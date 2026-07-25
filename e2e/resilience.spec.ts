@@ -118,23 +118,35 @@ test.describe("resilience", () => {
    * Launching with the server away — off the tailnet, or the box asleep. The
    * app should say that, not offer a passcode box that cannot work.
    */
-  test("says the server is unreachable rather than asking for a passcode", async ({
-    page,
-    context,
-  }) => {
-    await page.goto("/");
-    await expect(page.locator(".row, .blocked").first()).toBeVisible();
-    // Give the worker a moment to cache the shell, or there is nothing to load.
-    await page.waitForTimeout(2_000);
+  // This one is about the cached shell, so it needs the worker the rest of the
+  // suite blocks.
+  test.describe("with the app installed", () => {
+    test.use({ serviceWorkers: "allow" });
 
-    await context.setOffline(true);
-    await page.goto("/").catch(() => undefined);
-    await expect(page.getByText(/cannot reach herdr/i)).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator(".login")).toHaveCount(0);
+    test("says the server is unreachable rather than asking for a passcode", async ({
+      page,
+      context,
+    }, testInfo) => {
+      // Chromium only: WebKit's offline emulation makes navigation throw an
+      // internal error rather than failing the request, so the scenario cannot
+      // be staged there. The behaviour under test is the app's response to a
+      // failed fetch, which is engine-independent.
+      test.skip(testInfo.project.name === "ios", "offline navigation is not emulable in WebKit");
 
-    await context.setOffline(false);
-    await page.getByRole("button", { name: /try again/i }).click();
-    await expect(page.locator(".row, .blocked").first()).toBeVisible({ timeout: 20_000 });
+      await page.goto("/");
+      await expect(page.locator(".row, .blocked").first()).toBeVisible();
+      // Give the worker a moment to cache the shell, or there is nothing to load.
+      await page.waitForTimeout(2_000);
+
+      await context.setOffline(true);
+      await page.goto("/").catch(() => undefined);
+      await expect(page.getByText(/cannot reach herdr/i)).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator(".login")).toHaveCount(0);
+
+      await context.setOffline(false);
+      await page.getByRole("button", { name: /try again/i }).click();
+      await expect(page.locator(".row, .blocked").first()).toBeVisible({ timeout: 20_000 });
+    });
   });
 
   test("leaves nothing growing behind it", async ({ page }) => {

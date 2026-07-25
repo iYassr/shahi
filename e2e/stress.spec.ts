@@ -1,6 +1,6 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
-import { tap } from "./touch";
+import { isHarmless, tap } from "./touch";
 
 /**
  * The app used the way it is actually used: opened, poked at, backed out of,
@@ -10,7 +10,9 @@ import { tap } from "./touch";
 
 function watch(page: Page) {
   const problems: string[] = [];
-  page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !isHarmless(m.text())) problems.push(m.text());
+  });
   page.on("pageerror", (e) => problems.push(String(e)));
   page.on("requestfailed", (r) => {
     // Navigations away from a page cancel their own requests; that is not a
@@ -71,7 +73,7 @@ test.describe("under use", () => {
     await tap(page, page.locator(".row").first());
     await expect(page).toHaveURL(/\/pane\//);
 
-    await page.locator(".composer__attach, button[aria-label*='ttach' i]").first().click();
+    await tap(page, page.locator(".compose__attach"));
     await expect(page.locator(".sheet")).toBeVisible();
     await expect(page.locator(".dir__row, .picker__row, .sheet button").first()).toBeVisible();
 

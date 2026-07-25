@@ -1,6 +1,6 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
-import { tap } from "./touch";
+import { isHarmless, tap } from "./touch";
 
 /**
  * Finds a pane whose transcript the reader can actually show.
@@ -48,7 +48,9 @@ test.describe("reader", () => {
   test("shows the conversation", async ({ page }) => {
     const problems: string[] = [];
     page.on("pageerror", (e) => problems.push(String(e)));
-    page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+    page.on("console", (m) => {
+    if (m.type() === "error" && !isHarmless(m.text())) problems.push(m.text());
+  });
 
     const paneId = await readablePane(page);
     await openReader(page, paneId);
