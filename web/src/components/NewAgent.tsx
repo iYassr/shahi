@@ -51,15 +51,18 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
     if (!kind) return;
     setPhase("creating");
     try {
-      const { result } = await api.createTab(space.workspaceId, name.trim() || null, cwd.path);
-      const paneId = (result as { root_pane?: { pane_id: string } }).root_pane?.pane_id;
-      if (!paneId) throw new Error("herdr created the tab without telling us the pane");
-
       setPhase("starting");
-      // herdr waits for the agent to report readiness. On a cold start that is
-      // genuinely slow, so the UI says what it is waiting for rather than
-      // looking hung.
-      await api.startAgent(paneId, kind, name.trim() || kind);
+      // One call: the server makes the tab and waits for its shell before
+      // starting the agent. herdr then waits for the agent to report readiness,
+      // which on a cold start is genuinely slow — so the UI says what it is
+      // waiting for rather than looking hung.
+      const { paneId } = await api.startAgent(
+        space.workspaceId,
+        cwd.path,
+        name.trim() || null,
+        kind,
+        name.trim() || kind,
+      );
       onStarted(paneId);
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Could not start the agent");

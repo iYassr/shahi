@@ -106,6 +106,22 @@ export const api = {
     postJson<{ result: unknown }>("/api/rpc", { method, params }),
 
   /**
+   * Makes a tab and starts an agent in it, in one call.
+   *
+   * The two herdr calls behind this race each other — the pane exists before
+   * its shell does — so the server owns the sequence and the retry. herdr then
+   * blocks until the agent is interactively ready, which on a cold start is
+   * tens of seconds.
+   */
+  startAgent: (options: {
+    workspaceId: string;
+    cwd: string | null;
+    label: string | null;
+    kind: string;
+    name: string;
+  }) => postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", options),
+
+  /**
    * Answers a numbered prompt by pressing its digit, exactly as the TUI does.
    * Verified against a live pane: `keys: ["2"]` puts a literal `2` on stdin.
    */

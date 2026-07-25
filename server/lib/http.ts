@@ -15,7 +15,7 @@ export type { DashboardPane };
 import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
-import { forgetInstalledAgents, installedAgents } from "./agents";
+import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 import { readAgentPanelSort } from "./herdr-config";
 import { readCodexLog } from "./codex-log";
 import { readSessionImage, readSessionLog } from "./session-log";
@@ -186,6 +186,45 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           agents: await installedAgents(manifests.map((m) => m.agent)),
           known: manifests.length,
         });
+      }
+
+      // Starting an agent is two herdr calls with a race between them, so it is
+      // one call from here. See `startAgentInTab`.
+      if (pathname === "/api/agents/start" && req.method === "POST") {
+        const body = (await req.json().catch(() => ({}))) as {
+          workspaceId?: string;
+          cwd?: string | null;
+          label?: string | null;
+          kind?: string;
+          name?: string;
+        };
+        if (!body.workspaceId || !body.kind) {
+          return json({ error: "workspaceId and kind are required" }, { status: 400 });
+        }
+        // herdr does not expand `~`; it silently uses $HOME instead, which puts
+        // the agent somewhere the user did not ask for.
+        if (body.cwd && !body.cwd.startsWith("/")) {
+          return json({ error: "cwd must be an absolute path" }, { status: 400 });
+        }
+        try {
+          const started = await startAgentInTab(
+            (method, params, options) =>
+              client.rpc(method as Method, params as ParamsFor<Method>, options) as never,
+            {
+              workspaceId: body.workspaceId,
+              cwd: body.cwd ?? null,
+              label: body.label ?? null,
+              kind: body.kind,
+              name: body.name ?? body.kind,
+            },
+          );
+          return json(started);
+        } catch (err) {
+          if (err instanceof HerdrError) {
+            return json({ error: err.message, code: err.code }, { status: 400 });
+          }
+          return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+        }
       }
 
       // A file sent from the phone. It lands in an owned directory and comes
