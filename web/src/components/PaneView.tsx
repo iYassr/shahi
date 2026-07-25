@@ -17,6 +17,7 @@ import {
   type TranscriptLine,
 } from "../api";
 import { AgentIcon } from "./AgentIcon";
+import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt } from "./Prompt";
 import { Reader } from "./Reader";
 import { Terminal, fitScale } from "./Terminal";
@@ -58,6 +59,8 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
   const [fitWidth, setFitWidth] = useState(true);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const frame = frames[paneId] ?? detail?.frame ?? null;
@@ -124,13 +127,20 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
 
   async function submit() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
+
+    // Attachments become paths on their own lines. An agent cannot receive a
+    // file over a terminal, but it can read one off disk, and a bare absolute
+    // path is the least ambiguous way to point at it.
+    const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
+
     // Text and Enter are separate calls: sending them together would race the
     // agent's own input handling on a slow pane.
     await send(async () => {
-      await api.sendText(paneId, text);
+      await api.sendText(paneId, body);
       await api.sendKeys(paneId, ["Enter"]);
       setDraft("");
+      setAttachments([]);
     }, "Message not sent");
   }
 
@@ -261,7 +271,34 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
             </button>
           ))}
         </div>
+        {attachments.length > 0 && (
+          <div className="attached">
+            {attachments.map((a) => (
+              <span className="attached__chip" key={a.path}>
+                <span className="attached__name">{a.name}</span>
+                {a.size !== undefined && (
+                  <span className="attached__size">{formatSize(a.size)}</span>
+                )}
+                <button
+                  className="attached__x"
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => setAttachments((c) => c.filter((x) => x.path !== a.path))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="compose__row">
+          <button
+            className="compose__attach"
+            onClick={() => setAttaching(true)}
+            aria-label="Attach a file"
+          >
+            +
+          </button>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -272,12 +309,25 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
           <button
             className="compose__send"
             onClick={() => void submit()}
-            disabled={sending || draft.trim() === ""}
+            disabled={sending || (draft.trim() === "" && attachments.length === 0)}
           >
             Send
           </button>
         </div>
       </div>
+
+      {attaching && (
+        <Attach
+          startPath={detail?.pane?.cwd ?? "~"}
+          onClose={() => setAttaching(false)}
+          onAttach={(a) =>
+            setAttachments((current) =>
+              current.some((x) => x.path === a.path) ? current : [...current, a],
+            )
+          }
+          onToast={onToast}
+        />
+      )}
     </div>
   );
 }

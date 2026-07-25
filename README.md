@@ -168,6 +168,23 @@ Only Claude Code writes this format. `codex`, `pi` and `opencode` keep their own
 stores, and shells have no transcript at all, so the terminal view stays the
 universal fallback rather than a legacy one.
 
+## Attachments
+
+Both sources end as an absolute path in the message, because that is what an
+agent can act on — it cannot receive a file over a terminal, but it can read one
+off disk, images included.
+
+- **From the phone** — photo library, Files, or straight to the camera. The file
+  uploads to `~/.local/share/herdrui/uploads/` and is referenced by path.
+- **On the server** — browse from the pane's own directory and tap a file.
+
+Uploads never land in the agent's working directory: a file arriving from a
+phone should not be able to overwrite a source file the agent is mid-edit on.
+Names are reduced to a safe basename before use, so `../../../etc/passwd`
+becomes `passwd` inside the upload directory, and files are timestamped so two
+photos both called `IMG_0001.jpg` cannot overwrite each other. Anything over
+32MB is refused. Uploads older than two weeks are swept on the next write.
+
 ## Checking it still works
 
 Unit tests cover the parser, the transcript recorder, auth, config, and the

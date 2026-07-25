@@ -14,6 +14,7 @@ import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents } from "./agents";
 import { readSessionLog } from "./session-log";
+import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
 import type { ParsedPrompt } from "./prompt-parser";
@@ -149,7 +150,11 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
       // phone keyboard is its own small punishment.
       if (pathname === "/api/dirs") {
         try {
-          return json(await listDirectories(url.searchParams.get("path") ?? "~"));
+          return json(
+            await listDirectories(url.searchParams.get("path") ?? "~", {
+              includeFiles: url.searchParams.get("files") === "1",
+            }),
+          );
         } catch (err) {
           if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
           return json({ error: "cannot list that directory" }, { status: 404 });
@@ -166,6 +171,21 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           agents: await installedAgents(manifests.map((m) => m.agent)),
           known: manifests.length,
         });
+      }
+
+      // A file sent from the phone. It lands in an owned directory and comes
+      // back as an absolute path, which is all the agent needs — the same shape
+      // as picking something already on the server.
+      if (pathname === "/api/uploads" && req.method === "POST") {
+        const form = await req.formData().catch(() => null);
+        const file = form?.get("file");
+        if (!(file instanceof File)) return json({ error: "no file supplied" }, { status: 400 });
+        try {
+          return json(await storeUpload(file));
+        } catch (err) {
+          if (err instanceof UploadTooLarge) return json({ error: err.message }, { status: 413 });
+          return json({ error: "could not save the file" }, { status: 500 });
+        }
       }
 
       if (pathname === "/api/push/key") {
