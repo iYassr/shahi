@@ -5,139 +5,48 @@
  * the session cookie. The socket reconnects with backoff because a phone
  * suspends it constantly — locking the screen drops it, and unlocking must
  * bring the dashboard straight back without a manual refresh.
+ *
+ * Every wire type is imported from `@herdrui/shared` rather than declared here.
+ * They used to be hand-mirrored from the server, with nothing enforcing that
+ * the two agreed — which is how `activity` and `cwdPath` each went missing on
+ * one side for a while. A React Native client will import the same module.
  */
+export type {
+  Activity,
+  AgentStatus,
+  ClientMessage,
+  DashboardPane,
+  DirEntry,
+  DirListing,
+  InstalledAgent,
+  LogBlock,
+  LogMessage,
+  PaneFrame,
+  ParsedPrompt,
+  PromptOption,
+  Session,
+  SessionLog,
+  SocketMessage,
+  Space,
+  SpaceTab,
+  StatusChange,
+  StoredUpload,
+  TranscriptLine,
+} from "@herdrui/shared";
 
-export type AgentStatus = "blocked" | "working" | "done" | "idle" | "unknown";
+import type {
+  AgentStatus,
+  DirListing,
+  PaneFrame,
+  Session,
+  SessionLog,
+  SocketMessage,
+  TranscriptLine,
+} from "@herdrui/shared";
 
-export interface PromptOption {
-  index: number;
-  label: string;
-  selected: boolean;
-}
+export { GAP_MARKER } from "@herdrui/shared";
 
-export interface ParsedPrompt {
-  question: string;
-  options: PromptOption[];
-  hints: string[];
-}
-
-export interface DashboardPane {
-  paneId: string;
-  workspaceId: string;
-  workspaceLabel: string;
-  tabId: string;
-  status: AgentStatus;
-  agent: string | null;
-  title: string | null;
-  cwd: string | null;
-  focused: boolean;
-  hasPrompt: boolean;
-  isAgent: boolean;
-  /** Present for blocked panes whose screen could be parsed. */
-  prompt: ParsedPrompt | null;
-}
-
-/** herdr calls these "spaces" in its sidebar and "workspaces" in its API. */
-export interface Space {
-  workspaceId: string;
-  label: string;
-  status: AgentStatus;
-  paneCount: number;
-  tabCount: number;
-  focused: boolean;
-  /** Display form, with `~` collapsed. Never send this to herdr. */
-  cwd: string | null;
-  /** Absolute form, safe to pass back into workspace.create / tab.create. */
-  cwdPath: string | null;
-}
-
-export interface SpaceTab {
-  tabId: string;
-  workspaceId: string;
-  label: string;
-  number: number;
-  status: AgentStatus;
-  paneCount: number;
-  focused: boolean;
-}
-
-export interface Session {
-  version: string;
-  protocol: number;
-  /**
-   * herdr's own `ui.agent_panel_sort`, so the phone opens the way the TUI
-   * already does. Null when no preference is set.
-   */
-  defaultGrouping: "priority" | "space" | null;
-  workspaces: Space[];
-  tabs: SpaceTab[];
-  panes: DashboardPane[];
-  focusedPaneId: string | null;
-}
-
-export interface DirEntry {
-  name: string;
-  path: string;
-  display: string;
-  isDirectory: boolean;
-  size?: number;
-}
-
-export interface DirListing {
-  path: string;
-  display: string;
-  parent: string | null;
-  entries: DirEntry[];
-}
-
-export interface Activity {
-  verb: string;
-  elapsed: string;
-  detail: string | null;
-}
-
-export interface PaneFrame {
-  paneId: string;
-  ansi: string;
-  text: string;
-  prompt: ParsedPrompt | null;
-  /** Present while the agent is mid-turn. Drives the reader's live footer. */
-  activity: Activity | null;
-  at: number;
-}
-
-export type LogBlock =
-  | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
-  | { kind: "image"; mediaType: string }
-  | {
-      kind: "tool";
-      name: string;
-      summary: string;
-      result: { text: string; isError: boolean; truncated: boolean } | null;
-    };
-
-export interface LogMessage {
-  id: string;
-  role: "you" | "agent" | "system";
-  at: number;
-  blocks: LogBlock[];
-}
-
-export interface SessionLog {
-  sessionId: string;
-  path: string;
-  messages: LogMessage[];
-  total: number;
-  offset: number;
-}
-
-export interface TranscriptLine {
-  seq: number;
-  text: string;
-  at: number;
-}
-
+/** Shapes the server returns that are not part of the shared contract. */
 export interface Rect {
   x: number;
   y: number;
@@ -157,8 +66,7 @@ export interface PaneDetail {
   frame: PaneFrame | null;
 }
 
-/** Matches the server's GAP_MARKER, rendered distinctly in the transcript. */
-export const GAP_MARKER = "… output not captured …";
+export type LinkState = "connecting" | "live" | "lost";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: "same-origin", ...init });
@@ -332,14 +240,6 @@ export const api = {
 };
 
 /* ------------------------------------------------------------------------- */
-
-export type SocketMessage =
-  | { type: "session"; session: Session }
-  | { type: "frame"; frame: PaneFrame }
-  | { type: "prompt"; paneId: string; prompt: ParsedPrompt }
-  | { type: "status"; change: { paneId: string; from?: AgentStatus; to: AgentStatus } };
-
-export type LinkState = "connecting" | "live" | "lost";
 
 /**
  * Holds the live connection, reconnecting on its own.

@@ -15,23 +15,15 @@
  *
  * Storage is SQLite via `bun:sqlite`, so history survives a restart.
  */
+import { GAP_MARKER, type TranscriptLine } from "@herdrui/shared";
 import { Database } from "bun:sqlite";
+
+export { GAP_MARKER };
+export type { TranscriptLine };
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-export interface TranscriptLine {
-  seq: number;
-  text: string;
-  /** Epoch ms when the line was first observed scrolling out of view. */
-  at: number;
-}
 
-/**
- * Stands in for output that scrolled past between two polls.
- *
- * Rendered distinctly by the UI so a gap never reads as continuous output.
- */
-export const GAP_MARKER = "… output not captured …";
 
 export interface TranscriptOptions {
   /** Lines retained per pane. ~5000 is a few hundred KB across a busy session. */

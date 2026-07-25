@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
   "scripts": {
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
-    "test": "bun test server web/src",
+    "test": "bun test shared/src server web/src",
     "build:web": "bun run --cwd web build"
   }
 }

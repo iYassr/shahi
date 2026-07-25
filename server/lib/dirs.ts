@@ -11,27 +11,14 @@
  * and everything else can already run arbitrary commands — but a path traversal
  * that leaks directory structure is still worth not having.
  */
+import type { DirEntry, DirListing } from "@herdrui/shared";
 import { readdir, realpath, stat } from "node:fs/promises";
+
+export type { DirEntry, DirListing };
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-export interface DirEntry {
-  name: string;
-  path: string;
-  /** Display form with the home prefix collapsed to `~`. */
-  display: string;
-  /** False for files, which are selectable but not enterable. */
-  isDirectory: boolean;
-  /** Bytes, for files only. */
-  size?: number;
-}
 
-export interface DirListing {
-  path: string;
-  display: string;
-  parent: string | null;
-  entries: DirEntry[];
-}
 
 const HOME = homedir();
 

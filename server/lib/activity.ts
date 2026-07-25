@@ -43,14 +43,9 @@ const ACTIVITY = new RegExp(
 /** Claude separates with `·`, codex with `•`. */
 const SEPARATOR = /\s[·•]\s/;
 
-export interface Activity {
-  /** The gerund Claude Code is showing, e.g. "Smooshing…". */
-  verb: string;
-  /** Elapsed time as written, e.g. "8m 2s". */
-  elapsed: string;
-  /** Whatever follows it: "↓ 24.1k tokens", "still thinking with high effort". */
-  detail: string | null;
-}
+import type { Activity } from "@herdrui/shared";
+
+export type { Activity };
 
 /**
  * Returns the current activity, or null when the agent is not mid-turn.

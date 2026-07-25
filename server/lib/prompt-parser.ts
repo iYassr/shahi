@@ -64,23 +64,9 @@ export function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
 
-export interface PromptOption {
-  /** The number the user would press — 1-based, as displayed. */
-  index: number;
-  label: string;
-  /** True for the option currently under `❯`. */
-  selected: boolean;
-}
+import type { ParsedPrompt, PromptOption } from "@herdrui/shared";
 
-export interface ParsedPrompt {
-  question: string;
-  options: PromptOption[];
-  /**
-   * Trailing hint lines shown under the options, e.g.
-   * "shift+tab to approve with this feedback". Useful context, not actionable.
-   */
-  hints: string[];
-}
+export type { ParsedPrompt, PromptOption };
 
 export interface ParseOptions {
   /**

@@ -235,9 +235,28 @@ sits. If a tap ever fails to move a real prompt, flip `ANSWER_STRATEGY` in
 `web/src/api.ts` to `"arrows"`, which walks the cursor from the option the parser
 saw selected to the one you tapped.
 
+## The shared contract
+
+`shared/` holds every type that crosses the HTTP or WebSocket boundary, and
+nothing else — no runtime code, no `node:` or `bun:` imports, so a React Native
+client can import the same module.
+
+It exists because those types were previously declared twice: once in the server
+module that produced them, once by hand in the web client, with nothing
+enforcing agreement. Nine had drifted or nearly drifted — adding `activity` to
+`PaneFrame` meant remembering to edit two files, and `cwdPath` was briefly
+missing on the client.
+
+TypeScript now catches a mismatch, but not someone quietly declaring a fresh
+local copy — which is how the drift started. `shared/src/contract.test.ts`
+catches that, and fails if any contract name is re-declared outside `shared`.
+The one exemption is `server/lib/herdr-schema.ts`, which is generated from
+herdr's own API schema and legitimately declares herdr's `AgentStatus`.
+
 ## Layout
 
 ```
+shared/src/index.ts      every type that crosses the wire
 server/
   index.ts               entry point
   lib/herdr-client.ts    the socket: one connection per RPC, one held for events
