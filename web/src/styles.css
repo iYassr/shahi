@@ -187,8 +187,21 @@ button {
  * The list is sorted so the thing needing a human is always at the top.
  */
 
+/*
+ * The group heading carries the boundary. Sticky because with seven spaces on a
+ * phone you otherwise lose track of which one you are scrolling through.
+ */
 .group {
-  padding: 20px var(--gutter) 4px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 22px var(--gutter) 8px;
+  background: var(--void);
+}
+
+/* The first heading sits under the group-by control, so it needs less air. */
+.groupbar + section .group {
+  padding-top: 8px;
 }
 
 .group__label {
@@ -200,14 +213,41 @@ button {
   margin: 0;
 }
 
+/*
+ * Two different boundaries, two different treatments — and deliberately not two
+ * weights of the same line.
+ *
+ * A rule between rows separates peers; a boundary between groups separates
+ * categories. Giving the second a heavier line is the obvious move and the
+ * wrong one: on a near-black background line weight barely registers, and more
+ * rules make a list read as a table. Space is the stronger signal, so groups
+ * are separated by whitespace alone and rows keep a hairline — inset to where
+ * the text starts, which is what says "still the same run of items".
+ */
 .row {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 10px;
   width: 100%;
   padding: 11px var(--gutter);
-  border-bottom: 1px solid var(--line);
   text-align: left;
+}
+
+.row::after {
+  content: "";
+  position: absolute;
+  /* Starts under the title, past the status glyph and agent mark. */
+  left: 48px;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+/* The last row of a group ends on space, not on a line. */
+.row:last-child::after {
+  display: none;
 }
 
 .row:active {
