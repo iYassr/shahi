@@ -58,11 +58,18 @@ const PROBE_FONT = 12;
 const CHAR_ASPECT_GUESS = 0.6;
 const PROBE = "─".repeat(PROBE_CHARS);
 
-/** Keys a touch keyboard cannot produce but agents routinely ask for. */
+/**
+ * Keys a touch keyboard cannot produce but agents routinely ask for.
+ *
+ * The names are herdr's, and it is strict about them: `shift+tab` is accepted
+ * and `S-Tab` is not — it answers `invalid_key`, which the key bar swallowed, so
+ * the one key Claude Code uses for its permission modes silently did nothing.
+ * Every name here has been sent to a live pane and accepted.
+ */
 const KEY_BAR: { label: string; keys: string[] }[] = [
   { label: "esc", keys: ["Escape"] },
   { label: "⇥", keys: ["Tab"] },
-  { label: "⇧⇥", keys: ["S-Tab"] },
+  { label: "⇧⇥", keys: ["shift+tab"] },
   { label: "^C", keys: ["C-c"] },
   { label: "↑", keys: ["Up"] },
   { label: "↓", keys: ["Down"] },
@@ -273,7 +280,9 @@ export function Pane({ paneId, onBack }: Props) {
             <Pressable
               key={label}
               style={styles.key}
-              onPress={() => void api.sendKeys(paneId, keys).catch(() => {})}
+              // Reported, not swallowed: this is how an unsupported key name
+              // stayed invisible.
+              onPress={() => void api.sendKeys(paneId, keys).catch((e: Error) => setError(e.message))}
             >
               <Text style={styles.keyText}>{label}</Text>
             </Pressable>
@@ -348,7 +357,10 @@ function Prompt({
               {isArmed || (armed === null && option.selected) ? "❯" : " "}
             </Text>
             <Text style={styles.choiceIndex}>{option.index}.</Text>
-            <Text style={styles.choiceLabel}>{option.label}</Text>
+            <View style={styles.choiceBody}>
+              <Text style={styles.choiceLabel}>{option.label}</Text>
+              {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
+            </View>
           </Pressable>
         );
       })}
@@ -731,7 +743,10 @@ const styles = StyleSheet.create({
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
   choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },
-  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, flex: 1, lineHeight: 19 },
+  choiceBody: { flex: 1 },
+  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, lineHeight: 19 },
+  /** The agent's own explanation of a choice, where it wrote one. */
+  choiceDetail: { color: theme.dim, fontSize: 12, lineHeight: 17, marginTop: 3 },
 
   working: { flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 14 },
   workingSpin: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },

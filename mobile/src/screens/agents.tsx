@@ -165,7 +165,10 @@ function BlockedCard({
                   {isArmed || (armed === null && option.selected) ? "❯" : " "}
                 </Text>
                 <Text style={styles.choiceIndex}>{option.index}.</Text>
-                <Text style={styles.choiceLabel}>{option.label}</Text>
+                <View style={styles.choiceBody}>
+                  <Text style={styles.choiceLabel}>{option.label}</Text>
+                  {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
+                </View>
               </Pressable>
             );
           })}
@@ -255,5 +258,8 @@ const styles = StyleSheet.create({
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
   choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },
-  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, flex: 1, lineHeight: 19 },
+  choiceBody: { flex: 1 },
+  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, lineHeight: 19 },
+  /** The agent's own explanation of a choice, where it wrote one. */
+  choiceDetail: { color: theme.dim, fontSize: 12, lineHeight: 17, marginTop: 3 },
 });

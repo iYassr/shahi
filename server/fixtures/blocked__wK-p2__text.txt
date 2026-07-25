@@ -1,0 +1,23 @@
+❯ now check if the file existse your AskUserQuestion
+  tool to ask me which colour I prefer: red, green or
+  blue. do nothing else.
+
+  Listed 1 directory
+
+● The file exists (0 bytes, created 15:21).
+──────────────────────────────────────────────────────
+ ☐ Colour
+
+Which colour do you prefer?
+
+❯ 1. Red
+     Warm, high-contrast — reads as alert or emphasis.
+  2. Green
+     Cool-warm midpoint — reads as success or growth.
+  3. Blue
+     Cool, calm — reads as informational or neutral.
+  4. Type something.
+──────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

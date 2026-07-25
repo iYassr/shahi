@@ -14,6 +14,23 @@
  *
  * That structure is what makes one-tap approval possible on a phone.
  *
+ * The same agent's question tool renders the list less tidily — an indented
+ * explanation under each choice, and a separator rule partway down:
+ *
+ *     Which colour do you prefer?
+ *
+ *     ❯ 1. Red
+ *          Warm, high-contrast — reads as alert or emphasis.
+ *       2. Green
+ *          Cool-warm midpoint — reads as success or growth.
+ *       4. Type something.
+ *     ──────────────────────────────────────────────────────
+ *       5. Chat about this
+ *
+ * So the run tolerates both, and keeps the explanations: they are frequently
+ * what the choice means, and a phone that dropped them would show less than the
+ * terminal it is standing in for.
+ *
  * The `❯` glyph on its own is *not* a reliable signal — it also appears as
  * herdr's pane marker and as Claude Code's slash-command echo (`❯ /model`) in
  * panes that are perfectly idle. Only a well-formed numbered run counts, and
@@ -96,19 +113,13 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
   const question = findQuestion(lines, run.startLine);
   if (!question) return null;
 
-  return {
-    question,
-    options: run.options,
-    hints: collectHints(lines, run.endLine, run.optionIndent),
-  };
+  return { question, options: run.options };
 }
 
 interface OptionRun {
   options: PromptOption[];
-  /** Index within `lines` of the first and last option line. */
+  /** Index within `lines` of the first option line, for finding the question. */
   startLine: number;
-  endLine: number;
-  optionIndent: number;
 }
 
 /**
@@ -120,17 +131,28 @@ interface OptionRun {
  */
 function findOptionRun(lines: string[]): OptionRun | null {
   let candidate: OptionRun | null = null;
-  let current: { entries: { index: number; label: string; selected: boolean; indent: number }[]; startLine: number } | null =
-    null;
+  let current: {
+    entries: { index: number; label: string; selected: boolean; indent: number; detail?: string }[];
+    startLine: number;
+  } | null = null;
 
-  const flush = (endLine: number) => {
+
+  const flush = () => {
     if (!current) return;
     const { entries, startLine } = current;
     current = null;
 
-    // Need a real choice, numbered 1..n in order.
+    // Need a real choice, starting at 1 and increasing.
+    //
+    // Strictly 1..n was the earlier rule, and it was too strict: the question
+    // tool's own list runs 1, 2, 3, 4, 5 in the simple case but can skip a
+    // number, and answering by digit works regardless. Increasing-from-1 still
+    // rejects the thing that rule existed for — an agent numbering points in
+    // its prose, which never starts at 1 and climbs in a single screen-bottom
+    // block with exactly one cursor on it.
     if (entries.length < 2) return;
-    if (entries.some((e, i) => e.index !== i + 1)) return;
+    if (entries[0]!.index !== 1) return;
+    if (entries.some((e, i) => i > 0 && e.index <= entries[i - 1]!.index)) return;
 
     // Exactly one option must carry the selection cursor.
     //
@@ -147,19 +169,32 @@ function findOptionRun(lines: string[]): OptionRun | null {
     if (entries.filter((e) => e.selected).length !== 1) return;
 
     candidate = {
-      options: entries.map(({ index, label, selected }) => ({ index, label, selected })),
+      options: entries.map(({ index, label, selected, detail }) => ({
+        index,
+        label,
+        selected,
+        ...(detail ? { detail } : {}),
+      })),
       startLine,
-      endLine,
-      optionIndent: entries[0]!.indent,
     };
   };
 
   for (const [i, line] of lines.entries()) {
     const match = line.match(OPTION_RE);
     if (!match?.groups) {
-      // A blank line inside the block (Claude Code does not emit one, but be
-      // forgiving) does not end the run; any other content does.
-      if (line.trim() !== "") flush(i - 1);
+      // Three kinds of line do not end a run: blank ones, chrome (the separator
+      // rule the question tool draws between choices), and a line indented past
+      // the option it follows, which is that option's own explanation.
+      if (line.trim() === "" || CHROME_ONLY_RE.test(line)) continue;
+
+      const last = current?.entries.at(-1);
+      const indent = line.length - line.trimStart().length;
+      if (last && indent > last.indent) {
+        last.detail = last.detail ? `${last.detail} ${line.trim()}` : line.trim();
+        continue;
+      }
+
+      flush();
       continue;
     }
 
@@ -168,17 +203,18 @@ function findOptionRun(lines: string[]): OptionRun | null {
       label: match.groups.label!.trim(),
       selected: Boolean(match.groups.marker),
       indent: match.groups.indent!.length,
+      detail: undefined as string | undefined,
     };
 
     // A fresh "1." starts a new run rather than extending the previous one.
     if (!current || entry.index === 1) {
-      flush(i - 1);
+      flush();
       current = { entries: [entry], startLine: i };
     } else {
       current.entries.push(entry);
     }
   }
-  flush(lines.length - 1);
+  flush();
 
   return candidate;
 }
@@ -213,20 +249,3 @@ function findQuestion(lines: string[], optionStart: number): string | null {
   return question.length > 0 ? question : null;
 }
 
-/**
- * Collects the hint lines under the options — those indented past the option
- * text and carrying no number of their own.
- */
-function collectHints(lines: string[], optionEnd: number, optionIndent: number): string[] {
-  const hints: string[] = [];
-  for (let i = optionEnd + 1; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (line.trim() === "") break;
-    if (CHROME_ONLY_RE.test(line)) break;
-    if (OPTION_RE.test(line)) break;
-    const indent = line.length - line.trimStart().length;
-    if (indent <= optionIndent) break;
-    hints.push(line.trim());
-  }
-  return hints;
-}

@@ -423,15 +423,17 @@ button {
   flex: 1;
 }
 
-.choice:disabled {
-  opacity: 0.4;
+/* The agent's own explanation of a choice, where it wrote one. */
+.choice__detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
 }
 
-.choices__hint {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  padding: 2px 10px 8px;
+.choice:disabled {
+  opacity: 0.4;
 }
 
 /* --------------------------------------------------------------- detail -- */

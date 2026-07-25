@@ -32,13 +32,19 @@ export interface PromptOption {
   label: string;
   /** True for the option currently under the cursor. */
   selected: boolean;
+  /**
+   * The explanation printed under the label, where the agent wrote one.
+   *
+   * Claude Code's own question tool renders a sentence under each choice, and
+   * it is often what the choice actually means — dropping it would leave the
+   * phone showing less than the terminal does.
+   */
+  detail?: string;
 }
 
 export interface ParsedPrompt {
   question: string;
   options: PromptOption[];
-  /** Trailing hints under the options. Context, not actionable. */
-  hints: string[];
 }
 
 /* ---------------------------------------------------------------- activity */

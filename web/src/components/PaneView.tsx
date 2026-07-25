@@ -35,11 +35,18 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-/** Keys a touch keyboard cannot produce but agents routinely ask for. */
+/**
+ * Keys a touch keyboard cannot produce but agents routinely ask for.
+ *
+ * The names are herdr's, and it is strict about them: `shift+tab` is accepted
+ * and `S-Tab` is not — it answers `invalid_key`, which the key bar swallowed, so
+ * the one key Claude Code uses for its permission modes silently did nothing.
+ * Every name here has been sent to a live pane and accepted.
+ */
 const KEY_BAR: Array<{ label: string; keys: string[] }> = [
   { label: "esc", keys: ["Escape"] },
   { label: "⇥", keys: ["Tab"] },
-  { label: "⇧⇥", keys: ["S-Tab"] },
+  { label: "⇧⇥", keys: ["shift+tab"] },
   { label: "^C", keys: ["C-c"] },
   { label: "^D", keys: ["C-d"] },
   { label: "↑", keys: ["Up"] },
