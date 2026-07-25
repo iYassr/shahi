@@ -6,7 +6,8 @@
   "workspaces": [
     "shared",
     "server",
-    "web"
+    "web",
+    "mobile"
   ],
   "scripts": {
     "gen:types": "bun run server/scripts/gen-types.ts",
