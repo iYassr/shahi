@@ -6,14 +6,21 @@
  * you would want to look at, and what the agent's own web client lets you open.
  * This is the endpoint behind that.
  *
- * Scoped to the home directory, the same boundary as the directory picker.
- * That is not a strong boundary — the app can already run arbitrary commands
- * through `pane.send_text`, so anything it could read this way it could read
- * anyway — but a path traversal that quietly serves `/etc/shadow` over a
- * tailnet is still worth refusing on principle.
+ * Scoped to the home directory and the temp directory. Home is where the work
+ * is; temp is where agents put everything they are not keeping — screenshots,
+ * scratch output, downloads — and refusing those made the feature useless for
+ * exactly the files most worth glancing at on a phone. Found by tapping a
+ * screenshot and getting a broken image.
+ *
+ * Neither is a strong boundary: this app can already run commands as you
+ * through `pane.send_text`, so anything readable here was readable anyway. It
+ * exists so that a malformed or hostile path cannot quietly walk somewhere
+ * nobody intended.
  */
-import { stat } from "node:fs/promises";
-import { OutsideHomeError, resolveWithinHome } from "./dirs";
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { OutsideHomeError, expandHome } from "./dirs";
 
 /** Enough to open in a browser without pretending to be a full file server. */
 const CONTENT_TYPES: Record<string, string> = {
@@ -84,16 +91,36 @@ export function isViewable(path: string): boolean {
     type.startsWith("application/json");
 }
 
+/** The roots a file may be read from. See the note at the top. */
+export const ROOTS = [homedir(), tmpdir()];
+
+const within = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
+
+/**
+ * Resolves a path, following symlinks first so none of them can point out.
+ *
+ * Throws `OutsideHomeError` for anything outside the roots, and for anything
+ * missing — `realpath` refuses both.
+ */
+export async function resolveReadable(input: string): Promise<string> {
+  const expanded = expandHome(input || "~");
+  const absolute = isAbsolute(expanded) ? expanded : resolve(homedir(), expanded);
+
+  const real = await realpath(absolute);
+  if (!ROOTS.some((root) => within(real, root))) throw new OutsideHomeError(input);
+  return real;
+}
+
 /**
  * Resolves and reads a file, or throws.
  *
- * `OutsideHomeError` for anything above the home directory or missing —
- * `realpath` refuses both — and `FileTooLarge` past the ceiling.
+ * `OutsideHomeError` for anything outside the roots or missing, and
+ * `FileTooLarge` past the ceiling.
  */
 export async function readWithinHome(
   request: FileRequest,
 ): Promise<{ path: string; bytes: Uint8Array; contentType: string; name: string }> {
-  const path = await resolveWithinHome(request.path);
+  const path = await resolveReadable(request.path);
 
   const info = await stat(path);
   if (info.isDirectory()) throw new OutsideHomeError(request.path);

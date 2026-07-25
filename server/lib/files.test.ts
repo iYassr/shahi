@@ -1,14 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { OutsideHomeError } from "./dirs";
 import { contentTypeFor, isViewable, readWithinHome } from "./files";
 
-/**
- * Written under the home directory, because that is the boundary being tested;
- * `/tmp` would be outside it and every read would fail for the wrong reason.
- */
+/** Under the home directory, which is one of the two roots a read may come from. */
 const dir = await mkdtemp(join(homedir(), ".herdrui-files-test-"));
 afterAll(() => rm(dir, { recursive: true, force: true }));
 
@@ -58,8 +55,30 @@ describe("readWithinHome", () => {
     expect(file.contentType).toStartWith("text/plain");
   });
 
-  test("refuses anything outside the home directory", async () => {
+  test("reads a file from the temp directory too", async () => {
+    // Where agents put screenshots and scratch output — the files most worth
+    // glancing at on a phone, and the ones this used to refuse.
+    const scratch = await mkdtemp(join(tmpdir(), "herdrui-files-test-"));
+    try {
+      const path = join(scratch, "shot.png");
+      await writeFile(path, "not really a png");
+      const file = await readWithinHome({ path });
+      expect(file.contentType).toBe("image/png");
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses anything outside both roots", async () => {
     expect(readWithinHome({ path: "/etc/passwd" })).rejects.toThrow(OutsideHomeError);
+    expect(readWithinHome({ path: "/usr/bin/env" })).rejects.toThrow(OutsideHomeError);
+  });
+
+  test("refuses a symlink that points out of them", async () => {
+    // Resolved before the check, so a link cannot be used as a door.
+    const link = join(dir, "escape");
+    await symlink("/etc/passwd", link);
+    expect(readWithinHome({ path: link })).rejects.toThrow(OutsideHomeError);
   });
 
   test("refuses to be walked out of it", async () => {

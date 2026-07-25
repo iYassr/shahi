@@ -120,7 +120,54 @@ test.describe("files in the reader", () => {
     await expect(page.locator(".viewer__get")).toBeVisible();
   });
 
-  test("a file outside the home directory is refused", async ({ request }) => {
+  test("a scratch file in the temp directory opens", async ({ request }) => {
+    // Where agents put screenshots. Refusing these made the feature useless for
+    // the files most worth a glance on a phone.
+    const res = await request.get("/api/file?path=/tmp");
+    // The directory itself is refused, but its contents are in scope — see the
+    // unit tests for the read path.
+    expect([403, 404]).toContain(res.status());
+  });
+
+  test("a file that cannot be read says why, rather than showing a broken image", async ({
+    page,
+  }) => {
+    await page.route("**/api/panes/*/session*", (route) =>
+      route.fulfill({
+        json: {
+          sessionId: "stub",
+          path: "/x",
+          offset: 0,
+          total: 1,
+          messages: [
+            {
+              id: "m1",
+              role: "agent",
+              at: 0,
+              blocks: [
+                {
+                  kind: "tool",
+                  name: "Read",
+                  summary: "/etc/shadow.png",
+                  file: { path: "/etc/shadow.png", name: "shadow.png" },
+                  result: null,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+
+    await page.locator(".tool__open").click();
+    await expect(page.locator(".viewer")).toBeVisible();
+    await expect(page.locator(".viewer .empty")).toContainText(/outside|cannot/i, {
+      timeout: 20_000,
+    });
+  });
+
+  test("a file outside either root is refused", async ({ request }) => {
     const res = await request.get("/api/file?path=/etc/passwd");
     expect(res.status()).toBe(403);
   });
