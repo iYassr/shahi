@@ -107,3 +107,5 @@ console.log(`  wrote ${out}`);
 
 socket.close();
 chrome.kill();
+
+export {};
