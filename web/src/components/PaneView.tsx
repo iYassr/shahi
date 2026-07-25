@@ -24,6 +24,9 @@ import { Terminal, fitScale } from "./Terminal";
 
 type Tab = "read" | "screen" | "history";
 
+/** Gap between inserting text and pressing Enter. See `submit`. */
+const SUBMIT_DELAY_MS = 200;
+
 interface Props {
   frames: Record<string, PaneFrame>;
   prompts: Record<string, ParsedPrompt>;
@@ -134,10 +137,14 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
     // path is the least ambiguous way to point at it.
     const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
 
-    // Text and Enter are separate calls: sending them together would race the
-    // agent's own input handling on a slow pane.
+    // Text and Enter are separate calls, and the gap between them is required
+    // rather than defensive. codex's composer needs a moment to ingest inserted
+    // text before Enter counts as submit: with no delay the message sat in the
+    // box and Send silently did nothing, while a second Enter sent it. Measured
+    // against a live codex pane, 150ms was enough; 200ms leaves margin.
     await send(async () => {
       await api.sendText(paneId, body);
+      await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
       await api.sendKeys(paneId, ["Enter"]);
       setDraft("");
       setAttachments([]);

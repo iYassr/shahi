@@ -174,11 +174,19 @@ export class Poller extends EventEmitter<PollerEvents> {
           const last = this.#records.get(paneId)?.lastPolledAt ?? 0;
           return now - last >= this.#intervalFor(paneId);
         })
-        // Oldest read first, so no pane is starved by a busy neighbour.
-        .sort(
-          (a, b) =>
-            (this.#records.get(a)?.lastPolledAt ?? 0) - (this.#records.get(b)?.lastPolledAt ?? 0),
-        )
+        // Watched panes first, then oldest read.
+        //
+        // Interval alone is not priority. A pane never polled has
+        // `lastPolledAt = 0`, so on a session this size — 47 panes — every cold
+        // pane sorted ahead of the one a client was actually looking at, and a
+        // batch of six per tick meant the watched pane waited its turn behind
+        // all of them. Short-lived state like codex's five-second working line
+        // vanished in the gap.
+        .sort((a, b) => {
+          const watched = Number(this.#watchers.has(b)) - Number(this.#watchers.has(a));
+          if (watched !== 0) return watched;
+          return (this.#records.get(a)?.lastPolledAt ?? 0) - (this.#records.get(b)?.lastPolledAt ?? 0);
+        })
         .slice(0, this.#options.batchSize);
 
       await Promise.all(
@@ -228,9 +236,13 @@ export class Poller extends EventEmitter<PollerEvents> {
       // The parser is deliberately strict, but this is the outer guard: a tap
       // sends a real keystroke into a live session.
       prompt: status === "blocked" ? parsePrompt(text) : null,
-      // Only meaningful mid-turn; a stale line on a finished screen would show
-      // a timer that never advances.
-      activity: status === "working" ? parseActivity(text) : null,
+      // Deliberately not gated on herdr's `agent_status`. Its working-state
+      // detection is tuned for Claude Code: a codex pane displaying
+      // `• Working (5s • esc to interrupt)` is still reported as `idle`, so
+      // gating on it made the indicator impossible for codex regardless of
+      // parsing. The status line's presence on the *current* screen is the
+      // better signal — both agents clear it the moment the turn ends.
+      activity: parseActivity(text),
       at: now,
     };
 
