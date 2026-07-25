@@ -70,12 +70,16 @@ test.describe("the composer", () => {
   test("every key in the bar sends the name herdr expects", async ({ page }) => {
     await openPane(page);
 
+    // The Screen tab carries the full bar; the reader keeps only the two that
+    // are useful while reading. `^D` is gone entirely — a mis-tap ended the
+    // pane's shell.
+    await page.getByRole("tab", { name: "Screen" }).click();
+
     const expected: Record<string, string> = {
       esc: "Escape",
+      "^C": "C-c",
       "⇥": "Tab",
       "⇧⇥": "shift+tab",
-      "^C": "C-c",
-      "^D": "C-d",
       "↑": "Up",
       "↓": "Down",
       "⏎": "Enter",
@@ -179,5 +183,36 @@ test.describe("attachments", () => {
 
     await expect(page.locator(".toast, .sheet__error")).toBeVisible();
     await expect(page.locator(".attached__chip")).toHaveCount(0);
+  });
+});
+
+test.describe("the key bar", () => {
+  /**
+   * The reader is for reading. The keys that drive a terminal UI belong where
+   * there is a terminal; a menu in the reader is already a card with tappable
+   * options, so the arrows were solving a problem the card had solved.
+   */
+  test("keeps only the stop keys while reading", async ({ page }) => {
+    await openPane(page);
+
+    await expect(page.locator(".keys button")).toHaveCount(2);
+    await expect(page.locator(".keys button").first()).toHaveText("esc");
+    await expect(page.locator(".keys button").last()).toHaveText("^C");
+  });
+
+  test("shows the rest on the screen, where there is a terminal", async ({ page }) => {
+    await openPane(page);
+    await page.getByRole("tab", { name: "Screen" }).click();
+
+    await expect(page.locator(".keys button")).toHaveCount(7);
+  });
+
+  /** EOF, one mis-tap from ending the shell, with nothing to undo. */
+  test("no longer offers ^D anywhere", async ({ page }) => {
+    await openPane(page);
+    await expect(page.locator(".keys button", { hasText: "^D" })).toHaveCount(0);
+
+    await page.getByRole("tab", { name: "Screen" }).click();
+    await expect(page.locator(".keys button", { hasText: "^D" })).toHaveCount(0);
   });
 });

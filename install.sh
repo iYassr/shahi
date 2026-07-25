@@ -103,6 +103,7 @@ Type=simple
 WorkingDirectory=$DIR
 Environment=HOST=$HOST
 Environment=PORT=$PORT
+Environment=WEB_ROOT=$DIR/web/dist
 Environment=PATH=$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=$BUN run server/index.ts
 Restart=on-failure

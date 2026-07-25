@@ -50,7 +50,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   if (connection.cookie) headers.cookie = connection.cookie;
 
-  const res = await fetch(`${connection.baseUrl}${path}`, { ...init, headers });
+  // `credentials: "omit"` turns off the native cookie jar for this request. On
+  // iOS, NSURLSession manages cookies itself and overrides a manually-set
+  // `cookie` header with whatever its jar holds — observed live: login returns
+  // 200 and sets the cookie, the next request 401s with the header
+  // demonstrably set, and the resulting UnauthorizedError signs the app out
+  // again. This client owns its cookie, because there is no browser to own it;
+  // the jar must not compete for the job.
+  const res = await fetch(`${connection.baseUrl}${path}`, {
+    ...init,
+    headers,
+    credentials: "omit",
+  });
   if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -75,6 +86,10 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ passcode }),
+      // Keep the response cookie out of the native jar: this client stores it
+      // itself, and a jar copy would then fight the manual header. See
+      // `request`.
+      credentials: "omit",
     });
     if (!res.ok) throw new Error("That passcode did not work.");
     connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
@@ -158,6 +173,7 @@ export const api = {
       method: "POST",
       headers: connection.cookie ? { cookie: connection.cookie } : {},
       body,
+      credentials: "omit", // see `request`
     });
     const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
     if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");

@@ -106,6 +106,16 @@ if (auth.disabled) {
   );
 }
 
+if (!config.webRoot) {
+  // Worth shouting about: everything else works, every health check passes, and
+  // the phone gets a one-line placeholder instead of the app. That combination
+  // cost an evening — the API was healthy the whole time.
+  console.warn(
+    "\n  WEB_ROOT is not set, so this is an API with no app in front of it.\n" +
+      "  Run `bun run build:web`, then set WEB_ROOT=<repo>/web/dist and restart.\n",
+  );
+}
+
 if (!loopback) {
   // Only loopback is a secure context. Off it, the browser refuses to register
   // a service worker, which is the sole delivery path for Web Push — so

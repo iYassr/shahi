@@ -53,16 +53,27 @@ interface Props {
  * the one key Claude Code uses for its permission modes silently did nothing.
  * Every name here has been sent to a live pane and accepted.
  */
-const KEY_BAR: Array<{ label: string; keys: string[] }> = [
-  { label: "esc", keys: ["Escape"] },
+const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = [
+  // `everywhere` marks the two that earn their place in the reader. The rest
+  // drive a terminal UI, and in the reader a menu is already a card with
+  // tappable options — so they only appear on the Screen tab, where there is a
+  // terminal to drive.
+  { label: "esc", keys: ["Escape"], everywhere: true },
+  { label: "^C", keys: ["C-c"], everywhere: true },
   { label: "⇥", keys: ["Tab"] },
   { label: "⇧⇥", keys: ["shift+tab"] },
-  { label: "^C", keys: ["C-c"] },
-  { label: "^D", keys: ["C-d"] },
   { label: "↑", keys: ["Up"] },
   { label: "↓", keys: ["Down"] },
   { label: "⏎", keys: ["Enter"] },
 ];
+
+/*
+ * `^D` was here and is not any more.
+ *
+ * It sends EOF: on a phone a mis-tap between `^C` and `↑` ends the pane's
+ * shell, with no confirmation and nothing to undo. Anything it was good for can
+ * be typed as `exit` in the composer, which at least requires meaning it.
+ */
 
 export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
   const { paneId = "" } = useParams();
@@ -347,7 +358,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
       <div className="compose">
         <div className="keys">
-          {KEY_BAR.map(({ label, keys }) => (
+          {KEY_BAR.filter((key) => tab === "screen" || key.everywhere).map(({ label, keys }) => (
             <button
               key={label}
               onClick={() => void send(() => api.sendKeys(paneId, keys), `${label} not sent`)}
