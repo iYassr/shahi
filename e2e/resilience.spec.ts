@@ -73,6 +73,41 @@ test.describe("resilience", () => {
     expect(polls.length).toBeLessThanOrEqual(9);
   });
 
+  /** What a stale notification opens: the pane it names has since closed. */
+  test("says so when a pane is gone instead of spinning", async ({ page }) => {
+    await page.goto("/pane/wZ%3Ap9");
+    await expect(page.getByText(/this pane is gone/i)).toBeVisible({ timeout: 20_000 });
+    // And no composer aimed at nothing.
+    await expect(page.locator("textarea")).toHaveCount(0);
+
+    await page.getByRole("button", { name: /back to agents/i }).click();
+    await expect(page.locator(".topbar__title")).toHaveText("Agents");
+  });
+
+  test("the terminal does not scroll into empty space when it fits", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".row").first().click();
+    await page.getByRole("tab", { name: "Screen" }).click();
+    await expect(page.locator(".term")).toBeVisible();
+    await page.waitForTimeout(2_000);
+
+    const fitted = await page.evaluate(() => {
+      const wrap = document.querySelector(".termwrap")!;
+      return { scrollable: wrap.scrollWidth - wrap.clientWidth };
+    });
+    // "Fit width" means it fits: there should be nothing to pan to.
+    expect(fitted.scrollable).toBeLessThanOrEqual(2);
+
+    await page.getByRole("button", { name: "Full size" }).click();
+    await page.waitForTimeout(500);
+    const full = await page.evaluate(() => {
+      const wrap = document.querySelector(".termwrap")!;
+      return { scrollable: wrap.scrollWidth - wrap.clientWidth };
+    });
+    // At full size it genuinely is wider than the phone, and pans.
+    expect(full.scrollable).toBeGreaterThan(50);
+  });
+
   test("leaves nothing growing behind it", async ({ page }) => {
     await page.goto("/");
     await page.locator(".row").first().click();
