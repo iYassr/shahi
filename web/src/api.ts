@@ -204,6 +204,19 @@ export const api = {
 
   sendKeys: (paneId: string, keys: string[]) => api.rpc("pane.send_keys", { pane_id: paneId, keys }),
 
+  /** Agent kinds that could actually start here, resolved in a real shell. */
+  agents: () => request<{ agents: { kind: string; command: string }[]; known: number }>("/api/agents"),
+
+  /**
+   * Starts an agent in a pane that is sitting at a shell prompt.
+   *
+   * herdr blocks until the agent reports interactive readiness, so this can
+   * take tens of seconds on a cold start — the server raises the RPC ceiling
+   * for it, and the UI has to stay patient rather than assume failure.
+   */
+  startAgent: (paneId: string, kind: string, name: string) =>
+    api.rpc("agent.start", { pane_id: paneId, kind, name }),
+
   dirs: (path = "~") => request<DirListing>(`/api/dirs?path=${encodeURIComponent(path)}`),
 
   /**

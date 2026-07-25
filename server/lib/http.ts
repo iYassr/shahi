@@ -11,7 +11,8 @@
 import type { Server, ServerWebSocket } from "bun";
 import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
-import { HerdrError, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
+import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
+import { forgetInstalledAgents, installedAgents } from "./agents";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
 import type { ParsedPrompt } from "./prompt-parser";
@@ -154,6 +155,18 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         }
       }
 
+      // Agent kinds that could actually start here. herdr knows how to detect
+      // 19, but offering one that is not installed would just fail after a
+      // 30-second wait for readiness that was never coming.
+      if (pathname === "/api/agents") {
+        if (url.searchParams.get("refresh") === "1") forgetInstalledAgents();
+        const { manifests } = await client.rpc("server.agent_manifests", {});
+        return json({
+          agents: await installedAgents(manifests.map((m) => m.agent)),
+          known: manifests.length,
+        });
+      }
+
       if (pathname === "/api/push/key") {
         return json({ publicKey: push.publicKey });
       }
@@ -211,10 +224,12 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         const body = (await req.json().catch(() => ({}))) as { method?: string; params?: unknown };
         if (!body.method) return json({ error: "method is required" }, { status: 400 });
         try {
-          const result = await client.rpc(
-            body.method as Method,
-            (body.params ?? {}) as ParamsFor<Method>,
-          );
+          const method = body.method as Method;
+          const result = await client.rpc(method, (body.params ?? {}) as ParamsFor<Method>, {
+            // agent.start and friends block waiting for something to happen;
+            // the default ceiling would fail them every time.
+            timeoutMs: SLOW_METHODS[method],
+          });
           return json({ result });
         } catch (err) {
           if (err instanceof HerdrError) {

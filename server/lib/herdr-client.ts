@@ -68,7 +68,23 @@ interface KnownResults {
   "events.subscribe": "subscription_started";
   "workspace.create": "workspace_created";
   "workspace.close": "workspace_closed";
+  "tab.create": "tab_created";
+  "agent.start": "agent_started";
+  "server.agent_manifests": "agent_manifest_status";
 }
+
+/**
+ * Methods that block on something happening rather than answering immediately,
+ * with the ceiling each one needs. Everything else uses the default.
+ */
+export const SLOW_METHODS: Partial<Record<Method, number>> = {
+  // Waits for the agent to reach interactive readiness — 30s default, 300s max.
+  "agent.start": 310_000,
+  "agent.wait": 310_000,
+  "agent.prompt": 310_000,
+  "pane.wait_for_output": 310_000,
+  "events.wait": 310_000,
+};
 
 export type ResultFor<M extends Method> = M extends keyof KnownResults
   ? Extract<ResponseResult, { type: KnownResults[M] }>
@@ -144,10 +160,20 @@ export class HerdrClient {
    * Issues one request on its own connection and resolves with `result`.
    *
    * Do not be tempted to pool these — see the module docstring.
+   *
+   * `timeoutMs` overrides the default for calls that legitimately block.
+   * `agent.start` is the motivating case: it waits for the agent to reach
+   * interactive readiness, up to 30s by default and 300s if asked, so the
+   * ordinary 5s ceiling would fail it every time.
    */
-  async rpc<M extends Method>(method: M, params: ParamsFor<M>): Promise<ResultFor<M>> {
+  async rpc<M extends Method>(
+    method: M,
+    params: ParamsFor<M>,
+    options: { timeoutMs?: number } = {},
+  ): Promise<ResultFor<M>> {
     const id = `herdrui:${++this.#requestSeq}`;
     const payload = `${JSON.stringify({ id, method, params })}\n`;
+    const timeoutMs = options.timeoutMs ?? this.#timeoutMs;
 
     return new Promise<ResultFor<M>>((resolve, reject) => {
       const lines = new LineBuffer();
@@ -155,8 +181,8 @@ export class HerdrClient {
       let settled = false;
 
       const timer = setTimeout(() => {
-        finish(() => reject(new Error(`herdr ${method} timed out after ${this.#timeoutMs}ms`)));
-      }, this.#timeoutMs);
+        finish(() => reject(new Error(`herdr ${method} timed out after ${timeoutMs}ms`)));
+      }, timeoutMs);
 
       /** Settle once, always tearing down the socket and timer. */
       const finish = (settle: () => void) => {
