@@ -209,6 +209,15 @@ export interface StatusChange {
 }
 
 export type SocketMessage =
+  /**
+   * A heartbeat, every few seconds regardless of activity.
+   *
+   * The server only speaks when something changes, so silence is ambiguous: a
+   * quiet session and a connection that died while the phone was asleep look
+   * identical. This makes silence mean something, and keeps the socket from
+   * being closed as idle during a long quiet stretch.
+   */
+  | { type: "ping"; at: number }
   | { type: "session"; session: Session }
   | { type: "frame"; frame: PaneFrame }
   | { type: "prompt"; paneId: string; prompt: ParsedPrompt }

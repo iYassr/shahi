@@ -36,6 +36,36 @@ interface Props {
  */
 const SPINNER = ["✻", "✽", "✳", "✶", "✢", "·"];
 
+/**
+ * Folds a freshly polled page into what is already on screen.
+ *
+ * Anything the page does not mention is older than it and stays where it is;
+ * everything the page does mention comes from the page, because the newest
+ * message is still being written and its earlier version is stale.
+ */
+export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
+  if (current.length === 0) return page;
+  const fresh = new Set(page.map((m) => m.id));
+  const older = current.filter((m) => !fresh.has(m.id));
+  return older.length === 0 ? page : [...older, ...page];
+}
+
+/** Cheap identity for a rendered list: ids, shape, and how much text is in it. */
+export function signature(messages: LogMessage[]): string {
+  return messages
+    .map((m) => `${m.id}:${m.blocks.length}:${textLength(m)}`)
+    .join("|");
+}
+
+function textLength(message: LogMessage): number {
+  let length = 0;
+  for (const block of message.blocks) {
+    if (block.kind === "text" || block.kind === "thinking") length += block.text.length;
+    else if (block.kind === "tool") length += (block.result?.text.length ?? 0) + block.summary.length;
+  }
+  return length;
+}
+
 export function Reader({ paneId, activity, onUnavailable }: Props) {
   const [messages, setMessages] = useState<LogMessage[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,17 +73,43 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
+  /** What is on screen, so a poll can diff against it without re-rendering. */
+  const shown = useRef<LogMessage[]>([]);
 
   const load = useCallback(async () => {
     try {
       const log = await api.sessionLog(paneId, { limit: PAGE });
-      setMessages(log.messages);
+      // Merged, not replaced. Replacing threw away everything "Load earlier"
+      // had fetched — scroll up through a long conversation and 2.5 seconds
+      // later you were back at the last page, with the view yanked along with
+      // it. The poll only ever knows about the newest page; what came before it
+      // is the reader's to keep.
+      const next = merge(shown.current, log.messages);
+
+      // And nothing re-renders unless something actually changed. A quiet
+      // session polled every 2.5s otherwise rebuilt the entire conversation on
+      // a timer, images and all, which is most of what made this feel unsteady
+      // on a phone.
+      if (signature(next) !== signature(shown.current)) {
+        shown.current = next;
+        setMessages(next);
+      }
       setTotal(log.total);
       setLoading(false);
     } catch {
       onUnavailable();
     }
   }, [paneId, onUnavailable]);
+
+  // Starting on a different pane is the only reason to throw away what is on
+  // screen. Deliberately not part of the polling effect below: tying them
+  // together meant any change in the poll's identity also wiped the view.
+  useEffect(() => {
+    shown.current = [];
+    setMessages([]);
+    setLoading(true);
+    pinnedToBottom.current = true;
+  }, [paneId]);
 
   useEffect(() => {
     void load();
@@ -75,7 +131,8 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
     try {
       const index = total - messages.length;
       const older = await api.sessionLog(paneId, { limit: PAGE, before: index });
-      setMessages((current) => [...older.messages, ...current]);
+      shown.current = [...older.messages, ...shown.current];
+      setMessages(shown.current);
     } catch {
       // Leave what is already loaded alone.
     } finally {
