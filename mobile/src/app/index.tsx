@@ -5,7 +5,7 @@
  * of one snapshot, not two places — switching between them should never cost a
  * fetch or lose what is on screen.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 // react-native's own SafeAreaView is deprecated and warns at runtime; this is
@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Agents } from "@/screens/agents";
 import { Connect } from "@/screens/connect";
 import { Spaces } from "@/screens/spaces";
+import { onNotificationTapped } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
@@ -27,6 +28,10 @@ export default function Index() {
   // (`w4:p2`), and letting the router do the encoding keeps that honest.
   const openPane = (paneId: string) =>
     router.push({ pathname: "/pane/[paneId]", params: { paneId } });
+
+  // A notification is about one pane, and the answer it wants is on that pane's
+  // screen — so tapping it should land there rather than on the list.
+  useEffect(() => onNotificationTapped(openPane), []);
 
   if (!ready) {
     return (
