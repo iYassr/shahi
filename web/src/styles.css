@@ -953,7 +953,12 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl; /* keep the tail of a long path visible */
+  /*
+   * Not `direction: rtl` to keep the tail visible — that reorders the leading
+   * "~/" and renders "~/VideoProduction/test" as "VideoProduction/test/~".
+   * A path that ellipsizes at the end is merely truncated; one that lies about
+   * its own order is worse.
+   */
   text-align: left;
 }
 
@@ -1037,4 +1042,47 @@ button {
 
 .picker__error {
   color: var(--rose);
+}
+
+/* The primary create action, against the dashed secondary one below it. */
+.bigaction--primary {
+  border-style: solid;
+  border-color: var(--peach);
+  background: var(--peach);
+  color: var(--void);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.bigaction--primary:active {
+  opacity: 0.85;
+  background: var(--peach);
+}
+
+/* Agent kind picker — one tap, no dropdown. */
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kind {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.kind[data-active="true"] {
+  border-color: var(--peach);
+  color: var(--peach);
+  background: var(--raised);
+}
+
+.kind:disabled {
+  opacity: 0.4;
 }

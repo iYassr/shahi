@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type AgentStatus, type Session } from "../api";
 import { DirPicker, type DirChoice } from "./DirPicker";
+import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
 
 const GLYPH: Record<AgentStatus, string> = {
@@ -104,7 +105,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
 export function SpaceDetail({ session, onToast, onChanged }: Props) {
   const { workspaceId = "" } = useParams();
   const navigate = useNavigate();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<"tab" | "agent" | null>(null);
 
   const space = session?.workspaces.find((w) => w.workspaceId === workspaceId);
   const tabs = useMemo(
@@ -171,19 +172,39 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
           );
         })}
 
-        <button className="bigaction" onClick={() => setCreating(true)}>
-          + New tab in {space.label}
+        {/*
+          * Starting an agent is the common case and gets the primary control;
+          * a bare tab is the occasional one and sits underneath it.
+          */}
+        <button className="bigaction bigaction--primary" onClick={() => setCreating("agent")}>
+          + New agent
+        </button>
+        <button className="bigaction" onClick={() => setCreating("tab")}>
+          + Empty tab
         </button>
       </div>
 
-      {creating && (
+      {creating === "tab" && (
         <CreateTab
           space={space}
-          onClose={() => setCreating(false)}
+          onClose={() => setCreating(null)}
           onToast={onToast}
           onCreated={() => {
-            setCreating(false);
+            setCreating(null);
             onChanged();
+          }}
+        />
+      )}
+
+      {creating === "agent" && (
+        <NewAgent
+          space={space}
+          onClose={() => setCreating(null)}
+          onToast={onToast}
+          onStarted={(paneId) => {
+            setCreating(null);
+            onChanged();
+            navigate(`/pane/${encodeURIComponent(paneId)}`);
           }}
         />
       )}
