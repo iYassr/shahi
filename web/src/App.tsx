@@ -10,6 +10,7 @@ import {
   type Session,
   type SocketMessage,
 } from "./api";
+import { reloadIfStale } from "./version";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
@@ -159,6 +160,9 @@ export function App() {
       if (document.visibilityState !== "visible") return;
       socketRef.current?.ensureConnected();
       void api.session().then(setSession).catch(() => {});
+      // And pick up a new build, rather than running whatever was current when
+      // the app was last launched — which on a phone can be days ago.
+      void reloadIfStale();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("pageshow", wake);

@@ -225,13 +225,9 @@ function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string })
   const src = api.imageUrl(paneId, imageRef);
   return (
     <>
-      <img
-        className="msg__image"
-        src={src}
-        alt="Tool output image"
-        loading="lazy"
-        onClick={() => setViewing(true)}
-      />
+      <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
+        <img className="msg__image" src={src} alt="Tool output image" loading="lazy" />
+      </button>
       {viewing && (
         <FileView name="image.png" url={src} downloadUrl={src} onClose={() => setViewing(false)} />
       )}
@@ -299,15 +295,24 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
       const name = `image.${block.mediaType.split("/")[1] ?? "png"}`;
       return (
         <>
-          {/* Tappable, because a screenshot shrunk into a phone-width column is
-              usually unreadable — full screen is where it becomes useful. */}
-          <img
-            className="msg__image"
-            src={src}
-            alt={`Image (${block.mediaType})`}
-            loading="lazy"
-            onClick={() => setViewing(true)}
-          />
+          {/*
+            * A button, not an image with a click handler.
+            *
+            * iOS Safari does not reliably deliver taps to non-interactive
+            * elements — an `onClick` on an `<img>` fires in every desktop
+            * browser and, on a phone, sometimes not at all. So the image that
+            * was supposed to open full screen simply did nothing, and the only
+            * way to see a screenshot was to download it. A real button has no
+            * such ambiguity.
+            */}
+          <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
+            <img
+              className="msg__image"
+              src={src}
+              alt={`Image (${block.mediaType})`}
+              loading="lazy"
+            />
+          </button>
           {viewing && (
             <FileView
               name={name}
