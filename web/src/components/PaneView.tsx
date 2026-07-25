@@ -16,6 +16,7 @@ import {
   type ParsedPrompt,
   type TranscriptLine,
 } from "../api";
+import { AgentIcon } from "./AgentIcon";
 import { Prompt } from "./Prompt";
 import { Reader } from "./Reader";
 import { Terminal, fitScale } from "./Terminal";
@@ -143,7 +144,10 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
           <div className="detail__where">
             {detail?.pane?.cwd?.replace(/^\/home\/[^/]+/, "~") ?? paneId}
           </div>
-          <div className="detail__task">{frame?.prompt ? "Waiting on you" : paneId}</div>
+          <div className="detail__task">
+            {detail?.pane?.agent && <AgentIcon kind={detail.pane.agent} />}
+            {frame?.prompt ? "Waiting on you" : paneId}
+          </div>
         </div>
       </header>
 
