@@ -115,9 +115,25 @@ test.describe("files in the reader", () => {
     await stubTranscript(page);
     await page.goto(`/pane/${encodeURIComponent(PANE)}`);
 
-    await page.locator(".msg__image").first().click();
+    await page.locator(".msg__zoom").first().click();
     await expect(page.locator(".viewer__image")).toBeVisible();
     await expect(page.locator(".viewer__get")).toBeVisible();
+  });
+
+  /**
+   * iOS does not reliably deliver a tap to a bare `<img>`, whatever handlers it
+   * carries — which is why the image that was meant to open full screen did
+   * nothing on a phone and could only be downloaded. A button always gets it.
+   */
+  test("the image is a button, not an image with a handler", async ({ page }) => {
+    await stubTranscript(page);
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+
+    const tag = await page
+      .locator(".msg__image")
+      .first()
+      .evaluate((el) => el.parentElement?.tagName);
+    expect(tag).toBe("BUTTON");
   });
 
   test("a scratch file in the temp directory opens", async ({ request }) => {
