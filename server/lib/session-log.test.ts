@@ -58,7 +58,7 @@ describe("normalise", () => {
         kind: "tool",
         name: "Bash",
         summary: "ls -la",
-        result: { text: "a.txt\nb.txt", isError: false, truncated: false },
+        result: { text: "a.txt\nb.txt", isError: false, truncated: false, images: [] },
       },
     ]);
   });
@@ -97,9 +97,12 @@ describe("normalise", () => {
         "one\ntwo",
       ));
 
-    test("images become a placeholder rather than base64", () =>
+    // Images used to collapse to the literal text "[image]" here, which lost
+    // them. They now leave the text and are carried as refs instead — see the
+    // "images inside a tool result" block below.
+    test("images leave the text rather than becoming a placeholder", () =>
       expect(resultOf([{ type: "text", text: "shot" }, { type: "image", source: {} }])).toBe(
-        "shot\n[image]",
+        "shot",
       ));
 
     test("null content", () => expect(resultOf(null)).toBe(""));
@@ -225,5 +228,50 @@ describe("machine-generated user records", () => {
     const messages = userText("<task-notification><status>done</status></task-notification>");
     const block = messages[0]!.blocks[0]!;
     expect(block.kind === "text" && block.text).not.toContain("<");
+  });
+});
+
+describe("images inside a tool result", () => {
+  // The common case: reading a screenshot returns the image inside the tool
+  // result rather than as a block of the message. These were previously
+  // collapsed to the literal text "[image]" and lost.
+  const withImages = () =>
+    normalise([
+      assistant([{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/x.png" } }], {
+        uuid: "a1",
+      }),
+      {
+        type: "user",
+        uuid: "u1",
+        timestamp: "2026-07-25T02:00:01.000Z",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "t1",
+              content: [
+                { type: "text", text: "Read image" },
+                { type: "image", source: { media_type: "image/png", data: "iVBORw0KGgo=" } },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+  test("keeps a ref instead of dropping the image", () => {
+    const block = withImages()[0]!.blocks[0]!;
+    expect(block.kind).toBe("tool");
+    if (block.kind !== "tool") return;
+    expect(block.result?.images).toHaveLength(1);
+    expect(block.result?.images[0]).toMatch(/^u1:r0$/);
+  });
+
+  test("does not leave a literal [image] in the text", () => {
+    const block = withImages()[0]!.blocks[0]!;
+    if (block.kind !== "tool") return;
+    expect(block.result?.text).not.toContain("[image]");
+    expect(block.result?.text).toContain("Read image");
   });
 });

@@ -12,8 +12,12 @@
  * exchange for syntax that rarely appears in this context.
  *
  * Handles: fenced code, headings, bullet and numbered lists, blockquotes,
- * horizontal rules, and inline bold / italic / code / links. Anything else
- * falls through as plain text, which is the correct failure.
+ * horizontal rules, tables, and inline bold / italic / code / links. Anything
+ * else falls through as plain text, which is the correct failure.
+ *
+ * Tables earn their place: agents produce them constantly, and without support
+ * a comparison table arrives as a stack of raw pipe-delimited lines — the
+ * single worst-looking thing in the reader.
  */
 import { Fragment, type ReactNode } from "react";
 
@@ -52,6 +56,39 @@ function renderBlocks(text: string): ReactNode[] {
         <pre className="md__code" key={key++}>
           {body.join("\n")}
         </pre>,
+      );
+      continue;
+    }
+
+    // A table is a header row, a delimiter row of dashes, then body rows.
+    // The delimiter is what distinguishes it from prose that happens to contain
+    // pipes, so both rows must be present before this commits.
+    if (TABLE_ROW.test(line) && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1]!)) {
+      flush();
+      const header = splitRow(line);
+      i += 2;
+      const body: string[][] = [];
+      while (i < lines.length && TABLE_ROW.test(lines[i]!)) body.push(splitRow(lines[i++]!));
+      i--;
+      out.push(
+        <div className="md__table" key={key++} role="table">
+          <div className="md__tr md__tr--head" role="row">
+            {header.map((cell, c) => (
+              <span className="md__th" role="columnheader" key={c}>
+                {inline(cell)}
+              </span>
+            ))}
+          </div>
+          {body.map((row, r) => (
+            <div className="md__tr" role="row" key={r}>
+              {row.map((cell, c) => (
+                <span className="md__td" role="cell" key={c}>
+                  {inline(cell)}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>,
       );
       continue;
     }
@@ -104,6 +141,14 @@ function renderBlocks(text: string): ReactNode[] {
 
   flush();
   return out;
+}
+
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_DIVIDER = /^\s*\|[\s:|-]*\|\s*$/;
+
+/** Splits `| a | b |` into its cells, dropping the outer pipes. */
+function splitRow(line: string): string[] {
+  return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 }
 
 /** Inline spans, innermost-first so code wins over emphasis inside it. */

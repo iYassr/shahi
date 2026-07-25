@@ -150,7 +150,7 @@ interface RawBlock {
   tool_use_id?: string;
   content?: unknown;
   is_error?: boolean;
-  source?: { media_type?: string };
+  source?: { media_type?: string; data?: string };
 }
 
 /**
@@ -164,11 +164,15 @@ interface RawBlock {
  */
 export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
   // First pass: collect every tool result so a call can carry its own output.
-  const results = new Map<string, { text: string; isError: boolean; truncated: boolean }>();
+  const results = new Map<
+    string,
+    { text: string; isError: boolean; truncated: boolean; images: string[] }
+  >();
   for (const row of rows) {
+    let resultImage = 0;
     for (const block of blocksOf(row)) {
       if (block.type === "tool_result" && block.tool_use_id) {
-        results.set(block.tool_use_id, flattenResult(block));
+        results.set(block.tool_use_id, flattenResult(block, row.uuid as string, () => resultImage++));
       }
     }
   }
@@ -183,6 +187,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     if (row.isMeta === true) continue;
 
     const blocks: LogBlock[] = [];
+    let imageIndex = 0;
     const content = (row.message as { content?: unknown } | undefined)?.content;
 
     if (typeof content === "string") {
@@ -208,7 +213,14 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
             });
             break;
           case "image":
-            blocks.push({ kind: "image", mediaType: block.source?.media_type ?? "image" });
+            // The bytes stay on disk. A transcript here holds 3.3MB of base64
+            // across 28 images, so inlining them would bloat every reader
+            // response; the block carries a reference the client fetches.
+            blocks.push({
+              kind: "image",
+              mediaType: block.source?.media_type ?? "image",
+              ref: `${row.uuid as string}:${imageIndex++}`,
+            });
             break;
           // tool_result was already folded into its tool_use above.
           default:
@@ -278,8 +290,19 @@ function renderUserText(raw: string): LogBlock | null {
   return { kind: "text", text };
 }
 
-/** Flattens the several shapes `tool_result.content` takes. */
-function flattenResult(block: RawBlock): { text: string; isError: boolean; truncated: boolean } {
+/**
+ * Flattens the several shapes `tool_result.content` takes.
+ *
+ * Images inside a result are the common case — reading a screenshot returns one
+ * — and were previously collapsed to the literal text `[image]`. They now carry
+ * a ref, the same handle a top-level image block uses.
+ */
+function flattenResult(
+  block: RawBlock,
+  uuid: string,
+  nextImage: () => number,
+): { text: string; isError: boolean; truncated: boolean; images: string[] } {
+  const images: string[] = [];
   const content = block.content;
   let text: string;
 
@@ -291,7 +314,10 @@ function flattenResult(block: RawBlock): { text: string; isError: boolean; trunc
         if (typeof part === "string") return part;
         const p = part as RawBlock;
         if (p.type === "text") return p.text ?? "";
-        if (p.type === "image") return "[image]";
+        if (p.type === "image") {
+          images.push(`${uuid}:r${nextImage()}`);
+          return "";
+        }
         return "";
       })
       .filter(Boolean)
@@ -305,6 +331,7 @@ function flattenResult(block: RawBlock): { text: string; isError: boolean; trunc
     text: truncated ? `${text.slice(0, MAX_RESULT_CHARS)}\n…` : text,
     isError: block.is_error === true,
     truncated,
+    images,
   };
 }
 
@@ -333,4 +360,55 @@ export function summariseToolInput(name: string, input: Record<string, unknown>)
 
   const oneLine = candidate.replace(/\s+/g, " ").trim();
   return oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
+}
+
+
+/**
+ * Recovers an image's bytes from a transcript.
+ *
+ * `ref` is `<record uuid>:<nth image in that record>`, which survives the
+ * message being re-read and re-paginated — unlike a position in the rendered
+ * list, which shifts as the transcript grows.
+ */
+export async function readSessionImage(
+  sessionId: string,
+  ref: string,
+): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
+  const separator = ref.lastIndexOf(":");
+  if (separator <= 0) return null;
+  const uuid = ref.slice(0, separator);
+  const wanted = Number(ref.slice(separator + 1));
+
+  const path = await findTranscript(sessionId);
+  if (!path) return null;
+
+  // `r` marks an image that came back inside a tool result rather than as a
+  // block of the message itself.
+  const inResult = ref.slice(separator + 1).startsWith("r");
+  const index = inResult ? Number(ref.slice(separator + 2)) : wanted;
+
+  for (const row of parseLines(await Bun.file(path).text())) {
+    if (row.uuid !== uuid) continue;
+    let seen = 0;
+    for (const block of blocksOf(row)) {
+      const parts = inResult
+        ? block.type === "tool_result" && Array.isArray(block.content)
+          ? (block.content as RawBlock[]).filter((p) => p.type === "image")
+          : []
+        : block.type === "image"
+          ? [block]
+          : [];
+
+      for (const part of parts) {
+        if (seen++ !== index) continue;
+        const data = part.source?.data;
+        if (!data) return null;
+        return {
+          bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+          mediaType: part.source?.media_type ?? "application/octet-stream",
+        };
+      }
+    }
+  }
+  return null;
 }

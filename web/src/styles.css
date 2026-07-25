@@ -1607,3 +1607,66 @@ label.bigaction {
 .msg--you .msg__who {
   color: var(--peach);
 }
+
+/*
+ * Tables. Agents produce them constantly, and a phone cannot show a wide one at
+ * full width — so the table scrolls sideways inside its own box rather than
+ * forcing the whole reader to, or being crushed into unreadable columns.
+ */
+.md__table {
+  display: block;
+  overflow-x: auto;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.md__tr {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+
+.md__tr:last-child {
+  border-bottom: none;
+}
+
+.md__tr--head {
+  background: var(--surface);
+}
+
+.md__th,
+.md__td {
+  flex: 1 0 auto;
+  min-width: 96px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.md__th:last-child,
+.md__td:last-child {
+  border-right: none;
+}
+
+.md__th {
+  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* Images out of the transcript. Capped so a screenshot cannot fill the screen. */
+.msg__image {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 6px 0 10px;
+  background: var(--surface);
+}
