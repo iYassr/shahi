@@ -643,8 +643,16 @@ button {
   tab-size: 2;
 }
 
-/* An image in the conversation opens the same viewer. */
-.msg__image {
+/*
+ * An image in the conversation opens the same viewer.
+ *
+ * The button is what receives the tap: iOS does not reliably deliver one to a
+ * bare `<img>`, however many handlers it carries.
+ */
+.msg__zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
   cursor: zoom-in;
 }
 
