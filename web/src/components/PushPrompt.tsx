@@ -4,6 +4,13 @@
  * iOS only grants Web Push to a PWA opened from the home screen. Asking for
  * permission in Safari there fails silently, so the banner says what to do
  * instead of offering a button that cannot work.
+ *
+ * And on iOS the `Notification` global does not merely refuse — it does not
+ * exist at all outside a home-screen app. Touching it threw a ReferenceError
+ * during the first render, which took the whole app down with it: the entire
+ * dashboard was a blank page in a Safari tab. Found the day this suite started
+ * running in WebKit, having been invisible in Chromium for the life of the
+ * project.
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
@@ -19,6 +26,10 @@ const isStandalone = () =>
   window.matchMedia("(display-mode: standalone)").matches ||
   (navigator as { standalone?: boolean }).standalone === true;
 
+/** The API, or nothing — which is what iOS gives a browser tab. */
+const notifications = (): typeof Notification | null =>
+  typeof window !== "undefined" && "Notification" in window ? window.Notification : null;
+
 export function PushPrompt({ onToast }: { onToast: (message: string) => void }) {
   const [state, setState] = useState<State>("hidden");
 
@@ -26,11 +37,19 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
     if (localStorage.getItem("herdrui.push.dismissed") === "1") return;
     if (!("serviceWorker" in navigator)) return;
 
-    if (Notification.permission === "granted") {
+    const api = notifications();
+    if (!api) {
+      // No API at all: a Safari tab on iOS. Installing to the home screen is
+      // the only route, and that is what the banner says.
+      setState(isIos() && !isStandalone() ? "needs-install" : "hidden");
+      return;
+    }
+
+    if (api.permission === "granted") {
       void registerPush().catch(() => {});
       return;
     }
-    if (Notification.permission === "denied") return;
+    if (api.permission === "denied") return;
 
     setState(isIos() && !isStandalone() ? "needs-install" : "offer");
   }, []);
@@ -38,7 +57,9 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   async function enable() {
     setState("asking");
     try {
-      if ((await Notification.requestPermission()) !== "granted") {
+      const api = notifications();
+      if (!api) throw new Error("This browser cannot show notifications here.");
+      if ((await api.requestPermission()) !== "granted") {
         onToast("Notifications stayed off");
         setState("hidden");
         return;

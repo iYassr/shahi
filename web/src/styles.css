@@ -514,6 +514,21 @@ button {
   opacity: 0.4;
 }
 
+.boundary__what {
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--rose);
+  text-align: left;
+  white-space: pre-wrap;
+}
+
 .empty__action {
   margin-top: 6px;
   min-height: 44px;
@@ -819,7 +834,10 @@ button {
   border: 1px solid var(--line-bright);
   border-radius: 6px;
   padding: 6px 10px;
-  min-height: 32px;
+  /* 32 in the stylesheet came out as 32 in WebKit and taller in Chromium, where
+     the padding pushed it past the floor. Only the phone's engine was telling
+     the truth. */
+  min-height: 40px;
   font-family: var(--mono);
   font-size: 12px;
   color: var(--fg);
@@ -918,7 +936,7 @@ button {
 
 .keys button {
   flex: none;
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line-bright);
   border-radius: 7px;
@@ -1020,7 +1038,9 @@ button {
   text-decoration: underline;
   margin-top: 8px;
   display: block;
-  min-height: 32px;
+  /* The last control under the 44px floor. WebKit reported it honestly at 32;
+     Chromium's padding pushed it past and hid the problem. */
+  min-height: 40px;
 }
 
 .toast {

@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { tap } from "./touch";
 
 /**
  * Saying something to an agent: the composer, the key bar, attachments.
@@ -19,7 +21,7 @@ async function recordWrites(page: Page): Promise<unknown[]> {
 
 const openPane = async (page: Page) => {
   await page.goto("/");
-  await page.locator(".row").first().click();
+  await tap(page, page.locator(".row").first());
   await expect(page).toHaveURL(/\/pane\//);
   await expect(page.locator("textarea")).toBeVisible();
 };
@@ -30,7 +32,7 @@ test.describe("the composer", () => {
     await openPane(page);
 
     await page.locator("textarea").fill("hello from a test");
-    await page.locator(".compose__send").click();
+    await tap(page, page.locator(".compose__send"));
 
     await expect.poll(() => sent.length, { timeout: 10_000 }).toBe(2);
     expect(sent[0]).toMatchObject({
@@ -45,7 +47,7 @@ test.describe("the composer", () => {
     await openPane(page);
 
     await page.locator("textarea").fill("something");
-    await page.locator(".compose__send").click();
+    await tap(page, page.locator(".compose__send"));
     await expect(page.locator("textarea")).toHaveValue("", { timeout: 10_000 });
   });
 
@@ -65,7 +67,7 @@ test.describe("the composer", () => {
     await openPane(page);
 
     await page.locator("textarea").fill("worth keeping");
-    await page.locator(".compose__send").click();
+    await tap(page, page.locator(".compose__send"));
 
     await expect(page.locator(".toast")).toBeVisible();
     await expect(page.locator("textarea")).toHaveValue("worth keeping");
@@ -101,7 +103,7 @@ test.describe("attachments", () => {
     const sent = await recordWrites(page);
     await openPane(page);
 
-    await page.locator(".compose__attach").click();
+    await tap(page, page.locator(".compose__attach"));
     await expect(page.locator(".sheet")).toBeVisible();
     await page.getByRole("button", { name: /on the server/i }).click();
 
@@ -111,7 +113,7 @@ test.describe("attachments", () => {
 
     await expect(page.locator(".attached__chip")).toHaveCount(1);
     await page.locator("textarea").fill("have a look at this");
-    await page.locator(".compose__send").click();
+    await tap(page, page.locator(".compose__send"));
 
     await expect.poll(() => sent.length, { timeout: 10_000 }).toBe(2);
     const body = (sent[0] as { params: { text: string } }).params.text;
@@ -126,7 +128,7 @@ test.describe("attachments", () => {
     await recordWrites(page);
     await openPane(page);
 
-    await page.locator(".compose__attach").click();
+    await tap(page, page.locator(".compose__attach"));
     await page.getByRole("button", { name: /on the server/i }).click();
     await page.locator(".picker__row").last().click();
     await expect(page.locator(".attached__chip")).toHaveCount(1);
@@ -146,7 +148,7 @@ test.describe("attachments", () => {
     });
 
     await openPane(page);
-    await page.locator(".compose__attach").click();
+    await tap(page, page.locator(".compose__attach"));
     await expect(page.locator(".sheet")).toBeVisible();
 
     await page.locator("input[type=file]").first().setInputFiles({
@@ -164,7 +166,7 @@ test.describe("attachments", () => {
       route.fulfill({ status: 413, json: { error: "file is too large" } }),
     );
     await openPane(page);
-    await page.locator(".compose__attach").click();
+    await tap(page, page.locator(".compose__attach"));
     await page.locator("input[type=file]").first().setInputFiles({
       name: "big.bin",
       mimeType: "application/octet-stream",
