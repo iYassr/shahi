@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { tap } from "./touch";
 
 /**
  * The things that make it an app rather than a page: the manifest, the worker,
@@ -6,6 +7,9 @@ import { expect, test } from "@playwright/test";
  */
 
 test.describe("installed app", () => {
+  // The only place a worker is wanted: these tests are about it.
+  test.use({ serviceWorkers: "allow" });
+
   test("the manifest describes something installable", async ({ request }) => {
     const res = await request.get("/manifest.webmanifest");
     expect(res.ok()).toBe(true);
@@ -89,10 +93,13 @@ test.describe("touch", () => {
 
   test("chrome does not select on a long press", async ({ page }) => {
     await page.goto("/");
-    const selectable = await page
-      .locator(".topbar")
-      .evaluate((el) => getComputedStyle(el).userSelect);
-    expect(["none"]).toContain(selectable);
+    // WebKit reports this under the prefix and leaves the unprefixed property
+    // undefined, so asking for one of them only works in one engine.
+    const selectable = await page.locator(".topbar").evaluate((el) => {
+      const style = getComputedStyle(el);
+      return style.userSelect || style.webkitUserSelect;
+    });
+    expect(selectable).toBe("none");
   });
 });
 
@@ -105,7 +112,7 @@ test.describe("the session running out", () => {
     await page.route("**/api/**", (route) =>
       route.fulfill({ status: 401, json: { error: "unauthorized" } }),
     );
-    await page.locator(".row").first().click();
+    await tap(page, page.locator(".row").first());
 
     await expect(page.locator(".login")).toBeVisible({ timeout: 20_000 });
   });
@@ -120,5 +127,41 @@ test.describe("the session running out", () => {
 
     await expect(page.locator(".login__error")).toBeVisible();
     await expect(page.locator(".login input")).toBeEditable();
+  });
+});
+
+test.describe("when something breaks", () => {
+  /**
+   * The owner's complaint was "I have to refresh the page a lot". React
+   * unmounts the whole tree when a render throws, so before this every such
+   * fault was a blank screen with no way back — precisely the shape of that
+   * complaint.
+   *
+   * Provoked with a transcript the reader cannot draw: a message whose blocks
+   * are not an array. The app trusts the shape of what the server sends, which
+   * is exactly the assumption that breaks in the field.
+   */
+  test("a render error offers a way out instead of a blank screen", async ({ page }) => {
+    await page.route("**/api/panes/*/session*", (route) =>
+      route.fulfill({
+        json: {
+          sessionId: "s",
+          path: "/x",
+          offset: 0,
+          total: 1,
+          messages: [{ id: "bad", role: "agent", at: 0, blocks: "not an array" }],
+        },
+      }),
+    );
+
+    await page.goto("/");
+    await tap(page, page.locator(".row").first());
+
+    // Either the reader coped or the boundary caught it — but never a blank
+    // page with nothing on it.
+    await expect(page.locator(".reader, .boundary__what, .empty").first()).toBeVisible({
+      timeout: 20_000,
+    });
+    expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(0);
   });
 });

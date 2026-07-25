@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { tap } from "./touch";
 
 /** Anything the console reports as an error is a failure, wherever it happens. */
 function watchConsole(page: Page): string[] {
@@ -56,7 +58,7 @@ test.describe("dashboard", () => {
 
   test("opening an agent lands on that pane and back returns", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".row").first().click();
+    await tap(page, page.locator(".row").first());
 
     await expect(page).toHaveURL(/\/pane\//);
     // The pane header shows where the agent is working rather than the row's

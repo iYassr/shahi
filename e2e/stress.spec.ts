@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { tap } from "./touch";
 
 /**
  * The app used the way it is actually used: opened, poked at, backed out of,
@@ -47,7 +49,7 @@ test.describe("under use", () => {
   test("the terminal keeps drawing as frames arrive", async ({ page }) => {
     const problems = watch(page);
     await page.goto("/");
-    await page.locator(".row").first().click();
+    await tap(page, page.locator(".row").first());
     await page.getByRole("tab", { name: "Screen" }).click();
 
     const term = page.locator(".term .xterm-screen, .term canvas, .term .xterm-rows").first();
@@ -66,7 +68,7 @@ test.describe("under use", () => {
 
   test("the attach sheet opens and browses the server", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".row").first().click();
+    await tap(page, page.locator(".row").first());
     await expect(page).toHaveURL(/\/pane\//);
 
     await page.locator(".composer__attach, button[aria-label*='ttach' i]").first().click();
@@ -79,7 +81,7 @@ test.describe("under use", () => {
 
   test("typing in the composer does not disturb the view", async ({ page }) => {
     await page.goto("/");
-    await page.locator(".row").first().click();
+    await tap(page, page.locator(".row").first());
     await expect(page).toHaveURL(/\/pane\//);
 
     const reader = page.locator(".reader");

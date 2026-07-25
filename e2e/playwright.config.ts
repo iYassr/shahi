@@ -22,11 +22,20 @@ export default defineConfig({
   use: {
     baseURL: process.env.HERDRUI_URL ?? "http://127.0.0.1:7171",
     ...devices["iPhone 14"],
-    // The device preset asks for WebKit; chromium is what is installed here,
-    // and the viewport is what these tests care about.
+    // The `phone` project runs this in Chromium, which is fast and catches
+    // logic; the `ios` project below runs the same tests in WebKit, which is
+    // what catches the rest.
     defaultBrowserType: "chromium",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    /*
+     * No service worker during tests.
+     *
+     * Once one controls the page, its requests bypass `page.route` — in WebKit
+     * completely — so every mocked write went to the real server instead. The
+     * service worker has its own tests, which opt back in.
+     */
+    serviceWorkers: "block",
   },
   projects: [
     { name: "signin", testMatch: /auth\.setup\.ts/ },
@@ -35,6 +44,23 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
       dependencies: ["signin"],
       use: { storageState: "e2e/.auth/state.json" },
+    },
+    /**
+     * The same tests in the engine the phone actually runs.
+     *
+     * Added after two bugs in a row that Chromium could not see: a tap that
+     * never reached an `<img>`, and an image inside a `<button>` collapsing to
+     * nothing. Both were reported from a phone, which is a poor place for a
+     * test suite to live.
+     */
+    {
+      name: "ios",
+      testMatch: /.*\.spec\.ts/,
+      dependencies: ["signin"],
+      use: {
+        ...devices["iPhone 14"],
+        storageState: "e2e/.auth/state.json",
+      },
     },
   ],
 });

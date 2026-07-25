@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
+import { tap } from "./touch";
 
 /**
  * Finds a pane whose transcript the reader can actually show.
@@ -67,7 +69,7 @@ test.describe("reader", () => {
     test.skip((await more.count()) === 0, "this transcript fits in one page");
 
     const before = await page.locator(".reader .msg").count();
-    await more.click();
+    await tap(page, more);
     await expect(page.locator(".reader .msg")).not.toHaveCount(before);
     const loaded = await page.locator(".reader .msg").count();
 
@@ -98,7 +100,7 @@ test.describe("reader", () => {
     const tool = page.locator(".tool__head").first();
     test.skip((await tool.count()) === 0, "no tool calls in this transcript");
     await tool.scrollIntoViewIfNeeded();
-    await tool.click();
+    await tap(page, tool);
     await expect(page.locator(".tool__out, .msg__aside").first()).toBeVisible();
 
     await page.waitForTimeout(6_000);
