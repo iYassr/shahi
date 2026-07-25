@@ -10,6 +10,12 @@ non-goal, so this is a sidecar rather than a fork: it owns herdr's unix socket
 and adds the three things herdr deliberately omits — HTTP, WebSocket, and
 authentication.
 
+Two views, matching how herdr splits its own sidebar. **Agents** is triage —
+what needs you right now. **Spaces** is structure — where things live, which
+tabs are in them, and where new work goes. Plain shells are reachable from
+Spaces; on a phone that is the only way to get at roughly half the panes in a
+real session.
+
 The home screen is not a terminal. A blocked agent gets a card carrying its real
 question and its real options, rebuilt as native buttons; everything else
 collapses to one line.
@@ -119,6 +125,7 @@ points contradict the official docs. They shape the whole design.
 | **Scrollback** | None. `lines=50`, `200` and `2000` all return the same 42 rows, and there is no scroll method. |
 | **Client size** | Cannot be declared. Output is pre-wrapped at the server's width, and `recent_unwrapped` returns the same text because Claude Code wraps its own output. |
 | **Status events** | `pane.updated` does **not** report `agent_status` transitions. Only `pane.agent_status_changed` does, and it needs a `pane_id` per subscription. |
+| **`cwd` on create** | Not tilde-expanded, and not rejected either — `~/foo` silently becomes `$HOME`. Always pass absolute paths. |
 
 Two of those turned into features rather than limitations:
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   SessionSocket,
   UnauthorizedError,
@@ -14,6 +14,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
 import { PushPrompt } from "./components/PushPrompt";
+import { SpaceDetail, Spaces } from "./components/Spaces";
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -88,6 +89,15 @@ export function App() {
     socketRef.current?.watch(paneId);
   }, []);
 
+  // After creating something, pull the session straight away rather than
+  // waiting up to a few seconds for the server's next snapshot to land.
+  const refresh = useCallback(() => {
+    void api
+      .session()
+      .then(setSession)
+      .catch(() => showToast("Could not refresh"));
+  }, [showToast]);
+
   const answer = useCallback(
     async (paneId: string, optionIndex: number) => {
       try {
@@ -135,22 +145,36 @@ export function App() {
           element={
             <>
               <header className="topbar">
-                <h1 className="topbar__title">herdr</h1>
+                <h1 className="topbar__title">Agents</h1>
                 <span className="topbar__spacer" />
                 {blockedCount > 0 && (
                   <span className="link" style={{ color: "var(--peach)" }}>
                     {blockedCount} waiting
                   </span>
                 )}
-                <span className={`link link--${link}`}>
-                  <span className="link__dot" />
-                  {link === "live" ? "live" : link === "lost" ? "offline" : "…"}
-                </span>
+                <LinkState state={link} />
               </header>
               <PushPrompt onToast={showToast} />
               <Dashboard session={session} prompts={prompts} onAnswer={answer} />
             </>
           }
+        />
+        <Route
+          path="/spaces"
+          element={
+            <>
+              <header className="topbar">
+                <h1 className="topbar__title">Spaces</h1>
+                <span className="topbar__spacer" />
+                <LinkState state={link} />
+              </header>
+              <Spaces session={session} onToast={showToast} onChanged={refresh} />
+            </>
+          }
+        />
+        <Route
+          path="/space/:workspaceId"
+          element={<SpaceDetail session={session} onToast={showToast} onChanged={refresh} />}
         />
         <Route
           path="/pane/:paneId"
@@ -166,7 +190,48 @@ export function App() {
         />
       </Routes>
 
+      <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
       {toast && <div className="toast">{toast}</div>}
     </div>
+  );
+}
+
+function LinkState({ state }: { state: LinkState }) {
+  return (
+    <span className={`link link--${state}`}>
+      <span className="link__dot" />
+      {state === "live" ? "live" : state === "lost" ? "offline" : "…"}
+    </span>
+  );
+}
+
+/**
+ * Bottom navigation between the app's two halves, matching how herdr splits its
+ * own sidebar. Bottom rather than top because that is where a thumb reaches.
+ *
+ * Hidden on the drill-in screens, which have their own back control and need
+ * every row of height they can get for a terminal.
+ */
+function TabBar({ blockedCount, spaceCount }: { blockedCount: number; spaceCount: number }) {
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/pane/") || pathname.startsWith("/space/")) return null;
+
+  return (
+    <nav className="tabbar">
+      <NavLink to="/" className="tabbar__item" end>
+        <span className="tabbar__glyph" aria-hidden="true">
+          ◐
+        </span>
+        Agents
+        {blockedCount > 0 && <span className="tabbar__badge">{blockedCount}</span>}
+      </NavLink>
+      <NavLink to="/spaces" className="tabbar__item">
+        <span className="tabbar__glyph" aria-hidden="true">
+          ▤
+        </span>
+        Spaces
+        <span className="tabbar__count">{spaceCount}</span>
+      </NavLink>
+    </nav>
   );
 }

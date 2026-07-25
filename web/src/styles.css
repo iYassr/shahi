@@ -690,3 +690,351 @@ button {
   font-size: 12px;
   z-index: 50;
 }
+
+/* ------------------------------------------------------------- tab bar -- */
+
+/*
+ * The app's two halves, mirroring herdr's own sidebar split: Agents for triage,
+ * Spaces for structure. At the bottom because that is where a thumb reaches —
+ * the top of a modern phone is the hardest part of the screen to touch.
+ */
+
+.tabbar {
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: var(--void);
+  padding-bottom: var(--safe-bottom);
+  flex: none;
+}
+
+.tabbar__item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 52px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.tabbar__item.active {
+  color: var(--fg);
+}
+
+.tabbar__glyph {
+  font-size: 14px;
+}
+
+.tabbar__item.active .tabbar__glyph {
+  color: var(--peach);
+}
+
+.tabbar__badge {
+  background: var(--peach);
+  color: var(--void);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tabbar__count {
+  color: var(--line-bright);
+  font-size: 11px;
+}
+
+/* -------------------------------------------------------------- spaces -- */
+
+.space {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.space:active {
+  background: var(--surface);
+}
+
+.space__glyph {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--dim);
+  flex: none;
+}
+
+.space__glyph--blocked {
+  color: var(--peach);
+}
+
+.space__glyph--working {
+  color: var(--mint);
+}
+
+.space__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.space__name {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.space__meta {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.space__badge {
+  flex: none;
+  background: var(--peach);
+  color: var(--void);
+  border-radius: 999px;
+  min-width: 22px;
+  padding: 2px 7px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The one obvious way to add something, sized for a thumb. */
+.bigaction {
+  display: block;
+  width: calc(100% - var(--gutter) * 2);
+  margin: 16px var(--gutter) 24px;
+  min-height: 48px;
+  border: 1px dashed var(--line-bright);
+  border-radius: var(--radius);
+  color: var(--peach);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.bigaction:active {
+  background: var(--surface);
+}
+
+/* -------------------------------------------------------------- sheets -- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  width: 100%;
+}
+
+.sheet__panel {
+  position: relative;
+  background: var(--surface);
+  border-top: 1px solid var(--line-bright);
+  border-radius: 16px 16px 0 0;
+  padding: 8px var(--gutter) calc(var(--safe-bottom) + 20px);
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12%);
+    opacity: 0;
+  }
+}
+
+.sheet__grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-bright);
+  margin: 4px auto 14px;
+}
+
+.sheet__title {
+  font-family: var(--ui);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  letter-spacing: -0.01em;
+}
+
+.sheet__go {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 10px;
+  background: var(--peach);
+  color: var(--void);
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.sheet__go:disabled {
+  opacity: 0.4;
+}
+
+.sheet__note {
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+  margin: 10px 0 0;
+}
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.field__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+.field input {
+  width: 100%;
+  background: var(--void);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--mono);
+  /* 16px keeps iOS from zooming the viewport on focus. */
+  font-size: 16px;
+  padding: 12px;
+  min-height: 46px;
+}
+
+/* -------------------------------------------------------- folder picker -- */
+
+.picker__current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--void);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 46px;
+}
+
+.picker__path {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* keep the tail of a long path visible */
+  text-align: left;
+}
+
+.picker__toggle {
+  flex: none;
+  color: var(--peach);
+  font-size: 13px;
+  min-height: 32px;
+  padding: 0 4px;
+}
+
+.picker__chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 8px;
+  scrollbar-width: none;
+}
+
+.picker__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.picker__chip {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 12px;
+  min-height: 34px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.picker__chip[data-active="true"] {
+  border-color: var(--peach);
+  color: var(--peach);
+}
+
+.picker__browser {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+}
+
+.picker__row:last-child {
+  border-bottom: none;
+}
+
+.picker__row:active {
+  background: var(--raised);
+}
+
+.picker__glyph {
+  color: var(--dim);
+  flex: none;
+}
+
+.picker__empty,
+.picker__error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0;
+}
+
+.picker__error {
+  color: var(--rose);
+}
