@@ -44,9 +44,13 @@ describe("real captured screens", () => {
     expect(parsePrompt(readFixture(name))).toBeNull();
   });
 
-  test("every status is represented in the fixture set", () => {
-    const statuses = new Set(readdirSync(FIXTURES).map((f) => f.split("__")[0]));
-    expect(statuses).toEqual(new Set(["blocked", "working", "idle", "done", "README.md"]));
+  test("every agent status is represented among the captured screens", () => {
+    const statuses = new Set(
+      readdirSync(FIXTURES)
+        .filter((f) => f.endsWith("__text.txt"))
+        .map((f) => f.split("__")[0]),
+    );
+    expect(statuses).toEqual(new Set(["blocked", "working", "idle", "done"]));
   });
 });
 
