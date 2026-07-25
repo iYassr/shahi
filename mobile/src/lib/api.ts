@@ -144,6 +144,12 @@ export const api = {
   sendKeys: (paneId: string, keys: string[]) =>
     api.rpc("pane.send_keys", { pane_id: paneId, keys }),
 
+  /** Registers this device for notifications. See `lib/push`. */
+  registerPush: (token: string) => postJson<{ ok: boolean }>("/api/push/expo", { token }),
+
+  unregisterPush: (token: string) =>
+    postJson<{ ok: boolean }>("/api/push/expo/unsubscribe", { token }),
+
   upload: async (file: { uri: string; name: string; type: string }): Promise<StoredUpload> => {
     const body = new FormData();
     // React Native's FormData takes this shape rather than a File.

@@ -253,6 +253,23 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         return json({ ok: true });
       }
 
+      // The native app's channel. No VAPID, no service worker — Expo's push
+      // service takes a token and hands the notification to FCM or APNs.
+      if (pathname === "/api/push/expo" && req.method === "POST") {
+        const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+        if (!push.isExpoToken(body.token)) {
+          return json({ error: "malformed expo push token" }, { status: 400 });
+        }
+        push.subscribeExpo(body.token);
+        return json({ ok: true });
+      }
+
+      if (pathname === "/api/push/expo/unsubscribe" && req.method === "POST") {
+        const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+        if (typeof body.token === "string") push.unsubscribeExpo(body.token);
+        return json({ ok: true });
+      }
+
       if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
         const body = (await req.json().catch(() => ({}))) as { endpoint?: string };
         if (body.endpoint) push.unsubscribe(body.endpoint);

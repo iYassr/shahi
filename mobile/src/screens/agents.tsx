@@ -10,12 +10,14 @@ import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { DashboardPane, ParsedPrompt } from "@herdrui/shared";
 import { api } from "@/lib/api";
+import { enablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
   const { session, prompts, link, error, clearPrompt } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
+  const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
 
   async function answer(paneId: string, index: number) {
     try {
@@ -48,10 +50,27 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         {blocked.length > 0 && (
           <Text style={[styles.link, { color: theme.peach }]}>{blocked.length} WAITING</Text>
         )}
+        <Pressable
+          hitSlop={10}
+          disabled={push === "asking" || push === "on"}
+          onPress={() => {
+            setPush("asking");
+            void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
+          }}
+        >
+          <Text style={[styles.bell, push === "on" && { color: theme.mint }]}>
+            {push === "on" ? "🔔" : "🔕"}
+          </Text>
+        </Pressable>
         <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
           {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
         </Text>
       </View>
+      {push !== "off" && push !== "on" && push !== "asking" && (
+        <Pressable onPress={() => setPush("off")}>
+          <Text style={styles.notice}>{push} Tap to dismiss.</Text>
+        </Pressable>
+      )}
 
       <FlatList
         data={rest}
@@ -185,6 +204,15 @@ const styles = StyleSheet.create({
   },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
   link: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
+  bell: { fontSize: 15, color: theme.dim },
+  notice: {
+    color: theme.dim,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: theme.surface,
+  },
 
   groupLabel: {
     color: theme.dim,
