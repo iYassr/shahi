@@ -22,6 +22,7 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HerdrClient } from "./herdr-client";
+import { parseActivity, type Activity } from "./activity";
 import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
@@ -34,6 +35,13 @@ export interface PaneFrame {
   text: string;
   /** Parsed prompt when the agent is blocked and the screen is well-formed. */
   prompt: ParsedPrompt | null;
+  /**
+   * What the agent is doing right now, from its status line.
+   *
+   * The reader view is fed by a transcript that is only written when a message
+   * completes, so without this it looks frozen for the whole of a long turn.
+   */
+  activity: Activity | null;
   at: number;
 }
 
@@ -220,6 +228,9 @@ export class Poller extends EventEmitter<PollerEvents> {
       // The parser is deliberately strict, but this is the outer guard: a tap
       // sends a real keystroke into a live session.
       prompt: status === "blocked" ? parsePrompt(text) : null,
+      // Only meaningful mid-turn; a stale line on a finished screen would show
+      // a timer that never advances.
+      activity: status === "working" ? parseActivity(text) : null,
       at: now,
     };
 

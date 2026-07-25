@@ -1540,3 +1540,38 @@ label.bigaction {
   color: var(--line-bright);
   font-size: 11px;
 }
+
+/* --------------------------------------------------------- live status -- */
+
+/*
+ * Stands in for the message still being written. The reader is fed by a
+ * transcript that only lands when a message completes, so without this a long
+ * turn looks like a frozen screen — which is exactly what the terminal view
+ * does not look like.
+ */
+.working {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 14px 0 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.working__spin {
+  color: var(--peach);
+  width: 1em;
+  flex: none;
+}
+
+.working__verb {
+  color: var(--fg);
+}
+
+.working__meta {
+  color: var(--dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

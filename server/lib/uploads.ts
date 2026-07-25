@@ -57,12 +57,24 @@ export function safeName(raw: string): string {
   return cleaned || "upload";
 }
 
-/** Writes a file and returns where it landed. */
-export async function storeUpload(file: File, now = Date.now): Promise<StoredUpload> {
+/**
+ * Writes a file and returns where it landed.
+ *
+ * `dir` exists so tests never touch the real upload directory. They previously
+ * did — writing to it and then removing it recursively on teardown — which
+ * silently destroyed files a user had actually uploaded. A default that points
+ * at live data is a trap; passing the directory in makes the test's target
+ * explicit at the call site.
+ */
+export async function storeUpload(
+  file: File,
+  now = Date.now,
+  dir = UPLOAD_DIR,
+): Promise<StoredUpload> {
   if (file.size > MAX_UPLOAD_BYTES) throw new UploadTooLarge(file.size);
 
-  await mkdir(UPLOAD_DIR, { recursive: true });
-  void sweepOldUploads(now).catch(() => {});
+  await mkdir(dir, { recursive: true });
+  void sweepOldUploads(now, dir).catch(() => {});
 
   const clean = safeName(file.name);
   const extension = extname(clean);
@@ -71,7 +83,7 @@ export async function storeUpload(file: File, now = Date.now): Promise<StoredUpl
   // Timestamped so a second photo of the same name cannot overwrite the first,
   // and so the newest upload is obvious when browsing the directory.
   const stamp = new Date(now()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const path = join(UPLOAD_DIR, `${stamp}_${stem}${extension}`);
+  const path = join(dir, `${stamp}_${stem}${extension}`);
 
   await Bun.write(path, file);
 
@@ -84,18 +96,18 @@ export async function storeUpload(file: File, now = Date.now): Promise<StoredUpl
 }
 
 /** Deletes uploads past their keep window, so the directory does not grow forever. */
-export async function sweepOldUploads(now = Date.now): Promise<number> {
+export async function sweepOldUploads(now = Date.now, dir = UPLOAD_DIR): Promise<number> {
   let removed = 0;
   let entries: string[];
   try {
-    entries = await readdir(UPLOAD_DIR);
+    entries = await readdir(dir);
   } catch {
     return 0;
   }
 
   const cutoff = now() - KEEP_MS;
   for (const entry of entries) {
-    const path = join(UPLOAD_DIR, entry);
+    const path = join(dir, entry);
     try {
       if ((await stat(path)).mtimeMs < cutoff) {
         await unlink(path);

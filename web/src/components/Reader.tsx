@@ -12,7 +12,7 @@
  * conversation and a wall of command output.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type LogBlock, type LogMessage } from "../api";
+import { api, type Activity, type LogBlock, type LogMessage } from "../api";
 import { Markdown } from "./Markdown";
 
 /** How often to pull while the tab is open. The server caches on file size. */
@@ -21,11 +21,22 @@ const PAGE = 60;
 
 interface Props {
   paneId: string;
+  /** Live status from the pane's screen; null when the agent is not mid-turn. */
+  activity: Activity | null;
   /** Called when this pane has no transcript, so the caller can fall back. */
   onUnavailable: () => void;
 }
 
-export function Reader({ paneId, onUnavailable }: Props) {
+/**
+ * The frames Claude Code cycles through in the terminal.
+ *
+ * Reused rather than substituted with a generic spinner: the reader should feel
+ * like the same session you would see over SSH, and this is the shape that
+ * session is already drawing.
+ */
+const SPINNER = ["✻", "✽", "✳", "✶", "✢", "·"];
+
+export function Reader({ paneId, activity, onUnavailable }: Props) {
   const [messages, setMessages] = useState<LogMessage[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -106,7 +117,40 @@ export function Reader({ paneId, onUnavailable }: Props) {
         </article>
       ))}
 
+      {activity && <Working activity={activity} />}
+
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/**
+ * The live footer: what the agent is doing, while it is doing it.
+ *
+ * Sits below the last completed message because that is where the next one will
+ * appear — it stands in for the message still being written.
+ */
+function Working({ activity }: { activity: Activity }) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    // Matches the terminal's own cadence closely enough to read as the same
+    // animation. Honours reduced motion by simply not advancing.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 220);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="working" role="status" aria-live="polite">
+      <span className="working__spin" aria-hidden="true">
+        {SPINNER[frame]}
+      </span>
+      <span className="working__verb">{activity.verb}</span>
+      <span className="working__meta">
+        {activity.elapsed}
+        {activity.detail && ` · ${activity.detail}`}
+      </span>
     </div>
   );
 }

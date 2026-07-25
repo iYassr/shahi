@@ -206,6 +206,7 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
       {tab === "read" && readable ? (
         <Reader
           paneId={paneId}
+          activity={frame?.activity ?? null}
           onUnavailable={() => {
             setReadable(false);
             setTab("screen");
