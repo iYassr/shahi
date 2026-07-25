@@ -10,11 +10,12 @@
  * stay pinned above everything, because burying the one agent waiting on you
  * inside the fifth space would defeat the entire point of the screen.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { Prompt } from "./Prompt";
+import { useScrollMemory } from "../useScrollMemory";
 
 interface Props {
   session: Session | null;
@@ -51,6 +52,9 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
 
   // Your explicit choice wins; otherwise follow whatever the TUI is set to;
   // otherwise the attention queue, which is what this screen is for.
+  const scroller = useRef<HTMLDivElement>(null);
+  useScrollMemory(scroller, Boolean(session));
+
   const [grouping, setGrouping] = useState<Grouping | null>(
     () => (localStorage.getItem(STORED) as Grouping | null) ?? null,
   );
@@ -85,7 +89,7 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
   }
 
   return (
-    <div className="scroll">
+    <div className="scroll" ref={scroller}>
       {blocked.map((pane) => (
         <BlockedCard
           key={pane.paneId}

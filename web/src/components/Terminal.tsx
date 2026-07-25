@@ -13,10 +13,14 @@
  *
  * Each frame is a complete screen — there are no deltas to apply — so a repaint
  * is a full clear and write.
+ *
+ * Loaded on demand. xterm.js is most of this app's JavaScript, and the Screen
+ * tab is not where anyone starts — so the dashboard should not pay for it.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal as Xterm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { CELL_WIDTH_RATIO, FONT_SIZE, LINE_HEIGHT } from "../termfit";
 
 interface Props {
   ansi: string;
@@ -49,20 +53,9 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-const FONT_SIZE = 12;
-
 export function Terminal({ ansi, cols, rows, scale }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
-  /**
-   * The terminal's size before scaling.
-   *
-   * Needed because `transform: scale` draws smaller without laying out smaller:
-   * at "Fit width" the element still reserved its full 787px, so the pane
-   * scrolled sideways into 400px of empty black even though everything already
-   * fitted. Measuring it lets the box match what is actually drawn.
-   */
-  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -74,7 +67,7 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
       theme: THEME,
       fontSize: FONT_SIZE,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-      lineHeight: 1.15,
+      lineHeight: LINE_HEIGHT,
       // Nothing is typed into this element — input goes through the composer,
       // which can send the keys a phone keyboard cannot produce.
       disableStdin: true,
@@ -85,15 +78,6 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
 
     term.open(host);
     termRef.current = term;
-
-    const measure = () => {
-      const inner = host.querySelector<HTMLElement>(".xterm");
-      if (inner?.offsetWidth) setNatural({ width: inner.offsetWidth, height: inner.offsetHeight });
-    };
-    measure();
-    // The first measurement lands before the monospace font resolves, and the
-    // cell width changes when it does.
-    void document.fonts?.ready.then(measure);
 
     return () => {
       term.dispose();
@@ -114,12 +98,19 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     <div
       className="term"
       ref={hostRef}
+      /*
+       * The box is sized to what the transform actually draws.
+       *
+       * `scale` shrinks the picture and not the layout, so at "Fit width" this
+       * element still reserved its full unscaled width and the pane scrolled
+       * sideways into empty black. Computed from the grid rather than measured
+       * off the DOM: xterm sizes itself from its container, so measuring the
+       * container and then resizing it chases its own tail.
+       */
       style={{
         transform: `scale(${scale})`,
-        ...(natural && {
-          width: natural.width * scale,
-          height: natural.height * scale,
-        }),
+        width: cols * FONT_SIZE * CELL_WIDTH_RATIO * scale,
+        height: rows * FONT_SIZE * LINE_HEIGHT * scale,
       }}
       // The terminal is a rendered image of another screen, not a live region
       // to be announced; the transcript tab is the readable form.
@@ -129,13 +120,4 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
   );
 }
 
-/**
- * Scale that fits `cols` columns into the viewport width.
- *
- * xterm's cell width for SF Mono at 12px is close enough to 0.6em that this
- * lands within a column or two, which is all "fit width" needs to promise.
- */
-export function fitScale(cols: number, viewportWidth: number): number {
-  const approximateCellWidth = FONT_SIZE * 0.6;
-  return Math.min(1, (viewportWidth - 16) / (cols * approximateCellWidth));
-}
+export default Terminal;

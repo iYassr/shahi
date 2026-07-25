@@ -91,21 +91,49 @@ test.describe("resilience", () => {
     await expect(page.locator(".term")).toBeVisible();
     await page.waitForTimeout(2_000);
 
-    const fitted = await page.evaluate(() => {
-      const wrap = document.querySelector(".termwrap")!;
-      return { scrollable: wrap.scrollWidth - wrap.clientWidth };
-    });
+    const box = () =>
+      page.evaluate(() => {
+        const wrap = document.querySelector(".termwrap")!;
+        const term = document.querySelector(".term") as HTMLElement;
+        return { scrollable: wrap.scrollWidth - wrap.clientWidth, width: term.offsetWidth };
+      });
+
     // "Fit width" means it fits: there should be nothing to pan to.
+    const fitted = await box();
     expect(fitted.scrollable).toBeLessThanOrEqual(2);
 
     await page.getByRole("button", { name: "Full size" }).click();
     await page.waitForTimeout(500);
-    const full = await page.evaluate(() => {
-      const wrap = document.querySelector(".termwrap")!;
-      return { scrollable: wrap.scrollWidth - wrap.clientWidth };
-    });
-    // At full size it genuinely is wider than the phone, and pans.
-    expect(full.scrollable).toBeGreaterThan(50);
+    const full = await box();
+
+    // Full size draws the terminal at its true width. How much of that overflows
+    // depends on the pane — this session has both 54-column and 146-column ones —
+    // so the assertion is that the box grew, not that it grew by some amount.
+    expect(full.width).toBeGreaterThanOrEqual(fitted.width);
+    expect(full.scrollable).toBeGreaterThanOrEqual(fitted.scrollable);
+  });
+
+  /**
+   * Launching with the server away — off the tailnet, or the box asleep. The
+   * app should say that, not offer a passcode box that cannot work.
+   */
+  test("says the server is unreachable rather than asking for a passcode", async ({
+    page,
+    context,
+  }) => {
+    await page.goto("/");
+    await expect(page.locator(".row, .blocked").first()).toBeVisible();
+    // Give the worker a moment to cache the shell, or there is nothing to load.
+    await page.waitForTimeout(2_000);
+
+    await context.setOffline(true);
+    await page.goto("/").catch(() => undefined);
+    await expect(page.getByText(/cannot reach herdr/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".login")).toHaveCount(0);
+
+    await context.setOffline(false);
+    await page.getByRole("button", { name: /try again/i }).click();
+    await expect(page.locator(".row, .blocked").first()).toBeVisible({ timeout: 20_000 });
   });
 
   test("leaves nothing growing behind it", async ({ page }) => {

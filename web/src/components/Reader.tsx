@@ -17,7 +17,30 @@ import { Markdown } from "./Markdown";
 
 /** How often to pull while the tab is open. The server caches on file size. */
 const POLL_MS = 2_500;
+
+/** What a first look at a conversation is worth. */
 const PAGE = 60;
+
+/**
+ * What a poll is worth.
+ *
+ * Only the tail of a conversation can change — an agent appends, and rewrites
+ * at most the message it is still writing. Re-fetching all 60 messages every
+ * 2.5 seconds to learn about the last one cost about 15KB a poll on a busy
+ * pane; this asks for the tail and lets `merge` keep the rest.
+ */
+const TAIL = 12;
+
+/**
+ * The last conversation seen for each pane.
+ *
+ * Reopening a pane you were reading a minute ago should show it, not a spinner:
+ * the poll will correct anything stale within 2.5 seconds, and starting from
+ * the right place is worth far more than starting from nothing. Bounded,
+ * because transcripts are not small.
+ */
+const remembered = new Map<string, LogMessage[]>();
+const REMEMBER_PANES = 4;
 
 interface Props {
   paneId: string;
@@ -67,18 +90,26 @@ function textLength(message: LogMessage): number {
 }
 
 export function Reader({ paneId, activity, onUnavailable }: Props) {
-  const [messages, setMessages] = useState<LogMessage[]>([]);
+  const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !remembered.has(paneId));
   const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   /** What is on screen, so a poll can diff against it without re-rendering. */
-  const shown = useRef<LogMessage[]>([]);
+  const shown = useRef<LogMessage[]>(remembered.get(paneId) ?? []);
+  /** Mirrors `total` for the poll, which must not close over a stale value. */
+  const knownTotal = useRef(0);
 
   const load = useCallback(async () => {
     try {
-      const log = await api.sessionLog(paneId, { limit: PAGE });
+      // A full page when there is nothing on screen, the tail when there is.
+      // If more arrived than the tail can bridge — a long silence, or a burst —
+      // fall back to a full page rather than leaving a hole in the middle.
+      const held = shown.current.length;
+      const behind = knownTotal.current - held;
+      const limit = held === 0 || behind > TAIL - 2 ? PAGE : TAIL;
+      const log = await api.sessionLog(paneId, { limit });
       // Merged, not replaced. Replacing threw away everything "Load earlier"
       // had fetched — scroll up through a long conversation and 2.5 seconds
       // later you were back at the last page, with the view yanked along with
@@ -94,6 +125,11 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
         shown.current = next;
         setMessages(next);
       }
+      if (remembered.size >= REMEMBER_PANES && !remembered.has(paneId)) {
+        remembered.delete(remembered.keys().next().value!);
+      }
+      remembered.set(paneId, shown.current);
+      knownTotal.current = log.total;
       setTotal(log.total);
       setLoading(false);
     } catch {
@@ -105,9 +141,10 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   // screen. Deliberately not part of the polling effect below: tying them
   // together meant any change in the poll's identity also wiped the view.
   useEffect(() => {
-    shown.current = [];
-    setMessages([]);
-    setLoading(true);
+    const seed = remembered.get(paneId) ?? [];
+    shown.current = seed;
+    setMessages(seed);
+    setLoading(seed.length === 0);
     pinnedToBottom.current = true;
   }, [paneId]);
 
