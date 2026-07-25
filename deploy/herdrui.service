@@ -19,6 +19,13 @@ After=network-online.target
 Type=simple
 WorkingDirectory=%h/HerdrUI
 Environment=WEB_ROOT=%h/HerdrUI/web/dist
+# Bound to this node's Tailscale address so the tailnet can reach it directly.
+#
+# Deliberately not 0.0.0.0: that would also publish on the LAN. And deliberately
+# not loopback, which would need `tailscale serve` in front — that variant is
+# the one that keeps Web Push working, since only a secure context may register
+# a service worker. Swap back to 127.0.0.1 if you want notifications.
+Environment=HOST=100.100.100.100
 ExecStart=%h/.bun/bin/bun run server/index.ts
 Restart=always
 RestartSec=3

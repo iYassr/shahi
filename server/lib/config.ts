@@ -10,9 +10,22 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface Config {
-  /** Loopback only. herdr's socket has no authentication of its own, and this
-   *  process proxies it; binding a wider interface would expose the whole
-   *  session to anything on the LAN. */
+  /**
+   * Interface to bind. Defaults to loopback.
+   *
+   * Widen this deliberately, not casually: herdr's own socket has no
+   * authentication and this process proxies every one of its methods, so the
+   * bind address plus the passcode are the entire security boundary.
+   *
+   * Prefer a specific Tailscale address (`100.x.y.z`) over `0.0.0.0`. Binding
+   * all interfaces also publishes on the LAN, which is a much larger audience
+   * than the tailnet and almost never what is intended.
+   *
+   * Note that anything other than loopback means the browser no longer treats
+   * the page as a secure context, so service workers will not register and Web
+   * Push stops working. `tailscale serve` avoids that by terminating real TLS
+   * in front of a loopback bind.
+   */
   host: string;
   port: number;
   socketPath: string;
@@ -74,10 +87,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const vapidPrivate = env.VAPID_PRIVATE_KEY;
 
   return {
-    // Deliberately not configurable to a non-loopback address. Reaching this
-    // from a phone is `tailscale serve`'s job, which terminates TLS and
-    // restricts access to the tailnet.
-    host: "127.0.0.1",
+    host: env.HOST ?? "127.0.0.1",
     port: Number(env.PORT ?? DEFAULT_PORT),
     socketPath: env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
     dataPath: env.HERDRUI_DATA ?? join(homedir(), ".local", "share", "herdrui", "herdrui.sqlite"),

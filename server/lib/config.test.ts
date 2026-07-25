@@ -9,11 +9,17 @@ describe("loadConfig", () => {
     expect(() => loadConfig({} as NodeJS.ProcessEnv)).toThrow(/SESSION_SECRET is not set/);
   });
 
-  test("binds loopback only, regardless of the environment", () => {
-    // Reaching this from a phone is `tailscale serve`'s job. Binding wider would
-    // expose an unauthenticated-by-default herdr proxy to the LAN.
-    const config = loadConfig({ ...base, HOST: "0.0.0.0" } as NodeJS.ProcessEnv);
-    expect(config.host).toBe("127.0.0.1");
+  test("binds loopback unless told otherwise", () => {
+    // The default has to be the safe one: this process proxies every herdr
+    // method, and herdr's own socket has no authentication.
+    expect(loadConfig(base).host).toBe("127.0.0.1");
+  });
+
+  test("binds a Tailscale address when given one", () => {
+    // Reaching it directly over the tailnet, rather than through
+    // `tailscale serve`. Costs the secure context — and therefore Web Push —
+    // which the server warns about at startup.
+    expect(loadConfig({ ...base, HOST: "100.100.100.100" }).host).toBe("100.100.100.100");
   });
 
   test("defaults the port to 7171", () => {

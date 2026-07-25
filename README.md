@@ -49,31 +49,58 @@ bun run --cwd web build
 WEB_ROOT=$PWD/web/dist bun run server/index.ts
 ```
 
-Then, to keep it running and reach it from a phone:
+Then, to keep it running:
 
 ```sh
 cp deploy/herdrui.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now herdrui
+sudo loginctl enable-linger "$USER"     # survive logout
+```
 
-sudo loginctl enable-linger "$USER"                        # survive logout
+### Reaching it from a phone
+
+Two options, and the choice is really about notifications.
+
+**Bind the tailnet directly** — what the shipped unit does. Set
+`HOST=<your 100.x.y.z>` and the app answers on
+`http://<node>.<tailnet>.ts.net:7171` with no extra moving parts and no root.
+
+Bind the Tailscale address specifically, not `0.0.0.0`: the latter also
+publishes on your LAN, which is a far larger audience than your tailnet.
+
+The cost is real, though. Plain HTTP is not a
+[secure context](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts),
+so the browser refuses to register a service worker — and a service worker is
+the only delivery path for Web Push. **Notifications will not arrive.** The
+dashboard, prompt answering and terminal all work normally. The server says so
+at startup rather than letting you discover it later.
+
+**Put TLS in front** — keeps `HOST` at loopback:
+
+```sh
 sudo tailscale serve --bg --https=443 http://127.0.0.1:7171
 ```
 
-Tailscale supplies a real certificate for your node's name, so the PWA installs
-and Web Push works. **Never `tailscale funnel`** — that would put an
-unauthenticated-by-default herdr proxy on the public internet.
+Tailscale supplies a real certificate for your node's name, so the page is a
+secure context: the PWA installs to the home screen and Web Push works. This is
+the option to choose if you want your phone to buzz when an agent blocks.
+
+**Never `tailscale funnel`** — that would put an unauthenticated-by-default
+herdr proxy on the public internet.
 
 ## Security
 
 The API proxies every herdr method, and `pane.send_text` alone is arbitrary
 shell execution as you. Three layers, in order of importance:
 
-1. **Loopback bind.** Not configurable; reaching it from elsewhere is
-   `tailscale serve`'s job.
-2. **Tailnet only.** Optionally tighten further with a tailnet ACL.
+1. **Bind address.** Defaults to loopback. Widen it to a Tailscale address
+   deliberately, never to `0.0.0.0`, which also publishes on your LAN.
+2. **Tailnet only.** Optionally tighten further with a tailnet ACL restricting
+   this node's port to your own devices.
 3. **App passcode.** Tailscale authenticates the *device*; the passcode
    authenticates the person holding it. This is what protects you if a phone is
-   unlocked by someone else.
+   unlocked by someone else — and when bound off loopback it is the only layer
+   between the port and full control of every agent on the machine.
 
 Terminal output is never logged — those screens carry whatever is in your
 terminals.
