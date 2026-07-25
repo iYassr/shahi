@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { Boundary } from "./components/Boundary";
 import "./styles.css";
 import { trackViewport } from "./viewport";
 
@@ -27,7 +28,11 @@ if ("serviceWorker" in navigator) {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      {/* Outside the router, so a screen that throws does not take the app with
+          it and leave a blank page — the shape of "I have to refresh a lot". */}
+      <Boundary>
+        <App />
+      </Boundary>
     </BrowserRouter>
   </StrictMode>,
 );
