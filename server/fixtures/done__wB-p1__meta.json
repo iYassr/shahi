@@ -1,0 +1,21 @@
+{
+  "terminal_id": "term_6576102402b841a",
+  "agent": "claude",
+  "terminal_title": "\u2733 Pull maskr project from GitHub",
+  "terminal_title_stripped": "Pull maskr project from GitHub",
+  "agent_status": "done",
+  "agent_session": {
+    "source": "herdr:claude",
+    "agent": "claude",
+    "kind": "id",
+    "value": "0ecca223-5021-4191-a748-023385081149"
+  },
+  "workspace_id": "wB",
+  "tab_id": "wB:t1",
+  "pane_id": "wB:p1",
+  "focused": false,
+  "state_change_seq": 264,
+  "cwd": "/home/operator/maskr",
+  "foreground_cwd": "/home/operator/maskr",
+  "revision": 2
+}

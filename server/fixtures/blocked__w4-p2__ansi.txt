@@ -1,0 +1,42 @@
+  │ BIA · BCP · DRP · Crisis Plan                                              │ standalone (ACME-tested separately)                │ 4      │
+  ├────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┼────────┤
+[0m[38;2;177;185;249m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔[0m
+                                                                                                                                               [0m[38;2;153;153;153m↑[0m
+   [0m[1mCategory column (also requested)[0m
+
+   Values assigned per logical doc: [0m[38;2;177;185;249mGovernance [0m· [0m[38;2;177;185;249mCyber [0m· [0m[38;2;177;185;249mFraud [0m· [0m[38;2;177;185;249mBusiness Continuity [0m· [0m[38;2;177;185;249mCustomer Protection [0m· [0m[38;2;177;185;249mData Protection [0m· [0m[38;2;177;185;249mThird-Party & [0m
+   [0m[38;2;177;185;249mCloud[0m · [0m[38;2;177;185;249mRisk[0m · [0m[38;2;177;185;249mPCI[0m · [0m[38;2;177;185;249mAssurance & Reporting[0m.
+
+   [0m[1mExecution steps[0m
+
+   1. [0m[1mMAP-003 CSV[0m: add [0m[38;2;177;185;249mCategory[0m and [0m[38;2;177;185;249mPhysical_Document [0mcolumns; assign both for all 86 rows (mapping per the table above).
+   2. [0m[1mGenerator [0m([0m[38;2;177;185;249mmappings/generate_xlsx.py[0m): Document Register sheet gains the two columns; add a small "Physical Documents" summary block or
+   second table at top of the sheet (10 physical docs with absorbed counts); color-group rows by Physical_Document.
+   3. [0m[1mDocs[0m: update [0m[38;2;177;185;249mplan/maple-program-plan.md[0m §5 intro + CLAUDE.md (document model note: 86 logical chapter-anchors → 10 physical documents;
+   IDs unchanged); regenerate MAP-002 MD (unaffected keys) and the workbook.
+   4. [0m[1mVerification[0m: script-check every register row has non-empty Category + Physical_Document ∈ the 10-doc set (+ "Report template");
+   cross-check MAP-001/MAP-002 owners still all present; run [0m[38;2;177;185;249mtools/check_content_coverage.py[0m.
+   5. Commit + push with rationale; send the updated workbook.
+
+   [0m[1mCritical files[0m
+
+   - [0m[38;2;177;185;249mmappings/REG-MAP-003_document-register.csv [0m(+2 columns)
+   - [0m[38;2;177;185;249mmappings/generate_xlsx.py [0m(register sheet rendering)
+   - [0m[38;2;177;185;249mCLAUDE.md[0m, [0m[38;2;177;185;249mplan/maple-program-plan.md [0m(document-model note)
+
+   [0m[1mVerification[0m
+
+   - Register: 86 rows × new schema, all categorized, all mapped to a physical doc; zero orphan owners; tripwire PASS; workbook regenerated
+   with grouped register.
+  [0m[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[0m
+
+  [0m[38;2;72;150;140m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+   [0m[38;2;153;153;153mClaude has written up a plan and is ready to execute. Would you like to proceed?[0m
+
+   [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mYes, and bypass permissions[0m
+     [0m[38;2;153;153;153m2. [0mYes, manually approve edits
+     [0m[38;2;153;153;153m3. [0mNo, refine with Ultraplan on Claude Code on the web
+     [0m[38;2;153;153;153m4. Tell Claude what to change[0m
+        [0m[38;2;153;153;153mshift+tab to approve with this feedback[0m
+
+   [0m[38;2;153;153;153mctrl+g to edit in Vim · ~/.claude/plans/company-name-is-maple-expressive-shannon.md[0m

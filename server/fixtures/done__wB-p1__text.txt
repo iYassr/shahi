@@ -1,0 +1,42 @@
+
+  Five are dead, independently re-proved with poppler and raw-byte scanning as outside oracles, and the app was driven end to end in the real
+  Electron UI on PDF, CSV, HTML and a scanned PDF:
+
+  - bank-form.pdf / resume.pdf — pdfjs returns one text item per glyph; the naive join produced "R o s a l y n", so 0 detections and a
+  byte-identical "sanitized" export. Now reassembled by glyph geometry: name, phone and IBAN detected and masked.
+  - CSV rosters — Alex Marlowe, Tamsin Everett now detected; 399 items masked, 101 rows / 5 columns preserved.
+  - PDF /Info + XMP — pdfinfo on the export shows no Author, Keywords or metadata stream at all.
+  - Scanned PDFs — refused at upload with an OCR instruction instead of being reported clean.
+  - HTML/JSON/CSV — exported from original bytes; href="mailto:…" masked, doctype and tables intact; clean files export byte-identical.
+
+  Three things I fixed after reading the verification
+
+  1. applyMasking failed open — its catch returned the original unmasked content, so an exception silently exported everything. Now throws; both
+  call sites already surface it.
+  2. Two new over-masking regressions, found only by the verifier and gated by nothing: the ALL-CAPS path reads non-English heading lines as
+  people (CHER PATIENT, 3/20), and the CSV path reads headerless tables of eponymous companies as people (Morgan Stanley, Johnnie Walker, 12 FPs
+  / 26 tables). I added a precision ratchet recording all seven — they're over-masking, not leaks, but they were invisible.
+  3. Set user.name/user.email repo-locally from your GitHub account so the commits could be made.
+
+  What's still open
+
+  - BOFAUS3N ships — there's no BIC/SWIFT detector in the engine at all; the parser surfaces it, detection can't see it.
+  - HTML attribute-only PII is a new exposure. The old flattening export destroyed the document and the attribute; byte-preserving export keeps
+  both. alt= and <meta name="author"> leak the same way. Held by it.fails with an honest comment.
+  - The capsRunFitsField code comment claims a guard that doesn't hold for short heading lines — the comment overstates the code.
+  - Release ordering still bites: deploying apps/web breaks curl … | bash until v1.4.1's SHA256SUMS exists. Production is currently safe (it's
+  still serving HEAD's installer).
+  - Infra handoffs need credentials I don't have: private R2 bucket, Apple/Windows certs, SHA256SUMS backfill.
+
+  Want me to push the branch and open a PR, or take a run at the two over-masking regressions first?
+
+✻ Cogitated for 1h 7m 7s
+
+
+
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ultracode ─
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  operator@ubuntu:~/maskr (fix/review-priorities) ctx:43% [INSERT]                                                                           /rc
+  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 2 agents

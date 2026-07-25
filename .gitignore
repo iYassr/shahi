@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+
+# Secrets: VAPID keypair, passcode hash, cookie signing key
+.env
+.env.*
+!.env.example
+
+# Runtime state: transcript ring buffers and push subscriptions.
+# Contains captured terminal output — never commit.
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal

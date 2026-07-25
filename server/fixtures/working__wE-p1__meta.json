@@ -1,0 +1,21 @@
+{
+  "terminal_id": "term_65764c3b93b3421",
+  "agent": "claude",
+  "terminal_title": "\u2802 herdr-mobile-dashboard",
+  "terminal_title_stripped": "herdr-mobile-dashboard",
+  "agent_status": "working",
+  "agent_session": {
+    "source": "herdr:claude",
+    "agent": "claude",
+    "kind": "id",
+    "value": "d9be5814-2f83-4f82-8133-b307049713dc"
+  },
+  "workspace_id": "wE",
+  "tab_id": "wE:t1",
+  "pane_id": "wE:p1",
+  "focused": true,
+  "state_change_seq": 271,
+  "cwd": "/home/operator/HerdrUI",
+  "foreground_cwd": "/home/operator/HerdrUI",
+  "revision": 3
+}

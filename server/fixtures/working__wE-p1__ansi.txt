@@ -1,0 +1,40 @@
+     herdr's config or session state.
+  
+     [0m[1mRisks[0m
+
+     - [0m[1mUndocumented behavior drift.[0m The one-response-per-connection
+     behavior contradicts the official docs, which means it's
+     unspecified and could change. Pin the protocol check at startup
+     and fail loudly.
+     - [0m[1mPolling cost.[0m 26 panes × frequent reads is real work. The
+     adaptive intervals and the no-clients backoff are load-bearing,
+     not optimizations — measure the server process's CPU before and
+     after.
+     - [0m[1mParser brittleness.[0m Claude Code's prompt rendering will change.
+     The design degrades gracefully to raw terminal + free text, so a
+     parser miss is an inconvenience, not a breakage.
+     - [0m[1mDigit-key answering is unproven. [0mVerify before building the
+     button UI on top of it.
+     
+[0m[38;2;255;255;255m● [0mStarting with the time-sensitive bit: capturing fixtures while [0m[38;2;177;185;249mw4:p2[0m
+  is still blocked.
+     
+[0m[38;2;153;153;153m● [0mRunning [0m[1m1[0m shell command…
+[0m[38;2;153;153;153m  ⎿  $ mkdir -p /home/operator/HerdrUI/server/fixtures && cd [0m
+     [0m[38;2;153;153;153m/home/operator && timeout 60 python3 -u - <<'EOF'[0m
+     [0m[38;2;153;153;153mimport socket, json, os[0m
+     [0m[38;2;153;153;153mS='/home/operator/.config/herdr/herdr.sock'[0m
+     [0m[38;2;153;153;153mOUT='/home/operator/HerdrUI/server/fixtures'[0m
+     [0m[38;2;153;153;153mdef rpc(m,p):[0m
+     [0m[38;2;153;153;153ms=socket.socket(socket.AF_UNIX); s.settimeout(8); s.connect(S)[0m
+     [0m[38;2;153;153;153ms.s…[0m 
+   
+[0m[38;2;215;119;87m✢ [0m[38;2;218;124;92mSeasoning…[0m[38;2;215;119;87m [0m[38;2;153;153;153m(14m 40s · ↓ 56.6k tokens)[0m
+                                   
+[0m[38;2;8;145;178m────────────────────────────────────────────[0m[38;2;0;0;0m[48;2;8;145;178m herdr-mobile-dashboard [0m[38;2;8;145;178m──[0m
+[0m[38;2;153;153;153m❯ [0m
+[0m[38;2;8;145;178m──────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;5;2moperator@ubuntu[0m[38;2;153;153;153m:[0m[1m[38;5;4m~/HerdrUI[0m[38;2;153;153;153m [0m[38;5;2mctx:10%[0m[38;2;153;153;153m [0m[38;5;2m[INSERT][0m
+  [0m[38;2;153;153;153m-- INSERT   [0m[38;2;255;107;128m⏵⏵ bypass permissions on[0m[38;2;153;153;153m (shift+tab to cycle) · ← 2 ag…[0m
+  [0m[38;2;153;153;153m--[0m
+                                                                  [0m[38;2;78;186;101m/rc[0m

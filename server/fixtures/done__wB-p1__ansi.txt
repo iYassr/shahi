@@ -1,0 +1,42 @@
+
+  Five are dead, independently re-proved with poppler and raw-byte scanning as outside oracles, and the app was driven end to end in the real
+  Electron UI on PDF, CSV, HTML and a scanned PDF:
+
+  - [0m[1m[38;2;177;185;249mbank-form.pdf[0m[1m / [0m[1m[38;2;177;185;249mresume.pdf [0m— pdfjs returns one text item per glyph; the naive join produced [0m[38;2;177;185;249m"R o s a l y n"[0m, so 0 detections and a
+  byte-identical "sanitized" export. Now reassembled by glyph geometry: name, phone and IBAN detected and masked.
+  - [0m[1mCSV rosters [0m— [0m[38;2;177;185;249mAlex Marlowe[0m, [0m[38;2;177;185;249mTamsin Everett [0mnow detected; 399 items masked, 101 rows / 5 columns preserved.
+  - [0m[1mPDF [0m[1m[38;2;177;185;249m/Info[0m[1m + XMP [0m— [0m[38;2;177;185;249mpdfinfo [0mon the export shows no [0m[38;2;177;185;249mAuthor[0m, [0m[38;2;177;185;249mKeywords [0mor metadata stream at all.
+  - [0m[1mScanned PDFs [0m— refused at upload with an OCR instruction instead of being reported clean.
+  - [0m[1mHTML/JSON/CSV [0m— exported from original bytes; [0m[38;2;177;185;249mhref="mailto:…" [0mmasked, doctype and tables intact; clean files export byte-identical.
+
+  [0m[1mThree things I fixed after reading the verification[0m
+
+  1. [0m[1m[38;2;177;185;249mapplyMasking[0m[1m failed open [0m— its [0m[38;2;177;185;249mcatch [0mreturned the [0m[3moriginal unmasked content[0m, so an exception silently exported everything. Now throws; both
+  call sites already surface it.
+  2. [0m[1mTwo new over-masking regressions[0m, found only by the verifier and gated by nothing: the ALL-CAPS path reads non-English heading lines as
+  people ([0m[38;2;177;185;249mCHER PATIENT[0m, 3/20), and the CSV path reads headerless tables of eponymous companies as people ([0m[38;2;177;185;249mMorgan Stanley[0m, [0m[38;2;177;185;249mJohnnie Walker[0m, 12 FPs
+  / 26 tables). I added a precision ratchet recording all seven — they're over-masking, not leaks, but they were invisible.
+  3. Set [0m[38;2;177;185;249muser.name[0m/[0m[38;2;177;185;249muser.email [0mrepo-locally from your GitHub account so the commits could be made.
+
+  [0m[1mWhat's still open[0m
+
+  - [0m[1m[38;2;177;185;249mBOFAUS3N[0m[1m ships [0m— there's no BIC/SWIFT detector in the engine at all; the parser surfaces it, detection can't see it.
+  - [0m[1mHTML attribute-only PII is a [0m[1m[3mnew[0m[1m exposure. [0mThe old flattening export destroyed the document [0m[3mand [0mthe attribute; byte-preserving export keeps
+  both. [0m[38;2;177;185;249malt= [0mand [0m[38;2;177;185;249m<meta name="author"> [0mleak the same way. Held by [0m[38;2;177;185;249mit.fails [0mwith an honest comment.
+  - The [0m[38;2;177;185;249mcapsRunFitsField [0mcode comment claims a guard that doesn't hold for short heading lines — the comment overstates the code.
+  - [0m[1mRelease ordering still bites: [0mdeploying [0m[38;2;177;185;249mapps/web [0mbreaks [0m[38;2;177;185;249mcurl … | bash [0muntil v1.4.1's [0m[38;2;177;185;249mSHA256SUMS [0mexists. Production is currently safe (it's
+  still serving HEAD's installer).
+  - Infra handoffs need credentials I don't have: private R2 bucket, Apple/Windows certs, SHA256SUMS backfill.
+
+  Want me to push the branch and open a PR, or take a run at the two over-masking regressions first?
+
+[0m[38;2;153;153;153m✻ Cogitated for 1h 7m 7s[0m
+
+
+
+
+[0m[38;2;136;136;136m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── [0m[38;2;175;135;255multracode [0m[38;2;136;136;136m─[0m
+❯ 
+[0m[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;5;2moperator@ubuntu[0m[38;2;153;153;153m:[0m[1m[38;5;4m~/maskr[0m[38;2;153;153;153m [0m[38;5;5m(fix/review-priorities)[0m[38;2;153;153;153m [0m[38;5;2mctx:43%[0m[38;2;153;153;153m [0m[38;5;2m[INSERT]                                                                           [0m[38;2;78;186;101m/rc[0m
+  [0m[38;2;153;153;153m-- INSERT -- [0m[38;2;255;107;128m⏵⏵ bypass permissions on[0m[38;2;153;153;153m (shift+tab to cycle) · ← 2 agents[0m

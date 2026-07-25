@@ -1,0 +1,40 @@
+     herdr's config or session state.
+
+     Risks
+
+     - Undocumented behavior drift. The one-response-per-connection
+     behavior contradicts the official docs, which means it's
+     unspecified and could change. Pin the protocol check at startup
+     and fail loudly.
+     - Polling cost. 26 panes × frequent reads is real work. The
+     adaptive intervals and the no-clients backoff are load-bearing,
+     not optimizations — measure the server process's CPU before and
+     after.
+     - Parser brittleness. Claude Code's prompt rendering will change.
+     The design degrades gracefully to raw terminal + free text, so a
+     parser miss is an inconvenience, not a breakage.
+     - Digit-key answering is unproven. Verify before building the
+     button UI on top of it.
+
+● Starting with the time-sensitive bit: capturing fixtures while w4:p2
+  is still blocked.
+
+● Running 1 shell command…
+  ⎿  $ mkdir -p /home/operator/HerdrUI/server/fixtures && cd
+     /home/operator && timeout 60 python3 -u - <<'EOF'
+     import socket, json, os
+     S='/home/operator/.config/herdr/herdr.sock'
+     OUT='/home/operator/HerdrUI/server/fixtures'
+     def rpc(m,p):
+     s=socket.socket(socket.AF_UNIX); s.settimeout(8); s.connect(S)
+     s.s…
+
+✢ Seasoning… (14m 40s · ↓ 56.6k tokens)
+
+──────────────────────────────────────────── herdr-mobile-dashboard ──
+❯
+──────────────────────────────────────────────────────────────────────
+  operator@ubuntu:~/HerdrUI ctx:10% [INSERT]
+  -- INSERT   ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 2 ag…
+  --
+                                                                  /rc

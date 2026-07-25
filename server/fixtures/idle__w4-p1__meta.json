@@ -1,0 +1,21 @@
+{
+  "terminal_id": "term_657283055534a1",
+  "agent": "claude",
+  "terminal_title": "\u2733 Convert PDF to verbatim markdown",
+  "terminal_title_stripped": "Convert PDF to verbatim markdown",
+  "agent_status": "idle",
+  "agent_session": {
+    "source": "herdr:claude",
+    "agent": "claude",
+    "kind": "id",
+    "value": "bf68bbfd-4aeb-464a-8398-74dd99f42edb"
+  },
+  "workspace_id": "w4",
+  "tab_id": "w4:t1",
+  "pane_id": "w4:p1",
+  "focused": false,
+  "state_change_seq": 116,
+  "cwd": "/home/operator/PlatformProject",
+  "foreground_cwd": "/home/operator/PlatformProject",
+  "revision": 2
+}

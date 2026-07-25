@@ -1,0 +1,21 @@
+{
+  "terminal_id": "term_65728305557472",
+  "agent": "claude",
+  "terminal_title": "\u2733 enrich-reg-map-001-implementation",
+  "terminal_title_stripped": "enrich-reg-map-001-implementation",
+  "agent_status": "blocked",
+  "agent_session": {
+    "source": "herdr:claude",
+    "agent": "claude",
+    "kind": "id",
+    "value": "7faf4927-2fcf-4d28-9c22-9788261e5a88"
+  },
+  "workspace_id": "w4",
+  "tab_id": "w4:t2",
+  "pane_id": "w4:p2",
+  "focused": false,
+  "state_change_seq": 252,
+  "cwd": "/home/operator/PlatformProject/frameworks",
+  "foreground_cwd": "/home/operator/PlatformProject/frameworks",
+  "revision": 2
+}

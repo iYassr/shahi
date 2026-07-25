@@ -1,0 +1,42 @@
+  │ BIA · BCP · DRP · Crisis Plan                                              │ standalone (ACME-tested separately)                │ 4      │
+  ├────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────┼────────┤
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+                                                                                                                                               ↑
+   Category column (also requested)
+
+   Values assigned per logical doc: Governance · Cyber · Fraud · Business Continuity · Customer Protection · Data Protection · Third-Party &
+   Cloud · Risk · PCI · Assurance & Reporting.
+
+   Execution steps
+
+   1. MAP-003 CSV: add Category and Physical_Document columns; assign both for all 86 rows (mapping per the table above).
+   2. Generator (mappings/generate_xlsx.py): Document Register sheet gains the two columns; add a small "Physical Documents" summary block or
+   second table at top of the sheet (10 physical docs with absorbed counts); color-group rows by Physical_Document.
+   3. Docs: update plan/maple-program-plan.md §5 intro + CLAUDE.md (document model note: 86 logical chapter-anchors → 10 physical documents;
+   IDs unchanged); regenerate MAP-002 MD (unaffected keys) and the workbook.
+   4. Verification: script-check every register row has non-empty Category + Physical_Document ∈ the 10-doc set (+ "Report template");
+   cross-check MAP-001/MAP-002 owners still all present; run tools/check_content_coverage.py.
+   5. Commit + push with rationale; send the updated workbook.
+
+   Critical files
+
+   - mappings/REG-MAP-003_document-register.csv (+2 columns)
+   - mappings/generate_xlsx.py (register sheet rendering)
+   - CLAUDE.md, plan/maple-program-plan.md (document-model note)
+
+   Verification
+
+   - Register: 86 rows × new schema, all categorized, all mapped to a physical doc; zero orphan owners; tripwire PASS; workbook regenerated
+   with grouped register.
+  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+   ❯ 1. Yes, and bypass permissions
+     2. Yes, manually approve edits
+     3. No, refine with Ultraplan on Claude Code on the web
+     4. Tell Claude what to change
+        shift+tab to approve with this feedback
+
+   ctrl+g to edit in Vim · ~/.claude/plans/company-name-is-maple-expressive-shannon.md
