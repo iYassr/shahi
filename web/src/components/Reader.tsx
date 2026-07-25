@@ -112,7 +112,7 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
         <article key={message.id} className={`msg msg--${message.role}`}>
           <div className="msg__who">{message.role === "agent" ? "Agent" : "You"}</div>
           {message.blocks.map((block, index) => (
-            <BlockView key={index} block={block} />
+            <BlockView key={index} block={block} paneId={paneId} />
           ))}
         </article>
       ))}
@@ -155,7 +155,7 @@ function Working({ activity }: { activity: Activity }) {
   );
 }
 
-function BlockView({ block }: { block: LogBlock }) {
+function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
   const [open, setOpen] = useState(false);
 
   switch (block.kind) {
@@ -176,7 +176,16 @@ function BlockView({ block }: { block: LogBlock }) {
       );
 
     case "image":
-      return <p className="msg__aside">[{block.mediaType}]</p>;
+      // Fetched rather than inlined: one transcript here holds 3.3MB of base64
+      // across 28 images, which would land in every reader response.
+      return (
+        <img
+          className="msg__image"
+          src={`/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(block.ref)}`}
+          alt={`Image (${block.mediaType})`}
+          loading="lazy"
+        />
+      );
 
     case "tool":
       return (
@@ -190,10 +199,29 @@ function BlockView({ block }: { block: LogBlock }) {
             {block.result?.isError && <span className="tool__err">failed</span>}
           </button>
           {open && block.result && (
-            <pre className="tool__out" data-error={block.result.isError}>
-              {block.result.text || "(no output)"}
-              {block.result.truncated && "\n… truncated"}
-            </pre>
+            <>
+              {block.result.text.trim() && (
+                <pre className="tool__out" data-error={block.result.isError}>
+                  {block.result.text}
+                  {block.result.truncated && "\n… truncated"}
+                </pre>
+              )}
+              {/* Reading a screenshot returns the image here rather than as a
+                  block of the message, and it is usually the whole point of
+                  having expanded the tool. */}
+              {block.result.images.map((ref) => (
+                <img
+                  key={ref}
+                  className="msg__image"
+                  src={`/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(ref)}`}
+                  alt="Tool output image"
+                  loading="lazy"
+                />
+              ))}
+              {!block.result.text.trim() && block.result.images.length === 0 && (
+                <pre className="tool__out">(no output)</pre>
+              )}
+            </>
           )}
           {open && !block.result && <p className="msg__aside">Still running.</p>}
         </div>

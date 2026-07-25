@@ -123,12 +123,23 @@ export interface Session {
 export type LogBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "image"; mediaType: string }
+  | {
+      kind: "image";
+      mediaType: string;
+      /** Opaque handle the client exchanges for the bytes. */
+      ref: string;
+    }
   | {
       kind: "tool";
       name: string;
       summary: string;
-      result: { text: string; isError: boolean; truncated: boolean } | null;
+      result: {
+        text: string;
+        isError: boolean;
+        truncated: boolean;
+        /** Refs for images returned by the tool, e.g. Read of a screenshot. */
+        images: string[];
+      } | null;
     };
 
 export interface LogMessage {

@@ -18,7 +18,7 @@ import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor
 import { forgetInstalledAgents, installedAgents } from "./agents";
 import { readAgentPanelSort } from "./herdr-config";
 import { readCodexLog } from "./codex-log";
-import { readSessionLog } from "./session-log";
+import { readSessionImage, readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
@@ -235,6 +235,22 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // Claude Code's own structured transcript, when this pane has one.
         // Far better than the recorded screen: real messages, full history,
         // and tool calls already paired with their results.
+        // An image out of the transcript, served rather than inlined.
+        if (sub === "/image") {
+          const sessionId = store.pane(paneId)?.agent_session?.value;
+          const ref = url.searchParams.get("ref");
+          if (!sessionId || !ref) return json({ error: "not found" }, { status: 404 });
+          const image = await readSessionImage(sessionId, ref);
+          if (!image) return json({ error: "not found" }, { status: 404 });
+          return new Response(image.bytes, {
+            headers: {
+              "content-type": image.mediaType,
+              // The transcript is append-only, so a given ref never changes.
+              "cache-control": "private, max-age=31536000, immutable",
+            },
+          });
+        }
+
         if (sub === "/session") {
           const pane = store.pane(paneId);
           const limit = Math.min(Number(url.searchParams.get("limit") ?? 60), 400);
