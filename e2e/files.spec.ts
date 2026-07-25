@@ -136,6 +136,28 @@ test.describe("files in the reader", () => {
     expect(tag).toBe("BUTTON");
   });
 
+  /**
+   * And the button must not eat it.
+   *
+   * WebKit renders a button through a box of its own, and an image inside one
+   * collapsed to nothing on the phone while showing correctly everywhere else —
+   * so the thumbnail vanished the moment the tap was fixed.
+   */
+  test("the thumbnail is actually drawn inside that button", async ({ page }) => {
+    await stubTranscript(page);
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+
+    const box = await page.locator(".msg__image").first().boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+
+    // And the button is no taller than what it contains, so there is no dead
+    // strip under the picture.
+    const button = await page.locator(".msg__zoom").first().boundingBox();
+    expect(button!.height - box!.height).toBeLessThan(24);
+  });
+
   test("a scratch file in the temp directory opens", async ({ request }) => {
     // Where agents put screenshots. Refusing these made the feature useless for
     // the files most worth a glance on a phone.
