@@ -215,6 +215,10 @@ bun run server/scripts/check-http-live.ts     # auth boundary, WS, frame scoping
 bun run server/scripts/measure-poll-cost.ts   # polling load on the herdr server
 
 bun run server/scripts/verify-key-delivery.ts # what send_keys actually delivers
+
+# See what the phone sees, without a phone. Logs in properly rather than
+# disabling the gate, and emulates an iPhone viewport.
+HERDRUI_PASSCODE=**** bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
 ```
 
 `check-parser-live` is the one worth re-running after a Claude Code upgrade: it
