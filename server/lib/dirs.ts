@@ -11,7 +11,7 @@
  * and everything else can already run arbitrary commands — but a path traversal
  * that leaks directory structure is still worth not having.
  */
-import { readdir, realpath } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -20,6 +20,10 @@ export interface DirEntry {
   path: string;
   /** Display form with the home prefix collapsed to `~`. */
   display: string;
+  /** False for files, which are selectable but not enterable. */
+  isDirectory: boolean;
+  /** Bytes, for files only. */
+  size?: number;
 }
 
 export interface DirListing {
@@ -67,18 +71,44 @@ export async function resolveWithinHome(input: string): Promise<string> {
   return real;
 }
 
-/** Lists the sub-directories of `path`, hiding dotfiles. */
-export async function listDirectories(input: string): Promise<DirListing> {
+/**
+ * Lists the contents of `path`, hiding dotfiles.
+ *
+ * Directories only by default — choosing where a space lives. With
+ * `includeFiles`, files come too, for attaching something already on the
+ * server. Directories sort first either way, so browsing stays predictable.
+ */
+export async function listDirectories(
+  input: string,
+  options: { includeFiles?: boolean } = {},
+): Promise<DirListing> {
   const path = await resolveWithinHome(input);
 
   const entries = await readdir(path, { withFileTypes: true });
-  const directories = entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-    .map((entry) => {
-      const full = join(path, entry.name);
-      return { name: entry.name, path: full, display: collapseHome(full) };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const directories = (
+    await Promise.all(
+      entries
+        .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => entry.isDirectory() || (options.includeFiles && entry.isFile()))
+        .map(async (entry) => {
+          const full = join(path, entry.name);
+          const isDirectory = entry.isDirectory();
+          let size: number | undefined;
+          if (!isDirectory) {
+            try {
+              size = (await stat(full)).size;
+            } catch {
+              size = undefined;
+            }
+          }
+          return { name: entry.name, path: full, display: collapseHome(full), isDirectory, size };
+        }),
+    )
+  ).sort(
+    (a, b) =>
+      Number(b.isDirectory) - Number(a.isDirectory) ||
+      a.name.localeCompare(b.name, undefined, { numeric: true }),
+  );
 
   return {
     path,

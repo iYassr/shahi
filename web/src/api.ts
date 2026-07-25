@@ -74,6 +74,8 @@ export interface DirEntry {
   name: string;
   path: string;
   display: string;
+  isDirectory: boolean;
+  size?: number;
 }
 
 export interface DirListing {
@@ -264,7 +266,31 @@ export const api = {
   startAgent: (paneId: string, kind: string, name: string) =>
     api.rpc("agent.start", { pane_id: paneId, kind, name }),
 
-  dirs: (path = "~") => request<DirListing>(`/api/dirs?path=${encodeURIComponent(path)}`),
+  dirs: (path = "~", opts: { files?: boolean } = {}) =>
+    request<DirListing>(
+      `/api/dirs?path=${encodeURIComponent(path)}${opts.files ? "&files=1" : ""}`,
+    ),
+
+  /**
+   * Sends a file from the phone to the server.
+   *
+   * Returns the absolute path it landed on, which is what goes into the
+   * message — an agent can read a path, it cannot read a browser File.
+   */
+  upload: async (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch("/api/uploads", { method: "POST", credentials: "same-origin", body });
+    if (res.status === 401) throw new UnauthorizedError();
+    const payload = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      name?: string;
+      path?: string;
+      size?: number;
+    };
+    if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
+    return { name: payload.name ?? file.name, path: payload.path, size: payload.size ?? file.size };
+  },
 
   /**
    * Creates a space. Two things matter here.
