@@ -151,45 +151,56 @@ function splitRow(line: string): string[] {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 }
 
-/** Inline spans, innermost-first so code wins over emphasis inside it. */
-const INLINE = [
-  { re: /`([^`]+)`/, render: (m: string, k: number) => <code className="md__c" key={k}>{m}</code> },
-  { re: /\*\*([^*]+)\*\*/, render: (m: string, k: number) => <strong key={k}>{m}</strong> },
-  { re: /(?<!\w)_([^_]+)_(?!\w)/, render: (m: string, k: number) => <em key={k}>{m}</em> },
-  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, render: (m: string, k: number) => <em key={k}>{m}</em> },
+/**
+ * Inline spans, in precedence order: code wins over emphasis, so backticks
+ * containing asterisks stay literal.
+ */
+const INLINE: { re: RegExp; render: (m: RegExpMatchArray, k: number) => ReactNode }[] = [
+  { re: /`([^`]+)`/, render: (m, k) => <code className="md__c" key={k}>{m[1]}</code> },
+  {
+    re: /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/,
+    render: (m, k) => (
+      <a className="md__a" href={m[2]} target="_blank" rel="noreferrer noopener" key={k}>
+        {m[1]}
+      </a>
+    ),
+  },
+  { re: /\*\*([^*]+)\*\*/, render: (m, k) => <strong key={k}>{m[1]}</strong> },
+  { re: /(?<!\w)_([^_]+)_(?!\w)/, render: (m, k) => <em key={k}>{m[1]}</em> },
+  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, render: (m, k) => <em key={k}>{m[1]}</em> },
 ];
 
-const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+/**
+ * Scans a line left to right, taking whichever marker comes first.
+ *
+ * The obvious shape — match one span, then recurse on the text either side —
+ * was wrong in a way that only showed on real output: a paragraph with seven
+ * inline spans exhausted the recursion guard partway along, and the rest of the
+ * line kept its `**` markers. Nesting depth and span count are different
+ * things — and a span's content is never re-scanned anyway, so a guard on the
+ * scan was guarding nothing.
+ */
+export function inline(text: string): ReactNode {
+  const out: ReactNode[] = [];
+  let rest = text;
+  let key = 0;
 
-function inline(text: string, depth = 0): ReactNode {
-  // Bounded recursion: malformed markers should degrade to plain text rather
-  // than spin.
-  if (depth > 6) return text;
+  while (rest.length > 0) {
+    let best: { at: number; match: RegExpMatchArray; render: (m: RegExpMatchArray, k: number) => ReactNode } | null = null;
+    for (const { re, render } of INLINE) {
+      const match = rest.match(re);
+      if (match?.index === undefined) continue;
+      if (!best || match.index < best.at) best = { at: match.index, match, render };
+    }
 
-  const link = text.match(LINK);
-  if (link?.index !== undefined) {
-    return (
-      <Fragment>
-        {inline(text.slice(0, link.index), depth + 1)}
-        <a className="md__a" href={link[2]} target="_blank" rel="noreferrer noopener">
-          {link[1]}
-        </a>
-        {inline(text.slice(link.index + link[0].length), depth + 1)}
-      </Fragment>
-    );
+    if (!best) {
+      out.push(rest);
+      break;
+    }
+    if (best.at > 0) out.push(rest.slice(0, best.at));
+    out.push(best.render(best.match, key++));
+    rest = rest.slice(best.at + best.match[0].length);
   }
 
-  for (const { re, render } of INLINE) {
-    const match = text.match(re);
-    if (match?.index === undefined) continue;
-    return (
-      <Fragment>
-        {inline(text.slice(0, match.index), depth + 1)}
-        {render(match[1]!, depth)}
-        {inline(text.slice(match.index + match[0].length), depth + 1)}
-      </Fragment>
-    );
-  }
-
-  return text;
+  return <Fragment>{out}</Fragment>;
 }

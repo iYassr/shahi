@@ -73,3 +73,59 @@ export async function installedAgents(
 export function forgetInstalledAgents(): void {
   cache = undefined;
 }
+
+/**
+ * Creates a tab and starts an agent in it.
+ *
+ * The two calls are one operation, and splitting them across the network was a
+ * race: herdr answers `tab.create` as soon as the pane exists, but its shell
+ * takes a moment more to come up, and `agent.start` against a pane that is not
+ * yet a settled shell fails with `agent_pane_busy`. Seen on the phone, seconds
+ * after creating a space — the tab appeared and the agent did not.
+ *
+ * So the wait belongs here, next to herdr, rather than in each client. Only
+ * that one code is retried; anything else is a real failure and is raised.
+ */
+export async function startAgentInTab(
+  rpc: <T>(method: string, params: unknown, options?: { timeoutMs?: number }) => Promise<T>,
+  options: {
+    workspaceId: string;
+    cwd: string | null;
+    label: string | null;
+    kind: string;
+    name: string;
+  },
+  wait: (ms: number) => Promise<unknown> = (ms) => Bun.sleep(ms),
+): Promise<{ paneId: string; tabId: string | null }> {
+  const created = await rpc<{ root_pane?: { pane_id: string }; tab?: { tab_id: string } }>(
+    "tab.create",
+    {
+      workspace_id: options.workspaceId,
+      label: options.label,
+      cwd: options.cwd,
+      focus: false,
+    },
+  );
+
+  const paneId = created.root_pane?.pane_id;
+  if (!paneId) throw new Error("herdr created the tab without telling us the pane");
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rpc(
+        "agent.start",
+        { pane_id: paneId, kind: options.kind, name: options.name },
+        { timeoutMs: 310_000 },
+      );
+      return { paneId, tabId: created.tab?.tab_id ?? null };
+    } catch (err) {
+      const busy = err instanceof Error && err.message.includes("agent_pane_busy");
+      if (!busy || attempt >= START_ATTEMPTS - 1) throw err;
+      await wait(START_RETRY_MS);
+    }
+  }
+}
+
+/** Long enough for a shell to appear (~5s), short enough to still feel like one action. */
+const START_ATTEMPTS = 10;
+const START_RETRY_MS = 500;

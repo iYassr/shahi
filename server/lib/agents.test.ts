@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { forgetInstalledAgents, installedAgents } from "./agents";
+import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 
 describe("installedAgents", () => {
   test("resolves through a login shell, not this process's PATH", async () => {
@@ -53,5 +53,65 @@ describe("installedAgents", () => {
     forgetInstalledAgents();
     const agents = await installedAgents(["bash", "ls", "env"]);
     expect(agents.map((a) => a.kind)).toEqual([...agents.map((a) => a.kind)].sort());
+  });
+});
+
+describe("startAgentInTab", () => {
+  const options = {
+    workspaceId: "w1",
+    cwd: "/home/u/project",
+    label: null,
+    kind: "codex",
+    name: "codex",
+  };
+
+  test("returns the pane the tab was created with", async () => {
+    const calls: string[] = [];
+    const rpc = async (method: string) => {
+      calls.push(method);
+      return { root_pane: { pane_id: "w1:p2" }, tab: { tab_id: "w1:t2" } } as never;
+    };
+    expect(await startAgentInTab(rpc, options, async () => {})).toEqual({
+      paneId: "w1:p2",
+      tabId: "w1:t2",
+    });
+    expect(calls).toEqual(["tab.create", "agent.start"]);
+  });
+
+  test("retries while the pane is still becoming a shell", async () => {
+    let starts = 0;
+    const rpc = async (method: string) => {
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
+      if (++starts < 3) throw new Error("herdr agent.start failed [agent_pane_busy]: not a shell");
+      return {} as never;
+    };
+    const waits: number[] = [];
+    await startAgentInTab(rpc, options, async (ms) => void waits.push(ms));
+    expect(starts).toBe(3);
+    expect(waits).toHaveLength(2);
+  });
+
+  test("gives up rather than retrying forever", async () => {
+    const rpc = async (method: string) => {
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
+      throw new Error("herdr agent.start failed [agent_pane_busy]: not a shell");
+    };
+    expect(startAgentInTab(rpc, options, async () => {})).rejects.toThrow("agent_pane_busy");
+  });
+
+  test("does not retry a real failure", async () => {
+    let starts = 0;
+    const rpc = async (method: string) => {
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
+      starts++;
+      throw new Error("herdr agent.start failed [unknown_agent]: no such kind");
+    };
+    expect(startAgentInTab(rpc, options, async () => {})).rejects.toThrow("unknown_agent");
+    expect(starts).toBe(1);
+  });
+
+  test("refuses to guess when herdr does not name the pane", async () => {
+    const rpc = async () => ({}) as never;
+    expect(startAgentInTab(rpc, options, async () => {})).rejects.toThrow("without telling us");
   });
 });
