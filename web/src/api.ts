@@ -90,11 +90,19 @@ export interface DirListing {
   entries: DirEntry[];
 }
 
+export interface Activity {
+  verb: string;
+  elapsed: string;
+  detail: string | null;
+}
+
 export interface PaneFrame {
   paneId: string;
   ansi: string;
   text: string;
   prompt: ParsedPrompt | null;
+  /** Present while the agent is mid-turn. Drives the reader's live footer. */
+  activity: Activity | null;
   at: number;
 }
 
