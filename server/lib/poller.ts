@@ -151,13 +151,16 @@ export class Poller extends EventEmitter<PollerEvents> {
     if (this.#ticking) return;
 
     // Nobody is looking. Watched panes still poll — a client may hold a pane
-    // open through a brief reconnect — but nothing else does.
-    if (this.#clientCount === 0 && this.#watchers.size === 0) return;
+    // open through a brief reconnect — and so do blocked ones, so that a prompt
+    // is already parsed by the time a push notification is tapped. Everything
+    // else stops: the dashboard should cost nothing while the phone is asleep.
+    const idle = this.#clientCount === 0 && this.#watchers.size === 0;
 
     this.#ticking = true;
     try {
       const now = Date.now();
       const due = this.store.state.panes
+        .filter((p) => !idle || p.agent_status === "blocked" || this.#watchers.has(p.pane_id))
         .map((p) => p.pane_id)
         .filter((paneId) => {
           const last = this.#records.get(paneId)?.lastPolledAt ?? 0;
