@@ -53,16 +53,13 @@ export function Prompt({ prompt, onAnswer, disabled }: Props) {
               ❯
             </span>
             <span className="choice__index">{option.index}.</span>
-            <span className="choice__label">{option.label}</span>
+            <span className="choice__label">
+              {option.label}
+              {option.detail && <span className="choice__detail">{option.detail}</span>}
+            </span>
           </button>
         );
       })}
-
-      {prompt.hints.map((hint) => (
-        <p className="choices__hint" key={hint}>
-          {hint}
-        </p>
-      ))}
     </div>
   );
 }

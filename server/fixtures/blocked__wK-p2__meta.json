@@ -1,0 +1,6 @@
+{
+  "paneId": "wK:p2",
+  "agent": "claude",
+  "status": "blocked",
+  "note": "AskUserQuestion: options carry indented descriptions, and a separator rule sits between option 4 and option 5"
+}

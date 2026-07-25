@@ -1,0 +1,23 @@
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mnow check if the file existse your AskUserQuestion [0m[48;2;55;55;55m [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mtool to ask me which colour I prefer: red, green or[0m[48;2;55;55;55m [0m
+[0m[48;2;55;55;55m  [0m[38;2;255;255;255m[48;2;55;55;55mblue. do nothing else.[0m[48;2;55;55;55m                              [0m
+
+  [0m[38;2;153;153;153mListed [0m[1m[38;2;153;153;153m1[0m[38;2;153;153;153m directory [0m
+
+[0m[38;2;255;255;255m●[0m The file exists (0 bytes, created 15:21).
+[0m[38;2;153;153;153m──────────────────────────────────────────────────────[0m
+[0m[38;2;0;0;0m[48;2;177;185;249m ☐ Colour [0m
+
+[0m[1m[38;2;255;255;255mWhich colour do you prefer?[0m
+
+[0m[38;2;177;185;249m❯[0m [0m[38;2;153;153;153m1.[0m [0m[38;2;177;185;249mRed[0m
+     [0m[38;2;153;153;153mWarm, high-contrast — reads as alert or emphasis.[0m
+  [0m[38;2;153;153;153m2.[0m Green
+     [0m[38;2;153;153;153mCool-warm midpoint — reads as success or growth.[0m
+  [0m[38;2;153;153;153m3. [0mBlue
+     [0m[38;2;153;153;153mCool, calm — reads as informational or neutral.[0m
+  [0m[38;2;153;153;153m4. Type something.[0m
+[0m[38;2;153;153;153m──────────────────────────────────────────────────────[0m
+  5. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · ↑/↓ to navigate · Esc to cancel[0m
