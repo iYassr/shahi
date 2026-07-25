@@ -42,6 +42,55 @@
   box-sizing: border-box;
 }
 
+/*
+ * Touch behaviour, applied once rather than per component.
+ *
+ * `touch-action: manipulation` drops the wait for a possible double-tap zoom,
+ * which is what makes a web app's buttons feel a beat behind a native one's.
+ * The tap highlight goes with it — every control here has its own `:active`
+ * state, and the grey flash on top of that reads as a rendering artefact.
+ */
+button,
+a,
+[role="button"],
+[role="tab"],
+label,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Chrome is not text. Long-pressing a row should not select it or raise iOS's
+ * magnifier — that is the single clearest tell that something is a web page.
+ * Anything an agent wrote stays selectable; see below.
+ */
+.topbar,
+.tabbar,
+.row,
+.space,
+.group__label,
+.tabs,
+.keys,
+.zoombar,
+.groupbar,
+.blocked__badge,
+.msg__who {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The conversation itself is worth copying out of. */
+.msg__text,
+.tool__out,
+.transcript,
+.term,
+textarea,
+input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 html,
 body,
 #root {

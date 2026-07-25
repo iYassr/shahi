@@ -6,13 +6,14 @@
  * view filters out, are reachable here: on the phone this is the only way to
  * get at roughly half the panes in a real session.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type AgentStatus, type Session } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
+import { useScrollMemory } from "../useScrollMemory";
 
 const GLYPH: Record<AgentStatus, string> = {
   blocked: "●",
@@ -40,6 +41,8 @@ interface Props {
 export function Spaces({ session, onToast, onChanged }: Props) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  useScrollMemory(scroller, Boolean(session));
 
   if (!session) {
     return (
@@ -52,7 +55,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
 
   return (
     <>
-      <div className="scroll">
+      <div className="scroll" ref={scroller}>
         {session.workspaces.map((space) => {
           const blocked = session.panes.filter(
             (p) => p.workspaceId === space.workspaceId && p.status === "blocked",
@@ -107,6 +110,8 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
   const { workspaceId = "" } = useParams();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<"tab" | "agent" | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  useScrollMemory(scroller, Boolean(session));
 
   const space = session?.workspaces.find((w) => w.workspaceId === workspaceId);
   const tabs = useMemo(
@@ -136,7 +141,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
         </div>
       </header>
 
-      <div className="scroll">
+      <div className="scroll" ref={scroller}>
         {tabs.map((tab) => {
           const panes = session.panes.filter((p) => p.tabId === tab.tabId);
           return (

@@ -16,6 +16,7 @@ import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
+import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { readCodexLog } from "./codex-log";
 import { readSessionImage, readSessionLog } from "./session-log";
@@ -130,268 +131,19 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     port: config.port,
 
     async fetch(req, srv) {
-      const url = new URL(req.url);
-      const { pathname } = url;
-
-      // --- unauthenticated ---
-      if (pathname === "/api/auth/status") {
-        return json({ required: !auth.disabled, authenticated: authorized(req) });
-      }
-
-      if (pathname === "/api/auth/login" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { passcode?: string };
-        if (!(await auth.verifyPasscode(body.passcode ?? ""))) {
-          // Blunt but effective against an unattended phone being guessed at.
-          await Bun.sleep(500);
-          return json({ error: "invalid passcode" }, { status: 401 });
-        }
-        return json({ ok: true }, { headers: { "set-cookie": auth.cookie(auth.issue()) } });
-      }
-
-      if (pathname === "/api/auth/logout" && req.method === "POST") {
-        return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
-      }
-
-      // --- everything below requires a session ---
-      if (pathname.startsWith("/api/") || pathname === "/ws") {
-        if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
-      }
-
-      if (pathname === "/ws") {
-        const upgraded = srv.upgrade(req, {
-          data: { watchedPaneId: null, releaseWatch: null } satisfies SocketData,
-        });
-        return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
-      }
-
-      if (pathname === "/api/session") {
-        defaultGrouping = await readAgentPanelSort();
-        return json(dashboard(store, poller, defaultGrouping));
-      }
-
-      // Choosing where a new space lives. Browsable, because typing a path on a
-      // phone keyboard is its own small punishment.
-      if (pathname === "/api/dirs") {
-        try {
-          return json(
-            await listDirectories(url.searchParams.get("path") ?? "~", {
-              includeFiles: url.searchParams.get("files") === "1",
-            }),
-          );
-        } catch (err) {
-          if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
-          return json({ error: "cannot list that directory" }, { status: 404 });
-        }
-      }
-
-      // Agent kinds that could actually start here. herdr knows how to detect
-      // 19, but offering one that is not installed would just fail after a
-      // 30-second wait for readiness that was never coming.
-      if (pathname === "/api/agents") {
-        if (url.searchParams.get("refresh") === "1") forgetInstalledAgents();
-        const { manifests } = await client.rpc("server.agent_manifests", {});
-        return json({
-          agents: await installedAgents(manifests.map((m) => m.agent)),
-          known: manifests.length,
-        });
-      }
-
-      // Starting an agent is two herdr calls with a race between them, so it is
-      // one call from here. See `startAgentInTab`.
-      if (pathname === "/api/agents/start" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as {
-          workspaceId?: string;
-          cwd?: string | null;
-          label?: string | null;
-          kind?: string;
-          name?: string;
-        };
-        if (!body.workspaceId || !body.kind) {
-          return json({ error: "workspaceId and kind are required" }, { status: 400 });
-        }
-        // herdr does not expand `~`; it silently uses $HOME instead, which puts
-        // the agent somewhere the user did not ask for.
-        if (body.cwd && !body.cwd.startsWith("/")) {
-          return json({ error: "cwd must be an absolute path" }, { status: 400 });
-        }
-        try {
-          const started = await startAgentInTab(
-            (method, params, options) =>
-              client.rpc(method as Method, params as ParamsFor<Method>, options) as never,
-            {
-              workspaceId: body.workspaceId,
-              cwd: body.cwd ?? null,
-              label: body.label ?? null,
-              kind: body.kind,
-              name: body.name ?? body.kind,
-            },
-          );
-          return json(started);
-        } catch (err) {
-          if (err instanceof HerdrError) {
-            return json({ error: err.message, code: err.code }, { status: 400 });
-          }
-          return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
-        }
-      }
-
-      // A file sent from the phone. It lands in an owned directory and comes
-      // back as an absolute path, which is all the agent needs — the same shape
-      // as picking something already on the server.
-      if (pathname === "/api/uploads" && req.method === "POST") {
-        const form = await req.formData().catch(() => null);
-        const file = form?.get("file");
-        if (!(file instanceof File)) return json({ error: "no file supplied" }, { status: 400 });
-        try {
-          return json(await storeUpload(file));
-        } catch (err) {
-          if (err instanceof UploadTooLarge) return json({ error: err.message }, { status: 413 });
-          return json({ error: "could not save the file" }, { status: 500 });
-        }
-      }
-
-      if (pathname === "/api/push/key") {
-        return json({ publicKey: push.publicKey });
-      }
-
-      if (pathname === "/api/push/subscribe" && req.method === "POST") {
-        const body = await req.json().catch(() => null);
-        if (!push.isSubscription(body)) return json({ error: "malformed subscription" }, { status: 400 });
-        push.subscribe(body);
-        return json({ ok: true });
-      }
-
-      // The native app's channel. No VAPID, no service worker — Expo's push
-      // service takes a token and hands the notification to FCM or APNs.
-      if (pathname === "/api/push/expo" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { token?: unknown };
-        if (!push.isExpoToken(body.token)) {
-          return json({ error: "malformed expo push token" }, { status: 400 });
-        }
-        push.subscribeExpo(body.token);
-        return json({ ok: true });
-      }
-
-      if (pathname === "/api/push/expo/unsubscribe" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { token?: unknown };
-        if (typeof body.token === "string") push.unsubscribeExpo(body.token);
-        return json({ ok: true });
-      }
-
-      if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { endpoint?: string };
-        if (body.endpoint) push.unsubscribe(body.endpoint);
-        return json({ ok: true });
-      }
-
-      if (pathname === "/api/push/test" && req.method === "POST") {
-        const sent = await push.sendTest();
-        return json({ sent });
-      }
-
-      const paneMatch = pathname.match(/^\/api\/panes\/([^/]+)(\/[a-z]+)?$/);
-      if (paneMatch) {
-        const paneId = decodeURIComponent(paneMatch[1]!);
-        const sub = paneMatch[2];
-
-        if (!store.pane(paneId)) return json({ error: "no such pane" }, { status: 404 });
-
-        // Claude Code's own structured transcript, when this pane has one.
-        // Far better than the recorded screen: real messages, full history,
-        // and tool calls already paired with their results.
-        // An image out of the transcript, served rather than inlined.
-        if (sub === "/image") {
-          const sessionId = store.pane(paneId)?.agent_session?.value;
-          const ref = url.searchParams.get("ref");
-          if (!sessionId || !ref) return json({ error: "not found" }, { status: 404 });
-          const image = await readSessionImage(sessionId, ref);
-          if (!image) return json({ error: "not found" }, { status: 404 });
-          return new Response(image.bytes, {
-            headers: {
-              "content-type": image.mediaType,
-              // The transcript is append-only, so a given ref never changes.
-              "cache-control": "private, max-age=31536000, immutable",
-            },
-          });
-        }
-
-        if (sub === "/session") {
-          const pane = store.pane(paneId);
-          const limit = Math.min(Number(url.searchParams.get("limit") ?? 60), 400);
-          const before = url.searchParams.get("before")
-            ? Number(url.searchParams.get("before"))
-            : undefined;
-
-          // Each agent keeps its transcript its own way, so the reader dispatches
-          // on kind rather than assuming one format.
-          const log =
-            pane?.agent === "codex"
-              ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before })
-              : pane?.agent_session?.value
-                ? await readSessionLog(pane.agent_session.value, { limit, before })
-                : null;
-
-          if (!log) {
-            return json(
-              { error: "no transcript for this pane", messages: [] },
-              { status: 404 },
-            );
-          }
-          return json(log);
-        }
-
-        if (sub === "/transcript") {
-          const before = url.searchParams.get("before");
-          const limit = Math.min(Number(url.searchParams.get("limit") ?? 500), 2_000);
-          const lines = before
-            ? transcript.before(paneId, Number(before), limit)
-            : transcript.tail(paneId, limit);
-          return json({ paneId, lines, total: transcript.count(paneId) });
-        }
-
-        if (!sub) {
-          // A pane opened cold may have no frame yet; read it now rather than
-          // making the phone wait for the next poll tick.
-          const frame = poller.frame(paneId) ?? (await poller.refresh(paneId));
-          return json({
-            pane: store.pane(paneId),
-            agent: store.agent(paneId),
-            layout: store.layoutForPane(paneId),
-            frame: frame ?? null,
-          });
-        }
-      }
-
-      // Full control, as chosen: any herdr method may be invoked. The gate above
-      // is the boundary, not an allowlist here.
-      if (pathname === "/api/rpc" && req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { method?: string; params?: unknown };
-        if (!body.method) return json({ error: "method is required" }, { status: 400 });
-        try {
-          const method = body.method as Method;
-          const result = await client.rpc(method, (body.params ?? {}) as ParamsFor<Method>, {
-            // agent.start and friends block waiting for something to happen;
-            // the default ceiling would fail them every time.
-            timeoutMs: SLOW_METHODS[method],
-          });
-          return json({ result });
-        } catch (err) {
-          if (err instanceof HerdrError) {
-            return json({ error: err.message, code: err.code }, { status: 400 });
-          }
-          return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
-        }
-      }
-
-      if (pathname.startsWith("/api/")) return json({ error: "not found" }, { status: 404 });
-
-      return serveStatic(pathname, config.webRoot);
+      const response = await handle(req, srv);
+      // Compression happens here and nowhere else: routes stay unaware of it,
+      // and a websocket upgrade (which returns undefined) passes through.
+      return response ? compress(req, response, compressionKey(response)) : response;
     },
 
     websocket: {
       // Comfortably longer than the heartbeat below, so only a genuinely dead
       // connection is ever closed for idling.
       idleTimeout: 90,
+
+      // The session payload is 18KB of JSON and goes out on every change.
+      perMessageDeflate: true,
 
       open(ws) {
         clients.add(ws);
@@ -430,6 +182,291 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     if (clients.size === 0) return;
     broadcast({ type: "ping", at: Date.now() });
   }, HEARTBEAT_MS);
+
+
+  /**
+   * Every request, before compression.
+   *
+   * Returns undefined for a websocket upgrade, which Bun takes as "already
+   * handled".
+   */
+  async function handle(req: Request, srv: Server<SocketData>): Promise<Response | undefined> {
+        const url = new URL(req.url);
+        const { pathname } = url;
+
+        // --- unauthenticated ---
+        if (pathname === "/api/auth/status") {
+          return json({ required: !auth.disabled, authenticated: authorized(req) });
+        }
+
+        if (pathname === "/api/auth/login" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { passcode?: string };
+          if (!(await auth.verifyPasscode(body.passcode ?? ""))) {
+            // Blunt but effective against an unattended phone being guessed at.
+            await Bun.sleep(500);
+            return json({ error: "invalid passcode" }, { status: 401 });
+          }
+          return json({ ok: true }, { headers: { "set-cookie": auth.cookie(auth.issue()) } });
+        }
+
+        if (pathname === "/api/auth/logout" && req.method === "POST") {
+          return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
+        }
+
+        // --- everything below requires a session ---
+        if (pathname.startsWith("/api/") || pathname === "/ws") {
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+        }
+
+        if (pathname === "/ws") {
+          const upgraded = srv.upgrade(req, {
+            data: { watchedPaneId: null, releaseWatch: null } satisfies SocketData,
+          });
+          return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
+        }
+
+        if (pathname === "/api/session") {
+          defaultGrouping = await readAgentPanelSort();
+          return json(dashboard(store, poller, defaultGrouping));
+        }
+
+        // Choosing where a new space lives. Browsable, because typing a path on a
+        // phone keyboard is its own small punishment.
+        if (pathname === "/api/dirs") {
+          try {
+            return json(
+              await listDirectories(url.searchParams.get("path") ?? "~", {
+                includeFiles: url.searchParams.get("files") === "1",
+              }),
+            );
+          } catch (err) {
+            if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
+            return json({ error: "cannot list that directory" }, { status: 404 });
+          }
+        }
+
+        // Agent kinds that could actually start here. herdr knows how to detect
+        // 19, but offering one that is not installed would just fail after a
+        // 30-second wait for readiness that was never coming.
+        if (pathname === "/api/agents") {
+          if (url.searchParams.get("refresh") === "1") forgetInstalledAgents();
+          const { manifests } = await client.rpc("server.agent_manifests", {});
+          return json({
+            agents: await installedAgents(manifests.map((m) => m.agent)),
+            known: manifests.length,
+          });
+        }
+
+        // Starting an agent is two herdr calls with a race between them, so it is
+        // one call from here. See `startAgentInTab`.
+        if (pathname === "/api/agents/start" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as {
+            workspaceId?: string;
+            cwd?: string | null;
+            label?: string | null;
+            kind?: string;
+            name?: string;
+          };
+          if (!body.workspaceId || !body.kind) {
+            return json({ error: "workspaceId and kind are required" }, { status: 400 });
+          }
+          // herdr does not expand `~`; it silently uses $HOME instead, which puts
+          // the agent somewhere the user did not ask for.
+          if (body.cwd && !body.cwd.startsWith("/")) {
+            return json({ error: "cwd must be an absolute path" }, { status: 400 });
+          }
+          try {
+            const started = await startAgentInTab(
+              (method, params, options) =>
+                client.rpc(method as Method, params as ParamsFor<Method>, options) as never,
+              {
+                workspaceId: body.workspaceId,
+                cwd: body.cwd ?? null,
+                label: body.label ?? null,
+                kind: body.kind,
+                name: body.name ?? body.kind,
+              },
+            );
+            return json(started);
+          } catch (err) {
+            if (err instanceof HerdrError) {
+              return json({ error: err.message, code: err.code }, { status: 400 });
+            }
+            return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+          }
+        }
+
+        // A file sent from the phone. It lands in an owned directory and comes
+        // back as an absolute path, which is all the agent needs — the same shape
+        // as picking something already on the server.
+        if (pathname === "/api/uploads" && req.method === "POST") {
+          const form = await req.formData().catch(() => null);
+          const file = form?.get("file");
+          if (!(file instanceof File)) return json({ error: "no file supplied" }, { status: 400 });
+          try {
+            return json(await storeUpload(file));
+          } catch (err) {
+            if (err instanceof UploadTooLarge) return json({ error: err.message }, { status: 413 });
+            return json({ error: "could not save the file" }, { status: 500 });
+          }
+        }
+
+        if (pathname === "/api/push/key") {
+          return json({ publicKey: push.publicKey });
+        }
+
+        if (pathname === "/api/push/subscribe" && req.method === "POST") {
+          const body = await req.json().catch(() => null);
+          if (!push.isSubscription(body)) return json({ error: "malformed subscription" }, { status: 400 });
+          push.subscribe(body);
+          return json({ ok: true });
+        }
+
+        // The native app's channel. No VAPID, no service worker — Expo's push
+        // service takes a token and hands the notification to FCM or APNs.
+        if (pathname === "/api/push/expo" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+          if (!push.isExpoToken(body.token)) {
+            return json({ error: "malformed expo push token" }, { status: 400 });
+          }
+          push.subscribeExpo(body.token);
+          return json({ ok: true });
+        }
+
+        if (pathname === "/api/push/expo/unsubscribe" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+          if (typeof body.token === "string") push.unsubscribeExpo(body.token);
+          return json({ ok: true });
+        }
+
+        if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { endpoint?: string };
+          if (body.endpoint) push.unsubscribe(body.endpoint);
+          return json({ ok: true });
+        }
+
+        if (pathname === "/api/push/test" && req.method === "POST") {
+          const sent = await push.sendTest();
+          return json({ sent });
+        }
+
+        const paneMatch = pathname.match(/^\/api\/panes\/([^/]+)(\/[a-z]+)?$/);
+        if (paneMatch) {
+          const paneId = decodeURIComponent(paneMatch[1]!);
+          const sub = paneMatch[2];
+
+          if (!store.pane(paneId)) return json({ error: "no such pane" }, { status: 404 });
+
+          // Claude Code's own structured transcript, when this pane has one.
+          // Far better than the recorded screen: real messages, full history,
+          // and tool calls already paired with their results.
+          // An image out of the transcript, served rather than inlined.
+          if (sub === "/image") {
+            const sessionId = store.pane(paneId)?.agent_session?.value;
+            const ref = url.searchParams.get("ref");
+            if (!sessionId || !ref) return json({ error: "not found" }, { status: 404 });
+            const image = await readSessionImage(sessionId, ref);
+            if (!image) return json({ error: "not found" }, { status: 404 });
+            return new Response(image.bytes, {
+              headers: {
+                "content-type": image.mediaType,
+                // The transcript is append-only, so a given ref never changes.
+                "cache-control": "private, max-age=31536000, immutable",
+              },
+            });
+          }
+
+          if (sub === "/session") {
+            const pane = store.pane(paneId);
+            const limit = Math.min(Number(url.searchParams.get("limit") ?? 60), 400);
+            const before = url.searchParams.get("before")
+              ? Number(url.searchParams.get("before"))
+              : undefined;
+
+            // Each agent keeps its transcript its own way, so the reader dispatches
+            // on kind rather than assuming one format.
+            const log =
+              pane?.agent === "codex"
+                ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before })
+                : pane?.agent_session?.value
+                  ? await readSessionLog(pane.agent_session.value, { limit, before })
+                  : null;
+
+            if (!log) {
+              return json(
+                { error: "no transcript for this pane", messages: [] },
+                { status: 404 },
+              );
+            }
+
+            /*
+             * An ETag, because this is the app's most expensive request by a
+             * wide margin: the reader polls every 2.5 seconds, and a busy pane
+             * was sending 15KB of gzipped JSON each time — most of it identical
+             * to the last one. With `no-cache` the browser revalidates on its
+             * own and this becomes a 304 with no body whenever the conversation
+             * has not moved, which is most polls.
+             *
+             * The tag is derived from the content rather than the file, since a
+             * transcript can be assembled from more than one place.
+             */
+            const etag = `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"`;
+            if (req.headers.get("if-none-match") === etag) {
+              return new Response(null, {
+                status: 304,
+                headers: { etag, "cache-control": "no-cache" },
+              });
+            }
+            return json(log, { headers: { etag, "cache-control": "no-cache" } });
+          }
+
+          if (sub === "/transcript") {
+            const before = url.searchParams.get("before");
+            const limit = Math.min(Number(url.searchParams.get("limit") ?? 500), 2_000);
+            const lines = before
+              ? transcript.before(paneId, Number(before), limit)
+              : transcript.tail(paneId, limit);
+            return json({ paneId, lines, total: transcript.count(paneId) });
+          }
+
+          if (!sub) {
+            // A pane opened cold may have no frame yet; read it now rather than
+            // making the phone wait for the next poll tick.
+            const frame = poller.frame(paneId) ?? (await poller.refresh(paneId));
+            return json({
+              pane: store.pane(paneId),
+              agent: store.agent(paneId),
+              layout: store.layoutForPane(paneId),
+              frame: frame ?? null,
+            });
+          }
+        }
+
+        // Full control, as chosen: any herdr method may be invoked. The gate above
+        // is the boundary, not an allowlist here.
+        if (pathname === "/api/rpc" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { method?: string; params?: unknown };
+          if (!body.method) return json({ error: "method is required" }, { status: 400 });
+          try {
+            const method = body.method as Method;
+            const result = await client.rpc(method, (body.params ?? {}) as ParamsFor<Method>, {
+              // agent.start and friends block waiting for something to happen;
+              // the default ceiling would fail them every time.
+              timeoutMs: SLOW_METHODS[method],
+            });
+            return json({ result });
+          } catch (err) {
+            if (err instanceof HerdrError) {
+              return json({ error: err.message, code: err.code }, { status: 400 });
+            }
+            return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+          }
+        }
+
+        if (pathname.startsWith("/api/")) return json({ error: "not found" }, { status: 404 });
+
+        return serveStatic(pathname, config.webRoot);
+  }
 
   function watch(ws: Client, paneId: string): void {
     // Releasing before acquiring would drop the watch count to zero and let the
@@ -530,6 +567,18 @@ const CONTENT_TYPES: Record<string, string> = {
   webmanifest: "application/manifest+json",
 };
 
+/**
+ * A cache key for compressed bytes, or undefined for anything that changes.
+ *
+ * Only immutable assets qualify — their URL already contains a content hash, so
+ * a different build is a different key and there is nothing to invalidate.
+ */
+function compressionKey(response: Response): string | undefined {
+  const control = response.headers.get("cache-control") ?? "";
+  if (!control.includes("immutable")) return undefined;
+  return response.headers.get("etag") ?? response.headers.get("x-asset") ?? undefined;
+}
+
 async function serveStatic(pathname: string, webRoot: string | null): Promise<Response> {
   if (!webRoot) {
     return new Response("HerdrUI API is running. Build the frontend to serve the app.", {
@@ -546,14 +595,16 @@ async function serveStatic(pathname: string, webRoot: string | null): Promise<Re
   const candidate = Bun.file(`${webRoot}/${relative}`);
   if (relative !== "" && (await candidate.exists())) {
     const ext = relative.slice(relative.lastIndexOf(".") + 1);
+    const immutable = /\.[0-9a-f]{8,}\./.test(relative);
     return new Response(candidate, {
       headers: {
         "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
+        // Names the asset for the compressed-bytes cache; the hash in the
+        // filename is what makes it safe.
+        ...(immutable ? { "x-asset": relative } : {}),
         // Hashed asset filenames may be cached hard; everything else must not
         // be, or a stale service worker outlives a deploy.
-        "cache-control": /\.[0-9a-f]{8,}\./.test(relative)
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
+        "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
       },
     });
   }
