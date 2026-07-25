@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { KEYBOARD_THRESHOLD_PX, varsFor } from "./viewport";
+import { CRAMPED_HEIGHT_PX, KEYBOARD_THRESHOLD_PX, varsFor } from "./viewport";
 
 /**
  * The rule this encodes: compensate for a keyboard, never for a toolbar.
@@ -13,6 +13,7 @@ describe("varsFor", () => {
     expect(varsFor({ height: 844, offsetTop: 0, windowHeight: 844 })).toEqual({
       height: null,
       offset: null,
+      cramped: false,
     });
   });
 
@@ -22,10 +23,12 @@ describe("varsFor", () => {
     expect(varsFor({ height: 760, offsetTop: 0, windowHeight: 844 })).toEqual({
       height: null,
       offset: null,
+      cramped: false,
     });
     expect(varsFor({ height: 844 - (KEYBOARD_THRESHOLD_PX - 1), offsetTop: 0, windowHeight: 844 })).toEqual({
       height: null,
       offset: null,
+      cramped: false,
     });
   });
 
@@ -33,6 +36,7 @@ describe("varsFor", () => {
     expect(varsFor({ height: 508, offsetTop: 0, windowHeight: 844 })).toEqual({
       height: "508px",
       offset: "0px",
+      cramped: false,
     });
   });
 
@@ -40,6 +44,7 @@ describe("varsFor", () => {
     expect(varsFor({ height: 508, offsetTop: 42, windowHeight: 844 })).toEqual({
       height: "508px",
       offset: "42px",
+      cramped: false,
     });
   });
 
@@ -49,6 +54,18 @@ describe("varsFor", () => {
     expect(varsFor({ height: 900, offsetTop: 0, windowHeight: 844 })).toEqual({
       height: null,
       offset: null,
+      cramped: false,
     });
+
+  });
+
+  test("flags the landscape case, where the chrome does not fit", () => {
+    // Phone on its side with the keyboard up: about 190px left.
+    expect(varsFor({ height: 190, offsetTop: 0, windowHeight: 390 })).toEqual({
+      height: "190px",
+      offset: "0px",
+      cramped: true,
+    });
+    expect(CRAMPED_HEIGHT_PX).toBeGreaterThan(190);
   });
 });

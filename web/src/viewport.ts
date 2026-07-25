@@ -31,6 +31,16 @@ const OFFSET = "--app-offset";
  */
 export const KEYBOARD_THRESHOLD_PX = 180;
 
+/**
+ * Below this much visible height, the pane's chrome does not fit.
+ *
+ * Landscape with the keyboard open leaves about 190px on this phone — less than
+ * the header, the tab row, the key bar and the composer add up to — so the
+ * composer ended up below the fold, which is the one thing that must not happen
+ * while someone is typing. Under this height the app sheds what it can.
+ */
+export const CRAMPED_HEIGHT_PX = 420;
+
 export interface ViewportState {
   /** Visual viewport height, or the window height where there is nothing better. */
   height: number;
@@ -42,6 +52,8 @@ export interface ViewportVars {
   /** CSS height for the app shell. `null` means "leave it at 100%". */
   height: string | null;
   offset: string | null;
+  /** True when there is too little room for anything but the essentials. */
+  cramped: boolean;
 }
 
 /**
@@ -53,8 +65,12 @@ export interface ViewportVars {
  */
 export function varsFor(state: ViewportState): ViewportVars {
   const covered = state.windowHeight - state.height;
-  if (covered < KEYBOARD_THRESHOLD_PX) return { height: null, offset: null };
-  return { height: `${state.height}px`, offset: `${state.offsetTop}px` };
+  if (covered < KEYBOARD_THRESHOLD_PX) return { height: null, offset: null, cramped: false };
+  return {
+    height: `${state.height}px`,
+    offset: `${state.offsetTop}px`,
+    cramped: state.height < CRAMPED_HEIGHT_PX,
+  };
 }
 
 export function trackViewport(): () => void {
@@ -76,10 +92,13 @@ export function trackViewport(): () => void {
       // scrolls and sticks on iOS. With no keyboard there should be no
       // transform at all.
       delete root.dataset.keyboard;
+      delete root.dataset.cramped;
     } else {
       root.style.setProperty(HEIGHT, vars.height);
       root.style.setProperty(OFFSET, vars.offset ?? "0px");
       root.dataset.keyboard = "open";
+      if (vars.cramped) root.dataset.cramped = "true";
+      else delete root.dataset.cramped;
     }
   };
 
