@@ -45,14 +45,25 @@ collapses to one line.
 
 ## Setup
 
-Requires Bun and a herdr server already running on the same machine.
+One command, on the machine herdr runs on:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iYassr/HerdrUI/master/install.sh | bash
+```
+
+It checks that herdr is there, fetches and builds, generates a passcode and the
+push keys, installs a systemd user service, enables lingering so it survives
+logout, and prints the address. Running it again upgrades in place and leaves
+your passcode alone.
+
+To do it by hand instead:
 
 ```sh
 bun install
 bun run gen:types                                          # from herdr's own schema
 bun run server/scripts/init-secrets.ts --passcode <digits>  # writes .env, mode 0600
-bun run --cwd web build
-WEB_ROOT=$PWD/web/dist bun run server/index.ts
+bun run build:web
+bun run server/index.ts
 ```
 
 Then, to keep it running:
