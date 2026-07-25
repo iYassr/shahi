@@ -13,8 +13,14 @@
  *
  *   HERDRUI_PASSCODE=1234 bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
  */
-const BASE = process.env.HERDRUI_URL ?? "http://100.74.120.105:7171";
-const PASSCODE = process.env.HERDRUI_PASSCODE ?? "4821";
+// Both come from the environment. A default host and a default passcode in a
+// checked-in file are a credential in the repository, however private it is.
+const BASE = process.env.HERDRUI_URL ?? "http://127.0.0.1:7171";
+const PASSCODE = process.env.HERDRUI_PASSCODE;
+if (!PASSCODE) {
+  console.error("Set HERDRUI_PASSCODE (and HERDRUI_URL if it is not on loopback).");
+  process.exit(1);
+}
 
 const path = process.argv[2] ?? "/";
 const out = process.argv[3] ?? "shot.png";
