@@ -21,7 +21,10 @@
  * replay, so anything missed while disconnected can only be recovered by asking
  * again.
  */
+import type { StatusChange } from "@herdrui/shared";
 import { EventEmitter } from "node:events";
+
+export type { StatusChange };
 import type { HerdrClient } from "./herdr-client";
 import type { AnyEvent } from "./herdr-client";
 import type {
@@ -56,12 +59,6 @@ export interface SessionState {
   focusedPaneId: string | null;
 }
 
-export interface StatusChange {
-  paneId: string;
-  workspaceId: string;
-  from: AgentStatus | undefined;
-  to: AgentStatus;
-}
 
 /** Events emitted to the rest of the app. */
 export interface SessionStoreEvents {

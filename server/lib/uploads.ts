@@ -12,7 +12,10 @@
  * agent reads it with the same tool it uses for any other file — including
  * images, which Claude Code's Read tool handles.
  */
+import type { StoredUpload } from "@herdrui/shared";
 import { mkdir, readdir, stat, unlink } from "node:fs/promises";
+
+export type { StoredUpload };
 import { homedir } from "node:os";
 import { extname, join } from "node:path";
 
@@ -25,13 +28,6 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 /** Uploads older than this are swept on the next write. */
 const KEEP_MS = 14 * 24 * 60 * 60 * 1000;
 
-export interface StoredUpload {
-  name: string;
-  /** Absolute path, which is what goes into the message. */
-  path: string;
-  size: number;
-  type: string;
-}
 
 export class UploadTooLarge extends Error {
   constructor(size: number) {

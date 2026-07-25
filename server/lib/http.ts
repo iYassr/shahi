@@ -8,7 +8,10 @@
  * Terminal output is never logged: these screens carry whatever is in the user's
  * terminals, including secrets.
  */
+import type { DashboardPane } from "@herdrui/shared";
 import type { Server, ServerWebSocket } from "bun";
+
+export type { DashboardPane };
 import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
@@ -19,7 +22,6 @@ import { readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
-import type { ParsedPrompt } from "./prompt-parser";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
@@ -354,31 +356,6 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
   return server;
 }
 
-/** What a phone needs to render the dashboard, and no more. */
-export interface DashboardPane {
-  paneId: string;
-  workspaceId: string;
-  workspaceLabel: string;
-  tabId: string;
-  status: string;
-  agent: string | null;
-  title: string | null;
-  cwd: string | null;
-  focused: boolean;
-  hasPrompt: boolean;
-  /**
-   * The parsed prompt, for blocked panes only.
-   *
-   * Carried in the dashboard payload rather than left to arrive on the next
-   * frame: a phone opening from a notification must be able to answer
-   * immediately, and frames only stream for the pane a client is watching.
-   */
-  prompt: ParsedPrompt | null;
-  /** False for plain shells. Roughly half the panes in a real session are not
-   *  agents at all, and a dashboard that lists them alongside agents buries the
-   *  thing you opened it for. */
-  isAgent: boolean;
-}
 
 export function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null) {
   const { state } = store;

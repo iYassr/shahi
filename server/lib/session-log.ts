@@ -32,6 +32,7 @@
  * store in their own format, and plain shells have no transcript at all — so
  * the terminal view remains the universal fallback rather than a legacy one.
  */
+import type { LogBlock, LogMessage, SessionLog } from "@herdrui/shared";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -41,35 +42,12 @@ const PROJECTS_DIR = join(homedir(), ".claude", "projects");
 /** Tool output can be enormous; the phone gets a readable slice. */
 const MAX_RESULT_CHARS = 2_000;
 
-export type Block =
-  | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
-  | { kind: "image"; mediaType: string }
-  | {
-      kind: "tool";
-      name: string;
-      /** One-line summary of the call, e.g. the command or the file path. */
-      summary: string;
-      result: { text: string; isError: boolean; truncated: boolean } | null;
-    };
+/** `Block` is the local name for the contract's `LogBlock`. */
+export type Block = LogBlock;
+export type { LogMessage, SessionLog };
 
-export interface LogMessage {
-  id: string;
-  /** `agent` and `you` are the two that render as conversation. */
-  role: "you" | "agent" | "system";
-  at: number;
-  blocks: Block[];
-}
 
-export interface SessionLog {
-  sessionId: string;
-  path: string;
-  messages: LogMessage[];
-  /** Total messages available, so the client knows more history exists. */
-  total: number;
-  /** Byte offset consumed, for tailing. */
-  offset: number;
-}
+
 
 /* -------------------------------------------------------------------------- */
 
@@ -204,7 +182,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     // Slash-command expansions are written for the model, not the reader.
     if (row.isMeta === true) continue;
 
-    const blocks: Block[] = [];
+    const blocks: LogBlock[] = [];
     const content = (row.message as { content?: unknown } | undefined)?.content;
 
     if (typeof content === "string") {
@@ -269,7 +247,7 @@ function blocksOf(row: Record<string, unknown>): RawBlock[] {
  *
  * Returns null for anything that is not worth showing as a message.
  */
-function renderUserText(raw: string): Block | null {
+function renderUserText(raw: string): LogBlock | null {
   const text = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
   if (!text) return null;
 

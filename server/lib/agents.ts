@@ -1,3 +1,7 @@
+import type { InstalledAgent } from "@herdrui/shared";
+
+export type { InstalledAgent };
+
 /**
  * Which agent kinds could actually start on this machine.
  *
@@ -21,10 +25,6 @@
  * started perfectly well.
  */
 
-export interface InstalledAgent {
-  kind: string;
-  command: string;
-}
 
 /** Resolution is a shell spawn, so it is cached briefly rather than per request. */
 const CACHE_TTL_MS = 60_000;

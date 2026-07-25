@@ -22,28 +22,14 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HerdrClient } from "./herdr-client";
-import { parseActivity, type Activity } from "./activity";
-import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
+import type { PaneFrame } from "@herdrui/shared";
+import { parseActivity } from "./activity";
+
+export type { PaneFrame };
+import { parsePrompt, stripAnsi } from "./prompt-parser";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
-export interface PaneFrame {
-  paneId: string;
-  /** Raw screen including escape sequences, for xterm.js. */
-  ansi: string;
-  /** Same screen with escapes stripped, for parsing and the transcript. */
-  text: string;
-  /** Parsed prompt when the agent is blocked and the screen is well-formed. */
-  prompt: ParsedPrompt | null;
-  /**
-   * What the agent is doing right now, from its status line.
-   *
-   * The reader view is fed by a transcript that is only written when a message
-   * completes, so without this it looks frozen for the whole of a long turn.
-   */
-  activity: Activity | null;
-  at: number;
-}
 
 export interface PollerEvents {
   frame: [PaneFrame];
