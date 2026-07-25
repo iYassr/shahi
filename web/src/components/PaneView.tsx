@@ -121,6 +121,20 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
 
   const scale = fitWidth && wrapWidth > 0 ? fitScale(cols, wrapWidth) : 1;
 
+  /**
+   * Stable, and that matters more than it looks.
+   *
+   * Passed inline, this was a new function on every render of this component —
+   * and this component re-renders on every frame that arrives for the pane it
+   * is watching, which is every 400ms. The reader's polling effect depends on
+   * it, so the effect was being torn down and rebuilt continuously: the poll
+   * restarted, and anything the reader was keeping went with it.
+   */
+  const fallBack = useCallback(() => {
+    setReadable(false);
+    setTab("screen");
+  }, []);
+
   const send = useCallback(
     async (action: () => Promise<unknown>, failure: string) => {
       setSending(true);
@@ -218,14 +232,7 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
       </div>
 
       {tab === "read" && readable ? (
-        <Reader
-          paneId={paneId}
-          activity={frame?.activity ?? null}
-          onUnavailable={() => {
-            setReadable(false);
-            setTab("screen");
-          }}
-        />
+        <Reader paneId={paneId} activity={frame?.activity ?? null} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>

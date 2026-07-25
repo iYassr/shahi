@@ -172,6 +172,10 @@ const SUBMIT_DELAY_MS = 200;
 
 export type LinkState = "connecting" | "live" | "lost";
 
+/** How long the server may be silent before the connection counts as dead. */
+const SILENCE_LIMIT_MS = 70_000;
+const WATCHDOG_INTERVAL_MS = 10_000;
+
 /**
  * Holds the live connection, reconnecting on its own.
  *
@@ -183,6 +187,8 @@ export class SessionSocket {
   #socket: WebSocket | undefined;
   #backoffMs = 500;
   #timer: ReturnType<typeof setTimeout> | undefined;
+  #watchdog: ReturnType<typeof setInterval> | undefined;
+  #lastMessageAt = 0;
   #closed = false;
   #watching: string | null = null;
 
@@ -194,13 +200,42 @@ export class SessionSocket {
   connect(): void {
     this.#closed = false;
     this.#open();
+    // A socket can die without saying so — a phone sleeping, a network changing
+    // under it, a proxy dropping it without a close frame — leaving the app
+    // showing "live" over stale agents. The server's heartbeat makes that
+    // detectable; this is what acts on the silence.
+    this.#watchdog ??= setInterval(() => this.#checkAlive(), WATCHDOG_INTERVAL_MS);
   }
 
   close(): void {
     this.#closed = true;
     if (this.#timer) clearTimeout(this.#timer);
+    if (this.#watchdog) clearInterval(this.#watchdog);
+    this.#watchdog = undefined;
     this.#socket?.close();
     this.#socket = undefined;
+  }
+
+  /** Reconnects now if the connection is not up — for coming back to the app. */
+  ensureConnected(): void {
+    if (this.#closed) return;
+    if (this.#socket?.readyState === 1) {
+      this.#checkAlive();
+      return;
+    }
+    if (this.#timer) {
+      clearTimeout(this.#timer);
+      this.#timer = undefined;
+    }
+    this.#backoffMs = 500;
+    this.#open();
+  }
+
+  #checkAlive(): void {
+    if (this.#closed || this.#socket?.readyState !== 1) return;
+    if (Date.now() - this.#lastMessageAt < SILENCE_LIMIT_MS) return;
+    this.onLink("lost");
+    this.#socket.close();
   }
 
   watch(paneId: string | null): void {
@@ -233,12 +268,16 @@ export class SessionSocket {
 
     socket.onopen = () => {
       this.#backoffMs = 500;
+      this.#lastMessageAt = Date.now();
       this.onLink("live");
       if (this.#watching) socket.send(JSON.stringify({ type: "watch", paneId: this.#watching }));
     };
     socket.onmessage = (event) => {
+      this.#lastMessageAt = Date.now();
       try {
-        this.onMessage(JSON.parse(String(event.data)) as SocketMessage);
+        const message = JSON.parse(String(event.data)) as SocketMessage;
+        // The heartbeat's only job is the timestamp above.
+        if (message.type !== "ping") this.onMessage(message);
       } catch {
         // A malformed frame is not worth tearing the connection down for.
       }

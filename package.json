@@ -14,9 +14,11 @@
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
     "test": "bun test shared/src server web/src",
-    "build:web": "bun run --cwd web build"
+    "build:web": "bun run --cwd web build",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "typescript": "^7.0.2"
   }
 }

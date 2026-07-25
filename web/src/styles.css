@@ -95,8 +95,15 @@ button {
   display: flex;
   flex-direction: column;
   height: var(--app-height, 100%);
-  /* With the keyboard open the page can scroll under it; pinning to the visual
-     viewport's top keeps the header where it belongs. */
+}
+
+/*
+ * Only while the keyboard is open. With it closed there is no transform at all:
+ * even `translateY(0)` makes this a containing block, which changes how
+ * everything inside scrolls and sticks — and on iOS that reads as the page
+ * fighting your finger.
+ */
+:root[data-keyboard="open"] .app {
   transform: translateY(var(--app-offset, 0px));
 }
 
@@ -182,7 +189,14 @@ button {
 
 .scroll {
   flex: 1;
+  /* Without this a flex item refuses to shrink below its content, and the page
+     scrolls instead of the list — which on iOS means the toolbars collapse and
+     expand mid-flick. */
+  min-height: 0;
   overflow-y: auto;
+  /* Reaching the end of the list should stop there rather than handing the
+     scroll to the page behind it. */
+  overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(var(--safe-bottom) + 24px);
 }
@@ -1149,6 +1163,7 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding: 4px var(--gutter) 16px;
 }

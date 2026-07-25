@@ -68,6 +68,15 @@ export interface PaneDetail {
 
 export type LinkState = "connecting" | "live" | "lost";
 
+/**
+ * How long the server may be silent before the connection counts as dead.
+ *
+ * The server heartbeats every 20s, so this is two missed beats and a margin.
+ * It is the backstop; `offline` usually gets there first.
+ */
+const SILENCE_LIMIT_MS = 50_000;
+const WATCHDOG_INTERVAL_MS = 5_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: "same-origin", ...init });
   if (res.status === 401) throw new UnauthorizedError();
@@ -262,6 +271,8 @@ export class SessionSocket {
   #socket: WebSocket | undefined;
   #backoffMs = 500;
   #timer: ReturnType<typeof setTimeout> | undefined;
+  #watchdog: ReturnType<typeof setInterval> | undefined;
+  #lastMessageAt = 0;
   #closed = false;
   #watching: string | null = null;
 
@@ -273,13 +284,76 @@ export class SessionSocket {
   connect(): void {
     this.#closed = false;
     this.#open();
+    // A socket can die without ever reporting it — a phone sleeping, a network
+    // changing under it, a proxy dropping the connection without a close frame.
+    // The page then sits there showing "live" over stale data indefinitely. The
+    // server's heartbeat is what makes that detectable.
+    this.#watchdog ??= setInterval(() => this.#checkAlive(), WATCHDOG_INTERVAL_MS);
+    // And when the browser already knows, there is no reason to wait for the
+    // heartbeat to time out: losing signal should show immediately, and getting
+    // it back should reconnect immediately.
+    window.addEventListener("offline", this.#handleOffline);
+    window.addEventListener("online", this.#handleOnline);
   }
 
   close(): void {
     this.#closed = true;
     if (this.#timer) clearTimeout(this.#timer);
+    if (this.#watchdog) clearInterval(this.#watchdog);
+    this.#watchdog = undefined;
+    window.removeEventListener("offline", this.#handleOffline);
+    window.removeEventListener("online", this.#handleOnline);
     this.#socket?.close();
     this.#socket = undefined;
+  }
+
+  #handleOffline = () => {
+    if (this.#closed) return;
+    this.onLink("lost");
+    // Chromium keeps an established socket open with the network emulated away,
+    // and a phone changing networks does much the same. Closing it makes the
+    // reconnect path the only path.
+    this.#socket?.close();
+  };
+
+  #handleOnline = () => this.ensureConnected();
+
+  /**
+   * Reconnects now if the connection is not up.
+   *
+   * Called when the app comes back to the foreground, where waiting out an
+   * exponential backoff would mean staring at stale agents for ten seconds.
+   */
+  ensureConnected(): void {
+    if (this.#closed) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (this.#socket?.readyState === WebSocket.OPEN) {
+      this.#checkAlive();
+      return;
+    }
+    if (this.#timer) {
+      clearTimeout(this.#timer);
+      this.#timer = undefined;
+    }
+    this.#backoffMs = 500;
+    this.#open();
+  }
+
+  /** True while the server has been heard from recently. */
+  get alive(): boolean {
+    return (
+      this.#socket?.readyState === WebSocket.OPEN &&
+      Date.now() - this.#lastMessageAt < SILENCE_LIMIT_MS
+    );
+  }
+
+  #checkAlive(): void {
+    if (this.#closed || this.#socket?.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - this.#lastMessageAt < SILENCE_LIMIT_MS) return;
+    // Silent for longer than several heartbeats: treat it as gone. `close()`
+    // fires `onclose`, which schedules the reconnect.
+    this.onLink("lost");
+    this.#socket.close();
   }
 
   watch(paneId: string | null): void {
@@ -300,13 +374,17 @@ export class SessionSocket {
 
     socket.onopen = () => {
       this.#backoffMs = 500;
+      this.#lastMessageAt = Date.now();
       this.onLink("live");
       if (this.#watching) socket.send(JSON.stringify({ type: "watch", paneId: this.#watching }));
     };
 
     socket.onmessage = (event) => {
+      this.#lastMessageAt = Date.now();
       try {
-        this.onMessage(JSON.parse(String(event.data)) as SocketMessage);
+        const message = JSON.parse(String(event.data)) as SocketMessage;
+        // The heartbeat's only job is the timestamp above.
+        if (message.type !== "ping") this.onMessage(message);
       } catch {
         // A malformed frame is not worth tearing the connection down for.
       }

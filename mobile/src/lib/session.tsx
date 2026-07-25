@@ -14,6 +14,7 @@
  * credential — it grants full control of the herdr session.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session, SocketMessage } from "@herdrui/shared";
 import { api, connection, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
@@ -128,6 +129,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       socketRef.current = null;
     };
   }, [connected, onMessage, refresh]);
+
+  // Coming back from the background: the socket may have died while the app was
+  // suspended, and iOS will not necessarily say so. Reconnect and re-read
+  // rather than show hours-old agents as though they were current.
+  useEffect(() => {
+    if (!connected) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      socketRef.current?.ensureConnected();
+      refresh();
+    });
+    return () => sub.remove();
+  }, [connected, refresh]);
 
   const value = useMemo<SessionValue>(
     () => ({

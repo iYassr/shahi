@@ -52,6 +52,14 @@ export interface HttpDeps {
  */
 const SESSION_BROADCAST_INTERVAL_MS = 250;
 
+/**
+ * How often to say something even when nothing has changed.
+ *
+ * Short enough that a client notices a dead connection within a few tens of
+ * seconds, long enough to be nothing on a phone's battery or data.
+ */
+const HEARTBEAT_MS = 20_000;
+
 const json = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
     ...init,
@@ -381,6 +389,10 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     },
 
     websocket: {
+      // Comfortably longer than the heartbeat below, so only a genuinely dead
+      // connection is ever closed for idling.
+      idleTimeout: 90,
+
       open(ws) {
         clients.add(ws);
         poller.setClientCount(clients.size);
@@ -411,6 +423,13 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
       },
     },
   });
+
+  // See the `ping` message in the shared contract: silence has to be
+  // distinguishable from a dead connection, and a phone's socket dies quietly.
+  setInterval(() => {
+    if (clients.size === 0) return;
+    broadcast({ type: "ping", at: Date.now() });
+  }, HEARTBEAT_MS);
 
   function watch(ws: Client, paneId: string): void {
     // Releasing before acquiring would drop the watch count to zero and let the
