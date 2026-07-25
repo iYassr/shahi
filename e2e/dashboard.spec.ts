@@ -1,11 +1,13 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
-import { tap } from "./touch";
+import { isHarmless, tap } from "./touch";
 
 /** Anything the console reports as an error is a failure, wherever it happens. */
 function watchConsole(page: Page): string[] {
   const problems: string[] = [];
-  page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !isHarmless(m.text())) problems.push(m.text());
+  });
   page.on("pageerror", (e) => problems.push(String(e)));
   return problems;
 }

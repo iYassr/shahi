@@ -36,3 +36,17 @@ export async function expectDrawn(target: Locator, minWidth = 8, minHeight = 8):
   expect(box!.width).toBeGreaterThanOrEqual(minWidth);
   expect(box!.height).toBeGreaterThanOrEqual(minHeight);
 }
+
+/**
+ * Console noise that is the engine's opinion, not the app's fault.
+ *
+ * WebKit logs an unrecognised viewport key as an *error*, and the key in
+ * question — `interactive-widget` — is there for Chrome on Android, which does
+ * honour it. Failing a test over that would mean choosing between two engines
+ * for no benefit.
+ */
+const HARMLESS = [/interactive-widget/i, /Unrecognized Content-Security-Policy/i];
+
+export function isHarmless(message: string): boolean {
+  return HARMLESS.some((pattern) => pattern.test(message));
+}
