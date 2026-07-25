@@ -1,45 +1,17 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { isHarmless, tap } from "./touch";
+import { scenario } from "./stub/control";
 
 /**
- * Finds a pane whose transcript the reader can actually show.
- *
- * Asked of the API rather than guessed from the list, so the suite follows the
- * session as it changes instead of pinning to whatever was running the day it
- * was written.
+ * A pane whose transcript the stub always provides — `w1:p1` has one of every
+ * block kind, `w1:p2` has a long conversation for pagination.
  */
-async function readablePane(page: Page): Promise<string> {
-  // Same-origin fetches need an origin: the helper runs before any navigation.
-  if (!page.url().startsWith("http")) await page.goto("/");
+const READABLE = "w1:p1";
+const LONG = "w1:p2";
 
-  const panes = await page.evaluate(async () => {
-    const session = await (await fetch("/api/session")).json();
-    const found: string[] = [];
-    for (const pane of session.panes) {
-      if (!pane.isAgent) continue;
-      const res = await fetch(`/api/panes/${encodeURIComponent(pane.paneId)}/session?limit=1`);
-      if (res.ok) {
-        const log = await res.json();
-        if (log.total > 0) found.push(`${pane.paneId}:${log.total}`);
-      }
-    }
-    return found;
-  });
-
-  // Prefer the longest conversation: pagination is only testable past one page.
-  const best = panes
-    .map((entry) => {
-      const at = entry.lastIndexOf(":");
-      return { paneId: entry.slice(0, at), total: Number(entry.slice(at + 1)) };
-    })
-    .sort((a, b) => b.total - a.total)[0];
-
-  if (!best) test.skip(true, "no agent in this session has a transcript to read");
-  return best!.paneId;
-}
-
-const openReader = async (page: Page, paneId: string) => {
+const openReader = async (page: Page, paneId = READABLE) => {
+  await scenario(page, "busy");
   await page.goto(`/pane/${encodeURIComponent(paneId)}`);
   await expect(page.locator(".reader .msg").first()).toBeVisible({ timeout: 30_000 });
 };
@@ -52,8 +24,7 @@ test.describe("reader", () => {
     if (m.type() === "error" && !isHarmless(m.text())) problems.push(m.text());
   });
 
-    const paneId = await readablePane(page);
-    await openReader(page, paneId);
+    await openReader(page);
 
     await expect(page.locator(".msg--you, .msg--agent").first()).toBeVisible();
     expect(problems).toEqual([]);
@@ -64,11 +35,9 @@ test.describe("reader", () => {
    * to survive that.
    */
   test("keeps earlier messages loaded across a poll", async ({ page }) => {
-    const paneId = await readablePane(page);
-    await openReader(page, paneId);
+    await openReader(page, LONG);
 
     const more = page.locator(".reader__more");
-    test.skip((await more.count()) === 0, "this transcript fits in one page");
 
     const before = await page.locator(".reader .msg").count();
     await tap(page, more);
@@ -82,8 +51,7 @@ test.describe("reader", () => {
 
   /** Scrolled up to read something, a new poll must not drag the view away. */
   test("does not scroll itself while you are reading", async ({ page }) => {
-    const paneId = await readablePane(page);
-    await openReader(page, paneId);
+    await openReader(page);
 
     const reader = page.locator(".reader");
     await reader.evaluate((el) => el.scrollTo(0, Math.floor(el.scrollHeight / 3)));
@@ -96,11 +64,9 @@ test.describe("reader", () => {
   });
 
   test("expanded tool output stays expanded across a poll", async ({ page }) => {
-    const paneId = await readablePane(page);
-    await openReader(page, paneId);
+    await openReader(page);
 
     const tool = page.locator(".tool__head").first();
-    test.skip((await tool.count()) === 0, "no tool calls in this transcript");
     await tool.scrollIntoViewIfNeeded();
     await tap(page, tool);
     await expect(page.locator(".tool__out, .msg__aside").first()).toBeVisible();
@@ -110,8 +76,7 @@ test.describe("reader", () => {
   });
 
   test("switches to the screen and back", async ({ page }) => {
-    const paneId = await readablePane(page);
-    await openReader(page, paneId);
+    await openReader(page);
 
     await page.getByRole("tab", { name: "Screen" }).click();
     await expect(page.locator(".termwrap")).toBeVisible();
