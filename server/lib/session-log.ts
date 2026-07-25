@@ -210,6 +210,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
               name: block.name ?? "tool",
               summary: summariseToolInput(block.name ?? "", block.input ?? {}),
               ...fileOf(block.input ?? {}),
+              ...questionsOf(block.name ?? "", block.input ?? {}),
               result: (block.id && results.get(block.id)) || null,
             });
             break;
@@ -343,6 +344,40 @@ function flattenResult(
  * "Bash" on its own tells a reader nothing.
  */
 /**
+ * The questions an agent stopped to ask, with their options.
+ *
+ * `AskUserQuestion` carries the whole exchange in its input, and the reader was
+ * throwing it away: what showed was a collapsed row named after the tool, with
+ * none of the choices it was asking you to make. Reported from a phone, where
+ * that is the entire message.
+ */
+export function questionsOf(
+  name: string,
+  input: Record<string, unknown>,
+): { questions?: { text: string; options: { label: string; description?: string }[] }[] } {
+  if (name !== "AskUserQuestion") return {};
+
+  const asked = Array.isArray(input.questions) ? input.questions : [];
+  const questions = asked
+    .filter((q): q is Record<string, unknown> => typeof q === "object" && q !== null)
+    .map((q) => ({
+      text: typeof q.question === "string" ? q.question : "",
+      options: (Array.isArray(q.options) ? q.options : [])
+        .filter((o): o is Record<string, unknown> => typeof o === "object" && o !== null)
+        .map((o) => ({
+          label: typeof o.label === "string" ? o.label : "",
+          ...(typeof o.description === "string" && o.description
+            ? { description: o.description }
+            : {}),
+        }))
+        .filter((o) => o.label),
+    }))
+    .filter((q) => q.text && q.options.length > 0);
+
+  return questions.length > 0 ? { questions } : {};
+}
+
+/**
  * The file a tool call named, if it named one.
  *
  * Only an absolute path counts. A relative one cannot be resolved without
@@ -358,10 +393,18 @@ export function fileOf(input: Record<string, unknown>): { file?: { path: string;
   return {};
 }
 
+/** The text of the first question, for the one-line summary. */
+function firstQuestion(input: Record<string, unknown>): string | undefined {
+  const first = Array.isArray(input.questions) ? input.questions[0] : undefined;
+  const text = (first as { question?: unknown } | undefined)?.question;
+  return typeof text === "string" ? text : undefined;
+}
+
 export function summariseToolInput(name: string, input: Record<string, unknown>): string {
   const str = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined);
 
   const candidate =
+    firstQuestion(input) ??
     str("command") ??
     str("file_path") ??
     str("path") ??

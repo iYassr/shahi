@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fileOf, normalise, parseLines, summariseToolInput } from "./session-log";
+import { fileOf, normalise, parseLines, questionsOf, summariseToolInput } from "./session-log";
 
 const assistant = (content: unknown[], over: Record<string, unknown> = {}) => ({
   type: "assistant",
@@ -297,5 +297,52 @@ describe("fileOf", () => {
   test("ignores a call that named no file", () => {
     expect(fileOf({ command: "ls -la" })).toEqual({});
     expect(fileOf({})).toEqual({});
+  });
+});
+
+describe("questionsOf", () => {
+  const input = {
+    questions: [
+      {
+        question: "Which colour?",
+        header: "Colour",
+        multiSelect: false,
+        options: [{ label: "Red", description: "Warm." }, { label: "Green" }],
+      },
+    ],
+  };
+
+  test("keeps the question and every option", () => {
+    expect(questionsOf("AskUserQuestion", input)).toEqual({
+      questions: [
+        {
+          text: "Which colour?",
+          options: [{ label: "Red", description: "Warm." }, { label: "Green" }],
+        },
+      ],
+    });
+  });
+
+  test("keeps all of them when more than one is asked", () => {
+    const two = {
+      questions: [input.questions[0], { ...input.questions[0], question: "And then?" }],
+    };
+    expect(questionsOf("AskUserQuestion", two).questions).toHaveLength(2);
+  });
+
+  test("ignores every other tool", () => {
+    expect(questionsOf("Bash", { command: "ls" })).toEqual({});
+    expect(questionsOf("Read", input)).toEqual({});
+  });
+
+  test("drops a malformed question rather than rendering an empty card", () => {
+    expect(questionsOf("AskUserQuestion", { questions: [{ question: "No options" }] })).toEqual({});
+    expect(questionsOf("AskUserQuestion", { questions: "nonsense" })).toEqual({});
+    expect(questionsOf("AskUserQuestion", {})).toEqual({});
+  });
+
+  test("the summary line becomes the question, not an empty string", () => {
+    // What made it invisible: no `command` or `file_path`, so nothing to show.
+    expect(summariseToolInput("AskUserQuestion", input)).toBe("Which colour?");
   });
 });

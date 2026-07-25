@@ -67,6 +67,64 @@ async function stubTranscript(page: Page): Promise<void> {
   );
 }
 
+test.describe("a question the agent asked", () => {
+  const asked = {
+    sessionId: "stub",
+    path: "/x",
+    offset: 0,
+    total: 1,
+    messages: [
+      {
+        id: "q1",
+        role: "agent",
+        at: 0,
+        blocks: [
+          {
+            kind: "tool",
+            name: "AskUserQuestion",
+            summary: "Which colour?",
+            questions: [
+              {
+                text: "Which colour?",
+                options: [
+                  { label: "Red", description: "Warm, high-contrast." },
+                  { label: "Green" },
+                ],
+              },
+            ],
+            result: null,
+          },
+        ],
+      },
+    ],
+  };
+
+  /**
+   * It used to render as a collapsed row named after the tool, with the choices
+   * thrown away — so from a phone there was nothing to read. Reported by
+   * someone who could not see what they were being asked.
+   */
+  test("shows the question and every option without expanding anything", async ({ page }) => {
+    await page.route("**/api/panes/*/session*", (route) => route.fulfill({ json: asked }));
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+
+    await expect(page.locator(".asked__q")).toHaveText("Which colour?");
+    await expect(page.locator(".asked__option")).toHaveCount(2);
+    await expect(page.locator(".asked__label").first()).toContainText("Red");
+    await expect(page.locator(".asked__why").first()).toHaveText("Warm, high-contrast.");
+  });
+
+  test("numbers them the way the terminal does, so answering by digit lines up", async ({
+    page,
+  }) => {
+    await page.route("**/api/panes/*/session*", (route) => route.fulfill({ json: asked }));
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+
+    await expect(page.locator(".asked__label").first()).toHaveText(/^1\.\s+Red$/);
+    await expect(page.locator(".asked__label").last()).toHaveText(/^2\.\s+Green$/);
+  });
+});
+
 test.describe("files in the reader", () => {
   test("a tool call that wrote a file offers it", async ({ page }) => {
     await stubTranscript(page);

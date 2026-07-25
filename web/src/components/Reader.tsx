@@ -337,6 +337,36 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
             {block.result?.isError && <span className="tool__err">failed</span>}
           </button>
 
+          {/*
+            * A question the agent asked, shown in full and never collapsed.
+            *
+            * This is the agent talking to you, not a tool call: it showed as a
+            * bare `AskUserQuestion` row with the choices thrown away, so from a
+            * phone there was nothing to read and nothing to answer. Answering
+            * still happens on the prompt card at the top — the terminal is what
+            * the keystroke goes to — but at least the question is legible now.
+            */}
+          {block.questions?.map((question, i) => (
+            <div className="asked" key={i}>
+              <p className="asked__q">{question.text}</p>
+              <ol className="asked__options">
+                {question.options.map((option, n) => (
+                  <li className="asked__option" key={n}>
+                    {/* The number is in the markup rather than a CSS counter:
+                        it is what you would press in the terminal, so it should
+                        be selectable, readable aloud, and visible to a test. */}
+                    <span className="asked__label">
+                      <span className="asked__n">{n + 1}.</span> {option.label}
+                    </span>
+                    {option.description && (
+                      <span className="asked__why">{option.description}</span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+
           {/* The file the call named, if it named one. Outside the collapsed
               section deliberately: on a phone this is usually the part you
               wanted, and burying it behind a second tap defeats the point. */}

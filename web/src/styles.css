@@ -525,6 +525,59 @@ button {
   font-size: 13px;
 }
 
+/* -------------------------------------------------------------- asked -- */
+
+/*
+ * A question the agent stopped to ask. Rendered like the prompt card rather
+ * than like a tool call, because that is what it is.
+ */
+.asked {
+  margin: 4px 0 10px 21px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-bright);
+  border-left: 2px solid var(--peach);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.asked__q {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+.asked__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.asked__option {
+  display: block;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.asked__n {
+  color: var(--dim);
+}
+
+.asked__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--peach);
+}
+
+.asked__why {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
 /* ---------------------------------------------------------------- files -- */
 
 /* The file a tool call touched: its name, where it lives, and a way to keep it. */
