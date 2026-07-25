@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { SafeAreaView, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+// react-native's own SafeAreaView is deprecated and warns at runtime; this is
+// the supported one, and it already ships with the Expo template.
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Agents } from "@/screens/agents";
 import { Connect } from "@/screens/connect";
 import { connection } from "@/lib/api";
