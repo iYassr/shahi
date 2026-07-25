@@ -24,8 +24,17 @@
  * breakage — keep it that way.
  */
 
-/** Matches `❯ 1. Label`, `> 2. Label`, or a plain `  3. Label`. */
-const OPTION_RE = /^(?<indent>\s*)(?<marker>[❯>»▶]\s*)?(?<index>\d{1,2})\.\s+(?<label>\S.*)$/u;
+/**
+ * Matches `❯ 1. Label`, `› 2. Label`, `> 3. Label`, or a plain `  4. Label`.
+ *
+ * The cursor glyph is agent-specific: Claude Code draws `❯` (U+276F), codex
+ * draws `›` (U+203A). Both must be here or the same prompt is actionable in one
+ * agent and invisible in the other.
+ */
+const OPTION_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s*)?(?<index>\d{1,2})\.\s+(?<label>\S.*)$/u;
+
+/** A line opening with a selection or prompt marker, rather than prose. */
+const MARKER_LINE_RE = /^\s*[❯›>»▶]\s/u;
 
 /** Box-drawing, block, and arrow glyphs Claude Code and herdr use for chrome. */
 const CHROME_ONLY_RE = /^[\s─-╿▀-▟←-⇿■-◿·—–-]*$/u;
@@ -204,6 +213,10 @@ function findQuestion(lines: string[], optionStart: number): string | null {
   while (i >= 0) {
     const line = lines[i]!;
     if (line.trim() === "" || CHROME_ONLY_RE.test(line)) break;
+    // A line that opens with a marker glyph is structure, not prose — codex
+    // prefixes a standalone `> You are in /tmp` above its trust prompt, and
+    // absorbing it into the question reads as one run-on sentence.
+    if (MARKER_LINE_RE.test(line)) break;
     collected.unshift(line.trim());
     i--;
     // Questions are short. Stop before swallowing an agent's whole last message.
