@@ -15,5 +15,8 @@
     "start": "bun run server/index.ts",
     "test": "bun test shared/src server web/src",
     "build:web": "bun run --cwd web build"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

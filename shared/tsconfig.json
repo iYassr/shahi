@@ -3,13 +3,19 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext"],
+    "lib": [
+      "ESNext"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "types": []
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }
