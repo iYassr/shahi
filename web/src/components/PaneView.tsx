@@ -10,6 +10,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
+  UnauthorizedError,
   api,
   type Session,
   type PaneDetail,
@@ -109,7 +110,14 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     void api
       .pane(paneId)
       .then((d) => live && setDetail(d))
-      .catch(() => live && setGone(true));
+      .catch((err: unknown) => {
+        // An expired session is not a missing pane. Rethrowing puts it in front
+        // of the global handler, which returns to the passcode screen; treating
+        // it as "gone" would have told you the pane had been closed when in
+        // fact the app had simply been open for a fortnight.
+        if (err instanceof UnauthorizedError) throw err;
+        if (live) setGone(true);
+      });
     return () => {
       live = false;
     };

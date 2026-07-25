@@ -156,6 +156,16 @@ button {
   transform: translateY(var(--app-offset, 0px));
 }
 
+/*
+ * Too little room for everything — landscape with the keyboard up leaves under
+ * 200px. What goes is what you are not using while typing: the tab row, and the
+ * second line of the header. The composer never goes.
+ */
+:root[data-cramped] .tabs,
+:root[data-cramped] .detail__where {
+  display: none;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -1603,7 +1613,9 @@ label.bigaction {
 }
 
 .groupbar__opt {
-  min-height: 32px;
+  /* 32px was below the floor for a thumb; these are the only controls on the
+     dashboard you are meant to hit deliberately rather than a whole row. */
+  min-height: 40px;
   padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
