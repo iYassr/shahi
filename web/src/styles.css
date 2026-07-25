@@ -1086,3 +1086,241 @@ button {
 .kind:disabled {
   opacity: 0.4;
 }
+
+/* -------------------------------------------------------------- reader -- */
+
+/*
+ * The conversation, reflowed. This is the only view in the app where text is
+ * free to wrap to the screen, because it comes from Claude Code's structured
+ * transcript rather than from a terminal that already wrapped it.
+ */
+
+.reader {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px var(--gutter) 16px;
+}
+
+.reader__more {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin: 8px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.msg {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.msg__who {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+.msg--you .msg__who {
+  color: var(--peach);
+}
+
+.msg__text {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.5;
+  /* Preserve the agent's paragraphing without preserving terminal wrapping. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg--you .msg__text {
+  color: var(--fg);
+}
+
+.msg__aside {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.msg__thinking {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.msg__thinking summary {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.msg__thinking p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-bright);
+}
+
+/* Tool calls dominate a real transcript; collapsed, they stop drowning it. */
+.tool {
+  margin-bottom: 6px;
+}
+
+.tool__head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+  min-height: 36px;
+  padding: 5px 0;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.tool__caret {
+  color: var(--line-bright);
+  flex: none;
+}
+
+.tool__name {
+  color: var(--mint);
+  flex: none;
+}
+
+.tool__summary {
+  color: var(--dim);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool__err {
+  color: var(--rose);
+  flex: none;
+}
+
+.tool__out {
+  margin: 2px 0 8px;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  /* Tool output is the one thing here that keeps its own formatting, so it
+     scrolls sideways rather than being rewrapped into nonsense. */
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.tool__out[data-error="true"] {
+  color: var(--rose);
+}
+
+/* ------------------------------------------------------------ markdown -- */
+
+.md__p,
+.md__li,
+.md__quote {
+  margin: 0 0 8px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.md__h {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.md__h[data-level="1"] {
+  font-size: 18px;
+}
+
+.md__h[data-level="2"] {
+  font-size: 16px;
+}
+
+.md__h[data-level="3"],
+.md__h[data-level="4"],
+.md__h[data-level="5"],
+.md__h[data-level="6"] {
+  font-size: 15px;
+  color: var(--dim);
+}
+
+.md__li {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.md__bullet {
+  flex: none;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 13px;
+  min-width: 1.2em;
+}
+
+.md__quote {
+  padding-left: 10px;
+  border-left: 2px solid var(--line-bright);
+  color: var(--dim);
+}
+
+.md__hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 12px 0;
+}
+
+/* Code keeps its own formatting and scrolls rather than being rewrapped. */
+.md__code {
+  margin: 6px 0 10px;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.md__c {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+
+.md__a {
+  color: var(--peach);
+  overflow-wrap: anywhere;
+}

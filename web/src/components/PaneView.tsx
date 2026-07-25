@@ -17,9 +17,10 @@ import {
   type TranscriptLine,
 } from "../api";
 import { Prompt } from "./Prompt";
+import { Reader } from "./Reader";
 import { Terminal, fitScale } from "./Terminal";
 
-type Tab = "screen" | "history";
+type Tab = "read" | "screen" | "history";
 
 interface Props {
   frames: Record<string, PaneFrame>;
@@ -46,7 +47,12 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
   const navigate = useNavigate();
 
   const [detail, setDetail] = useState<PaneDetail | null>(null);
-  const [tab, setTab] = useState<Tab>("screen");
+  // Reader is the default where it exists: on a phone the conversation is what
+  // you came for, and the terminal is for when you need to see the real screen.
+  // `readable` flips to false the moment the server says there is no transcript
+  // — shells and non-Claude agents — and the view falls back for good.
+  const [tab, setTab] = useState<Tab>("read");
+  const [readable, setReadable] = useState(true);
   const [history, setHistory] = useState<TranscriptLine[]>([]);
   const [fitWidth, setFitWidth] = useState(true);
   const [draft, setDraft] = useState("");
@@ -155,6 +161,16 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
       )}
 
       <div className="tabs" role="tablist">
+        {readable && (
+          <button
+            className="tab"
+            role="tab"
+            aria-selected={tab === "read"}
+            onClick={() => setTab("read")}
+          >
+            Read
+          </button>
+        )}
         <button
           className="tab"
           role="tab"
@@ -173,7 +189,15 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
         </button>
       </div>
 
-      {tab === "screen" ? (
+      {tab === "read" && readable ? (
+        <Reader
+          paneId={paneId}
+          onUnavailable={() => {
+            setReadable(false);
+            setTab("screen");
+          }}
+        />
+      ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>
             {frame ? (

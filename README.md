@@ -139,6 +139,35 @@ Two of those turned into features rather than limitations:
   including `mirror=idle herdr=blocked` — the app silently missing the one agent
   it exists to surface.
 
+## Reader view
+
+The pane screen herdr exposes is pre-wrapped at the server's width, 42 rows
+deep, with no scrollback — anything built on it is scraping a redrawing TUI. But
+Claude Code writes its own structured JSONL transcript per session under
+`~/.claude/projects/`, and herdr's `agent_session.value` **is that file's name**.
+So the reader view is a file read plus a renderer, with no terminal parsing at
+all, and it can reflow text because the text was never wrapped to begin with.
+
+Measured across 48 transcripts and 8,298 records, the format has one trap that
+dominates everything else: **87% of `user` records are not from the user.** 1,509
+of 1,736 carry nothing but `tool_result` blocks, because that is how tool output
+returns through the API. Rendering `type: "user"` as "you said" misattributes
+almost all tool output to the human. `<task-notification>` blocks are the same
+trap in miniature. Tool calls are therefore paired with their results and shown
+as one collapsible row.
+
+Existing viewers for this format are worth knowing about —
+[claude-code-trace](https://github.com/delexw/claude-code-trace),
+[claude-code-log](https://github.com/daaain/claude-code-log),
+[claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) —
+but all are standalone apps with their own servers and UI, so none could sit
+above the answer buttons for a blocked agent. `claude-code-log`'s renderer was
+read as a reference for edge cases.
+
+Only Claude Code writes this format. `codex`, `pi` and `opencode` keep their own
+stores, and shells have no transcript at all, so the terminal view stays the
+universal fallback rather than a legacy one.
+
 ## Checking it still works
 
 Unit tests cover the parser, the transcript recorder, auth, config, and the
