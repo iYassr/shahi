@@ -91,7 +91,10 @@ export function App() {
   const answer = useCallback(
     async (paneId: string, optionIndex: number) => {
       try {
-        await api.answerPrompt(paneId, optionIndex);
+        // Where the cursor currently sits, so an arrow-based delivery knows how
+        // far to walk. Unused by the digit strategy.
+        const selected = prompts[paneId]?.options.find((o) => o.selected)?.index ?? 1;
+        await api.answerPrompt(paneId, optionIndex, selected);
         // The agent's next frame is what confirms it landed; clearing here keeps
         // the card from re-offering a question that is on its way out.
         setPrompts((current) => {
@@ -104,7 +107,7 @@ export function App() {
         throw err;
       }
     },
-    [showToast],
+    [showToast, prompts],
   );
 
   // A session can expire while the app sits open on a home screen.

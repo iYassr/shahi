@@ -66,6 +66,8 @@ interface KnownResults {
   "pane.focus": "ok";
   "agent.prompt": "agent_prompted";
   "events.subscribe": "subscription_started";
+  "workspace.create": "workspace_created";
+  "workspace.close": "workspace_closed";
 }
 
 export type ResultFor<M extends Method> = M extends keyof KnownResults

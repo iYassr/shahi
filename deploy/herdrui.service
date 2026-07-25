@@ -1,0 +1,38 @@
+# HerdrUI — user service.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/herdrui.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now herdrui
+#
+# `loginctl enable-linger operator` is what keeps this running when you are not
+# logged in — without it the service stops the moment your last SSH session ends,
+# which is precisely when you would want to reach it from a phone.
+
+[Unit]
+Description=HerdrUI — mobile dashboard for herdr
+Documentation=https://herdr.dev/docs/socket-api/
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/HerdrUI
+Environment=WEB_ROOT=%h/HerdrUI/web/dist
+ExecStart=%h/.bun/bin/bun run server/index.ts
+Restart=always
+RestartSec=3
+
+# herdr's socket lives under ~/.config, and the transcript database under
+# ~/.local/share. Nothing else needs writing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/herdrui
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=default.target
