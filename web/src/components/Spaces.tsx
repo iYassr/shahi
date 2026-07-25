@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type AgentStatus, type Session } from "../api";
+import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
@@ -162,6 +163,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                   <span className="row__glyph" aria-hidden="true">
                     {GLYPH[pane.status]}
                   </span>
+                  {pane.isAgent && <AgentIcon kind={pane.agent} />}
                   <span className="row__title">
                     {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
                   </span>

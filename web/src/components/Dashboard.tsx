@@ -7,6 +7,7 @@
  */
 import { useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
+import { AgentIcon } from "./AgentIcon";
 import { Prompt } from "./Prompt";
 
 interface Props {
@@ -83,6 +84,7 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
               <span className="row__glyph" aria-hidden="true">
                 {GLYPH[pane.status]}
               </span>
+              <AgentIcon kind={pane.agent} />
               <span className="row__title">{pane.title ?? pane.paneId}</span>
               <span className="row__meta">{pane.workspaceLabel}</span>
             </button>
@@ -112,6 +114,7 @@ function BlockedCard({
         </span>
         <h2 className="blocked__where">{pane.workspaceLabel}</h2>
         <p className="blocked__task">
+          <AgentIcon kind={pane.agent} />
           {pane.agent ?? "agent"} · {pane.paneId} · {pane.title ?? "untitled"}
         </p>
       </button>

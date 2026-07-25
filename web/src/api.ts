@@ -131,7 +131,12 @@ export interface Rect {
 }
 
 export interface PaneDetail {
-  pane: { pane_id: string; agent_status: AgentStatus; cwd?: string | null } | null;
+  pane: {
+    pane_id: string;
+    agent_status: AgentStatus;
+    cwd?: string | null;
+    agent?: string | null;
+  } | null;
   agent: { name?: string | null } | null;
   layout: { area: Rect } | null;
   frame: PaneFrame | null;

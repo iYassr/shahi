@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { Sheet } from "./Sheet";
 
@@ -88,6 +89,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
                 onClick={() => setKind(agent.kind)}
                 disabled={busy}
               >
+                <AgentIcon kind={agent.kind} size={15} />
                 {agent.kind}
               </button>
             ))}
