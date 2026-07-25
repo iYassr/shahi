@@ -10,10 +10,17 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput,
 import { api, connection } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
-const DEFAULT_URL = "http://ubuntu.tailnet01.ts.net:7171";
+/**
+ * Deliberately blank rather than a guess.
+ *
+ * A pre-filled address that happens to be wrong looks configured and fails only
+ * at connect time — worse than an obviously empty field. The placeholder shows
+ * the shape without claiming to know the answer.
+ */
+const URL_PLACEHOLDER = "http://your-host.your-tailnet.ts.net:7171";
 
 export function Connect({ onConnected }: { onConnected: () => void }) {
-  const [url, setUrl] = useState(DEFAULT_URL);
+  const [url, setUrl] = useState("");
   const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +54,7 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
+        placeholder={URL_PLACEHOLDER}
         placeholderTextColor={theme.dim}
       />
 
@@ -62,8 +70,8 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
       {error && <Text style={styles.error}>{error}</Text>}
 
       <Pressable
-        style={[styles.button, (busy || !passcode) && styles.buttonOff]}
-        disabled={busy || !passcode}
+        style={[styles.button, (busy || !passcode || !url.trim()) && styles.buttonOff]}
+        disabled={busy || !passcode || !url.trim()}
         onPress={() => void connect()}
       >
         <Text style={styles.buttonText}>{busy ? "Connecting…" : "Connect"}</Text>
