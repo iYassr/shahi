@@ -217,3 +217,24 @@ describe("stripAnsi", () => {
     );
   });
 });
+
+describe("other agents", () => {
+  // codex draws its selection cursor as `›` (U+203A) rather than Claude Code's
+  // `❯` (U+276F). Captured from a real codex startup prompt.
+  test("parses a codex prompt", () => {
+    const codexTrust = [
+      "> You are in /tmp",
+      "  Do you trust the contents of this directory?",
+      "",
+      "› 1. Yes, continue",
+      "  2. No, quit",
+    ].join("\n");
+
+    const parsed = parsePrompt(codexTrust);
+    expect(parsed?.question).toBe("Do you trust the contents of this directory?");
+    expect(parsed?.options).toEqual([
+      { index: 1, label: "Yes, continue", selected: true },
+      { index: 2, label: "No, quit", selected: false },
+    ]);
+  });
+});

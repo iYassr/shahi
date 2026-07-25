@@ -14,6 +14,7 @@ import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents } from "./agents";
 import { readAgentPanelSort } from "./herdr-config";
+import { readCodexLog } from "./codex-log";
 import { readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
@@ -233,17 +234,27 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // Far better than the recorded screen: real messages, full history,
         // and tool calls already paired with their results.
         if (sub === "/session") {
-          const sessionId = store.pane(paneId)?.agent_session?.value;
-          if (!sessionId) {
-            return json({ error: "this pane has no agent session", messages: [] }, { status: 404 });
+          const pane = store.pane(paneId);
+          const limit = Math.min(Number(url.searchParams.get("limit") ?? 60), 400);
+          const before = url.searchParams.get("before")
+            ? Number(url.searchParams.get("before"))
+            : undefined;
+
+          // Each agent keeps its transcript its own way, so the reader dispatches
+          // on kind rather than assuming one format.
+          const log =
+            pane?.agent === "codex"
+              ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before })
+              : pane?.agent_session?.value
+                ? await readSessionLog(pane.agent_session.value, { limit, before })
+                : null;
+
+          if (!log) {
+            return json(
+              { error: "no transcript for this pane", messages: [] },
+              { status: 404 },
+            );
           }
-          const log = await readSessionLog(sessionId, {
-            limit: Math.min(Number(url.searchParams.get("limit") ?? 60), 400),
-            before: url.searchParams.get("before")
-              ? Number(url.searchParams.get("before"))
-              : undefined,
-          });
-          if (!log) return json({ error: "no transcript on disk", messages: [] }, { status: 404 });
           return json(log);
         }
 
