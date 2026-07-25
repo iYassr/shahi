@@ -10,6 +10,11 @@
  *
  * iOS only permits Web Push for a PWA installed to the home screen, and only
  * over real HTTPS, which is what `tailscale serve` provides.
+ *
+ * The native app cannot use Web Push at all — there is no service worker — so it
+ * registers an Expo push token instead and the same notification goes out over
+ * both channels. The two are independent: Web Push needs VAPID keys and Expo
+ * push needs none, so either can be configured without the other.
  */
 import { Database } from "bun:sqlite";
 import webpush, { type PushSubscription } from "web-push";
@@ -18,6 +23,8 @@ import type { SessionStore, StatusChange } from "./state";
 
 /** How long to suppress repeat notifications for the same pane. */
 const DEBOUNCE_MS = 5_000;
+
+const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
 
 export interface PushPayload {
   title: string;
@@ -41,6 +48,12 @@ export class PushService {
         endpoint TEXT PRIMARY KEY,
         p256dh   TEXT NOT NULL,
         auth     TEXT NOT NULL,
+        added_at INTEGER NOT NULL
+      )
+    `);
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS expo_push_token (
+        token    TEXT PRIMARY KEY,
         added_at INTEGER NOT NULL
       )
     `);
@@ -88,7 +101,32 @@ export class PushService {
   }
 
   count(): number {
-    return this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM push_subscription").get()?.n ?? 0;
+    return (
+      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM push_subscription").get()?.n ??
+        0) +
+      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM expo_push_token").get()?.n ?? 0)
+    );
+  }
+
+  /**
+   * Expo's push tokens have a fixed shape, and this is the whole validation.
+   * Anything else would be rejected by Expo anyway, but a token that cannot work
+   * should not be stored and retried on every notification.
+   */
+  isExpoToken(value: unknown): value is string {
+    return typeof value === "string" && /^Expo(nent)?PushToken\[[^\]]+\]$/.test(value);
+  }
+
+  subscribeExpo(token: string): void {
+    this.#db.run(
+      `INSERT INTO expo_push_token (token, added_at) VALUES (?, ?)
+         ON CONFLICT(token) DO NOTHING`,
+      [token, Date.now()],
+    );
+  }
+
+  unsubscribeExpo(token: string): void {
+    this.#db.run("DELETE FROM expo_push_token WHERE token = ?", [token]);
   }
 
   /**
@@ -131,8 +169,60 @@ export class PushService {
     });
   }
 
-  /** Delivers to every subscription, returning how many succeeded. */
+  /** Delivers over both channels, returning how many deliveries succeeded. */
   async send(payload: PushPayload): Promise<number> {
+    const [web, native] = await Promise.all([this.#sendWebPush(payload), this.#sendExpo(payload)]);
+    return web + native;
+  }
+
+  /**
+   * Hands the notification to Expo's push service, which passes it to FCM or
+   * APNs.
+   *
+   * Tokens Expo reports as `DeviceNotRegistered` are dropped: the app has been
+   * uninstalled or the token rotated, and keeping it means failing forever.
+   */
+  async #sendExpo(payload: PushPayload): Promise<number> {
+    const tokens = this.#db
+      .query<{ token: string }, []>("SELECT token FROM expo_push_token")
+      .all()
+      .map((row) => row.token);
+    if (tokens.length === 0) return 0;
+
+    const messages = tokens.map((to) => ({
+      to,
+      title: payload.title,
+      body: payload.body,
+      data: { paneId: payload.paneId, workspaceLabel: payload.workspaceLabel },
+      sound: "default",
+      // Android needs a channel to make any sound at all; the app creates it.
+      channelId: "blocked",
+    }));
+
+    try {
+      const res = await fetch(EXPO_PUSH_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(messages),
+      });
+      const body = (await res.json()) as {
+        data?: { status: string; details?: { error?: string } }[];
+      };
+      let delivered = 0;
+      body.data?.forEach((ticket, i) => {
+        if (ticket.status === "ok") delivered++;
+        else if (ticket.details?.error === "DeviceNotRegistered") {
+          this.unsubscribeExpo(tokens[i]!);
+        }
+      });
+      return delivered;
+    } catch {
+      // A push service that is unreachable is not worth crashing a poll over.
+      return 0;
+    }
+  }
+
+  async #sendWebPush(payload: PushPayload): Promise<number> {
     if (!this.#enabled) return 0;
 
     const rows = this.#db
