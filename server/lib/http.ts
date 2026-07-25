@@ -13,6 +13,7 @@ import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents } from "./agents";
+import { readSessionLog } from "./session-log";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
 import type { ParsedPrompt } from "./prompt-parser";
@@ -195,6 +196,24 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         const sub = paneMatch[2];
 
         if (!store.pane(paneId)) return json({ error: "no such pane" }, { status: 404 });
+
+        // Claude Code's own structured transcript, when this pane has one.
+        // Far better than the recorded screen: real messages, full history,
+        // and tool calls already paired with their results.
+        if (sub === "/session") {
+          const sessionId = store.pane(paneId)?.agent_session?.value;
+          if (!sessionId) {
+            return json({ error: "this pane has no agent session", messages: [] }, { status: 404 });
+          }
+          const log = await readSessionLog(sessionId, {
+            limit: Math.min(Number(url.searchParams.get("limit") ?? 60), 400),
+            before: url.searchParams.get("before")
+              ? Number(url.searchParams.get("before"))
+              : undefined,
+          });
+          if (!log) return json({ error: "no transcript on disk", messages: [] }, { status: 404 });
+          return json(log);
+        }
 
         if (sub === "/transcript") {
           const before = url.searchParams.get("before");

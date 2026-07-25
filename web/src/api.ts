@@ -91,6 +91,32 @@ export interface PaneFrame {
   at: number;
 }
 
+export type LogBlock =
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "image"; mediaType: string }
+  | {
+      kind: "tool";
+      name: string;
+      summary: string;
+      result: { text: string; isError: boolean; truncated: boolean } | null;
+    };
+
+export interface LogMessage {
+  id: string;
+  role: "you" | "agent" | "system";
+  at: number;
+  blocks: LogBlock[];
+}
+
+export interface SessionLog {
+  sessionId: string;
+  path: string;
+  messages: LogMessage[];
+  total: number;
+  offset: number;
+}
+
 export interface TranscriptLine {
   seq: number;
   text: string;
@@ -170,6 +196,22 @@ export const api = {
   session: () => request<Session>("/api/session"),
 
   pane: (paneId: string) => request<PaneDetail>(`/api/panes/${encodeURIComponent(paneId)}`),
+
+  /**
+   * Claude Code's own transcript for this pane, when it has one.
+   *
+   * Structured messages rather than a scraped screen — see server/lib/
+   * session-log.ts. Returns 404 for shells and for agents that keep no
+   * transcript, which is why the caller must fall back to the terminal.
+   */
+  sessionLog: (paneId: string, opts: { limit?: number; before?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (opts.limit) query.set("limit", String(opts.limit));
+    if (opts.before !== undefined) query.set("before", String(opts.before));
+    return request<SessionLog>(
+      `/api/panes/${encodeURIComponent(paneId)}/session?${query.toString()}`,
+    );
+  },
 
   transcript: (paneId: string, before?: number) =>
     request<{ paneId: string; lines: TranscriptLine[]; total: number }>(
