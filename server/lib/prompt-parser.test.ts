@@ -22,9 +22,51 @@ describe("real captured screens", () => {
       { index: 1, label: "Yes, and bypass permissions", selected: true },
       { index: 2, label: "Yes, manually approve edits", selected: false },
       { index: 3, label: "No, refine with Ultraplan on Claude Code on the web", selected: false },
-      { index: 4, label: "Tell Claude what to change", selected: false },
+      {
+        index: 4,
+        label: "Tell Claude what to change",
+        selected: false,
+        // Belongs to option 4, not to the prompt: it says what pressing 4 then
+        // does. It used to arrive as a free-floating hint under the whole list.
+        detail: "shift+tab to approve with this feedback",
+      },
     ]);
-    expect(parsed!.hints).toEqual(["shift+tab to approve with this feedback"]);
+  });
+
+  test("parses the question tool's list, explanations and all", () => {
+    const parsed = parsePrompt(readFixture("blocked__wK-p2__text.txt"));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.question).toBe("Which colour do you prefer?");
+    expect(parsed!.options).toEqual([
+      {
+        index: 1,
+        label: "Red",
+        selected: true,
+        detail: "Warm, high-contrast — reads as alert or emphasis.",
+      },
+      {
+        index: 2,
+        label: "Green",
+        selected: false,
+        detail: "Cool-warm midpoint — reads as success or growth.",
+      },
+      {
+        index: 3,
+        label: "Blue",
+        selected: false,
+        detail: "Cool, calm — reads as informational or neutral.",
+      },
+      { index: 4, label: "Type something.", selected: false },
+      // Below a separator rule, which used to end the run and lose the option.
+      { index: 5, label: "Chat about this", selected: false },
+    ]);
+  });
+
+  test("the question tool's list parses the same from raw ANSI", () => {
+    expect(parsePrompt(readFixture("blocked__wK-p2__ansi.txt"))).toEqual(
+      parsePrompt(readFixture("blocked__wK-p2__text.txt")),
+    );
   });
 
   test("produces identical results from the raw-ANSI capture", () => {
