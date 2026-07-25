@@ -450,6 +450,17 @@ button {
   opacity: 0.4;
 }
 
+.empty__action {
+  margin-top: 6px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--peach);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
 /* --------------------------------------------------------------- detail -- */
 
 .detail {
@@ -516,10 +527,12 @@ button {
 
 .term {
   transform-origin: top left;
-  /* `scale` does not affect layout size, so the element still reserves its
-     unscaled box and leaves a dead gutter below. Collapsing the box and letting
-     the transform draw outside it keeps the scroll area honest. */
+  /* The box is sized in JS to the scaled size — see Terminal.tsx. `scale` draws
+     smaller without laying out smaller, and `max-content` still measured the
+     unscaled width, so a terminal that already fitted could be panned sideways
+     into empty black. */
   width: max-content;
+  overflow: hidden;
 }
 
 .zoombar {

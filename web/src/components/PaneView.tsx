@@ -59,6 +59,15 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
   const navigate = useNavigate();
 
   const [detail, setDetail] = useState<PaneDetail | null>(null);
+  /**
+   * Set when the server says this pane is not there.
+   *
+   * Which happens more than it sounds: a notification opens a pane that has
+   * since been closed, or you return to a bookmarked one after the agent
+   * finished. Before this, the view sat on "Reading the pane…" forever, with a
+   * key bar and a composer aimed at nothing.
+   */
+  const [gone, setGone] = useState(false);
   // Reader is the default where it exists: on a phone the conversation is what
   // you came for, and the terminal is for when you need to see the real screen.
   // `readable` flips to false the moment the server says there is no transcript
@@ -83,14 +92,15 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
 
   useEffect(() => {
     let live = true;
+    setGone(false);
     void api
       .pane(paneId)
       .then((d) => live && setDetail(d))
-      .catch(() => live && onToast("Could not load that pane"));
+      .catch(() => live && setGone(true));
     return () => {
       live = false;
     };
-  }, [paneId, onToast]);
+  }, [paneId]);
 
   useEffect(() => {
     if (tab !== "history") return;
@@ -170,6 +180,27 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
       setDraft("");
       setAttachments([]);
     }, "Message not sent");
+  }
+
+  if (gone) {
+    return (
+      <div className="detail">
+        <header className="topbar">
+          <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
+            ‹
+          </button>
+          <div className="detail__where">{paneId}</div>
+        </header>
+        <div className="empty">
+          <span className="empty__mark">○</span>
+          This pane is gone. It was closed, or the agent in it finished and the
+          tab went with it.
+          <button className="empty__action" onClick={() => navigate("/")}>
+            Back to agents
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

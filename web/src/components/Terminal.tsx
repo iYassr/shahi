@@ -14,7 +14,7 @@
  * Each frame is a complete screen — there are no deltas to apply — so a repaint
  * is a full clear and write.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal as Xterm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
@@ -54,6 +54,15 @@ const FONT_SIZE = 12;
 export function Terminal({ ansi, cols, rows, scale }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
+  /**
+   * The terminal's size before scaling.
+   *
+   * Needed because `transform: scale` draws smaller without laying out smaller:
+   * at "Fit width" the element still reserved its full 787px, so the pane
+   * scrolled sideways into 400px of empty black even though everything already
+   * fitted. Measuring it lets the box match what is actually drawn.
+   */
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -77,6 +86,15 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     term.open(host);
     termRef.current = term;
 
+    const measure = () => {
+      const inner = host.querySelector<HTMLElement>(".xterm");
+      if (inner?.offsetWidth) setNatural({ width: inner.offsetWidth, height: inner.offsetHeight });
+    };
+    measure();
+    // The first measurement lands before the monospace font resolves, and the
+    // cell width changes when it does.
+    void document.fonts?.ready.then(measure);
+
     return () => {
       term.dispose();
       termRef.current = null;
@@ -96,7 +114,13 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     <div
       className="term"
       ref={hostRef}
-      style={{ transform: `scale(${scale})` }}
+      style={{
+        transform: `scale(${scale})`,
+        ...(natural && {
+          width: natural.width * scale,
+          height: natural.height * scale,
+        }),
+      }}
       // The terminal is a rendered image of another screen, not a live region
       // to be announced; the transcript tab is the readable form.
       aria-label="Terminal output"
