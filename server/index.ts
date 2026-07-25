@@ -96,11 +96,36 @@ console.log(`  passcode ${auth.disabled ? "DISABLED — anyone reaching this por
 console.log(`  push ${push.enabled ? `enabled, ${push.count()} subscription(s)` : "disabled (no VAPID keys)"}`);
 console.log(`  data ${config.dataPath}`);
 
+const loopback = config.host === "127.0.0.1" || config.host === "localhost" || config.host === "::1";
+
 if (auth.disabled) {
   console.warn(
-    "\n  Set PASSCODE_HASH before exposing this beyond localhost:\n" +
-      "  bun run server/scripts/init-secrets.ts\n",
+    "\n  No passcode set. Anyone who can reach this port has full control of\n" +
+      "  every agent on this machine:\n" +
+      "    bun run server/scripts/init-secrets.ts --passcode <digits>\n",
   );
+}
+
+if (!loopback) {
+  // Only loopback is a secure context. Off it, the browser refuses to register
+  // a service worker, which is the sole delivery path for Web Push — so
+  // notifications stop working silently unless this is said out loud.
+  console.warn(
+    `\n  Bound to ${config.host}, not loopback. Two consequences:\n` +
+      "    - Not a secure context, so service workers will not register and\n" +
+      "      Web Push will not be delivered. The dashboard still works.\n" +
+      "    - The passcode is now the only thing between this port and full\n" +
+      "      control of every agent here.\n" +
+      "  To get notifications back, bind loopback and put TLS in front:\n" +
+      `    sudo tailscale serve --bg --https=443 http://127.0.0.1:${config.port}\n`,
+  );
+
+  if (config.host === "0.0.0.0" || config.host === "::") {
+    console.warn(
+      "  You bound ALL interfaces, which includes your LAN — not just the\n" +
+        "  tailnet. Bind your Tailscale address specifically instead.\n",
+    );
+  }
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
