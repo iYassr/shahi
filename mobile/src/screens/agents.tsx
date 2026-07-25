@@ -6,59 +6,27 @@
  * because that decision was the point of the product, not an artefact of the
  * platform. What differs is only how it is drawn.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import type { DashboardPane, ParsedPrompt, Session, SocketMessage } from "@herdrui/shared";
-import { api, connection, SessionSocket, type LinkState } from "@/lib/api";
+import type { DashboardPane, ParsedPrompt } from "@herdrui/shared";
+import { api } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
 
-export function Agents() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
-  const [link, setLink] = useState<LinkState>("connecting");
-  const [error, setError] = useState<string | null>(null);
-
-  const onMessage = useCallback((msg: SocketMessage) => {
-    if (msg.type === "session") {
-      setSession(msg.session);
-      // A prompt belongs to a blocked agent; once it moves on, drop it so the
-      // list cannot offer answers to a question already answered.
-      setPrompts((current) => {
-        const next: Record<string, ParsedPrompt> = {};
-        for (const pane of msg.session.panes) {
-          if (pane.status !== "blocked") continue;
-          const known = current[pane.paneId] ?? pane.prompt;
-          if (known) next[pane.paneId] = known;
-        }
-        return next;
-      });
-    } else if (msg.type === "prompt") {
-      setPrompts((current) => ({ ...current, [msg.paneId]: msg.prompt }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!connection.cookie) return;
-    void api.session().then(setSession).catch((e: Error) => setError(e.message));
-    const socket = new SessionSocket(onMessage, setLink);
-    socket.connect();
-    return () => socket.close();
-  }, [onMessage]);
+export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
+  const { session, prompts, link, error, clearPrompt } = useSession();
+  const [failure, setFailure] = useState<string | null>(null);
 
   async function answer(paneId: string, index: number) {
     try {
       await api.answerPrompt(paneId, index);
-      setPrompts((current) => {
-        const next = { ...current };
-        delete next[paneId];
-        return next;
-      });
+      clearPrompt(paneId);
     } catch (e) {
-      setError((e as Error).message);
+      setFailure((e as Error).message);
     }
   }
 
-  if (error) return <Centered>{error}</Centered>;
+  if (error ?? failure) return <Centered>{error ?? failure}</Centered>;
   if (!session) {
     return (
       <View style={styles.centered}>
@@ -96,6 +64,7 @@ export function Agents() {
                 pane={pane}
                 prompt={prompts[pane.paneId]}
                 onAnswer={(i) => void answer(pane.paneId, i)}
+                onOpen={() => onOpenPane(pane.paneId)}
               />
             ))}
             {rest.length > 0 && (
@@ -105,16 +74,18 @@ export function Agents() {
             )}
           </>
         }
-        renderItem={({ item }) => <Row pane={item} />}
+        renderItem={({ item }) => (
+          <Row pane={item} onPress={() => onOpenPane(item.paneId)} />
+        )}
         ListEmptyComponent={blocked.length ? null : <Centered>No agents running.</Centered>}
       />
     </View>
   );
 }
 
-function Row({ pane }: { pane: DashboardPane }) {
+function Row({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
   return (
-    <View style={styles.row}>
+    <Pressable style={styles.row} onPress={onPress}>
       <Text style={[styles.glyph, { color: statusColor(pane.status) }]}>
         {GLYPH[pane.status] ?? "·"}
       </Text>
@@ -125,7 +96,7 @@ function Row({ pane }: { pane: DashboardPane }) {
       <Text style={styles.rowMeta} numberOfLines={1}>
         {pane.workspaceLabel}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -137,20 +108,24 @@ function BlockedCard({
   pane,
   prompt,
   onAnswer,
+  onOpen,
 }: {
   pane: DashboardPane;
   prompt: ParsedPrompt | undefined;
   onAnswer: (index: number) => void;
+  onOpen: () => void;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
 
   return (
     <View style={styles.blocked}>
-      <Text style={styles.badge}>● WAITING ON YOU</Text>
-      <Text style={styles.where}>{pane.workspaceLabel}</Text>
-      <Text style={styles.task} numberOfLines={1}>
-        {pane.agent ?? "agent"} · {pane.paneId} · {pane.title ?? "untitled"}
-      </Text>
+      <Pressable onPress={onOpen}>
+        <Text style={styles.badge}>● WAITING ON YOU</Text>
+        <Text style={styles.where}>{pane.workspaceLabel}</Text>
+        <Text style={styles.task} numberOfLines={1}>
+          {pane.agent ?? "agent"} · {pane.paneId} · {pane.title ?? "untitled"}
+        </Text>
+      </Pressable>
 
       {prompt ? (
         <>
@@ -177,7 +152,9 @@ function BlockedCard({
           })}
         </>
       ) : (
-        <Text style={styles.question}>This one needs a typed reply.</Text>
+        <Pressable onPress={onOpen}>
+          <Text style={styles.question}>This one needs a typed reply. Open it →</Text>
+        </Pressable>
       )}
     </View>
   );

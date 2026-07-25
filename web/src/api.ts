@@ -85,8 +85,11 @@ export class UnauthorizedError extends Error {
   }
 }
 
-const postJson = (path: string, body: unknown) =>
-  request<{ ok?: boolean; result?: unknown; sent?: number }>(path, {
+const postJson = <T = { ok?: boolean; result?: unknown; sent?: number }>(
+  path: string,
+  body: unknown,
+) =>
+  request<T>(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -178,14 +181,22 @@ export const api = {
   agents: () => request<{ agents: { kind: string; command: string }[]; known: number }>("/api/agents"),
 
   /**
-   * Starts an agent in a pane that is sitting at a shell prompt.
+   * Makes a tab and starts an agent in it, in one call.
    *
-   * herdr blocks until the agent reports interactive readiness, so this can
-   * take tens of seconds on a cold start — the server raises the RPC ceiling
-   * for it, and the UI has to stay patient rather than assume failure.
+   * The two herdr calls behind this race each other — the pane exists before
+   * its shell does — so the server owns the sequence and the retry. herdr then
+   * blocks until the agent reports interactive readiness, which on a cold start
+   * is tens of seconds, so the UI has to stay patient rather than assume
+   * failure.
    */
-  startAgent: (paneId: string, kind: string, name: string) =>
-    api.rpc("agent.start", { pane_id: paneId, kind, name }),
+  startAgent: (workspaceId: string, cwdPath: string | null, label: string | null, kind: string, name: string) =>
+    postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", {
+      workspaceId,
+      cwd: cwdPath === null ? null : requireAbsolute(cwdPath),
+      label,
+      kind,
+      name,
+    }),
 
   dirs: (path = "~", opts: { files?: boolean } = {}) =>
     request<DirListing>(

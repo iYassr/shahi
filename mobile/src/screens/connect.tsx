@@ -6,7 +6,7 @@
  * asked for once and kept.
  */
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, connection } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
@@ -41,7 +41,12 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      // "padding" on Android too, not just iOS. Under edge-to-edge — the
+      // default since SDK 54 — the window no longer resizes when the keyboard
+      // opens, so leaving Android on the default meant the composer stayed
+      // where it was and the keyboard covered it. Verified on the emulator:
+      // taps meant for Send were landing on the keyboard's own Enter key.
+      behavior="padding"
     >
       <Text style={styles.title}>herdr</Text>
       <Text style={styles.hint}>Reach the agents on your server over Tailscale.</Text>
