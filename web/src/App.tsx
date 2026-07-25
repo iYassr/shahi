@@ -18,6 +18,15 @@ import { SpaceDetail, Spaces } from "./components/Spaces";
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  /**
+   * Whether the server answered at all.
+   *
+   * Distinct from being signed out, and the difference matters: launched with
+   * the server unreachable — off the tailnet, or the box asleep — the app used
+   * to show a passcode prompt, which invites you to type a passcode that cannot
+   * possibly work.
+   */
+  const [reachable, setReachable] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
@@ -31,12 +40,27 @@ export function App() {
     setTimeout(() => setToast(null), 3_000);
   }, []);
 
-  useEffect(() => {
+  const checkAuth = useCallback(() => {
     void api
       .authStatus()
-      .then((s) => setAuthenticated(!s.required || s.authenticated))
-      .catch(() => setAuthenticated(false));
+      .then((s) => {
+        setReachable(true);
+        setAuthenticated(!s.required || s.authenticated);
+      })
+      .catch(() => {
+        // A refused or timed-out request is the server being away; a 401 would
+        // have resolved, not thrown.
+        setReachable(false);
+        setAuthenticated(false);
+      });
   }, []);
+
+  useEffect(() => {
+    checkAuth();
+    // Coming back onto the network should just work, without a manual retry.
+    window.addEventListener("online", checkAuth);
+    return () => window.removeEventListener("online", checkAuth);
+  }, [checkAuth]);
 
   const onMessage = useCallback((msg: SocketMessage) => {
     switch (msg.type) {
@@ -157,7 +181,26 @@ export function App() {
   }, [navigate]);
 
   if (authenticated === null) return null;
-  if (!authenticated) return <Login onSuccess={() => setAuthenticated(true)} />;
+  if (!reachable) {
+    return (
+      <div className="app">
+        <div className="empty">
+          <span className="empty__mark">○</span>
+          Cannot reach herdr. Check that you are on the tailnet and that the
+          server is up.
+          <button className="empty__action" onClick={checkAuth}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!authenticated) {
+    return <Login onSuccess={() => {
+      setReachable(true);
+      setAuthenticated(true);
+    }} />;
+  }
 
   const blockedCount = session?.panes.filter((p) => p.status === "blocked").length ?? 0;
 
@@ -204,6 +247,7 @@ export function App() {
           path="/pane/:paneId"
           element={
             <PaneView
+              session={session}
               frames={frames}
               prompts={prompts}
               onWatch={watch}

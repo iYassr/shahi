@@ -6,11 +6,12 @@
  * or shift+Tab, and agents ask for all four. Those go through herdr's
  * `pane.send_keys`, which names keys rather than sending bytes.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
   api,
+  type Session,
   type PaneDetail,
   type PaneFrame,
   type ParsedPrompt,
@@ -20,7 +21,13 @@ import { AgentIcon } from "./AgentIcon";
 import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt } from "./Prompt";
 import { Reader } from "./Reader";
-import { Terminal, fitScale } from "./Terminal";
+import { fitScale } from "../termfit";
+
+/**
+ * On demand, with the rest of xterm.js behind it: 170KB of the app's 240KB,
+ * for a tab most visits never open.
+ */
+const Terminal = lazy(() => import("./Terminal"));
 
 type Tab = "read" | "screen" | "history";
 
@@ -28,6 +35,8 @@ type Tab = "read" | "screen" | "history";
 const SUBMIT_DELAY_MS = 200;
 
 interface Props {
+  /** The dashboard's own view of this pane, so the header can paint at once. */
+  session: Session | null;
   frames: Record<string, PaneFrame>;
   prompts: Record<string, ParsedPrompt>;
   onWatch: (paneId: string | null) => void;
@@ -54,7 +63,7 @@ const KEY_BAR: Array<{ label: string; keys: string[] }> = [
   { label: "⏎", keys: ["Enter"] },
 ];
 
-export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props) {
+export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
   const { paneId = "" } = useParams();
   const navigate = useNavigate();
 
@@ -82,6 +91,10 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
   const [attaching, setAttaching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  // What the list already knew when you tapped it. Waiting for `api.pane` to
+  // come back before drawing a header meant every pane opened on a blank bar,
+  // however fast the request was.
+  const known = session?.panes.find((pane) => pane.paneId === paneId) ?? null;
   const frame = frames[paneId] ?? detail?.frame ?? null;
   const prompt = prompts[paneId] ?? frame?.prompt ?? null;
 
@@ -211,11 +224,13 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
         </button>
         <div>
           <div className="detail__where">
-            {detail?.pane?.cwd?.replace(/^\/home\/[^/]+/, "~") ?? paneId}
+            {detail?.pane?.cwd?.replace(/^\/home\/[^/]+/, "~") ?? known?.cwd ?? paneId}
           </div>
           <div className="detail__task">
-            {detail?.pane?.agent && <AgentIcon kind={detail.pane.agent} />}
-            {frame?.prompt ? "Waiting on you" : paneId}
+            {(detail?.pane?.agent ?? known?.agent) && (
+              <AgentIcon kind={(detail?.pane?.agent ?? known?.agent)!} />
+            )}
+            {frame?.prompt ? "Waiting on you" : (known?.title ?? paneId)}
           </div>
         </div>
       </header>
@@ -268,7 +283,16 @@ export function PaneView({ frames, prompts, onWatch, onAnswer, onToast }: Props)
         <>
           <div className="termwrap" ref={wrapRef}>
             {frame ? (
-              <Terminal ansi={frame.ansi} cols={cols} rows={rows} scale={scale} />
+              <Suspense
+                fallback={
+                  <div className="empty">
+                    <span className="empty__mark">⟳</span>
+                    Loading the terminal…
+                  </div>
+                }
+              >
+                <Terminal ansi={frame.ansi} cols={cols} rows={rows} scale={scale} />
+              </Suspense>
             ) : (
               <div className="empty">
                 <span className="empty__mark">⟳</span>
