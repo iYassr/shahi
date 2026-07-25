@@ -282,3 +282,14 @@ server/
 web/
   src/components/Prompt.tsx  the answer list, rebuilt from the terminal's own
 ```
+
+## More
+
+- [`docs/operations.md`](docs/operations.md) — running it: TLS, health, where
+  state lives, what to do when the phone cannot reach it
+- [`docs/notifications.md`](docs/notifications.md) — which combinations of
+  browser, install method and build can actually deliver a notification
+- [`docs/verify-on-device.md`](docs/verify-on-device.md) — the five minutes of
+  checking that no test on a Linux box can do for you
+- [`CLAUDE.md`](CLAUDE.md) — for anyone changing the code: what herdr actually
+  does as measured, and the decisions worth not relitigating

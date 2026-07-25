@@ -110,6 +110,65 @@ now cover them are named after the symptom.
   the suite blocks service workers and why a fuse fails any write that leaves for
   a host other than the stub: mocked writes once reached real agents.
 
+## Rules with reasons behind them
+
+Break one of these and the app regresses quietly, which is the worst kind.
+
+**The service worker caches the shell and never `/api`.** A cached dashboard
+would show agent states that are hours old, and a stale agent list is worse than
+an honest failure. Assets are hashed, so they are cached forever; the HTML is
+network-first with a 1.5s grace, because cache-first means every deploy takes two
+launches to appear. It precaches the HTML *and* the bundle that HTML names —
+without the second part, the first visit cached a page whose JavaScript was not
+there, and going offline produced a blank screen.
+
+**The app compares its own bundle against the served one** whenever it comes to
+the foreground, and reloads if they differ. A home-screen app is resumed far more
+often than launched — iOS keeps one alive for days — so without this a fix can go
+unseen indefinitely, and every conversation turns into "are you sure you
+reloaded?".
+
+**The reader polls the tail, not the page.** Only the last message can change, so
+a poll asks for ~12 messages and `merge` keeps the rest. With an ETag on the
+endpoint, an unchanged conversation costs 224 bytes on the wire instead of 15KB
+gzipped — and it polls every 2.5 seconds, forever, on whatever connection the
+phone is on.
+
+**Everything text-shaped is gzipped at the edge of the request handler**, in one
+place, with compressed bytes cached for immutable assets. Nothing was compressed
+at all until it was measured: a cold launch pulled 640KB.
+
+**Never re-render the conversation when nothing changed.** The poll compares a
+signature and returns the same array identity if it matches. A quiet session was
+otherwise rebuilding the entire reader, images and all, on a timer — which is
+most of what made it feel unsteady.
+
+**Callbacks passed to components that poll must be stable.** `onUnavailable` was
+inline once; the pane re-renders on every frame, so the reader's polling effect
+was torn down and rebuilt every 400ms, refetching the transcript each time.
+
+## What is not done
+
+Stated plainly, because a vague gaps list is worse than none.
+
+- **Native push is untested end to end.** The server channel and the client
+  registration are both written and unit-tested; nothing has ever delivered a
+  notification to a real device through them, because that needs a development
+  build and a paid Apple account. See `docs/notifications.md`.
+- **The refresh problem is not root-caused.** The owner reports needing to
+  refresh the page; two plausible causes were fixed (a render crash with no
+  boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
+  to be *the* one. If it recurs, what matters is which of three shapes it takes —
+  blank, frozen-with-stale-data, or claiming LIVE while not updating.
+- **Codex tool calls are unrendered.** `codex-log.ts` reads only `event_msg`
+  records and drops unknown types rather than guessing. No sample of a codex tool
+  call has ever been captured, so nobody knows what is being dropped.
+- **There is no CI.** The suite runs when someone remembers. Everything needed is
+  a `bun test` and a `bun run test:e2e` away from being automatic.
+- **WebKit is not Safari.** It is the closest thing available on a Linux box and
+  it has earned its place, but the phone remains the only place some faults
+  appear. `docs/verify-on-device.md` is the five-minute list of those.
+
 ## Testing
 
 The suite runs against `e2e/stub/server.ts`, which speaks the same contract with
