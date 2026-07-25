@@ -140,6 +140,17 @@ export type LogBlock =
       name: string;
       summary: string;
       /**
+       * The choices offered, when the agent stopped to ask something.
+       *
+       * A question is not really a tool call — it is the agent talking to you —
+       * and rendering it as a collapsed `AskUserQuestion` row hid the entire
+       * substance of it. The terminal shows the options; so should this.
+       */
+      questions?: {
+        text: string;
+        options: { label: string; description?: string }[];
+      }[];
+      /**
        * The file this call touched, where it named one.
        *
        * Read, Write and Edit all take a path, and on a phone that path is the
