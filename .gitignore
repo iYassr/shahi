@@ -13,3 +13,8 @@ data/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
+
+# Expo
+mobile/.expo/
+mobile/android/
+mobile/ios/
