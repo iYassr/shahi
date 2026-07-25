@@ -12,10 +12,11 @@ import type { Server, ServerWebSocket } from "bun";
 import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
+import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import type { PaneFrame, Poller } from "./poller";
 import type { ParsedPrompt } from "./prompt-parser";
 import type { PushService } from "./push";
-import { STATUS_PRIORITY, type SessionStore } from "./state";
+import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
 interface SocketData {
@@ -140,6 +141,17 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
       if (pathname === "/api/session") {
         return json(dashboard(store, poller));
+      }
+
+      // Choosing where a new space lives. Browsable, because typing a path on a
+      // phone keyboard is its own small punishment.
+      if (pathname === "/api/dirs") {
+        try {
+          return json(await listDirectories(url.searchParams.get("path") ?? "~"));
+        } catch (err) {
+          if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
+          return json({ error: "cannot list that directory" }, { status: 404 });
+        }
       }
 
       if (pathname === "/api/push/key") {
@@ -328,11 +340,35 @@ export function dashboard(store: SessionStore, poller: Poller) {
       label: w.label,
       status: w.agent_status,
       paneCount: w.pane_count,
+      tabCount: w.tab_count,
       focused: w.focused,
+      // Where the space lives, taken from its first pane. herdr keeps the
+      // canonical path on the worktree record, which most spaces do not have.
+      //
+      // Both forms: `cwd` is for display, `cwdPath` is what may be sent back to
+      // herdr. herdr does not expand `~` — it silently falls back to $HOME —
+      // so anything round-tripped into workspace.create must be absolute.
+      cwd: firstCwd(state, w.workspace_id),
+      cwdPath: state.panes.find((p) => p.workspace_id === w.workspace_id && p.cwd)?.cwd ?? null,
+    })),
+    tabs: state.tabs.map((t) => ({
+      tabId: t.tab_id,
+      workspaceId: t.workspace_id,
+      label: t.label,
+      number: t.number,
+      status: t.agent_status,
+      paneCount: t.pane_count,
+      focused: t.focused,
     })),
     panes,
     focusedPaneId: state.focusedPaneId,
   };
+}
+
+/** Display path for a space, derived from a pane inside it. */
+function firstCwd(state: SessionState, workspaceId: string): string | null {
+  const cwd = state.panes.find((p) => p.workspace_id === workspaceId && p.cwd)?.cwd;
+  return cwd ? collapseHome(cwd) : null;
 }
 
 const CONTENT_TYPES: Record<string, string> = {

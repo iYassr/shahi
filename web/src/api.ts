@@ -37,9 +37,25 @@ export interface DashboardPane {
   prompt: ParsedPrompt | null;
 }
 
-export interface DashboardWorkspace {
+/** herdr calls these "spaces" in its sidebar and "workspaces" in its API. */
+export interface Space {
   workspaceId: string;
   label: string;
+  status: AgentStatus;
+  paneCount: number;
+  tabCount: number;
+  focused: boolean;
+  /** Display form, with `~` collapsed. Never send this to herdr. */
+  cwd: string | null;
+  /** Absolute form, safe to pass back into workspace.create / tab.create. */
+  cwdPath: string | null;
+}
+
+export interface SpaceTab {
+  tabId: string;
+  workspaceId: string;
+  label: string;
+  number: number;
   status: AgentStatus;
   paneCount: number;
   focused: boolean;
@@ -48,9 +64,23 @@ export interface DashboardWorkspace {
 export interface Session {
   version: string;
   protocol: number;
-  workspaces: DashboardWorkspace[];
+  workspaces: Space[];
+  tabs: SpaceTab[];
   panes: DashboardPane[];
   focusedPaneId: string | null;
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  display: string;
+}
+
+export interface DirListing {
+  path: string;
+  display: string;
+  parent: string | null;
+  entries: DirEntry[];
 }
 
 export interface PaneFrame {
@@ -108,6 +138,20 @@ const postJson = (path: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 
+/**
+ * Guards the one mistake herdr will not report.
+ *
+ * Given a non-absolute `cwd`, herdr neither expands it nor errors — it just
+ * uses $HOME, so the space appears to be created correctly and is quietly in
+ * the wrong place. Better to fail here, visibly.
+ */
+function requireAbsolute(path: string): string {
+  if (!path.startsWith("/")) {
+    throw new Error(`Folder must be an absolute path, got "${path}"`);
+  }
+  return path;
+}
+
 /** How a tapped option is delivered. See `api.answerPrompt`. */
 const ANSWER_STRATEGY: "digit" | "arrows" = "digit";
 
@@ -159,6 +203,29 @@ export const api = {
   sendText: (paneId: string, text: string) => api.rpc("pane.send_text", { pane_id: paneId, text }),
 
   sendKeys: (paneId: string, keys: string[]) => api.rpc("pane.send_keys", { pane_id: paneId, keys }),
+
+  dirs: (path = "~") => request<DirListing>(`/api/dirs?path=${encodeURIComponent(path)}`),
+
+  /**
+   * Creates a space. Two things matter here.
+   *
+   * `cwd` must be absolute: herdr does not expand `~`, and rather than
+   * rejecting it, it silently falls back to $HOME — so a display path would
+   * land every new space in the wrong folder with no error to notice.
+   *
+   * `focus: false` matters because you are usually attached to this session on
+   * a desktop, and a phone should not yank your view sideways.
+   */
+  createSpace: (label: string, cwdPath: string) =>
+    api.rpc("workspace.create", { label, cwd: requireAbsolute(cwdPath), focus: false }),
+
+  createTab: (workspaceId: string, label: string | null, cwdPath: string | null) =>
+    api.rpc("tab.create", {
+      workspace_id: workspaceId,
+      label,
+      cwd: cwdPath === null ? null : requireAbsolute(cwdPath),
+      focus: false,
+    }),
 
   pushKey: () => request<{ publicKey: string | null }>("/api/push/key"),
   pushSubscribe: (subscription: PushSubscriptionJSON) => postJson("/api/push/subscribe", subscription),
