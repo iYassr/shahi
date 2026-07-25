@@ -168,6 +168,19 @@ Only Claude Code writes this format. `codex`, `pi` and `opencode` keep their own
 stores, and shells have no transcript at all, so the terminal view stays the
 universal fallback rather than a legacy one.
 
+## Grouping the agent list
+
+Three modes, using herdr's own vocabulary: **Priority** (its attention queue),
+**Space**, and **Agent**. The default is read from your `ui.agent_panel_sort` in
+`~/.config/herdr/config.toml`, so the phone opens the way your TUI already does;
+an explicit choice is remembered per device. herdr's socket API can reload
+config but cannot report it, so the file is read directly, and any failure just
+means "no preference stated".
+
+Blocked agents are deliberately **not** grouped. They stay pinned above the
+grouping control, because burying the one agent waiting on you inside the fifth
+space would defeat the screen.
+
 ## Attachments
 
 Both sources end as an absolute path in the message, because that is what an
@@ -192,7 +205,7 @@ state mirror. The scripts talk to the live server; all are read-only except the
 last, which creates and closes its own scratch workspace.
 
 ```sh
-bun test server
+bun test server web/src
 
 bun run server/scripts/smoke.ts               # socket client end-to-end
 bun run server/scripts/check-parser-live.ts   # prompt parser across every pane
