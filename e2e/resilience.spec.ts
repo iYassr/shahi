@@ -1,5 +1,6 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
+import { dropConnections, scenario } from "./stub/control";
 
 /**
  * What the app does when the network misbehaves, and what it costs while it
@@ -15,6 +16,7 @@ const liveAgain = (page: Page) =>
 
 test.describe("resilience", () => {
   test("recovers on its own after the network drops", async ({ page, context }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await liveAgain(page);
 
@@ -31,6 +33,7 @@ test.describe("resilience", () => {
     page,
     context,
   }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await liveAgain(page);
 
@@ -48,6 +51,7 @@ test.describe("resilience", () => {
     const requests: string[] = [];
     page.on("request", (r) => requests.push(r.url()));
 
+    await scenario(page, "busy");
     await page.goto("/");
     await expect(page.locator(".row, .blocked").first()).toBeVisible();
     requests.length = 0;
@@ -60,6 +64,7 @@ test.describe("resilience", () => {
   });
 
   test("the reader polls at its stated rate and no faster", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.locator(".row").first().click();
     await expect(page).toHaveURL(/\/pane\//);
@@ -86,6 +91,7 @@ test.describe("resilience", () => {
   });
 
   test("the terminal does not scroll into empty space when it fits", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.locator(".row").first().click();
     await page.getByRole("tab", { name: "Screen" }).click();
@@ -133,7 +139,8 @@ test.describe("resilience", () => {
       // failed fetch, which is engine-independent.
       test.skip(testInfo.project.name === "ios", "offline navigation is not emulable in WebKit");
 
-      await page.goto("/");
+      await scenario(page, "busy");
+    await page.goto("/");
       await expect(page.locator(".row, .blocked").first()).toBeVisible();
       // Give the worker a moment to cache the shell, or there is nothing to load.
       await page.waitForTimeout(2_000);
@@ -150,6 +157,7 @@ test.describe("resilience", () => {
   });
 
   test("leaves nothing growing behind it", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.locator(".row").first().click();
     await expect(page).toHaveURL(/\/pane\//);

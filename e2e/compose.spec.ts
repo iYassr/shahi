@@ -1,6 +1,7 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { tap } from "./touch";
+import { rpcs, scenario } from "./stub/control";
 
 /**
  * Saying something to an agent: the composer, the key bar, attachments.
@@ -10,31 +11,26 @@ import { tap } from "./touch";
  * sends rather than what herdr does with it.
  */
 
-async function recordWrites(page: Page): Promise<unknown[]> {
-  const sent: unknown[] = [];
-  await page.route("**/api/rpc", async (route) => {
-    sent.push(route.request().postDataJSON());
-    await route.fulfill({ json: { result: { type: "ok" } } });
-  });
-  return sent;
-}
-
-const openPane = async (page: Page) => {
-  await page.goto("/");
-  await tap(page, page.locator(".row").first());
-  await expect(page).toHaveURL(/\/pane\//);
+/**
+ * The stub records every write instead of performing it, so a test can assert
+ * on exactly what the app tried to send — and nothing can reach an agent, which
+ * is the property that matters most here.
+ */
+const openPane = async (page: Page, paneId = "w1:p1") => {
+  await scenario(page, "busy");
+  await page.goto(`/pane/${encodeURIComponent(paneId)}`);
   await expect(page.locator("textarea")).toBeVisible();
 };
 
 test.describe("the composer", () => {
   test("sends the text, then Enter, in that order", async ({ page }) => {
-    const sent = await recordWrites(page);
     await openPane(page);
 
     await page.locator("textarea").fill("hello from a test");
     await tap(page, page.locator(".compose__send"));
 
-    await expect.poll(() => sent.length, { timeout: 10_000 }).toBe(2);
+    await expect.poll(async () => (await rpcs(page)).length, { timeout: 10_000 }).toBe(2);
+    const sent = await rpcs(page);
     expect(sent[0]).toMatchObject({
       method: "pane.send_text",
       params: { text: "hello from a test" },
@@ -43,7 +39,6 @@ test.describe("the composer", () => {
   });
 
   test("clears itself once the message is away", async ({ page }) => {
-    await recordWrites(page);
     await openPane(page);
 
     await page.locator("textarea").fill("something");
@@ -52,7 +47,6 @@ test.describe("the composer", () => {
   });
 
   test("will not send nothing", async ({ page }) => {
-    await recordWrites(page);
     await openPane(page);
     await expect(page.locator(".compose__send")).toBeDisabled();
 
@@ -74,7 +68,6 @@ test.describe("the composer", () => {
   });
 
   test("every key in the bar sends the name herdr expects", async ({ page }) => {
-    const sent = await recordWrites(page);
     await openPane(page);
 
     const expected: Record<string, string> = {
@@ -88,19 +81,31 @@ test.describe("the composer", () => {
       "⏎": "Enter",
     };
 
-    for (const [label, key] of Object.entries(expected)) {
+    for (const label of Object.keys(expected)) {
       // Exact text: "⇥" is a substring of "⇧⇥".
-      await page.locator(".keys button").filter({ hasText: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }).click();
-      await expect.poll(() => sent.length).toBeGreaterThan(0);
-      expect(sent.at(-1)).toMatchObject({ params: { keys: [key] } });
+      await tap(
+        page,
+        page
+          .locator(".keys button")
+          .filter({ hasText: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }),
+      );
     }
-    expect(sent).toHaveLength(Object.keys(expected).length);
+
+    await expect
+      .poll(async () => (await rpcs(page)).length, { timeout: 15_000 })
+      .toBe(Object.keys(expected).length);
+
+    // The names herdr accepts, verified against a live pane: `S-Tab` is not one
+    // of them, and the key bar swallowed that error for weeks.
+    const sent = await rpcs(page);
+    expect(sent.map((call) => (call.params as { keys: string[] }).keys[0])).toEqual(
+      Object.values(expected),
+    );
   });
 });
 
 test.describe("attachments", () => {
   test("a server file becomes a path on its own line", async ({ page }) => {
-    const sent = await recordWrites(page);
     await openPane(page);
 
     await tap(page, page.locator(".compose__attach"));
@@ -115,7 +120,8 @@ test.describe("attachments", () => {
     await page.locator("textarea").fill("have a look at this");
     await tap(page, page.locator(".compose__send"));
 
-    await expect.poll(() => sent.length, { timeout: 10_000 }).toBe(2);
+    await expect.poll(async () => (await rpcs(page)).length, { timeout: 10_000 }).toBe(2);
+    const sent = await rpcs(page);
     const body = (sent[0] as { params: { text: string } }).params.text;
     // Path first, message after: an agent reads the path, and the sentence
     // after it is what to do with it.
@@ -125,7 +131,6 @@ test.describe("attachments", () => {
   });
 
   test("an attachment can be taken off again", async ({ page }) => {
-    await recordWrites(page);
     await openPane(page);
 
     await tap(page, page.locator(".compose__attach"));
@@ -138,7 +143,6 @@ test.describe("attachments", () => {
   });
 
   test("a file from the phone is uploaded and referenced by path", async ({ page }) => {
-    await recordWrites(page);
     let uploaded = false;
     await page.route("**/api/uploads", async (route) => {
       uploaded = true;

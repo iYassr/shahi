@@ -1,6 +1,7 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { isHarmless, tap } from "./touch";
+import { scenario } from "./stub/control";
 
 /**
  * The app used the way it is actually used: opened, poked at, backed out of,
@@ -26,11 +27,12 @@ function watch(page: Page) {
 test.describe("under use", () => {
   test("survives being walked through repeatedly", async ({ page }) => {
     const problems = watch(page);
+    await scenario(page, "crowded");
     await page.goto("/");
     await expect(page.locator(".row").first()).toBeVisible();
 
     for (let round = 0; round < 5; round++) {
-      await page.locator(".row").nth(round % 3).click();
+      await tap(page, page.locator(".row").nth(round));
       await expect(page).toHaveURL(/\/pane\//);
       await expect(page.locator(".detail__where")).toBeVisible();
 
@@ -39,10 +41,12 @@ test.describe("under use", () => {
 
       await page.goBack();
       await expect(page.locator(".topbar__title")).toHaveText("Agents");
+      await expect(page.locator(".row").first()).toBeVisible();
 
       await page.getByRole("link", { name: /spaces/i }).click();
       await expect(page.locator(".space").first()).toBeVisible();
       await page.getByRole("link", { name: /agents/i }).click();
+      await expect(page.locator(".row").first()).toBeVisible();
     }
 
     expect(problems).toEqual([]);
@@ -50,6 +54,7 @@ test.describe("under use", () => {
 
   test("the terminal keeps drawing as frames arrive", async ({ page }) => {
     const problems = watch(page);
+    await scenario(page, "busy");
     await page.goto("/");
     await tap(page, page.locator(".row").first());
     await page.getByRole("tab", { name: "Screen" }).click();
@@ -69,6 +74,7 @@ test.describe("under use", () => {
   });
 
   test("the attach sheet opens and browses the server", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await tap(page, page.locator(".row").first());
     await expect(page).toHaveURL(/\/pane\//);
@@ -82,6 +88,7 @@ test.describe("under use", () => {
   });
 
   test("typing in the composer does not disturb the view", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await tap(page, page.locator(".row").first());
     await expect(page).toHaveURL(/\/pane\//);

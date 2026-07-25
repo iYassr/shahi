@@ -1,7 +1,9 @@
 import { expect, test } from "./fixtures";
+import { scenario } from "./stub/control";
 
 test.describe("getting around", () => {
   test("moves between agents and spaces", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.getByRole("link", { name: /spaces/i }).click();
     await expect(page.locator(".topbar__title")).toHaveText("Spaces");
@@ -22,6 +24,7 @@ test.describe("getting around", () => {
     const problems: string[] = [];
     page.on("pageerror", (e) => problems.push(String(e)));
 
+    await scenario(page, "busy");
     await page.goto("/");
     await page.locator(".row").first().click();
     await expect(page).toHaveURL(/\/pane\//);
@@ -37,6 +40,7 @@ test.describe("getting around", () => {
    * viewport. They have to be on screen, not under the fold.
    */
   test("keeps the composer reachable", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.locator(".row").first().click();
     await expect(page).toHaveURL(/\/pane\//);

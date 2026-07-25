@@ -1,6 +1,7 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { isHarmless, tap } from "./touch";
+import { scenario } from "./stub/control";
 
 /** Anything the console reports as an error is a failure, wherever it happens. */
 function watchConsole(page: Page): string[] {
@@ -14,6 +15,7 @@ function watchConsole(page: Page): string[] {
 
 test.describe("dashboard", () => {
   test("lists agents and stays quiet", async ({ page }) => {
+    await scenario(page, "busy");
     const problems = watchConsole(page);
     await page.goto("/");
 
@@ -25,6 +27,7 @@ test.describe("dashboard", () => {
   });
 
   test("remembers how you grouped it", async ({ page }) => {
+    await scenario(page, "crowded");
     await page.goto("/");
     await page.getByRole("button", { name: "Space" }).click();
     await expect(page.locator(".group__label").first()).toBeVisible();
@@ -43,6 +46,7 @@ test.describe("dashboard", () => {
    * re-renders while you are reading it. Scrolling must survive that.
    */
   test("keeps its scroll position while the session updates", async ({ page }) => {
+    await scenario(page, "crowded");
     await page.goto("/");
     await expect(page.locator(".row").first()).toBeVisible();
 
@@ -59,6 +63,7 @@ test.describe("dashboard", () => {
   });
 
   test("opening an agent lands on that pane and back returns", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await tap(page, page.locator(".row").first());
 
@@ -69,5 +74,46 @@ test.describe("dashboard", () => {
 
     await page.goBack();
     await expect(page.locator(".topbar__title")).toHaveText("Agents");
+  });
+});
+
+test.describe("the states a dashboard can be in", () => {
+  test("says so when nothing is running", async ({ page }) => {
+    await scenario(page, "empty");
+    await page.goto("/");
+
+    await expect(page.locator(".empty")).toBeVisible();
+    await expect(page.locator(".row, .blocked")).toHaveCount(0);
+    // And the tab bar still says how many spaces there are: zero.
+    await expect(page.locator(".tabbar__count")).toHaveText("0");
+  });
+
+  test("pins every waiting agent above the rest", async ({ page }) => {
+    await scenario(page, "waiting");
+    await page.goto("/");
+
+    await expect(page.locator(".blocked")).toHaveCount(3);
+    // Each card carries its own question, not a shared one.
+    const questions = await page.locator(".blocked__question").allInnerTexts();
+    expect(new Set(questions).size).toBeGreaterThan(1);
+  });
+
+  test("stays readable with twenty-eight agents", async ({ page }) => {
+    await scenario(page, "crowded");
+    await page.goto("/");
+
+    await expect(page.locator(".row")).toHaveCount(28);
+    // Grouped by space, every group is labelled and counted.
+    await page.getByRole("button", { name: "Space" }).click();
+    await expect(page.locator(".group__label")).toHaveCount(4);
+    expect(await page.locator(".group__count").first().innerText()).toMatch(/^\d+$/);
+  });
+
+  test("a shell is not offered as an agent", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto("/");
+
+    // Three agents in this scenario, and a plain shell that belongs to Spaces.
+    await expect(page.locator(".row, .blocked")).toHaveCount(3);
   });
 });

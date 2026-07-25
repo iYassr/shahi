@@ -8,8 +8,8 @@ const STATE = "e2e/.auth/state.json";
  * it at all.
  */
 setup("sign in", async ({ page }) => {
-  const passcode = process.env.HERDRUI_PASSCODE;
-  if (!passcode) throw new Error("Set HERDRUI_PASSCODE to the app passcode");
+  // The stub's passcode by default; the live suite brings its own.
+  const passcode = process.env.HERDRUI_PASSCODE ?? "test";
 
   await page.goto("/");
   await page.locator(".login input").fill(passcode);

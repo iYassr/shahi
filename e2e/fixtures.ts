@@ -3,19 +3,16 @@ import { test as base, expect } from "@playwright/test";
 /**
  * A fuse, after a test suite typed into somebody's live agents.
  *
- * The write tests all mock `/api/rpc` with `page.route`, and in Chromium that
- * works. In WebKit it does not: once a service worker controls the page, its
+ * The write tests mocked `/api/rpc` with `page.route`, and in Chromium that
+ * worked. In WebKit it did not: once a service worker controls the page its
  * requests bypass page-level interception entirely, so every "mocked" send went
- * straight to herdr. A test that meant to assert what the composer *would* send
- * instead sent it — real text, and the whole key bar including Ctrl-C, into
- * whichever agent happened to be at the top of the list.
+ * straight to herdr — real text, and the whole key bar including Ctrl-C, into
+ * whichever agent happened to be top of the list.
  *
- * Two changes stop that. The config blocks service workers, so interception
- * works everywhere. And this: a context-level route that catches any write that
- * got past a spec's own mock, refuses to let it out, and fails the test.
- *
- * Page routes take precedence over context routes, so a spec that mocks a write
- * still sees it. Anything that reaches here was never meant to leave.
+ * The suite now runs against a stub that records writes instead of performing
+ * them, so a write reaching *it* is correct and expected. This makes sure a
+ * write never reaches anything else: any that leaves for another host is
+ * aborted and fails the test, whatever a spec forgot to mock.
  */
 
 /** Requests that change something on the far side. */
@@ -23,14 +20,22 @@ const WRITES = /\/api\/(rpc|uploads|agents\/start|push\/(subscribe|test|expo))/;
 
 export const test = base.extend<{ noStrayWrites: void }>({
   noStrayWrites: [
-    async ({ context }, use) => {
+    async ({ context, baseURL }, use) => {
       const escaped: string[] = [];
+      const safe = new URL(baseURL ?? "http://127.0.0.1:7272").host;
 
       await context.route(WRITES, async (route) => {
         const request = route.request();
-        escaped.push(`${request.method()} ${new URL(request.url()).pathname}`);
-        // Aborted rather than fulfilled: a test that depends on the response is
-        // a test that should have mocked it.
+        const target = new URL(request.url());
+
+        // The stub is the intended destination: it records writes rather than
+        // performing them, which is the whole point of running against it.
+        if (target.host === safe) {
+          await route.continue();
+          return;
+        }
+
+        escaped.push(`${request.method()} ${target.href}`);
         await route.abort();
       });
 
@@ -38,7 +43,7 @@ export const test = base.extend<{ noStrayWrites: void }>({
 
       expect(
         escaped,
-        "a write escaped this spec's mocks — in a live session that would have reached an agent",
+        "a write left for somewhere that is not the stub — that is how a test ended up typing into a live agent",
       ).toEqual([]);
     },
     { auto: true },

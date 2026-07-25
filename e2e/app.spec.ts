@@ -1,5 +1,6 @@
 import { expect, test } from "./fixtures";
 import { tap } from "./touch";
+import { scenario } from "./stub/control";
 
 /**
  * The things that make it an app rather than a page: the manifest, the worker,
@@ -33,6 +34,7 @@ test.describe("installed app", () => {
   });
 
   test("the service worker takes control", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await expect
       .poll(async () => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), {
@@ -42,6 +44,7 @@ test.describe("installed app", () => {
   });
 
   test("live data is never served from the cache", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await page.waitForTimeout(2_000);
 
@@ -64,6 +67,7 @@ test.describe("installed app", () => {
 
 test.describe("touch", () => {
   test("everything tappable is big enough to tap", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await expect(page.locator(".row").first()).toBeVisible();
 
@@ -83,6 +87,7 @@ test.describe("touch", () => {
   });
 
   test("the double-tap zoom delay is off", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     const touchAction = await page
       .locator(".row")
@@ -92,6 +97,7 @@ test.describe("touch", () => {
   });
 
   test("chrome does not select on a long press", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     // WebKit reports this under the prefix and leaves the unprefixed property
     // undefined, so asking for one of them only works in one engine.
@@ -105,6 +111,7 @@ test.describe("touch", () => {
 
 test.describe("the session running out", () => {
   test("an expired cookie returns you to the passcode screen", async ({ page }) => {
+    await scenario(page, "busy");
     await page.goto("/");
     await expect(page.locator(".row").first()).toBeVisible();
 
@@ -119,6 +126,7 @@ test.describe("the session running out", () => {
 
   test("a wrong passcode says so and lets you try again", async ({ page, context }) => {
     await context.clearCookies();
+    await scenario(page, "busy");
     await page.goto("/");
     await expect(page.locator(".login")).toBeVisible();
 
@@ -154,6 +162,7 @@ test.describe("when something breaks", () => {
       }),
     );
 
+    await scenario(page, "busy");
     await page.goto("/");
     await tap(page, page.locator(".row").first());
 
