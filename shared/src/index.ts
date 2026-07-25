@@ -139,6 +139,15 @@ export type LogBlock =
       kind: "tool";
       name: string;
       summary: string;
+      /**
+       * The file this call touched, where it named one.
+       *
+       * Read, Write and Edit all take a path, and on a phone that path is the
+       * most useful thing in the block: it is what you would want to open, and
+       * what the agent's own web client lets you open. Absent for anything that
+       * did not name a file — a shell command, a search.
+       */
+      file?: { path: string; name: string };
       result: {
         text: string;
         isError: boolean;

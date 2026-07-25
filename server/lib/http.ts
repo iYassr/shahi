@@ -22,6 +22,7 @@ import { readCodexLog } from "./codex-log";
 import { readSessionImage, readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
+import { FileTooLarge, readWithinHome } from "./files";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
@@ -296,7 +297,40 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           }
         }
 
-        // A file sent from the phone. It lands in an owned directory and comes
+        /*
+       * A file the agent touched, for reading or downloading.
+       *
+       * `Content-Disposition` decides which: inline lets the browser show it,
+       * attachment makes it a download. Both are the same bytes; the reader
+       * offers both because a phone can do more with a picture on screen than
+       * with a file in Downloads, and more with a spreadsheet the other way
+       * round.
+       */
+      if (pathname === "/api/file") {
+        const path = url.searchParams.get("path");
+        if (!path) return json({ error: "path is required" }, { status: 400 });
+
+        const download = url.searchParams.get("download") === "1";
+        try {
+          const file = await readWithinHome({ path, download });
+          const safeName = file.name.replace(/["\\]/g, "_");
+          return new Response(file.bytes, {
+            headers: {
+              "content-type": file.contentType,
+              "content-length": String(file.bytes.byteLength),
+              "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+              // The agent may rewrite it a second later.
+              "cache-control": "no-store",
+            },
+          });
+        } catch (err: unknown) {
+          if (err instanceof FileTooLarge) return json({ error: err.message }, { status: 413 });
+          if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
+          return json({ error: "cannot read that file" }, { status: 404 });
+        }
+      }
+
+      // A file sent from the phone. It lands in an owned directory and comes
         // back as an absolute path, which is all the agent needs — the same shape
         // as picking something already on the server.
         if (pathname === "/api/uploads" && req.method === "POST") {

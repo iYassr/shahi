@@ -209,6 +209,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
               kind: "tool",
               name: block.name ?? "tool",
               summary: summariseToolInput(block.name ?? "", block.input ?? {}),
+              ...fileOf(block.input ?? {}),
               result: (block.id && results.get(block.id)) || null,
             });
             break;
@@ -341,6 +342,22 @@ function flattenResult(
  * A collapsed tool row is only useful if it says which file or which command;
  * "Bash" on its own tells a reader nothing.
  */
+/**
+ * The file a tool call named, if it named one.
+ *
+ * Only an absolute path counts. A relative one cannot be resolved without
+ * knowing where the agent was standing, and offering to open something the
+ * server would then fail to find is worse than offering nothing.
+ */
+export function fileOf(input: Record<string, unknown>): { file?: { path: string; name: string } } {
+  for (const key of ["file_path", "notebook_path", "path"]) {
+    const value = input[key];
+    if (typeof value !== "string" || !value.startsWith("/")) continue;
+    return { file: { path: value, name: value.slice(value.lastIndexOf("/") + 1) } };
+  }
+  return {};
+}
+
 export function summariseToolInput(name: string, input: Record<string, unknown>): string {
   const str = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined);
 

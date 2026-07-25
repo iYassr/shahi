@@ -254,6 +254,31 @@ export const api = {
       focus: false,
     }),
 
+  /**
+   * A file an agent touched.
+   *
+   * A URL rather than bytes: an image goes straight into `src`, and a download
+   * is a link the browser handles — fetching either would mean holding the file
+   * in memory only to hand it back to the same browser.
+   */
+  fileUrl: (path: string, options: { download?: boolean } = {}) =>
+    `/api/file?path=${encodeURIComponent(path)}${options.download ? "&download=1" : ""}`,
+
+  /** Where a transcript's image lives. */
+  imageUrl: (paneId: string, ref: string) =>
+    `/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(ref)}`,
+
+  /** Anything the viewer can show as text, fetched from wherever it lives. */
+  textAt: async (url: string) => {
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (res.status === 401) throw new UnauthorizedError();
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "Cannot read that file");
+    }
+    return res.text();
+  },
+
   pushKey: () => request<{ publicKey: string | null }>("/api/push/key"),
   pushSubscribe: (subscription: PushSubscriptionJSON) => postJson("/api/push/subscribe", subscription),
   pushTest: () => postJson("/api/push/test", {}),

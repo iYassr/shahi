@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalise, parseLines, summariseToolInput } from "./session-log";
+import { fileOf, normalise, parseLines, summariseToolInput } from "./session-log";
 
 const assistant = (content: unknown[], over: Record<string, unknown> = {}) => ({
   type: "assistant",
@@ -273,5 +273,29 @@ describe("images inside a tool result", () => {
     if (block.kind !== "tool") return;
     expect(block.result?.text).not.toContain("[image]");
     expect(block.result?.text).toContain("Read image");
+  });
+});
+
+describe("fileOf", () => {
+  test("finds the file a Read or Write named", () => {
+    expect(fileOf({ file_path: "/home/x/project/src/api.ts" })).toEqual({
+      file: { path: "/home/x/project/src/api.ts", name: "api.ts" },
+    });
+  });
+
+  test("covers the notebook and generic spellings", () => {
+    expect(fileOf({ notebook_path: "/home/x/a.ipynb" }).file?.name).toBe("a.ipynb");
+    expect(fileOf({ path: "/home/x/b.txt" }).file?.name).toBe("b.txt");
+  });
+
+  test("ignores a relative path", () => {
+    // Unresolvable without knowing where the agent was standing, and offering
+    // to open something the server cannot find is worse than offering nothing.
+    expect(fileOf({ file_path: "src/api.ts" })).toEqual({});
+  });
+
+  test("ignores a call that named no file", () => {
+    expect(fileOf({ command: "ls -la" })).toEqual({});
+    expect(fileOf({})).toEqual({});
   });
 });
