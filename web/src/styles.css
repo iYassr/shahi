@@ -86,10 +86,18 @@ button {
 
 /* ---------------------------------------------------------------- chrome -- */
 
+/*
+ * Sized from the visual viewport, not the layout viewport — see
+ * src/viewport.ts. On iOS the keyboard overlays rather than resizes, so
+ * `height: 100%` would keep the composer underneath it.
+ */
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: var(--app-height, 100%);
+  /* With the keyboard open the page can scroll under it; pinning to the visual
+     viewport's top keeps the header where it belongs. */
+  transform: translateY(var(--app-offset, 0px));
 }
 
 .topbar {
