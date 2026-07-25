@@ -18,3 +18,6 @@ data/
 mobile/.expo/
 mobile/android/
 mobile/ios/
+e2e/.auth/
+e2e/test-results/
+test-results/

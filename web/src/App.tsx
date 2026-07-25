@@ -120,6 +120,30 @@ export function App() {
     [showToast, prompts],
   );
 
+  /**
+   * Coming back to the app.
+   *
+   * A PWA on a home screen spends most of its life suspended, and iOS does not
+   * reliably tell a suspended page that its socket died. Returning to a screen
+   * full of hours-old agents was the single most misleading thing this app did,
+   * so returning now forces the connection open and pulls a fresh session
+   * rather than waiting for something to change.
+   */
+  useEffect(() => {
+    if (!authenticated) return;
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      socketRef.current?.ensureConnected();
+      void api.session().then(setSession).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("pageshow", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("pageshow", wake);
+    };
+  }, [authenticated]);
+
   // A session can expire while the app sits open on a home screen.
   useEffect(() => {
     const onRejection = (event: PromiseRejectionEvent) => {
