@@ -8,7 +8,7 @@
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
-    "test": "bun test server",
+    "test": "bun test server web/src",
     "build:web": "bun run --cwd web build"
   }
 }

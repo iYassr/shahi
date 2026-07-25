@@ -1449,3 +1449,54 @@ label.bigaction {
   line-height: 46px;
   cursor: pointer;
 }
+
+/* ------------------------------------------------------------- grouping -- */
+
+/*
+ * Mirrors herdr's own `ui.agent_panel_sort`, using its wording, and defaults to
+ * whatever the TUI is set to. Blocked agents sit above this bar and are never
+ * grouped — burying the one agent waiting on you inside a collapsed section
+ * would defeat the screen.
+ */
+
+.groupbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px var(--gutter) 8px;
+}
+
+.groupbar__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-right: 2px;
+}
+
+.groupbar__opt {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.groupbar__opt[aria-pressed="true"] {
+  border-color: var(--peach);
+  color: var(--peach);
+}
+
+.group__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.group__count {
+  color: var(--line-bright);
+  font-size: 11px;
+}

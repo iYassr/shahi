@@ -13,6 +13,7 @@ import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents } from "./agents";
+import { readAgentPanelSort } from "./herdr-config";
 import { readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
@@ -58,6 +59,14 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
   const { config, auth, client, store, poller, transcript, push } = deps;
   const clients = new Set<Client>();
 
+  // herdr's own agent-panel preference, cached rather than re-read on every
+  // broadcast. Refreshed whenever the dashboard is fetched, so editing
+  // config.toml takes effect on the next pull rather than needing a restart.
+  let defaultGrouping: string | null = null;
+  void readAgentPanelSort().then((value) => {
+    defaultGrouping = value;
+  });
+
   const authorized = (req: Request) =>
     auth.verifyToken(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
 
@@ -79,7 +88,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     if (sessionBroadcastTimer) return;
     sessionBroadcastTimer = setTimeout(() => {
       sessionBroadcastTimer = undefined;
-      if (clients.size > 0) broadcast({ type: "session", session: dashboard(store, poller) });
+      if (clients.size > 0) {
+        broadcast({ type: "session", session: dashboard(store, poller, defaultGrouping) });
+      }
     }, SESSION_BROADCAST_INTERVAL_MS);
   });
 
@@ -143,7 +154,8 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
       }
 
       if (pathname === "/api/session") {
-        return json(dashboard(store, poller));
+        defaultGrouping = await readAgentPanelSort();
+        return json(dashboard(store, poller, defaultGrouping));
       }
 
       // Choosing where a new space lives. Browsable, because typing a path on a
@@ -287,7 +299,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
       open(ws) {
         clients.add(ws);
         poller.setClientCount(clients.size);
-        ws.send(JSON.stringify({ type: "session", session: dashboard(store, poller) }));
+        ws.send(JSON.stringify({ type: "session", session: dashboard(store, poller, defaultGrouping) }));
       },
 
       close(ws) {
@@ -357,7 +369,7 @@ export interface DashboardPane {
   isAgent: boolean;
 }
 
-export function dashboard(store: SessionStore, poller: Poller) {
+export function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null) {
   const { state } = store;
 
   const panes: DashboardPane[] = state.panes.map((pane) => ({
@@ -389,6 +401,9 @@ export function dashboard(store: SessionStore, poller: Poller) {
   return {
     version: state.version,
     protocol: state.protocol,
+    // What herdr's own agent panel is set to, so the phone opens the way the
+    // TUI already does. Null when no preference is stated.
+    defaultGrouping,
     workspaces: state.workspaces.map((w) => ({
       workspaceId: w.workspace_id,
       label: w.label,

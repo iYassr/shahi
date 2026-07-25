@@ -64,6 +64,11 @@ export interface SpaceTab {
 export interface Session {
   version: string;
   protocol: number;
+  /**
+   * herdr's own `ui.agent_panel_sort`, so the phone opens the way the TUI
+   * already does. Null when no preference is set.
+   */
+  defaultGrouping: "priority" | "space" | null;
   workspaces: Space[];
   tabs: SpaceTab[];
   panes: DashboardPane[];
