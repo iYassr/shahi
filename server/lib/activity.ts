@@ -11,6 +11,7 @@
  *     ✽ Smooshing… (7m 54s · ↓ 23.7k tokens)
  *     · Burrowing… (16s · still thinking with high effort)
  *     ✢ Seasoning… (14m 40s · ↓ 56.6k tokens)
+ *     • Working (5s • esc to interrupt)              <- codex
  *
  * The leading glyph is what identifies it, and it cycles — ✻ ✽ ✢ ✳ · * were all
  * seen within a minute. That matters because a superficially similar line,
@@ -19,13 +20,28 @@
  * trailing parenthesis would not.
  */
 
-/** Frames Claude Code cycles through. `·` and `*` are part of the animation. */
-const SPINNER = "✻✽✳✶✢✧✦✺∗*·⋆";
+/**
+ * Leading glyphs. Claude Code cycles ✻ ✽ ✳ ✶ ✢ · * as an animation; codex uses a
+ * static bullet.
+ */
+const SPINNER = "✻✽✳✶✢✧✦✺∗*·•⋆";
 
+/**
+ * The verb and its parenthetical.
+ *
+ * The parenthetical must *open with an elapsed time*, and that is the whole
+ * discriminator. Without it, `• Done (finally)` — an ordinary codex reply that
+ * happens to end in brackets — parses as a status line and shows a timer that
+ * never moves. Claude marks its verb with `…`; codex does not, so the ellipsis
+ * cannot carry the check.
+ */
 const ACTIVITY = new RegExp(
-  String.raw`^[${SPINNER}]\s+([A-Za-z][A-Za-z' -]*…)\s+\((.+)\)\s*$`,
+  String.raw`^[${SPINNER}]\s+([A-Za-z][A-Za-z' -]*…?)\s+\((\d+[ms]\b.*)\)\s*$`,
   "u",
 );
+
+/** Claude separates with `·`, codex with `•`. */
+const SEPARATOR = /\s[·•]\s/;
 
 export interface Activity {
   /** The gerund Claude Code is showing, e.g. "Smooshing…". */
@@ -49,7 +65,7 @@ export function parseActivity(screen: string): Activity | null {
     const match = lines[i]!.trim().match(ACTIVITY);
     if (!match) continue;
 
-    const [elapsed, ...rest] = match[2]!.split("·").map((part) => part.trim());
+    const [elapsed, ...rest] = match[2]!.split(SEPARATOR).map((part) => part.trim());
     if (!elapsed) continue;
 
     return {

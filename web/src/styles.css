@@ -1583,3 +1583,27 @@ label.bigaction {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/*
+ * Your own messages carry a tinted panel, the agent's sit on the page.
+ *
+ * Scrolling a long transcript, the question is almost always "where did I last
+ * say something" — that is the anchor you navigate by. A label alone does not
+ * survive a fast scroll; a background shape does.
+ *
+ * Tinted rather than reversed: these are still prose to be read, and a fully
+ * inverted block would fight the agent's text for attention when the agent's
+ * text is the thing you opened the reader for.
+ */
+.msg--you {
+  background: var(--surface);
+  border-left: 2px solid var(--peach);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 12px 4px 12px;
+  margin: 8px 0;
+  border-bottom: none;
+}
+
+.msg--you .msg__who {
+  color: var(--peach);
+}

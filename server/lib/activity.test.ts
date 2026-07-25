@@ -64,3 +64,39 @@ describe("parseActivity", () => {
     expect(parseActivity("✻ Working… (1s · a · b)")?.detail).toBe("a · b");
   });
 });
+
+describe("codex", () => {
+  // Captured from a live codex pane. Different leading glyph, no ellipsis on the
+  // verb, and `•` rather than `·` as the separator.
+  test("parses codex's working line", () => {
+    expect(parseActivity("• Working (5s • esc to interrupt)")).toEqual({
+      verb: "Working",
+      elapsed: "5s",
+      detail: "esc to interrupt",
+    });
+  });
+
+  test("finds it under codex's conversation", () => {
+    const screen = [
+      "› test",
+      "• Test received successfully.",
+      "› write a haiku about terminals",
+      "• Working (12s • esc to interrupt)",
+      "  gpt-5.6-sol default · ~/HerdrUI",
+    ].join("\n");
+    expect(parseActivity(screen)?.elapsed).toBe("12s");
+  });
+
+  // The discriminator. An ordinary codex reply that happens to end in brackets
+  // must not parse as a status line and show a timer that never moves — the
+  // parenthetical has to open with an elapsed time.
+  test("ignores a reply that merely ends in parentheses", () => {
+    expect(parseActivity("• Done (finally)")).toBeNull();
+    expect(parseActivity("• Fixed it (see the diff above)")).toBeNull();
+  });
+
+  test("ignores codex conversation lines", () => {
+    expect(parseActivity("• I'm doing well—curious and ready to help. How are you?")).toBeNull();
+    expect(parseActivity("› write a haiku about terminals")).toBeNull();
+  });
+});
