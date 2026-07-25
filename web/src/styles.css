@@ -116,6 +116,11 @@ button {
   border: none;
   padding: 0;
   cursor: pointer;
+  /* WebKit renders a button through its own box unless told not to, which is
+     how an image inside one ends up invisible on a phone and fine everywhere
+     else. */
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 :focus-visible {
@@ -653,7 +658,23 @@ button {
   display: block;
   width: 100%;
   padding: 0;
+  border: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  /* A button is line-box-aligned by default, and the descender space under the
+     image reads as a gap. Zero here, restored on the image itself. */
+  line-height: 0;
+  text-align: left;
   cursor: zoom-in;
+}
+
+.msg__zoom .msg__image {
+  /* Explicit, because a button will not derive a height from a replaced child
+     the way a block would: on iOS the thumbnail collapsed to nothing while the
+     same image opened correctly in the viewer. */
+  width: auto;
+  height: auto;
 }
 
 /* --------------------------------------------------------------- detail -- */
