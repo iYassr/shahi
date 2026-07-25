@@ -45,6 +45,7 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
   }, [onClose]);
 
   useEffect(() => {
+    setError(null);
     if (isImage || !TEXTUAL.test(name)) return;
     let live = true;
     void api
@@ -72,12 +73,27 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
       </header>
 
       <div className="viewer__body">
-        {isImage ? (
-          <img className="viewer__image" src={url} alt={name} />
+        {isImage && !error ? (
+          <img
+            className="viewer__image"
+            src={url}
+            alt={name}
+            /* A broken image icon says nothing. The server's refusal does, so
+               ask it why — this only ever runs on failure. */
+            onError={() => {
+              void api
+                .textAt(url)
+                .then(() => setError("That image could not be displayed."))
+                .catch((err: Error) => setError(err.message));
+            }}
+          />
         ) : error ? (
           <div className="empty">
             <span className="empty__mark">○</span>
             {error}
+            <a className="empty__action" href={downloadUrl} download={name}>
+              Download it instead
+            </a>
           </div>
         ) : text === null && TEXTUAL.test(name) ? (
           <div className="empty">
