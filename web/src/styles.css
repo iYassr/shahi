@@ -1,0 +1,692 @@
+/*
+ * HerdrUI design system.
+ *
+ * The palette is Vesper — the herdr theme already configured on this machine —
+ * so the app reads as an extension of the terminal rather than a separate
+ * product bolted onto it. Vesper's warm peach is its primary accent, and it is
+ * spent on exactly one thing here: an agent that is blocked and waiting.
+ *
+ * Type is system-only, deliberately. The target is an iPhone, where the system
+ * stack gives SF Mono and SF Pro with no network round-trip — which matters for
+ * something reached over Tailscale and installed as a PWA. Monospace is used
+ * for anything that *is* a terminal string (pane ids, agent titles, output);
+ * the UI face is used for chrome, so the interface never gets mistaken for more
+ * terminal output.
+ */
+
+:root {
+  --void: #101010;
+  --surface: #161616;
+  --raised: #1c1c1c;
+  --line: #282828;
+  --line-bright: #3a3a3a;
+  --dim: #8b8b8b;
+  --fg: #ffffff;
+
+  --peach: #ffc799; /* blocked — the one thing that needs you */
+  --mint: #99ffe4; /* working */
+  --rose: #ff8080; /* exited, errors */
+
+  --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  --gutter: 16px;
+  --radius: 10px;
+
+  /* Home indicator and notch on iPhone. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* The app scrolls its own regions; the page itself never should. */
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--peach);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------- chrome -- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 12px) var(--gutter) 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--void);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar__title {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+.topbar__back {
+  font-family: var(--mono);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--dim);
+  padding: 4px 8px 4px 0;
+  margin-left: -4px;
+}
+
+/* Connection state, stated plainly rather than as a bare coloured dot. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.link__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.link--live .link__dot {
+  background: var(--mint);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.link--live {
+  color: var(--mint);
+}
+
+.link--lost .link__dot,
+.link--lost {
+  color: var(--rose);
+}
+
+.link--lost .link__dot {
+  background: var(--rose);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--safe-bottom) + 24px);
+}
+
+/* ------------------------------------------------------------- dashboard -- */
+
+/*
+ * Density encodes urgency. A blocked agent gets a full card carrying its actual
+ * question and answer buttons; everything else collapses to one dense line.
+ * The list is sorted so the thing needing a human is always at the top.
+ */
+
+.group {
+  padding: 20px var(--gutter) 4px;
+}
+
+.group__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 11px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.row:active {
+  background: var(--surface);
+}
+
+.row__glyph {
+  font-family: var(--mono);
+  font-size: 13px;
+  width: 1em;
+  flex: none;
+  color: var(--dim);
+}
+
+.row__title {
+  font-family: var(--mono);
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.row__meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  flex: none;
+}
+
+.row--idle .row__title {
+  color: var(--dim);
+}
+
+.row--working .row__glyph {
+  color: var(--mint);
+}
+
+.row--done .row__glyph {
+  color: var(--fg);
+}
+
+.row--exited .row__glyph {
+  color: var(--rose);
+}
+
+/* The blocked card. Everything above is quiet so this can be loud. */
+.blocked {
+  margin: 12px var(--gutter);
+  border: 1px solid var(--peach);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.blocked__head {
+  display: block;
+  width: 100%;
+  padding: 14px 16px 12px;
+  text-align: left;
+}
+
+.blocked__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--peach);
+}
+
+.blocked__where {
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  margin: 8px 0 2px;
+  letter-spacing: -0.01em;
+}
+
+.blocked__task {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blocked__question {
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.4;
+  padding: 0 16px 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin: 0;
+}
+
+/* ----------------------------------------------------------- the choices -- */
+
+/*
+ * The signature element.
+ *
+ * Claude Code renders a blocked prompt as a numbered list with `❯` marking the
+ * selection. Rather than translating that into generic buttons, the same list
+ * is rebuilt natively: same numbering, same cursor, sized for a thumb. Tapping
+ * moves the cursor to that row before the keystroke is sent, so the phone shows
+ * the same thing the terminal is about to.
+ */
+
+.choices {
+  padding: 0 8px 8px;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  /* 44px minimum touch target, per Apple's guidance. */
+  min-height: 44px;
+  padding: 11px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+  color: var(--fg);
+  transition: background 120ms ease;
+}
+
+.choice:active,
+.choice[data-armed="true"] {
+  background: var(--raised);
+}
+
+.choice__cursor {
+  width: 1ch;
+  flex: none;
+  color: var(--peach);
+  /* Reserve the column so rows do not shift as the cursor moves. */
+  visibility: hidden;
+}
+
+.choice[data-armed="true"] .choice__cursor,
+.choice[data-selected="true"] .choice__cursor {
+  visibility: visible;
+}
+
+.choice__index {
+  flex: none;
+  color: var(--dim);
+}
+
+.choice[data-armed="true"] .choice__index {
+  color: var(--peach);
+}
+
+.choice__label {
+  flex: 1;
+}
+
+.choice:disabled {
+  opacity: 0.4;
+}
+
+.choices__hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  padding: 2px 10px 8px;
+}
+
+/* --------------------------------------------------------------- detail -- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.detail__head {
+  padding: 12px var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+
+.detail__where {
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.detail__task {
+  font-family: var(--mono);
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 10px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--peach);
+}
+
+/*
+ * The terminal is rendered at herdr's own geometry (146x42 here) because the
+ * protocol has no way for a client to request its own size — output arrives
+ * pre-wrapped at the server's width. Rather than pretend otherwise, the pane is
+ * shown at true scale inside a pannable, zoomable frame.
+ */
+.termwrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--void);
+  padding: 8px;
+}
+
+.term {
+  transform-origin: top left;
+  /* `scale` does not affect layout size, so the element still reserves its
+     unscaled box and leaves a dead gutter below. Collapsing the box and letting
+     the transform draw outside it keeps the scroll area honest. */
+  width: max-content;
+}
+
+.zoombar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--gutter);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.zoombar button {
+  border: 1px solid var(--line-bright);
+  border-radius: 6px;
+  padding: 6px 10px;
+  min-height: 32px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.zoombar button[aria-pressed="true"] {
+  border-color: var(--peach);
+  color: var(--peach);
+}
+
+/* ------------------------------------------------------------ transcript -- */
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px var(--gutter);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.transcript__line {
+  display: block;
+}
+
+/* A recorded gap must never read as continuous output. */
+.transcript__gap {
+  display: block;
+  color: var(--dim);
+  font-style: italic;
+  border-top: 1px dashed var(--line-bright);
+  border-bottom: 1px dashed var(--line-bright);
+  margin: 6px 0;
+  padding: 4px 0;
+  white-space: normal;
+}
+
+/* -------------------------------------------------------------- compose -- */
+
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px var(--gutter) calc(var(--safe-bottom) + 10px);
+  border-top: 1px solid var(--line);
+  background: var(--void);
+}
+
+.compose__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.compose textarea {
+  flex: 1;
+  resize: none;
+  background: var(--surface);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--mono);
+  /* 16px keeps iOS from zooming the viewport on focus. */
+  font-size: 16px;
+  padding: 10px 12px;
+  min-height: 44px;
+  max-height: 140px;
+}
+
+.compose__send {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--peach);
+  color: var(--void);
+  font-weight: 600;
+  flex: none;
+}
+
+.compose__send:disabled {
+  opacity: 0.35;
+}
+
+.keys {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.keys::-webkit-scrollbar {
+  display: none;
+}
+
+.keys button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.keys button:active {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+/* ---------------------------------------------------------------- login -- */
+
+.login {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  height: 100%;
+  padding: 0 32px;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.login__title {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.login__hint {
+  color: var(--dim);
+  font-size: 14px;
+  margin: -10px 0 0;
+}
+
+.login input {
+  background: var(--surface);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 20px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  padding: 14px;
+}
+
+.login button {
+  min-height: 48px;
+  border-radius: 8px;
+  background: var(--peach);
+  color: var(--void);
+  font-weight: 600;
+}
+
+.login__error {
+  color: var(--rose);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- states -- */
+
+.empty {
+  padding: 48px var(--gutter);
+  text-align: center;
+  color: var(--dim);
+}
+
+.empty__mark {
+  font-family: var(--mono);
+  font-size: 28px;
+  color: var(--line-bright);
+  display: block;
+  margin-bottom: 12px;
+}
+
+.banner {
+  margin: var(--gutter);
+  padding: 12px 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.banner strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.banner button {
+  color: var(--peach);
+  text-decoration: underline;
+  margin-top: 8px;
+  display: block;
+  min-height: 32px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--safe-bottom) + 20px);
+  background: var(--raised);
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  z-index: 50;
+}

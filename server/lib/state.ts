@@ -1,13 +1,25 @@
 /**
  * In-memory mirror of the herdr session.
  *
- * Seeded from `session.snapshot` and kept current by the event stream, so the
- * HTTP layer can answer from memory instead of hitting the socket per request.
+ * Seeded from `session.snapshot`, patched by the event stream for responsiveness,
+ * and re-snapshotted on a timer because **events alone do not keep it true**.
  *
- * herdr has no event replay, so anything that happens while the subscription is
- * down is simply lost. `HerdrSubscriber` therefore calls `onResync` after every
- * (re)connect, and this module responds by re-snapshotting from scratch rather
- * than trying to patch up a diff it cannot compute.
+ * That last point was measured, not assumed. The obvious design is to subscribe
+ * to the unfiltered `pane.updated` topic, which carries a full `PaneInfo`
+ * including `agent_status`, and conclude that one connection covers every pane.
+ * It does not: `pane.updated` fires for pane metadata, while a pure status
+ * transition is only announced on `pane.agent_status_changed`, and *that* topic
+ * requires an explicit `pane_id` per subscription. A drift check comparing the
+ * mirror against live snapshots failed 18 times out of 18, with entries like
+ * `w4:p2: mirror=idle herdr=blocked` — precisely the agent the whole app exists
+ * to surface.
+ *
+ * Periodic re-snapshotting fixes it without having to manage a subscription per
+ * pane across creation and closure. It costs one ~30KB RPC every few seconds,
+ * which measured as noise against the herdr server's baseline CPU, and it
+ * doubles as the recovery path after a dropped connection — herdr has no event
+ * replay, so anything missed while disconnected can only be recovered by asking
+ * again.
  */
 import { EventEmitter } from "node:events";
 import type { HerdrClient } from "./herdr-client";
@@ -60,13 +72,41 @@ export interface SessionStoreEvents {
   error: [Error];
 }
 
+/**
+ * How often to re-snapshot.
+ *
+ * This is the worst-case delay between an agent blocking and the phone being
+ * told, so it wants to be short; it is also a whole-session read, so it wants
+ * not to be absurd. Three seconds is imperceptible for "an agent needs you" and
+ * measured as noise against herdr's own CPU.
+ */
+export const SYNC_INTERVAL_MS = 3_000;
+
 export class SessionStore extends EventEmitter<SessionStoreEvents> {
   #state: SessionState = emptyState();
   #statuses = new Map<string, AgentStatus>();
   #resyncing: Promise<void> | undefined;
+  #syncTimer: ReturnType<typeof setInterval> | undefined;
+  #signature = "";
 
   constructor(private readonly client: HerdrClient) {
     super();
+  }
+
+  /**
+   * Begins periodic re-snapshotting.
+   *
+   * Runs regardless of whether any client is connected: push notifications
+   * depend on noticing a transition to `blocked`, and that has to work while
+   * the phone is asleep.
+   */
+  startSync(intervalMs = SYNC_INTERVAL_MS): void {
+    this.#syncTimer ??= setInterval(() => void this.resync(), intervalMs);
+  }
+
+  stopSync(): void {
+    if (this.#syncTimer) clearInterval(this.#syncTimer);
+    this.#syncTimer = undefined;
   }
 
   get state(): SessionState {
@@ -109,8 +149,19 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     try {
       const { snapshot } = await this.client.rpc("session.snapshot", {});
       this.#state = fromSnapshot(snapshot);
+
+      // Status transitions are reported even when nothing else moved, because
+      // they are what drive notifications.
       this.#reconcileStatuses();
-      this.emit("changed", this.#state);
+
+      // The snapshot runs on a timer, so most of them find nothing new. Emitting
+      // regardless would push a full dashboard to every connected phone every
+      // few seconds for no reason.
+      const signature = signatureOf(this.#state);
+      if (signature !== this.#signature) {
+        this.#signature = signature;
+        this.emit("changed", this.#state);
+      }
     } catch (err) {
       this.emit("error", err instanceof Error ? err : new Error(String(err)));
     }
@@ -230,7 +281,10 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
         break;
     }
 
-    if (changed) this.emit("changed", this.#state);
+    if (changed) {
+      this.#signature = signatureOf(this.#state);
+      this.emit("changed", this.#state);
+    }
   }
 
   #upsertPane(pane: PaneInfo): void {
@@ -286,6 +340,25 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
       if (!seen.has(paneId)) this.#statuses.delete(paneId);
     }
   }
+}
+
+/**
+ * A compact fingerprint of everything the dashboard renders.
+ *
+ * Covers status, title and structure but deliberately not fields that churn
+ * without being visible (revisions, scroll offsets), so a timer-driven resync
+ * only wakes clients when something they can actually see has changed.
+ */
+function signatureOf(state: SessionState): string {
+  const panes = state.panes
+    .map((p) => `${p.pane_id}:${p.agent_status}:${p.agent ?? ""}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`)
+    .sort()
+    .join("|");
+  const workspaces = state.workspaces
+    .map((w) => `${w.workspace_id}:${w.label}:${w.agent_status}:${w.pane_count}`)
+    .sort()
+    .join("|");
+  return `${state.focusedPaneId}~${workspaces}~${panes}`;
 }
 
 function upsert<T>(list: T[], item: T, match: (candidate: T) => boolean): void {

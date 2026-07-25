@@ -13,6 +13,7 @@ import { Auth, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import type { PaneFrame, Poller } from "./poller";
+import type { ParsedPrompt } from "./prompt-parser";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
@@ -276,6 +277,14 @@ export interface DashboardPane {
   cwd: string | null;
   focused: boolean;
   hasPrompt: boolean;
+  /**
+   * The parsed prompt, for blocked panes only.
+   *
+   * Carried in the dashboard payload rather than left to arrive on the next
+   * frame: a phone opening from a notification must be able to answer
+   * immediately, and frames only stream for the pane a client is watching.
+   */
+  prompt: ParsedPrompt | null;
   /** False for plain shells. Roughly half the panes in a real session are not
    *  agents at all, and a dashboard that lists them alongside agents buries the
    *  thing you opened it for. */
@@ -299,6 +308,7 @@ export function dashboard(store: SessionStore, poller: Poller) {
     cwd: pane.cwd ?? null,
     focused: pane.focused,
     hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
+    prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
     isAgent: store.agent(pane.pane_id) !== undefined,
   }));
 

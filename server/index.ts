@@ -77,6 +77,9 @@ const subscriber = new HerdrSubscriber({
 
 await store.resync();
 subscriber.start();
+// Events keep the mirror responsive but do not keep it correct on their own —
+// see the note in state.ts. This timer is what makes the dashboard trustworthy.
+store.startSync();
 poller.start();
 
 const server = createServer({ config, auth, client, store, poller, transcript, push });
@@ -104,6 +107,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     console.log(`\n${signal} — shutting down`);
     subscriber.stop();
+    store.stopSync();
     poller.stop();
     server.stop();
     transcript.close();

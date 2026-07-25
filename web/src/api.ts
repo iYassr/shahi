@@ -1,0 +1,228 @@
+/**
+ * Client for the HerdrUI server.
+ *
+ * Session state arrives over a WebSocket; everything else is plain fetch with
+ * the session cookie. The socket reconnects with backoff because a phone
+ * suspends it constantly — locking the screen drops it, and unlocking must
+ * bring the dashboard straight back without a manual refresh.
+ */
+
+export type AgentStatus = "blocked" | "working" | "done" | "idle" | "unknown";
+
+export interface PromptOption {
+  index: number;
+  label: string;
+  selected: boolean;
+}
+
+export interface ParsedPrompt {
+  question: string;
+  options: PromptOption[];
+  hints: string[];
+}
+
+export interface DashboardPane {
+  paneId: string;
+  workspaceId: string;
+  workspaceLabel: string;
+  tabId: string;
+  status: AgentStatus;
+  agent: string | null;
+  title: string | null;
+  cwd: string | null;
+  focused: boolean;
+  hasPrompt: boolean;
+  isAgent: boolean;
+  /** Present for blocked panes whose screen could be parsed. */
+  prompt: ParsedPrompt | null;
+}
+
+export interface DashboardWorkspace {
+  workspaceId: string;
+  label: string;
+  status: AgentStatus;
+  paneCount: number;
+  focused: boolean;
+}
+
+export interface Session {
+  version: string;
+  protocol: number;
+  workspaces: DashboardWorkspace[];
+  panes: DashboardPane[];
+  focusedPaneId: string | null;
+}
+
+export interface PaneFrame {
+  paneId: string;
+  ansi: string;
+  text: string;
+  prompt: ParsedPrompt | null;
+  at: number;
+}
+
+export interface TranscriptLine {
+  seq: number;
+  text: string;
+  at: number;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PaneDetail {
+  pane: { pane_id: string; agent_status: AgentStatus; cwd?: string | null } | null;
+  agent: { name?: string | null } | null;
+  layout: { area: Rect } | null;
+  frame: PaneFrame | null;
+}
+
+/** Matches the server's GAP_MARKER, rendered distinctly in the transcript. */
+export const GAP_MARKER = "… output not captured …";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, { credentials: "same-origin", ...init });
+  if (res.status === 401) throw new UnauthorizedError();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${path} failed with ${res.status}`);
+  }
+  return (await res.json()) as T;
+}
+
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
+const postJson = (path: string, body: unknown) =>
+  request<{ ok?: boolean; result?: unknown; sent?: number }>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+export const api = {
+  authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
+  login: (passcode: string) => postJson("/api/auth/login", { passcode }),
+  logout: () => postJson("/api/auth/logout", {}),
+
+  session: () => request<Session>("/api/session"),
+
+  pane: (paneId: string) => request<PaneDetail>(`/api/panes/${encodeURIComponent(paneId)}`),
+
+  transcript: (paneId: string, before?: number) =>
+    request<{ paneId: string; lines: TranscriptLine[]; total: number }>(
+      `/api/panes/${encodeURIComponent(paneId)}/transcript` + (before ? `?before=${before}` : ""),
+    ),
+
+  /** Invokes any herdr method. The passcode gate is the boundary, not this. */
+  rpc: (method: string, params: unknown = {}) => postJson("/api/rpc", { method, params }),
+
+  /** Answers a numbered prompt by pressing its digit, exactly as the TUI does. */
+  answerPrompt: (paneId: string, optionIndex: number) =>
+    api.rpc("pane.send_keys", { pane_id: paneId, keys: [String(optionIndex)] }),
+
+  sendText: (paneId: string, text: string) => api.rpc("pane.send_text", { pane_id: paneId, text }),
+
+  sendKeys: (paneId: string, keys: string[]) => api.rpc("pane.send_keys", { pane_id: paneId, keys }),
+
+  pushKey: () => request<{ publicKey: string | null }>("/api/push/key"),
+  pushSubscribe: (subscription: PushSubscriptionJSON) => postJson("/api/push/subscribe", subscription),
+  pushTest: () => postJson("/api/push/test", {}),
+};
+
+/* ------------------------------------------------------------------------- */
+
+export type SocketMessage =
+  | { type: "session"; session: Session }
+  | { type: "frame"; frame: PaneFrame }
+  | { type: "prompt"; paneId: string; prompt: ParsedPrompt }
+  | { type: "status"; change: { paneId: string; from?: AgentStatus; to: AgentStatus } };
+
+export type LinkState = "connecting" | "live" | "lost";
+
+/**
+ * Holds the live connection, reconnecting on its own.
+ *
+ * The watched pane is remembered across reconnects: a phone that locks and
+ * wakes should land back on the same live view without the user doing anything.
+ */
+export class SessionSocket {
+  #socket: WebSocket | undefined;
+  #backoffMs = 500;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  #closed = false;
+  #watching: string | null = null;
+
+  constructor(
+    private readonly onMessage: (msg: SocketMessage) => void,
+    private readonly onLink: (state: LinkState) => void,
+  ) {}
+
+  connect(): void {
+    this.#closed = false;
+    this.#open();
+  }
+
+  close(): void {
+    this.#closed = true;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#socket?.close();
+    this.#socket = undefined;
+  }
+
+  watch(paneId: string | null): void {
+    this.#watching = paneId;
+    if (this.#socket?.readyState !== WebSocket.OPEN) return;
+    this.#socket.send(
+      JSON.stringify(paneId ? { type: "watch", paneId } : { type: "unwatch" }),
+    );
+  }
+
+  #open(): void {
+    if (this.#closed) return;
+    this.onLink("connecting");
+
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${scheme}://${location.host}/ws`);
+    this.#socket = socket;
+
+    socket.onopen = () => {
+      this.#backoffMs = 500;
+      this.onLink("live");
+      if (this.#watching) socket.send(JSON.stringify({ type: "watch", paneId: this.#watching }));
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        this.onMessage(JSON.parse(String(event.data)) as SocketMessage);
+      } catch {
+        // A malformed frame is not worth tearing the connection down for.
+      }
+    };
+
+    socket.onclose = () => {
+      this.onLink("lost");
+      this.#retry();
+    };
+
+    socket.onerror = () => socket.close();
+  }
+
+  #retry(): void {
+    if (this.#closed || this.#timer) return;
+    const delay = this.#backoffMs;
+    this.#backoffMs = Math.min(this.#backoffMs * 2, 10_000);
+    this.#timer = setTimeout(() => {
+      this.#timer = undefined;
+      this.#open();
+    }, delay);
+  }
+}
