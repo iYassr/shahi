@@ -2,11 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- viewport-fit=cover lets the app paint under the notch; the safe-area
-         insets in styles.css keep content clear of it. -->
+    <!--
+      viewport-fit=cover lets the app paint under the notch; the safe-area
+      insets in styles.css keep content clear of it.
+
+      interactive-widget=resizes-content makes the on-screen keyboard shrink the
+      layout viewport instead of overlaying it, which is what stops the composer
+      being buried. Not every browser implements it, so src/viewport.ts sizes
+      from visualViewport as well and the two agree.
+    -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#101010" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
