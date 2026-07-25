@@ -112,12 +112,15 @@ if (!loopback) {
   // notifications stop working silently unless this is said out loud.
   console.warn(
     `\n  Bound to ${config.host}, not loopback. Two consequences:\n` +
-      "    - Not a secure context, so service workers will not register and\n" +
-      "      Web Push will not be delivered. The dashboard still works.\n" +
+      "    - This address is not a secure context, so a browser here will not\n" +
+      "      register a service worker and Web Push will not be delivered.\n" +
+      "      The dashboard itself works fine.\n" +
       "    - The passcode is now the only thing between this port and full\n" +
       "      control of every agent here.\n" +
-      "  To get notifications back, bind loopback and put TLS in front:\n" +
-      `    sudo tailscale serve --bg --https=443 http://127.0.0.1:${config.port}\n`,
+      "  Both are answered by putting TLS in front of it, which also keeps this\n" +
+      "  address working:\n" +
+      `    sudo tailscale serve --bg --https=443 http://${config.host}:${config.port}\n` +
+      "  then use the https:// name rather than the address.\n",
   );
 
   if (config.host === "0.0.0.0" || config.host === "::") {
