@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Activity, type LogBlock, type LogMessage } from "../api";
+import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
 
 /** How often to pull while the tab is open. The server caches on file size. */
@@ -218,6 +219,26 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   );
 }
 
+/** An image a tool returned — a screenshot, usually, and worth opening. */
+function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
+  const [viewing, setViewing] = useState(false);
+  const src = api.imageUrl(paneId, imageRef);
+  return (
+    <>
+      <img
+        className="msg__image"
+        src={src}
+        alt="Tool output image"
+        loading="lazy"
+        onClick={() => setViewing(true)}
+      />
+      {viewing && (
+        <FileView name="image.png" url={src} downloadUrl={src} onClose={() => setViewing(false)} />
+      )}
+    </>
+  );
+}
+
 /**
  * The live footer: what the agent is doing, while it is doing it.
  *
@@ -251,6 +272,8 @@ function Working({ activity }: { activity: Activity }) {
 
 function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
   const [open, setOpen] = useState(false);
+  /** The file this block named, once you have asked to see it. */
+  const [viewing, setViewing] = useState(false);
 
   switch (block.kind) {
     case "text":
@@ -269,17 +292,33 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
         </details>
       );
 
-    case "image":
+    case "image": {
       // Fetched rather than inlined: one transcript here holds 3.3MB of base64
       // across 28 images, which would land in every reader response.
+      const src = api.imageUrl(paneId, block.ref);
+      const name = `image.${block.mediaType.split("/")[1] ?? "png"}`;
       return (
-        <img
-          className="msg__image"
-          src={`/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(block.ref)}`}
-          alt={`Image (${block.mediaType})`}
-          loading="lazy"
-        />
+        <>
+          {/* Tappable, because a screenshot shrunk into a phone-width column is
+              usually unreadable — full screen is where it becomes useful. */}
+          <img
+            className="msg__image"
+            src={src}
+            alt={`Image (${block.mediaType})`}
+            loading="lazy"
+            onClick={() => setViewing(true)}
+          />
+          {viewing && (
+            <FileView
+              name={name}
+              url={src}
+              downloadUrl={src}
+              onClose={() => setViewing(false)}
+            />
+          )}
+        </>
       );
+    }
 
     case "tool":
       return (
@@ -292,6 +331,37 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
             <span className="tool__summary">{block.summary}</span>
             {block.result?.isError && <span className="tool__err">failed</span>}
           </button>
+
+          {/* The file the call named, if it named one. Outside the collapsed
+              section deliberately: on a phone this is usually the part you
+              wanted, and burying it behind a second tap defeats the point. */}
+          {block.file && (
+            <div className="tool__file">
+              <button className="tool__open" onClick={() => setViewing(true)}>
+                {block.file.name}
+              </button>
+              {/* The summary line above already carries the path; repeating it
+                  here just crowded the row. */}
+              <span className="tool__path" aria-hidden="true" />
+              <a
+                className="tool__get"
+                href={api.fileUrl(block.file.path, { download: true })}
+                download={block.file.name}
+                aria-label={`Download ${block.file.name}`}
+              >
+                ↓
+              </a>
+            </div>
+          )}
+
+          {viewing && block.file && (
+            <FileView
+              name={block.file.name}
+              url={api.fileUrl(block.file.path)}
+              downloadUrl={api.fileUrl(block.file.path, { download: true })}
+              onClose={() => setViewing(false)}
+            />
+          )}
           {open && block.result && (
             <>
               {block.result.text.trim() && (
@@ -304,13 +374,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
                   block of the message, and it is usually the whole point of
                   having expanded the tool. */}
               {block.result.images.map((ref) => (
-                <img
-                  key={ref}
-                  className="msg__image"
-                  src={`/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(ref)}`}
-                  alt="Tool output image"
-                  loading="lazy"
-                />
+                <ResultImage key={ref} paneId={paneId} imageRef={ref} />
               ))}
               {!block.result.text.trim() && block.result.images.length === 0 && (
                 <pre className="tool__out">(no output)</pre>
