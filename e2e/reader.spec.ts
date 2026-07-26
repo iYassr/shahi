@@ -85,3 +85,59 @@ test.describe("reader", () => {
     await expect(page.locator(".reader .msg").first()).toBeVisible();
   });
 });
+
+test.describe("finding your way back down", () => {
+  /**
+   * Reading back through a long conversation, the way home was a long flick —
+   * and there was no way to tell whether the agent had said anything while you
+   * were up there.
+   */
+  test("offers a way back once you have scrolled off the end", async ({ page }) => {
+    await openReader(page, LONG);
+    const reader = page.locator(".reader");
+
+    await expect(page.locator(".reader__jump")).toHaveCount(0);
+
+    await reader.evaluate((el) => el.scrollTo(0, 0));
+    await expect(page.locator(".reader__jump")).toBeVisible();
+    await expect(page.locator(".reader__jump")).toHaveText(/latest/i);
+  });
+
+  test("tapping it returns to the newest message", async ({ page }) => {
+    await openReader(page, LONG);
+    const reader = page.locator(".reader");
+
+    await reader.evaluate((el) => el.scrollTo(0, 0));
+    await tap(page, page.locator(".reader__jump"));
+
+    await expect.poll(async () =>
+      reader.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight),
+    ).toBeLessThan(80);
+    // And it goes away again, because there is nowhere left to go.
+    await expect(page.locator(".reader__jump")).toHaveCount(0);
+  });
+
+  test("says how much arrived while you were reading", async ({ page }) => {
+    await openReader(page, LONG);
+    await page.locator(".reader").evaluate((el) => el.scrollTo(0, 0));
+    await expect(page.locator(".reader__jump")).toBeVisible();
+
+    // Two more messages land while the view is up the page.
+    await page.request.post("/__stub/scenario", {
+      data: {
+        patch: {
+          transcripts: {
+            "w1:p2": [
+              ...(await (await page.request.get("/api/panes/w1%3Ap2/session?limit=400")).json())
+                .messages,
+              { id: "new-1", role: "agent", at: 1, blocks: [{ kind: "text", text: "One more." }] },
+              { id: "new-2", role: "agent", at: 2, blocks: [{ kind: "text", text: "And another." }] },
+            ],
+          },
+        },
+      },
+    });
+
+    await expect(page.locator(".reader__jump")).toHaveText(/2 new/, { timeout: 20_000 });
+  });
+});

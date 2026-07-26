@@ -97,6 +97,16 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
+  /**
+   * Scrolled away from the end, and how much has arrived since.
+   *
+   * Reading back through a long conversation, the way home was a long flick —
+   * and worse, there was no way to tell whether the agent had said anything
+   * while you were up there. The count is the difference between "there might
+   * be something new" and "there are three new messages".
+   */
+  const [away, setAway] = useState(false);
+  const [unseen, setUnseen] = useState(0);
   /** What is on screen, so a poll can diff against it without re-rendering. */
   const shown = useRef<LogMessage[]>(remembered.get(paneId) ?? []);
   /** Mirrors `total` for the poll, which must not close over a stale value. */
@@ -123,6 +133,8 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
       // a timer, images and all, which is most of what made this feel unsteady
       // on a phone.
       if (signature(next) !== signature(shown.current)) {
+        const arrived = next.length - shown.current.length;
+        if (arrived > 0 && !pinnedToBottom.current) setUnseen((n) => n + arrived);
         shown.current = next;
         setMessages(next);
       }
@@ -147,6 +159,8 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
     setMessages(seed);
     setLoading(seed.length === 0);
     pinnedToBottom.current = true;
+    setAway(false);
+    setUnseen(0);
   }, [paneId]);
 
   useEffect(() => {
@@ -194,7 +208,10 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
       className="reader"
       onScroll={(e) => {
         const el = e.currentTarget;
-        pinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        pinnedToBottom.current = atBottom;
+        setAway(!atBottom);
+        if (atBottom) setUnseen(0);
       }}
     >
       {hasOlder && (
@@ -215,6 +232,27 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
       {activity && <Working activity={activity} />}
 
       <div ref={bottomRef} />
+
+      {/*
+        * Sticky rather than fixed, so it rides just above the composer without
+        * either of them needing to know the other's height. The wrapper has no
+        * height of its own, so it never pushes the conversation around.
+        */}
+      {away && (
+        <div className="reader__jumpwrap">
+          <button
+            className="reader__jump"
+            onClick={() => {
+              pinnedToBottom.current = true;
+              setUnseen(0);
+              setAway(false);
+              bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+            }}
+          >
+            {unseen > 0 ? `${unseen} new` : "Latest"} ↓
+          </button>
+        </div>
+      )}
     </div>
   );
 }
