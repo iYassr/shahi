@@ -359,6 +359,18 @@ button {
   color: var(--fg);
 }
 
+.row__tab {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  text-align: center;
+}
+
 .row__meta {
   font-family: var(--mono);
   font-size: 11px;
@@ -760,15 +772,44 @@ button {
 }
 
 .detail__where {
-  font-family: var(--ui);
-  font-size: 13px;
+  /* Whatever is left after the title has had what it needs, and gone entirely
+     when there is not enough for both. */
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
   color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+@media (max-width: 420px) {
+  .detail__where {
+    display: none;
+  }
 }
 
 .detail__task {
-  font-family: var(--mono);
-  font-size: 14px;
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  /* Proportional, because a task name is a sentence. */
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.detail__title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .tabs {
@@ -784,7 +825,9 @@ button {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--dim);
-  padding: 10px 12px;
+  /* 10px each side was 44px of chrome on a screen already short of it. */
+  padding: 7px 12px;
+  min-height: 40px;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }

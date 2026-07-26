@@ -31,7 +31,7 @@ test.describe("getting around", () => {
     const url = page.url();
 
     await page.goto(url);
-    await expect(page.locator(".detail__where")).toBeVisible();
+    await expect(page.locator(".detail__task")).toBeVisible();
     expect(problems).toEqual([]);
   });
 
