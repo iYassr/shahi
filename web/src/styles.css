@@ -348,9 +348,22 @@ button {
   color: var(--dim);
 }
 
+/*
+ * Proportional, like a space's name and like the reader's prose.
+ *
+ * These were monospace at 13px while the Spaces list set its names in the UI
+ * face at 16 — two lists under one tab bar, in two different faces. The rule
+ * everywhere else in the app is that a name is prose and machine text is
+ * monospace, and an agent's title is a name: "Convert PDF to verbatim markdown"
+ * is a sentence. It also fits about a sixth more of one before truncating.
+ *
+ * The secondary column stays monospace: `claude`, `w4:p6` and paths are
+ * machine text and read better aligned.
+ */
 .row__title {
-  font-family: var(--mono);
-  font-size: 13px;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 500;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1367,6 +1380,8 @@ button {
 
 .space__name {
   display: block;
+  /* One step above an agent row on purpose: a space contains agents, so it
+     reads as the heading it is. Same face, though. */
   font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.01em;
