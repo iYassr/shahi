@@ -1164,8 +1164,67 @@ button {
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 14px var(--gutter);
+  padding: 11px var(--gutter);
   border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+/* A space with something waiting in it says so from the left edge. */
+.space--blocked {
+  box-shadow: inset 2px 0 0 var(--peach);
+}
+
+.space__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.space__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.space__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+/* One per agent, coloured by what it is doing. */
+.space__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-bright);
+}
+
+.space__dot--working {
+  background: var(--mint);
+}
+
+.space__dot--blocked {
+  background: var(--peach);
+}
+
+.space__dot--done {
+  background: var(--dim);
+}
+
+.space__summary {
+  flex: none;
+  color: var(--dim);
+}
+
+/* Shortened in JS — see `fromTheLeft`. */
+.space__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--line-bright);
   text-align: left;
 }
 
@@ -1201,14 +1260,14 @@ button {
 }
 
 .space__meta {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--dim);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 3px;
+  min-width: 0;
 }
 
 .space__badge {
@@ -1216,12 +1275,11 @@ button {
   background: var(--peach);
   color: var(--void);
   border-radius: 999px;
-  min-width: 22px;
-  padding: 2px 7px;
-  text-align: center;
+  padding: 1px 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 /* The one obvious way to add something, sized for a thumb. */
