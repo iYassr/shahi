@@ -391,6 +391,48 @@ button {
   flex: none;
 }
 
+/*
+ * One mark per row, and room around it.
+ *
+ * The list used to carry four things per line: a status glyph, a coloured agent
+ * mark, the title, and the space name. Two of those were saturated marks, so
+ * three or four hues repeated down a screen whose only question is "which one
+ * needs me" — and the loudest of them encoded the least useful fact, which
+ * agent kind it is. Twenty-eight of those rows is a wall.
+ *
+ * So the glyph that survives is status, because that is what you are scanning
+ * for, and the agent kind joins the space in the dim text on the right. The
+ * coloured mark still exists where it is worth its volume: once per heading,
+ * when the list is grouped by agent.
+ *
+ * The extra padding is the other half. Reference points on iOS run to about
+ * 70pt a row; this was 46 and is now 52, which is calmer without giving up the
+ * two rows that matter when fifteen agents are running.
+ */
+.row--agent {
+  align-items: baseline;
+  padding: 14px var(--gutter);
+}
+
+/* Inset to the title, which now starts past one glyph rather than two. */
+.row--agent::after {
+  left: 34px;
+}
+
+/*
+ * Prose, matching the title, and capped so a long space name cannot eat a
+ * title that is a whole sentence. It was monospace, which made a secondary
+ * column read as loudly as the primary one.
+ */
+.row--agent .row__meta {
+  font-family: var(--ui);
+  font-size: 12px;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .row--idle .row__title {
   color: var(--dim);
 }

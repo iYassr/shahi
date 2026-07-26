@@ -168,9 +168,21 @@ test.describe("when something breaks", () => {
 
     // Either the reader coped or the boundary caught it — but never a blank
     // page with nothing on it.
-    await expect(page.locator(".reader, .boundary__what, .empty").first()).toBeVisible({
-      timeout: 20_000,
-    });
-    expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(0);
+    const shown = page.locator(".reader, .boundary__what, .empty").first();
+    await expect(shown).toBeVisible({ timeout: 20_000 });
+
+    /*
+     * Polled, and against the element rather than `body`.
+     *
+     * `body.innerText()` failed roughly one run in four in WebKit — with the
+     * boundary plainly drawn in the failure screenshot, message and both
+     * buttons and all. innerText is defined in terms of rendered text, so it
+     * can come back empty on a layout WebKit has not settled; the page was
+     * never blank. Reading the element that is already asserted visible, and
+     * retrying, tests what this is actually about.
+     */
+    await expect
+      .poll(async () => (await shown.innerText()).trim().length)
+      .toBeGreaterThan(0);
   });
 });

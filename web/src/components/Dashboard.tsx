@@ -128,18 +128,14 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
               {group.panes.map((pane) => (
                 <button
                   key={pane.paneId}
-                  className={`row row--${pane.status}`}
+                  className={`row row--agent row--${pane.status}`}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <span className="row__glyph" aria-hidden="true">
                     {GLYPH[pane.status]}
                   </span>
-                  {/* The mark is redundant once the group already says it. */}
-                  {effective !== "agent" && <AgentIcon kind={pane.agent} />}
                   <span className="row__title">{pane.title ?? pane.paneId}</span>
-                  <span className="row__meta">
-                    {effective === "space" ? (pane.agent ?? pane.paneId) : pane.workspaceLabel}
-                  </span>
+                  <span className="row__meta">{subtitle(pane, effective)}</span>
                 </button>
               ))}
             </section>
@@ -148,6 +144,24 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
       )}
     </div>
   );
+}
+
+/**
+ * The quiet line under a title: where this agent is, and what it is.
+ *
+ * Whatever the grouping already says is left out — repeating the space name on
+ * every row inside a space heading is noise, and it was the loudest thing on
+ * the screen when it sat in its own right-hand column.
+ */
+function subtitle(pane: DashboardPane, grouping: Grouping): string {
+  const parts =
+    grouping === "space"
+      ? [pane.agent]
+      : grouping === "agent"
+        ? [pane.workspaceLabel]
+        : [pane.workspaceLabel, pane.agent];
+  const shown = parts.filter(Boolean);
+  return shown.length > 0 ? shown.join(" · ") : pane.paneId;
 }
 
 interface PaneGroup {
