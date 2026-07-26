@@ -181,8 +181,10 @@ describe("summariseToolInput", () => {
     expect(summariseToolInput("Skill", { skill: "brainstorming" })).toBe("brainstorming");
   });
 
-  test("falls back to the tool name when nothing is recognisable", () => {
-    expect(summariseToolInput("Mystery", { weird: 1 })).toBe("Mystery");
+  test("says nothing when there is nothing to say", () => {
+    // It used to fall back to the tool's own name, which the client then drew
+    // beside the name it was already drawing: "SendUserFile SendUserFile".
+    expect(summariseToolInput("Mystery", { weird: 1 })).toBe("");
   });
 
   test("collapses whitespace and clips long values", () => {
@@ -346,3 +348,4 @@ describe("questionsOf", () => {
     expect(summariseToolInput("AskUserQuestion", input)).toBe("Which colour?");
   });
 });
+
