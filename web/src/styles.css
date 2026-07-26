@@ -552,6 +552,34 @@ button {
   font-size: 13px;
 }
 
+/* The way back to the newest message, once you have scrolled off it. */
+.reader__jumpwrap {
+  position: sticky;
+  bottom: 10px;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.reader__jump {
+  pointer-events: auto;
+  transform: translateY(-46px);
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-bright);
+  background: var(--raised);
+  color: var(--peach);
+  font-family: var(--mono);
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 45%);
+}
+
+.reader__jump:active {
+  background: var(--surface);
+}
+
 /* -------------------------------------------------------------- asked -- */
 
 /*
