@@ -144,20 +144,33 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
       <div className="scroll" ref={scroller}>
         {tabs.map((tab) => {
           const panes = session.panes.filter((p) => p.tabId === tab.tabId);
+
+          /*
+           * `label` is herdr's display position (1..n) and `number` is its
+           * internal id, which diverge as tabs are closed — showing both reads
+           * as "Tab 5 · 3" and means nothing. A renamed tab puts its name in
+           * `label`, so a non-numeric label is a real name.
+           */
+          const named = !/^\d+$/.test(tab.label);
+
+          /*
+           * A heading only where a tab holds more than one pane.
+           *
+           * Almost every tab holds exactly one, and a "TAB 3" line above every
+           * single row meant two lines of chrome per item — most of the screen
+           * spent labelling rather than listing. The tab is still identified,
+           * on the row itself, where it costs nothing.
+           */
+          const grouped = panes.length > 1 || named;
+
           return (
             <section key={tab.tabId}>
-              <div className="group">
-                {/*
-                  * `label` is herdr's display position (1..n) and `number` is
-                  * its internal id, which diverge as tabs are closed — showing
-                  * both reads as "Tab 5 · 3" and means nothing. A renamed tab
-                  * puts its name in `label`, so a non-numeric label is a real
-                  * name and stands on its own.
-                  */}
-                <h2 className="group__label">
-                  {/^\d+$/.test(tab.label) ? `Tab ${tab.label}` : tab.label}
-                </h2>
-              </div>
+              {grouped && (
+                <div className="group">
+                  <h2 className="group__label">{named ? tab.label : `Tab ${tab.label}`}</h2>
+                  {panes.length > 1 && <span className="group__count">{panes.length}</span>}
+                </div>
+              )}
 
               {panes.map((pane) => (
                 <button
@@ -172,6 +185,10 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                   <span className="row__title">
                     {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
                   </span>
+                  {/* Which tab, on the row, instead of a heading above it. */}
+                  {!grouped && <span className="row__tab">{tab.label}</span>}
+                  {/* The agent's kind, or — for a shell, whose title already
+                      says "shell" — which pane it is. */}
                   <span className="row__meta">{pane.agent ?? pane.paneId}</span>
                 </button>
               ))}

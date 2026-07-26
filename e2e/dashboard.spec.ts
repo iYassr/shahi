@@ -68,9 +68,9 @@ test.describe("dashboard", () => {
     await tap(page, page.locator(".row").first());
 
     await expect(page).toHaveURL(/\/pane\//);
-    // The pane header shows where the agent is working rather than the row's
-    // title, so this asserts arrival rather than the text.
-    await expect(page.locator(".detail__where")).toBeVisible({ timeout: 20_000 });
+    // The header carries the task title; the cwd beside it is dropped at phone
+    // width, where the title is what matters.
+    await expect(page.locator(".detail__task")).toBeVisible({ timeout: 20_000 });
 
     await page.goBack();
     await expect(page.locator(".topbar__title")).toHaveText("Agents");

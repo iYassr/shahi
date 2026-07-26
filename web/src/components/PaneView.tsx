@@ -237,21 +237,31 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
   return (
     <div className="detail">
+      {/*
+        * One line, and prose set as prose.
+        *
+        * The title was monospace at 14px, which wrapped to two lines and — with
+        * the cwd above it and the tab row below — spent about a quarter of the
+        * screen before any content, on the view you opened in order to read.
+        * A task name is a sentence, not machine output; the path beside it is
+        * the thing that wants a monospace face, and it is on the Screen tab
+        * anyway, so it gets what is left over.
+        */}
       <header className="topbar">
         <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
           ‹
         </button>
-        <div>
-          <div className="detail__where">
-            {detail?.pane?.cwd?.replace(/^\/home\/[^/]+/, "~") ?? known?.cwd ?? paneId}
-          </div>
-          <div className="detail__task">
-            {(detail?.pane?.agent ?? known?.agent) && (
-              <AgentIcon kind={(detail?.pane?.agent ?? known?.agent)!} />
-            )}
+        <h1 className="detail__task">
+          {(detail?.pane?.agent ?? known?.agent) && (
+            <AgentIcon kind={(detail?.pane?.agent ?? known?.agent)!} />
+          )}
+          <span className="detail__title">
             {frame?.prompt ? "Waiting on you" : (known?.title ?? paneId)}
-          </div>
-        </div>
+          </span>
+        </h1>
+        <span className="detail__where">
+          {detail?.pane?.cwd?.replace(/^\/home\/[^/]+/, "~") ?? known?.cwd ?? ""}
+        </span>
       </header>
 
       {prompt && (

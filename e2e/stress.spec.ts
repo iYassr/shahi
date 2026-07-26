@@ -34,7 +34,7 @@ test.describe("under use", () => {
     for (let round = 0; round < 5; round++) {
       await tap(page, page.locator(".row").nth(round));
       await expect(page).toHaveURL(/\/pane\//);
-      await expect(page.locator(".detail__where")).toBeVisible();
+      await expect(page.locator(".detail__task")).toBeVisible();
 
       await page.getByRole("tab", { name: "Screen" }).click();
       await expect(page.locator(".termwrap")).toBeVisible();
