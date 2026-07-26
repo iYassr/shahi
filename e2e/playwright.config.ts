@@ -23,6 +23,7 @@ const STUB = `http://127.0.0.1:${process.env.STUB_PORT ?? 7272}`;
 
 export default defineConfig({
   testDir: ".",
+  globalSetup: "./global-setup.ts",
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
