@@ -69,6 +69,25 @@ describe("real captured screens", () => {
     );
   });
 
+  test("reads a codex approval: the question, the command, and the answers", () => {
+    const parsed = parsePrompt(readFixture("blocked__wE-p6__text.txt"));
+
+    expect(parsed).not.toBeNull();
+    // Not the command, which is what taking the nearest paragraph gave: eight
+    // wrapped lines of shell as a heading, with the answers pushed off screen.
+    expect(parsed!.question).toBe("Would you like to run the following command?");
+
+    // `Reason:` ends in a question mark here and is still not the question.
+    expect(parsed!.context).toEqual([
+      "Environment: local",
+      expect.stringContaining("Reason: May I inspect"),
+      expect.stringContaining("$ sed -n"),
+    ]);
+
+    expect(parsed!.options.map((o) => o.index)).toEqual([1, 2, 3]);
+    expect(parsed!.options[0]).toMatchObject({ label: "Yes, proceed (y)", selected: true });
+  });
+
   test("produces identical results from the raw-ANSI capture", () => {
     expect(parsePrompt(readFixture("blocked__w4-p2__ansi.txt"))).toEqual(
       parsePrompt(readFixture("blocked__w4-p2__text.txt")),

@@ -1,7 +1,7 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { tap } from "./touch";
-import { rpcs, scenario } from "./stub/control";
+import { rpcs, scenario, writes } from "./stub/control";
 
 /**
  * Saying something to an agent: the composer, the key bar, attachments.
@@ -214,5 +214,41 @@ test.describe("the key bar", () => {
 
     await page.getByRole("tab", { name: "Screen" }).click();
     await expect(page.locator(".keys button", { hasText: "^D" })).toHaveCount(0);
+  });
+});
+
+test.describe("starting an agent", () => {
+  /**
+   * Every agent has a permission setting and every one spells it differently.
+   * Choosing it at the start is the difference between an agent that works and
+   * one that stops for a prompt every ninety seconds — which, answered from a
+   * phone, is the friction this app exists to remove.
+   */
+  test("offers the permission modes for the agent you picked", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto("/space/w1");
+
+    await page.getByRole("button", { name: /new agent/i }).click();
+    await expect(page.locator(".mode")).not.toHaveCount(0);
+    await expect(page.locator(".mode__label").first()).toHaveText("Ask me");
+    // The one that never asks is marked as such.
+    await expect(page.locator('.mode[data-unsafe="true"]')).toHaveCount(1);
+  });
+
+  test("sends the chosen mode, and asks by default", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto("/space/w1");
+
+    await page.getByRole("button", { name: /new agent/i }).click();
+    await page.locator(".mode", { hasText: "Auto-accept edits" }).click();
+    await page.getByRole("button", { name: /start/i }).click();
+
+    await expect
+      .poll(async () => (await writes(page)).filter((w) => w.path === "/api/agents/start").length)
+      .toBe(1);
+    const start = (await writes(page)).find((w) => w.path === "/api/agents/start")!;
+    // A mode id, not flags: the server decides what that means on the command
+    // line, so nothing the browser sends can invent an argument.
+    expect(start.body).toMatchObject({ kind: "claude", mode: "acceptEdits" });
   });
 });
