@@ -3,14 +3,16 @@
  *
  * codex stores things quite differently, and two of the differences matter:
  *
- * **There is no session id to join on.** herdr populates `agent_session` for
- * Claude panes and leaves it `null` for codex, so the trick that works there —
- * session id is the transcript's filename — has nothing to stand on. Instead
- * the pane's foreground process is asked what file it has open: herdr's
+ * **The session id has to be earned.** herdr populates `agent_session` for
+ * Claude panes out of the box; for codex it only does so once its codex
+ * integration is installed, because that is what puts a SessionStart hook in
+ * `~/.codex/hooks.json` to report the id. Where the id is there, it is the best
+ * answer available and it outlives the process. Where it is not, the pane's
+ * foreground process is asked what file it has open: herdr's
  * `pane.process_info` gives the codex pid, and `/proc/<pid>/fd` holds a symlink
- * to the rollout it is writing. That is exact rather than a guess. Matching on
- * working directory is the fallback, and only a fallback, because two codex
- * sessions in one directory would be indistinguishable.
+ * to the rollout it is writing. Matching on working directory is the last
+ * fallback, because two codex sessions in one directory are indistinguishable
+ * there and the newer one would win whichever pane asked.
  *
  * **The transcript has two views of the same conversation, and one is a trap.**
  * `response_item` records are the raw API turns, which include `developer`-role
@@ -43,17 +45,59 @@ const STATE_DB = join(CODEX_HOME, "state_5.sqlite");
 /**
  * Finds the rollout file a pane's codex process is writing.
  *
- * Exact when the process is inspectable; falls back to the most recently
- * updated thread for the pane's directory otherwise.
+ * Three routes, best first. The session id is exact and survives the process
+ * exiting; `/proc` is exact while it is alive; the working directory is a guess
+ * and only ever a fallback.
  */
 export async function findCodexRollout(
   client: HerdrClient,
   paneId: string,
   cwd: string | null,
+  sessionId?: string | null,
 ): Promise<string | null> {
+  const viaSession = sessionId ? rolloutFromSessionId(sessionId) : null;
+  if (viaSession) return viaSession;
   const viaProcess = await rolloutFromProcess(client, paneId);
   if (viaProcess) return viaProcess;
   return cwd ? rolloutFromIndex(cwd) : null;
+}
+
+/**
+ * Resolves a codex session id to its rollout.
+ *
+ * The id only exists once herdr's codex integration is installed: its
+ * SessionStart hook reports it through `pane.report_agent_session`, and herdr
+ * then carries it on the pane as `agent_session.value` — the same field the
+ * Claude reader has always joined on. Without the integration this returns
+ * nothing and the older routes below still work, which is why this is an
+ * addition rather than a replacement.
+ *
+ * The index is asked first and the filename glob is the backstop: codex writes
+ * the id into the rollout's name (`rollout-<when>-<id>.jsonl`), so a thread the
+ * index has not caught up with is still findable.
+ */
+function rolloutFromSessionId(sessionId: string): string | null {
+  // Ids come from another process; only ever let a real one near a path.
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
+
+  try {
+    const db = new Database(STATE_DB, { readonly: true });
+    const row = db
+      .query<{ rollout_path: string }, [string]>("SELECT rollout_path FROM threads WHERE id = ?")
+      .get(sessionId);
+    db.close();
+    if (row?.rollout_path) return row.rollout_path;
+  } catch {
+    // A migrated or missing index is not fatal — fall through to the glob.
+  }
+
+  try {
+    const matches = [...new Bun.Glob(`**/rollout-*-${sessionId}.jsonl`).scanSync(SESSIONS_DIR)];
+    if (matches.length > 0) return join(SESSIONS_DIR, matches.sort().at(-1)!);
+  } catch {
+    // No sessions directory yet.
+  }
+  return null;
 }
 
 /** Asks the pane's foreground process which rollout it has open. */
@@ -150,9 +194,9 @@ export async function readCodexLog(
   client: HerdrClient,
   paneId: string,
   cwd: string | null,
-  options: { limit?: number; before?: number } = {},
+  options: { limit?: number; before?: number; sessionId?: string | null } = {},
 ): Promise<SessionLog | null> {
-  const path = await findCodexRollout(client, paneId, cwd);
+  const path = await findCodexRollout(client, paneId, cwd, options.sessionId);
   if (!path) return null;
 
   const file = Bun.file(path);
