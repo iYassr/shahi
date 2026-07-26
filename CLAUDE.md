@@ -163,8 +163,6 @@ Stated plainly, because a vague gaps list is worse than none.
 - **Codex tool calls are unrendered.** `codex-log.ts` reads only `event_msg`
   records and drops unknown types rather than guessing. No sample of a codex tool
   call has ever been captured, so nobody knows what is being dropped.
-- **There is no CI.** The suite runs when someone remembers. Everything needed is
-  a `bun test` and a `bun run test:e2e` away from being automatic.
 - **WebKit is not Safari.** It is the closest thing available on a Linux box and
   it has earned its place, but the phone remains the only place some faults
   appear. `docs/verify-on-device.md` is the five-minute list of those.
@@ -188,6 +186,20 @@ notice.
 
 **Never point the suite at the live server for anything that writes.** That
 mistake typed into somebody's session once already.
+
+**A dead stub is reported as a dead stub.** Every test takes the server's pulse
+before it runs and again if it failed, because a run once produced one real
+failure followed by 78 connection errors and nothing said which was which. Now
+the first test to find the server gone fails saying so, and the rest are skipped
+— they did not run, and calling that 78 regressions is worse than saying
+nothing. The marker is a file (`e2e/.server-gone`, cleared by `global-setup.ts`)
+because Playwright replaces the worker process after a failure and module state
+goes with it.
+
+CI runs all of this on every push and pull request: `bun run typecheck` — which
+includes the parked Expo app, the only automatic check that the two clients have
+not drifted apart — then the unit tests, then a web build and both engines.
+Traces from a failing run are uploaded as an artifact.
 
 ## The native app
 
