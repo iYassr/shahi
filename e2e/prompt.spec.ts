@@ -75,7 +75,7 @@ test.describe("answering a prompt", () => {
   test("the same prompt is answerable from inside the pane", async ({ page }) => {
     await scenario(page, "busy");
     await page.goto(`/pane/${encodeURIComponent(BLOCKED_PANE)}`);
-    await expect(page.locator(".detail__where")).toBeVisible();
+    await expect(page.locator(".detail__task")).toBeVisible();
 
     // The pane draws the question three times over — the prompt card, the
     // reader's record of it, and the tool summary — so be specific about which.
