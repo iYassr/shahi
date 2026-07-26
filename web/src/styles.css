@@ -1599,10 +1599,10 @@ button {
   gap: 7px;
   width: 100%;
   min-height: 36px;
-  padding: 5px 0;
+  padding: 3px 0;
   text-align: left;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .tool__caret {
@@ -1610,8 +1610,18 @@ button {
   flex: none;
 }
 
+/*
+ * Quiet, on purpose.
+ *
+ * These were mint — the only saturated colour in a near-monochrome field, and
+ * the one this app uses to mean "working" — so the eye landed on `Bash` before
+ * the sentence the agent had written underneath it. A collapsed tool row is an
+ * index entry: it exists to be skimmed past. The name still reads as distinct
+ * through the monospace face and the caret beside it.
+ */
 .tool__name {
-  color: var(--mint);
+  color: var(--fg);
+  opacity: 0.72;
   flex: none;
 }
 
@@ -1624,6 +1634,10 @@ button {
   white-space: nowrap;
 }
 
+/*
+ * The exception keeps its colour, and now that the successful rows have stopped
+ * shouting it is the only thing in a message that does.
+ */
 .tool__err {
   color: var(--rose);
   flex: none;

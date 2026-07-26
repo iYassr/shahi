@@ -416,7 +416,9 @@ export function summariseToolInput(name: string, input: Record<string, unknown>)
     str("skill") ??
     str("subject");
 
-  if (!candidate) return name;
+  // Empty rather than the tool's own name: the client draws the name already,
+  // so falling back to it rendered "SendUserFile SendUserFile".
+  if (!candidate) return "";
 
   const oneLine = candidate.replace(/\s+/g, " ").trim();
   return oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
