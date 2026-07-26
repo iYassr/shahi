@@ -38,6 +38,22 @@ interface Props {
   onChanged: () => void;
 }
 
+/**
+ * Shortens a path by dropping its head.
+ *
+ * The end of a path is what identifies it — `~/work/clients/acme/site` and
+ * `~/work/clients/beta/site` differ in the middle, and truncating from the
+ * right would leave both reading `~/work/clients/…`.
+ */
+export function fromTheLeft(path: string, keep = 30): string {
+  if (path.length <= keep) return path;
+  const tail = path.slice(-(keep - 1));
+  const cut = tail.indexOf("/");
+  // Start at a segment boundary where there is one nearby, so the result never
+  // begins mid-word.
+  return `…${cut >= 0 && cut < 8 ? tail.slice(cut) : tail}`;
+}
+
 export function Spaces({ session, onToast, onChanged }: Props) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -57,28 +73,69 @@ export function Spaces({ session, onToast, onChanged }: Props) {
     <>
       <div className="scroll" ref={scroller}>
         {session.workspaces.map((space) => {
-          const blocked = session.panes.filter(
-            (p) => p.workspaceId === space.workspaceId && p.status === "blocked",
-          ).length;
+          const panes = session.panes.filter((p) => p.workspaceId === space.workspaceId);
+          const agents = panes.filter((p) => p.isAgent);
+          const blocked = agents.filter((p) => p.status === "blocked").length;
+          const working = agents.filter((p) => p.status === "working").length;
+          const shells = panes.length - agents.length;
+
+          /*
+           * What is happening here, rather than how it is arranged.
+           *
+           * This row used to read "~/pc · 6 tabs · 6 panes" — the count of tabs
+           * is herdr's filing system, not news, and it left two spaces both
+           * called `pc` distinguishable only by a number that means nothing to
+           * anyone. What you actually want to know from a list of spaces is
+           * where the work is: how many agents, how many are running, and
+           * whether any of them is waiting on you.
+           */
+          const summary = [
+            agents.length > 0 && `${agents.length} agent${agents.length === 1 ? "" : "s"}`,
+            working > 0 && `${working} running`,
+            agents.length === 0 && shells > 0 && `${shells} shell${shells === 1 ? "" : "s"}`,
+            agents.length === 0 && shells === 0 && "empty",
+          ]
+            .filter(Boolean)
+            .join(" · ");
 
           return (
             <button
               key={space.workspaceId}
-              className="space"
+              className={`space${blocked > 0 ? " space--blocked" : ""}`}
               onClick={() => navigate(`/space/${encodeURIComponent(space.workspaceId)}`)}
             >
-              <span className={`space__glyph space__glyph--${space.status}`} aria-hidden="true">
-                {GLYPH[space.status]}
-              </span>
               <span className="space__body">
-                <span className="space__name">{space.label}</span>
+                <span className="space__top">
+                  <span className="space__name">{space.label}</span>
+                  {blocked > 0 && (
+                    <span className="space__badge">
+                      {blocked} waiting
+                    </span>
+                  )}
+                </span>
+
                 <span className="space__meta">
-                  {space.cwd ?? space.workspaceId} · {space.tabCount} tab
-                  {space.tabCount === 1 ? "" : "s"} · {space.paneCount} pane
-                  {space.paneCount === 1 ? "" : "s"}
+                  {/*
+                   * One dot per agent, in its own status colour: the shape of
+                   * the space at a glance, and the thing that finally tells two
+                   * spaces of the same name apart.
+                   */}
+                  {agents.length > 0 && (
+                    <span className="space__dots" aria-hidden="true">
+                      {agents.slice(0, 12).map((p) => (
+                        <i key={p.paneId} className={`space__dot space__dot--${p.status}`} />
+                      ))}
+                    </span>
+                  )}
+                  <span className="space__summary">{summary}</span>
+                  {/* Shortened in JS rather than with `direction: rtl`, which
+                      puts the ellipsis in the right place and the path segments
+                      in the wrong order — `~/MediaProduction/test` came out as
+                      `MediaProduction/test/~`. This project has made that
+                      mistake before. */}
+                  <span className="space__path">{fromTheLeft(space.cwd ?? space.workspaceId)}</span>
                 </span>
               </span>
-              {blocked > 0 && <span className="space__badge">{blocked}</span>}
             </button>
           );
         })}
