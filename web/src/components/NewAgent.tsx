@@ -11,6 +11,7 @@
  * full readiness timeout for a process that was never coming.
  */
 import { useEffect, useState } from "react";
+import { modesFor } from "@herdrui/shared";
 import { api } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
@@ -35,6 +36,13 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       ? { path: space.cwdPath, display: space.cwd }
       : { path: "~", display: "~" },
   );
+  // Reset to the safe default whenever the agent changes: modes do not carry
+  // across kinds, and inheriting "skip all permissions" silently would be the
+  // worst possible way to be helpful.
+  const modes = modesFor(kind);
+  const [mode, setMode] = useState<string | null>(null);
+  useEffect(() => setMode(modes[0]?.id ?? null), [kind]);
+
   const [phase, setPhase] = useState<Phase>("idle");
 
   useEffect(() => {
@@ -62,6 +70,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         name.trim() || null,
         kind,
         name.trim() || kind,
+        mode,
       );
       onStarted(paneId);
     } catch (err) {
@@ -99,6 +108,37 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
           </div>
         )}
       </div>
+
+      {/*
+        * How much it may do without asking.
+        *
+        * Every agent has this setting and every one spells it differently, so
+        * it belongs here rather than three prompts later when the agent stops
+        * to ask about a `mkdir` — answering those one at a time from a phone is
+        * the friction this app exists to remove. Only offered for agents whose
+        * flags have actually been checked; the rest start with their own
+        * defaults.
+        */}
+      {modes.length > 0 && (
+        <div className="field">
+          <span className="field__label">Permissions</span>
+          <div className="modes">
+            {modes.map((option) => (
+              <button
+                key={option.id}
+                className="mode"
+                data-active={option.id === mode}
+                data-unsafe={option.unsafe ?? false}
+                onClick={() => setMode(option.id)}
+                disabled={busy}
+              >
+                <span className="mode__label">{option.label}</span>
+                <span className="mode__why">{option.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <label className="field">
         <span className="field__label">Name</span>

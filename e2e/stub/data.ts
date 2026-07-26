@@ -75,6 +75,28 @@ export const question = (): ParsedPrompt => ({
   ],
 });
 
+/**
+ * The shape codex renders when it wants to run something.
+ *
+ * The question, the reason, and a command line routinely longer than the
+ * screen — captured from a live approval, because taking the nearest paragraph
+ * as the question gave a card headed by eight wrapped lines of shell with the
+ * answers pushed out of view.
+ */
+export const approval = (): ParsedPrompt => ({
+  question: "Would you like to run the following command?",
+  context: [
+    "Environment: local",
+    "Reason: May I inspect the failing E2E tests to separate product defects from harness failures?",
+    "$ sed -n '1,180p' e2e/stress.spec.ts; sed -n '1,240p' e2e/playwright.config.ts; git diff --stat",
+  ],
+  options: [
+    { index: 1, label: "Yes, proceed (y)", selected: true },
+    { index: 2, label: "Yes, and don't ask again for commands that start with `sed` (p)", selected: false },
+    { index: 3, label: "No, and tell Codex what to do differently (esc)", selected: false },
+  ],
+});
+
 /** The prompt shape a permission request renders. */
 export const permission = (): ParsedPrompt => ({
   question: "Do you want to make this edit to index.ts?",
@@ -297,7 +319,7 @@ export function emptySession(): Scenario {
 /** Every agent blocked at once, each asking something different. */
 export function everyoneWaiting(): Scenario {
   const base = busySession();
-  const prompts = [question(), permission(), question()];
+  const prompts = [question(), permission(), approval()];
   const panes = base.session.panes
     .filter((p) => p.isAgent)
     .map((p, i) => ({ ...p, status: "blocked" as const, hasPrompt: true, prompt: prompts[i]! }));

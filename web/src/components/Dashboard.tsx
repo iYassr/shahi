@@ -221,6 +221,13 @@ function BlockedCard({
       {prompt ? (
         <>
           <p className="blocked__question">{prompt.question}</p>
+          {prompt.context && prompt.context.length > 0 && (
+            <div className="asked__context">
+              {prompt.context.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+          )}
           <Prompt prompt={prompt} onAnswer={onAnswer} />
         </>
       ) : (

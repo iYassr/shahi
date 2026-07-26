@@ -269,6 +269,15 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
             {prompt.question}
           </p>
+          {/* The command and the reason behind it: monospace, because it is a
+              command, and scrollable rather than wrapped across the screen. */}
+          {prompt.context && prompt.context.length > 0 && (
+            <div className="asked__context">
+              {prompt.context.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+          )}
           <Prompt
             prompt={prompt}
             disabled={sending}

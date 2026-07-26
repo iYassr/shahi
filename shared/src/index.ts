@@ -14,6 +14,8 @@
  * — stay in the server, because a client has no business knowing them.
  */
 
+export * from "./modes";
+
 /* ------------------------------------------------------------------ agents */
 
 export type AgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
@@ -45,6 +47,23 @@ export interface PromptOption {
 export interface ParsedPrompt {
   question: string;
   options: PromptOption[];
+  /**
+   * What sits between the question and the options — the command an agent
+   * wants to run, and its reason for wanting to.
+   *
+   * codex renders an approval like this:
+   *
+   *     Would you like to run the following command?
+   *     Reason: May I inspect the failing tests?
+   *     $ sed -n '1,180p' e2e/stress.spec.ts; …
+   *     › 1. Yes, proceed (y)
+   *
+   * Taken as the question, that command wrapped across eight lines of prose and
+   * pushed the answers off the screen — which is what "the codex permission
+   * prompt does not show" turned out to mean. It is context: shown, in a
+   * monospace block, under the question and above the answers.
+   */
+  context?: string[];
 }
 
 /* ---------------------------------------------------------------- activity */
