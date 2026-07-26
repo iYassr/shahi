@@ -1,4 +1,4 @@
-import type { InstalledAgent } from "@herdrui/shared";
+import { argsForMode, type InstalledAgent } from "@herdrui/shared";
 
 export type { InstalledAgent };
 
@@ -94,6 +94,13 @@ export async function startAgentInTab(
     label: string | null;
     kind: string;
     name: string;
+    /**
+     * How much the agent may do without asking, as a mode id rather than a
+     * command line. Resolved here, so a client cannot pass arbitrary flags to a
+     * process running as the user — the passcode is the boundary for what the
+     * app may do, not for what any request may invent.
+     */
+    mode?: string | null;
   },
   wait: (ms: number) => Promise<unknown> = (ms) => Bun.sleep(ms),
 ): Promise<{ paneId: string; tabId: string | null }> {
@@ -112,9 +119,10 @@ export async function startAgentInTab(
 
   for (let attempt = 0; ; attempt++) {
     try {
+      const args = argsForMode(options.kind, options.mode ?? null);
       await rpc(
         "agent.start",
-        { pane_id: paneId, kind: options.kind, name: options.name },
+        { pane_id: paneId, kind: options.kind, name: options.name, ...(args.length ? { args } : {}) },
         { timeoutMs: 310_000 },
       );
       return { paneId, tabId: created.tab?.tab_id ?? null };

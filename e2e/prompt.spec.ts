@@ -86,6 +86,29 @@ test.describe("answering a prompt", () => {
     expect(sent[0]).toMatchObject({ params: { keys: ["1"] } });
   });
 
+  /**
+   * A codex approval carries a command longer than the screen. Taken as the
+   * question it wrapped across eight lines and pushed the answers out of view,
+   * which is what "the codex permission prompt does not show" meant.
+   */
+  test("an approval shows the question, the command, and the answers together", async ({
+    page,
+  }) => {
+    await scenario(page, "waiting");
+    await page.goto("/");
+
+    const card = page.locator(".blocked", { hasText: "Would you like to run" });
+    await expect(card.locator(".blocked__question")).toHaveText(
+      "Would you like to run the following command?",
+    );
+    await expect(card.locator(".asked__context")).toContainText("$ sed -n");
+    await expect(card.locator(".choice")).toHaveCount(3);
+
+    // The command is capped and scrolls rather than pushing the answers away.
+    const context = await card.locator(".asked__context").boundingBox();
+    expect(context!.height).toBeLessThanOrEqual(140);
+  });
+
   test("a blocked agent is pinned above everything else", async ({ page }) => {
     await scenario(page, "busy");
     await page.goto("/");

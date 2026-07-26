@@ -605,6 +605,91 @@ button {
   color: var(--dim);
 }
 
+/*
+ * What the agent wants to do, between the question and the answers.
+ *
+ * Capped and scrollable: a codex approval carries the whole command line, which
+ * is routinely longer than the screen, and letting it wrap pushed the answers
+ * out of view — which is what "the permission prompt does not show" meant.
+ */
+.asked__context {
+  max-height: 132px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 8px;
+  background: var(--void);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.asked__context p {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asked__context p:last-child {
+  margin-bottom: 0;
+  color: var(--fg);
+}
+
+/* ---------------------------------------------------------------- modes -- */
+
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mode {
+  display: block;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.mode[data-active="true"] {
+  border-color: var(--peach);
+  background: var(--surface);
+}
+
+/* The one that never asks looks like it. */
+.mode[data-unsafe="true"][data-active="true"] {
+  border-color: var(--rose);
+}
+
+.mode[data-unsafe="true"] .mode__label {
+  color: var(--rose);
+}
+
+.mode__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.mode[data-active="true"] .mode__label {
+  color: var(--peach);
+}
+
+.mode[data-unsafe="true"][data-active="true"] .mode__label {
+  color: var(--rose);
+}
+
+.mode__why {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dim);
+}
+
 /* ---------------------------------------------------------------- files -- */
 
 /* The file a tool call touched: its name, where it lives, and a way to keep it. */

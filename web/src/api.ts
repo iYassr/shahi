@@ -198,13 +198,23 @@ export const api = {
    * is tens of seconds, so the UI has to stay patient rather than assume
    * failure.
    */
-  startAgent: (workspaceId: string, cwdPath: string | null, label: string | null, kind: string, name: string) =>
+  startAgent: (
+    workspaceId: string,
+    cwdPath: string | null,
+    label: string | null,
+    kind: string,
+    name: string,
+    mode: string | null = null,
+  ) =>
     postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", {
       workspaceId,
       cwd: cwdPath === null ? null : requireAbsolute(cwdPath),
       label,
       kind,
       name,
+      // A mode id, not flags: the server resolves it, so nothing here decides
+      // what runs on the far end.
+      mode,
     }),
 
   dirs: (path = "~", opts: { files?: boolean } = {}) =>

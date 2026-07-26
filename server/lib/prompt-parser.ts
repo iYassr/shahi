@@ -113,7 +113,11 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
   const question = findQuestion(lines, run.startLine);
   if (!question) return null;
 
-  return { question, options: run.options };
+  return {
+    question: question.text,
+    options: run.options,
+    ...(question.context.length > 0 ? { context: question.context } : {}),
+  };
 }
 
 interface OptionRun {
@@ -226,26 +230,80 @@ function findOptionRun(lines: string[]): OptionRun | null {
  * contiguous prose block above them is the question, joined back together
  * because Claude Code hard-wraps it at the pane width.
  */
-function findQuestion(lines: string[], optionStart: number): string | null {
+function findQuestion(
+  lines: string[],
+  optionStart: number,
+): { text: string; context: string[] } | null {
   let i = optionStart - 1;
   while (i >= 0 && (lines[i]!.trim() === "" || CHROME_ONLY_RE.test(lines[i]!))) i--;
   if (i < 0) return null;
 
-  const collected: string[] = [];
-  while (i >= 0) {
-    const line = lines[i]!;
-    if (line.trim() === "" || CHROME_ONLY_RE.test(line)) break;
-    // A line that opens with a marker glyph is structure, not prose — codex
-    // prefixes a standalone `> You are in /tmp` above its trust prompt, and
-    // absorbing it into the question reads as one run-on sentence.
-    if (MARKER_LINE_RE.test(line)) break;
-    collected.unshift(line.trim());
-    i--;
-    // Questions are short. Stop before swallowing an agent's whole last message.
-    if (collected.length >= 4) break;
-  }
+  /*
+   * Walk up collecting paragraphs, and take the first one that reads as a
+   * question.
+   *
+   * The nearest block above the options is not always the question. codex puts
+   * the command it wants to run there, with the question three paragraphs
+   * further up — so taking the nearest gave a card headed by eight wrapped
+   * lines of shell with the answers pushed off screen. Everything between the
+   * question and the options is kept as context, which is where a command and
+   * its reason belong.
+   */
+  const paragraphs: string[][] = [];
+  let current: string[] = [];
 
-  const question = collected.join(" ").replace(/\s+/g, " ").trim();
-  return question.length > 0 ? question : null;
+  while (i >= 0 && paragraphs.length < MAX_PARAGRAPHS) {
+    const line = lines[i]!;
+
+    if (line.trim() === "" || CHROME_ONLY_RE.test(line) || MARKER_LINE_RE.test(line)) {
+      if (current.length > 0) {
+        paragraphs.push(current);
+        current = [];
+      }
+      // A marker line is structure, and nothing above it belongs to this
+      // prompt — codex prefixes a standalone `> You are in /tmp` above its
+      // trust prompt.
+      if (MARKER_LINE_RE.test(line)) break;
+      i--;
+      continue;
+    }
+
+    current.unshift(line.trim());
+    i--;
+    if (current.length >= MAX_PARAGRAPH_LINES) {
+      paragraphs.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) paragraphs.push(current);
+  if (paragraphs.length === 0) return null;
+
+  const joined = paragraphs.map((p) => p.join(" ").replace(/\s+/g, " ").trim()).filter(Boolean);
+
+  /*
+   * A labelled line is context however it is punctuated.
+   *
+   * codex writes `Reason: May I inspect the failing tests?` — a question mark,
+   * but not the question being asked. The question is the one line without a
+   * label in front of it.
+   */
+  const asked = joined.findIndex((p) => p.endsWith("?") && !LABELLED_RE.test(p));
+
+  // No question mark anywhere: the nearest block is the best guess, as before.
+  if (asked < 0) return { text: joined[0] ?? "", context: [] };
+
+  return {
+    // Nearest-first while walking up, so everything before the question in that
+    // list sits between it and the options on screen.
+    text: joined[asked]!,
+    context: joined.slice(0, asked).reverse(),
+  };
 }
+
+/** `Reason:`, `Environment:` — codex's own labels for the context it supplies. */
+const LABELLED_RE = /^[A-Z][A-Za-z ]{1,20}:\s/;
+
+/** Enough for a question, a reason and a command; not a whole message. */
+const MAX_PARAGRAPHS = 5;
+const MAX_PARAGRAPH_LINES = 8;
 
