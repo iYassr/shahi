@@ -38,9 +38,15 @@ protocol 17, and every one of them cost an afternoon.
 - **`revision` cannot detect output changes.** It tracked structural changes
   only: four polls returned `revision: 0` while the text changed. Hash the text
   yourself.
-- **There is no scrollback.** `lines` is ignored; `pane.read` returns the visible
-  screen and nothing else. The server records its own transcript for the History
-  tab.
+- **Scrollback depends on the source, and this was wrong here for months.**
+  `source: "visible"` is the current screen and ignores `lines` — which is where
+  "there is no scrollback" came from. `source: "recent"` returns the last N of
+  the pane's *total* rows, scrollback included, capped at 1000 server-side.
+  Measured live: a shell gave 268 rows against 36 visible, a codex pane 196, and
+  every Claude Code pane exactly its 36 — it draws on the alternate screen,
+  where no rows exist behind the ones you can see. The poller reads `visible`
+  every tick and `recent` once per pane, to seed history from before it was
+  watching; the recorder builds the rest.
 - **Output cannot be re-flowed.** `recent_unwrapped` returns the same hard-wrapped
   146 columns, because agents wrap before the bytes reach the PTY. So: render
   faithfully and let the user scale, never re-wrap.
@@ -58,7 +64,11 @@ protocol 17, and every one of them cost an afternoon.
 
 **The reader is fed by the agent's own transcript, not the terminal.** Claude
 Code writes JSONL to `~/.claude/projects/`; codex keeps a rollout file indexed in
-SQLite. Reading those is what makes a phone-shaped conversation possible at all —
+SQLite. herdr hands over the id to join on — but for codex only once its
+integration is installed (`herdr integration install codex`), which adds the
+SessionStart hook that reports one. Without it the reader falls back to asking
+`/proc` what file the codex process has open, and then to the working
+directory, which cannot tell two sessions in one folder apart. Reading those is what makes a phone-shaped conversation possible at all —
 terminal text arrives pre-wrapped at 146 columns and cannot be reflowed. The
 terminal is still there, on the Screen tab, for when you need the real screen.
 

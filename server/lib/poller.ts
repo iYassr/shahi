@@ -64,6 +64,8 @@ export class Poller extends EventEmitter<PollerEvents> {
   readonly #options: Required<PollerOptions>;
   readonly #records = new Map<string, PaneRecord>();
   readonly #watchers = new Map<string, number>();
+  /** Last time herdr was asked to settle a status the screen disagreed with. */
+  readonly #confirmedAt = new Map<string, number>();
 
   #timer: ReturnType<typeof setInterval> | undefined;
   #ticking = false;
@@ -129,6 +131,7 @@ export class Poller extends EventEmitter<PollerEvents> {
   forget(paneId: string): void {
     this.#records.delete(paneId);
     this.#watchers.delete(paneId);
+    this.#confirmedAt.delete(paneId);
   }
 
   #intervalFor(paneId: string): number {
@@ -212,7 +215,8 @@ export class Poller extends EventEmitter<PollerEvents> {
     // parser and transcript need them gone. Stripping locally avoids a second
     // round-trip for the same screen.
     const text = stripAnsi(read.text);
-    const status = this.store.pane(paneId)?.agent_status;
+    const parsed = parsePrompt(text);
+    const status = await this.#status(paneId, parsed !== null);
 
     const frame: PaneFrame = {
       paneId,
@@ -221,7 +225,7 @@ export class Poller extends EventEmitter<PollerEvents> {
       // Only offer answer buttons when herdr itself says the agent is waiting.
       // The parser is deliberately strict, but this is the outer guard: a tap
       // sends a real keystroke into a live session.
-      prompt: status === "blocked" ? parsePrompt(text) : null,
+      prompt: status === "blocked" ? parsed : null,
       // Deliberately not gated on herdr's `agent_status`. Its working-state
       // detection is tuned for Claude Code: a codex pane displaying
       // `• Working (5s • esc to interrupt)` is still reported as `idle`, so
@@ -232,12 +236,95 @@ export class Poller extends EventEmitter<PollerEvents> {
       at: now,
     };
 
+    // Whatever herdr still holds from before we were watching, once per pane
+    // and before the first screen is recorded on top of it.
+    if (!existing) await this.#seedHistory(paneId, text);
+
     this.#records.set(paneId, { hash, lastPolledAt: now, frame });
     this.transcript.record(paneId, text);
     this.emit("frame", frame);
     return frame;
   }
+
+  /**
+   * The pane's status, confirmed with herdr when the screen disagrees.
+   *
+   * The mirror is re-snapshotted every 3 seconds, which is fine for a list and
+   * too slow for the pane you are looking at: the screen arrives in 400ms with
+   * a question on it, and the answer buttons wait for the mirror to notice.
+   * (Status transitions are not on `pane.updated`; they are only announced per
+   * pane on `pane.agent_status_changed`, which is why the mirror re-snapshots
+   * rather than subscribing — see `state.ts`.)
+   *
+   * So when the parser finds a menu and the mirror says the agent is not
+   * waiting, ask. One extra RPC, in the one window where the mirror is likely
+   * to be behind, rate-limited so a screen the parser mis-reads cannot turn
+   * every frame into two calls.
+   */
+  async #status(paneId: string, screenLooksBlocked: boolean): Promise<string | undefined> {
+    const mirrored = this.store.pane(paneId)?.agent_status;
+    if (!screenLooksBlocked || mirrored === "blocked") return mirrored;
+
+    const now = Date.now();
+    if (now - (this.#confirmedAt.get(paneId) ?? 0) < CONFIRM_INTERVAL_MS) return mirrored;
+    this.#confirmedAt.set(paneId, now);
+
+    try {
+      const { pane } = await this.client.rpc("pane.get", { pane_id: paneId });
+      return pane?.agent_status ?? mirrored;
+    } catch {
+      return mirrored;
+    }
+  }
+
+  /**
+   * Asks herdr for the rows above the current screen, once, when a pane is
+   * first read.
+   *
+   * `source: "recent"` reaches into scrollback where a pane keeps any — a shell
+   * or a codex session — and returns just the visible screen where it does not,
+   * which is every Claude Code pane. The visible tail is cut off the end
+   * because the recorder is about to account for that screen itself; where the
+   * two reads disagree, because output arrived between them, the overlap is
+   * dropped by length rather than guessed at.
+   */
+  async #seedHistory(paneId: string, visible: string): Promise<void> {
+    if (this.transcript.count(paneId) > 0) return;
+
+    let rows: string[];
+    try {
+      const { read } = await this.client.rpc("pane.read", {
+        pane_id: paneId,
+        source: "recent",
+        lines: HISTORY_LINES,
+        format: "text",
+        strip_ansi: true,
+      });
+      rows = read.text.split("\n").map((line: string) => line.trimEnd());
+    } catch {
+      // A pane that closed, or a herdr that does not answer. History is a
+      // bonus; never let it cost the frame the client is waiting for.
+      return;
+    }
+
+    const screen = visible.split("\n").map((line) => line.trimEnd());
+    while (screen.length > 0 && screen.at(-1) === "") screen.pop();
+    while (rows.length > 0 && rows.at(-1) === "") rows.pop();
+
+    const above = rows.slice(0, Math.max(0, rows.length - screen.length));
+    if (above.length > 0) this.transcript.seed(paneId, above);
+  }
 }
+
+/**
+ * How far back to ask. herdr caps `lines` at 1000 server-side, so this is the
+ * most it will ever give, and it is one read per pane for the life of the
+ * process.
+ */
+const HISTORY_LINES = 1000;
+
+/** Floor between status confirmations for one pane. */
+const CONFIRM_INTERVAL_MS = 1_000;
 
 function isMissingPane(err: unknown): boolean {
   const code = (err as { code?: string })?.code;

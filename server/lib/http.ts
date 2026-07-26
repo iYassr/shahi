@@ -421,7 +421,11 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
             // on kind rather than assuming one format.
             const log =
               pane?.agent === "codex"
-                ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before })
+                ? await readCodexLog(client, paneId, pane.cwd ?? null, {
+                    limit,
+                    before,
+                    sessionId: pane.agent_session?.value ?? null,
+                  })
                 : pane?.agent_session?.value
                   ? await readSessionLog(pane.agent_session.value, { limit, before })
                   : null;
