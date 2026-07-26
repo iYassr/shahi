@@ -1,17 +1,20 @@
 /**
  * Scrollback recorder.
  *
- * herdr's API socket has no scrollback: `pane.read` returns the current visible
- * screen and nothing else. This was verified against the live server — `lines`
- * of 50, 200 and 2000 all return the same 42 rows, and every pane reports
- * `scroll.max_offset_from_bottom: 0`. There is also no scroll method to drive
- * the pane from outside.
+ * herdr gives out less history than you would like and more than we first
+ * thought. `pane.read {source: "visible"}` is the current screen and nothing
+ * else — `lines` of 50, 200 and 2000 all return the same rows, which is where
+ * "there is no scrollback" came from. But `source: "recent"` reads the last N
+ * of the pane's *total* rows, scrollback included, up to 1000. Measured on a
+ * live session: a shell pane gave 268 rows against 36 visible, a codex pane
+ * 196 — while every Claude Code pane gave exactly its 36, because it draws on
+ * the alternate screen, where no rows exist beyond the ones on it.
  *
- * So the history has to be built here. Each time a pane's screen changes, the
- * new screen is aligned against the previous one and whatever scrolled off the
- * top is appended to a per-pane ring buffer. On a phone, where you cannot
- * simply scroll the real terminal, this is what makes a long agent answer
- * readable at all.
+ * So `seed` takes what herdr has when a pane is first read, and the recorder
+ * builds the rest: each time a pane's screen changes, the new screen is aligned
+ * against the previous one and whatever scrolled off the top is appended to a
+ * per-pane ring buffer. On a phone, where you cannot simply scroll the real
+ * terminal, this is what makes a long agent answer readable at all.
  *
  * Storage is SQLite via `bun:sqlite`, so history survives a restart.
  */
@@ -139,6 +142,38 @@ export class TranscriptStore {
       )
       .all(paneId, beforeSeq, limit)
       .reverse();
+  }
+
+  /**
+   * Lays down history that happened before this process was watching.
+   *
+   * The recorder can only ever see what scrolls past while it is looking, so a
+   * pane opened for the first time used to show one screen and nothing behind
+   * it. herdr can answer for the rest: `pane.read {source: "recent"}` returns
+   * the last N rows of the pane's *total* rows — scrollback included — which is
+   * real history for anything that keeps some. (Claude Code keeps none: it
+   * draws on the alternate screen, where the only rows that exist are the ones
+   * you can see. Shells and codex keep plenty.)
+   *
+   * Seeds once and only into an empty pane, so a restart does not lay the same
+   * history down twice on top of what was already recorded.
+   */
+  seed(paneId: string, history: string[]): number {
+    if (this.#lastScreen.has(paneId) || this.count(paneId) > 0) return 0;
+
+    const lines = history.map((line) => line.trimEnd());
+    while (lines.length > 0 && lines.at(-1) === "") lines.pop();
+    if (lines.length === 0) return 0;
+
+    const at = Date.now();
+    const insert = this.#db.prepare(
+      "INSERT OR REPLACE INTO transcript (pane_id, seq, text, at) VALUES (?, ?, ?, ?)",
+    );
+    this.#db.transaction(() => {
+      lines.forEach((text, i) => insert.run(paneId, i, text, at));
+    })();
+    this.prune(paneId);
+    return lines.length;
   }
 
   count(paneId: string): number {

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { normaliseCodex } from "./codex-log";
 
@@ -90,5 +93,45 @@ describe("normaliseCodex", () => {
       event("user_message", "c"),
     ]);
     expect(new Set(messages.map((m) => m.id)).size).toBe(3);
+  });
+});
+
+/**
+ * The session-id route, which only exists once herdr's codex integration is
+ * installed. `CODEX_HOME` is read when the module loads, so this imports a
+ * fresh copy pointed at a temp directory rather than at the real one.
+ */
+describe("findCodexRollout, by session id", () => {
+  const home = mkdtempSync(join(tmpdir(), "herdrui-codex-"));
+  const id = "019f9bd1-1b6b-7f33-a046-a60cce4e6455";
+  const rollout = join(home, "sessions/2026/07/26", `rollout-2026-07-26T00-26-40-${id}.jsonl`);
+  mkdirSync(dirname(rollout), { recursive: true });
+  writeFileSync(rollout, "");
+
+  // A client that would throw if the process route were reached, so a passing
+  // test proves the id answered rather than something else finding it anyway.
+  const noClient = {
+    rpc: () => {
+      throw new Error("the session id should have answered before /proc was asked");
+    },
+  } as never;
+
+  const load = async () => {
+    process.env.CODEX_HOME = home;
+    return (await import(`./codex-log?codex-home=${encodeURIComponent(home)}`)) as typeof import("./codex-log");
+  };
+
+  test("finds the rollout the id names, with no index and no process", async () => {
+    const { findCodexRollout } = await load();
+    expect(await findCodexRollout(noClient, "w1:p1", null, id)).toBe(rollout);
+  });
+
+  // Ids arrive from another process via herdr. A path fragment in one must not
+  // become a path.
+  test("refuses anything that is not a plain uuid", async () => {
+    const { findCodexRollout } = await load();
+    for (const bad of ["../../etc/passwd", `${id}/..`, "", "*"]) {
+      expect(await findCodexRollout(noClient, "w1:p1", null, bad)).toBe(null);
+    }
   });
 });
