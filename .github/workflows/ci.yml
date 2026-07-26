@@ -1,0 +1,75 @@
+# The suite used to run when someone remembered, which meant it ran after a
+# regression rather than before one. Everything here is a command that already
+# existed; the only new thing is that it happens on its own.
+#
+# Two jobs on purpose: `checks` answers in under a minute and catches most
+# mistakes, `browser` takes a few minutes because it builds the client and
+# drives two engines. Failing fast on the cheap one is worth the duplicated
+# install.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: types and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+
+      # This also covers the parked Expo app, which is the only automatic check
+      # that it still compiles against `shared/`. Two clients drifting apart is
+      # otherwise invisible until someone tries to build the one nobody runs.
+      - run: bun run typecheck
+
+      - run: bun test shared/src server web/src
+
+  browser:
+    name: playwright, both engines
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+
+      # The stub serves web/dist, so an unbuilt client means the suite tests
+      # yesterday's app — the same trap as forgetting to rebuild before a
+      # restart, and just as quiet.
+      - run: bun run build:web
+
+      - name: Cache browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      # WebKit is not optional. Three faults in a row were invisible in
+      # Chromium: a tap that never landed, a thumbnail that collapsed, and a
+      # blank page in a Safari tab.
+      - run: bunx playwright install --with-deps chromium webkit
+
+      - run: bun run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: |
+            test-results/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
