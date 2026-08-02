@@ -165,6 +165,14 @@ Stated plainly, because a vague gaps list is worse than none.
   registration are both written and unit-tested; nothing has ever delivered a
   notification to a real device through them, because that needs a development
   build and a paid Apple account. See `docs/notifications.md`.
+- **The reader parses a whole transcript to show twelve messages.** A poll asks
+  for the tail, and `readSessionLog` reads and parses the entire JSONL to slice
+  it — which was fine when the largest file here was 4.9MB and is not now that
+  they reach 38 and 50MB. Measured on the live server: opening one such pane
+  takes the process from 74MB to 282MB. Repeat polls are free, because the cache
+  hits, and the cache is now bounded — but the first read of each pane costs
+  that. The fix is to parse only the tail and widen the window until every
+  `tool_result` has found its `tool_use`; nobody has written it yet.
 - **The refresh problem is not root-caused.** The owner reports needing to
   refresh the page; two plausible causes were fixed (a render crash with no
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed

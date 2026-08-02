@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fileOf, normalise, parseLines, questionsOf, summariseToolInput } from "./session-log";
+import { cachedPaths, fileOf, normalise, parseLines, questionsOf, remember, summariseToolInput } from "./session-log";
 
 const assistant = (content: unknown[], over: Record<string, unknown> = {}) => ({
   type: "assistant",
@@ -349,3 +349,56 @@ describe("questionsOf", () => {
   });
 });
 
+
+/**
+ * The cache had no bound, and on a year-old transcript directory that cost
+ * 443MB of resident memory: every distinct pane opened held its parsed
+ * transcript forever, at roughly five times the file it came from.
+ */
+describe("the transcript cache", () => {
+  const entry = (size: number) => ({ size, messages: [] as never[] });
+
+  test("keeps what fits, newest first", () => {
+    const store = new Map<string, { size: number; messages: never[] }>();
+    remember("a", entry(10), 100, store);
+    remember("b", entry(10), 100, store);
+    expect(cachedPaths(store)).toEqual(["a", "b"]);
+  });
+
+  test("evicts the least recently used once the budget is passed", () => {
+    const store = new Map<string, { size: number; messages: never[] }>();
+    for (const name of ["a", "b", "c", "d"]) remember(name, entry(40), 100, store);
+    expect(cachedPaths(store)).toEqual(["c", "d"]);
+  });
+
+  /*
+   * Two survive whatever they weigh. A single transcript here is 38MB against a
+   * 48MB budget, so a strict budget would evict each of two open panes on the
+   * way to the other and re-parse 38MB every poll.
+   */
+  test("holds two however far over budget they are", () => {
+    const store = new Map<string, { size: number; messages: never[] }>();
+    remember("big", entry(10_000), 100, store);
+    remember("bigger", entry(20_000), 100, store);
+    expect(cachedPaths(store)).toEqual(["big", "bigger"]);
+  });
+
+  // Reading a pane again should keep it, not age it out behind panes opened
+  // once and abandoned.
+  test("a hit counts as use", () => {
+    const store = new Map<string, { size: number; messages: never[] }>();
+    for (const name of ["a", "b", "c"]) remember(name, entry(40), 100, store);
+    remember("a", entry(40), 100, store);
+    remember("d", entry(40), 100, store);
+    expect(cachedPaths(store)).toEqual(["a", "d"]);
+  });
+
+  // The one being read is the one whose re-parse would be felt on every poll.
+  test("never evicts the newest, however big", () => {
+    const store = new Map<string, { size: number; messages: never[] }>();
+    remember("first", entry(10), 100, store);
+    remember("second", entry(10), 100, store);
+    remember("huge", entry(10_000), 100, store);
+    expect(cachedPaths(store)).toEqual(["second", "huge"]);
+  });
+});
