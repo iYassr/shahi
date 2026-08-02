@@ -82,15 +82,70 @@ export async function findTranscript(sessionId: string): Promise<string | null> 
 }
 
 /**
- * Cache keyed on file size.
+ * Cache keyed on file size, bounded by the bytes it came from.
  *
- * A full read of the largest transcript here (4.9MB, 516 messages) measured at
- * 27-35ms, which is cheap enough to re-read rather than maintain an incremental
- * parser — and re-reading keeps tool_use/tool_result pairing correct, which
- * incremental parsing would break whenever a call and its result straddled the
- * boundary. Size is a sufficient key because the file is only ever appended to.
+ * A full read is cheap enough to prefer over an incremental parser — and
+ * re-reading keeps tool_use/tool_result pairing correct, which incremental
+ * parsing would break whenever a call and its result straddled the boundary.
+ * Size is a sufficient key because the file is only ever appended to.
+ *
+ * The bound is the part that was missing, and it cost 443MB of resident memory
+ * before anyone looked. This was written when the largest transcript here was
+ * 4.9MB and 516 messages; a year of use later the same directory holds 489MB
+ * across it, with single files at 38 and 50MB and one pane reporting 2,310
+ * messages. Measured on the live server: opening one pane took the process from
+ * 76MB to 282MB, six panes took it to 443MB, and none of it ever came back,
+ * because an unbounded Map keyed on path holds every transcript ever opened.
+ * Parsed objects run about five times the file they came from.
+ *
+ * Polling the same pane is not the problem — ten repeat polls cost 1.4MB, since
+ * the size key hits. Only distinct panes accumulate. So the fix is eviction, not
+ * a different cache: least-recently-used, budgeted in source bytes, and always
+ * keeping the newest entry however large it is — dropping that one would mean
+ * re-parsing 38MB on every poll of the pane you are actually reading.
  */
+const CACHE_BUDGET_BYTES = 48 * 1024 * 1024;
+
 const cache = new Map<string, { size: number; messages: LogMessage[] }>();
+
+/**
+ * Records a parsed transcript as the most recently used, then evicts from the
+ * far end until the held bytes fit the budget.
+ *
+ * `Map` iterates in insertion order, so re-inserting on every hit is what makes
+ * that order least-recently-used.
+ */
+export function remember(
+  path: string,
+  entry: { size: number; messages: LogMessage[] },
+  budget = CACHE_BUDGET_BYTES,
+  store = cache,
+): void {
+  store.delete(path);
+  store.set(path, entry);
+
+  let held = 0;
+  let kept = 0;
+  for (const [key, held_entry] of [...store].reverse()) {
+    held += held_entry.size;
+    kept += 1;
+    /*
+     * Two are kept whatever they cost, and only then does the budget apply.
+     *
+     * One is not enough: a single transcript here is 38MB, so a budget in
+     * source bytes holds about one of them, and moving between two panes would
+     * evict each on the way to the other — a 200ms re-parse every 2.5 seconds,
+     * for as long as you had them both open. Holding the second is much cheaper
+     * than re-reading it forever, and past two the budget is the right call.
+     */
+    if (kept > 2 && held > budget) store.delete(key);
+  }
+}
+
+/** Test seam: what the cache is holding, newest last. */
+export function cachedPaths(store = cache): string[] {
+  return [...store.keys()];
+}
 
 /** Reads and normalises a transcript, newest messages last. */
 export async function readSessionLog(
@@ -107,9 +162,12 @@ export async function readSessionLog(
   let all: LogMessage[];
   if (cached && cached.size === size) {
     all = cached.messages;
+    // Re-inserted even on a hit, or the pane you keep coming back to ages out
+    // behind ones you opened once.
+    remember(path, cached);
   } else {
     all = normalise(parseLines(await file.text()));
-    cache.set(path, { size, messages: all });
+    remember(path, { size, messages: all });
   }
 
   const limit = options.limit ?? 200;
