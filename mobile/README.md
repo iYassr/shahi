@@ -1,7 +1,7 @@
-# HerdrUI — mobile
+# Shahi — mobile
 
 An Expo app over the same server the web client uses, importing the same wire
-contract from `@herdrui/shared`.
+contract from `@shahi/shared`.
 
 ```sh
 bun install                 # from the repo root
@@ -20,7 +20,7 @@ reload and the app silently runs against a stale contract; and
 `nodeModulesPaths` must list both the app's own modules and the root's, because
 Bun hoists most dependencies while leaving some in the workspace.
 
-`@herdrui/shared` is TypeScript source rather than a built package. It is types
+`@shahi/shared` is TypeScript source rather than a built package. It is types
 only, so Metro erases it and there is nothing to build, publish or keep in sync.
 
 ## What is done, and what is not

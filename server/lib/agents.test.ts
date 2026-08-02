@@ -20,9 +20,9 @@ describe("installedAgents", () => {
   // so anything shell-special must never reach it.
   test("drops names that are not plain identifiers", async () => {
     forgetInstalledAgents();
-    const agents = await installedAgents(["bash; touch /tmp/herdrui-pwned", "$(id)", "a b"]);
+    const agents = await installedAgents(["bash; touch /tmp/shahi-pwned", "$(id)", "a b"]);
     expect(agents).toEqual([]);
-    expect(await Bun.file("/tmp/herdrui-pwned").exists()).toBe(false);
+    expect(await Bun.file("/tmp/shahi-pwned").exists()).toBe(false);
   });
 
   test("returns nothing for an empty list", async () => {

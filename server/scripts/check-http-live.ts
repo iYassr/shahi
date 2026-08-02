@@ -8,7 +8,7 @@
  * Start the server first, then:
  *   bun run server/scripts/check-http-live.ts [passcode]
  */
-const BASE = process.env.HERDRUI_URL ?? "http://127.0.0.1:7171";
+const BASE = process.env.SHAHI_URL ?? "http://127.0.0.1:7171";
 const passcode = process.argv[2] ?? "4821";
 
 let failures = 0;
@@ -47,7 +47,7 @@ check(
 );
 
 const forged = await fetch(`${BASE}/api/session`, {
-  headers: { cookie: `herdrui_session=${Date.now() + 1e9}.forged-signature` },
+  headers: { cookie: `shahi_session=${Date.now() + 1e9}.forged-signature` },
 });
 check("a forged cookie is refused", forged.status === 401, `${forged.status}`);
 

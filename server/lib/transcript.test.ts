@@ -193,7 +193,7 @@ describe("TranscriptStore", () => {
   });
 
   test("survives a reopen", () => {
-    const path = `/tmp/herdrui-test-${process.pid}-${Math.random().toString(36).slice(2)}.sqlite`;
+    const path = `/tmp/shahi-test-${process.pid}-${Math.random().toString(36).slice(2)}.sqlite`;
     const first = new TranscriptStore(path);
     first.record("w1:p1", body(0, 20).join("\n"));
     first.record("w1:p1", [...body(4, 16), ...body(20, 4)].join("\n"));

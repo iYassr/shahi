@@ -17,7 +17,7 @@ import type {
   Session,
   Space,
   SpaceTab,
-} from "@herdrui/shared";
+} from "@shahi/shared";
 
 export interface Scenario {
   session: Session;

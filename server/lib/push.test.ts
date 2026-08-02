@@ -49,7 +49,7 @@ describe("delivery", () => {
     }) as unknown as typeof fetch;
 
     expect(await push.sendTest()).toBe(1);
-    expect(sent).toMatchObject([{ to: "ExpoPushToken[abc]", title: "HerdrUI" }]);
+    expect(sent).toMatchObject([{ to: "ExpoPushToken[abc]", title: "Shahi" }]);
   });
 
   test("drops a token the device no longer holds", async () => {

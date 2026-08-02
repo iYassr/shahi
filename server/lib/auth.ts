@@ -14,7 +14,7 @@
 import { password as bunPassword } from "bun";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export const SESSION_COOKIE = "herdrui_session";
+export const SESSION_COOKIE = "shahi_session";
 
 export interface AuthOptions {
   passcodeHash: string;

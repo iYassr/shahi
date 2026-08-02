@@ -8,7 +8,7 @@
  */
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import type { DashboardPane, ParsedPrompt } from "@herdrui/shared";
+import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { enablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";

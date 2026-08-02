@@ -12,7 +12,7 @@
  * agent reads it with the same tool it uses for any other file — including
  * images, which Claude Code's Read tool handles.
  */
-import type { StoredUpload } from "@herdrui/shared";
+import type { StoredUpload } from "@shahi/shared";
 import { mkdir, readdir, stat, unlink } from "node:fs/promises";
 
 export type { StoredUpload };
@@ -20,7 +20,7 @@ import { homedir } from "node:os";
 import { extname, join } from "node:path";
 
 export const UPLOAD_DIR =
-  process.env.HERDRUI_UPLOADS ?? join(homedir(), ".local", "share", "herdrui", "uploads");
+  process.env.SHAHI_UPLOADS ?? join(homedir(), ".local", "share", "shahi", "uploads");
 
 /** A phone photo is a few MB; well past that is a mistake, not an attachment. */
 export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;

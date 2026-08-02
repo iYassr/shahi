@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { HerdrClient } from "../lib/herdr-client";
 import { stripAnsi } from "../lib/prompt-parser";
 
-const WORKSPACE_LABEL = "herdrui-keytest";
+const WORKSPACE_LABEL = "shahi-keytest";
 
 /**
  * Reads one character at a time in raw mode and echoes its repr.
@@ -41,7 +41,7 @@ finally:
     termios.tcsetattr(fd, termios.TCSADRAIN, old)
 `;
 
-const readerPath = join(tmpdir(), "herdrui-keyreader.py");
+const readerPath = join(tmpdir(), "shahi-keyreader.py");
 writeFileSync(readerPath, READER);
 
 const client = new HerdrClient();

@@ -9,7 +9,7 @@ const STATE = "e2e/.auth/state.json";
  */
 setup("sign in", async ({ page }) => {
   // The stub's passcode by default; the live suite brings its own.
-  const passcode = process.env.HERDRUI_PASSCODE ?? "test";
+  const passcode = process.env.SHAHI_PASSCODE ?? "test";
 
   await page.goto("/");
   await page.locator(".login input").fill(passcode);
