@@ -1,4 +1,4 @@
-# Working on HerdrUI
+# Working on Shahi
 
 A phone-shaped view of a running [herdr](https://herdr.dev) session. `README.md`
 says what it is for a user; this says what an agent working on it needs to know
@@ -21,7 +21,7 @@ place and keeps your passcode).
 bun test shared/src server web/src        # unit
 bun run test:e2e                          # both engines, against the stub
 bun run test:e2e --project=ios            # WebKit only — what the phone runs
-bun run build:web && systemctl --user restart herdrui   # deploy
+bun run build:web && systemctl --user restart shahi   # deploy
 ```
 
 **Rebuild and restart after touching `web/`.** The server serves
@@ -228,3 +228,24 @@ part that decays fastest and is hardest to recover.
 
 Commit messages are prose, not bullet lists of changed files: what broke, how it
 was found, what it cost.
+
+## The name
+
+This was HerdrUI until August 2026, and is now **Shahi** — because a phone-shaped
+window onto a terminal multiplexer need not be named after one multiplexer, and
+tmux is a plausible second backend.
+
+Two things kept the old name deliberately:
+
+- **`server/lib/herdr-*.ts`** is the herdr adapter, and should stay called that.
+  When a second backend arrives it wants a sibling, not a rename.
+- **`server/fixtures/`** contains captured terminal output, and some of those
+  screens have `/home/yasserdo/HerdrUI/…` in them because that is the path that
+  was on screen when they were recorded. Rewriting a recording to match a later
+  decision makes it a worse record. They were rewritten once by a careless
+  find-and-replace and restored.
+
+`HERDRUI_DATA` is still read as a fallback, and the installer moves
+`~/.local/share/herdrui` to `~/.local/share/shahi` on the first run after the
+rename. Startup says so loudly if it finds the old directory and no new one,
+because an empty database beside a full one looks exactly like a quiet app.

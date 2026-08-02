@@ -45,7 +45,7 @@ const GROUPINGS: { key: Grouping; label: string }[] = [
   { key: "agent", label: "Agent" },
 ];
 
-const STORED = "herdrui.grouping";
+const STORED = "shahi.grouping";
 
 export function Dashboard({ session, prompts, onAnswer }: Props) {
   const navigate = useNavigate();

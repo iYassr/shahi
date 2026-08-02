@@ -60,5 +60,5 @@ directions, so say which one it was:
 - **still says LIVE but nothing updates** — the socket is open and the server is
   not sending, which is a server-side question
 
-A screenshot of the moment beats a description of it. `~/.local/share/herdrui/uploads`
+A screenshot of the moment beats a description of it. `~/.local/share/shahi/uploads`
 is a fine place to drop one — the app can then show it to whoever is debugging.

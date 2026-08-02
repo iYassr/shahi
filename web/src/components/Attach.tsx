@@ -96,7 +96,7 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             onChange={(e) => void upload(e.target.files)}
           />
           <input
-            id="herdrui-camera"
+            id="shahi-camera"
             type="file"
             accept="image/*"
             capture="environment"
@@ -112,7 +112,7 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             {uploading ? "Uploading…" : "Choose photo or file"}
           </button>
 
-          <label className="bigaction" htmlFor="herdrui-camera" style={{ margin: "10px 0 0" }}>
+          <label className="bigaction" htmlFor="shahi-camera" style={{ margin: "10px 0 0" }}>
             Take a photo
           </label>
 

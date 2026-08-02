@@ -11,7 +11,7 @@ import { MAX_UPLOAD_BYTES, UPLOAD_DIR, UploadTooLarge, safeName, storeUpload } f
  * recursively on teardown, which destroyed files a user had genuinely uploaded.
  * A test that can delete production data is worse than no test.
  */
-const DIR = join(tmpdir(), `herdrui-uploads-test-${process.pid}`);
+const DIR = join(tmpdir(), `shahi-uploads-test-${process.pid}`);
 
 afterAll(async () => {
   await rm(DIR, { recursive: true, force: true }).catch(() => {});

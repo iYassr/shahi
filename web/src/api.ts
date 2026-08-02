@@ -1,12 +1,12 @@
 /**
- * Client for the HerdrUI server.
+ * Client for the Shahi server.
  *
  * Session state arrives over a WebSocket; everything else is plain fetch with
  * the session cookie. The socket reconnects with backoff because a phone
  * suspends it constantly — locking the screen drops it, and unlocking must
  * bring the dashboard straight back without a manual refresh.
  *
- * Every wire type is imported from `@herdrui/shared` rather than declared here.
+ * Every wire type is imported from `@shahi/shared` rather than declared here.
  * They used to be hand-mirrored from the server, with nothing enforcing that
  * the two agreed — which is how `activity` and `cwdPath` each went missing on
  * one side for a while. A React Native client will import the same module.
@@ -32,7 +32,7 @@ export type {
   StatusChange,
   StoredUpload,
   TranscriptLine,
-} from "@herdrui/shared";
+} from "@shahi/shared";
 
 import type {
   AgentStatus,
@@ -42,9 +42,9 @@ import type {
   SessionLog,
   SocketMessage,
   TranscriptLine,
-} from "@herdrui/shared";
+} from "@shahi/shared";
 
-export { GAP_MARKER } from "@herdrui/shared";
+export { GAP_MARKER } from "@shahi/shared";
 
 /** Shapes the server returns that are not part of the shared contract. */
 export interface Rect {

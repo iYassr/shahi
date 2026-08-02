@@ -43,7 +43,7 @@ const ACTIVITY = new RegExp(
 /** Claude separates with `·`, codex with `•`. */
 const SEPARATOR = /\s[·•]\s/;
 
-import type { Activity } from "@herdrui/shared";
+import type { Activity } from "@shahi/shared";
 
 export type { Activity };
 

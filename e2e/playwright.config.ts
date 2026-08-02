@@ -12,11 +12,11 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * **The live suite** (`live`) is a handful of read-only checks against the real
  * server, which is the only thing that can catch the contract drifting apart
- * from the stub. It needs `HERDRUI_URL` and `HERDRUI_PASSCODE`.
+ * from the stub. It needs `SHAHI_URL` and `SHAHI_PASSCODE`.
  *
  *   bun run test:e2e                    # both engines, against the stub
  *   bun run test:e2e --project=ios      # WebKit only, which is what the phone runs
- *   HERDRUI_URL=… HERDRUI_PASSCODE=… bun run test:e2e --project=live
+ *   SHAHI_URL=… SHAHI_PASSCODE=… bun run test:e2e --project=live
  */
 
 const STUB = `http://127.0.0.1:${process.env.STUB_PORT ?? 7272}`;
@@ -80,7 +80,7 @@ export default defineConfig({
     {
       name: "live",
       testMatch: /live\/.*\.spec\.ts/,
-      use: { baseURL: process.env.HERDRUI_URL ?? STUB, ...devices["iPhone 14"] },
+      use: { baseURL: process.env.SHAHI_URL ?? STUB, ...devices["iPhone 14"] },
     },
   ],
 });

@@ -27,12 +27,12 @@ not" is a DNS symptom, not a server one.
 ## Standing it up
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iYassr/HerdrUI/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
 ```
 
 Idempotent: run it again to upgrade, and it keeps the passcode you already have.
 It refuses to repoint an existing installation somewhere else unless you pass
-`HERDRUI_FORCE=1`.
+`SHAHI_FORCE=1`.
 
 Then, once, for TLS:
 
@@ -50,11 +50,11 @@ this one can run arbitrary commands as you.
 
 | what | where |
 |---|---|
-| the app | `~/.local/share/herdrui/app` (or wherever you cloned it) |
+| the app | `~/.local/share/shahi/app` (or wherever you cloned it) |
 | secrets | `.env` in that directory, mode 0600 — never commit it |
-| database | `~/.local/share/herdrui/herdrui.sqlite` — push subscriptions, transcripts |
-| uploads | `~/.local/share/herdrui/uploads` — files sent from the phone |
-| service | `~/.config/systemd/user/herdrui.service` |
+| database | `~/.local/share/shahi/shahi.sqlite` — push subscriptions, transcripts |
+| uploads | `~/.local/share/shahi/uploads` — files sent from the phone |
+| service | `~/.config/systemd/user/shahi.service` |
 
 The database is not precious: transcripts are a convenience and subscriptions
 re-register when the phone next opens the app. Deleting it costs a re-grant of
@@ -63,10 +63,10 @@ notifications, nothing more.
 ## Everyday commands
 
 ```sh
-systemctl --user status herdrui        # is it up
-journalctl --user -u herdrui -f        # what it is doing
-systemctl --user restart herdrui       # after a rebuild
-bun run build:web && systemctl --user restart herdrui   # the whole deploy
+systemctl --user status shahi        # is it up
+journalctl --user -u shahi -f        # what it is doing
+systemctl --user restart shahi       # after a rebuild
+bun run build:web && systemctl --user restart shahi   # the whole deploy
 ```
 
 `loginctl enable-linger $USER` is what keeps the service alive when you are not
@@ -97,7 +97,7 @@ is expected here, and answered by `tailscale serve`.
 **The phone cannot reach it.** Work outwards: `curl http://127.0.0.1:7171/api/auth/status`
 on the box, then the tailnet IP, then the HTTPS name. If the IP works and the
 name does not, it is DNS — turn on "Use Tailscale DNS" in the phone's Tailscale
-app. If neither works, check `systemctl --user status herdrui`.
+app. If neither works, check `systemctl --user status shahi`.
 
 **The dashboard is stale but says LIVE.** The socket died without saying so. The
 server heartbeats every 20s and the client gives up after 50s of silence, so this
@@ -116,7 +116,7 @@ process has exited accepts input into nothing.
 
 ```sh
 bun run server/scripts/init-secrets.ts --passcode <digits>
-systemctl --user restart herdrui
+systemctl --user restart shahi
 ```
 
 Only the bcrypt hash is stored; the plaintext lives nowhere. The session secret

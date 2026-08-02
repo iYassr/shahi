@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { readAgentPanelSort } from "./herdr-config";
 
 const withConfig = async (toml: string, run: (path: string) => Promise<void>) => {
-  const path = join(tmpdir(), `herdrui-cfg-${Math.random().toString(36).slice(2)}.toml`);
+  const path = join(tmpdir(), `shahi-cfg-${Math.random().toString(36).slice(2)}.toml`);
   await Bun.write(path, toml);
   try {
     await run(path);

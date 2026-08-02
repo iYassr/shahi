@@ -162,7 +162,7 @@ export class PushService {
 
   async sendTest(): Promise<number> {
     return this.send({
-      title: "HerdrUI",
+      title: "Shahi",
       body: "Notifications are working.",
       paneId: "",
       workspaceLabel: "",

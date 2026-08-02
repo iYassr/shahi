@@ -1,4 +1,4 @@
-# HerdrUI
+# Shahi
 
 A phone-shaped view of a running [herdr](https://herdr.dev) session: which agent
 needs you, what it is asking, and a way to answer it.
@@ -48,7 +48,7 @@ collapses to one line.
 One command, on the machine herdr runs on:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iYassr/HerdrUI/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
 ```
 
 It checks that herdr is there, fetches and builds, generates a passcode and the
@@ -69,8 +69,8 @@ bun run server/index.ts
 Then, to keep it running:
 
 ```sh
-cp deploy/herdrui.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now herdrui
+cp deploy/shahi.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now shahi
 sudo loginctl enable-linger "$USER"     # survive logout
 ```
 
@@ -199,7 +199,7 @@ agent can act on — it cannot receive a file over a terminal, but it can read o
 off disk, images included.
 
 - **From the phone** — photo library, Files, or straight to the camera. The file
-  uploads to `~/.local/share/herdrui/uploads/` and is referenced by path.
+  uploads to `~/.local/share/shahi/uploads/` and is referenced by path.
 - **On the server** — browse from the pane's own directory and tap a file.
 
 Uploads never land in the agent's working directory: a file arriving from a
@@ -229,7 +229,7 @@ bun run server/scripts/verify-key-delivery.ts # what send_keys actually delivers
 
 # See what the phone sees, without a phone. Logs in properly rather than
 # disabling the gate, and emulates an iPhone viewport.
-HERDRUI_PASSCODE=**** bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
+SHAHI_PASSCODE=**** bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
 ```
 
 `check-parser-live` is the one worth re-running after a Claude Code upgrade: it

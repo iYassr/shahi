@@ -7,7 +7,7 @@
  * modules and the root's, because Bun hoists most dependencies to the root while
  * leaving some in the workspace.
  *
- * `@herdrui/shared` is TypeScript source rather than a built package, which is
+ * `@shahi/shared` is TypeScript source rather than a built package, which is
  * deliberate: it is types only, so Metro erases it and there is nothing to
  * build, publish or keep in sync.
  */

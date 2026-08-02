@@ -26,7 +26,7 @@ import { SCENARIOS, type Scenario, type ScenarioName } from "./data";
 const PORT = Number(process.env.PORT ?? 7272);
 const WEB_ROOT = process.env.STUB_WEB_ROOT ?? join(import.meta.dir, "../../web/dist");
 const PASSCODE = "test";
-const COOKIE = "herdrui_session=stub";
+const COOKIE = "shahi_session=stub";
 
 let scenario: Scenario = SCENARIOS.busy();
 /** Everything the app tried to change, in order, for tests to assert on. */
@@ -34,7 +34,7 @@ let writes: { method: string; path: string; body: unknown; at: number }[] = [];
 const sockets = new Set<ServerWebSocket<unknown>>();
 
 /** Files the file viewer can open, written once into a temp directory. */
-const files = mkdtempSync(join(tmpdir(), "herdrui-stub-"));
+const files = mkdtempSync(join(tmpdir(), "shahi-stub-"));
 writeFileSync(join(files, "prompt-parser.ts"), "const OPTION_RE = /^\\s*(\\d+)\\.\\s+(.+)$/;\n");
 writeFileSync(join(files, "notes.md"), "# Notes\n\nA file the agent wrote.\n");
 // A 240x160 PNG, so "is the thumbnail drawn?" can fail honestly.
@@ -50,7 +50,7 @@ const json = (body: unknown, init?: ResponseInit) =>
     headers: { "content-type": "application/json", ...init?.headers },
   });
 
-const authorised = (req: Request) => (req.headers.get("cookie") ?? "").includes("herdrui_session=");
+const authorised = (req: Request) => (req.headers.get("cookie") ?? "").includes("shahi_session=");
 
 const record = async (req: Request, path: string) => {
   writes.push({
@@ -302,4 +302,4 @@ Bun.serve({
 // Heartbeat, matching the real server's contract.
 setInterval(() => broadcast({ type: "ping", at: Date.now() }), 20_000);
 
-console.log(`stub herdrui on http://127.0.0.1:${PORT} (passcode ${PASSCODE}, files in ${files})`);
+console.log(`stub shahi on http://127.0.0.1:${PORT} (passcode ${PASSCODE}, files in ${files})`);

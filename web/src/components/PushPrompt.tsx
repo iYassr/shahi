@@ -34,7 +34,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   const [state, setState] = useState<State>("hidden");
 
   useEffect(() => {
-    if (localStorage.getItem("herdrui.push.dismissed") === "1") return;
+    if (localStorage.getItem("shahi.push.dismissed") === "1") return;
     if (!("serviceWorker" in navigator)) return;
 
     const api = notifications();
@@ -74,7 +74,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   }
 
   function dismiss() {
-    localStorage.setItem("herdrui.push.dismissed", "1");
+    localStorage.setItem("shahi.push.dismissed", "1");
     setState("hidden");
   }
 
@@ -83,7 +83,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   if (state === "needs-install") {
     return (
       <div className="banner">
-        <strong>Add HerdrUI to your Home Screen</strong> to get notified when an
+        <strong>Add Shahi to your Home Screen</strong> to get notified when an
         agent needs you. iOS only delivers notifications to installed apps — tap
         Share, then Add to Home Screen.
         <button onClick={dismiss}>Not now</button>

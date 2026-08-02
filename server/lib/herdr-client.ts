@@ -171,7 +171,7 @@ export class HerdrClient {
     params: ParamsFor<M>,
     options: { timeoutMs?: number } = {},
   ): Promise<ResultFor<M>> {
-    const id = `herdrui:${++this.#requestSeq}`;
+    const id = `shahi:${++this.#requestSeq}`;
     const payload = `${JSON.stringify({ id, method, params })}\n`;
     const timeoutMs = options.timeoutMs ?? this.#timeoutMs;
 
@@ -352,7 +352,7 @@ export class HerdrSubscriber {
           this.#socket = s;
           s.write(
             `${JSON.stringify({
-              id: "herdrui:subscribe",
+              id: "shahi:subscribe",
               method: "events.subscribe",
               params: { subscriptions: this.topics },
             })}\n`,

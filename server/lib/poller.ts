@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { HerdrClient } from "./herdr-client";
-import type { PaneFrame } from "@herdrui/shared";
+import type { PaneFrame } from "@shahi/shared";
 import { parseActivity } from "./activity";
 
 export type { PaneFrame };

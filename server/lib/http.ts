@@ -8,7 +8,7 @@
  * Terminal output is never logged: these screens carry whatever is in the user's
  * terminals, including secrets.
  */
-import type { DashboardPane } from "@herdrui/shared";
+import type { DashboardPane } from "@shahi/shared";
 import type { Server, ServerWebSocket } from "bun";
 
 export type { DashboardPane };
@@ -619,7 +619,7 @@ function compressionKey(response: Response): string | undefined {
 
 async function serveStatic(pathname: string, webRoot: string | null): Promise<Response> {
   if (!webRoot) {
-    return new Response("HerdrUI API is running. Build the frontend to serve the app.", {
+    return new Response("Shahi API is running. Build the frontend to serve the app.", {
       headers: { "content-type": "text/plain; charset=utf-8" },
     });
   }

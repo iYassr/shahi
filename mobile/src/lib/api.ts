@@ -1,7 +1,7 @@
 /**
- * Client for the HerdrUI server, for React Native.
+ * Client for the Shahi server, for React Native.
  *
- * Every wire type comes from `@herdrui/shared`, the same module the web client
+ * Every wire type comes from `@shahi/shared`, the same module the web client
  * imports — which is the whole reason that package exists. The differences
  * between the two clients are genuinely small:
  *
@@ -22,7 +22,7 @@ import type {
   SocketMessage,
   StoredUpload,
   TranscriptLine,
-} from "@herdrui/shared";
+} from "@shahi/shared";
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -34,7 +34,7 @@ export class UnauthorizedError extends Error {
 export interface Connection {
   /** e.g. `http://ubuntu.tailnet01.ts.net:7171` */
   baseUrl: string;
-  /** `herdrui_session=…`, held here because there is no browser cookie jar. */
+  /** `shahi_session=…`, held here because there is no browser cookie jar. */
   cookie: string | null;
 }
 

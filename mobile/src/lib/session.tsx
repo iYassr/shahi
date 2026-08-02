@@ -16,10 +16,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import type { ParsedPrompt, Session, SocketMessage } from "@herdrui/shared";
+import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
 import { api, connection, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
 
-const KEY = "herdrui.connection";
+const KEY = "shahi.connection";
 
 interface Stored {
   baseUrl: string;

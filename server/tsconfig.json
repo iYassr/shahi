@@ -19,7 +19,7 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "paths": {
-      "@herdrui/shared": [
+      "@shahi/shared": [
         "../shared/src/index.ts"
       ]
     }

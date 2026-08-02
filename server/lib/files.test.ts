@@ -6,7 +6,7 @@ import { OutsideHomeError } from "./dirs";
 import { contentTypeFor, isViewable, readWithinHome } from "./files";
 
 /** Under the home directory, which is one of the two roots a read may come from. */
-const dir = await mkdtemp(join(homedir(), ".herdrui-files-test-"));
+const dir = await mkdtemp(join(homedir(), ".shahi-files-test-"));
 afterAll(() => rm(dir, { recursive: true, force: true }));
 
 describe("contentTypeFor", () => {
@@ -58,7 +58,7 @@ describe("readWithinHome", () => {
   test("reads a file from the temp directory too", async () => {
     // Where agents put screenshots and scratch output — the files most worth
     // glancing at on a phone, and the ones this used to refuse.
-    const scratch = await mkdtemp(join(tmpdir(), "herdrui-files-test-"));
+    const scratch = await mkdtemp(join(tmpdir(), "shahi-files-test-"));
     try {
       const path = join(scratch, "shot.png");
       await writeFile(path, "not really a png");

@@ -11,7 +11,7 @@
  * full readiness timeout for a process that was never coming.
  */
 import { useEffect, useState } from "react";
-import { modesFor } from "@herdrui/shared";
+import { modesFor } from "@shahi/shared";
 import { api } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";

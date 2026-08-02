@@ -1,24 +1,24 @@
-# HerdrUI — user service.
+# Shahi — user service.
 #
 # Install:
 #   mkdir -p ~/.config/systemd/user
-#   cp deploy/herdrui.service ~/.config/systemd/user/
+#   cp deploy/shahi.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now herdrui
+#   systemctl --user enable --now shahi
 #
 # `loginctl enable-linger operator` is what keeps this running when you are not
 # logged in — without it the service stops the moment your last SSH session ends,
 # which is precisely when you would want to reach it from a phone.
 
 [Unit]
-Description=HerdrUI — mobile dashboard for herdr
+Description=Shahi — mobile dashboard for herdr
 Documentation=https://herdr.dev/docs/socket-api/
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/HerdrUI
-Environment=WEB_ROOT=%h/HerdrUI/web/dist
+WorkingDirectory=%h/Shahi
+Environment=WEB_ROOT=%h/Shahi/web/dist
 # Bound to this node's Tailscale address so the tailnet can reach it directly.
 #
 # Deliberately not 0.0.0.0: that would also publish on the LAN. And deliberately
@@ -36,7 +36,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/share/herdrui
+ReadWritePaths=%h/.local/share/shahi
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true

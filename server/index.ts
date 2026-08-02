@@ -1,5 +1,5 @@
 /**
- * HerdrUI server.
+ * Shahi server.
  *
  * A sidecar beside a running herdr server: it owns herdr's unix socket and
  * provides the three things herdr deliberately does not — HTTP, WebSocket, and
@@ -12,7 +12,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Auth } from "./lib/auth";
-import { loadConfig } from "./lib/config";
+import { legacyDataDir, loadConfig } from "./lib/config";
 import { HerdrClient, HerdrProtocolMismatch, HerdrSubscriber } from "./lib/herdr-client";
 import { createServer } from "./lib/http";
 import { Poller } from "./lib/poller";
@@ -37,6 +37,10 @@ try {
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 }
+
+// Asked before the directory is created, or creating it is what makes the
+// answer no.
+const leftBehind = legacyDataDir(config.dataPath);
 
 mkdirSync(dirname(config.dataPath), { recursive: true });
 const db = new Database(config.dataPath, { create: true });
@@ -103,6 +107,18 @@ if (auth.disabled) {
     "\n  No passcode set. Anyone who can reach this port has full control of\n" +
       "  every agent on this machine:\n" +
       "    bun run server/scripts/init-secrets.ts --passcode <digits>\n",
+  );
+}
+
+if (leftBehind) {
+  // Same shape of fault as WEB_ROOT above: everything comes up healthy and the
+  // data is simply somewhere else. An empty transcript list looks like a quiet
+  // app, not like a misconfigured one.
+  console.warn(
+    `\n  Found ${leftBehind}, from before this was called Shahi, and no new data\n` +
+      "  directory. Transcripts, uploads and push subscriptions are in there.\n" +
+      `    mv ${leftBehind} ${dirname(config.dataPath)}\n` +
+      `    mv ${dirname(config.dataPath)}/herdrui.sqlite ${config.dataPath}\n`,
   );
 }
 

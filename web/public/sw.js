@@ -14,7 +14,7 @@
  * negotiates TLS.
  */
 
-const CACHE = "herdrui-shell-v3";
+const CACHE = "shahi-shell-v4";
 
 /** Everything the app needs before it can render anything at all. */
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-180.png"];
@@ -123,7 +123,7 @@ async function shellFirst(request) {
 }
 
 self.addEventListener("push", (event) => {
-  let payload = { title: "herdr", body: "An agent needs you.", paneId: "" };
+  let payload = { title: "Shahi", body: "An agent needs you.", paneId: "" };
   try {
     if (event.data) payload = { ...payload, ...event.data.json() };
   } catch {

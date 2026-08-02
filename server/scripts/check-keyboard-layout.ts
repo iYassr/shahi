@@ -11,10 +11,10 @@
  * stays. If the composer is still on screen at the reduced height, it will
  * still be on screen above a real keyboard.
  *
- *   HERDRUI_PASSCODE=**** bun run server/scripts/check-keyboard-layout.ts
+ *   SHAHI_PASSCODE=**** bun run server/scripts/check-keyboard-layout.ts
  */
-const BASE = process.env.HERDRUI_URL ?? "http://127.0.0.1:7171";
-const PASSCODE = process.env.HERDRUI_PASSCODE ?? "4821";
+const BASE = process.env.SHAHI_URL ?? "http://127.0.0.1:7171";
+const PASSCODE = process.env.SHAHI_PASSCODE ?? "4821";
 
 /** iPhone 15 Pro, then the same device with a keyboard taking ~55% of it. */
 const FULL = { width: 393, height: 852 };
@@ -39,7 +39,7 @@ const chrome = Bun.spawn(
     "google-chrome",
     "--headless=new",
     `--remote-debugging-port=${port}`,
-    "--user-data-dir=/tmp/herdrui-keyboard-check",
+    "--user-data-dir=/tmp/shahi-keyboard-check",
     "--no-first-run",
     "--no-sandbox",
     "--disable-gpu",

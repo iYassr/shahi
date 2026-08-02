@@ -17,7 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { DashboardPane, Session, Space } from "@herdrui/shared";
+import type { DashboardPane, Session, Space } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
 

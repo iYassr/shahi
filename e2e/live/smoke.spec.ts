@@ -8,12 +8,12 @@ import { expect, test } from "@playwright/test";
  * answering differently. This is the part that can: it asserts shapes, not
  * behaviour, and it never writes.
  *
- *   HERDRUI_URL=https://host HERDRUI_PASSCODE=… bun run test:e2e --project=live
+ *   SHAHI_URL=https://host SHAHI_PASSCODE=… bun run test:e2e --project=live
  */
 
-const passcode = process.env.HERDRUI_PASSCODE;
+const passcode = process.env.SHAHI_PASSCODE;
 
-test.skip(!process.env.HERDRUI_URL, "set HERDRUI_URL to run against the real server");
+test.skip(!process.env.SHAHI_URL, "set SHAHI_URL to run against the real server");
 
 test("the real server still speaks the contract the stub imitates", async ({ request }) => {
   const login = await request.post("/api/auth/login", { data: { passcode } });

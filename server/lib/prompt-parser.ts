@@ -81,7 +81,7 @@ export function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
 
-import type { ParsedPrompt, PromptOption } from "@herdrui/shared";
+import type { ParsedPrompt, PromptOption } from "@shahi/shared";
 
 export type { ParsedPrompt, PromptOption };
 
