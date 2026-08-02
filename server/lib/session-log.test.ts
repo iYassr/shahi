@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { cachedPaths, fileOf, normalise, parseLines, questionsOf, remember, summariseToolInput } from "./session-log";
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  fileOf,
+  indexTranscript,
+  normalise,
+  parseLines,
+  questionsOf,
+  readWindow,
+  summariseToolInput,
+} from "./session-log";
 
 const assistant = (content: unknown[], over: Record<string, unknown> = {}) => ({
   type: "assistant",
@@ -349,56 +360,138 @@ describe("questionsOf", () => {
   });
 });
 
-
 /**
- * The cache had no bound, and on a year-old transcript directory that cost
- * 443MB of resident memory: every distinct pane opened held its parsed
- * transcript forever, at roughly five times the file it came from.
+ * Windowed reading, against a real file.
+ *
+ * The property that matters is equivalence: a window has to contain exactly the
+ * messages a full parse would have put at those positions. These build a
+ * transcript on disk and compare the two, because the whole point of the change
+ * is that the second one is no longer what runs.
  */
-describe("the transcript cache", () => {
-  const entry = (size: number) => ({ size, messages: [] as never[] });
+describe("reading a window instead of the whole file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "shahi-log-"));
 
-  test("keeps what fits, newest first", () => {
-    const store = new Map<string, { size: number; messages: never[] }>();
-    remember("a", entry(10), 100, store);
-    remember("b", entry(10), 100, store);
-    expect(cachedPaths(store)).toEqual(["a", "b"]);
+  const assistantRow = (uuid: string, text: string) =>
+    JSON.stringify({
+      type: "assistant",
+      uuid,
+      timestamp: "2026-08-02T00:00:00.000Z",
+      message: { content: [{ type: "text", text }] },
+    });
+
+  const toolCall = (uuid: string, id: string) =>
+    JSON.stringify({
+      type: "assistant",
+      uuid,
+      timestamp: "2026-08-02T00:00:00.000Z",
+      message: { content: [{ type: "tool_use", id, name: "Read", input: { file_path: "/tmp/x" } }] },
+    });
+
+  const toolResult = (uuid: string, id: string, text: string) =>
+    JSON.stringify({
+      type: "user",
+      uuid,
+      timestamp: "2026-08-02T00:00:00.000Z",
+      message: { content: [{ type: "tool_result", tool_use_id: id, content: text }] },
+    });
+
+  /** Writes a transcript and returns its path plus what a full parse yields. */
+  function transcript(name: string, lines: string[]) {
+    const path = join(dir, `${name}.jsonl`);
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    return { path, whole: normalise(parseLines(readFileSync(path, "utf8"))) };
+  }
+
+  test("indexes one offset per message, and no offset for a bare tool result", async () => {
+    const { path, whole } = transcript("mixed", [
+      assistantRow("a", "one"),
+      toolCall("b", "t1"),
+      toolResult("c", "t1", "output"),
+      assistantRow("d", "two"),
+    ]);
+
+    const index = await indexTranscript(path);
+    // Four rows, three messages: the tool result folded into the call above it.
+    expect(index.offsets.length).toBe(3);
+    expect(index.offsets.length).toBe(whole.length);
   });
 
-  test("evicts the least recently used once the budget is passed", () => {
-    const store = new Map<string, { size: number; messages: never[] }>();
-    for (const name of ["a", "b", "c", "d"]) remember(name, entry(40), 100, store);
-    expect(cachedPaths(store)).toEqual(["c", "d"]);
+  test("a window matches the same slice of a full parse", async () => {
+    const { path, whole } = transcript(
+      "many",
+      Array.from({ length: 40 }, (_, i) => assistantRow(`u${i}`, `message ${i}`)),
+    );
+
+    const tail = await readWindow(path, { limit: 12 });
+    expect(tail!.total).toBe(40);
+    expect(tail!.messages).toEqual(whole.slice(28, 40));
+
+    const page = await readWindow(path, { limit: 12, before: 28 });
+    expect(page!.messages).toEqual(whole.slice(16, 28));
   });
 
-  /*
-   * Two survive whatever they weigh. A single transcript here is 38MB against a
-   * 48MB budget, so a strict budget would evict each of two open panes on the
-   * way to the other and re-parse 38MB every poll.
-   */
-  test("holds two however far over budget they are", () => {
-    const store = new Map<string, { size: number; messages: never[] }>();
-    remember("big", entry(10_000), 100, store);
-    remember("bigger", entry(20_000), 100, store);
-    expect(cachedPaths(store)).toEqual(["big", "bigger"]);
+  // The reason a window can start anywhere: a tool_result whose call is above
+  // the window renders nothing rather than rendering as something the user said.
+  test("a window starting on an orphaned tool result drops it", async () => {
+    const { path, whole } = transcript("orphan", [
+      toolCall("a", "t1"),
+      toolResult("b", "t1", "output"),
+      assistantRow("c", "after"),
+    ]);
+
+    const window = await readWindow(path, { limit: 1 });
+    expect(window!.messages).toEqual(whole.slice(1, 2));
+    expect(window!.messages[0]!.blocks[0]).toMatchObject({ kind: "text", text: "after" });
   });
 
-  // Reading a pane again should keep it, not age it out behind panes opened
-  // once and abandoned.
-  test("a hit counts as use", () => {
-    const store = new Map<string, { size: number; messages: never[] }>();
-    for (const name of ["a", "b", "c"]) remember(name, entry(40), 100, store);
-    remember("a", entry(40), 100, store);
-    remember("d", entry(40), 100, store);
-    expect(cachedPaths(store)).toEqual(["a", "d"]);
+  // The last call in a page has its result in a later row, so the read has to
+  // reach past the window to pair them.
+  test("the newest tool call in a page still carries its output", async () => {
+    const { path } = transcript("pairing", [
+      assistantRow("a", "before"),
+      toolCall("b", "t1"),
+      toolResult("c", "t1", "the output"),
+      assistantRow("d", "after"),
+    ]);
+
+    const page = await readWindow(path, { limit: 1, before: 2 });
+    expect(page!.messages[0]!.blocks[0]).toMatchObject({
+      kind: "tool",
+      result: { text: "the output" },
+    });
   });
 
-  // The one being read is the one whose re-parse would be felt on every poll.
-  test("never evicts the newest, however big", () => {
-    const store = new Map<string, { size: number; messages: never[] }>();
-    remember("first", entry(10), 100, store);
-    remember("second", entry(10), 100, store);
-    remember("huge", entry(10_000), 100, store);
-    expect(cachedPaths(store)).toEqual(["second", "huge"]);
+  test("extends the index as the file grows, rather than rebuilding it", async () => {
+    const path = join(dir, "growing.jsonl");
+    writeFileSync(path, `${assistantRow("a", "one")}\n`);
+    const first = await indexTranscript(path);
+    expect(first.offsets.length).toBe(1);
+
+    appendFileSync(path, `${assistantRow("b", "two")}\n`);
+    const second = await indexTranscript(path);
+    expect(second.offsets.length).toBe(2);
+    // The first message's offset is untouched, which is what says the earlier
+    // bytes were not read again.
+    expect(second.offsets[0]).toBe(first.offsets[0]!);
+  });
+
+  // A live transcript is often mid-write. The half-line must not be indexed as
+  // a message, and must be picked up once it is complete.
+  test("waits for a half-written final line", async () => {
+    const path = join(dir, "partial.jsonl");
+    writeFileSync(path, `${assistantRow("a", "one")}\n{"type":"assist`);
+    expect((await indexTranscript(path)).offsets.length).toBe(1);
+
+    writeFileSync(path, `${assistantRow("a", "one")}\n${assistantRow("b", "two")}\n`);
+    expect((await indexTranscript(path)).offsets.length).toBe(2);
+  });
+
+  test("starts over when the file was replaced rather than appended to", async () => {
+    const path = join(dir, "replaced.jsonl");
+    writeFileSync(path, [assistantRow("a", "one"), assistantRow("b", "two")].join("\n") + "\n");
+    expect((await indexTranscript(path)).offsets.length).toBe(2);
+
+    writeFileSync(path, `${assistantRow("c", "only")}\n`);
+    expect((await indexTranscript(path)).offsets.length).toBe(1);
   });
 });

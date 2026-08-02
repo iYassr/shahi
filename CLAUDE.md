@@ -68,7 +68,9 @@ SQLite. herdr hands over the id to join on — but for codex only once its
 integration is installed (`herdr integration install codex`), which adds the
 SessionStart hook that reports one. Without it the reader falls back to asking
 `/proc` what file the codex process has open, and then to the working
-directory, which cannot tell two sessions in one folder apart. Reading those is what makes a phone-shaped conversation possible at all —
+directory, which cannot tell two sessions in one folder apart.
+
+Reading those files is what makes a phone-shaped conversation possible at all —
 terminal text arrives pre-wrapped at 146 columns and cannot be reflowed. The
 terminal is still there, on the Screen tab, for when you need the real screen.
 
@@ -138,6 +140,17 @@ often than launched — iOS keeps one alive for days — so without this a fix c
 unseen indefinitely, and every conversation turns into "are you sure you
 reloaded?".
 
+**The reader reads a window, not a file.** A transcript is indexed once by the
+byte offset of the line that produced each message — two numbers per message
+against a parsed object — and a poll reads only that byte range. This replaced
+parsing the whole JSONL to slice twelve messages off the end, which had gone
+from reasonable (4.9MB, 516 messages) to 208MB of resident memory per pane
+opened (38MB, 2,391 messages). Measured after: a six-pane sweep costs 111MB
+where it cost 369MB, and re-polling a pane you opened earlier costs 1MB where it
+cost 154MB. Two properties of `normalise` make windowing sound and both are load
+bearing: whether a row produces a message depends on that row alone, and an
+orphaned `tool_result` already renders nothing rather than something wrong.
+
 **The reader polls the tail, not the page.** Only the last message can change, so
 a poll asks for ~12 messages and `merge` keeps the rest. With an ETag on the
 endpoint, an unchanged conversation costs 224 bytes on the wire instead of 15KB
@@ -165,14 +178,6 @@ Stated plainly, because a vague gaps list is worse than none.
   registration are both written and unit-tested; nothing has ever delivered a
   notification to a real device through them, because that needs a development
   build and a paid Apple account. See `docs/notifications.md`.
-- **The reader parses a whole transcript to show twelve messages.** A poll asks
-  for the tail, and `readSessionLog` reads and parses the entire JSONL to slice
-  it — which was fine when the largest file here was 4.9MB and is not now that
-  they reach 38 and 50MB. Measured on the live server: opening one such pane
-  takes the process from 74MB to 282MB. Repeat polls are free, because the cache
-  hits, and the cache is now bounded — but the first read of each pane costs
-  that. The fix is to parse only the tail and widen the window until every
-  `tool_result` has found its `tool_use`; nobody has written it yet.
 - **The refresh problem is not root-caused.** The owner reports needing to
   refresh the page; two plausible causes were fixed (a render crash with no
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed

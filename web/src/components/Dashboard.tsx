@@ -128,7 +128,7 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
               {group.panes.map((pane) => (
                 <button
                   key={pane.paneId}
-                  className={`row row--agent row--${pane.status}`}
+                  className={`row row--${pane.status}`}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <span className="row__glyph" aria-hidden="true">
