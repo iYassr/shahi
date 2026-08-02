@@ -316,15 +316,15 @@ button {
   align-items: baseline;
   gap: 10px;
   width: 100%;
-  padding: 11px var(--gutter);
+  padding: 14px var(--gutter);
   text-align: left;
 }
 
 .row::after {
   content: "";
   position: absolute;
-  /* Starts under the title, past the status glyph and agent mark. */
-  left: 48px;
+  /* Starts under the title, past the one glyph before it. */
+  left: 34px;
   right: 0;
   bottom: 0;
   height: 1px;
@@ -384,49 +384,22 @@ button {
   text-align: center;
 }
 
+/*
+ * One face for both lists.
+ *
+ * This was monospace at 11px in Spaces while the Agents list set the same
+ * column in the UI face at 12 — two lists under one tab bar, disagreeing, which
+ * is the second time that exact mismatch has been noticed from a phone. A space
+ * name and an agent kind are names, and names are prose here; only real machine
+ * text — pane ids, paths, terminal output — stays monospace.
+ *
+ * Capped so a long space name cannot eat a title that is a whole sentence.
+ */
 .row__meta {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  flex: none;
-}
-
-/*
- * One mark per row, and room around it.
- *
- * The list used to carry four things per line: a status glyph, a coloured agent
- * mark, the title, and the space name. Two of those were saturated marks, so
- * three or four hues repeated down a screen whose only question is "which one
- * needs me" — and the loudest of them encoded the least useful fact, which
- * agent kind it is. Twenty-eight of those rows is a wall.
- *
- * So the glyph that survives is status, because that is what you are scanning
- * for, and the agent kind joins the space in the dim text on the right. The
- * coloured mark still exists where it is worth its volume: once per heading,
- * when the list is grouped by agent.
- *
- * The extra padding is the other half. Reference points on iOS run to about
- * 70pt a row; this was 46 and is now 52, which is calmer without giving up the
- * two rows that matter when fifteen agents are running.
- */
-.row--agent {
-  align-items: baseline;
-  padding: 14px var(--gutter);
-}
-
-/* Inset to the title, which now starts past one glyph rather than two. */
-.row--agent::after {
-  left: 34px;
-}
-
-/*
- * Prose, matching the title, and capped so a long space name cannot eat a
- * title that is a whole sentence. It was monospace, which made a secondary
- * column read as loudly as the primary one.
- */
-.row--agent .row__meta {
   font-family: var(--ui);
   font-size: 12px;
+  color: var(--dim);
+  flex: none;
   max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;

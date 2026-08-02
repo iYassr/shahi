@@ -82,105 +82,166 @@ export async function findTranscript(sessionId: string): Promise<string | null> 
 }
 
 /**
- * Cache keyed on file size, bounded by the bytes it came from.
+ * An index of where each message starts, so a poll reads a window and not a file.
  *
- * A full read is cheap enough to prefer over an incremental parser — and
- * re-reading keeps tool_use/tool_result pairing correct, which incremental
- * parsing would break whenever a call and its result straddled the boundary.
- * Size is a sufficient key because the file is only ever appended to.
+ * The reader polls the tail every 2.5 seconds and asks for twelve messages. This
+ * used to answer by parsing the entire transcript and slicing the end off it,
+ * which was reasonable when the largest file here was 4.9MB and 516 messages.
+ * That directory now holds 489MB, with single files at 38 and 50MB and one pane
+ * reporting 2,310 messages, and the cost had become 208MB of resident memory to
+ * show twelve of them — measured live, 74MB to 282MB on opening one pane.
  *
- * The bound is the part that was missing, and it cost 443MB of resident memory
- * before anyone looked. This was written when the largest transcript here was
- * 4.9MB and 516 messages; a year of use later the same directory holds 489MB
- * across it, with single files at 38 and 50MB and one pane reporting 2,310
- * messages. Measured on the live server: opening one pane took the process from
- * 76MB to 282MB, six panes took it to 443MB, and none of it ever came back,
- * because an unbounded Map keyed on path holds every transcript ever opened.
- * Parsed objects run about five times the file they came from.
+ * What is held now is the byte offset of the line that produced each message:
+ * two numbers per message rather than a parsed object, about 18KB where the
+ * messages were 200MB. A window is served by reading that byte range and
+ * parsing only it.
  *
- * Polling the same pane is not the problem — ten repeat polls cost 1.4MB, since
- * the size key hits. Only distinct panes accumulate. So the fix is eviction, not
- * a different cache: least-recently-used, budgeted in source bytes, and always
- * keeping the newest entry however large it is — dropping that one would mean
- * re-parsing 38MB on every poll of the pane you are actually reading.
+ * Two properties of `normalise` are what make this sound, and both are worth
+ * stating because the design rests on them:
+ *
+ *  - **Whether a row produces a message is a property of that row alone.** Only
+ *    the tool_use/tool_result pairing looks across rows, and it decides what a
+ *    message *contains*, never whether it exists. So the index is built with
+ *    `normalise([row]).length` rather than a second copy of that logic, which
+ *    could drift from it.
+ *  - **An orphaned `tool_result` is already dropped.** A user row carrying only
+ *    a tool_result whose call is outside the window produces no blocks, and a
+ *    message with no blocks is skipped. A window can therefore start anywhere
+ *    without rendering half a tool call.
+ *
+ * The index extends rather than rebuilds: a live transcript grows by a few lines
+ * between polls, and only those bytes are read. A file that shrank was replaced
+ * rather than appended to, so that one starts over.
  */
-const CACHE_BUDGET_BYTES = 48 * 1024 * 1024;
+interface TranscriptIndex {
+  /** Bytes indexed so far — always the end of the last complete line. */
+  size: number;
+  /** Byte offset of the line that produced each message, in order. */
+  offsets: number[];
+}
 
-const cache = new Map<string, { size: number; messages: LogMessage[] }>();
+/** Indexes are small; this bound is a backstop, not a working constraint. */
+const MAX_INDEXES = 64;
+
+const indexes = new Map<string, TranscriptIndex>();
 
 /**
- * Records a parsed transcript as the most recently used, then evicts from the
- * far end until the held bytes fit the budget.
+ * Reads whole lines from `from`, returning the offset after the last complete
+ * one.
  *
- * `Map` iterates in insertion order, so re-inserting on every hit is what makes
- * that order least-recently-used.
+ * The last line of a live transcript is often half-written, so anything after
+ * the final newline is left unconsumed and picked up on the next pass. Splitting
+ * on bytes is safe: `\n` cannot appear inside a UTF-8 multi-byte sequence.
  */
-export function remember(
+async function scanLines(
   path: string,
-  entry: { size: number; messages: LogMessage[] },
-  budget = CACHE_BUDGET_BYTES,
-  store = cache,
-): void {
-  store.delete(path);
-  store.set(path, entry);
+  from: number,
+  onRow: (offset: number, row: Record<string, unknown>) => void,
+): Promise<number> {
+  const decoder = new TextDecoder();
+  let pending: Uint8Array<ArrayBuffer> = new Uint8Array(0);
+  let consumed = from;
 
-  let held = 0;
-  let kept = 0;
-  for (const [key, held_entry] of [...store].reverse()) {
-    held += held_entry.size;
-    kept += 1;
-    /*
-     * Two are kept whatever they cost, and only then does the budget apply.
-     *
-     * One is not enough: a single transcript here is 38MB, so a budget in
-     * source bytes holds about one of them, and moving between two panes would
-     * evict each on the way to the other — a 200ms re-parse every 2.5 seconds,
-     * for as long as you had them both open. Holding the second is much cheaper
-     * than re-reading it forever, and past two the budget is the right call.
-     */
-    if (kept > 2 && held > budget) store.delete(key);
+  for await (const chunk of Bun.file(path).slice(from).stream()) {
+    const buffer: Uint8Array<ArrayBuffer> =
+      pending.length === 0 ? (chunk as Uint8Array<ArrayBuffer>) : concat(pending, chunk);
+    let start = 0;
+    for (let i = 0; i < buffer.length; i++) {
+      if (buffer[i] !== 0x0a) continue;
+      const line = decoder.decode(buffer.subarray(start, i));
+      if (line.trim()) {
+        try {
+          onRow(consumed + start, JSON.parse(line) as Record<string, unknown>);
+        } catch {
+          // A partially-written line, or one this version cannot read. Skipping
+          // it costs one message; failing the read costs the whole transcript.
+        }
+      }
+      start = i + 1;
+    }
+    consumed += start;
+    pending = buffer.subarray(start);
   }
+  return consumed;
 }
 
-/** Test seam: what the cache is holding, newest last. */
-export function cachedPaths(store = cache): string[] {
-  return [...store.keys()];
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
 }
 
-/** Reads and normalises a transcript, newest messages last. */
+/** Builds the index, or extends the one already held, up to the file's end. */
+export async function indexTranscript(path: string): Promise<TranscriptIndex> {
+  const size = Bun.file(path).size;
+  const held = indexes.get(path);
+
+  // Only ever appended to in normal use; anything else means a different file
+  // wearing the same name.
+  const index: TranscriptIndex =
+    held && size >= held.size ? held : { size: 0, offsets: [] };
+
+  if (index.size !== size) {
+    index.size = await scanLines(path, index.size, (offset, row) => {
+      if (normalise([row]).length > 0) index.offsets.push(offset);
+    });
+  }
+
+  indexes.delete(path);
+  indexes.set(path, index);
+  for (const key of [...indexes.keys()].slice(0, Math.max(0, indexes.size - MAX_INDEXES))) {
+    indexes.delete(key);
+  }
+  return index;
+}
+
+/** Test seam: which transcripts are indexed, least recently used first. */
+export function indexedPaths(): string[] {
+  return [...indexes.keys()];
+}
+
+/**
+ * Messages beyond the window, read so the last tool call in it can still find
+ * its result. Its `tool_result` is in a later row, and without a few rows of
+ * slack the newest call in a page would render without its output.
+ */
+const PAIRING_SLACK = 4;
+
+/** Reads and normalises a window of a transcript, newest messages last. */
 export async function readSessionLog(
   sessionId: string,
   options: { limit?: number; before?: number } = {},
 ): Promise<SessionLog | null> {
   const path = await findTranscript(sessionId);
   if (!path) return null;
+  const log = await readWindow(path, options);
+  return log && { ...log, sessionId };
+}
 
-  const file = Bun.file(path);
-  const size = file.size;
-
-  const cached = cache.get(path);
-  let all: LogMessage[];
-  if (cached && cached.size === size) {
-    all = cached.messages;
-    // Re-inserted even on a hit, or the pane you keep coming back to ages out
-    // behind ones you opened once.
-    remember(path, cached);
-  } else {
-    all = normalise(parseLines(await file.text()));
-    remember(path, { size, messages: all });
-  }
+/** The same, by path — which is what the tests can reach. */
+export async function readWindow(
+  path: string,
+  options: { limit?: number; before?: number } = {},
+): Promise<SessionLog | null> {
+  const index = await indexTranscript(path);
+  const total = index.offsets.length;
 
   const limit = options.limit ?? 200;
-  const end = options.before ?? all.length;
+  const end = Math.min(options.before ?? total, total);
   const start = Math.max(0, end - limit);
 
-  return {
-    sessionId,
-    path,
-    messages: all.slice(start, end),
-    total: all.length,
-    offset: size,
-  };
+  // Reading from the line that produced message `start` means the first message
+  // parsed out of the range is exactly that one, so the slice below only has to
+  // drop the slack read for pairing.
+  const from = index.offsets[start] ?? 0;
+  const beyond = end + PAIRING_SLACK;
+  const to = beyond < total ? index.offsets[beyond] : undefined;
+
+  const window = await Bun.file(path).slice(from, to).text();
+  const messages = normalise(parseLines(window)).slice(0, end - start);
+
+  return { sessionId: path, path, messages, total, offset: index.size };
 }
 
 export function parseLines(text: string): Record<string, unknown>[] {
@@ -507,8 +568,13 @@ export async function readSessionImage(
   const inResult = ref.slice(separator + 1).startsWith("r");
   const index = inResult ? Number(ref.slice(separator + 2)) : wanted;
 
-  for (const row of parseLines(await Bun.file(path).text())) {
-    if (row.uuid !== uuid) continue;
+  // Streamed and stopped at the match rather than parsed whole. One transcript
+  // here is 38MB and holds 3.3MB of base64 across 28 images; reading all of it
+  // into memory to answer for one of them is what this endpoint used to do.
+  let found: { bytes: Uint8Array; mediaType: string } | null = null;
+
+  await scanLines(path, 0, (_offset, row) => {
+    if (found || row.uuid !== uuid) return;
     let seen = 0;
     for (const block of blocksOf(row)) {
       const parts = inResult
@@ -522,13 +588,15 @@ export async function readSessionImage(
       for (const part of parts) {
         if (seen++ !== index) continue;
         const data = part.source?.data;
-        if (!data) return null;
-        return {
+        if (!data) return;
+        found = {
           bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
           mediaType: part.source?.media_type ?? "application/octet-stream",
         };
+        return;
       }
     }
-  }
-  return null;
+  });
+
+  return found;
 }
