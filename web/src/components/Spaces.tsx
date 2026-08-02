@@ -9,7 +9,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type AgentStatus, type Session } from "../api";
-import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
@@ -238,7 +237,9 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                   <span className="row__glyph" aria-hidden="true">
                     {GLYPH[pane.status]}
                   </span>
-                  {pane.isAgent && <AgentIcon kind={pane.agent} />}
+                  {/* No coloured mark here either: the kind is in the dim text
+                      at the end of the row, and two marks per line is what made
+                      the agent list a wall. */}
                   <span className="row__title">
                     {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
                   </span>
