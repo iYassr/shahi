@@ -102,7 +102,7 @@ describe("normaliseCodex", () => {
  * fresh copy pointed at a temp directory rather than at the real one.
  */
 describe("findCodexRollout, by session id", () => {
-  const home = mkdtempSync(join(tmpdir(), "herdrui-codex-"));
+  const home = mkdtempSync(join(tmpdir(), "shahi-codex-"));
   const id = "019f9bd1-1b6b-7f33-a046-a60cce4e6455";
   const rollout = join(home, "sessions/2026/07/26", `rollout-2026-07-26T00-26-40-${id}.jsonl`);
   mkdirSync(dirname(rollout), { recursive: true });

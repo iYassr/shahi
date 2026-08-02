@@ -6,8 +6,9 @@
  * default passcode or a hardcoded signing key would defeat the point of having
  * either.
  */
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface Config {
   /**
@@ -90,7 +91,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? "127.0.0.1",
     port: Number(env.PORT ?? DEFAULT_PORT),
     socketPath: env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
-    dataPath: env.HERDRUI_DATA ?? join(homedir(), ".local", "share", "herdrui", "herdrui.sqlite"),
+    // `HERDRUI_DATA` is still read, one name behind. A box part-way through the
+    // rename should keep its transcripts rather than start an empty database
+    // beside them; `legacyDataDir` below is what says so out loud.
+    dataPath:
+      env.SHAHI_DATA ??
+      env.HERDRUI_DATA ??
+      join(homedir(), ".local", "share", "shahi", "shahi.sqlite"),
     passcodeHash: decodePasscodeHash(env.PASSCODE_HASH_B64),
     sessionSecret: required(
       "SESSION_SECRET",
@@ -103,9 +110,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         ? {
             publicKey: vapidPublic,
             privateKey: vapidPrivate,
-            subject: env.VAPID_SUBJECT ?? "mailto:herdrui@localhost",
+            subject: env.VAPID_SUBJECT ?? "mailto:shahi@localhost",
           }
         : null,
     webRoot: env.WEB_ROOT ?? null,
   };
+}
+
+/**
+ * The pre-rename data directory, if it is still sitting there unused.
+ *
+ * The project was called herdrui until it was called Shahi, and its database
+ * and uploads lived under `~/.local/share/herdrui`. Renaming the default path
+ * without moving the files would have started an empty database beside a full
+ * one and lost every recorded transcript and every file ever attached from the
+ * phone — silently, which is the worst way to lose something.
+ *
+ * The installer moves it. This is for everyone who never runs the installer:
+ * returns the old directory only when it exists and the new one does not, so
+ * startup can say exactly what to do about it.
+ */
+export function legacyDataDir(
+  dataPath: string,
+  exists: (path: string) => boolean = (path) => existsSync(path),
+): string | null {
+  const legacy = join(homedir(), ".local", "share", "herdrui");
+  if (!exists(legacy)) return null;
+  if (exists(dirname(dataPath))) return null;
+  return legacy;
 }

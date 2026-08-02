@@ -82,7 +82,7 @@ describe("codex", () => {
       "• Test received successfully.",
       "› write a haiku about terminals",
       "• Working (12s • esc to interrupt)",
-      "  gpt-5.6-sol default · ~/HerdrUI",
+      "  gpt-5.6-sol default · ~/Shahi",
     ].join("\n");
     expect(parseActivity(screen)?.elapsed).toBe("12s");
   });

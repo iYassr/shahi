@@ -9,7 +9,7 @@ export default defineConfig({
       // The shared contract is TypeScript source in a sibling workspace, so it
       // is aliased rather than resolved through node_modules — Vite compiles it
       // as part of this app instead of expecting a built package.
-      "@herdrui/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
+      "@shahi/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
     },
   },
   build: { outDir: "dist", emptyOutDir: true },

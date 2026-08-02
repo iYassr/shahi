@@ -11,14 +11,14 @@
  * a multi-gigabyte image pull for something a WebSocket and four commands
  * cover.
  *
- *   HERDRUI_PASSCODE=1234 bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
+ *   SHAHI_PASSCODE=1234 bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
  */
 // Both come from the environment. A default host and a default passcode in a
 // checked-in file are a credential in the repository, however private it is.
-const BASE = process.env.HERDRUI_URL ?? "http://127.0.0.1:7171";
-const PASSCODE = process.env.HERDRUI_PASSCODE;
+const BASE = process.env.SHAHI_URL ?? "http://127.0.0.1:7171";
+const PASSCODE = process.env.SHAHI_PASSCODE;
 if (!PASSCODE) {
-  console.error("Set HERDRUI_PASSCODE (and HERDRUI_URL if it is not on loopback).");
+  console.error("Set SHAHI_PASSCODE (and SHAHI_URL if it is not on loopback).");
   process.exit(1);
 }
 
@@ -36,7 +36,7 @@ const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
 if (!cookie) throw new Error("login did not return a cookie");
 
 const port = 9333;
-const profile = "/tmp/herdrui-shot-profile";
+const profile = "/tmp/shahi-shot-profile";
 const chrome = Bun.spawn(
   [
     "google-chrome",

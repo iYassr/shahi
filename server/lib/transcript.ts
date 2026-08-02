@@ -18,7 +18,7 @@
  *
  * Storage is SQLite via `bun:sqlite`, so history survives a restart.
  */
-import { GAP_MARKER, type TranscriptLine } from "@herdrui/shared";
+import { GAP_MARKER, type TranscriptLine } from "@shahi/shared";
 import { Database } from "bun:sqlite";
 
 export { GAP_MARKER };

@@ -1,4 +1,4 @@
-import { argsForMode, type InstalledAgent } from "@herdrui/shared";
+import { argsForMode, type InstalledAgent } from "@shahi/shared";
 
 export type { InstalledAgent };
 

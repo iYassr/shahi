@@ -21,7 +21,7 @@
  * replay, so anything missed while disconnected can only be recovered by asking
  * again.
  */
-import type { StatusChange } from "@herdrui/shared";
+import type { StatusChange } from "@shahi/shared";
 import { EventEmitter } from "node:events";
 
 export type { StatusChange };

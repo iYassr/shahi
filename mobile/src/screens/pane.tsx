@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@herdrui/shared";
+import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
 import { api, connection } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";

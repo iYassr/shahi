@@ -9,7 +9,7 @@
       "@/assets/*": [
         "./assets/*"
       ],
-      "@herdrui/shared": [
+      "@shahi/shared": [
         "../shared/src/index.ts"
       ]
     }

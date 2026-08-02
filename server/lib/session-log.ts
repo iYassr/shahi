@@ -32,7 +32,7 @@
  * store in their own format, and plain shells have no transcript at all — so
  * the terminal view remains the universal fallback rather than a legacy one.
  */
-import type { LogBlock, LogMessage, SessionLog } from "@herdrui/shared";
+import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
