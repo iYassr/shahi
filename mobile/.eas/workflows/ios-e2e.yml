@@ -1,14 +1,21 @@
 name: iOS end to end
 
+# NOTE: the `maestro` job type requires a paid EAS plan. On the free tier this
+# file validates server-side and refuses to run with:
+#   "Running maestro_test jobs requires a paid plan."
+# The build job below is free-tier eligible; only the test job is gated. Kept in
+# the repository because it is correct and one subscription away from running —
+# see docs/verify-on-device.md for what is being done by hand until then.
+
 # Not on every push: each run is a simulator build plus a Maestro job, and the
 # browser suite already covers the shared contract. This is for the things only
 # a real iOS runtime can answer — the native tab bar, the route restructure, a
 # picker that must send the right flags.
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   push:
     branches: [master]
-    paths: ['mobile/**', '.maestro/**', '.eas/workflows/**']
+    paths: ['mobile/**', '.maestro/**']
 
 jobs:
   build:
@@ -24,7 +31,7 @@ jobs:
     type: maestro
     params:
       build_id: ${{ needs.build.outputs.build_id }}
-      flow_path: .maestro
+      flow_path: ../.maestro
       record_screen: true
       # A flake here costs a whole simulator boot, so one retry of only what
       # failed is cheaper than re-running the suite by hand.
@@ -51,4 +58,4 @@ jobs:
             done
             echo "the stub never came up; every flow after this would fail for the wrong reason"
             exit 1
-          working_directory: ../..
+          working_directory: ..
