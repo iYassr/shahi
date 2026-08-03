@@ -1,64 +1,91 @@
-# Five minutes on the actual phone
+# Ten minutes on the actual phone
 
-The suite runs 146 tests in Chromium and WebKit and none of them are an iPhone.
-WebKit is close — close enough to have caught a blank page, a tap that never
-landed, and a thumbnail that collapsed — but it is not Safari, it has no soft
-keyboard, no home screen, and no APNs.
+The native app has no automated tests at all. `web/` has 164 browser tests and
+`mobile/` has none, so **this list is the entire test suite for the product**
+until that changes. It is not a nice-to-have.
 
-This is the list of things only a device can answer. Run it after anything that
-touches layout, the service worker, or notifications. It takes about five
-minutes.
+It is ordered by what is most likely to be broken, not by what a user does
+first. Anything a type checker cannot confirm — a route, a native module, a
+gesture, a notification — is near the top.
 
 ## Before you start
 
-Background the app and reopen it. It compares its bundle against the served one
-and reloads if they differ, so this is how you know you are testing the build you
-just deployed rather than the one from last week.
+Check you are running the build you think you are. Settings inside the app is
+not enough; the giveaway is a feature you know is new. If the tab bar at the
+bottom is a real iOS tab bar with a blur behind it, you are on August's build or
+later. If it is two words with a line under one, you are not.
+
+A **JS-only** change arrives over the air on the `preview` channel — background
+the app and reopen it. A change touching **native** code needs a new build; when
+in doubt, rebuild.
 
 ## The checks
 
-**1. It opens from the icon.**
-Launch from the home screen, not a tab. It should paint immediately — the shell
-is cached — and fill in as the session arrives. A white screen for more than a
-moment means the worker is not doing its job.
+**1. It opens, and it opens where it should.**
+Cold-launch from the icon with Tailscale on. You should land on the agent list.
+Force-quit and reopen with Tailscale *off*: it should say it cannot reach the
+server, not hang and not show an empty list as though nothing were running.
+Sign out and back in — the connect screen should take the address and passcode
+and land you back on the list.
 
-**2. Scrolling is boring.**
-Flick the agent list hard, then a long transcript. Nothing should stutter, jump,
-or drift as Safari's toolbar collapses. This is the one that has broken twice and
-neither time did a test notice: the app used to resize itself in response to the
-toolbar moving.
+**2. The tab bar is real.**
+Tap between Agents and Spaces. The bar should blur what scrolls under it, and
+tapping the tab you are already on should scroll that list back to the top.
+Neither is something a drawn tab bar can do, which is why it is here.
 
-**3. The keyboard does not bury the composer.**
-Open a pane, tap the text box. The composer, the key bar and Send must all stay
-above the keyboard. Type a few words, dismiss the keyboard, reopen it — the draft
-should still be there. Then turn the phone sideways with the keyboard open: the
-tab row disappears, and the composer is still reachable.
+**3. Nothing hides under the notch or the home indicator.**
+Scroll each list to both ends. The first row should clear the status bar and the
+last should clear the home indicator, and the scroll bar itself should stay
+inside the safe area.
 
-**4. Tapping works where it looks like it should.**
-Tap an image in a transcript — it should open full screen, pinch-zoomable, with
-Download. Tap a filename under a tool call — same viewer, different route. Both
-of these have failed on iOS while working everywhere else.
+**4. Starting an agent offers its permissions.**
+Spaces → a space → New agent. Pick claude: four modes should appear, from "Ask
+me" to "Skip all permissions", the dangerous one outlined in red. Pick codex:
+the four should change to codex's own. Start one with a non-default mode and
+confirm on the desktop that the flags actually landed — this is the one thing on
+this list where being wrong is expensive rather than annoying.
 
-**5. Answering an agent actually answers it.**
-With something blocked, tap an option on the card and watch the agent move on.
-This is the whole product; it is worth confirming with your own eyes
-occasionally rather than trusting the test that mocks it.
+**5. A question renders as a question.**
+Find a blocked agent. The card should carry the question, the numbered options,
+and — for codex — the command it wants to run above them. If you see a bare
+"Allow?" with nothing to judge, the context lines are missing.
 
-**6. Notifications arrive.**
-Turn them on, use "Send a test", and confirm one appears with the app closed.
-Then tap it: it should open the pane it names, not the dashboard.
+**6. A file a tool touched opens.**
+In a transcript, find a tool row naming a file and tap the filename. Text should
+open in a sheet; an image should open as an image. There is deliberately no
+download button.
+
+**7. It taps back.**
+Answering a prompt, sending a message, and starting an agent should each give a
+small haptic at the moment it commits. A failure should feel different from a
+success. If you feel nothing at all, `expo-haptics` did not make it into the
+build.
+
+**8. Text you want is selectable.**
+Long-press a paragraph the agent wrote, a code block, and tool output. All three
+should offer Copy. Chrome — titles, labels, the tab bar — should not.
+
+**9. The keyboard does not bury the composer.**
+Open a pane, tap the text box. Composer, key bar and Send stay above the
+keyboard. Type, dismiss, reopen: the draft survives. Rotate with the keyboard
+open and the composer is still reachable.
+
+**10. Notifications arrive.**
+Turn them on. `expo_push_token` on the server should gain a row — until it does,
+nothing else in this check can pass, and as of August 2026 it never has. Then
+lock the phone, get an agent to block, and confirm one arrives. Tap it: it
+should open that pane, not the list.
 
 ## What to write down when something fails
 
-The three failures look identical from a distance and point in different
-directions, so say which one it was:
+Which of these it is, because they point at different things:
 
-- **blank** — a render threw; the boundary should have caught it, so if you see
-  a truly blank screen the boundary itself is implicated
-- **frozen with stale data** — the connection died and the watchdog did not
-  notice
-- **still says LIVE but nothing updates** — the socket is open and the server is
-  not sending, which is a server-side question
+- **crash on launch** — a native module in the JS but not in the binary. Almost
+  always means a rebuild was needed and an update was pushed instead.
+- **blank screen, app still responsive** — a render threw.
+- **the screen is right but the data is old** — the socket died; the mirror
+  re-snapshots every 3s, so this should not persist.
+- **it says connected and nothing updates** — server-side.
 
-A screenshot of the moment beats a description of it. `~/.local/share/shahi/uploads`
-is a fine place to drop one — the app can then show it to whoever is debugging.
+A screenshot beats a description. `~/.local/share/shahi/uploads` is a fine place
+to put one — the app can then show it to whoever is debugging.
