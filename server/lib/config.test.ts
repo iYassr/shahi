@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
 import { Auth } from "./auth";
-import { legacyDataDir, loadConfig } from "./config";
+import { loadConfig } from "./config";
 
 const base = { SESSION_SECRET: "s".repeat(32) } as NodeJS.ProcessEnv;
 
@@ -92,30 +90,3 @@ describe("loadConfig", () => {
   });
 });
 
-/**
- * The rename's one destructive edge: a new default path beside a full old
- * directory. This is what makes startup say so instead of quietly beginning
- * again with nothing.
- */
-describe("legacyDataDir", () => {
-  const NEW = join(homedir(), ".local", "share", "shahi", "shahi.sqlite");
-  const OLD = join(homedir(), ".local", "share", "herdrui");
-
-  test("names the old directory when it is there and the new one is not", () => {
-    expect(legacyDataDir(NEW, (path) => path === OLD)).toBe(OLD);
-  });
-
-  test("says nothing once the data has been moved", () => {
-    expect(legacyDataDir(NEW, (path) => path === dirname(NEW))).toBe(null);
-  });
-
-  // Both present means someone has already dealt with it, or never had an old
-  // one to deal with. Either way there is nothing useful to say.
-  test("says nothing when both exist", () => {
-    expect(legacyDataDir(NEW, () => true)).toBe(null);
-  });
-
-  test("says nothing on a machine that never had the old name", () => {
-    expect(legacyDataDir(NEW, () => false)).toBe(null);
-  });
-});

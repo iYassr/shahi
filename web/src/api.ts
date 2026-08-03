@@ -118,16 +118,6 @@ function requireAbsolute(path: string): string {
   return path;
 }
 
-/** How a tapped option is delivered. See `api.answerPrompt`. */
-const ANSWER_STRATEGY: "digit" | "arrows" = "digit";
-
-/** Cursor movement from the currently selected row to the target, then Enter. */
-function arrowPath(from: number, to: number): string[] {
-  const distance = Math.abs(to - from);
-  const direction = to > from ? "Down" : "Up";
-  return [...Array<string>(distance).fill(direction), "Enter"];
-}
-
 export const api = {
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
   login: (passcode: string) => postJson("/api/auth/login", { passcode }),
@@ -162,25 +152,14 @@ export const api = {
   rpc: (method: string, params: unknown = {}) => postJson("/api/rpc", { method, params }),
 
   /**
-   * Answers a numbered prompt.
+   * Answers a numbered prompt by pressing its digit.
    *
-   * Key delivery was verified against a scratch pane: `keys: ["2"]` puts a
-   * literal `2` on the process's stdin, and `["Down","Down","Enter"]` arrives in
-   * order as `\x1b[B \x1b[B \r`. So both strategies below are mechanically
-   * sound; what a scratch pane cannot answer is whether Claude Code's menu
-   * widget itself accepts a bare digit, since that needs a real prompt.
-   *
-   * Digit is the default because it does not depend on knowing where the cursor
-   * currently sits. If a tap ever fails to move a real prompt, switch
-   * ANSWER_STRATEGY to "arrows": that walks the cursor from the option the
-   * parser saw selected to the one you tapped, which works for any menu that
-   * responds to arrow keys at all.
+   * Verified against a scratch pane: `keys: ["2"]` puts a literal `2` on the
+   * process's stdin. A digit does not depend on knowing where the cursor
+   * currently sits, which walking it with arrow keys would.
    */
-  answerPrompt: (paneId: string, optionIndex: number, selectedIndex = 1) =>
-    api.rpc("pane.send_keys", {
-      pane_id: paneId,
-      keys: ANSWER_STRATEGY === "digit" ? [String(optionIndex)] : arrowPath(selectedIndex, optionIndex),
-    }),
+  answerPrompt: (paneId: string, optionIndex: number) =>
+    api.rpc("pane.send_keys", { pane_id: paneId, keys: [String(optionIndex)] }),
 
   sendText: (paneId: string, text: string) => api.rpc("pane.send_text", { pane_id: paneId, text }),
 

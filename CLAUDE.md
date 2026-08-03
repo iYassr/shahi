@@ -281,7 +281,10 @@ Two things kept the old name deliberately:
   decision makes it a worse record. They were rewritten once by a careless
   find-and-replace and restored.
 
-`HERDRUI_DATA` is still read as a fallback, and the installer moves
-`~/.local/share/herdrui` to `~/.local/share/shahi` on the first run after the
-rename. Startup says so loudly if it finds the old directory and no new one,
-because an empty database beside a full one looks exactly like a quiet app.
+The rename came with a `HERDRUI_DATA` fallback, a startup warning about the old
+directory, and an installer that moved it. All three are gone: the only
+installation there has ever been was carried across, and code that exists to
+bridge a rename nobody else lived through is exactly the debt the rules above
+forbid. If a pre-rename backup ever turns up, move
+`~/.local/share/herdrui` to `~/.local/share/shahi` and rename the database
+inside it by hand.

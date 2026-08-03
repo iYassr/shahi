@@ -60,7 +60,7 @@ export type { LogMessage, SessionLog };
  * round-trip through that encoding, would simply not be found. The id is a
  * UUID, so a scan is unambiguous.
  */
-export async function findTranscript(sessionId: string): Promise<string | null> {
+async function findTranscript(sessionId: string): Promise<string | null> {
   if (!/^[0-9a-f-]{16,64}$/i.test(sessionId)) return null;
 
   let projects: string[];
@@ -132,6 +132,10 @@ const indexes = new Map<string, TranscriptIndex>();
  * The last line of a live transcript is often half-written, so anything after
  * the final newline is left unconsumed and picked up on the next pass. Splitting
  * on bytes is safe: `\n` cannot appear inside a UTF-8 multi-byte sequence.
+ *
+ * Hand-rolled rather than `node:readline` because the byte offset of each line
+ * is the whole point, and readline hands back decoded strings — whose lengths
+ * are characters, not bytes, and so cannot be added up to seek by.
  */
 async function scanLines(
   path: string,
@@ -196,10 +200,6 @@ export async function indexTranscript(path: string): Promise<TranscriptIndex> {
   return index;
 }
 
-/** Test seam: which transcripts are indexed, least recently used first. */
-export function indexedPaths(): string[] {
-  return [...indexes.keys()];
-}
 
 /**
  * Messages beyond the window, read so the last tool call in it can still find
