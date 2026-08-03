@@ -62,7 +62,7 @@ const CONTENT_TYPES: Record<string, string> = {
 const NEVER_INLINE = new Set(["html", "htm", "svg", "xhtml"]);
 
 /** Reading a whole file into memory has to stop somewhere. */
-export const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_BYTES = 25 * 1024 * 1024;
 
 export interface FileRequest {
   path: string;
@@ -102,7 +102,7 @@ const within = (real: string, root: string) => real === root || real.startsWith(
  * Throws `OutsideHomeError` for anything outside the roots, and for anything
  * missing — `realpath` refuses both.
  */
-export async function resolveReadable(input: string): Promise<string> {
+async function resolveReadable(input: string): Promise<string> {
   const expanded = expandHome(input || "~");
   const absolute = isAbsolute(expanded) ? expanded : resolve(homedir(), expanded);
 

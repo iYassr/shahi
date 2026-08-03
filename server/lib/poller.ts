@@ -36,23 +36,14 @@ export interface PollerEvents {
   error: [Error];
 }
 
-export interface PollerOptions {
-  /** A pane a client currently has open. */
-  watchedIntervalMs?: number;
-  /** An agent that is working or blocked, but nobody is watching. */
-  activeIntervalMs?: number;
-  /** Everything else. */
-  backgroundIntervalMs?: number;
-  /** Panes to read per tick, to avoid bursting the socket. */
-  batchSize?: number;
-}
-
-const DEFAULTS = {
-  watchedIntervalMs: 400,
-  activeIntervalMs: 2_000,
-  backgroundIntervalMs: 15_000,
-  batchSize: 6,
-} satisfies Required<PollerOptions>;
+/** A pane a client currently has open. */
+const WATCHED_INTERVAL_MS = 400;
+/** An agent that is working or blocked, but nobody is watching. */
+const ACTIVE_INTERVAL_MS = 2_000;
+/** Everything else. */
+const BACKGROUND_INTERVAL_MS = 15_000;
+/** Panes to read per tick, to avoid bursting the socket. */
+const BATCH_SIZE = 6;
 
 interface PaneRecord {
   hash: string;
@@ -61,7 +52,6 @@ interface PaneRecord {
 }
 
 export class Poller extends EventEmitter<PollerEvents> {
-  readonly #options: Required<PollerOptions>;
   readonly #records = new Map<string, PaneRecord>();
   readonly #watchers = new Map<string, number>();
   /** Last time herdr was asked to settle a status the screen disagreed with. */
@@ -75,10 +65,8 @@ export class Poller extends EventEmitter<PollerEvents> {
     private readonly client: HerdrClient,
     private readonly store: SessionStore,
     private readonly transcript: TranscriptStore,
-    options: PollerOptions = {},
   ) {
     super();
-    this.#options = { ...DEFAULTS, ...options };
   }
 
   start(): void {
@@ -135,11 +123,11 @@ export class Poller extends EventEmitter<PollerEvents> {
   }
 
   #intervalFor(paneId: string): number {
-    if (this.#watchers.has(paneId)) return this.#options.watchedIntervalMs;
+    if (this.#watchers.has(paneId)) return WATCHED_INTERVAL_MS;
     const status = this.store.pane(paneId)?.agent_status;
     return status === "working" || status === "blocked"
-      ? this.#options.activeIntervalMs
-      : this.#options.backgroundIntervalMs;
+      ? ACTIVE_INTERVAL_MS
+      : BACKGROUND_INTERVAL_MS;
   }
 
   async #tick(): Promise<void> {
@@ -176,7 +164,7 @@ export class Poller extends EventEmitter<PollerEvents> {
           if (watched !== 0) return watched;
           return (this.#records.get(a)?.lastPolledAt ?? 0) - (this.#records.get(b)?.lastPolledAt ?? 0);
         })
-        .slice(0, this.#options.batchSize);
+        .slice(0, BATCH_SIZE);
 
       await Promise.all(
         due.map((paneId) =>

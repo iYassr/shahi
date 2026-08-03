@@ -72,40 +72,6 @@ else
   "$BUN" run server/scripts/init-secrets.ts --passcode "$PASSCODE"
 fi
 
-# --- from the old name ------------------------------------------------------
-#
-# This was called herdrui until it was called Shahi. Everything it had kept
-# lived under ~/.local/share/herdrui: the SQLite database with every recorded
-# transcript, the uploads directory, and the push subscriptions. Renaming the
-# default path without moving that would begin again with an empty database
-# sitting next to a full one, and nothing would say so.
-
-LEGACY_DATA="$HOME/.local/share/herdrui"
-NEW_DATA="$HOME/.local/share/shahi"
-
-if [ -d "$LEGACY_DATA" ] && [ ! -d "$NEW_DATA" ]; then
-  say "Moving your data over from the old name"
-  mv "$LEGACY_DATA" "$NEW_DATA"
-  # The database is named after the project too. WAL and shm go with it, or
-  # SQLite finds a database whose sidecars belong to a different file.
-  for suffix in "" "-wal" "-shm"; do
-    [ -f "$NEW_DATA/herdrui.sqlite$suffix" ] && \
-      mv "$NEW_DATA/herdrui.sqlite$suffix" "$NEW_DATA/shahi.sqlite$suffix"
-  done
-  note "Transcripts, uploads and push subscriptions are now in $NEW_DATA"
-fi
-
-LEGACY_SERVICE="$HOME/.config/systemd/user/herdrui.service"
-if [ -f "$LEGACY_SERVICE" ]; then
-  say "Retiring the old service"
-  # Left enabled, it comes back on the next boot and fights the new one for the
-  # port — and the loser is whichever started second, which is not predictable.
-  systemctl --user disable --now herdrui.service >/dev/null 2>&1 || true
-  rm -f "$LEGACY_SERVICE"
-  systemctl --user daemon-reload
-  note "herdrui.service stopped and removed"
-fi
-
 # --- the service ------------------------------------------------------------
 
 say "Installing the service"
