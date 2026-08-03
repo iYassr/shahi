@@ -44,8 +44,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "8282a129-ec6a-4517-81b7-770e7b6a415c"
-      }
-    }
+        "projectId": "fa81100f-5f3c-4c44-898b-4ecd740a84e9"
+      },
+      "router": {}
+    },
+    "owner": "yasserd99"
   }
 }
