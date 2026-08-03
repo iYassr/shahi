@@ -1,0 +1,54 @@
+name: iOS end to end
+
+# Not on every push: each run is a simulator build plus a Maestro job, and the
+# browser suite already covers the shared contract. This is for the things only
+# a real iOS runtime can answer — the native tab bar, the route restructure, a
+# picker that must send the right flags.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ['mobile/**', '.maestro/**', '.eas/workflows/**']
+
+jobs:
+  build:
+    name: Simulator build
+    type: build
+    params:
+      platform: ios
+      profile: e2e
+
+  test:
+    name: Maestro
+    needs: [build]
+    type: maestro
+    params:
+      build_id: ${{ needs.build.outputs.build_id }}
+      flow_path: .maestro
+      record_screen: true
+      # A flake here costs a whole simulator boot, so one retry of only what
+      # failed is cheaper than re-running the suite by hand.
+      retries: 1
+    hooks:
+      before_maestro_tests:
+        # The app needs a server, and an Expo worker cannot reach a private
+        # tailnet — nor should it. So the worker runs the same stub the browser
+        # suite runs: same contract, same fixtures, no live agents anywhere near
+        # a test. The simulator shares the host's network stack, so the app
+        # reaches it on localhost.
+        - name: Install Bun
+          run: curl -fsSL https://bun.sh/install | bash
+        - name: Start the stub server
+          run: |
+            export PATH="$HOME/.bun/bin:$PATH"
+            bun install --frozen-lockfile
+            PORT=7272 bun run e2e/stub/server.ts &
+            # Wait for it rather than sleeping: a slow start would otherwise
+            # look like a broken connect screen.
+            for i in $(seq 1 30); do
+              curl -sf http://localhost:7272/api/auth/status >/dev/null && exit 0
+              sleep 1
+            done
+            echo "the stub never came up; every flow after this would fail for the wrong reason"
+            exit 1
+          working_directory: ../..

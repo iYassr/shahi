@@ -31,10 +31,23 @@ export async function tap(page: Page, target: Locator): Promise<void> {
  */
 export async function expectDrawn(target: Locator, minWidth = 8, minHeight = 8): Promise<void> {
   await expect(target).toBeVisible();
-  const box = await target.boundingBox();
-  expect(box, "should have a layout box").not.toBeNull();
-  expect(box!.width).toBeGreaterThanOrEqual(minWidth);
-  expect(box!.height).toBeGreaterThanOrEqual(minHeight);
+
+  /*
+   * Polled, because an image has no size until its bytes arrive.
+   *
+   * A single measurement passed on this machine for months and failed the first
+   * time it ran on a CI runner: 2px wide, which is what WebKit reports for an
+   * `<img>` whose intrinsic size it does not know yet. The bug being guarded
+   * against is a *permanent* collapse — an image that never takes up space —
+   * and waiting distinguishes that from one that has simply not loaded on a
+   * slower box.
+   */
+  await expect(async () => {
+    const box = await target.boundingBox();
+    expect(box, "should have a layout box").not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(minWidth);
+    expect(box!.height).toBeGreaterThanOrEqual(minHeight);
+  }).toPass({ timeout: 10_000 });
 }
 
 /**
