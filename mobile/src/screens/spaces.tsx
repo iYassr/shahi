@@ -17,8 +17,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { DashboardPane, Session, Space } from "@shahi/shared";
+import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { api } from "@/lib/api";
+import { landed, refused } from "@/lib/feel";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
 
 interface Props {
@@ -72,6 +73,7 @@ export function Spaces({ session, onOpenPane, onChanged }: Props) {
         <Text style={styles.title}>Spaces</Text>
       </View>
       <FlatList
+        contentInsetAdjustmentBehavior="automatic"
         data={session.workspaces}
         keyExtractor={(w) => w.workspaceId}
         renderItem={({ item }) => {
@@ -150,6 +152,7 @@ function SpaceDetail({
       </View>
 
       <FlatList
+        contentInsetAdjustmentBehavior="automatic"
         data={tabs}
         keyExtractor={(t) => t.tabId}
         renderItem={({ item }) => {
@@ -245,6 +248,7 @@ function NewSpace({
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="what you are working on" placeholderTextColor={theme.dim} />
       <Text style={styles.label}>FOLDER</Text>
       <FlatList
+        contentInsetAdjustmentBehavior="automatic"
         data={suggestions}
         horizontal
         keyExtractor={(p) => p}
@@ -280,6 +284,23 @@ function NewAgent({
   const [phase, setPhase] = useState<"idle" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * How much the agent may do without asking.
+   *
+   * Every agent has this setting and every one spells it differently, so the
+   * choice belongs here rather than three prompts later when it stops over a
+   * `mkdir`. On a phone that matters more than on a desktop: answering
+   * permission prompts one at a time through a dashboard is the friction this
+   * app exists to remove. `shared/modes.ts` holds the flags, checked against
+   * each agent's `--help` on the machine that runs them, and the server
+   * resolves the id — nothing here decides what runs on the far end.
+   */
+  const modes = modesFor(kind);
+  const [mode, setMode] = useState<string | null>(null);
+  // Reset whenever the agent changes: modes do not carry across kinds, and a
+  // stale id would silently resolve to no flags at all.
+  useEffect(() => setMode(modes[0]?.id ?? null), [kind]);
+
   useMemo(() => {
     void api.agents().then((d) => {
       setKinds(d.agents.map((a) => a.kind));
@@ -300,9 +321,12 @@ function NewAgent({
         label: null,
         kind,
         name: kind,
+        mode,
       });
+      landed();
       onStarted(paneId);
     } catch (e) {
+      refused();
       setError((e as Error).message);
       setPhase("idle");
     }
@@ -319,6 +343,30 @@ function NewAgent({
           </Pressable>
         ))}
       </View>
+      {modes.length > 0 && (
+        <>
+          <Text style={styles.label}>PERMISSIONS</Text>
+          <View style={styles.modes}>
+            {modes.map((option) => (
+              <Pressable
+                key={option.id}
+                style={[
+                  styles.mode,
+                  option.id === mode && styles.modeOn,
+                  option.id === mode && option.unsafe && styles.modeUnsafe,
+                ]}
+                onPress={() => setMode(option.id)}
+                disabled={busy}
+              >
+                <Text style={[styles.modeLabel, option.id === mode && styles.modeLabelOn]}>
+                  {option.label}
+                </Text>
+                <Text style={styles.modeWhy}>{option.description}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
       {error && <Text style={styles.err}>{error}</Text>}
       <Pressable style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind} onPress={() => void start()}>
         <Text style={styles.goText}>
@@ -393,7 +441,7 @@ const styles = StyleSheet.create({
   rowTitle: { color: theme.fg, fontFamily: theme.mono, fontSize: 13, flex: 1 },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
 
-  action: { margin: 16, minHeight: 48, borderWidth: 1, borderStyle: "dashed", borderColor: theme.lineBright, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  action: { margin: 16, minHeight: 48, borderWidth: 1, borderStyle: "dashed", borderColor: theme.lineBright, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
   actionText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
   actionPrimary: { backgroundColor: theme.peach, borderStyle: "solid", borderColor: theme.peach },
   actionPrimaryText: { color: theme.void, fontWeight: "600" },
@@ -404,15 +452,29 @@ const styles = StyleSheet.create({
   sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600" },
   sheetClose: { color: theme.peach, fontSize: 15 },
   label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2 },
-  input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
+  input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 40, justifyContent: "center", marginRight: 8 },
   chipOn: { borderColor: theme.peach },
   chipText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, maxWidth: 200 },
   chipTextOn: { color: theme.peach },
   err: { color: theme.rose, fontSize: 13 },
-  go: { backgroundColor: theme.peach, borderRadius: 10, minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  go: { backgroundColor: theme.peach, borderRadius: 10, borderCurve: "continuous", minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 4 },
   goOff: { opacity: 0.35 },
   goText: { color: theme.void, fontWeight: "600", fontSize: 16 },
   note: { color: theme.dim, fontSize: 12, textAlign: "center" },
+  modes: { gap: 8, marginBottom: 16 },
+  mode: {
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 10, borderCurve: "continuous",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  modeOn: { borderColor: theme.peach },
+  // The one that asks nothing before acting is worth reading twice.
+  modeUnsafe: { borderColor: theme.rose },
+  modeLabel: { color: theme.dim, fontSize: 15, fontWeight: "600" },
+  modeLabelOn: { color: theme.fg },
+  modeWhy: { color: theme.dim, fontSize: 12, marginTop: 2 },
 });

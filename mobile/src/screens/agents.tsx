@@ -10,6 +10,7 @@ import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { api } from "@/lib/api";
+import { landed, refused } from "@/lib/feel";
 import { enablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
@@ -22,8 +23,10 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   async function answer(paneId: string, index: number) {
     try {
       await api.answerPrompt(paneId, index);
+      landed();
       clearPrompt(paneId);
     } catch (e) {
+      refused();
       setFailure((e as Error).message);
     }
   }
@@ -73,6 +76,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       )}
 
       <FlatList
+        contentInsetAdjustmentBehavior="automatic"
         data={rest}
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
@@ -149,6 +153,18 @@ function BlockedCard({
       {prompt ? (
         <>
           <Text style={styles.question}>{prompt.question}</Text>
+          {/* What the agent said above the question — the command it wants to
+              run, usually. Without it a codex approval reads as a bare "Allow?"
+              with nothing to judge. */}
+          {prompt.context && prompt.context.length > 0 && (
+            <View style={styles.context}>
+              {prompt.context.map((line, i) => (
+                <Text style={styles.contextLine} key={i}>
+                  {line}
+                </Text>
+              ))}
+            </View>
+          )}
           {prompt.options.map((option) => {
             const isArmed = armed === option.index;
             return (
@@ -237,13 +253,15 @@ const styles = StyleSheet.create({
     margin: 16,
     borderWidth: 1,
     borderColor: theme.peach,
-    borderRadius: 10,
+    borderRadius: 10, borderCurve: "continuous",
     backgroundColor: theme.surface,
     padding: 16,
   },
   badge: { color: theme.peach, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.4, fontWeight: "600" },
   where: { color: theme.fg, fontSize: 17, fontWeight: "600", marginTop: 8 },
   task: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginTop: 2 },
+  context: { borderLeftWidth: 1, borderLeftColor: theme.line, paddingLeft: 10, marginBottom: 12, gap: 4 },
+  contextLine: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, lineHeight: 17 },
   question: {
     color: theme.fg,
     fontSize: 15,
@@ -254,7 +272,7 @@ const styles = StyleSheet.create({
     borderTopColor: theme.line,
   },
 
-  choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 11, paddingHorizontal: 4, borderRadius: 6 },
+  choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 11, paddingHorizontal: 4, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
   choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },

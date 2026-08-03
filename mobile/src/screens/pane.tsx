@@ -13,6 +13,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
 import { api, connection } from "@/lib/api";
+import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Markdown } from "@/components/markdown";
@@ -99,6 +101,8 @@ export function Pane({ paneId, onBack }: Props) {
    * nothing to look at while typing into it.
    */
   const [view, setView] = useState<"reader" | "screen">("reader");
+  /** A file a tool call named, once you have asked to see it. */
+  const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   const [columns, setColumns] = useState(TERMINAL_SIZES[1]!);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -177,8 +181,10 @@ export function Pane({ paneId, onBack }: Props) {
     setSending(true);
     try {
       await api.send(paneId, text);
+      committed();
       setDraft("");
     } catch (e) {
+      refused();
       setError((e as Error).message);
     } finally {
       setSending(false);
@@ -247,6 +253,7 @@ export function Pane({ paneId, onBack }: Props) {
         </View>
       ) : (
         <FlatList
+          contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
@@ -255,7 +262,9 @@ export function Pane({ paneId, onBack }: Props) {
           // the keyboard and is swallowed — so expanding a tool call or
           // pressing a key takes two taps while the composer has focus.
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => <Message message={item} paneId={paneId} />}
+          renderItem={({ item }) => (
+            <Message message={item} paneId={paneId} onOpenFile={setViewing} />
+          )}
           onScroll={({ nativeEvent: e }) => {
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
@@ -268,6 +277,8 @@ export function Pane({ paneId, onBack }: Props) {
           ListFooterComponent={activity ? <Working activity={activity} /> : null}
         />
       )}
+
+      {viewing && <FileView file={viewing} onClose={() => setViewing(null)} />}
 
       <View style={styles.compose}>
         <ScrollView
@@ -282,7 +293,13 @@ export function Pane({ paneId, onBack }: Props) {
               style={styles.key}
               // Reported, not swallowed: this is how an unsupported key name
               // stayed invisible.
-              onPress={() => void api.sendKeys(paneId, keys).catch((e: Error) => setError(e.message))}
+              onPress={() => {
+                committed();
+                void api.sendKeys(paneId, keys).catch((e: Error) => {
+                  refused();
+                  setError(e.message);
+                });
+              }}
             >
               <Text style={styles.keyText}>{label}</Text>
             </Pressable>
@@ -368,19 +385,35 @@ function Prompt({
   );
 }
 
-function Message({ message, paneId }: { message: LogMessage; paneId: string }) {
+function Message({
+  message,
+  paneId,
+  onOpenFile,
+}: {
+  message: LogMessage;
+  paneId: string;
+  onOpenFile: (file: { path: string; name: string }) => void;
+}) {
   const mine = message.role === "you";
   return (
     <View style={[styles.msg, mine && styles.msgYou]}>
       <Text style={[styles.who, mine && styles.whoYou]}>{mine ? "YOU" : "AGENT"}</Text>
       {message.blocks.map((block, i) => (
-        <Block key={i} block={block} paneId={paneId} />
+        <Block key={i} block={block} paneId={paneId} onOpenFile={onOpenFile} />
       ))}
     </View>
   );
 }
 
-function Block({ block, paneId }: { block: LogBlock; paneId: string }) {
+function Block({
+  block,
+  paneId,
+  onOpenFile,
+}: {
+  block: LogBlock;
+  paneId: string;
+  onOpenFile: (file: { path: string; name: string }) => void;
+}) {
   const [open, setOpen] = useState(false);
 
   if (block.kind === "text") return <Markdown text={block.text} />;
@@ -389,7 +422,11 @@ function Block({ block, paneId }: { block: LogBlock; paneId: string }) {
     return (
       <Pressable onPress={() => setOpen((o) => !o)}>
         <Text style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</Text>
-        {open && <Text style={styles.thinking}>{block.text}</Text>}
+        {open && (
+          <Text style={styles.thinking} selectable>
+            {block.text}
+          </Text>
+        )}
       </Pressable>
     );
   }
@@ -405,11 +442,48 @@ function Block({ block, paneId }: { block: LogBlock; paneId: string }) {
         <Text style={styles.toolSummary} numberOfLines={1}>{block.summary}</Text>
         {block.result?.isError && <Text style={styles.toolErr}>failed</Text>}
       </Pressable>
+      {/*
+        * A question the agent asked, shown in full and never collapsed.
+        *
+        * This is the agent talking to you, not a tool call. Collapsed behind a
+        * caret it showed as a bare `AskUserQuestion` row with the choices
+        * thrown away, so from a phone there was nothing to read and nothing to
+        * answer. Answering still happens on the prompt card — the keystroke
+        * goes to the terminal — but the question is legible here.
+        */}
+      {block.questions?.map((question, i) => (
+        <View style={styles.asked} key={i}>
+          <Text style={styles.askedQ}>{question.text}</Text>
+          {question.options.map((option, n) => (
+            <View style={styles.askedOption} key={n}>
+              {/* The number is what you would press in the terminal. */}
+              <Text style={styles.askedLabel}>
+                <Text style={styles.askedN}>{n + 1}. </Text>
+                {option.label}
+              </Text>
+              {option.description ? (
+                <Text style={styles.askedWhy}>{option.description}</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ))}
+
+      {/* The file the call named. Outside the collapsed section deliberately:
+          on a phone this is usually the part you wanted, and burying it behind
+          a second tap defeats the point. */}
+      {block.file && (
+        <Pressable style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
+          <Text style={styles.toolFileName}>{block.file.name}</Text>
+          <Text style={styles.toolFileGo}>open</Text>
+        </Pressable>
+      )}
+
       {open && block.result && (
         <>
           {block.result.text.trim().length > 0 && (
             <ScrollView horizontal style={styles.toolOut}>
-              <Text style={styles.toolOutText}>{block.result.text}</Text>
+              <Text style={styles.toolOutText} selectable>{block.result.text}</Text>
             </ScrollView>
           )}
           {block.result.images.map((ref) => (
@@ -418,6 +492,78 @@ function Block({ block, paneId }: { block: LogBlock; paneId: string }) {
         </>
       )}
     </View>
+  );
+}
+
+/**
+ * A file an agent touched, read from the server rather than guessed at.
+ *
+ * Text and images come down one route and are told apart by content-type,
+ * because the server is what decides — it serves HTML and SVG as `text/plain`
+ * so agent-written markup cannot run anywhere, and reads are scoped to $HOME
+ * and /tmp. There is deliberately no download: the cookie belongs to this
+ * client, so handing the URL to Safari would only produce a 401.
+ */
+function FileView({
+  file,
+  onClose,
+}: {
+  file: { path: string; name: string };
+  onClose: () => void;
+}) {
+  const [body, setBody] = useState<{ text: string } | { imageUrl: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void api
+      .readFile(file.path)
+      .then((result) => live && setBody(result))
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [file.path]);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
+      <View style={styles.fileSheet}>
+        <View style={styles.fileBar}>
+          <Text style={styles.viewerName} numberOfLines={1}>
+            {file.name}
+          </Text>
+          <Pressable onPress={onClose} hitSlop={12}>
+            <Text style={styles.fileClose}>Done</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.filePath} numberOfLines={1}>
+          {file.path}
+        </Text>
+
+        {error ? (
+          <Text style={styles.err}>{error}</Text>
+        ) : !body ? (
+          <ActivityIndicator color={theme.dim} style={styles.fileWait} />
+        ) : "imageUrl" in body ? (
+          <Image
+            source={{
+              uri: body.imageUrl,
+              headers: connection.cookie ? { cookie: connection.cookie } : undefined,
+            }}
+            style={styles.fileImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <ScrollView style={styles.fileBody}>
+            {/* Horizontally too: source lines are not written to wrap, and
+                wrapping them turns code into prose that no longer lines up. */}
+            <ScrollView horizontal>
+              <Text style={styles.fileText} selectable>{body.text}</Text>
+            </ScrollView>
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
   );
 }
 
@@ -615,6 +761,7 @@ function FilePicker({
 
       <Text style={styles.sheetPath} numberOfLines={1}>{path}</Text>
       <FlatList
+        contentInsetAdjustmentBehavior="automatic"
         data={parent ? [{ name: parent, path: parent, display: parent, isDirectory: true }, ...entries] : entries}
         keyExtractor={(e) => e.path}
         style={{ maxHeight: 320 }}
@@ -655,7 +802,7 @@ const styles = StyleSheet.create({
   heading: { flexShrink: 1 },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 14 },
   subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, marginTop: 1 },
-  toggle: { flexDirection: "row", borderWidth: 1, borderColor: theme.line, borderRadius: 7 },
+  toggle: { flexDirection: "row", borderWidth: 1, borderColor: theme.line, borderRadius: 7, borderCurve: "continuous" },
   toggleItem: { paddingHorizontal: 10, minHeight: 32, justifyContent: "center" },
   toggleOn: { backgroundColor: theme.raised },
   toggleText: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
@@ -678,7 +825,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.line,
-    borderRadius: 7,
+    borderRadius: 7, borderCurve: "continuous",
   },
   widthOn: { borderColor: theme.peach },
   widthText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
@@ -690,7 +837,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
   },
   ghostText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
 
@@ -701,7 +848,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: theme.peach,
     borderBottomWidth: 0,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     paddingHorizontal: 12,
     marginVertical: 8,
   },
@@ -711,13 +858,38 @@ const styles = StyleSheet.create({
   thinkingLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1, paddingVertical: 6 },
   thinking: { color: theme.dim, fontSize: 13, lineHeight: 19, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: theme.lineBright },
 
+  err: { color: theme.rose, fontSize: 13, padding: 16 },
+
+  // A question the agent asked, never collapsed.
+  asked: { borderLeftWidth: 2, borderLeftColor: theme.peach, paddingLeft: 10, marginTop: 8, gap: 6 },
+  askedQ: { color: theme.fg, fontSize: 15, fontWeight: "600" },
+  askedOption: { gap: 1 },
+  askedLabel: { color: theme.fg, fontSize: 14 },
+  askedN: { color: theme.dim, fontFamily: theme.mono },
+  askedWhy: { color: theme.dim, fontSize: 12 },
+
+  // The file a call named, above the fold rather than behind the caret.
+  toolFile: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, minHeight: 40 },
+  toolFileName: { color: theme.peach, fontSize: 14, flexShrink: 1 },
+  toolFileGo: { color: theme.dim, fontSize: 12 },
+
+  fileSheet: { flex: 1, backgroundColor: theme.void },
+  fileBar: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, paddingBottom: 4 },
+  viewerName: { color: theme.fg, fontSize: 17, fontWeight: "600", flex: 1 },
+  fileClose: { color: theme.peach, fontSize: 16 },
+  filePath: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, paddingHorizontal: 16, paddingBottom: 12 },
+  fileWait: { marginTop: 32 },
+  fileBody: { flex: 1, borderTopWidth: 1, borderTopColor: theme.line },
+  fileText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, padding: 16 },
+  fileImage: { flex: 1, width: "100%" },
+
   tool: { marginBottom: 6 },
   toolHead: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 7 },
   toolCaret: { color: theme.lineBright, fontFamily: theme.mono, fontSize: 12 },
   toolName: { color: theme.mint, fontFamily: theme.mono, fontSize: 12 },
   toolSummary: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, flex: 1 },
   toolErr: { color: theme.rose, fontFamily: theme.mono, fontSize: 11 },
-  toolOut: { backgroundColor: theme.surface, borderRadius: 8, padding: 10, marginBottom: 8, maxHeight: 260 },
+  toolOut: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", padding: 10, marginBottom: 8, maxHeight: 260 },
   toolOutText: { color: theme.fg, fontFamily: theme.mono, fontSize: 11, lineHeight: 17 },
 
   image: {
@@ -725,7 +897,7 @@ const styles = StyleSheet.create({
     height: 220,
     borderWidth: 1,
     borderColor: theme.line,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     marginVertical: 6,
     backgroundColor: theme.surface,
   },
@@ -734,12 +906,12 @@ const styles = StyleSheet.create({
     margin: 16,
     borderWidth: 1,
     borderColor: theme.peach,
-    borderRadius: 10,
+    borderRadius: 10, borderCurve: "continuous",
     backgroundColor: theme.surface,
     padding: 14,
   },
   question: { color: theme.fg, fontSize: 15, lineHeight: 21, marginBottom: 8 },
-  choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6 },
+  choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
   choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },
@@ -761,7 +933,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 7,
+    borderRadius: 7, borderCurve: "continuous",
     marginRight: 6,
   },
   keyText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
@@ -771,7 +943,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -781,7 +953,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     color: theme.fg,
     fontFamily: theme.mono,
     fontSize: 15,
@@ -793,7 +965,7 @@ const styles = StyleSheet.create({
   send: {
     minHeight: 44,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     backgroundColor: theme.peach,
     alignItems: "center",
     justifyContent: "center",
@@ -825,7 +997,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
   },
   phoneButtonText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
   uploadErr: { color: theme.rose, fontSize: 12 },

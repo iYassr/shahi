@@ -34,7 +34,7 @@ function renderBlocks(text: string): ReactNode[] {
   const flush = () => {
     if (paragraph.length === 0) return;
     out.push(
-      <Text style={styles.p} key={key++}>
+      <Text style={styles.p} key={key++} selectable>
         {inline(paragraph.join("\n"))}
       </Text>,
     );
@@ -53,7 +53,7 @@ function renderBlocks(text: string): ReactNode[] {
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i]!)) body.push(lines[i++]!);
       out.push(
         <ScrollView horizontal style={styles.codeBox} key={key++}>
-          <Text style={styles.code}>{body.join("\n")}</Text>
+          <Text style={styles.code} selectable>{body.join("\n")}</Text>
         </ScrollView>,
       );
       continue;
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   quoteText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
 
   // Code keeps its own formatting and scrolls rather than being rewrapped.
-  codeBox: { backgroundColor: theme.surface, borderRadius: 8, marginVertical: 6, padding: 10 },
+  codeBox: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", marginVertical: 6, padding: 10 },
   code: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18 },
   inlineCode: { fontFamily: theme.mono, fontSize: 13, color: theme.fg, backgroundColor: theme.raised },
 
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   italic: { fontStyle: "italic" },
   link: { color: theme.peach, textDecorationLine: "underline" },
 
-  table: { borderWidth: 1, borderColor: theme.line, borderRadius: 8, marginVertical: 8 },
+  table: { borderWidth: 1, borderColor: theme.line, borderRadius: 8, borderCurve: "continuous", marginVertical: 8 },
   tr: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: theme.line },
   trHead: { backgroundColor: theme.surface },
   cell: { color: theme.fg, fontSize: 13, padding: 8, minWidth: 110, maxWidth: 220 },

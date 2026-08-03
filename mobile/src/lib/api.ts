@@ -134,7 +134,35 @@ export const api = {
     label: string | null;
     kind: string;
     name: string;
+    /** A mode id, not flags: the server resolves it. */
+    mode: string | null;
   }) => postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", options),
+
+  /**
+   * Reads a file an agent touched.
+   *
+   * Text and images arrive down the same route and are told apart by
+   * content-type, because the server decides that — it serves HTML and SVG as
+   * `text/plain` so agent-written markup cannot run anywhere. Reads are scoped
+   * to $HOME and /tmp server-side.
+   */
+  readFile: async (path: string): Promise<{ text: string } | { imageUrl: string }> => {
+    if (!connection.baseUrl) throw new Error("No server address configured");
+    const url = `${connection.baseUrl}/api/file?path=${encodeURIComponent(path)}`;
+    const res = await fetch(url, {
+      headers: connection.cookie ? { cookie: connection.cookie } : undefined,
+      credentials: "omit",
+    });
+    if (res.status === 401) throw new UnauthorizedError();
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `could not read that file (${res.status})`);
+    }
+    // The URL is handed back rather than the bytes: `Image` fetches it itself,
+    // and passing megabytes of base64 through JS to get there would be worse.
+    if ((res.headers.get("content-type") ?? "").startsWith("image/")) return { imageUrl: url };
+    return { text: await res.text() };
+  },
 
   /**
    * Answers a numbered prompt by pressing its digit, exactly as the TUI does.
