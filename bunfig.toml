@@ -1,0 +1,10 @@
+# Native modules must not be installed twice.
+#
+# Bun's default isolated linker gives each workspace its own copy of a
+# dependency, which is fine for TypeScript and fatal for native code: an iOS
+# build may contain only one copy of any native module, and `expo-doctor`
+# reported duplicates of expo, @expo/ui, expo-constants and expo-font before
+# this. EAS runs its own install from this lockfile, so the layout it produces
+# has to be the one that builds.
+[install]
+linker = "hoisted"

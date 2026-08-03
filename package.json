@@ -21,5 +21,11 @@
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "typescript": "^7.0.2"
+  },
+  "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher — a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "expo-constants": "~57.0.8"
   }
 }
