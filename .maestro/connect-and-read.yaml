@@ -1,0 +1,41 @@
+# The first automated test the native app has ever had.
+#
+# It runs on an EAS macOS worker against a simulator build, and it talks to the
+# same stub server the browser suite uses — started on the worker's localhost by
+# the workflow, because an Expo runner cannot reach a private tailnet and should
+# not be able to. That reuse is the point: one contract, one set of fixtures,
+# both clients.
+appId: app.shahi.mobile
+name: Connect, then read a session
+---
+- launchApp:
+    clearState: true
+
+# Signing in. The address is the worker's own stub; the passcode is the stub's.
+- assertVisible: "Shahi"
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "test"
+- tapOn: "Connect"
+
+# The dashboard. `busy` is the default scenario: one blocked agent above a list.
+- assertVisible: "Agents"
+- assertVisible: "Waiting on you"
+- assertVisible: "Convert PDF to markdown"
+
+# The tab bar — a real one as of August 2026, and the reason this flow exists.
+- tapOn: "Spaces"
+- assertVisible: "project"
+- tapOn: "Agents"
+- assertVisible: "Waiting on you"
+
+# Into a pane, which is where the reader draws an agent's own transcript.
+- tapOn: "Convert PDF to markdown"
+- assertVisible:
+    text: "Screen|Reader|History"
+    optional: true
+- back
+- assertVisible: "Agents"

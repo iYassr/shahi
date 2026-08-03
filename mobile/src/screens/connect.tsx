@@ -48,7 +48,7 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
       // taps meant for Send were landing on the keyboard's own Enter key.
       behavior="padding"
     >
-      <Text style={styles.title}>herdr</Text>
+      <Text style={styles.title}>Shahi</Text>
       <Text style={styles.hint}>Reach the agents on your server over Tailscale.</Text>
 
       <Text style={styles.label}>SERVER</Text>
@@ -59,6 +59,7 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
+        testID="server-address"
         placeholder={URL_PLACEHOLDER}
         placeholderTextColor={theme.dim}
       />
@@ -68,6 +69,7 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
         style={[styles.input, styles.passcode]}
         value={passcode}
         onChangeText={setPasscode}
+        testID="passcode"
         secureTextEntry
         keyboardType="number-pad"
       />
