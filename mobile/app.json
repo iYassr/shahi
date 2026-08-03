@@ -9,7 +9,10 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "app.shahi.mobile"
+      "bundleIdentifier": "app.shahi.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -48,6 +51,12 @@
       },
       "router": {}
     },
-    "owner": "yasserd99"
+    "owner": "yasserd99",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/fa81100f-5f3c-4c44-898b-4ecd740a84e9"
+    }
   }
 }

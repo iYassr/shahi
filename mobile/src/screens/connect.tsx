@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.lineBright,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     color: theme.fg,
     fontFamily: theme.mono,
     fontSize: 16,
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   error: { color: theme.rose, fontSize: 13 },
   button: {
     backgroundColor: theme.peach,
-    borderRadius: 8,
+    borderRadius: 8, borderCurve: "continuous",
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
