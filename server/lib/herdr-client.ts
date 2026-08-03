@@ -32,7 +32,7 @@ import {
   type SuccessResponse,
 } from "./herdr-schema";
 
-export const DEFAULT_SOCKET_PATH =
+const DEFAULT_SOCKET_PATH =
   process.env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock");
 
 /** Every method name the server accepts, derived from the generated schema. */

@@ -32,7 +32,7 @@ const COMPRESSIBLE = [
 const cache = new Map<string, Uint8Array>();
 const CACHE_LIMIT = 32;
 
-export function acceptsGzip(request: Request): boolean {
+function acceptsGzip(request: Request): boolean {
   return (request.headers.get("accept-encoding") ?? "").toLowerCase().includes("gzip");
 }
 

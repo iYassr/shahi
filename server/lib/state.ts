@@ -77,7 +77,7 @@ export interface SessionStoreEvents {
  * not to be absurd. Three seconds is imperceptible for "an agent needs you" and
  * measured as noise against herdr's own CPU.
  */
-export const SYNC_INTERVAL_MS = 3_000;
+const SYNC_INTERVAL_MS = 3_000;
 
 export class SessionStore extends EventEmitter<SessionStoreEvents> {
   #state: SessionState = emptyState();

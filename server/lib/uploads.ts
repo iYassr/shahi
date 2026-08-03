@@ -92,7 +92,7 @@ export async function storeUpload(
 }
 
 /** Deletes uploads past their keep window, so the directory does not grow forever. */
-export async function sweepOldUploads(now = Date.now, dir = UPLOAD_DIR): Promise<number> {
+async function sweepOldUploads(now = Date.now, dir = UPLOAD_DIR): Promise<number> {
   let removed = 0;
   let entries: string[];
   try {
