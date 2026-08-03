@@ -25,3 +25,6 @@ test-results/
 
 # Incremental typecheck state, regenerated on every run.
 *.tsbuildinfo
+
+# Expo: generated route types and dev-server state.
+mobile/.expo/

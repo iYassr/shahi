@@ -9,8 +9,8 @@ before changing anything.
 ```
 shared/    the wire contract, types only — both clients import it
 server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
-web/       the React PWA the phone actually runs
-mobile/    an Expo app, complete but unused — see "the native app" below
+mobile/    the Expo app — the product, and where new work goes
+web/       the React PWA, archived: kept working, no longer developed
 e2e/       Playwright, against a stub of the server
 ```
 
@@ -197,10 +197,14 @@ was torn down and rebuilt every 400ms, refetching the transcript each time.
 
 Stated plainly, because a vague gaps list is worse than none.
 
-- **Native push is untested end to end.** The server channel and the client
-  registration are both written and unit-tested; nothing has ever delivered a
-  notification to a real device through them, because that needs a development
-  build and a paid Apple account. See `docs/notifications.md`.
+- **Native push is untested end to end.** The blocker is gone — the app is built
+  and installed on a real iPhone with an APNs key — but nothing has yet
+  delivered a notification through it, and `expo_push_token` is still empty.
+  The first token to land in that table is the proof. See
+  `docs/notifications.md`.
+- **The native app has never been tested by anything but hand.** `web/` has 164
+  browser tests; `mobile/` has none. Now that it is the product, that is the
+  largest single gap in this list.
 - **The refresh problem is not root-caused.** The owner reports needing to
   refresh the page; two plausible causes were fixed (a render crash with no
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
@@ -247,13 +251,30 @@ includes the parked Expo app, the only automatic check that the two clients have
 not drifted apart — then the unit tests, then a web build and both engines.
 Traces from a failing run are uploaded as an artifact.
 
-## The native app
+## The two clients
 
-`mobile/` is a complete Expo app — agents, spaces, reader, screen view,
-attachments — verified on an Android emulator. It is unused because Expo Go on
-the owner's phone tops out at SDK 54 while the app is on 57, and a real build
-needs an Apple developer account. The PWA does everything it does, plus
-notifications. Do not delete it; do not assume it is current either.
+**`mobile/` is the product.** August 2026: a paid Apple account made a real
+build possible, and the decision followed that native is where this goes —
+voice dictation and anything else that needs the device properly are not things
+a web page does well.
+
+**`web/` is archived, not deleted.** It still builds, still passes its 164
+tests, and the server still serves it, which is worth keeping: it is how you
+reach a session from any browser without a build, and it is the reference for
+behaviour the native app has not caught up on yet. It should not gain features.
+When the two disagree about how something should work, the native app is right
+and the PWA is history.
+
+That split has a cost that was already paid once. Every change between January
+and August landed only in the PWA, so the native app arrived on the phone
+missing agent permission modes, the file viewer, `AskUserQuestion` cards and
+the context above a prompt — the last two meaning a codex approval showed as a
+bare question with nothing to judge it by. All four are ported. The lesson is
+cheap to state and was expensive to find: **a feature that only exists in
+`web/` does not exist.**
+
+Still only in the PWA, and worth porting when someone next needs them: the
+reader's jump-to-latest pill, the redesigned agent list, and the spaces view.
 
 ## House style
 

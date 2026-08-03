@@ -18,7 +18,6 @@
  */
 import * as Device from "expo-device";
 import Constants, { ExecutionEnvironment } from "expo-constants";
-import { Platform } from "react-native";
 import { api } from "@/lib/api";
 
 type Notifications = typeof import("expo-notifications");
@@ -68,7 +67,7 @@ export async function enablePush(): Promise<PushResult> {
 
     // Android will not make a sound without a channel, and the server names
     // this one on every message it sends.
-    if (Platform.OS === "android") {
+    if (process.env.EXPO_OS === "android") {
       await notifications.setNotificationChannelAsync("blocked", {
         name: "Waiting on you",
         importance: notifications.AndroidImportance.HIGH,
