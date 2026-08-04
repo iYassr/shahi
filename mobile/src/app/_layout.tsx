@@ -25,13 +25,40 @@ export default function RootLayout() {
           // The back button shows the chevron alone. A stack this shallow gains
           // nothing from repeating the previous screen's title beside it.
           headerBackButtonDisplayMode: "minimal",
+          // What the hidden label reads as — otherwise VoiceOver (and the test
+          // driver) get the previous ROUTE'S name, which is "(tabs)".
+          headerBackTitle: "Back",
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connect" options={{ headerShown: false }} />
-        {/* The Pane component draws its own header; without this the default
-            stack header sat above it showing the raw route name. */}
-        <Stack.Screen name="pane/[paneId]" options={{ headerShown: false }} />
+        {/* Titles set from inside the screens, where the pane or space is
+            known. The empty defaults stop raw route names flashing first. */}
+        <Stack.Screen name="pane/[paneId]" options={{ title: "" }} />
+        <Stack.Screen name="space/[workspaceId]" options={{ title: "" }} />
+        {/* Real sheets: the presentation owns the card, the dimming,
+            drag-to-dismiss and staying clear of the keyboard — all things the
+            old absolutely-positioned sheet had to fake. */}
+        <Stack.Screen
+          name="new-space"
+          options={{
+            presentation: "formSheet",
+            headerShown: false,
+            sheetAllowedDetents: "fitToContents",
+            sheetGrabberVisible: true,
+            contentStyle: { backgroundColor: theme.surface },
+          }}
+        />
+        <Stack.Screen
+          name="new-agent"
+          options={{
+            presentation: "formSheet",
+            headerShown: false,
+            sheetAllowedDetents: "fitToContents",
+            sheetGrabberVisible: true,
+            contentStyle: { backgroundColor: theme.surface },
+          }}
+        />
       </Stack>
       <StatusBar style="light" />
     </SessionProvider>
