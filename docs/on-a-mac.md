@@ -52,7 +52,7 @@ transcripts, and every keystroke you send is real.
 PORT=7272 bun run e2e/stub/server.ts     # from the repo root
 ```
 
-Then connect to `http://localhost:7272` with passcode `test`. The simulator
+Then connect to `http://localhost:7272` with passcode `1234`. The simulator
 shares the Mac's network stack, so localhost is the Mac. This is the same stub
 the browser suite uses — the same contract, the same fixtures, and writes are
 recorded rather than performed.
@@ -68,6 +68,17 @@ With the app installed on a booted simulator and the stub running:
 ```sh
 maestro test .maestro/
 ```
+
+Two things the first local run taught:
+
+- The `expo run:ios` build has no embedded bundle — Metro must be running or
+  the app opens on a red "No script URL provided" screen. Launch the app once
+  by hand before `maestro test`, so the first flow is not racing a cold bundle
+  compile.
+- Maestro's iOS driver sometimes wedges between runs and the next run dies
+  with "iOS driver not ready in time". `pkill -9 -f maestro-driver-iosUITests`
+  clears it; a simulator that has stopped answering `simctl` needs a shutdown
+  and boot.
 
 Two flows today. One signs in, crosses the tab bar both ways and opens a pane —
 the route restructure and the native tab bar, which nothing else can verify. The
@@ -87,6 +98,14 @@ bun run test:e2e                     # 164 browser tests, both engines
 ```
 
 The last one needs `bunx playwright install chromium webkit` first.
+
+Two of the unit tests — the `installedAgents` detections in
+`server/lib/agents.test.ts` — can fail here with agents resolving to nothing.
+Measured on macOS 27.0 with bun 1.3.14: under `bun test` a spawned child's
+writes to its stdout pipe fail (the same child writes files fine, and the same
+spawn under `bun -e` works), and it comes and goes across minutes. That is a
+bun test-runner fault, not a detection bug; the same tests pass on the Ubuntu
+box and in CI.
 
 ## What not to do
 

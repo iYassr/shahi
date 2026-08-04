@@ -17,6 +17,7 @@
  * exists so that a malformed or hostile path cannot quietly walk somewhere
  * nobody intended.
  */
+import { realpathSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -91,8 +92,21 @@ export function isViewable(path: string): boolean {
     type.startsWith("application/json");
 }
 
-/** The roots a file may be read from. See the note at the top. */
-export const ROOTS = [homedir(), tmpdir()];
+/**
+ * The roots a file may be read from. See the note at the top.
+ *
+ * Resolved through realpath because candidates are compared after their own
+ * realpath: on macOS `tmpdir()` is `/var/folders/…` while every file in it
+ * resolves to `/private/var/folders/…`, and the unresolved root rejected the
+ * whole temp directory.
+ */
+export const ROOTS = [homedir(), tmpdir()].map((root) => {
+  try {
+    return realpathSync(root);
+  } catch {
+    return root;
+  }
+});
 
 const within = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
 

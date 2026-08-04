@@ -29,6 +29,9 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connect" options={{ headerShown: false }} />
+        {/* The Pane component draws its own header; without this the default
+            stack header sat above it showing the raw route name. */}
+        <Stack.Screen name="pane/[paneId]" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="light" />
     </SessionProvider>

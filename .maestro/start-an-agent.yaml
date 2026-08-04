@@ -4,27 +4,32 @@
 # means an agent runs with flags nobody chose. The stub records what was asked
 # for rather than starting anything, so this asserts the intent, and the
 # workflow checks the recorded write afterwards.
+#
+# clearKeychain and the .*…* wrappers are explained in connect-and-read.yaml:
+# the session survives clearState in the keychain, and React Native flattens a
+# Pressable's children into one accessibility label that Maestro matches whole.
 appId: app.shahi.mobile
 name: Start an agent with a permission mode
 ---
 - launchApp:
     clearState: true
+    clearKeychain: true
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"
 - tapOn:
     id: "passcode"
-- inputText: "test"
+- inputText: "1234"
 - tapOn: "Connect"
 
 - tapOn: "Spaces"
-- tapOn: "project"
+- tapOn: ".*project.*"
 - tapOn: "+ New agent"
 
 # Every claude mode should be offered, and the dangerous one should be
 # reachable rather than hidden.
 - assertVisible: "PERMISSIONS"
-- assertVisible: "Ask me"
-- assertVisible: "Plan first"
-- tapOn: "Skip all permissions"
-- assertVisible: "Never asks. It can run any command as you, without a prompt."
+- assertVisible: ".*Ask me.*"
+- assertVisible: ".*Plan first.*"
+- tapOn: ".*Skip all permissions.*"
+- assertVisible: ".*Never asks. It can run any command as you, without a prompt.*"

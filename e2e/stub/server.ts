@@ -25,7 +25,10 @@ import { SCENARIOS, type Scenario, type ScenarioName } from "./data";
 
 const PORT = Number(process.env.PORT ?? 7272);
 const WEB_ROOT = process.env.STUB_WEB_ROOT ?? join(import.meta.dir, "../../web/dist");
-const PASSCODE = "test";
+// Digits, because the app's passcode field is a number pad — real passcodes
+// are generated as digits, and Maestro cannot type letters on an iOS number
+// pad. "test" here meant the native flows could never sign in.
+const PASSCODE = "1234";
 const COOKIE = "shahi_session=stub";
 
 let scenario: Scenario = SCENARIOS.busy();
