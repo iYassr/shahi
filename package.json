@@ -16,16 +16,18 @@
     "test": "bun test shared/src server web/src",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p web && tsc --noEmit -p mobile",
     "build:web": "bun run --cwd web build",
-    "test:e2e": "playwright test --config e2e/playwright.config.ts"
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:mobile": "bun run --cwd mobile test"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "typescript": "^7.0.2"
   },
-  "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher — a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
+  "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher \u2014 a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
   "overrides": {
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "expo-constants": "~57.0.8"
+    "expo-constants": "~57.0.8",
+    "react-test-renderer": "19.2.3"
   }
 }

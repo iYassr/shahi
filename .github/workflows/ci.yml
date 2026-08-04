@@ -36,6 +36,11 @@ jobs:
 
       - run: bun test shared/src server web/src
 
+      # The native app runs on a different runner: jest-expo renders real
+      # components in a JS environment, which is the only automated coverage
+      # `mobile/` has and the only kind that needs no simulator.
+      - run: bun run test:mobile
+
   browser:
     name: playwright, both engines
     runs-on: ubuntu-latest
