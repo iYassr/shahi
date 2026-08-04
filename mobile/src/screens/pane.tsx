@@ -405,7 +405,7 @@ function Message({
   );
 }
 
-function Block({
+export function Block({
   block,
   paneId,
   onOpenFile,
