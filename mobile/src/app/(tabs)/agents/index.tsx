@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Agents } from "@/screens/agents";
 import { onNotificationTapped } from "@/lib/push";
@@ -26,12 +25,5 @@ export default function AgentsTab() {
       </View>
     );
   }
-  return (
-    // Top edge only: the screen draws its own topbar, which sat under the
-    // status bar without this — the clock rendered over the screen's title.
-    // The bottom belongs to the native tab bar.
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: theme.void }}>
-      <Agents onOpenPane={openPane} />
-    </SafeAreaView>
-  );
+  return <Agents onOpenPane={openPane} />;
 }

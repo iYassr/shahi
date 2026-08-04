@@ -5,73 +5,27 @@
  * structure — and it is the only place plain shells are reachable, since the
  * Agents view filters them out and they are roughly half the panes in a real
  * session.
+ *
+ * Navigation is routes, not state: a space is pushed, and the new-space /
+ * new-agent forms are formSheet routes. The router owns back — the hardware
+ * button, the edge swipe and drag-to-dismiss all work without this file
+ * re-teaching any of them, which is exactly what the old BackHandler wiring
+ * existed to do.
  */
 import { useEffect, useMemo, useState } from "react";
-import {
-  BackHandler,
-  FlatList,
-  Keyboard,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
+import { openPane } from "@/lib/navigate";
 import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
 
-interface Props {
-  session: Session | null;
-  onOpenPane: (paneId: string) => void;
-  onChanged: () => void;
-}
-
-export function Spaces({ session, onOpenPane, onChanged }: Props) {
-  const [open, setOpen] = useState<string | null>(null);
-  const [creating, setCreating] = useState<"space" | "agent" | null>(null);
-
-  // A space and a sheet are state rather than routes, so the system back button
-  // does not know about them: without this it leaves the app from two screens
-  // deep, which is not what a back button means anywhere else.
-  useEffect(() => {
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (creating) {
-        setCreating(null);
-        return true;
-      }
-      if (open) {
-        setOpen(null);
-        return true;
-      }
-      return false;
-    });
-    return () => sub.remove();
-  }, [creating, open]);
-
+export function Spaces({ session }: { session: Session | null }) {
   if (!session) return <Centered>Connecting…</Centered>;
-
-  const space = session.workspaces.find((w) => w.workspaceId === open);
-  if (space) {
-    return (
-      <SpaceDetail
-        space={space}
-        session={session}
-        onBack={() => setOpen(null)}
-        onOpenPane={onOpenPane}
-        onChanged={onChanged}
-        creating={creating === "agent"}
-        setCreating={(v) => setCreating(v ? "agent" : null)}
-      />
-    );
-  }
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topbar}>
-        <Text style={styles.title}>Spaces</Text>
-      </View>
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
         data={session.workspaces}
@@ -81,7 +35,15 @@ export function Spaces({ session, onOpenPane, onChanged }: Props) {
             (p) => p.workspaceId === item.workspaceId && p.status === "blocked",
           ).length;
           return (
-            <Pressable style={styles.space} onPress={() => setOpen(item.workspaceId)}>
+            <Pressable
+              style={styles.space}
+              onPress={() =>
+                router.push({
+                  pathname: "/space/[workspaceId]",
+                  params: { workspaceId: item.workspaceId },
+                })
+              }
+            >
               <Text style={[styles.glyph, { color: statusColor(item.status) }]}>
                 {GLYPH[item.status] ?? "·"}
               </Text>
@@ -98,42 +60,16 @@ export function Spaces({ session, onOpenPane, onChanged }: Props) {
           );
         }}
         ListFooterComponent={
-          <Pressable style={styles.action} onPress={() => setCreating("space")}>
+          <Pressable style={styles.action} onPress={() => router.push("/new-space")}>
             <Text style={styles.actionText}>+ New space</Text>
           </Pressable>
         }
       />
-      {creating === "space" && (
-        <NewSpace
-          session={session}
-          onClose={() => setCreating(null)}
-          onCreated={() => {
-            setCreating(null);
-            onChanged();
-          }}
-        />
-      )}
     </View>
   );
 }
 
-function SpaceDetail({
-  space,
-  session,
-  onBack,
-  onOpenPane,
-  onChanged,
-  creating,
-  setCreating,
-}: {
-  space: Space;
-  session: Session;
-  onBack: () => void;
-  onOpenPane: (paneId: string) => void;
-  onChanged: () => void;
-  creating: boolean;
-  setCreating: (v: boolean) => void;
-}) {
+export function SpaceDetail({ space, session }: { space: Space; session: Session }) {
   const tabs = useMemo(
     () => session.tabs.filter((t) => t.workspaceId === space.workspaceId),
     [session, space],
@@ -141,15 +77,16 @@ function SpaceDetail({
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topbar}>
-        <Pressable onPress={onBack} hitSlop={12}>
-          <Text style={styles.back}>‹</Text>
-        </Pressable>
-        <View>
-          <Text style={styles.title}>{space.label}</Text>
-          <Text style={styles.spaceMeta}>{space.cwd ?? space.workspaceId}</Text>
-        </View>
-      </View>
+      <Stack.Screen
+        options={{
+          headerTitle: () => (
+            <View style={styles.headTitle}>
+              <Text style={styles.title}>{space.label}</Text>
+              <Text style={styles.spaceMeta}>{space.cwd ?? space.workspaceId}</Text>
+            </View>
+          ),
+        }}
+      />
 
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
@@ -163,7 +100,7 @@ function SpaceDetail({
                 {/^\d+$/.test(item.label) ? `TAB ${item.label}` : item.label.toUpperCase()}
               </Text>
               {panes.map((pane) => (
-                <PaneRow key={pane.paneId} pane={pane} onPress={() => onOpenPane(pane.paneId)} />
+                <PaneRow key={pane.paneId} pane={pane} onPress={() => openPane(pane.paneId)} />
               ))}
             </View>
           );
@@ -171,24 +108,17 @@ function SpaceDetail({
         ListFooterComponent={
           <Pressable
             style={[styles.action, styles.actionPrimary]}
-            onPress={() => setCreating(true)}
+            onPress={() =>
+              router.push({
+                pathname: "/new-agent",
+                params: { workspaceId: space.workspaceId },
+              })
+            }
           >
             <Text style={styles.actionPrimaryText}>+ New agent</Text>
           </Pressable>
         }
       />
-
-      {creating && (
-        <NewAgent
-          space={space}
-          onClose={() => setCreating(false)}
-          onStarted={(paneId) => {
-            setCreating(false);
-            onChanged();
-            onOpenPane(paneId);
-          }}
-        />
-      )}
     </View>
   );
 }
@@ -210,15 +140,7 @@ function PaneRow({ pane, onPress }: { pane: DashboardPane; onPress: () => void }
   );
 }
 
-function NewSpace({
-  session,
-  onClose,
-  onCreated,
-}: {
-  session: Session;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+export function NewSpace({ session, onCreated }: { session: Session; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -243,12 +165,11 @@ function NewSpace({
   }
 
   return (
-    <Sheet title="New space" onClose={onClose}>
+    <SheetBody title="New space">
       <Text style={styles.label}>NAME</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="what you are working on" placeholderTextColor={theme.dim} />
       <Text style={styles.label}>FOLDER</Text>
       <FlatList
-        contentInsetAdjustmentBehavior="automatic"
         data={suggestions}
         horizontal
         keyExtractor={(p) => p}
@@ -266,19 +187,11 @@ function NewSpace({
       <Pressable style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()}>
         <Text style={styles.goText}>{busy ? "Creating…" : "Create space"}</Text>
       </Pressable>
-    </Sheet>
+    </SheetBody>
   );
 }
 
-function NewAgent({
-  space,
-  onClose,
-  onStarted,
-}: {
-  space: Space;
-  onClose: () => void;
-  onStarted: (paneId: string) => void;
-}) {
+export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "starting">("idle");
@@ -334,7 +247,7 @@ function NewAgent({
 
   const busy = phase !== "idle";
   return (
-    <Sheet title={`New agent in ${space.label}`} onClose={onClose}>
+    <SheetBody title={`New agent in ${space.label}`}>
       <Text style={styles.label}>AGENT</Text>
       <View style={styles.kinds}>
         {kinds.map((k) => (
@@ -374,44 +287,30 @@ function NewAgent({
         </Text>
       </Pressable>
       <Text style={styles.note}>A cold start can take half a minute.</Text>
-    </Sheet>
+    </SheetBody>
   );
 }
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  const keyboard = useKeyboardHeight();
+/**
+ * The inside of a formSheet route: a title row, then the form.
+ *
+ * The sheet itself — the rounded card, the dimming, drag-to-dismiss, and
+ * moving out of the keyboard's way — is the presentation's job now, which is
+ * why this replaced an absolutely positioned View with a hand-measured
+ * keyboard lift.
+ */
+function SheetBody({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    // Lifted by the measured keyboard height rather than by
-    // KeyboardAvoidingView, which does nothing for an absolutely positioned
-    // sheet — it derives its padding from its own laid-out frame, and this one
-    // is pinned to the bottom with no height of its own. Without the lift the
-    // confirm button sits behind the keyboard, unreachable.
-    <View style={[styles.sheetWrap, { paddingBottom: keyboard }]}>
-      <View style={styles.sheet}>
-        <View style={styles.sheetHead}>
-          <Text style={styles.sheetTitle}>{title}</Text>
-          <Pressable onPress={onClose} hitSlop={12}>
-            <Text style={styles.sheetClose}>Close</Text>
-          </Pressable>
-        </View>
-        {children}
+    <View style={styles.sheet}>
+      <View style={styles.sheetHead}>
+        <Text style={styles.sheetTitle}>{title}</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Text style={styles.sheetClose}>Close</Text>
+        </Pressable>
       </View>
+      {children}
     </View>
   );
-}
-
-/** How much of the screen the keyboard is currently taking, in dp. */
-function useKeyboardHeight(): number {
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    const shown = Keyboard.addListener("keyboardDidShow", (e) => setHeight(e.endCoordinates.height));
-    const hidden = Keyboard.addListener("keyboardDidHide", () => setHeight(0));
-    return () => {
-      shown.remove();
-      hidden.remove();
-    };
-  }, []);
-  return height;
 }
 
 const Centered = ({ children }: { children: React.ReactNode }) => (
@@ -425,9 +324,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   dim: { color: theme.dim },
-  topbar: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.line },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
-  back: { color: theme.dim, fontSize: 26, lineHeight: 26 },
+  headTitle: { alignItems: "center" },
 
   space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.line },
   spaceName: { color: theme.fg, fontSize: 16, fontWeight: "600" },
@@ -446,8 +344,7 @@ const styles = StyleSheet.create({
   actionPrimary: { backgroundColor: theme.peach, borderStyle: "solid", borderColor: theme.peach },
   actionPrimaryText: { color: theme.void, fontWeight: "600" },
 
-  sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
-  sheet: { backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.lineBright, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, gap: 10 },
+  sheet: { padding: 16, gap: 10 },
   sheetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600" },
   sheetClose: { color: theme.peach, fontSize: 15 },

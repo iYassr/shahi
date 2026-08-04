@@ -276,7 +276,8 @@ cheap to state and was expensive to find: **a feature that only exists in
 `web/` does not exist.**
 
 Still only in the PWA, and worth porting when someone next needs them: the
-reader's jump-to-latest pill, the redesigned agent list, and the spaces view.
+redesigned agent list and the spaces view. The reader's jump-to-latest pill
+is ported.
 
 ## House style
 

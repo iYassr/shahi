@@ -1,0 +1,41 @@
+# Scrolling back through a transcript is reading; losing the place is the
+# regression. The read/screen toggle unmounts the list, which used to throw
+# the reader back to the tail — so this scrolls away from the newest message,
+# flips to the terminal and back, and asserts the newest message is still off
+# screen. The stub's transcript ends at "Message 140", which makes "not at
+# the tail" checkable as text.
+appId: app.shahi.mobile
+name: The reader keeps your place across the screen toggle
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+
+- tapOn: ".*Convert PDF to markdown.*"
+- assertVisible: ".*Message 140.*"
+
+- swipe:
+    direction: DOWN
+- swipe:
+    direction: DOWN
+- swipe:
+    direction: DOWN
+- assertNotVisible: ".*Message 140.*"
+# Scrolled away, so the jump pill should be offering the way back.
+- assertVisible: "Latest ↓"
+
+- tapOn: "screen"
+- tapOn: "read"
+- assertVisible: "AGENT"
+- assertNotVisible: ".*Message 140.*"
+
+# And the pill delivers: back at the tail, following again.
+- tapOn: "Latest ↓"
+- assertVisible: ".*Message 140.*"
