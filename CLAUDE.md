@@ -15,7 +15,9 @@ e2e/       Playwright, against a stub of the server
 ```
 
 One command to a running install: `bash install.sh` (idempotent; upgrades in
-place and keeps your passcode).
+place and keeps your passcode). Building the iOS app needs a Mac — see
+`docs/on-a-mac.md`, which is also where the iOS tests are free rather than
+behind a paid EAS plan.
 
 ```sh
 bun test shared/src server web/src        # unit
