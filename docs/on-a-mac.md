@@ -18,6 +18,12 @@ bun install
 Xcode from the App Store, then `xcode-select --install` and open it once to
 accept the licence. `bun` via `curl -fsSL https://bun.sh/install | bash`.
 
+**Install from the repo root, not from `mobile/`.** This is a workspace: the
+app's dependencies are hoisted to the root, and installing from inside `mobile`
+gives you a second, partial copy of them. If Expo's CLI reaches for npm — it
+does when it cannot see a lockfile beside the project — that is fine now, but
+bun is what the lockfile is for.
+
 ## Run the app
 
 ```sh
