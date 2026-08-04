@@ -2,6 +2,11 @@ node_modules/
 dist/
 *.log
 
+# bun.lock is the lockfile. Expo's CLI reaches for npm when it cannot see one
+# beside the project and leaves this behind, and the layout npm produces broke
+# the web build once.
+package-lock.json
+
 # Secrets: VAPID keypair, passcode hash, cookie signing key
 .env
 .env.*
