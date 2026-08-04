@@ -12,7 +12,10 @@
       "@shahi/shared": [
         "../shared/src/index.ts"
       ]
-    }
+    },
+    "types": [
+      "jest"
+    ]
   },
   "include": [
     "**/*.ts",
