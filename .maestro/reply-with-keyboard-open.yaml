@@ -1,0 +1,29 @@
+# The keyboard is the phone's half of every conversation, and nothing else
+# tested it: iOS raises it over the app, and the composer has to lift to stay
+# usable — the known failure mode is a Send tap landing on the keyboard's own
+# Enter key. The assert is behavioral rather than geometric: a send that lands
+# clears the draft, so the placeholder coming back proves Send was really
+# above the keyboard when it was tapped.
+#
+# Running this on a Mac by hand needs the software keyboard: Simulator >
+# I/O > Keyboard > Connect Hardware Keyboard must be off, or it never rises.
+# Maestro's own typing raises it regardless, which is what CI relies on.
+appId: app.shahi.mobile
+name: Reply with the keyboard open
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+
+- tapOn: ".*Convert PDF to markdown.*"
+- tapOn: "Reply to this agent…"
+- inputText: "hello from the keyboard flow"
+- tapOn: "Send"
+- assertVisible: "Reply to this agent…"

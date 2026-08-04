@@ -5,11 +5,20 @@
 # the workflow, because an Expo runner cannot reach a private tailnet and should
 # not be able to. That reuse is the point: one contract, one set of fixtures,
 # both clients.
+#
+# Two things here were learned by running it, not writing it:
+# - clearState does not touch the keychain, and the session lives in
+#   expo-secure-store. Without clearKeychain, whichever flow runs second starts
+#   already signed in and never sees the connect screen.
+# - React Native flattens a Pressable's children into one accessibility label,
+#   so a row reads as "●, project, ~/project · 3 tabs · 3 panes, 1". Maestro
+#   matches the whole label, hence the .*…* around any text inside a Pressable.
 appId: app.shahi.mobile
 name: Connect, then read a session
 ---
 - launchApp:
     clearState: true
+    clearKeychain: true
 
 # Signing in. The address is the worker's own stub; the passcode is the stub's.
 - assertVisible: "Shahi"
@@ -18,24 +27,26 @@ name: Connect, then read a session
 - inputText: "http://localhost:7272"
 - tapOn:
     id: "passcode"
-- inputText: "test"
+- inputText: "1234"
 - tapOn: "Connect"
 
 # The dashboard. `busy` is the default scenario: one blocked agent above a list.
 - assertVisible: "Agents"
-- assertVisible: "Waiting on you"
-- assertVisible: "Convert PDF to markdown"
+- assertVisible: ".*Waiting on you.*"
+- assertVisible: ".*Convert PDF to markdown.*"
 
 # The tab bar — a real one as of August 2026, and the reason this flow exists.
 - tapOn: "Spaces"
-- assertVisible: "project"
+- assertVisible: ".*project.*"
 - tapOn: "Agents"
-- assertVisible: "Waiting on you"
+- assertVisible: ".*Waiting on you.*"
 
 # Into a pane, which is where the reader draws an agent's own transcript.
-- tapOn: "Convert PDF to markdown"
+- tapOn: ".*Convert PDF to markdown.*"
 - assertVisible:
     text: "Screen|Reader|History"
     optional: true
-- back
+# Not `back`: on iOS that is an edge swipe, and it left the pane screen where
+# it was. The app's own chevron is the thing a user would tap.
+- tapOn: "‹"
 - assertVisible: "Agents"
