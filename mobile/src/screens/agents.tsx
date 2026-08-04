@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
@@ -47,28 +48,34 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
 
   return (
     <View style={styles.screen}>
-      <View style={styles.topbar}>
-        <Text style={styles.title}>Agents</Text>
-        <View style={{ flex: 1 }} />
-        {blocked.length > 0 && (
-          <Text style={[styles.link, { color: theme.peach }]}>{blocked.length} WAITING</Text>
-        )}
-        <Pressable
-          hitSlop={10}
-          disabled={push === "asking" || push === "on"}
-          onPress={() => {
-            setPush("asking");
-            void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
-          }}
-        >
-          <Text style={[styles.bell, push === "on" && { color: theme.mint }]}>
-            {push === "on" ? "🔔" : "🔕"}
-          </Text>
-        </Pressable>
-        <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
-          {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
-        </Text>
-      </View>
+      {/* The status cluster rides in the platform's header, set here because
+          this is where the state lives. */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <View style={styles.status}>
+              {blocked.length > 0 && (
+                <Text style={[styles.link, { color: theme.peach }]}>{blocked.length} WAITING</Text>
+              )}
+              <Pressable
+                hitSlop={10}
+                disabled={push === "asking" || push === "on"}
+                onPress={() => {
+                  setPush("asking");
+                  void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
+                }}
+              >
+                <Text style={[styles.bell, push === "on" && { color: theme.mint }]}>
+                  {push === "on" ? "🔔" : "🔕"}
+                </Text>
+              </Pressable>
+              <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
+                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
+              </Text>
+            </View>
+          ),
+        }}
+      />
       {push !== "off" && push !== "on" && push !== "asking" && (
         <Pressable onPress={() => setPush("off")}>
           <Text style={styles.notice}>{push} Tap to dismiss.</Text>
@@ -116,6 +123,9 @@ function Row({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
       <Text style={styles.rowTitle} numberOfLines={1}>
         {pane.title ?? pane.paneId}
       </Text>
+      {/* The glyphs are the terminal's vocabulary; the word is for everyone
+          who has not internalised it yet. */}
+      <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
       <Text style={styles.rowMeta} numberOfLines={1}>
         {pane.workspaceLabel}
       </Text>
@@ -212,16 +222,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   dim: { color: theme.dim, textAlign: "center" },
 
-  topbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.line,
-  },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
+  status: { flexDirection: "row", alignItems: "center", gap: 10 },
   link: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
   bell: { fontSize: 15, color: theme.dim },
   notice: {
@@ -248,6 +249,7 @@ const styles = StyleSheet.create({
   mark: { fontFamily: theme.mono, fontSize: 13 },
   rowTitle: { color: theme.fg, fontFamily: theme.mono, fontSize: 13, flex: 1 },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
+  rowStatus: { fontFamily: theme.mono, fontSize: 10, letterSpacing: 0.5 },
 
   blocked: {
     margin: 16,

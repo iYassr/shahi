@@ -6,12 +6,13 @@
  * The terminal itself is not here yet; xterm.js has no React Native port and
  * would have to run inside a WebView.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -22,6 +23,12 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Stack } from "expo-router";
+// The deep path is deliberate: SDK 57's expo-router vendors react-navigation
+// wholesale, so a separately installed @react-navigation/elements would carry
+// its own context and read a height of 0. This one shares the router's.
+import { useHeaderHeight } from "expo-router/build/react-navigation/elements";
+import { useKeyboardHeight } from "@/lib/keyboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
@@ -78,13 +85,66 @@ const KEY_BAR: { label: string; keys: string[] }[] = [
   { label: "⏎", keys: ["Enter"] },
 ];
 
-interface Props {
-  paneId: string;
-  onBack: () => void;
+/**
+ * Where you were in each pane's transcript, for the life of the process.
+ *
+ * The scroll offset otherwise lives only inside the mounted list, and both
+ * ways of leaving destroy that: popping the route unmounts the whole screen,
+ * and the read/screen toggle unmounts just the list. Either way, coming back
+ * silently threw the reader to the tail — or worse, the top. "bottom" is kept
+ * as its own value so a pane left at the tail still opens at the tail, which
+ * is where a pane you were not reading mid-scroll should open.
+ *
+ * A position is an offset *and* the content height it was taken at. The
+ * height is what makes restoring sound: a fresh list measures itself in
+ * steps, and scrolling to the offset early clamps to the half-measured
+ * bottom — which then reads as "at the bottom" and snaps the reader to the
+ * tail. Watched happen at h=6780 of an eventual 7525. The height says when
+ * the offset is reachable again.
+ */
+const scrollMemory = new Map<string, { y: number; h: number } | "bottom">();
+
+/**
+ * Folds a freshly fetched tail into what is already shown.
+ *
+ * Two properties carried over from the web reader, both load-bearing there:
+ * messages older than the fetched window are kept, so scrolling back through
+ * history survives the next poll; and unchanged messages keep their object
+ * identity — a quiet poll returns the previous array itself — so the list
+ * re-renders nothing when nothing changed. Only the last message can change
+ * in place, so it is the only one compared by content.
+ */
+function merge(prev: LogMessage[], next: LogMessage[]): LogMessage[] {
+  const start = next.length ? prev.findIndex((m) => m.id === next[0]!.id) : -1;
+  if (start === -1) return next;
+  const head = prev.slice(0, start);
+  const prevById = new Map(prev.map((m) => [m.id, m] as const));
+  const tail = next.map((m, i) => {
+    const old = prevById.get(m.id);
+    const last = i === next.length - 1;
+    if (old && (!last || JSON.stringify(old) === JSON.stringify(m))) return old;
+    return m;
+  });
+  const out = [...head, ...tail];
+  const same = out.length === prev.length && out.every((m, i) => m === prev[i]);
+  return same ? prev : out;
 }
 
-export function Pane({ paneId, onBack }: Props) {
+interface Props {
+  paneId: string;
+}
+
+export function Pane({ paneId }: Props) {
   const [messages, setMessages] = useState<LogMessage[]>([]);
+  /** Mirror of `messages`, so merging does not need a functional setState. */
+  const messagesRef = useRef<LogMessage[]>([]);
+  /**
+   * Away from the tail, as state rather than the `following` ref, because the
+   * jump pill has to render when it changes. `unseen` counts what arrived
+   * while away — the pill's label, same as the web reader's.
+   */
+  const [away, setAway] = useState(typeof scrollMemory.get(paneId) === "object");
+  const [unseen, setUnseen] = useState(0);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [readable, setReadable] = useState(true);
@@ -112,13 +172,24 @@ export function Pane({ paneId, onBack }: Props) {
    * The list re-measures on every poll, and snapping to the end each time would
    * drag the reader back down mid-paragraph — the one thing that makes a long
    * transcript unreadable. So it follows only while already at the bottom, and
-   * lets go the moment you scroll away.
+   * lets go the moment you scroll away. A remembered mid-scroll position means
+   * the last visit had already let go.
    */
-  const following = useRef(true);
+  const following = useRef(typeof scrollMemory.get(paneId) !== "object");
+  /**
+   * True while a remembered position is being restored. Scroll events are
+   * ignored until it clears: they are the restore's own clamped settling, and
+   * treating one as the reader's doing is how the position got overwritten.
+   */
+  const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
   const { watch, session } = useSession();
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
+  // The native header sits above this screen, and "padding" measures from the
+  // window — without the offset the composer stops a header's height short.
+  const headerHeight = useHeaderHeight();
+  const keyboard = useKeyboardHeight();
 
   // Back should close the attachment sheet before it leaves the pane.
   useEffect(() => {
@@ -140,7 +211,13 @@ export function Pane({ paneId, onBack }: Props) {
   const load = useCallback(async () => {
     try {
       const log = await api.sessionLog(paneId, 60);
-      setMessages(log.messages);
+      const folded = merge(messagesRef.current, log.messages);
+      if (folded !== messagesRef.current) {
+        if (!following.current)
+          setUnseen((u) => u + Math.max(0, folded.length - messagesRef.current.length));
+        messagesRef.current = folded;
+        setMessages(folded);
+      }
       setReadable(true);
       setLoading(false);
     } catch {
@@ -165,6 +242,14 @@ export function Pane({ paneId, onBack }: Props) {
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  function jumpToLatest() {
+    following.current = true;
+    scrollMemory.set(paneId, "bottom");
+    setAway(false);
+    setUnseen(0);
+    listRef.current?.scrollToEnd({ animated: true });
+  }
 
   async function answer(index: number) {
     try {
@@ -200,45 +285,57 @@ export function Pane({ paneId, onBack }: Props) {
       // where it was and the keyboard covered it. Verified on the emulator:
       // taps meant for Send were landing on the keyboard's own Enter key.
       behavior="padding"
+      keyboardVerticalOffset={headerHeight}
     >
-      <View style={styles.topbar}>
-        <Pressable onPress={onBack} hitSlop={12}>
-          <Text style={styles.back}>‹</Text>
+      {/* The platform's header, not a drawn one: the back chevron, the title,
+          and correct insets come with it. Set here because this is where the
+          pane is known. */}
+      <Stack.Screen
+        options={{
+          headerTitle: () => (
+            <View style={styles.headTitle}>
+              <Text style={styles.title} numberOfLines={1}>
+                {pane?.title ?? paneId}
+              </Text>
+              <Text style={styles.subtitle}>{pane?.agent ?? "shell"} · {paneId}</Text>
+            </View>
+          ),
+          headerRight: () => (
+            <View style={styles.toggle}>
+              <Pressable
+                style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
+                onPress={() => setView("reader")}
+              >
+                <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>read</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
+                onPress={() => setView("screen")}
+              >
+                <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]}>screen</Text>
+              </Pressable>
+            </View>
+          ),
+        }}
+      />
+
+      {/* Readable and dismissible, instead of one truncated line squeezed
+          into the old topbar. */}
+      {error && (
+        <Pressable style={styles.banner} onPress={() => setError(null)}>
+          <Text style={styles.bannerText} numberOfLines={2}>{error}</Text>
+          <Text style={styles.bannerClose}>✕</Text>
         </Pressable>
-        <View style={styles.heading}>
-          <Text style={styles.title} numberOfLines={1}>
-            {pane?.title ?? paneId}
-          </Text>
-          {pane?.title && <Text style={styles.subtitle}>{pane.agent ?? "shell"} · {paneId}</Text>}
-        </View>
-        <View style={{ flex: 1 }} />
-        {error && <Text style={styles.error} numberOfLines={1}>{error}</Text>}
-        <View style={styles.toggle}>
-          <Pressable
-            style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
-            onPress={() => setView("reader")}
-          >
-            <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>read</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
-            onPress={() => setView("screen")}
-          >
-            <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]}>screen</Text>
-          </Pressable>
-        </View>
-      </View>
+      )}
 
       {prompt && <Prompt prompt={prompt} onAnswer={answer} />}
 
-      {view === "screen" ? (
-        <Screen text={screen} columns={columns} onColumns={setColumns} />
-      ) : loading ? (
+      {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.peach} />
           <Text style={styles.dim}>Reading the conversation…</Text>
         </View>
-      ) : !readable ? (
+      ) : !readable && view === "reader" ? (
         <View style={styles.centered}>
           <Text style={styles.dim}>
             Nothing to read yet.
@@ -252,6 +349,7 @@ export function Pane({ paneId, onBack }: Props) {
           </Pressable>
         </View>
       ) : (
+        <View style={styles.body}>
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
@@ -266,21 +364,60 @@ export function Pane({ paneId, onBack }: Props) {
             <Message message={item} paneId={paneId} onOpenFile={setViewing} />
           )}
           onScroll={({ nativeEvent: e }) => {
+            if (pendingRestore.current) return;
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             following.current = fromBottom < 80;
+            scrollMemory.set(
+              paneId,
+              following.current ? "bottom" : { y: e.contentOffset.y, h: e.contentSize.height },
+            );
+            setAway(!following.current);
+            if (following.current) setUnseen(0);
           }}
           scrollEventThrottle={200}
-          onContentSizeChange={() => {
+          onContentSizeChange={(_w, h) => {
+            const spot = scrollMemory.get(paneId);
+            if (pendingRestore.current && typeof spot === "object") {
+              // Re-issued on every growth step: each attempt clamps to however
+              // much is measured so far, and the last one — once the content
+              // is back to the height the position was taken at — lands.
+              listRef.current?.scrollToOffset({ offset: spot.y, animated: false });
+              if (h >= spot.h - 1) pendingRestore.current = false;
+              return;
+            }
+            pendingRestore.current = false;
             if (following.current) listRef.current?.scrollToEnd({ animated: false });
           }}
           ListFooterComponent={activity ? <Working activity={activity} /> : null}
         />
+
+        {view === "reader" && away && (
+          <View style={styles.jumpWrap} pointerEvents="box-none">
+            <Pressable style={styles.jump} onPress={jumpToLatest}>
+              <Text style={styles.jumpText}>{unseen > 0 ? `${unseen} new ↓` : "Latest ↓"}</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Laid over the reader rather than replacing it, so flipping to the
+            terminal and back never unmounts the list — which is what used to
+            lose the scroll position. */}
+        {view === "screen" && (
+          <View style={styles.screenOverlay}>
+            <Screen text={screen} columns={columns} onColumns={setColumns} />
+          </View>
+        )}
+        </View>
       )}
 
       {viewing && <FileView file={viewing} onClose={() => setViewing(null)} />}
 
       <View style={styles.compose}>
+        {/* Terminal vocabulary: always there on the screen view, but in the
+            reader only while the keyboard is up and you are actually
+            answering — the rest of the time it was a row of noise. */}
+        {(view === "screen" || keyboard > 0) && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -305,6 +442,7 @@ export function Pane({ paneId, onBack }: Props) {
             </Pressable>
           ))}
         </ScrollView>
+        )}
         <View style={styles.composeRow}>
           <Pressable style={styles.attach} onPress={() => setAttaching(true)}>
             <Text style={styles.attachText}>+</Text>
@@ -385,7 +523,9 @@ function Prompt({
   );
 }
 
-function Message({
+// memo is what turns merge's identity-keeping into skipped work: with stable
+// message objects and stable other props, an unchanged row never re-renders.
+const Message = memo(function Message({
   message,
   paneId,
   onOpenFile,
@@ -403,7 +543,7 @@ function Message({
       ))}
     </View>
   );
-}
+});
 
 export function Block({
   block,
@@ -785,23 +925,40 @@ function FilePicker({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
+  body: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   dim: { color: theme.dim, textAlign: "center" },
-  error: { color: theme.rose, fontSize: 11, maxWidth: 160 },
 
-  topbar: {
+  banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: 10,
+    backgroundColor: theme.surface,
     borderBottomWidth: 1,
-    borderBottomColor: theme.line,
+    borderBottomColor: theme.rose,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  back: { color: theme.dim, fontSize: 26, lineHeight: 26 },
-  heading: { flexShrink: 1 },
+  bannerText: { color: theme.rose, fontSize: 13, flex: 1 },
+  bannerClose: { color: theme.dim, fontSize: 13 },
+
+  headTitle: { alignItems: "center" },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 14 },
   subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, marginTop: 1 },
+
+  jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 14, alignItems: "center" },
+  jump: {
+    backgroundColor: theme.raised,
+    borderWidth: 1,
+    borderColor: theme.lineBright,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    minHeight: 34,
+    justifyContent: "center",
+  },
+  jumpText: { color: theme.peach, fontFamily: theme.mono, fontSize: 12 },
+
+  screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void },
   toggle: { flexDirection: "row", borderWidth: 1, borderColor: theme.line, borderRadius: 7, borderCurve: "continuous" },
   toggleItem: { paddingHorizontal: 10, minHeight: 32, justifyContent: "center" },
   toggleOn: { backgroundColor: theme.raised },

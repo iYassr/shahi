@@ -47,6 +47,6 @@ name: Connect, then read a session
     text: "Screen|Reader|History"
     optional: true
 # Not `back`: on iOS that is an edge swipe, and it left the pane screen where
-# it was. The app's own chevron is the thing a user would tap.
-- tapOn: "‹"
+# it was. "Back" is the native header button's accessibility label.
+- tapOn: "Back"
 - assertVisible: "Agents"
