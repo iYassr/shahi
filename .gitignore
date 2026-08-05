@@ -33,3 +33,6 @@ test-results/
 
 # Expo: generated route types and dev-server state.
 mobile/.expo/
+
+# Generated at the root by eas-cli when run from the wrong directory.
+/eas.json
