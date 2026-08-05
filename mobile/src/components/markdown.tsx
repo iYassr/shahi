@@ -13,6 +13,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { CopyOnHold } from "@/components/copy";
 import { theme } from "@/lib/theme";
 
 export function Markdown({ text }: { text: string }) {
@@ -52,9 +53,13 @@ function renderBlocks(text: string): ReactNode[] {
       i++;
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i]!)) body.push(lines[i++]!);
       out.push(
-        <ScrollView horizontal style={styles.codeBox} key={key++}>
-          <Text style={styles.code} selectable>{body.join("\n")}</Text>
-        </ScrollView>,
+        <CopyOnHold text={body.join("\n")} key={key++}>
+          <ScrollView horizontal style={styles.codeBox}>
+            {/* Not selectable: the hold already copies, and the selection menu
+                landing on top of it offered the same copy twice. */}
+            <Text style={styles.code}>{body.join("\n")}</Text>
+          </ScrollView>
+        </CopyOnHold>,
       );
       continue;
     }
@@ -81,7 +86,7 @@ function renderBlocks(text: string): ReactNode[] {
             {body.map((row, r) => (
               <View style={styles.tr} key={r}>
                 {row.map((cell, c) => (
-                  <Text style={styles.cell} key={c}>
+                  <Text style={styles.cell} key={c} selectable>
                     {inline(cell)}
                   </Text>
                 ))}
@@ -97,7 +102,7 @@ function renderBlocks(text: string): ReactNode[] {
     if (heading) {
       flush();
       out.push(
-        <Text style={[styles.h, heading[1]!.length > 2 && styles.hSmall]} key={key++}>
+        <Text style={[styles.h, heading[1]!.length > 2 && styles.hSmall]} key={key++} selectable>
           {inline(heading[2]!)}
         </Text>,
       );
@@ -117,7 +122,7 @@ function renderBlocks(text: string): ReactNode[] {
       out.push(
         <View style={styles.li} key={key++}>
           <Text style={styles.bullet}>{numbered ? `${numbered[1]}.` : "•"}</Text>
-          <Text style={styles.liText}>{inline((bullet ? bullet[1] : numbered![2])!)}</Text>
+          <Text style={styles.liText} selectable>{inline((bullet ? bullet[1] : numbered![2])!)}</Text>
         </View>,
       );
       continue;
@@ -128,7 +133,7 @@ function renderBlocks(text: string): ReactNode[] {
       flush();
       out.push(
         <View style={styles.quote} key={key++}>
-          <Text style={styles.quoteText}>{inline(quote[1]!)}</Text>
+          <Text style={styles.quoteText} selectable>{inline(quote[1]!)}</Text>
         </View>,
       );
       continue;

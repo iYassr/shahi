@@ -29,6 +29,7 @@ import { Stack } from "expo-router";
 // its own context and read a height of 0. This one shares the router's.
 import { useHeaderHeight } from "expo-router/build/react-navigation/elements";
 import { useKeyboardHeight } from "@/lib/keyboard";
+import { CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
@@ -593,16 +594,16 @@ export function Block({
         */}
       {block.questions?.map((question, i) => (
         <View style={styles.asked} key={i}>
-          <Text style={styles.askedQ}>{question.text}</Text>
+          <Text style={styles.askedQ} selectable>{question.text}</Text>
           {question.options.map((option, n) => (
             <View style={styles.askedOption} key={n}>
               {/* The number is what you would press in the terminal. */}
-              <Text style={styles.askedLabel}>
+              <Text style={styles.askedLabel} selectable>
                 <Text style={styles.askedN}>{n + 1}. </Text>
                 {option.label}
               </Text>
               {option.description ? (
-                <Text style={styles.askedWhy}>{option.description}</Text>
+                <Text style={styles.askedWhy} selectable>{option.description}</Text>
               ) : null}
             </View>
           ))}
@@ -622,9 +623,11 @@ export function Block({
       {open && block.result && (
         <>
           {block.result.text.trim().length > 0 && (
-            <ScrollView horizontal style={styles.toolOut}>
-              <Text style={styles.toolOutText} selectable>{block.result.text}</Text>
-            </ScrollView>
+            <CopyOnHold text={block.result.text}>
+              <ScrollView horizontal style={styles.toolOut}>
+                <Text style={styles.toolOutText}>{block.result.text}</Text>
+              </ScrollView>
+            </CopyOnHold>
           )}
           {block.result.images.map((ref) => (
             <TranscriptImage key={ref} paneId={paneId} imageRef={ref} />
@@ -758,22 +761,24 @@ function Screen({
       >
         {PROBE}
       </Text>
-      <ScrollView horizontal>
-        <ScrollView>
-          <Text
-            style={[
-              styles.screenText,
-              {
-                fontSize,
-                lineHeight: fontSize * 1.25,
-                width: longest * fontSize * aspect + 24,
-              },
-            ]}
-          >
-            {body}
-          </Text>
+      <CopyOnHold text={body}>
+        <ScrollView horizontal>
+          <ScrollView>
+            <Text
+              style={[
+                styles.screenText,
+                {
+                  fontSize,
+                  lineHeight: fontSize * 1.25,
+                  width: longest * fontSize * aspect + 24,
+                },
+              ]}
+            >
+              {body}
+            </Text>
+          </ScrollView>
         </ScrollView>
-      </ScrollView>
+      </CopyOnHold>
       <View style={styles.widths}>
         {TERMINAL_SIZES.map((size) => (
           <Pressable
