@@ -61,6 +61,8 @@ export const pane = (
   hasPrompt: false,
   isAgent: true,
   prompt: null,
+  preview: null,
+  activity: null,
   ...over,
 });
 
@@ -243,6 +245,8 @@ export function busySession(): Scenario {
       status: "working",
       title: "Convert PDF to markdown",
       tabId: "w1:t2",
+      preview: "Message 140: a sentence that takes a little room.",
+      activity: { verb: "Baking", elapsed: "8m 34s", detail: "26.0k tokens" },
     }),
     pane({
       paneId: "w1:p3",
@@ -261,6 +265,7 @@ export function busySession(): Scenario {
       status: "done",
       agent: "codex",
       title: "Summarise the meeting",
+      preview: "Done — the summary is in notes/2026-08-05.md, three decisions and one open question.",
     }),
   ];
 

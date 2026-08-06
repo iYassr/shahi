@@ -19,7 +19,8 @@ import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/s
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openPane } from "@/lib/navigate";
-import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
+import { AGENT_COLORS, theme } from "@/lib/theme";
+import { AGENT_ICONS, Icon } from "@/components/icons";
 
 export function Spaces({ session }: { session: Session | null }) {
   if (!session) return <Centered>Connecting…</Centered>;
@@ -30,7 +31,10 @@ export function Spaces({ session }: { session: Session | null }) {
         contentInsetAdjustmentBehavior="automatic"
         data={session.workspaces}
         keyExtractor={(w) => w.workspaceId}
-        renderItem={({ item }) => {
+        // The same chat-list grammar as the Agents tab. The avatar is the
+        // space's number — herdr's own vocabulary for workspaces, and what a
+        // keyboard user would press to reach it in the TUI.
+        renderItem={({ item, index }) => {
           const blocked = session.panes.filter(
             (p) => p.workspaceId === item.workspaceId && p.status === "blocked",
           ).length;
@@ -44,9 +48,11 @@ export function Spaces({ session }: { session: Session | null }) {
                 })
               }
             >
-              <Text style={[styles.glyph, { color: statusColor(item.status) }]}>
-                {GLYPH[item.status] ?? "·"}
-              </Text>
+              <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
+                <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>
+                  {index + 1}
+                </Text>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.spaceName}>{item.label}</Text>
                 <Text style={styles.spaceMeta} numberOfLines={1}>
@@ -59,6 +65,7 @@ export function Spaces({ session }: { session: Session | null }) {
             </Pressable>
           );
         }}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListFooterComponent={
           <Pressable style={styles.action} onPress={() => router.push("/new-space")}>
             <Text style={styles.actionText}>+ New space</Text>
@@ -99,8 +106,11 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
               <Text style={styles.groupLabel}>
                 {/^\d+$/.test(item.label) ? `TAB ${item.label}` : item.label.toUpperCase()}
               </Text>
-              {panes.map((pane) => (
-                <PaneRow key={pane.paneId} pane={pane} onPress={() => openPane(pane.paneId)} />
+              {panes.map((pane, i) => (
+                <View key={pane.paneId}>
+                  {i > 0 && <View style={styles.separator} />}
+                  <PaneRow pane={pane} onPress={() => openPane(pane.paneId)} />
+                </View>
               ))}
             </View>
           );
@@ -123,19 +133,38 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
   );
 }
 
+/** The same chat-list grammar as the Agents tab, keeping the tab grouping. */
 function PaneRow({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
+  const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
   return (
     <Pressable style={styles.row} onPress={onPress}>
-      <Text style={[styles.glyph, { color: statusColor(pane.status) }]}>
-        {GLYPH[pane.status] ?? "·"}
-      </Text>
-      {pane.isAgent && (
-        <Text style={[styles.mark, { color: AGENT_COLORS[pane.agent ?? ""] ?? theme.dim }]}>✳</Text>
-      )}
-      <Text style={styles.rowTitle} numberOfLines={1}>
-        {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
-      </Text>
-      <Text style={styles.rowMeta}>{pane.agent ?? pane.paneId}</Text>
+      <View style={[styles.avatar, { borderColor: color }]}>
+        {pane.agent && AGENT_ICONS[pane.agent] ? (
+          <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
+        ) : (
+          <Text style={[styles.avatarGlyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
+        )}
+      </View>
+      <View style={styles.rowBody}>
+        <View style={styles.rowLine}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
+          </Text>
+          <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
+        </View>
+        <View style={styles.rowLine}>
+          {pane.activity ? (
+            <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
+              {pane.activity.verb}… {pane.activity.elapsed}
+            </Text>
+          ) : (
+            <Text style={styles.rowSaid} numberOfLines={1}>
+              {pane.preview ?? (pane.isAgent ? "No conversation yet." : "A plain shell.")}
+            </Text>
+          )}
+          <Text style={styles.rowMeta}>{pane.agent ?? pane.paneId}</Text>
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -327,17 +356,32 @@ const styles = StyleSheet.create({
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
   headTitle: { alignItems: "center" },
 
-  space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.line },
+  space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.surface,
+  },
+  avatarNumber: { fontFamily: theme.mono, fontSize: 16, fontWeight: "600" },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 70 },
   spaceName: { color: theme.fg, fontSize: 16, fontWeight: "600" },
   spaceMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, marginTop: 2 },
   badge: { backgroundColor: theme.peach, color: theme.void, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontFamily: theme.mono, fontSize: 12, fontWeight: "600", overflow: "hidden" },
 
   groupLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 11 },
-  glyph: { fontFamily: theme.mono, fontSize: 13, width: 14 },
-  mark: { fontFamily: theme.mono, fontSize: 13 },
-  rowTitle: { color: theme.fg, fontFamily: theme.mono, fontSize: 13, flex: 1 },
-  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  avatarGlyph: { fontFamily: theme.mono, fontSize: 16 },
+  rowBody: { flex: 1, gap: 2 },
+  rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
+  rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
+  rowSaid: { color: theme.dim, fontSize: 13, flex: 1 },
+  rowTyping: { color: theme.mint, fontStyle: "italic" },
+  rowStatus: { fontFamily: theme.mono, fontSize: 10, letterSpacing: 0.5 },
+  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
 
   action: { margin: 16, minHeight: 48, borderWidth: 1, borderStyle: "dashed", borderColor: theme.lineBright, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
   actionText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },

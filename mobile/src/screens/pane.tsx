@@ -133,9 +133,11 @@ function merge(prev: LogMessage[], next: LogMessage[]): LogMessage[] {
 
 interface Props {
   paneId: string;
+  /** A swipe's Screen action lands straight on the terminal. */
+  initialView?: "reader" | "screen";
 }
 
-export function Pane({ paneId }: Props) {
+export function Pane({ paneId, initialView = "reader" }: Props) {
   const [messages, setMessages] = useState<LogMessage[]>([]);
   /** Mirror of `messages`, so merging does not need a functional setState. */
   const messagesRef = useRef<LogMessage[]>([]);
@@ -161,7 +163,7 @@ export function Pane({ paneId }: Props) {
    * a transcript. A plain shell has none, and without the screen there would be
    * nothing to look at while typing into it.
    */
-  const [view, setView] = useState<"reader" | "screen">("reader");
+  const [view, setView] = useState<"reader" | "screen">(initialView);
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   const [columns, setColumns] = useState(TERMINAL_SIZES[1]!);
@@ -964,11 +966,13 @@ const styles = StyleSheet.create({
   jumpText: { color: theme.peach, fontFamily: theme.mono, fontSize: 12 },
 
   screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void },
-  toggle: { flexDirection: "row", borderWidth: 1, borderColor: theme.line, borderRadius: 7, borderCurve: "continuous" },
-  toggleItem: { paddingHorizontal: 10, minHeight: 32, justifyContent: "center" },
-  toggleOn: { backgroundColor: theme.raised },
-  toggleText: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
-  toggleTextOn: { color: theme.peach },
+  // No boxes at all: two labels, the active one lit. Every boxed version —
+  // square-in-rounded, then pill-in-pill — read as shapes fighting shapes.
+  toggle: { flexDirection: "row", gap: 16 },
+  toggleItem: { minHeight: 32, justifyContent: "center" },
+  toggleOn: {},
+  toggleText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
+  toggleTextOn: { color: theme.peach, fontWeight: "700" },
 
   screenWrap: { flex: 1 },
   probe: { position: "absolute", opacity: 0, left: 0, top: 0 },

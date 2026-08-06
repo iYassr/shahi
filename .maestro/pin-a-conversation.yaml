@@ -1,0 +1,34 @@
+# Pinning, through the long-press sheet — the in-app one: iOS 26's native
+# ActionSheetIOS dropped synthesized taps on its buttons (glass transforms),
+# so the sheet is the app's own and its buttons are plain Pressables. The
+# assert is the row's own id carrying the pinned state, because a pressable
+# flattens its children and a marker inside it is invisible to the driver.
+# The swipe actions reach the same handlers and stay a finger-only
+# convenience, hand-checked via docs/verify-on-device.md.
+#
+# clearKeychain wipes stored pins, so this starts unpinned by construction —
+# which is also why no cleanup step is needed at the end.
+appId: app.shahi.mobile
+name: Pin a conversation and it stays pinned
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: ".*Summarise the meeting.*"
+
+- longPressOn: ".*Summarise the meeting.*"
+- tapOn: "Pin"
+- assertVisible:
+    id: "row-w2:p1-pinned"
+
+# And it survives an app relaunch.
+- launchApp
+- assertVisible:
+    id: "row-w2:p1-pinned"
