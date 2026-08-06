@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
   statusText: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
 
-  space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15 },
   avatar: {
     width: 42,
     height: 42,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: theme.peach, color: theme.void, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontFamily: theme.mono, fontSize: 12, fontWeight: "600", overflow: "hidden" },
 
   groupLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
-  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15 },
   rowBody: { flex: 1, gap: 2 },
   rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
