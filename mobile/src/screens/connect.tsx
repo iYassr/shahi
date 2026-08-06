@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, connection } from "@/lib/api";
+import { Logo } from "@/components/icons";
 import { theme } from "@/lib/theme";
 
 /**
@@ -48,7 +49,11 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
       // taps meant for Send were landing on the keyboard's own Enter key.
       behavior="padding"
     >
-      <Text style={styles.title}>Shahi</Text>
+      {/* The horizontal lockup: cup mark + lowercase mono wordmark. */}
+      <View style={styles.brand}>
+        <Logo color={theme.peach} size={30} />
+        <Text style={styles.title}>shahi</Text>
+      </View>
       <Text style={styles.hint}>Reach the agents on your server over Tailscale.</Text>
 
       <Text style={styles.label}>SERVER</Text>
@@ -89,7 +94,8 @@ export function Connect({ onConnected }: { onConnected: () => void }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void, justifyContent: "center", padding: 28, gap: 10 },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 24, fontWeight: "600" },
+  brand: { flexDirection: "row", alignItems: "center", gap: 12 },
+  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 26, fontWeight: "500", letterSpacing: -0.5 },
   hint: { color: theme.dim, fontSize: 14, marginBottom: 12 },
   label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, marginTop: 8 },
   input: {

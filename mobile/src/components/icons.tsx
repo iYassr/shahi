@@ -8,7 +8,25 @@
  * also fetch icons from a CDN at runtime. Status marks in lists stay
  * terminal glyphs (○ ◐ ✳ ❯) — they are the terminal's own vocabulary.
  */
-import Svg, { Path } from "react-native-svg";
+import Svg, { Path, Rect } from "react-native-svg";
+
+/**
+ * The Cup Cursor — the brand mark, from the shahi brand guidelines v1.0.
+ *
+ * A tea glass drawn as a terminal block cursor; the lid is the cursor and is
+ * the only part that may blink. Geometry is fixed by the guidelines (no
+ * rotation, stretching, or recoloring beyond a single ink), so it takes one
+ * color and a size, nothing else.
+ */
+export function Logo({ color, size = 24 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Rect x={44} y={6} width={12} height={9} rx={2} fill={color} />
+      <Rect x={31} y={24} width={38} height={54} rx={9} fill="none" stroke={color} strokeWidth={6} />
+      <Rect x={38} y={55} width={24} height={16} rx={4} fill={color} />
+    </Svg>
+  );
+}
 
 const ICONS = {
   bell: { d: "M10.268 21a2 2 0 0 0 3.464 0m-10.47-5.674A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326", filled: false },
