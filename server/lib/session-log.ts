@@ -202,6 +202,43 @@ export async function indexTranscript(path: string): Promise<TranscriptIndex> {
 
 
 /**
+ * One line for a chat-style list row: the last thing said, flattened.
+ *
+ * The last text block of the last message wins; a message that is nothing but
+ * tool calls previews as the call ("Edit · pane.tsx"), which reads better than
+ * silence. "You: " marks the human's own words, the way every messenger does.
+ */
+export function previewOf(messages: LogMessage[]): string | null {
+  const last = messages.at(-1);
+  if (!last) return null;
+
+  const blocks = [...last.blocks].reverse();
+  const text = blocks.find((b) => b.kind === "text" && b.text.trim().length > 0);
+  const tool = blocks.find((b) => b.kind === "tool");
+  const line =
+    text?.kind === "text"
+      ? text.text
+      : tool?.kind === "tool"
+        ? `${tool.name} · ${tool.summary}`
+        : null;
+  if (!line) return null;
+
+  const flat = line.replace(/[#*`_>]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+  if (!flat) return null;
+  return last.role === "you" ? `You: ${flat}` : flat;
+}
+
+/**
+ * The preview alone, cheaply enough for a dashboard that refreshes every few
+ * seconds: the index already caches by file size, so an unchanged transcript
+ * costs one stat, and a grown one costs a tail read of a few messages.
+ */
+export async function previewFor(sessionId: string): Promise<string | null> {
+  const log = await readSessionLog(sessionId, { limit: 3 });
+  return log ? previewOf(log.messages) : null;
+}
+
+/**
  * Messages beyond the window, read so the last tool call in it can still find
  * its result. Its `tool_result` is in a later row, and without a few rows of
  * slack the newest call in a page would render without its output.

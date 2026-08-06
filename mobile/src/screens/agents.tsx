@@ -7,19 +7,26 @@
  * platform. What differs is only how it is drawn.
  */
 import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RectButton } from "react-native-gesture-handler";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
+import { openScreen } from "@/lib/navigate";
 import { enablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
-import { AGENT_COLORS, GLYPH, theme } from "@/lib/theme";
+import { AGENT_COLORS, theme } from "@/lib/theme";
+import { AGENT_ICONS, Icon } from "@/components/icons";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
-  const { session, prompts, link, error, clearPrompt } = useSession();
+  const { session, prompts, link, error, clearPrompt, pins, togglePin } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
+  const [filter, setFilter] = useState("all");
+  /** The row a long-press opened actions for. */
+  const [acting, setActing] = useState<DashboardPane | null>(null);
 
   async function answer(paneId: string, index: number) {
     try {
@@ -43,8 +50,45 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   }
 
   const agents = session.panes.filter((p) => p.isAgent);
-  const blocked = agents.filter((p) => p.status === "blocked");
-  const rest = agents.filter((p) => p.status !== "blocked");
+  const shells = session.panes.filter((p) => !p.isAgent);
+
+  /*
+   * The filter row, in WhatsApp's grammar but with this app's nouns: not
+   * "Unread / Favourites / Groups" but Waiting, each agent kind actually
+   * running, and Shells. Derived from the session rather than declared, so a
+   * kind that is not running is not offered — and Shells only exists here as
+   * an explicit ask, because burying agents under shells is what the Agents
+   * view exists to avoid.
+   */
+  const kinds = [...new Set(agents.map((p) => p.agent).filter((a): a is string => !!a))].sort();
+  const waiting = agents.filter((p) => p.status === "blocked").length;
+  const chips: { id: string; label: string }[] = [
+    { id: "all", label: "All" },
+    ...(waiting > 0 ? [{ id: "waiting", label: `Waiting ${waiting}` }] : []),
+    ...kinds.map((k) => ({ id: `kind:${k}`, label: k })),
+    ...(shells.length > 0 ? [{ id: "shells", label: "Shells" }] : []),
+  ];
+
+  // A chip can vanish under its selection — the last codex exits, the waiting
+  // agent gets its answer. Falling back to All beats an empty screen filtered
+  // by a control that is no longer on it.
+  const active = chips.some((c) => c.id === filter) ? filter : "all";
+  const shown =
+    active === "all"
+      ? agents
+      : active === "waiting"
+        ? agents.filter((p) => p.status === "blocked")
+        : active === "shells"
+          ? shells
+          : agents.filter((p) => `kind:${p.agent}` === active);
+  const blocked = shown.filter((p) => p.status === "blocked");
+  // Pinned first, and stably: within each half the server's order holds.
+  // Blocked panes are deliberately not pin-sorted — the card is already the
+  // top of the screen, and a pin must not compete with a question.
+  const rest = [
+    ...shown.filter((p) => p.status !== "blocked" && pins.has(p.paneId)),
+    ...shown.filter((p) => p.status !== "blocked" && !pins.has(p.paneId)),
+  ];
 
   return (
     <View style={styles.screen}>
@@ -65,9 +109,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                   void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
                 }}
               >
-                <Text style={[styles.bell, push === "on" && { color: theme.mint }]}>
-                  {push === "on" ? "🔔" : "🔕"}
-                </Text>
+                <Icon
+                  name={push === "on" ? "bell" : "bell-off"}
+                  color={push === "on" ? theme.mint : theme.dim}
+                  size={16}
+                />
               </Pressable>
               <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
                 {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
@@ -76,18 +122,38 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           ),
         }}
       />
-      {push !== "off" && push !== "on" && push !== "asking" && (
-        <Pressable onPress={() => setPush("off")}>
-          <Text style={styles.notice}>{push} Tap to dismiss.</Text>
-        </Pressable>
-      )}
-
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
         data={rest}
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
           <>
+            {/* Inside the list, not above it: content outside the FlatList
+                gets no inset for the transparent large-title header and drew
+                behind the clock — the first safe-area bug, wearing a new hat.
+                WhatsApp's chips scroll with the content anyway. */}
+            {push !== "off" && push !== "on" && push !== "asking" && (
+              <Pressable onPress={() => setPush("off")}>
+                <Text style={styles.notice}>{push} Tap to dismiss.</Text>
+              </Pressable>
+            )}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filters}
+            >
+              {chips.map((chip) => (
+                <Pressable
+                  key={chip.id}
+                  style={[styles.filter, chip.id === active && styles.filterOn]}
+                  onPress={() => setFilter(chip.id)}
+                >
+                  <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
+                    {chip.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
             {blocked.map((pane) => (
               <BlockedCard
                 key={pane.paneId}
@@ -99,37 +165,177 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             ))}
             {rest.length > 0 && (
               <Text style={styles.groupLabel}>
-                {blocked.length > 0 ? "EVERYTHING ELSE" : `${rest.length} AGENTS`}
+                {blocked.length > 0
+                  ? "EVERYTHING ELSE"
+                  : `${rest.length} ${active === "shells" ? "SHELLS" : "AGENTS"}`}
               </Text>
             )}
           </>
         }
         renderItem={({ item }) => (
-          <Row pane={item} onPress={() => onOpenPane(item.paneId)} />
+          <Row
+            pane={item}
+            pinned={pins.has(item.paneId)}
+            onPress={() => onOpenPane(item.paneId)}
+            onPin={() => togglePin(item.paneId)}
+            onActions={() => setActing(item)}
+          />
         )}
-        ListEmptyComponent={blocked.length ? null : <Centered>No agents running.</Centered>}
+        // WhatsApp's hairline, starting past the avatar so the circles read
+        // as one column.
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={
+          blocked.length ? null : (
+            <Centered>{active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
+          )
+        }
       />
+
+      {/* An in-app sheet rather than ActionSheetIOS or Modal: the native
+          sheet's buttons dropped synthesized taps on iOS 26, and Modal mounts
+          a second window the test driver cannot see into. An overlay in the
+          same tree is visible to everything that can see the screen. */}
+      {acting && (
+        <View style={styles.sheetLayer}>
+          {/* The backdrop is a sibling of the card, not its parent: a
+              pressable flattens its children into one element, and the whole
+              sheet inside it became a single untappable blob. */}
+          <Pressable style={styles.sheetBack} onPress={() => setActing(null)} />
+          <View style={styles.sheetCard}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {acting.title ?? acting.paneId}
+              </Text>
+              <Pressable
+                style={styles.sheetItem}
+                onPress={() => {
+                  togglePin(acting.paneId);
+                  setActing(null);
+                }}
+              >
+                <Icon name={pins.has(acting.paneId) ? "pin-off" : "pin"} color={theme.peach} size={16} />
+                <Text style={styles.sheetItemText}>
+                  {pins.has(acting.paneId) ? "Unpin" : "Pin"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.sheetItem}
+                onPress={() => {
+                  setActing(null);
+                  openScreen(acting.paneId);
+                }}
+              >
+                <Icon name="terminal" color={theme.mint} size={16} />
+                <Text style={styles.sheetItemText}>Open screen</Text>
+              </Pressable>
+              <Pressable style={styles.sheetItem} onPress={() => setActing(null)}>
+                <Text style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</Text>
+              </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
-function Row({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
+/**
+ * A chat-list row, in the grammar every messenger taught: who, the last thing
+ * said, and whether they are typing. An agent session is a conversation, and
+ * a row that reads "I've finished the parser — run the tests?" tells you more
+ * than a status glyph ever did. The blocked card above stays a card — a
+ * conversation that needs a decision does not queue politely in a list.
+ *
+ * Swiping reveals the two things worth doing without opening it: keeping it
+ * on top, and going straight to the raw terminal.
+ */
+function Row({
+  pane,
+  pinned,
+  onPress,
+  onPin,
+  onActions,
+}: {
+  pane: DashboardPane;
+  pinned: boolean;
+  onPress: () => void;
+  onPin: () => void;
+  onActions: () => void;
+}) {
+  const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
   return (
-    <Pressable style={styles.row} onPress={onPress}>
-      <Text style={[styles.glyph, { color: statusColor(pane.status) }]}>
-        {GLYPH[pane.status] ?? "·"}
-      </Text>
-      <Text style={[styles.mark, { color: AGENT_COLORS[pane.agent ?? ""] ?? theme.dim }]}>✳</Text>
-      <Text style={styles.rowTitle} numberOfLines={1}>
-        {pane.title ?? pane.paneId}
-      </Text>
-      {/* The glyphs are the terminal's vocabulary; the word is for everyone
-          who has not internalised it yet. */}
-      <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
-      <Text style={styles.rowMeta} numberOfLines={1}>
-        {pane.workspaceLabel}
-      </Text>
-    </Pressable>
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={40}
+      overshootRight={false}
+      renderRightActions={(_progress, _drag, swipeable) => (
+        // RectButton, not Pressable: inside the swipeable's gesture territory
+        // a plain touchable's press never fires — the library's own buttons
+        // are how the actions stay tappable.
+        <View style={styles.actions}>
+          <RectButton
+            style={styles.action}
+            onPress={() => {
+              swipeable.close();
+              onPin();
+            }}
+          >
+            <Icon name={pinned ? "pin-off" : "pin"} color={theme.peach} />
+            <Text style={styles.actionText}>{pinned ? "Unpin" : "Pin"}</Text>
+          </RectButton>
+          <RectButton
+            style={styles.action}
+            onPress={() => {
+              swipeable.close();
+              openScreen(pane.paneId);
+            }}
+          >
+            <Icon name="terminal" color={theme.mint} />
+            <Text style={styles.actionText}>Screen</Text>
+          </RectButton>
+        </View>
+      )}
+    >
+      <Pressable
+        style={styles.row}
+        // The pinned state rides in the row's own id: children of a pressable
+        // flatten into one accessibility element, so a marker inside it is
+        // invisible to the test driver — the row's id is not.
+        testID={`row-${pane.paneId}${pinned ? "-pinned" : ""}`}
+        onPress={onPress}
+        // The same actions as the swipe, reachable without knowing the swipe
+        // exists.
+        onLongPress={onActions}
+      >
+        <View style={[styles.avatar, { borderColor: color }]}>
+          {pane.agent && AGENT_ICONS[pane.agent] ? (
+            <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
+          ) : (
+            <Text style={[styles.avatarGlyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
+          )}
+        </View>
+        <View style={styles.rowBody}>
+          <View style={styles.rowLine}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {pane.title ?? pane.paneId}
+            </Text>
+            {pinned && <Icon name="pin" color={theme.dim} size={12} />}
+            <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
+          </View>
+          <View style={styles.rowLine}>
+            {pane.activity ? (
+              // What "typing…" means when the other party is an agent.
+              <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
+                {pane.activity.verb}… {pane.activity.elapsed}
+              </Text>
+            ) : (
+              <Text style={styles.rowSaid} numberOfLines={1}>
+                {pane.preview ?? (pane.isAgent ? "No conversation yet." : "A plain shell.")}
+              </Text>
+            )}
+            <Text style={styles.rowMeta}>{pane.workspaceLabel}</Text>
+          </View>
+        </View>
+      </Pressable>
+    </ReanimatedSwipeable>
   );
 }
 
@@ -224,7 +430,6 @@ const styles = StyleSheet.create({
 
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
   link: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
-  bell: { fontSize: 15, color: theme.dim },
   notice: {
     color: theme.dim,
     fontSize: 12,
@@ -244,11 +449,66 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
 
-  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 11 },
-  glyph: { fontFamily: theme.mono, fontSize: 13, width: 14 },
-  mark: { fontFamily: theme.mono, fontSize: 13 },
-  rowTitle: { color: theme.fg, fontFamily: theme.mono, fontSize: 13, flex: 1 },
-  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
+  filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  filter: {
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    minHeight: 34,
+    justifyContent: "center",
+    backgroundColor: theme.surface,
+  },
+  filterOn: { backgroundColor: theme.raised, borderColor: theme.peach },
+  filterText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
+  filterTextOn: { color: theme.peach },
+
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: theme.line,
+    // Past the avatar, so the circles read as one column.
+    marginLeft: 70,
+  },
+  sheetLayer: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },
+  sheetBack: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.55)" },
+  sheetCard: {
+    backgroundColor: theme.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+    gap: 4,
+  },
+  sheetTitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginBottom: 8 },
+  sheetItem: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48 },
+  sheetItemText: { color: theme.fg, fontSize: 16 },
+  actions: { flexDirection: "row" },
+  action: {
+    width: 76,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: theme.raised,
+  },
+  actionText: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
+
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: theme.void },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.surface,
+  },
+  avatarGlyph: { fontFamily: theme.mono, fontSize: 16 },
+  rowBody: { flex: 1, gap: 2 },
+  rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
+  rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
+  rowSaid: { color: theme.dim, fontSize: 13, flex: 1 },
+  rowTyping: { color: theme.mint, fontStyle: "italic" },
+  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
   rowStatus: { fontFamily: theme.mono, fontSize: 10, letterSpacing: 0.5 },
 
   blocked: {

@@ -19,7 +19,7 @@ import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agent
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { readCodexLog } from "./codex-log";
-import { readSessionImage, readSessionLog } from "./session-log";
+import { previewFor, readSessionImage, readSessionLog } from "./session-log";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
@@ -102,7 +102,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     sessionBroadcastTimer = setTimeout(() => {
       sessionBroadcastTimer = undefined;
       if (clients.size > 0) {
-        broadcast({ type: "session", session: dashboard(store, poller, defaultGrouping) });
+        void dashboard(store, poller, defaultGrouping).then((session) =>
+          broadcast({ type: "session", session }),
+        );
       }
     }, SESSION_BROADCAST_INTERVAL_MS);
   });
@@ -149,7 +151,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
       open(ws) {
         clients.add(ws);
         poller.setClientCount(clients.size);
-        ws.send(JSON.stringify({ type: "session", session: dashboard(store, poller, defaultGrouping) }));
+        void dashboard(store, poller, defaultGrouping).then((session) =>
+          ws.send(JSON.stringify({ type: "session", session })),
+        );
       },
 
       close(ws) {
@@ -228,7 +232,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
         if (pathname === "/api/session") {
           defaultGrouping = await readAgentPanelSort();
-          return json(dashboard(store, poller, defaultGrouping));
+          return json(await dashboard(store, poller, defaultGrouping));
         }
 
         // Choosing where a new space lives. Browsable, because typing a path on a
@@ -523,10 +527,10 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 }
 
 
-export function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null) {
+export async function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null) {
   const { state } = store;
 
-  const panes: DashboardPane[] = state.panes.map((pane) => ({
+  const panes: DashboardPane[] = await Promise.all(state.panes.map(async (pane) => ({
     paneId: pane.pane_id,
     workspaceId: pane.workspace_id,
     workspaceLabel: store.workspace(pane.workspace_id)?.label ?? pane.workspace_id,
@@ -542,7 +546,13 @@ export function dashboard(store: SessionStore, poller: Poller, defaultGrouping: 
     hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
     prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
     isAgent: store.agent(pane.pane_id) !== undefined,
-  }));
+    // The last thing said, for chat-style rows. The transcript index caches by
+    // file size, so a quiet pane costs one stat here.
+    preview: pane.agent_session?.value
+      ? await previewFor(pane.agent_session.value).catch(() => null)
+      : null,
+    activity: poller.frame(pane.pane_id)?.activity ?? null,
+  })));
 
   panes.sort(
     (a, b) =>

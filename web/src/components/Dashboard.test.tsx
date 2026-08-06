@@ -14,6 +14,8 @@ const pane = (over: Partial<DashboardPane> & { paneId: string }): DashboardPane 
   hasPrompt: false,
   isAgent: true,
   prompt: null,
+  preview: null,
+  activity: null,
   ...over,
 });
 

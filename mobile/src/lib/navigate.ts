@@ -8,3 +8,7 @@ import { router } from "expo-router";
  */
 export const openPane = (paneId: string) =>
   router.push({ pathname: "/pane/[paneId]", params: { paneId } });
+
+/** The same pane, opened on the raw terminal — what a swipe's Screen action means. */
+export const openScreen = (paneId: string) =>
+  router.push({ pathname: "/pane/[paneId]", params: { paneId, view: "screen" } });

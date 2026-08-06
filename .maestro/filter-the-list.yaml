@@ -1,0 +1,35 @@
+# The filter chips: WhatsApp's grammar, this app's nouns — Waiting, each
+# agent kind actually running, Shells. Two things worth pinning: a kind
+# filter hides the other kinds' cards and rows alike, and All is the default
+# that still shows everything the screen exists to show.
+appId: app.shahi.mobile
+name: Filter the agent list
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: ".*Waiting on you.*"
+
+- tapOn: "codex"
+- assertNotVisible: ".*Convert PDF to markdown.*"
+- assertNotVisible: ".*Which colour do you prefer.*"
+- assertVisible: ".*Summarise the meeting.*"
+
+- tapOn: "Shells"
+- assertVisible: ".*A plain shell.*"
+- assertNotVisible: ".*Summarise the meeting.*"
+
+- tapOn: "Waiting 1"
+- assertVisible: ".*Which colour do you prefer.*"
+- assertNotVisible: ".*Summarise the meeting.*"
+
+- tapOn: "All"
+- assertVisible: ".*Convert PDF to markdown.*"
+- assertVisible: ".*Which colour do you prefer.*"

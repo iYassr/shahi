@@ -43,7 +43,13 @@ interface SessionValue {
   watch: (paneId: string | null) => void;
   /** Drops a remembered prompt once it has been answered. */
   clearPrompt: (paneId: string) => void;
+  /** Conversations kept on top of the list, by pane id, per device. */
+  pins: Set<string>;
+  togglePin: (paneId: string) => void;
 }
+
+/** Pins live beside the connection in the keychain: same storage, same life. */
+const PINS_KEY = "shahi.pins";
 
 const Ctx = createContext<SessionValue | null>(null);
 
@@ -60,6 +66,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
   const [link, setLink] = useState<LinkState>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [pins, setPins] = useState<Set<string>>(new Set());
   const socketRef = useRef<SessionSocket | null>(null);
 
   // Restore before first paint of anything that depends on being signed in.
@@ -76,8 +83,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // A corrupt or unreadable entry just means signing in again.
       }
+      try {
+        const pinned = await SecureStore.getItemAsync(PINS_KEY);
+        if (pinned) setPins(new Set(JSON.parse(pinned) as string[]));
+      } catch {
+        // Lost pins are re-pinnable; nothing to surface.
+      }
       setReady(true);
     })();
+  }, []);
+
+  const togglePin = useCallback((paneId: string) => {
+    setPins((current) => {
+      const next = new Set(current);
+      if (next.has(paneId)) next.delete(paneId);
+      else next.add(paneId);
+      void SecureStore.setItemAsync(PINS_KEY, JSON.stringify([...next]));
+      return next;
+    });
   }, []);
 
   const onMessage = useCallback((msg: SocketMessage) => {
@@ -167,8 +190,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           delete next[paneId];
           return next;
         }),
+      pins,
+      togglePin,
     }),
-    [ready, connected, session, prompts, link, error, refresh, signOut],
+    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
