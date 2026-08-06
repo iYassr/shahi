@@ -198,20 +198,16 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
       <Text style={styles.label}>NAME</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="what you are working on" placeholderTextColor={theme.dim} />
       <Text style={styles.label}>FOLDER</Text>
-      <FlatList
-        data={suggestions}
-        horizontal
-        keyExtractor={(p) => p}
-        showsHorizontalScrollIndicator={false}
-        // Otherwise the first tap only dismisses the keyboard and is swallowed,
-        // so picking a folder while naming the space takes two taps.
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <Pressable style={[styles.chip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
+      {/* A wrapping row like the agent-kind chips: a FlatList cannot size
+          itself inside this fit-to-contents sheet, and the chips floated up
+          over the title. */}
+      <View style={styles.kinds}>
+        {suggestions.map((item) => (
+          <Pressable key={item} style={[styles.chip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
             <Text style={[styles.chipText, item === cwd && styles.chipTextOn]} numberOfLines={1}>{item}</Text>
           </Pressable>
-        )}
-      />
+        ))}
+      </View>
       {error && <Text style={styles.err}>{error}</Text>}
       <Pressable style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()}>
         <Text style={styles.goText}>{busy ? "Creating…" : "Create space"}</Text>

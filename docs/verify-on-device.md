@@ -93,3 +93,8 @@ to put one — the app can then show it to whoever is debugging.
 - Swipe an Agents row left: Pin and Screen appear and answer a real
   finger. The suite cannot press buttons inside the swipe gesture area, so
   the swipe path is checked here; the long-press sheet covers it in CI.
+
+- Tap an agent row immediately after opening the app from a killed state:
+  under the dev client the very first touch can be swallowed before it
+  reaches the app (measured: the press handler never fired), and a second
+  tap works. Confirm a release build on the phone does not do this.

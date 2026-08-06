@@ -166,7 +166,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [view, setView] = useState<"reader" | "screen">(initialView);
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
-  const [columns, setColumns] = useState(TERMINAL_SIZES[1]!);
+  // Opens at the width Settings chose; the buttons on the screen still win.
+  const { watch, session, terminalWidth } = useSession();
+  const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
   /**
@@ -185,7 +187,6 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * treating one as the reader's doing is how the position got overwritten.
    */
   const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
-  const { watch, session } = useSession();
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);

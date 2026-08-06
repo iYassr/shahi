@@ -15,15 +15,13 @@ import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
-import { enablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, theme } from "@/lib/theme";
 import { AGENT_ICONS, Icon } from "@/components/icons";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
-  const { session, prompts, link, error, clearPrompt, pins, togglePin } = useSession();
+  const { session, prompts, link, error, clearPrompt, pins, togglePin, server } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
-  const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
   const [filter, setFilter] = useState("all");
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
@@ -92,29 +90,15 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
 
   return (
     <View style={styles.screen}>
-      {/* The status cluster rides in the platform's header, set here because
-          this is where the state lives. */}
+      {/* Just the server and whether it is talking — the waiting count was
+          the card's job said twice, and the bell now lives in Settings. */}
       <Stack.Screen
         options={{
           headerRight: () => (
             <View style={styles.status}>
-              {blocked.length > 0 && (
-                <Text style={[styles.link, { color: theme.peach }]}>{blocked.length} WAITING</Text>
-              )}
-              <Pressable
-                hitSlop={10}
-                disabled={push === "asking" || push === "on"}
-                onPress={() => {
-                  setPush("asking");
-                  void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
-                }}
-              >
-                <Icon
-                  name={push === "on" ? "bell" : "bell-off"}
-                  color={push === "on" ? theme.mint : theme.dim}
-                  size={16}
-                />
-              </Pressable>
+              <Text style={[styles.link, { color: theme.dim }]} numberOfLines={1}>
+                {server.replace(/^https?:\/\//, "")}
+              </Text>
               <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
                 {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
               </Text>
@@ -132,11 +116,6 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 gets no inset for the transparent large-title header and drew
                 behind the clock — the first safe-area bug, wearing a new hat.
                 WhatsApp's chips scroll with the content anyway. */}
-            {push !== "off" && push !== "on" && push !== "asking" && (
-              <Pressable onPress={() => setPush("off")}>
-                <Text style={styles.notice}>{push} Tap to dismiss.</Text>
-              </Pressable>
-            )}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -261,39 +240,7 @@ function Row({
   onActions: () => void;
 }) {
   const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
-  return (
-    <ReanimatedSwipeable
-      friction={2}
-      rightThreshold={40}
-      overshootRight={false}
-      renderRightActions={(_progress, _drag, swipeable) => (
-        // RectButton, not Pressable: inside the swipeable's gesture territory
-        // a plain touchable's press never fires — the library's own buttons
-        // are how the actions stay tappable.
-        <View style={styles.actions}>
-          <RectButton
-            style={styles.action}
-            onPress={() => {
-              swipeable.close();
-              onPin();
-            }}
-          >
-            <Icon name={pinned ? "pin-off" : "pin"} color={theme.peach} />
-            <Text style={styles.actionText}>{pinned ? "Unpin" : "Pin"}</Text>
-          </RectButton>
-          <RectButton
-            style={styles.action}
-            onPress={() => {
-              swipeable.close();
-              openScreen(pane.paneId);
-            }}
-          >
-            <Icon name="terminal" color={theme.mint} />
-            <Text style={styles.actionText}>Screen</Text>
-          </RectButton>
-        </View>
-      )}
-    >
+  const row = (
       <Pressable
         style={styles.row}
         // The pinned state rides in the row's own id: children of a pressable
@@ -335,6 +282,41 @@ function Row({
           </View>
         </View>
       </Pressable>
+  );
+  return (
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={40}
+      overshootRight={false}
+      renderRightActions={(_progress, _drag, swipeable_) => (
+        // RectButton, not Pressable: inside the swipeable's gesture territory
+        // a plain touchable's press never fires — the library's own buttons
+        // are how the actions stay tappable.
+        <View style={styles.actions}>
+          <RectButton
+            style={styles.action}
+            onPress={() => {
+              swipeable_.close();
+              onPin();
+            }}
+          >
+            <Icon name={pinned ? "pin-off" : "pin"} color={theme.peach} />
+            <Text style={styles.actionText}>{pinned ? "Unpin" : "Pin"}</Text>
+          </RectButton>
+          <RectButton
+            style={styles.action}
+            onPress={() => {
+              swipeable_.close();
+              openScreen(pane.paneId);
+            }}
+          >
+            <Icon name="terminal" color={theme.mint} />
+            <Text style={styles.actionText}>Screen</Text>
+          </RectButton>
+        </View>
+      )}
+    >
+      {row}
     </ReanimatedSwipeable>
   );
 }
@@ -470,13 +452,18 @@ const styles = StyleSheet.create({
     marginLeft: 70,
   },
   sheetLayer: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },
+  // Floating above the native tab bar rather than sliding under it — the
+  // first cut pinned to the bottom edge and buried Cancel beneath the tabs.
   sheetBack: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.55)" },
   sheetCard: {
     backgroundColor: theme.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 16,
+    borderCurve: "continuous",
+    marginHorizontal: 10,
+    marginBottom: 104,
     padding: 16,
-    paddingBottom: 32,
     gap: 4,
   },
   sheetTitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginBottom: 8 },
