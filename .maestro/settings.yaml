@@ -1,0 +1,34 @@
+# Settings' load-bearing rows: the server you are on, and the way out.
+# Signing out was unreachable before this screen — switching servers meant
+# deleting the app — so the flow proves the whole loop: out to the connect
+# screen, and back in.
+appId: app.shahi.mobile
+name: Settings shows the connection and signs out
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: "Agents"
+
+- tapOn: "Settings"
+- assertVisible: ".*localhost:7272.*"
+- assertVisible: ".*protocol 17.*"
+- tapOn: "Sign out"
+- assertVisible: "Shahi"
+
+# And back in, which is the other half of switching servers.
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: ".*Waiting on you.*"

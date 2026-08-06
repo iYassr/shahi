@@ -46,10 +46,24 @@ interface SessionValue {
   /** Conversations kept on top of the list, by pane id, per device. */
   pins: Set<string>;
   togglePin: (paneId: string) => void;
+  clearPins: () => void;
+  /** When the last session update arrived — the number that tells a frozen
+   * screen from a dead link. */
+  lastUpdateAt: number | null;
+  /** Columns a pane's terminal opens at, before the fit buttons say otherwise. */
+  terminalWidth: number;
+  setTerminalWidth: (columns: number) => void;
+  /**
+   * The server address, as state rather than a read of the connection
+   * module — a component render races the async restore, and a mutable
+   * module field never tells React it changed. The pins bug, resisted.
+   */
+  server: string;
 }
 
 /** Pins live beside the connection in the keychain: same storage, same life. */
 const PINS_KEY = "shahi.pins";
+const WIDTH_KEY = "shahi.terminal-width";
 
 const Ctx = createContext<SessionValue | null>(null);
 
@@ -67,6 +81,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [link, setLink] = useState<LinkState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [pins, setPins] = useState<Set<string>>(new Set());
+  const [lastUpdateAt, setLastUpdateAt] = useState<number | null>(null);
+  // 100 columns: readable text that still shows most of a real line.
+  const [terminalWidth, setWidth] = useState(100);
+  const [server, setServer] = useState("");
   const socketRef = useRef<SessionSocket | null>(null);
 
   // Restore before first paint of anything that depends on being signed in.
@@ -78,6 +96,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           const stored = JSON.parse(raw) as Stored;
           connection.baseUrl = stored.baseUrl;
           connection.cookie = stored.cookie;
+          setServer(stored.baseUrl);
           setConnected(true);
         }
       } catch {
@@ -86,6 +105,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       try {
         const pinned = await SecureStore.getItemAsync(PINS_KEY);
         if (pinned) setPins(new Set(JSON.parse(pinned) as string[]));
+        const width = await SecureStore.getItemAsync(WIDTH_KEY);
+        if (width) setWidth(Number(width) || 100);
       } catch {
         // Lost pins are re-pinnable; nothing to surface.
       }
@@ -103,7 +124,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const clearPins = useCallback(() => {
+    setPins(new Set());
+    void SecureStore.deleteItemAsync(PINS_KEY);
+  }, []);
+
+  const setTerminalWidth = useCallback((columns: number) => {
+    setWidth(columns);
+    void SecureStore.setItemAsync(WIDTH_KEY, String(columns));
+  }, []);
+
   const onMessage = useCallback((msg: SocketMessage) => {
+    setLastUpdateAt(Date.now());
     if (msg.type === "session") {
       setSession(msg.session);
       // A prompt belongs to a blocked agent; once it moves on, drop it so no
@@ -181,6 +213,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           KEY,
           JSON.stringify({ baseUrl: connection.baseUrl, cookie: connection.cookie ?? "" }),
         );
+        setServer(connection.baseUrl);
         setConnected(true);
       },
       watch: (paneId) => socketRef.current?.watch(paneId),
@@ -192,8 +225,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }),
       pins,
       togglePin,
+      clearPins,
+      lastUpdateAt,
+      terminalWidth,
+      setTerminalWidth,
+      server,
     }),
-    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin],
+    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin, clearPins, lastUpdateAt, terminalWidth, setTerminalWidth, server],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
