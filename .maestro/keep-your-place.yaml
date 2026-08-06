@@ -39,3 +39,23 @@ name: The reader keeps your place across the screen toggle
 # And the pill delivers: back at the tail, following again.
 - tapOn: "Latest ↓"
 - assertVisible: ".*Message 140.*"
+
+# The harder case, and the one actually reported from the phone: leave the
+# conversation entirely and come back. The route unmounts, so nothing about
+# the list survives except what scrollMemory carried — and carrying a pixel
+# offset was exactly what failed here, because the remounted list measures
+# itself differently. Scroll away, go back to the list, reopen, and the
+# reader must still be away from the tail with the pill offering the way
+# back.
+- swipe:
+    direction: DOWN
+- swipe:
+    direction: DOWN
+- swipe:
+    direction: DOWN
+- assertNotVisible: ".*Message 140.*"
+- tapOn: "Back"
+- assertVisible: ".*Refactor the parser.*"
+- tapOn: ".*Convert PDF to markdown.*"
+- assertVisible: "Latest ↓"
+- assertNotVisible: ".*Message 140.*"
