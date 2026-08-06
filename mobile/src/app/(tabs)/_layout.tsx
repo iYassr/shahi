@@ -25,6 +25,10 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Icon sf="square.grid.2x2" md="grid_view" />
         <NativeTabs.Trigger.Label>Spaces</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger.Icon sf="gearshape" md="settings" />
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
