@@ -23,7 +23,9 @@ name: Filter the agent list
 - assertVisible: ".*Summarise the meeting.*"
 
 - tapOn: "Shells"
-- assertVisible: ".*A plain shell.*"
+# The shell row: no title, so the pane id — its second line is now the
+# working folder rather than the old "A plain shell." filler.
+- assertVisible: ".*w1:p3.*"
 - assertNotVisible: ".*Summarise the meeting.*"
 
 - tapOn: "Waiting 1"

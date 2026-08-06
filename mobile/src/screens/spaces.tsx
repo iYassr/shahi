@@ -19,18 +19,43 @@ import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/s
 import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openPane } from "@/lib/navigate";
-import { AGENT_COLORS, theme } from "@/lib/theme";
-import { AGENT_ICONS, Icon } from "@/components/icons";
+import { useSession } from "@/lib/session";
+import { theme } from "@/lib/theme";
+import { Avatar } from "@/components/avatar";
 
 export function Spaces({ session }: { session: Session | null }) {
+  // Same header furniture as the Agents tab — the two lists are siblings and
+  // should read as one app, not two designs.
+  const { server, link } = useSession();
   if (!session) return <Centered>Connecting…</Centered>;
 
   return (
     <View style={styles.screen}>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <View style={styles.status}>
+              <Text style={[styles.statusText, { color: theme.dim }]} numberOfLines={1}>
+                {server.replace(/^https?:\/\//, "")}
+              </Text>
+              <Text style={[styles.statusText, { color: link === "live" ? theme.mint : theme.dim }]}>
+                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
+              </Text>
+            </View>
+          ),
+        }}
+      />
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
         data={session.workspaces}
         keyExtractor={(w) => w.workspaceId}
+        ListHeaderComponent={
+          session.workspaces.length > 0 ? (
+            <Text style={styles.groupLabel}>
+              {session.workspaces.length} SPACE{session.workspaces.length === 1 ? "" : "S"}
+            </Text>
+          ) : null
+        }
         // The same chat-list grammar as the Agents tab. The avatar is the
         // space's number — herdr's own vocabulary for workspaces, and what a
         // keyboard user would press to reach it in the TUI.
@@ -135,35 +160,36 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
 
 /** The same chat-list grammar as the Agents tab, keeping the tab grouping. */
 function PaneRow({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
-  const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
   return (
     <Pressable style={styles.row} onPress={onPress}>
-      <View style={[styles.avatar, { borderColor: color }]}>
-        {pane.agent && AGENT_ICONS[pane.agent] ? (
-          <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
-        ) : (
-          <Text style={[styles.avatarGlyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
-        )}
-      </View>
+      <Avatar pane={pane} />
       <View style={styles.rowBody}>
         <View style={styles.rowLine}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
           </Text>
-          <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
-        </View>
-        <View style={styles.rowLine}>
-          {pane.activity ? (
-            <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
-              {pane.activity.verb}… {pane.activity.elapsed}
-            </Text>
-          ) : (
-            <Text style={styles.rowSaid} numberOfLines={1}>
-              {pane.preview ?? (pane.isAgent ? "No conversation yet." : "A plain shell.")}
+          {/* Same quieting as the Agents rows: idle says nothing, and the
+              second line only exists when there is something to preview. */}
+          {pane.status !== "idle" && (
+            <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
+              {pane.status}
             </Text>
           )}
           <Text style={styles.rowMeta}>{pane.agent ?? pane.paneId}</Text>
         </View>
+        {(pane.activity || pane.preview || pane.cwd) && (
+          <View style={styles.rowLine}>
+            {pane.activity ? (
+              <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
+                {pane.activity.verb}… {pane.activity.elapsed}
+              </Text>
+            ) : (
+              <Text style={styles.rowSaid} numberOfLines={1}>
+                {pane.preview ?? pane.cwd}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
     </Pressable>
   );
@@ -351,6 +377,8 @@ const styles = StyleSheet.create({
   dim: { color: theme.dim },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
   headTitle: { alignItems: "center" },
+  status: { flexDirection: "row", alignItems: "center", gap: 10 },
+  statusText: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
 
   space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   avatar: {
@@ -370,7 +398,6 @@ const styles = StyleSheet.create({
 
   groupLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  avatarGlyph: { fontFamily: theme.mono, fontSize: 16 },
   rowBody: { flex: 1, gap: 2 },
   rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },

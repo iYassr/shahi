@@ -16,8 +16,9 @@ import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
-import { AGENT_COLORS, theme } from "@/lib/theme";
-import { AGENT_ICONS, Icon } from "@/components/icons";
+import { theme } from "@/lib/theme";
+import { Icon } from "@/components/icons";
+import { Avatar } from "@/components/avatar";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
   const { session, prompts, link, error, clearPrompt, pins, togglePin, server } = useSession();
@@ -239,7 +240,6 @@ function Row({
   onPin: () => void;
   onActions: () => void;
 }) {
-  const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
   const row = (
       <Pressable
         style={styles.row}
@@ -252,34 +252,40 @@ function Row({
         // exists.
         onLongPress={onActions}
       >
-        <View style={[styles.avatar, { borderColor: color }]}>
-          {pane.agent && AGENT_ICONS[pane.agent] ? (
-            <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
-          ) : (
-            <Text style={[styles.avatarGlyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
-          )}
-        </View>
+        <Avatar pane={pane} />
         <View style={styles.rowBody}>
           <View style={styles.rowLine}>
             <Text style={styles.rowTitle} numberOfLines={1}>
               {pane.title ?? pane.paneId}
             </Text>
             {pinned && <Icon name="pin" color={theme.dim} size={12} />}
-            <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>{pane.status}</Text>
-          </View>
-          <View style={styles.rowLine}>
-            {pane.activity ? (
-              // What "typing…" means when the other party is an agent.
-              <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
-                {pane.activity.verb}… {pane.activity.elapsed}
-              </Text>
-            ) : (
-              <Text style={styles.rowSaid} numberOfLines={1}>
-                {pane.preview ?? (pane.isAgent ? "No conversation yet." : "A plain shell.")}
+            {/* "idle" is the resting state of most of a real herd; saying it
+                twenty-six times is what made the list feel crowded. Only a
+                state that asks something of you gets a word. */}
+            {pane.status !== "idle" && (
+              <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
+                {pane.status}
               </Text>
             )}
             <Text style={styles.rowMeta}>{pane.workspaceLabel}</Text>
           </View>
+          {/* A quiet agent's second line is where it is working, not a
+              "No conversation yet." filler — the path answers "which one is
+              this" while saying nothing twenty-six times was the crowding. */}
+          {(pane.activity || pane.preview || pane.cwd) && (
+            <View style={styles.rowLine}>
+              {pane.activity ? (
+                // What "typing…" means when the other party is an agent.
+                <Text style={[styles.rowSaid, styles.rowTyping]} numberOfLines={1}>
+                  {pane.activity.verb}… {pane.activity.elapsed}
+                </Text>
+              ) : (
+                <Text style={styles.rowSaid} numberOfLines={1}>
+                  {pane.preview ?? pane.cwd}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
       </Pressable>
   );
@@ -480,16 +486,6 @@ const styles = StyleSheet.create({
   actionText: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
 
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: theme.void },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.surface,
-  },
-  avatarGlyph: { fontFamily: theme.mono, fontSize: 16 },
   rowBody: { flex: 1, gap: 2 },
   rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },

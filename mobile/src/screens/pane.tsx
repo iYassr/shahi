@@ -96,14 +96,16 @@ const KEY_BAR: { label: string; keys: string[] }[] = [
  * as its own value so a pane left at the tail still opens at the tail, which
  * is where a pane you were not reading mid-scroll should open.
  *
- * A position is an offset *and* the content height it was taken at. The
- * height is what makes restoring sound: a fresh list measures itself in
- * steps, and scrolling to the offset early clamps to the half-measured
- * bottom — which then reads as "at the bottom" and snaps the reader to the
- * tail. Watched happen at h=6780 of an eventual 7525. The height says when
- * the offset is reachable again.
+ * A position is the id of the topmost visible message, not a pixel offset.
+ * Offsets were tried and failed exactly where it matters — leaving the pane
+ * and coming back: the remount re-estimates item heights, and the fetched
+ * window shifts as the conversation grows, so the saved offset named a
+ * different place, and the restore either landed wrong or wedged waiting
+ * for a content height that never came back (leaving every later scroll
+ * unrecorded, which read as "never remembered"). The message being read is
+ * the place; its id survives both remeasurement and window drift.
  */
-const scrollMemory = new Map<string, { y: number; h: number } | "bottom">();
+const scrollMemory = new Map<string, { id: string } | "bottom">();
 
 /**
  * Folds a freshly fetched tail into what is already shown.
@@ -187,6 +189,46 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * treating one as the reader's doing is how the position got overwritten.
    */
   const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
+  /** Topmost visible message, kept fresh by the list's viewability callback. */
+  const topItem = useRef<string | null>(null);
+  /** Whether the restore's own deadline has been armed; see restore(). */
+  const restoreArmed = useRef(false);
+  const trackTop = useRef(({ viewableItems }: { viewableItems: Array<{ item: LogMessage }> }) => {
+    if (viewableItems.length > 0) topItem.current = viewableItems[0]!.item.id;
+  }).current;
+
+  /**
+   * Puts the remembered message back at the top of the viewport.
+   *
+   * Called from every content-size change while a restore is pending: the
+   * first scrollToIndex usually misses (the anchor is outside the initially
+   * rendered window and there is no getItemLayout for variable heights), so
+   * onScrollToIndexFailed walks closer by estimate and retries. Nothing
+   * reports "the list stopped moving", so a deadline ends the restore — and
+   * un-wedges one whose anchor can no longer land.
+   */
+  function restore() {
+    const spot = scrollMemory.get(paneId);
+    const index =
+      typeof spot === "object" ? messagesRef.current.findIndex((m) => m.id === spot.id) : -1;
+    if (index < 0) {
+      // The anchor fell out of the fetched window: the conversation moved on
+      // past your place, and the tail is the closest honest answer.
+      pendingRestore.current = false;
+      following.current = true;
+      scrollMemory.set(paneId, "bottom");
+      setAway(false);
+      listRef.current?.scrollToEnd({ animated: false });
+      return;
+    }
+    if (!restoreArmed.current) {
+      restoreArmed.current = true;
+      setTimeout(() => {
+        pendingRestore.current = false;
+      }, 1_500);
+    }
+    listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+  }
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
@@ -217,7 +259,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       const log = await api.sessionLog(paneId, 60);
       const folded = merge(messagesRef.current, log.messages);
       if (folded !== messagesRef.current) {
-        if (!following.current)
+        // Not on the first fill: a remount fetching the same conversation is
+        // not "60 new" — unseen counts only what arrived while looking away.
+        if (!following.current && messagesRef.current.length > 0)
           setUnseen((u) => u + Math.max(0, folded.length - messagesRef.current.length));
         messagesRef.current = folded;
         setMessages(folded);
@@ -247,6 +291,19 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     return () => clearInterval(timer);
   }, [load]);
 
+  /**
+   * The poll is 2.5s, which is fine for reading and glacial right after
+   * *you* said something — the screen view felt instant only because the
+   * terminal echoes keystrokes, while the reader sat out the interval. So
+   * every send is chased: once immediately, and again shortly after for the
+   * beat the agent needs to write its transcript line.
+   */
+  function chase() {
+    void load();
+    setTimeout(() => void load(), 700);
+    setTimeout(() => void load(), 1_500);
+  }
+
   function jumpToLatest() {
     following.current = true;
     scrollMemory.set(paneId, "bottom");
@@ -259,6 +316,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     try {
       await api.answerPrompt(paneId, index);
       setPrompt(null);
+      chase();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -272,6 +330,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       await api.send(paneId, text);
       committed();
       setDraft("");
+      chase();
     } catch (e) {
       refused();
       setError((e as Error).message);
@@ -374,23 +433,30 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             following.current = fromBottom < 80;
             scrollMemory.set(
               paneId,
-              following.current ? "bottom" : { y: e.contentOffset.y, h: e.contentSize.height },
+              following.current || !topItem.current ? "bottom" : { id: topItem.current },
             );
             setAway(!following.current);
             if (following.current) setUnseen(0);
           }}
           scrollEventThrottle={200}
-          onContentSizeChange={(_w, h) => {
-            const spot = scrollMemory.get(paneId);
-            if (pendingRestore.current && typeof spot === "object") {
-              // Re-issued on every growth step: each attempt clamps to however
-              // much is measured so far, and the last one — once the content
-              // is back to the height the position was taken at — lands.
-              listRef.current?.scrollToOffset({ offset: spot.y, animated: false });
-              if (h >= spot.h - 1) pendingRestore.current = false;
+          // Any visible sliver counts: the anchor should be the message at the
+          // top of the screen, not the first one half-past it.
+          viewabilityConfig={{ itemVisiblePercentThreshold: 1 }}
+          onViewableItemsChanged={trackTop}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            listRef.current?.scrollToOffset({
+              offset: index * averageItemLength,
+              animated: false,
+            });
+            setTimeout(() => {
+              if (pendingRestore.current) restore();
+            }, 100);
+          }}
+          onContentSizeChange={() => {
+            if (pendingRestore.current) {
+              restore();
               return;
             }
-            pendingRestore.current = false;
             if (following.current) listRef.current?.scrollToEnd({ animated: false });
           }}
           ListFooterComponent={activity ? <Working activity={activity} /> : null}
@@ -436,7 +502,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               // stayed invisible.
               onPress={() => {
                 committed();
-                void api.sendKeys(paneId, keys).catch((e: Error) => {
+                api.sendKeys(paneId, keys).then(chase, (e: Error) => {
                   refused();
                   setError(e.message);
                 });
@@ -866,7 +932,15 @@ function FilePicker({
       setError("Photo access was declined.");
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 1 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      quality: 1,
+      // An iPhone photo is HEIC, and Claude Code's Read tool cannot open
+      // one — "attach a photo, the agent says it can't read it" was the
+      // report. Compatible asks the picker for the most broadly readable
+      // representation, which transcodes HEIC to JPEG on the way out.
+      preferredAssetRepresentationMode:
+        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+    });
     const asset = result.assets?.[0];
     if (result.canceled || !asset) return;
     await upload({
