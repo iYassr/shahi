@@ -106,6 +106,13 @@ export interface DashboardPane {
   isAgent: boolean;
   /** Present for blocked panes whose screen could be parsed. */
   prompt: ParsedPrompt | null;
+  /**
+   * One line of the last thing said in the conversation, for chat-style list
+   * rows. Null for shells and agents that have not written a transcript.
+   */
+  preview: string | null;
+  /** What the agent is doing right now, when its status line says. */
+  activity: Activity | null;
 }
 
 /** herdr calls these "spaces" in its sidebar and "workspaces" in its API. */

@@ -7,10 +7,12 @@ import {
   indexTranscript,
   normalise,
   parseLines,
+  previewOf,
   questionsOf,
   readWindow,
   summariseToolInput,
 } from "./session-log";
+import type { LogMessage } from "@shahi/shared";
 
 const assistant = (content: unknown[], over: Record<string, unknown> = {}) => ({
   type: "assistant",
@@ -493,5 +495,45 @@ describe("reading a window instead of the whole file", () => {
 
     writeFileSync(path, `${assistantRow("c", "only")}\n`);
     expect((await indexTranscript(path)).offsets.length).toBe(1);
+  });
+});
+
+describe("previewOf", () => {
+  const msg = (role: "you" | "agent", blocks: LogMessage["blocks"]): LogMessage => ({
+    id: "m1",
+    role,
+    blocks,
+    at: 0,
+  });
+
+  test("takes the last text block of the last message, flattened to one line", () => {
+    const messages = [
+      msg("agent", [{ kind: "text", text: "Old news." }]),
+      msg("agent", [
+        { kind: "text", text: "First." },
+        { kind: "text", text: "## Done\n\nThe **summary** is\nready." },
+      ]),
+    ];
+    expect(previewOf(messages)).toBe("Done The summary is ready.");
+  });
+
+  test("a message that is all tool calls previews as the call", () => {
+    const messages = [
+      msg("agent", [
+        { kind: "tool", name: "Edit", summary: "pane.tsx", questions: undefined, file: undefined, result: null } as never,
+      ]),
+    ];
+    expect(previewOf(messages)).toBe("Edit · pane.tsx");
+  });
+
+  test("marks your own words the way a messenger does", () => {
+    expect(previewOf([msg("you", [{ kind: "text", text: "run the tests" }])])).toBe(
+      "You: run the tests",
+    );
+  });
+
+  test("nothing to say is null, not an invented line", () => {
+    expect(previewOf([])).toBeNull();
+    expect(previewOf([msg("agent", [{ kind: "text", text: "   " }])])).toBeNull();
   });
 });
