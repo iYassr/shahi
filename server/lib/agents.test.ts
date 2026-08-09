@@ -78,6 +78,32 @@ describe("startAgentInTab", () => {
     expect(calls).toEqual(["tab.create", "agent.start"]);
   });
 
+  test("a mode reaches agent.start as the resolved flags", async () => {
+    // The route dropped `mode` on the floor for months and every agent
+    // started with default permissions — the picker was decorative. Found by
+    // ps on a live box showing bare `claude` after "Plan first" was chosen.
+    // This pins the half of the chain that lives in this file.
+    let startParams: Record<string, unknown> | undefined;
+    const rpc = async (method: string, params: unknown) => {
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
+      startParams = params as Record<string, unknown>;
+      return {} as never;
+    };
+    await startAgentInTab(rpc, { ...options, kind: "claude", name: "c", mode: "plan" }, async () => {});
+    expect(startParams?.args).toEqual(["--permission-mode", "plan"]);
+  });
+
+  test("no mode means no args key at all", async () => {
+    let startParams: Record<string, unknown> | undefined;
+    const rpc = async (method: string, params: unknown) => {
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
+      startParams = params as Record<string, unknown>;
+      return {} as never;
+    };
+    await startAgentInTab(rpc, options, async () => {});
+    expect("args" in (startParams ?? {})).toBe(false);
+  });
+
   test("retries while the pane is still becoming a shell", async () => {
     let starts = 0;
     const rpc = async (method: string) => {

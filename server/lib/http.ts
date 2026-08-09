@@ -271,6 +271,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
             label?: string | null;
             kind?: string;
             name?: string;
+            mode?: string | null;
           };
           if (!body.workspaceId || !body.kind) {
             return json({ error: "workspaceId and kind are required" }, { status: 400 });
@@ -290,6 +291,11 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
                 label: body.label ?? null,
                 kind: body.kind,
                 name: body.name ?? body.kind,
+                // Forwarded, not implied: this was dropped here for months and
+                // every agent silently started with default permissions — found
+                // by ps on a live box showing bare `claude` after "Plan first"
+                // was chosen. The picker was decorative without this line.
+                mode: body.mode ?? null,
               },
             );
             return json(started);
