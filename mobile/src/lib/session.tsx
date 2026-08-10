@@ -13,7 +13,7 @@
  * into the keychain rather than plain storage, because the cookie *is* the
  * credential — it grants full control of the herdr session.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
@@ -60,9 +60,6 @@ interface SessionValue {
   pins: Set<string>;
   togglePin: (paneId: string) => void;
   clearPins: () => void;
-  /** When the last session update arrived — the number that tells a frozen
-   * screen from a dead link. */
-  lastUpdateAt: number | null;
   /** Columns a pane's terminal opens at, before the fit buttons say otherwise. */
   terminalWidth: number;
   setTerminalWidth: (columns: number) => void;
@@ -86,6 +83,30 @@ export function useSession(): SessionValue {
   return value;
 }
 
+/**
+ * The last-update clock, as an external store rather than context state.
+ *
+ * It ticks on every socket message (every ~2.5s), and only one screen reads it
+ * (Settings, for its "updated N seconds ago" line). Kept in context, that tick
+ * recreated the context value and re-rendered every screen on a timer — which
+ * is what RN's VirtualizedList "slow to update" warning was reacting to. As a
+ * store, only `useLastUpdate` subscribers wake.
+ */
+const lastUpdate = { at: null as number | null, listeners: new Set<() => void>() };
+function markUpdated() {
+  lastUpdate.at = Date.now();
+  lastUpdate.listeners.forEach((fn) => fn());
+}
+export function useLastUpdate(): number | null {
+  return useSyncExternalStore(
+    (cb) => {
+      lastUpdate.listeners.add(cb);
+      return () => lastUpdate.listeners.delete(cb);
+    },
+    () => lastUpdate.at,
+  );
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -94,7 +115,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [link, setLink] = useState<LinkState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [pins, setPins] = useState<Set<string>>(new Set());
-  const [lastUpdateAt, setLastUpdateAt] = useState<number | null>(null);
   // 100 columns: readable text that still shows most of a real line.
   const [terminalWidth, setWidth] = useState(100);
   const [server, setServer] = useState("");
@@ -167,7 +187,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const onMessage = useCallback((msg: SocketMessage) => {
-    setLastUpdateAt(Date.now());
+    // The freshness clock is an external store, not context state, so ticking
+    // it on every socket message does not recreate the context value and
+    // re-render every screen 2.5s — which RN's VirtualizedList "slow to update"
+    // warning was pointing at. Only `useLastUpdate` consumers (Settings) wake.
+    markUpdated();
     if (msg.type === "session") {
       setSession(msg.session);
       // A prompt belongs to a blocked agent; once it moves on, drop it so no
@@ -275,12 +299,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       pins,
       togglePin,
       clearPins,
-      lastUpdateAt,
       terminalWidth,
       setTerminalWidth,
       server,
     }),
-    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin, clearPins, lastUpdateAt, terminalWidth, setTerminalWidth, server],
+    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
