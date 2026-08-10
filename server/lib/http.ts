@@ -12,7 +12,7 @@ import type { DashboardPane } from "@shahi/shared";
 import type { Server, ServerWebSocket } from "bun";
 
 export type { DashboardPane };
-import { Auth, SESSION_COOKIE, readCookie } from "./auth";
+import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
 import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
@@ -82,6 +82,10 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
   const authorized = (req: Request) =>
     auth.verifyToken(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
+
+  // One throttle for the whole server: login attempts are serialised and slowed
+  // after failures so the small passcode space cannot be brute-forced.
+  const loginThrottle = new LoginThrottle();
 
   const broadcast = (message: unknown) => {
     const payload = JSON.stringify(message);
@@ -206,9 +210,10 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
         if (pathname === "/api/auth/login" && req.method === "POST") {
           const body = (await req.json().catch(() => ({}))) as { passcode?: string };
-          if (!(await auth.verifyPasscode(body.passcode ?? ""))) {
-            // Blunt but effective against an unattended phone being guessed at.
-            await Bun.sleep(500);
+          // Serialised + backing off: concurrency buys an attacker nothing, and
+          // each failure slows the next. See LoginThrottle.
+          const ok = await loginThrottle.attempt(() => auth.verifyPasscode(body.passcode ?? ""));
+          if (!ok) {
             return json({ error: "invalid passcode" }, { status: 401 });
           }
           return json({ ok: true }, { headers: { "set-cookie": auth.cookie(auth.issue()) } });

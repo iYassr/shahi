@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Auth, SESSION_COOKIE, readCookie } from "./auth";
+import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
 
 const secret = "test-secret-not-used-anywhere-real";
 const auth = (over: Partial<ConstructorParameters<typeof Auth>[0]> = {}) =>
@@ -101,5 +101,53 @@ describe("cookies", () => {
 
   test("is not fooled by a cookie name that is a suffix of another", () => {
     expect(readCookie(`not_${SESSION_COOKIE}=nope`, SESSION_COOKIE)).toBeUndefined();
+  });
+});
+
+describe("LoginThrottle", () => {
+  // A fake clock and sleep so the test asserts the backoff schedule without
+  // real waits: `sleep` records the delay and advances the clock.
+  const harness = () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const sleep = async (ms: number) => {
+      waits.push(ms);
+      clock += ms;
+    };
+    return { waits, sleep, now: () => clock };
+  };
+
+  test("does not delay the first attempt or a success", async () => {
+    const { waits, sleep, now } = harness();
+    const t = new LoginThrottle();
+    expect(await t.attempt(async () => true, sleep, now)).toBe(true);
+    expect(waits).toEqual([]);
+  });
+
+  test("delays grow after each failure and reset on success", async () => {
+    const { waits, sleep, now } = harness();
+    const t = new LoginThrottle();
+    await t.attempt(async () => false, sleep, now); // 1st fail: no pre-wait
+    await t.attempt(async () => false, sleep, now); // waits 500 (from 1 failure)
+    await t.attempt(async () => false, sleep, now); // waits 1000
+    await t.attempt(async () => true, sleep, now); //  waits 2000, then resets
+    expect(waits).toEqual([500, 1000, 2000]);
+    // After a success the counter is clear, so the next failure starts over.
+    await t.attempt(async () => false, sleep, now);
+    await t.attempt(async () => false, sleep, now);
+    expect(waits).toEqual([500, 1000, 2000, 500]);
+  });
+
+  test("serialises concurrent attempts so none skips the wait", async () => {
+    const { waits, sleep, now } = harness();
+    const t = new LoginThrottle();
+    // Fire three failing attempts at once; they must run one after another,
+    // each seeing the previous one's backoff rather than all racing through.
+    await Promise.all([
+      t.attempt(async () => false, sleep, now),
+      t.attempt(async () => false, sleep, now),
+      t.attempt(async () => false, sleep, now),
+    ]);
+    expect(waits).toEqual([500, 1000]);
   });
 });
