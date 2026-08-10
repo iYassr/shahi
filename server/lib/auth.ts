@@ -90,6 +90,49 @@ export class Auth {
   }
 }
 
+/**
+ * Serialises login attempts and slows them exponentially after failures.
+ *
+ * The old gate applied a fixed 500ms sleep *after* verifying, with nothing
+ * stopping a thousand requests firing at once — so the whole 9,000-value space
+ * was brute-forceable in parallel in seconds, and the API behind the gate can
+ * drive terminal sessions. This makes every attempt wait for the one before it
+ * (so concurrency buys nothing) and pushes a growing delay after each failure
+ * (500ms, 1s, 2s … capped at 30s), resetting on the first success. Global
+ * rather than per-source because, behind `tailscale serve`, every request
+ * arrives from loopback anyway.
+ */
+export class LoginThrottle {
+  #running: Promise<unknown> = Promise.resolve();
+  #failures = 0;
+  #nextAllowedAt = 0;
+
+  async attempt(
+    check: () => Promise<boolean>,
+    sleep: (ms: number) => Promise<unknown> = (ms) => Bun.sleep(ms),
+    now: () => number = Date.now,
+  ): Promise<boolean> {
+    const run = this.#running.then(async () => {
+      const wait = this.#nextAllowedAt - now();
+      if (wait > 0) await sleep(wait);
+      const ok = await check();
+      if (ok) {
+        this.#failures = 0;
+        this.#nextAllowedAt = 0;
+      } else {
+        this.#failures += 1;
+        const backoff = Math.min(500 * 2 ** Math.min(this.#failures - 1, 6), 30_000);
+        this.#nextAllowedAt = now() + backoff;
+      }
+      return ok;
+    });
+    // Keep the chain alive even if one attempt throws, so a failure does not
+    // wedge the gate shut.
+    this.#running = run.catch(() => {});
+    return run;
+  }
+}
+
 /** Reads one cookie out of a `Cookie` header. */
 export function readCookie(header: string | null, name: string): string | undefined {
   if (!header) return undefined;
