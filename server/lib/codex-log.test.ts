@@ -26,11 +26,12 @@ describe("normaliseCodex", () => {
     ]);
   });
 
-  // The trap. `response_item` is the raw API conversation and carries
+  // The trap, still shut. `response_item` message/reasoning records carry
   // developer-role system prompts plus an <environment_context> block delivered
-  // as a user turn. Reading it would put codex's own instructions in the user's
-  // mouth — the same mistake as attributing Claude's tool results to them.
-  test("ignores response_item entirely", () => {
+  // as a user turn. Reading them would put codex's own instructions in the
+  // user's mouth — the same mistake as attributing Claude's tool results to
+  // them. Tool-call subtypes are the deliberate exception, covered below.
+  test("ignores the message and reasoning response_item subtypes", () => {
     const messages = normaliseCodex([
       {
         timestamp: "2026-07-25T04:51:48.000Z",
@@ -50,11 +51,92 @@ describe("normaliseCodex", () => {
           content: [{ type: "input_text", text: "<environment_context><cwd>/x</cwd>…" }],
         },
       },
+      { type: "response_item", payload: { type: "reasoning", summary: [] } },
       event("user_message", "the real question"),
     ]);
 
     expect(messages).toHaveLength(1);
     expect(messages[0]!.blocks[0]).toEqual({ kind: "text", text: "the real question" });
+  });
+
+  // Tool activity lives only in response_item and nowhere in event_msg, so
+  // dropping it made codex read as if the agent talked but never ran anything.
+  // These two records are a verbatim capture from a live codex 2026.07.18.1
+  // rollout: the `exec` tool wraps the command in a scrap of JS, and its output
+  // arrives as a list of input_text parts under a matching call_id.
+  test("renders a custom_tool_call as a tool block, paired to its output", () => {
+    const messages = normaliseCodex([
+      event("user_message", "count the lines in note.txt"),
+      {
+        timestamp: "2026-08-09T21:34:24.281Z",
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call",
+          call_id: "call_s301jtW9F2ANQ2UhIkAQacy2",
+          name: "exec",
+          input:
+            'const r = await tools.exec_command({"cmd":"wc -l note.txt","workdir":"/home/yasserdo/reader-test"});\ntext(r.output);\n',
+        },
+      },
+      {
+        timestamp: "2026-08-09T21:34:27.684Z",
+        type: "response_item",
+        payload: {
+          type: "custom_tool_call_output",
+          call_id: "call_s301jtW9F2ANQ2UhIkAQacy2",
+          output: [
+            { type: "input_text", text: "Script completed\nWall time 0.2 seconds\nOutput:\n" },
+            { type: "input_text", text: "1 note.txt\n" },
+          ],
+        },
+      },
+      event("agent_message", "note.txt has 1 line."),
+    ]);
+
+    // you → tool → agent, in file order.
+    expect(messages.map((m) => m.role)).toEqual(["you", "agent", "agent"]);
+    const tool = messages[1]!.blocks[0]!;
+    expect(tool).toMatchObject({
+      kind: "tool",
+      name: "exec",
+      summary: "wc -l note.txt",
+      result: { text: "Script completed\nWall time 0.2 seconds\nOutput:\n1 note.txt", isError: false },
+    });
+  });
+
+  // function_call is the other tool shape: a JSON `arguments` string, and its
+  // output can be a plain string rather than a list.
+  test("renders a function_call, pulling the command out of JSON arguments", () => {
+    const [message] = normaliseCodex([
+      {
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          call_id: "call_x",
+          name: "shell",
+          arguments: '{"command":"ls -la"}',
+        },
+      },
+      {
+        type: "response_item",
+        payload: { type: "function_call_output", call_id: "call_x", output: "total 0\n" },
+      },
+    ]);
+    expect(message!.blocks[0]).toMatchObject({
+      kind: "tool",
+      name: "shell",
+      summary: "ls -la",
+      result: { text: "total 0", truncated: false },
+    });
+  });
+
+  // A call whose output has not arrived yet renders with a null result — the
+  // pending state the client already draws for Claude's unfinished tools.
+  test("a tool call with no output yet has a null result", () => {
+    const [message] = normaliseCodex([
+      { type: "response_item", payload: { type: "function_call", call_id: "pending", name: "shell", arguments: "{}" } },
+    ]);
+    expect(message!.blocks[0]).toMatchObject({ kind: "tool", name: "shell", result: null });
   });
 
   test("skips lifecycle events that carry no message", () => {
