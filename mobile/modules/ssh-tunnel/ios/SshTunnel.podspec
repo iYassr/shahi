@@ -10,10 +10,12 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  # NMSSH vendors libssh2 + OpenSSL and is App Store proven. It handles the
-  # session and both auth modes; the direct-tcpip forward is driven through the
-  # libssh2 session it exposes. See SshTunnelModule.swift.
-  s.dependency 'NMSSH'
+  # libssh2 built from source with device AND simulator slices (NMSSH's
+  # prebuilt binaries are device-only, so they cannot link for the Apple
+  # Silicon simulator). This pod bundles its own crypto, so the whole tunnel —
+  # connect, handshake, auth, direct-tcpip forward — is libssh2 in
+  # SshForwarder; nothing else is needed.
+  s.dependency 'libssh2-iosx', '~> 1.11.0.1'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
