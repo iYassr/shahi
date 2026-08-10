@@ -291,29 +291,18 @@ function SshForm({
         </>
       )}
 
-      <View style={styles.row}>
-        <View style={styles.grow}>
-          <Text style={styles.label}>SIDECAR PORT</Text>
-          <TextInput
-            style={styles.input}
-            value={String(ssh.remotePort)}
-            onChangeText={(t) => patch({ remotePort: Number(t.replace(/[^0-9]/g, "")) || 0 })}
-            keyboardType="number-pad"
-            testID="ssh-sidecar-port"
-          />
-        </View>
-        <View style={styles.grow}>
-          <Text style={styles.label}>PASSCODE</Text>
-          <TextInput
-            style={[styles.input, styles.passcode]}
-            value={ssh.passcode}
-            onChangeText={(passcode) => patch({ passcode })}
-            secureTextEntry
-            keyboardType="number-pad"
-            testID="ssh-passcode"
-          />
-        </View>
-      </View>
+      {/* No sidecar-port field: the sidecar is always on the installer's
+          default (7171), and a mass-market user should not have to know a port
+          exists. `remotePort` stays at DEFAULT_SIDECAR_PORT from the profile. */}
+      <Text style={styles.label}>PASSCODE</Text>
+      <TextInput
+        style={[styles.input, styles.passcode]}
+        value={ssh.passcode}
+        onChangeText={(passcode) => patch({ passcode })}
+        secureTextEntry
+        keyboardType="number-pad"
+        testID="ssh-passcode"
+      />
     </>
   );
 }
