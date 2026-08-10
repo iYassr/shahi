@@ -347,15 +347,29 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
  * only wakes clients when something they can actually see has changed.
  */
 function signatureOf(state: SessionState): string {
+  // Everything a rendered row or the Spaces grouping depends on. It grew to
+  // include a pane's tab and cwd (rows show the working folder, Spaces groups
+  // panes under their tab) and a tabs section (a rename, close or move must
+  // wake clients) — omitting them let the internal mirror recover while no
+  // client was told, so tab renames/closes and pane moves stayed stale until
+  // an unrelated event nudged a broadcast. Still excludes churn nobody sees
+  // (revisions, scroll offsets), so a resync only fires on visible change.
   const panes = state.panes
-    .map((p) => `${p.pane_id}:${p.agent_status}:${p.agent ?? ""}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`)
+    .map(
+      (p) =>
+        `${p.pane_id}:${p.agent_status}:${p.agent ?? ""}:${p.tab_id ?? ""}:${p.cwd ?? ""}:${p.focused ? 1 : 0}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`,
+    )
+    .sort()
+    .join("|");
+  const tabs = state.tabs
+    .map((t) => `${t.tab_id}:${t.workspace_id}:${t.label ?? ""}`)
     .sort()
     .join("|");
   const workspaces = state.workspaces
-    .map((w) => `${w.workspace_id}:${w.label}:${w.agent_status}:${w.pane_count}`)
+    .map((w) => `${w.workspace_id}:${w.label}:${w.agent_status}:${w.pane_count}:${w.tab_count}`)
     .sort()
     .join("|");
-  return `${state.focusedPaneId}~${workspaces}~${panes}`;
+  return `${state.focusedPaneId}~${workspaces}~${tabs}~${panes}`;
 }
 
 function upsert<T>(list: T[], item: T, match: (candidate: T) => boolean): void {

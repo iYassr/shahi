@@ -131,9 +131,16 @@ function isErrorResponse(msg: unknown): msg is ErrorResponse {
  */
 class LineBuffer {
   #buf = "";
+  // One decoder for the life of the stream, decoding in streaming mode: a
+  // multibyte character split across two TCP reads is held until its bytes
+  // arrive, rather than each chunk being decoded in isolation and the split
+  // character turning into replacement characters (�). A fresh decoder per
+  // chunk was the bug — invisible on ASCII, corrupting any non-ASCII terminal
+  // output that happened to straddle a read boundary.
+  #decoder = new TextDecoder("utf-8");
 
   push(chunk: Uint8Array): string[] {
-    this.#buf += new TextDecoder().decode(chunk);
+    this.#buf += this.#decoder.decode(chunk, { stream: true });
     const parts = this.#buf.split("\n");
     this.#buf = parts.pop() ?? "";
     return parts.filter((line) => line.trim().length > 0);
