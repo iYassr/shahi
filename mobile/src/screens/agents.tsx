@@ -6,7 +6,7 @@
  * because that decision was the point of the product, not an artefact of the
  * platform. What differs is only how it is drawn.
  */
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -156,11 +156,20 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <Row
             pane={item}
             pinned={pins.has(item.paneId)}
-            onPress={() => onOpenPane(item.paneId)}
-            onPin={() => togglePin(item.paneId)}
-            onActions={() => setActing(item)}
+            onPress={onOpenPane}
+            onPin={togglePin}
+            onActions={setActing}
           />
         )}
+        // Virtualization tuning: RN warned this list was "slow to update"
+        // because every session snapshot re-rendered all rows (each with an
+        // animated avatar). Rendering only a small window around the viewport
+        // and detaching off-screen rows keeps an update cheap; the memoised Row
+        // above skips the rows that did not change.
+        removeClippedSubviews
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
         // WhatsApp's hairline, starting past the avatar so the circles read
         // as one column.
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -227,7 +236,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
  * Swiping reveals the two things worth doing without opening it: keeping it
  * on top, and going straight to the raw terminal.
  */
-function Row({
+const Row = memo(function Row({
   pane,
   pinned,
   onPress,
@@ -236,9 +245,11 @@ function Row({
 }: {
   pane: DashboardPane;
   pinned: boolean;
-  onPress: () => void;
-  onPin: () => void;
-  onActions: () => void;
+  // Stable callbacks that take the pane, so memo actually holds: inline
+  // closures would give every row a new identity on each list render.
+  onPress: (paneId: string) => void;
+  onPin: (paneId: string) => void;
+  onActions: (pane: DashboardPane) => void;
 }) {
   const row = (
       <Pressable
@@ -247,10 +258,10 @@ function Row({
         // flatten into one accessibility element, so a marker inside it is
         // invisible to the test driver — the row's id is not.
         testID={`row-${pane.paneId}${pinned ? "-pinned" : ""}`}
-        onPress={onPress}
+        onPress={() => onPress(pane.paneId)}
         // The same actions as the swipe, reachable without knowing the swipe
         // exists.
-        onLongPress={onActions}
+        onLongPress={() => onActions(pane)}
       >
         <Avatar pane={pane} />
         <View style={styles.rowBody}>
@@ -303,7 +314,7 @@ function Row({
             style={styles.action}
             onPress={() => {
               swipeable_.close();
-              onPin();
+              onPin(pane.paneId);
             }}
           >
             <Icon name={pinned ? "pin-off" : "pin"} color={theme.peach} />
@@ -325,7 +336,7 @@ function Row({
       {row}
     </ReanimatedSwipeable>
   );
-}
+});
 
 /**
  * The answer list, rebuilt from the terminal's own — same numbering, same

@@ -14,15 +14,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import { enablePush } from "@/lib/push";
-import { useSession } from "@/lib/session";
+import { useSession, useLastUpdate } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Icon, type IconName } from "@/components/icons";
 
 const TERMINAL_WIDTHS = [60, 100, 146];
 
 export function Settings() {
-  const { session, link, signOut, pins, clearPins, lastUpdateAt, terminalWidth, setTerminalWidth, server } =
+  const { session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server } =
     useSession();
+  const lastUpdateAt = useLastUpdate();
   const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
   // A ticking "how stale" readout; only this screen pays for the timer.
   const [, tick] = useState(0);
