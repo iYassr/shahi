@@ -18,13 +18,24 @@ import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
 import { api, connection, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
+import { closeTunnel, openTunnel } from "@/lib/tunnel";
+import type { SshProfile } from "@/lib/ssh";
 
 const KEY = "shahi.connection";
 
-interface Stored {
-  baseUrl: string;
-  cookie: string;
-}
+/**
+ * What is kept in the keychain between launches.
+ *
+ * A direct connection remembers its address and cookie — the cookie *is* the
+ * credential. An SSH connection remembers the whole profile instead: the local
+ * tunnel port changes every launch, so the old base URL is worthless, and the
+ * profile's passcode lets us re-open the tunnel and sign in fresh without
+ * asking again. Both shapes live at the same key; `kind` tells them apart, and
+ * an entry written before SSH existed has no `kind` and reads as direct.
+ */
+type Stored =
+  | { kind?: "direct"; baseUrl: string; cookie: string }
+  | { kind: "ssh"; ssh: SshProfile };
 
 interface SessionValue {
   /** Null until the keychain has been read, so nothing flashes the wrong screen. */
@@ -34,8 +45,10 @@ interface SessionValue {
   prompts: Record<string, ParsedPrompt>;
   link: LinkState;
   error: string | null;
-  /** Called by Connect once `api.login` has succeeded. */
+  /** Called by Connect once `api.login` has succeeded on a direct connection. */
   signIn: () => void;
+  /** Called by Connect after an SSH tunnel is open and login has succeeded. */
+  signInSsh: (profile: SshProfile) => void;
   signOut: () => void;
   /** Ask the server for a fresh snapshot — after creating a space or a tab. */
   refresh: () => void;
@@ -86,6 +99,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [terminalWidth, setWidth] = useState(100);
   const [server, setServer] = useState("");
   const socketRef = useRef<SessionSocket | null>(null);
+  // The active SSH profile, when the connection is tunnelled — kept so sign-out
+  // can tear the tunnel down and restore knows to re-open it.
+  const sshProfile = useRef<SshProfile | null>(null);
 
   // Restore before first paint of anything that depends on being signed in.
   useEffect(() => {
@@ -94,13 +110,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const raw = await SecureStore.getItemAsync(KEY);
         if (raw) {
           const stored = JSON.parse(raw) as Stored;
-          connection.baseUrl = stored.baseUrl;
-          connection.cookie = stored.cookie;
-          setServer(stored.baseUrl);
-          setConnected(true);
+          if (stored.kind === "ssh") {
+            // The tunnel's local port is gone with the last process, so re-open
+            // it and sign in again from the remembered passcode. A failure here
+            // (box down, key changed) surfaces on the Connect screen rather
+            // than pretending to be signed in.
+            sshProfile.current = stored.ssh;
+            connection.baseUrl = await openTunnel(stored.ssh);
+            connection.cookie = null;
+            await api.login(stored.ssh.passcode);
+            setServer(`ssh://${stored.ssh.username}@${stored.ssh.host}`);
+            setConnected(true);
+          } else {
+            connection.baseUrl = stored.baseUrl;
+            connection.cookie = stored.cookie;
+            setServer(stored.baseUrl);
+            setConnected(true);
+          }
         }
       } catch {
-        // A corrupt or unreadable entry just means signing in again.
+        // A corrupt entry, a dead box or a rejected key all mean the same
+        // thing to a cold start: show Connect. The tunnel, if it half-opened,
+        // is closed so a retry starts clean.
+        void closeTunnel();
       }
       try {
         const pinned = await SecureStore.getItemAsync(PINS_KEY);
@@ -159,6 +191,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     connection.cookie = null;
     setConnected(false);
     setSession(null);
+    // Drop the SSH session with the app session — a live tunnel to a box you
+    // signed out of is exactly what you did not ask to keep.
+    if (sshProfile.current) {
+      sshProfile.current = null;
+      void closeTunnel();
+    }
   }, []);
 
   const refresh = useCallback(() => {
@@ -209,11 +247,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       refresh,
       signOut,
       signIn: () => {
+        sshProfile.current = null;
         void SecureStore.setItemAsync(
           KEY,
-          JSON.stringify({ baseUrl: connection.baseUrl, cookie: connection.cookie ?? "" }),
+          JSON.stringify({ kind: "direct", baseUrl: connection.baseUrl, cookie: connection.cookie ?? "" }),
         );
         setServer(connection.baseUrl);
+        setConnected(true);
+      },
+      // The SSH tunnel is already open and login has already succeeded by the
+      // time Connect calls this — same contract as signIn, but it remembers the
+      // profile (not a base URL, which is a throwaway local port) so a cold
+      // start can rebuild the tunnel.
+      signInSsh: (profile: SshProfile) => {
+        sshProfile.current = profile;
+        void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "ssh", ssh: profile }));
+        setServer(`ssh://${profile.username}@${profile.host}`);
         setConnected(true);
       },
       watch: (paneId) => socketRef.current?.watch(paneId),
