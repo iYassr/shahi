@@ -227,7 +227,7 @@ function SshForm({
         autoCapitalize="none"
         autoCorrect={false}
         testID="ssh-username"
-        placeholder="you"
+        placeholder="ubuntu"
         placeholderTextColor={theme.dim}
       />
 
