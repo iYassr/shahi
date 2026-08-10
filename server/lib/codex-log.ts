@@ -14,21 +14,38 @@
  * fallback, because two codex sessions in one directory are indistinguishable
  * there and the newer one would win whichever pane asked.
  *
- * **The transcript has two views of the same conversation, and one is a trap.**
- * `response_item` records are the raw API turns, which include `developer`-role
- * system prompts and a `<environment_context>` block sent as a user turn.
- * Rendering those would put codex's own instructions in your mouth — the same
- * mistake as attributing Claude's `tool_result` records to the user. The
- * `event_msg` records are the UI-level view, already stripped to what a person
- * actually said and what the agent actually replied, so those are what the
- * reader uses.
+ * **The transcript has two views of the same conversation, and one is mostly a
+ * trap.** `response_item` records are the raw API turns. Their `message` and
+ * `reasoning` subtypes include `developer`-role system prompts and an
+ * `<environment_context>` block sent as a user turn; rendering those would put
+ * codex's own instructions in your mouth — the same mistake as attributing
+ * Claude's `tool_result` records to the user. So the conversation text is taken
+ * from `event_msg`, the UI-level view already stripped to what a person said
+ * and what the agent replied.
+ *
+ * The exception is tool activity, which lives *only* in `response_item` and
+ * nowhere in `event_msg`: `function_call` / `custom_tool_call` and their
+ * matching `*_output` records. Dropping those meant a codex conversation read
+ * as if the agent talked but never ran anything. These subtypes are
+ * unambiguously tool calls — there is no developer-prompt ambiguity — so the
+ * reader now renders them as the same `tool` blocks the Claude reader produces,
+ * pairing a call to its output by `call_id`. The two shapes were captured live
+ * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
 import { Database } from "bun:sqlite";
 import { readdir, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { HerdrClient } from "./herdr-client";
-import { parseLines, type LogMessage, type SessionLog } from "./session-log";
+import { parseLines, type Block, type LogMessage, type SessionLog } from "./session-log";
+
+/** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
+const MAX_RESULT_CHARS = 2_000;
+
+/** The `response_item` subtypes that are a tool being invoked. */
+const TOOL_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
+/** …and the ones carrying that call's result, joined back by `call_id`. */
+const TOOL_OUTPUT_TYPES = new Set(["function_call_output", "custom_tool_call_output"]);
 
 const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), ".codex");
 const SESSIONS_DIR = join(CODEX_HOME, "sessions");
@@ -155,35 +172,132 @@ function rolloutFromIndex(cwd: string): string | null {
   }
 }
 
+/** The non-null half of a `tool` block's `result`, extracted for reuse. */
+type ToolResult = NonNullable<(Block & { kind: "tool" })["result"]>;
+
+/** codex tool output is either a plain string or a list of `input_text` parts. */
+function codexResult(payload: Record<string, unknown>): ToolResult {
+  const raw = payload.output;
+  let text = "";
+  if (typeof raw === "string") {
+    text = raw;
+  } else if (Array.isArray(raw)) {
+    text = raw
+      .map((part) => (typeof part === "string" ? part : ((part as { text?: string })?.text ?? "")))
+      .join("");
+  }
+  text = text.trim();
+  const truncated = text.length > MAX_RESULT_CHARS;
+  return {
+    text: truncated ? `${text.slice(0, MAX_RESULT_CHARS)}\n…` : text,
+    // codex does not flag errors in the rollout the way Claude's `is_error`
+    // does; guessing from output text would mislabel ordinary stderr, so this
+    // stays honest and leaves severity to the words.
+    isError: false,
+    truncated,
+    images: [],
+  };
+}
+
+/**
+ * The one-line summary under a codex tool row.
+ *
+ * `custom_tool_call` (the `exec` tool) wraps the real command in a scrap of JS —
+ * `tools.exec_command({"cmd":"wc -l note.txt", …})` — so the command is pulled
+ * out of it. `function_call` carries a JSON `arguments` string; its `command`
+ * is used when present, otherwise a compact rendering of the arguments. The
+ * command is what a person scanning the conversation actually wants to see.
+ */
+export function summariseCodexCall(payload: Record<string, unknown>): string {
+  const cmdIn = (s: string): string | null => {
+    const m = /"cmd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(s);
+    if (!m) return null;
+    try {
+      return JSON.parse(`"${m[1]}"`) as string;
+    } catch {
+      return m[1] ?? null;
+    }
+  };
+
+  if (typeof payload.input === "string") {
+    return cmdIn(payload.input) ?? payload.input.trim().split("\n")[0]!.slice(0, 160);
+  }
+  if (typeof payload.arguments === "string") {
+    try {
+      const args = JSON.parse(payload.arguments) as Record<string, unknown>;
+      if (typeof args.command === "string") return args.command;
+      if (typeof args.cmd === "string") return args.cmd;
+      const compact = JSON.stringify(args);
+      return compact.length > 160 ? `${compact.slice(0, 160)}…` : compact;
+    } catch {
+      return payload.arguments.slice(0, 160);
+    }
+  }
+  return "";
+}
+
 /**
  * Turns rollout records into the same shape the Claude reader produces.
  *
- * Only `event_msg` is read. `response_item` carries the raw API conversation
- * including developer-role system prompts and an `<environment_context>` block
- * delivered as a user turn — see the module note.
+ * Conversation text comes from `event_msg`. Tool activity comes from the
+ * `function_call` / `custom_tool_call` subtypes of `response_item` — the only
+ * place codex records it — rendered as `tool` blocks and paired to their output
+ * by `call_id`. Every other `response_item` (developer prompts, the environment
+ * context, reasoning, the duplicated assistant message) is left alone; see the
+ * module note.
  */
 export function normaliseCodex(rows: Record<string, unknown>[]): LogMessage[] {
+  // Outputs follow their call in the file, so index them first, then a single
+  // forward pass emits calls already knowing their result (or null if the tool
+  // has not returned yet — the pending state the client already renders).
+  const outputs = new Map<string, ToolResult>();
+  for (const row of rows) {
+    if (row.type !== "response_item") continue;
+    const payload = row.payload as Record<string, unknown> | undefined;
+    if (payload && TOOL_OUTPUT_TYPES.has(payload.type as string) && typeof payload.call_id === "string") {
+      outputs.set(payload.call_id, codexResult(payload));
+    }
+  }
+
   const messages: LogMessage[] = [];
 
   for (const [index, row] of rows.entries()) {
-    if (row.type !== "event_msg") continue;
+    const at = Date.parse((row.timestamp as string) ?? "") || 0;
 
-    const payload = row.payload as { type?: string; message?: string } | undefined;
-    const text = payload?.message?.trim();
-    if (!text) continue;
+    if (row.type === "event_msg") {
+      const payload = row.payload as { type?: string; message?: string } | undefined;
+      const text = payload?.message?.trim();
+      if (!text) continue;
 
-    const role =
-      payload?.type === "user_message" ? "you" : payload?.type === "agent_message" ? "agent" : null;
-    // task_started, task_complete, token_count and anything codex adds later
-    // are lifecycle, not conversation.
-    if (!role) continue;
+      const role =
+        payload?.type === "user_message" ? "you" : payload?.type === "agent_message" ? "agent" : null;
+      // task_started, task_complete, token_count and anything codex adds later
+      // are lifecycle, not conversation.
+      if (!role) continue;
 
-    messages.push({
-      id: `codex-${index}`,
-      role,
-      at: Date.parse((row.timestamp as string) ?? "") || 0,
-      blocks: [{ kind: "text", text }],
-    });
+      messages.push({ id: `codex-${index}`, role, at, blocks: [{ kind: "text", text }] });
+      continue;
+    }
+
+    if (row.type === "response_item") {
+      const payload = row.payload as Record<string, unknown> | undefined;
+      if (!payload || !TOOL_CALL_TYPES.has(payload.type as string)) continue;
+
+      const callId = typeof payload.call_id === "string" ? payload.call_id : null;
+      messages.push({
+        id: `codex-${index}`,
+        role: "agent",
+        at,
+        blocks: [
+          {
+            kind: "tool",
+            name: typeof payload.name === "string" ? payload.name : "tool",
+            summary: summariseCodexCall(payload),
+            result: (callId && outputs.get(callId)) || null,
+          },
+        ],
+      });
+    }
   }
 
   return messages;
