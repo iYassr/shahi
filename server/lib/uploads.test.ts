@@ -68,9 +68,11 @@ describe("storeUpload", () => {
 
   // Two photos from a phone are routinely both called IMG_0001.
   test("does not let a second file of the same name overwrite the first", async () => {
-    let clock = Date.parse("2026-07-25T10:00:00Z");
+    // Same-name, same-second uploads — the case the second-resolution stamp
+    // let collide, silently overwriting the first. The random salt keeps them
+    // apart even at identical millisecond clocks.
+    const clock = Date.parse("2026-07-25T10:00:00.500Z");
     const a = await storeUpload(new File(["one"], "IMG_0001.jpg"), () => clock, DIR);
-    clock += 1000;
     const b = await storeUpload(new File(["two"], "IMG_0001.jpg"), () => clock, DIR);
 
     expect(a.path).not.toBe(b.path);

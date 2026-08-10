@@ -38,7 +38,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
     }
   }
 
-  if (error ?? failure) return <Centered>{error ?? failure}</Centered>;
+  // Only take over the whole screen when there is nothing to show yet. Once a
+  // session is on screen, a transient error must not replace the live list —
+  // the next successful poll clears it (see `refresh`), and blanking the herd
+  // over one blip was the "sticky failure" this review flagged.
+  if ((error ?? failure) && !session) return <Centered>{error ?? failure}</Centered>;
   if (!session) {
     return (
       <View style={styles.centered}>
