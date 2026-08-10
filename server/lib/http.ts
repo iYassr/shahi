@@ -649,7 +649,13 @@ async function serveStatic(pathname: string, webRoot: string | null): Promise<Re
   const candidate = Bun.file(`${webRoot}/${relative}`);
   if (relative !== "" && (await candidate.exists())) {
     const ext = relative.slice(relative.lastIndexOf(".") + 1);
-    const immutable = /\.[0-9a-f]{8,}\./.test(relative);
+    // Vite content-hashes into `assets/name-<hash>.ext`, where the hash is
+    // mixed-case base64url (`index-DfotvnE1.js`) — NOT the lowercase-hex,
+    // dot-delimited form the old matcher assumed, so it matched nothing and
+    // every hashed asset was served no-cache (confirmed on a production
+    // request). Require the assets/ prefix (where Vite puts only hashed files)
+    // and the dash-hash tail, so nothing unhashed is ever frozen.
+    const immutable = /^assets\/.*-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(relative);
     return new Response(candidate, {
       headers: {
         "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",

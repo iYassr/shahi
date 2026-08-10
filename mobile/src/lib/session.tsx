@@ -89,16 +89,19 @@ const WIDTH_KEY = "shahi.terminal-width";
  *  - a snapshot identical to the last returns the *previous* Session, so
  *    `setSession` sees the same reference and does not re-render at all.
  */
-function reconcileArray<T>(prev: T[], next: T[], key: (t: T) => string): T[] {
+export function reconcileArray<T>(prev: T[], next: T[], key: (t: T) => string): T[] {
   const prevByKey = new Map(prev.map((t) => [key(t), t] as const));
-  let changed = next.length !== prev.length;
-  const out = next.map((n, i) => {
+  // Reuse the previous object for any entry with byte-identical content,
+  // wherever it now sits. Then keep the previous array only when the result is
+  // element-for-element the same (same refs, same order) — that catches
+  // insertions, removals and reorders without ever indexing prev out of
+  // bounds, which is what crashed when `next` was longer than `prev`.
+  const out = next.map((n) => {
     const old = prevByKey.get(key(n));
-    if (old && key(prev[i] as T) === key(n) && JSON.stringify(old) === JSON.stringify(n)) return old;
-    changed = true;
-    return n;
+    return old && JSON.stringify(old) === JSON.stringify(n) ? old : n;
   });
-  return changed ? out : prev;
+  const unchanged = out.length === prev.length && out.every((v, i) => v === prev[i]);
+  return unchanged ? prev : out;
 }
 
 function reconcileSession(prev: Session | null, next: Session): Session {
@@ -276,7 +279,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(() => {
     void api
       .session()
-      .then(setSession)
+      .then((s) => {
+        setSession((prev) => reconcileSession(prev, s));
+        // A poll that succeeds clears a prior transient error, so one blip does
+        // not leave the whole screen showing failure until the next unrelated
+        // event — the "sticky error" this review flagged.
+        setError(null);
+      })
       .catch((e: Error) => {
         // An expired cookie is not an error to display; it is a sign-out.
         if (e instanceof UnauthorizedError) signOut();
