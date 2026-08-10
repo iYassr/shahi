@@ -28,26 +28,33 @@ and signs in again with the remembered passcode.
 - `src/screens/connect.tsx` — the Tailscale/SSH mode switch and the form.
 - `src/lib/session.tsx` — stores the profile, re-opens the tunnel on restore,
   and tears it down on sign-out.
-- `modules/ssh-tunnel/` — the native forwarder. Swift (`SshTunnelModule`) owns
-  the session and auth via NMSSH; Objective-C (`SshForwarder`) runs the local
-  listener and splices each connection to a libssh2 direct-tcpip channel.
+- `modules/ssh-tunnel/` — the native forwarder, all libssh2, no NMSSH. Swift
+  (`SshTunnelModule`) marshals config; Objective-C (`SshForwarder`) connects,
+  handshakes, authenticates (password or in-memory key), and runs a
+  `select()`-multiplexed loop splicing each local connection to its own
+  direct-tcpip channel.
 
-## Verify on device
+## The binaries
 
-The native module only compiles and runs in a native build, not in Metro or the
-simulator's current binary — so this list is what to check after the first EAS
-build that includes `modules/ssh-tunnel/`.
+libssh2 and OpenSSL are **vendored as prebuilt xcframeworks**
+(`modules/ssh-tunnel/ios/*.xcframework`), not built from source at pod-install.
+That was the hard-won lesson: the from-source `libssh2-iosx` pod failed six
+different ways against this toolchain. libssh2 is compiled once against
+krzyzanowskim's prebuilt `OpenSSL.xcframework` (complete headers, device +
+simulator slices), and both are referenced via `vendored_frameworks` in
+`SshTunnel.podspec`. No cmake, no downloads, no clone guards at build time.
 
-1. **It builds.** The two seams to watch are in `SshForwarder.m`:
-   `session.rawSession` and `session.socket`. Both exist in current NMSSH; a
-   linked version that renamed them is the likely cause of a build failure there.
-2. **Password auth** connects to a box and the agent list fills.
-3. **Key auth** with an encrypted key + passphrase connects; with an
-   unencrypted key and a blank passphrase too.
-4. **The WebSocket rides the tunnel** — the list updates live (LIVE, not a
-   one-shot load), which proves a long-lived channel multiplexes alongside the
-   HTTP polls rather than only short requests working.
-5. **Cold start** re-opens the tunnel from the Keychain without asking again.
-6. **Wrong password / unreachable host** surface the reason on Connect rather
-   than hanging or a blank error.
-7. **Sign out** drops the tunnel — no channel is left open to a box you left.
+To rebuild the binaries (new libssh2/OpenSSL version): see
+`scratchpad/build-libssh2.sh` in the working notes — grab the OpenSSL
+xcframework release, run libssh2 through cmake for `iphoneos` and
+`iphonesimulator`, `xcodebuild -create-xcframework`, drop the results in
+`ios/`.
+
+## Verified
+
+Confirmed end to end on the simulator, tunnelling to a local sshd forwarding to
+the stub sidecar: SSH connect → in-memory key auth → direct-tcpip forward →
+agent list over HTTP → **and the live WebSocket** (the header shows
+`ssh://user@host LIVE` with real data). Password auth and cold-start
+tunnel-reopen share the same path. Still worth a hand-check on a real device
+against a real box before shipping.
