@@ -75,6 +75,51 @@ interface SessionValue {
 const PINS_KEY = "shahi.pins";
 const WIDTH_KEY = "shahi.terminal-width";
 
+/**
+ * Preserves object identity across session snapshots.
+ *
+ * herdr's mirror is pushed whole every couple of seconds, so a naive
+ * `setSession(next)` makes every pane, tab and space a new reference — and the
+ * memoised rows, which compare props by reference, re-render regardless of
+ * whether anything actually changed. This reuses the previous object for any
+ * entry whose content is byte-for-byte the same (JSON is the cheap, correct
+ * equality here — the wire types are plain data), so:
+ *
+ *  - a row whose pane is unchanged keeps its identity and its memo skips it;
+ *  - a snapshot identical to the last returns the *previous* Session, so
+ *    `setSession` sees the same reference and does not re-render at all.
+ */
+function reconcileArray<T>(prev: T[], next: T[], key: (t: T) => string): T[] {
+  const prevByKey = new Map(prev.map((t) => [key(t), t] as const));
+  let changed = next.length !== prev.length;
+  const out = next.map((n, i) => {
+    const old = prevByKey.get(key(n));
+    if (old && key(prev[i] as T) === key(n) && JSON.stringify(old) === JSON.stringify(n)) return old;
+    changed = true;
+    return n;
+  });
+  return changed ? out : prev;
+}
+
+function reconcileSession(prev: Session | null, next: Session): Session {
+  if (!prev) return next;
+  const panes = reconcileArray(prev.panes, next.panes, (p) => p.paneId);
+  const tabs = reconcileArray(prev.tabs, next.tabs, (t) => t.tabId);
+  const workspaces = reconcileArray(prev.workspaces, next.workspaces, (w) => w.workspaceId);
+  // Scalar fields (version, protocol, grouping, focus) rarely move; compare them
+  // together, and if they and all three lists are unchanged, keep the previous
+  // Session so nothing downstream re-renders.
+  const scalarsSame =
+    prev.version === next.version &&
+    prev.protocol === next.protocol &&
+    prev.defaultGrouping === next.defaultGrouping &&
+    prev.focusedPaneId === next.focusedPaneId;
+  if (scalarsSame && panes === prev.panes && tabs === prev.tabs && workspaces === prev.workspaces) {
+    return prev;
+  }
+  return { ...next, panes, tabs, workspaces };
+}
+
 const Ctx = createContext<SessionValue | null>(null);
 
 export function useSession(): SessionValue {
@@ -193,7 +238,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // warning was pointing at. Only `useLastUpdate` consumers (Settings) wake.
     markUpdated();
     if (msg.type === "session") {
-      setSession(msg.session);
+      // Reconcile against the last snapshot so unchanged panes/tabs/spaces keep
+      // their object identity — the server sends a fresh JSON every ~2.5s, and
+      // without this every row is a new reference and the memoised rows re-render
+      // regardless. When nothing changed at all, reconcile returns the previous
+      // Session unchanged and setSession bails out entirely (no re-render).
+      setSession((prev) => reconcileSession(prev, msg.session));
       // A prompt belongs to a blocked agent; once it moves on, drop it so no
       // screen can offer answers to a question already answered.
       setPrompts((current) => {
