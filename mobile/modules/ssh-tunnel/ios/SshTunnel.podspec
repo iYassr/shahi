@@ -10,20 +10,21 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  # libssh2 built from source with device AND simulator slices (NMSSH's
-  # prebuilt binaries are device-only, so they cannot link for the Apple
-  # Silicon simulator). This pod bundles its own crypto, so the whole tunnel —
-  # connect, handshake, auth, direct-tcpip forward — is libssh2 in
-  # SshForwarder; nothing else is needed.
-  s.dependency 'libssh2-iosx', '~> 1.11.0.1'
+
+  # Prebuilt binaries with device + simulator slices, vendored directly — no
+  # from-source build at pod-install time (that path fought the toolchain six
+  # different ways; see git history). libssh2 was compiled once against this
+  # exact OpenSSL, so the versions match. OpenSSL is a dynamic framework and is
+  # embedded + signed by CocoaPods automatically.
+  s.vendored_frameworks = ['libssh2.xcframework', 'OpenSSL.xcframework']
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_COMPILATION_MODE' => 'wholemodule'
   }
 
-  s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
-  # Public so the pod's umbrella header re-exports SshForwarder.h and the Swift
-  # module (SshTunnelModule.swift) can call into it without a bridging header.
-  s.public_header_files = "**/*.h"
+  s.source_files = "*.{h,m,mm,swift}"
+  # Public so the pod's umbrella re-exports SshForwarder.h and the Swift module
+  # can call into it without a bridging header.
+  s.public_header_files = "*.h"
 end
