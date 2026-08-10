@@ -13,6 +13,7 @@
  * images, which Claude Code's Read tool handles.
  */
 import type { StoredUpload } from "@shahi/shared";
+import { randomBytes } from "node:crypto";
 import { mkdir, readdir, stat, unlink } from "node:fs/promises";
 
 export type { StoredUpload };
@@ -76,10 +77,14 @@ export async function storeUpload(
   const extension = extname(clean);
   const stem = extension ? clean.slice(0, -extension.length) : clean;
 
-  // Timestamped so a second photo of the same name cannot overwrite the first,
-  // and so the newest upload is obvious when browsing the directory.
-  const stamp = new Date(now()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const path = join(dir, `${stamp}_${stem}${extension}`);
+  // Timestamped to the millisecond AND salted with random bytes: a
+  // second-resolution stamp let two photos of the same name in the same second
+  // resolve to one path and silently overwrite each other (reproduced in the
+  // review). The full ISO timestamp keeps the newest obvious when browsing; the
+  // random suffix makes a collision astronomically unlikely regardless.
+  const stamp = new Date(now()).toISOString().replace(/[:.]/g, "-");
+  const salt = randomBytes(4).toString("hex");
+  const path = join(dir, `${stamp}_${salt}_${stem}${extension}`);
 
   await Bun.write(path, file);
 

@@ -2,6 +2,7 @@ import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SessionProvider } from "@/lib/session";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { theme } from "@/lib/theme";
 
 /**
@@ -17,6 +18,7 @@ export default function RootLayout() {
     // Above the router, so the mirror and the socket survive navigation.
     // The gesture root is what lets a row's swipe actions receive the drag.
     <GestureHandlerRootView style={{ flex: 1 }}>
+    <ErrorBoundary>
     <SessionProvider>
       <Stack
         screenOptions={{
@@ -65,6 +67,7 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style="light" />
     </SessionProvider>
+    </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

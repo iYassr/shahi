@@ -44,6 +44,29 @@ export interface Connection {
  */
 export const connection: Connection = { baseUrl: "", cookie: null };
 
+/**
+ * How long any single request may hang before it is aborted. A dead host used
+ * to leave Connect or an action busy forever, because `fetch` has no timeout of
+ * its own; this bounds it and surfaces a plain "timed out" the UI can recover
+ * from. Generous enough for a slow tailnet or a cold agent, short enough not to
+ * feel stuck.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
+/** Runs `fetch` with an abort-on-timeout, turning the abort into a clear error. */
+export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw new Error("The server didn't respond — it may be unreachable.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!connection.baseUrl) throw new Error("No server address configured");
 
@@ -57,7 +80,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // demonstrably set, and the resulting UnauthorizedError signs the app out
   // again. This client owns its cookie, because there is no browser to own it;
   // the jar must not compete for the job.
-  const res = await fetch(`${connection.baseUrl}${path}`, {
+  const res = await fetchWithTimeout(`${connection.baseUrl}${path}`, {
     ...init,
     headers,
     credentials: "omit",
@@ -82,7 +105,7 @@ export const api = {
 
   /** Captures the session cookie, since there is no browser to hold it. */
   login: async (passcode: string) => {
-    const res = await fetch(`${connection.baseUrl}/api/auth/login`, {
+    const res = await fetchWithTimeout(`${connection.baseUrl}/api/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ passcode }),

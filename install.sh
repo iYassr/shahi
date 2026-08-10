@@ -114,7 +114,13 @@ WantedBy=default.target
 UNIT
 
 systemctl --user daemon-reload
-systemctl --user enable --now shahi.service >/dev/null 2>&1 || systemctl --user restart shahi.service
+# Enable for boot, then ALWAYS restart. `enable --now` starts a stopped service
+# but does nothing to a running one, so on an in-place upgrade the old server
+# kept running and the new code never took effect — the update looked applied
+# and was not. `restart` is a no-op cost on first install and correct on every
+# upgrade.
+systemctl --user enable shahi.service >/dev/null 2>&1 || true
+systemctl --user restart shahi.service
 
 # Survives logout and reboot, which is the whole point of a phone dashboard.
 loginctl enable-linger "$USER" >/dev/null 2>&1 || \

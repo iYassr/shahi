@@ -169,11 +169,16 @@ export class Poller extends EventEmitter<PollerEvents> {
       await Promise.all(
         due.map((paneId) =>
           this.#read(paneId).catch((err) => {
-            // A pane closing between the snapshot and the read is routine.
-            if (!isMissingPane(err)) {
+            // A pane closing between the snapshot and the read is routine, and
+            // the only case that should drop the watch. A transient read
+            // failure (a hiccup on herdr's socket) must NOT forget the pane —
+            // doing so tore down a watcher the WebSocket still believed was
+            // live, and it never recovered. Keep it; the next tick retries.
+            if (isMissingPane(err)) {
+              this.forget(paneId);
+            } else {
               this.emit("error", err instanceof Error ? err : new Error(String(err)));
             }
-            this.forget(paneId);
           }),
         ),
       );
