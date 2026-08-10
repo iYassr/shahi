@@ -41,6 +41,8 @@ import { Markdown } from "@/components/markdown";
 
 /** How often to pull while open. The server caches on file size. */
 const POLL_MS = 2_500;
+/** The fast cadence used right after you act and while the agent is working. */
+const POLL_ACTIVE_MS = 700;
 
 /**
  * How many columns to fit across the screen.
@@ -189,6 +191,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * treating one as the reader's doing is how the position got overwritten.
    */
   const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
+  /** While `Date.now()` is under this, the poll runs at the fast cadence. */
+  const activeUntil = useRef(0);
   /** Topmost visible message, kept fresh by the list's viewability callback. */
   const topItem = useRef<string | null>(null);
   /** Whether the restore's own deadline has been armed; see restore(). */
@@ -259,10 +263,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       const log = await api.sessionLog(paneId, 60);
       const folded = merge(messagesRef.current, log.messages);
       if (folded !== messagesRef.current) {
+        const prevLen = messagesRef.current.length;
         // Not on the first fill: a remount fetching the same conversation is
         // not "60 new" — unseen counts only what arrived while looking away.
-        if (!following.current && messagesRef.current.length > 0)
-          setUnseen((u) => u + Math.max(0, folded.length - messagesRef.current.length));
+        if (!following.current && prevLen > 0)
+          setUnseen((u) => u + Math.max(0, folded.length - prevLen));
         messagesRef.current = folded;
         setMessages(folded);
       }
@@ -280,28 +285,44 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setPrompt(detail.frame?.prompt ?? null);
       setActivity(detail.frame?.activity ?? null);
       setScreen(detail.frame?.text ?? null);
+      // A working agent means a reply is imminent: keep polling fast so it
+      // surfaces the instant it is written, not on the next idle tick.
+      if (detail.frame?.activity) activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
     } catch {
       // Transient; the next poll will catch up.
     }
   }, [paneId]);
 
+  /**
+   * Adaptive polling. 2.5s is right for reading, but glacial right after you
+   * send and while the agent is visibly working — the two moments a reply is
+   * imminent. So the loop polls fast (700ms) whenever `activeUntil` is in the
+   * future, and `chase`/an active `activity` push that window forward. The old
+   * fixed 2.5s interval plus three one-off chase refetches left the reply to
+   * land on a 2.5s tick most of the time; this catches it within ~700ms
+   * instead, then relaxes back to 2.5s so a quiet pane costs nothing.
+   */
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      await load();
+      if (cancelled) return;
+      const fast = Date.now() < activeUntil.current;
+      timer = setTimeout(() => void tick(), fast ? POLL_ACTIVE_MS : POLL_MS);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [load]);
 
-  /**
-   * The poll is 2.5s, which is fine for reading and glacial right after
-   * *you* said something — the screen view felt instant only because the
-   * terminal echoes keystrokes, while the reader sat out the interval. So
-   * every send is chased: once immediately, and again shortly after for the
-   * beat the agent needs to write its transcript line.
-   */
   function chase() {
+    // Poll fast for a while: long enough to cover the agent's think time on a
+    // quick reply, short enough that a walk-away pane settles back to idle.
+    activeUntil.current = Date.now() + 25_000;
     void load();
-    setTimeout(() => void load(), 700);
-    setTimeout(() => void load(), 1_500);
   }
 
   function jumpToLatest() {
@@ -426,6 +447,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           renderItem={({ item }) => (
             <Message message={item} paneId={paneId} onOpenFile={setViewing} />
           )}
+          // A long transcript is the other list RN can choke on. Detaching
+          // off-screen messages and rendering a bounded window keeps scrolling
+          // and each poll cheap; Message is already memoised and merge() keeps
+          // unchanged messages' identity, so a poll re-renders only the tail.
+          removeClippedSubviews
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={9}
           onScroll={({ nativeEvent: e }) => {
             if (pendingRestore.current) return;
             const fromBottom =

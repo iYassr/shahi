@@ -12,7 +12,7 @@
  * re-teaching any of them, which is exactly what the old BackHandler wiring
  * existed to do.
  */
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
@@ -134,7 +134,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
               {panes.map((pane, i) => (
                 <View key={pane.paneId}>
                   {i > 0 && <View style={styles.separator} />}
-                  <PaneRow pane={pane} onPress={() => openPane(pane.paneId)} />
+                  <PaneRow pane={pane} onPress={openPane} />
                 </View>
               ))}
             </View>
@@ -159,9 +159,16 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
 }
 
 /** The same chat-list grammar as the Agents tab, keeping the tab grouping. */
-function PaneRow({ pane, onPress }: { pane: DashboardPane; onPress: () => void }) {
+const PaneRow = memo(function PaneRow({
+  pane,
+  onPress,
+}: {
+  pane: DashboardPane;
+  // Stable callback taking the id, so memo holds across list re-renders.
+  onPress: (paneId: string) => void;
+}) {
   return (
-    <Pressable style={styles.row} onPress={onPress}>
+    <Pressable style={styles.row} onPress={() => onPress(pane.paneId)}>
       <Avatar pane={pane} />
       <View style={styles.rowBody}>
         <View style={styles.rowLine}>
@@ -193,7 +200,7 @@ function PaneRow({ pane, onPress }: { pane: DashboardPane; onPress: () => void }
       </View>
     </Pressable>
   );
-}
+});
 
 export function NewSpace({ session, onCreated }: { session: Session; onCreated: () => void }) {
   const [name, setName] = useState("");
