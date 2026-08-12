@@ -33,6 +33,7 @@ typedef struct Conn {
   NSString *_password;
   NSString *_privateKey;
   NSString *_passphrase;
+  NSString *_expectedHostKey;
   NSString *_remoteHost;
   int32_t _remotePort;
   int _listenFd;
@@ -48,6 +49,7 @@ typedef struct Conn {
                     password:(NSString *)password
                   privateKey:(NSString *)privateKey
                   passphrase:(NSString *)passphrase
+             expectedHostKey:(NSString *)expectedHostKey
                   remoteHost:(NSString *)remoteHost
                   remotePort:(int32_t)remotePort {
   if ((self = [super init])) {
@@ -57,6 +59,7 @@ typedef struct Conn {
     _password = [password copy];
     _privateKey = [privateKey copy];
     _passphrase = [passphrase copy];
+    _expectedHostKey = [expectedHostKey copy];
     _remoteHost = [remoteHost copy];
     _remotePort = remotePort;
     _listenFd = -1;
@@ -79,6 +82,27 @@ typedef struct Conn {
   _ssh = libssh2_session_init();
   if (_ssh == NULL || libssh2_session_handshake(_ssh, _sessionFd) != 0) {
     if (error) *error = [self errorWithMessage:@"The SSH handshake failed."];
+    [self stop];
+    return nil;
+  }
+
+  // 2a. Verify the host key BEFORE authenticating — otherwise a man in the
+  // middle collects the password/key you are about to send. Trust on first use:
+  // the app has no stored fingerprint the first time, accepts, and remembers it;
+  // every connection after passes that fingerprint back as expectedHostKey, and
+  // a mismatch (a different server, or an interception) is refused here, before
+  // any credential leaves the device.
+  const char *hash = libssh2_hostkey_hash(_ssh, LIBSSH2_HOSTKEY_HASH_SHA256);
+  if (hash == NULL) {
+    if (error) *error = [self errorWithMessage:@"Could not read the server's host key."];
+    [self stop];
+    return nil;
+  }
+  _hostKeyFingerprint = [[NSData dataWithBytes:hash length:32] base64EncodedStringWithOptions:0];
+  if (_expectedHostKey.length > 0 && ![_expectedHostKey isEqualToString:_hostKeyFingerprint]) {
+    if (error)
+      *error = [self errorWithMessage:@"The server's host key has changed since you last connected. "
+                                       "This can mean a man-in-the-middle — connection refused."];
     [self stop];
     return nil;
   }
