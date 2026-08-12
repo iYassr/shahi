@@ -78,14 +78,16 @@ const PROBE = "─".repeat(PROBE_CHARS);
  * the one key Claude Code uses for its permission modes silently did nothing.
  * Every name here has been sent to a live pane and accepted.
  */
-const KEY_BAR: { label: string; keys: string[] }[] = [
-  { label: "esc", keys: ["Escape"] },
-  { label: "⇥", keys: ["Tab"] },
-  { label: "⇧⇥", keys: ["shift+tab"] },
-  { label: "^C", keys: ["C-c"] },
-  { label: "↑", keys: ["Up"] },
-  { label: "↓", keys: ["Down"] },
-  { label: "⏎", keys: ["Enter"] },
+// `spoken` is what VoiceOver reads: the glyphs (⇥, ⇧⇥, ^C) are unintelligible
+// aloud, so each carries the key's real name.
+const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
+  { label: "esc", spoken: "Escape", keys: ["Escape"] },
+  { label: "⇥", spoken: "Tab", keys: ["Tab"] },
+  { label: "⇧⇥", spoken: "Shift Tab", keys: ["shift+tab"] },
+  { label: "^C", spoken: "Control C", keys: ["C-c"] },
+  { label: "↑", spoken: "Up arrow", keys: ["Up"] },
+  { label: "↓", spoken: "Down arrow", keys: ["Down"] },
+  { label: "⏎", spoken: "Return", keys: ["Enter"] },
 ];
 
 /**
@@ -523,10 +525,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           style={styles.keys}
           keyboardShouldPersistTaps="handled"
         >
-          {KEY_BAR.map(({ label, keys }) => (
+          {KEY_BAR.map(({ label, spoken, keys }) => (
             <Pressable
               key={label}
               style={styles.key}
+              accessibilityRole="button"
+              accessibilityLabel={spoken}
               // Reported, not swallowed: this is how an unsupported key name
               // stayed invisible.
               onPress={() => {
@@ -543,7 +547,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         </ScrollView>
         )}
         <View style={styles.composeRow}>
-          <Pressable style={styles.attach} onPress={() => setAttaching(true)}>
+          <Pressable
+            style={styles.attach}
+            onPress={() => setAttaching(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Attach a file"
+          >
             <Text style={styles.attachText}>+</Text>
           </Pressable>
           <TextInput
@@ -1073,7 +1082,7 @@ const styles = StyleSheet.create({
   // No boxes at all: two labels, the active one lit. Every boxed version —
   // square-in-rounded, then pill-in-pill — read as shapes fighting shapes.
   toggle: { flexDirection: "row", gap: 16 },
-  toggleItem: { minHeight: 32, justifyContent: "center" },
+  toggleItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   toggleOn: {},
   toggleText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
   toggleTextOn: { color: theme.peach, fontWeight: "700" },
@@ -1198,7 +1207,7 @@ const styles = StyleSheet.create({
   compose: { borderTopWidth: 1, borderTopColor: theme.line, padding: 10, gap: 8 },
   keys: { flexGrow: 0 },
   key: {
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: 12,
     justifyContent: "center",
     borderWidth: 1,
