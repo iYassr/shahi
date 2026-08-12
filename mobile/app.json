@@ -11,7 +11,8 @@
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.shahi.mobile",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "_comment_encryption": "The SSH module bundles OpenSSL and does general-purpose encryption, so this is 'true' — 'false' would be a false declaration. Standard/mass-market crypto (SSH, TLS) qualifies for the export exemption; ANSWER the export-compliance questions in App Store Connect accordingly at submission (or supply the self-classification report). See docs/app-store.md.",
+        "ITSAppUsesNonExemptEncryption": true
       }
     },
     "android": {
