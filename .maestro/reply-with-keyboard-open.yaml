@@ -14,6 +14,11 @@ name: Reply with the keyboard open
 - launchApp:
     clearState: true
     clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"

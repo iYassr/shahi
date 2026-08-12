@@ -10,6 +10,11 @@ name: The reader keeps your place across the screen toggle
 - launchApp:
     clearState: true
     clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"
