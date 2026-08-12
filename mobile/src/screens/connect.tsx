@@ -10,16 +10,22 @@
  * never leave the phone.
  */
 import { useState } from "react";
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { api, connection } from "@/lib/api";
 import { Logo } from "@/components/icons";
 import { openTunnel, closeTunnel, sshTunnelAvailable } from "@/lib/tunnel";
+import { committed } from "@/lib/feel";
 import {
   emptySshProfile,
   sshProfileReady,
   type SshProfile,
 } from "@/lib/ssh";
 import { theme } from "@/lib/theme";
+
+/** The one-time server install, the thing the intro exists to hand over. */
+const INSTALL_COMMAND =
+  "curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash";
 
 /**
  * Deliberately blank rather than a guess.
@@ -39,12 +45,19 @@ export function Connect({
   onConnected: () => void;
   onConnectedSsh: (profile: SshProfile) => void;
 }) {
+  // First run opens on the setup guide, not a bare form: a new user has nothing
+  // to connect to yet, and the old screen assumed a server they had not been
+  // told to set up. The guide hands over the one install command and explains
+  // where the address and passcode come from; "Connect" moves on to the form.
+  const [phase, setPhase] = useState<"intro" | "form">("intro");
   const [mode, setMode] = useState<Mode>("direct");
   const [url, setUrl] = useState("");
   const [passcode, setPasscode] = useState("");
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (phase === "intro") return <Intro onContinue={() => setPhase("form")} />;
 
   // Narrow updates so the nested auth object stays a discriminated union.
   const patch = (fields: Partial<SshProfile>) => setSsh((p) => ({ ...p, ...fields }));
@@ -166,8 +179,69 @@ export function Connect({
             SSH needs the native build of the app. This build can connect over Tailscale.
           </Text>
         )}
+
+        <Pressable onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
+          <Text style={styles.link}>Haven't set up your server yet?</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * The setup guide, shown before the form on first run.
+ *
+ * Shahi is bring-your-own-server: it shows the agents on a machine you control,
+ * reached through a small helper you install once. A new user has none of that,
+ * so this owns the prerequisite instead of dropping them onto a form that asks
+ * for an address they do not have — the onboarding cliff. It hands over the one
+ * command and says plainly where the address and passcode come from.
+ */
+function Intro({ onContinue }: { onContinue: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    await Clipboard.setStringAsync(INSTALL_COMMAND);
+    committed();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator={false}>
+      <View style={styles.brand}>
+        <Logo color={theme.peach} size={30} />
+        <Text style={styles.title}>shahi</Text>
+      </View>
+
+      <Text style={styles.lede}>See and answer your terminal agents from your phone.</Text>
+      <Text style={styles.introText}>
+        Shahi shows the agents running on a server you control — Claude Code, codex, plain shells — and
+        lets you reply from anywhere. It talks to a small helper you install on that server once.
+      </Text>
+
+      <Text style={styles.step}>1 — On your server, run:</Text>
+      <Pressable style={styles.command} onPress={() => void copy()} testID="copy-install">
+        <Text style={styles.commandText} numberOfLines={2} selectable>
+          {INSTALL_COMMAND}
+        </Text>
+        <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
+      </Pressable>
+      <Text style={styles.introText}>
+        It needs a Linux box already running{" "}
+        <Text style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
+          herdr
+        </Text>
+        . When it finishes it prints your server's address and a passcode.
+      </Text>
+
+      <Text style={styles.step}>2 — Enter those here.</Text>
+      <Text style={styles.introText}>Over Tailscale with the address, or over SSH the way you already log in.</Text>
+
+      <Pressable style={styles.button} onPress={onContinue} testID="intro-continue">
+        <Text style={styles.buttonText}>Connect your server</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
@@ -313,6 +387,27 @@ const styles = StyleSheet.create({
   brand: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 6 },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 26, fontWeight: "500", letterSpacing: -0.5 },
   hint: { color: theme.dim, fontSize: 14, marginBottom: 12 },
+
+  // Intro / setup guide
+  introBody: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 14 },
+  lede: { color: theme.fg, fontSize: 20, fontWeight: "600", lineHeight: 27, marginTop: 4 },
+  introText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
+  step: { color: theme.peach, fontFamily: theme.mono, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
+  command: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.lineBright,
+    borderRadius: 10,
+    borderCurve: "continuous",
+    padding: 14,
+  },
+  commandText: { flex: 1, color: theme.fg, fontFamily: theme.mono, fontSize: 12.5, lineHeight: 18 },
+  copy: { color: theme.peach, fontFamily: theme.mono, fontSize: 13, fontWeight: "600" },
+  linkInline: { color: theme.peach },
+  link: { color: theme.dim, fontSize: 14, textAlign: "center", marginTop: 18, textDecorationLine: "underline" },
   label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, marginTop: 8 },
   input: {
     backgroundColor: theme.surface,

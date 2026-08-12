@@ -22,6 +22,11 @@ name: Connect, then read a session
 
 # Signing in. The address is the worker's own stub; the passcode is the stub's.
 - assertVisible: "Shahi"
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"

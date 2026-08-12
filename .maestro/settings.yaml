@@ -8,6 +8,11 @@ name: Settings shows the connection and signs out
 - launchApp:
     clearState: true
     clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"
@@ -23,7 +28,10 @@ name: Settings shows the connection and signs out
 - tapOn: "Sign out"
 - assertVisible: "Shahi"
 
-# And back in, which is the other half of switching servers.
+# And back in, which is the other half of switching servers. Sign-out returns
+# to the setup guide, so step through it again.
+- tapOn:
+    id: "intro-continue"
 - tapOn:
     id: "server-address"
 - inputText: "http://localhost:7272"
