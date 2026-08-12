@@ -199,14 +199,25 @@ was torn down and rebuilt every 400ms, refetching the transcript each time.
 
 Stated plainly, because a vague gaps list is worse than none.
 
-- **Native push is untested end to end.** The blocker is gone — the app is built
-  and installed on a real iPhone with an APNs key — but nothing has yet
-  delivered a notification through it, and `expo_push_token` is still empty.
-  The first token to land in that table is the proof. See
+- **Native push is untested end to end — but the code is complete.** The whole
+  path is wired: a Settings toggle calls `enablePush()`, which registers an Expo
+  token with `/api/push/expo`; the server sends on the transition to `blocked`
+  and drops `DeviceNotRegistered` tokens; the agents screen routes a tapped
+  notification to its pane. What is missing is not code but a device: the
+  simulator returns `Device.isDevice === false` and refuses to mint a token, so
+  the only place this can be proven is a real iPhone. `expo_push_token` is still
+  empty; the first token to land there is the proof. Do not go looking for
+  missing wiring — flip the toggle on the phone. Expo receipt polling (dropping a
+  token whose failure only shows in the receipt, not the ticket) is deliberately
+  not built: it is premature for a table with zero rows, and the common
+  invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
-- **The native app has never been tested by anything but hand.** `web/` has 164
-  browser tests; `mobile/` has none. Now that it is the product, that is the
-  largest single gap in this list.
+- **The native app's automated coverage is thin but no longer zero.** `mobile/`
+  has a handful of unit tests (`reconcile`, `feel`, `api`, `blocks`,
+  `new-agent`) and seven Maestro flows in `.maestro/` that drive the real app
+  against the stub. `web/` still has 164 browser tests to its five-or-so, so the
+  reader, the poller, and the SSH path are still largely proven by hand. Closing
+  that gap is the largest remaining test debt now that this is the product.
 - **The refresh problem is not root-caused.** The owner reports needing to
   refresh the page; two plausible causes were fixed (a render crash with no
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
