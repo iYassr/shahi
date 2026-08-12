@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
   label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2 },
   input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 40, justifyContent: "center", marginRight: 8 },
+  chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 44, justifyContent: "center", marginRight: 8 },
   chipOn: { borderColor: theme.peach },
   chipText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, maxWidth: 200 },
   chipTextOn: { color: theme.peach },

@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     padding: 4,
     marginTop: 8,
   },
-  segItem: { flex: 1, minHeight: 38, alignItems: "center", justifyContent: "center", borderRadius: 7, borderCurve: "continuous" },
+  segItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 7, borderCurve: "continuous" },
   segItemOn: { backgroundColor: theme.raised },
   segText: { color: theme.dim, fontFamily: theme.mono, fontSize: 13 },
   segTextOn: { color: theme.peach, fontWeight: "600" },
