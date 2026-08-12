@@ -40,11 +40,19 @@ SDKs.** No usage data is collected.
 
 ## Push notifications
 
-If you enable notifications, the app registers a push token with Apple's Push
-Notification service so your server can alert you when an agent needs input. The
-token identifies your device to APNs; it is stored on your server to send you
-notifications and is not shared further. _(Update this section to match the
-notification implementation before publishing.)_
+Notifications are **off unless you turn them on.** If you enable them, the app
+obtains a push token and stores it on **your** server, which uses it to alert
+you when an agent needs input.
+
+Be aware of the delivery path, because it is the one place data leaves the
+loop between your phone and your own machine: the token is an **Expo** push
+token, and a notification your server sends is relayed through **Expo's push
+service** and then Apple's Push Notification service before it reaches your
+phone. The message carries the notification's title and body (for example, the
+agent's name and that it is waiting) and the id of the pane to open. Expo and
+Apple are third parties in this path; everything else in the app talks only to
+your server. If you would rather nothing transit a third party, leave
+notifications off — the app is fully usable without them.
 
 ## Children
 
