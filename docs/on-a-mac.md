@@ -43,7 +43,7 @@ again: `npx expo run:ios` handles that too.
 Two choices, and the second is usually the right one.
 
 **The real server**, if the Mac is on the tailnet: enter
-`https://ubuntu.taileb04e.ts.net` and the passcode. Live agents, real
+`https://<your-host>.<your-tailnet>.ts.net` and the passcode. Live agents, real
 transcripts, and every keystroke you send is real.
 
 **The stub**, for anything you would rather not do to a live session:
