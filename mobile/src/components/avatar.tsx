@@ -13,6 +13,7 @@ import { StyleSheet, Text } from "react-native";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSequence,
@@ -24,7 +25,10 @@ import { AGENT_ICONS, Icon } from "@/components/icons";
 
 export function Avatar({ pane }: { pane: DashboardPane }) {
   const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
-  const dancing = pane.status === "working";
+  // Honour Reduce Motion: the bob is decorative reinforcement of "working", and
+  // the row's status word carries the same meaning, so it is safe to still it.
+  const reduceMotion = useReducedMotion();
+  const dancing = pane.status === "working" && !reduceMotion;
   const t = useSharedValue(0);
   useEffect(() => {
     if (dancing) {
@@ -42,7 +46,14 @@ export function Avatar({ pane }: { pane: DashboardPane }) {
   }));
 
   return (
-    <Animated.View style={[styles.avatar, { borderColor: color }, dance]}>
+    <Animated.View
+      style={[styles.avatar, { borderColor: color }, dance]}
+      // The animation says "working" visually; give VoiceOver the same via a
+      // label, since the row's own text is a separate element.
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={`${pane.agent ?? (pane.isAgent ? "agent" : "shell")}, ${pane.status}`}
+    >
       {pane.agent && AGENT_ICONS[pane.agent] ? (
         <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
       ) : (
