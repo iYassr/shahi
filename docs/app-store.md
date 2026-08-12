@@ -27,13 +27,18 @@ marked **(you)** need a human — an account, a legal call, or a device.
   server you run (see onboarding) — or you invite "doesn't work" reviews.
 
 ## Functionality gates before a public launch
-- **SSH host-key verification** — currently the tunnel does not verify the
-  server's host key (review finding #1, a MITM risk). Ship this before people
-  rely on SSH. See `modules/ssh-tunnel/`.
-- **Push notifications** end to end — the headline feature; verify real delivery
-  on a device (the simulator cannot receive push). See `docs/notifications.md`.
-- **Accessibility** — touch targets ≥44pt and labels on icon-only controls
-  (partly addressed; audit before submission).
+- **SSH host-key verification** — **done.** The tunnel now reads the server's
+  SHA-256 host key after the handshake and refuses to authenticate if it does
+  not match what was stored on first use (trust-on-first-use, known hosts in the
+  Keychain). See `modules/ssh-tunnel/` and `mobile/src/lib/tunnel.ts`.
+- **Push notifications** end to end — code-complete (registration, blocked-state
+  send, tap routing all wired); **(you)** the one unproven step is real delivery
+  on a device, which the simulator cannot do. Turn on notifications on the phone
+  and confirm a token lands in `expo_push_token`. See `docs/notifications.md`.
+- **Accessibility** — **done for the first pass.** Touch targets raised to ≥44pt
+  across the key bar, filters, toggles, and chips; icon-only controls carry
+  `accessibilityLabel`s; the dancing avatar honours reduce-motion. A full
+  VoiceOver pass on a device is still worth doing before submission.
 
 ## Build & submit
 - `eas build --platform ios --profile production` (not `preview`), then
