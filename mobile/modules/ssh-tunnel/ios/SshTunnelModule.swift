@@ -24,8 +24,10 @@ public class SshTunnelModule: Module {
       self.tunnel = tunnel
       tunnel.open(config) { result in
         switch result {
-        case .success(let localPort):
-          promise.resolve(["localPort": localPort])
+        case .success(let opened):
+          // Hand back the host-key fingerprint so JS can store it (first use)
+          // or confirm it matched — see lib/tunnel.ts.
+          promise.resolve(["localPort": opened.localPort, "hostKey": opened.hostKey as Any])
         case .failure(let error):
           self.tunnel = nil
           promise.reject("ssh_tunnel", error.message)
@@ -53,23 +55,26 @@ struct OpenConfig: Record {
   @Field var password: String?
   @Field var privateKey: String?
   @Field var passphrase: String?
+  /** The SHA-256 host-key fingerprint remembered from a previous connection. */
+  @Field var expectedHostKey: String?
   @Field var remoteHost: String = "127.0.0.1"
   @Field var remotePort: Int
 }
 
 struct TunnelError: Error { let message: String }
+struct Opened { let localPort: Int; let hostKey: String? }
 
 final class Tunnel {
   private var forwarder: SshForwarder?
   private let queue = DispatchQueue(label: "shahi.ssh-tunnel", qos: .userInitiated)
 
-  func open(_ config: OpenConfig, completion: @escaping (Result<Int, TunnelError>) -> Void) {
+  func open(_ config: OpenConfig, completion: @escaping (Result<Opened, TunnelError>) -> Void) {
     queue.async {
-      // The forwarder does everything synchronously — connect, handshake, auth,
-      // then bind a local port (0 → the OS picks a free one) and splice each
-      // accepted connection to its own direct-tcpip channel. Separate channels
-      // mean the sidecar's WebSocket and its HTTP polls multiplex over the one
-      // session exactly as a real `-L` forward does. Hence the queue.
+      // The forwarder does everything synchronously — connect, handshake, verify
+      // the host key, auth, then bind a local port (0 → the OS picks a free one)
+      // and splice each accepted connection to its own direct-tcpip channel.
+      // Separate channels mean the sidecar's WebSocket and its HTTP polls
+      // multiplex over the one session exactly as a real `-L` forward does.
       let forwarder = SshForwarder(
         host: config.host,
         port: Int32(config.port),
@@ -77,13 +82,14 @@ final class Tunnel {
         password: config.password,
         privateKey: config.privateKey,
         passphrase: config.passphrase,
+        expectedHostKey: config.expectedHostKey,
         remoteHost: config.remoteHost,
         remotePort: Int32(config.remotePort)
       )
       self.forwarder = forwarder
       do {
         let localPort = try forwarder.start()
-        completion(.success(localPort.intValue))
+        completion(.success(Opened(localPort: localPort.intValue, hostKey: forwarder.hostKeyFingerprint)))
       } catch {
         self.forwarder = nil
         completion(.failure(TunnelError(message: (error as NSError).localizedDescription)))

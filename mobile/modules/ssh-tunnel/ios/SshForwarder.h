@@ -21,13 +21,22 @@ NS_ASSUME_NONNULL_BEGIN
                     password:(nullable NSString *)password
                   privateKey:(nullable NSString *)privateKey
                   passphrase:(nullable NSString *)passphrase
+             expectedHostKey:(nullable NSString *)expectedHostKey
                   remoteHost:(NSString *)remoteHost
                   remotePort:(int32_t)remotePort;
 
 /**
- * Connects, authenticates, and starts the forward, returning the local port it
- * listens on. Returns nil with a human-readable error on any failure — an
- * NSNumber (not a scalar) so Swift imports it as a throwing call.
+ * The server's SHA-256 host-key fingerprint (base64), captured during the
+ * handshake. The app stores it on first connect and passes it back as
+ * `expectedHostKey` next time, so a changed key is caught.
+ */
+@property (nonatomic, readonly, nullable) NSString *hostKeyFingerprint;
+
+/**
+ * Connects, verifies the host key, authenticates, and starts the forward,
+ * returning the local port it listens on. Returns nil with a human-readable
+ * error on any failure — an NSNumber (not a scalar) so Swift imports it as a
+ * throwing call. On a host-key mismatch the message contains "host key".
  */
 - (nullable NSNumber *)start:(NSError **)error;
 
