@@ -6,6 +6,7 @@
  * Run: bun run server/scripts/smoke.ts
  */
 import { HerdrClient, HerdrSubscriber, type AnyEvent } from "../lib/herdr-client";
+import { HERDR_PROTOCOL } from "../lib/herdr-schema";
 
 const client = new HerdrClient();
 let failures = 0;
@@ -19,7 +20,7 @@ console.log(`socket: ${client.socketPath}\n`);
 
 // 1. Handshake and protocol pin.
 const { version, protocol } = await client.connect();
-check("ping", protocol === 17, `herdr ${version}, protocol ${protocol}`);
+check("ping", protocol === HERDR_PROTOCOL, `herdr ${version}, protocol ${protocol}`);
 
 // 2. Whole-session snapshot.
 const { snapshot } = await client.rpc("session.snapshot", {});

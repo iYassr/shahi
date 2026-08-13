@@ -271,8 +271,8 @@ export function busySession(): Scenario {
 
   return {
     session: {
-      version: "0.7.5",
-      protocol: 17,
+      version: "0.8.0",
+      protocol: 19,
       defaultGrouping: null,
       workspaces: [
         space({ workspaceId: "w1", label: "project", status: "blocked", paneCount: 3, tabCount: 3 }),
@@ -307,8 +307,8 @@ export function busySession(): Scenario {
 export function emptySession(): Scenario {
   return {
     session: {
-      version: "0.7.5",
-      protocol: 17,
+      version: "0.8.0",
+      protocol: 19,
       defaultGrouping: null,
       workspaces: [],
       tabs: [],

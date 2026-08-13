@@ -24,7 +24,7 @@ name: Settings shows the connection and signs out
 
 - tapOn: "Settings"
 - assertVisible: ".*localhost:7272.*"
-- assertVisible: ".*protocol 17.*"
+- assertVisible: ".*protocol 19.*"
 - tapOn: "Sign out"
 - assertVisible: "Shahi"
 

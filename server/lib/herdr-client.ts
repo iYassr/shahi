@@ -2,21 +2,24 @@
  * Client for herdr's socket API.
  *
  * Transport is newline-delimited JSON over a unix domain socket. Two behaviours
- * of herdr 0.7.5 drive the shape of this module, and both contradict the
- * official docs at herdr.dev/docs/socket-api:
+ * measured against herdr 0.7.5 drove the shape of this module:
  *
- *  1. **The server closes the connection after writing one response.** The docs
- *     say connections are persistent and can carry sequential requests; on
- *     0.7.5 a second request on the same socket gets EPIPE, and pipelining two
- *     requests in one write yields one response then ECONNRESET. So `rpc()`
- *     opens a fresh socket per call and never pools.
+ *  1. **The server closed the connection after writing one response.** On 0.7.5
+ *     a second request on the same socket got EPIPE, and pipelining two requests
+ *     in one write yielded one response then ECONNRESET. So `rpc()` opens a
+ *     fresh socket per call and never pools.
  *
- *  2. **`events.subscribe` is the sole exception** — it holds the socket open
- *     and streams `{event, data}` lines until either side hangs up.
+ *     NOTE (0.8.0): the docs now describe an id-correlated connection that stays
+ *     open for subscriptions, which *implies* sequential RPCs on one socket may
+ *     work. Not re-measured. Opening a socket per RPC still works on 0.8.0, so
+ *     this is kept; if a live two-RPC-on-one-socket probe confirms persistence,
+ *     pooling is a real efficiency win. Match responses by `id` before pooling.
  *
- * Because this behaviour is undocumented it could change under us, so
- * `connect()` pins the protocol version at startup and complains loudly on a
- * mismatch rather than failing in some subtle way later.
+ *  2. **`events.subscribe` is the exception** — it holds the socket open and
+ *     streams `{event, data}` lines until either side hangs up.
+ *
+ * `connect()` checks the protocol at startup so a server too old for these
+ * generated types fails loudly rather than in some subtle way later.
  */
 import { connect as bunConnect, type Socket } from "bun";
 import { homedir } from "node:os";
@@ -242,11 +245,27 @@ export class HerdrClient {
     });
   }
 
-  /** Verifies the server is reachable and speaking the protocol we generated against. */
+  /**
+   * Verifies the server is reachable and speaks a protocol these types cover.
+   *
+   * The check is `>=`, not `===`. herdr's protocol drifted 14 → 19 across 0.7.x
+   * → 0.8.0 through purely *additive* changes — regenerating against 19 produced
+   * zero type errors — so an exact pin hard-fails on bumps that don't actually
+   * break us. A server *older* than the pin can be missing fields we rely on, so
+   * that still throws; a *newer* one only warns, since the drift has always been
+   * additive and re-`gen:types` is the fix, not a wall.
+   */
   async connect(): Promise<{ version: string; protocol: number }> {
     const pong = await this.rpc("ping", {});
-    if (pong.protocol !== HERDR_PROTOCOL) {
+    if (pong.protocol < HERDR_PROTOCOL) {
       throw new HerdrProtocolMismatch(HERDR_PROTOCOL, pong.protocol, pong.version);
+    }
+    if (pong.protocol > HERDR_PROTOCOL) {
+      console.warn(
+        `herdr speaks protocol ${pong.protocol} (v${pong.version}); these types were ` +
+          `generated from ${HERDR_PROTOCOL}. Additive so far, but run \`bun run gen:types\` ` +
+          `against this server and re-check the behaviours in herdr-client.ts.`,
+      );
     }
     return { version: pong.version, protocol: pong.protocol };
   }
