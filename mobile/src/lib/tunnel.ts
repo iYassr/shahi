@@ -98,17 +98,30 @@ export async function openTunnel(profile: SshProfile): Promise<string> {
   const host = profile.host.trim();
   const expectedHostKey = (await rememberedHostKey(host, profile.port)) ?? undefined;
 
-  const { localPort, hostKey } = await native.open({
-    host,
-    port: profile.port,
-    username: profile.username.trim(),
-    ...(profile.auth.kind === "password"
-      ? { password: profile.auth.password }
-      : { privateKey: profile.auth.privateKey, passphrase: profile.auth.passphrase }),
-    ...(expectedHostKey ? { expectedHostKey } : {}),
-    remoteHost: "127.0.0.1",
-    remotePort: profile.remotePort,
-  });
+  let opened;
+  try {
+    opened = await native.open({
+      host,
+      port: profile.port,
+      username: profile.username.trim(),
+      ...(profile.auth.kind === "password"
+        ? { password: profile.auth.password }
+        : { privateKey: profile.auth.privateKey, passphrase: profile.auth.passphrase }),
+      ...(expectedHostKey ? { expectedHostKey } : {}),
+      remoteHost: "127.0.0.1",
+      remotePort: profile.remotePort,
+    });
+  } catch (e) {
+    // The native reject sometimes arrives with no message ("undefined reason"),
+    // which tells the user nothing. Give them something actionable instead.
+    const msg = (e as Error)?.message;
+    throw new Error(
+      msg && msg !== "undefined"
+        ? msg
+        : `Couldn't open the SSH tunnel to ${host}:${profile.port}. Check the host, port, username, and key or password — and that the server allows this login.`,
+    );
+  }
+  const { localPort, hostKey } = opened;
 
   // First connection to this host: remember the key we just trusted, so the
   // next connection can catch a change.

@@ -13,6 +13,15 @@ marked **(you)** need a human — an account, a legal call, or a device.
   your legal position needs it, file the annual self-classification report with
   the US BIS. When in doubt, confirm with counsel.
 
+## App Transport Security
+- `NSAllowsArbitraryLoads: true` is set (`mobile/app.json`) because the Direct
+  connection talks plain HTTP to a **user-typed** server address — a tailnet
+  MagicDNS name or a raw `100.x` tailnet IP — so no fixed domain can be
+  whitelisted. **(you)** App Review will ask why: the answer is that the bytes
+  are already encrypted beneath HTTP (Tailscale carries Direct traffic over
+  WireGuard; the SSH mode tunnels to `127.0.0.1`), and the app connects only to
+  a server the user runs and configures. Put that in the review notes.
+
 ## Privacy
 - **(you)** Publish `docs/privacy-policy.md` at a stable URL and link it in App
   Store Connect. Have it reviewed first.
