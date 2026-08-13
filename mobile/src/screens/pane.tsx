@@ -148,6 +148,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** Mirror of `messages`, so merging does not need a functional setState. */
   const messagesRef = useRef<LogMessage[]>([]);
   /**
+   * Optimistic echo: your own reply, shown in the thread the instant you send,
+   * before the transcript poll fetches it back. Reconciled away once the real
+   * message lands (the transcript's `you` count passes this one's baseline) or
+   * after a short timeout, so a dropped send cannot leave a ghost behind.
+   */
+  const [pending, setPending] = useState<{ message: LogMessage; youBaseline: number; at: number }[]>([]);
+  const pendingSeq = useRef(0);
+  /**
    * Away from the tail, as state rather than the `following` ref, because the
    * jump pill has to render when it changes. `unseen` counts what arrived
    * while away — the pill's label, same as the web reader's.
@@ -182,7 +190,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
-  const { watch, session, terminalWidth, signOut } = useSession();
+  const { watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -297,6 +305,17 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           Date.now() - awaitingSince.current > 10 * 60_000)
       )
         endAwaiting();
+      // Retire an optimistic echo once its real message has landed — the
+      // transcript's `you` count has passed the baseline it was stamped with —
+      // or after 30s as a backstop, so a send that never persisted can't leave a
+      // permanent ghost. Same load that added the real message removes the echo,
+      // so they swap without a flicker or a double.
+      setPending((prev) => {
+        if (prev.length === 0) return prev;
+        const you = messagesRef.current.filter((m) => m.role === "you").length;
+        const kept = prev.filter((p) => p.youBaseline >= you && Date.now() - p.at < 30_000);
+        return kept.length === prev.length ? prev : kept;
+      });
       setReadable(true);
       setLoading(false);
     } catch (e) {
@@ -359,6 +378,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     };
   }, [load]);
 
+  // Event-driven refresh: the server already pushes a frame the instant this
+  // pane's content changes, so react to that instead of waiting for the next
+  // poll tick — a reply appears as fast as the server sees it. The timer above
+  // stays as a backstop for a dropped socket.
+  useEffect(() => onPaneFrame(paneId, () => void load()), [paneId, onPaneFrame, load]);
+
   function chase() {
     // Poll fast for a while: long enough to cover the agent's think time on a
     // quick reply, short enough that a walk-away pane settles back to idle.
@@ -406,15 +431,24 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     const text = draft.trim();
     if (!text) return;
     setSending(true);
-    // Before the send round-trip even starts, so the reader reacts the instant
-    // you tap rather than after the first poll lands.
+    // Echo the message into the thread and show "working", both before the send
+    // round-trip — the reader reacts the instant you tap, not after a poll. The
+    // baseline is the current `you` count so `load` can retire this echo once the
+    // real message lands.
+    const id = `pending-${(pendingSeq.current += 1)}`;
+    const youNow = messagesRef.current.filter((m) => m.role === "you").length;
+    const echo: LogMessage = { id, role: "you", at: Date.now(), blocks: [{ kind: "text", text }] };
+    setPending((prev) => [...prev, { message: echo, youBaseline: youNow + prev.length, at: Date.now() }]);
+    setDraft("");
     beginAwaiting();
     try {
       await api.send(paneId, text);
       committed();
-      setDraft("");
       chase();
     } catch (e) {
+      // The send did not land: pull the echo back and return the text to retry.
+      setPending((prev) => prev.filter((p) => p.message.id !== id));
+      setDraft(text);
       endAwaiting();
       refused();
       setError((e as Error).message);
@@ -500,7 +534,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
-          data={messages}
+          data={pending.length ? [...messages, ...pending.map((p) => p.message)] : messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           // Without this, the first tap anywhere in a scrollable only dismisses

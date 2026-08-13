@@ -1,0 +1,30 @@
+# Your own reply must appear in the thread the instant you send it, not when the
+# next transcript poll fetches it back. The test sends to an idle/done pane
+# ("Summarise the meeting") where the stub never has the agent reply, so the
+# message text showing up can only be the optimistic echo — which the real
+# transcript later reconciles away. It also checks the composer clears at once.
+appId: app.shahi.mobile
+name: Your reply echoes into the thread instantly
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: "Agents"
+- tapOn: ".*Summarise the meeting.*"
+- tapOn: "Reply to this agent…"
+- inputText: "optimistic echo check 42"
+- tapOn: "Send"
+- assertVisible: "optimistic echo check 42"
+- assertVisible: "Reply to this agent…"

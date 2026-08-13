@@ -54,6 +54,12 @@ interface SessionValue {
   refresh: () => void;
   /** Puts a pane on the fast poll interval while it is on screen. */
   watch: (paneId: string | null) => void;
+  /**
+   * Fires whenever the server pushes a fresh frame for a pane. The server
+   * already emits one on every content change; the reader turns it into an
+   * immediate refresh rather than waiting for its own poll tick.
+   */
+  onPaneFrame: (paneId: string, cb: () => void) => () => void;
   /** Drops a remembered prompt once it has been answered. */
   clearPrompt: (paneId: string) => void;
   /** Conversations kept on top of the list, by pane id, per device. */
@@ -167,6 +173,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [terminalWidth, setWidth] = useState(100);
   const [server, setServer] = useState("");
   const socketRef = useRef<SessionSocket | null>(null);
+  // Per-pane frame subscribers. A ref so `onMessage` (deps []) can reach them
+  // without being recreated, which would tear the socket down every time.
+  const frameListeners = useRef(new Map<string, Set<() => void>>());
   // The active SSH profile, when the connection is tunnelled — kept so sign-out
   // can tear the tunnel down and restore knows to re-open it.
   const sshProfile = useRef<SshProfile | null>(null);
@@ -260,7 +269,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       });
     } else if (msg.type === "prompt") {
       setPrompts((current) => ({ ...current, [msg.paneId]: msg.prompt }));
+    } else if (msg.type === "frame") {
+      // A content change on some pane. Wake whoever is watching that exact pane
+      // — the reader turns this into an immediate refresh, so a reply appears as
+      // fast as the server sees it rather than on the next client tick.
+      frameListeners.current.get(msg.frame.paneId)?.forEach((fn) => fn());
     }
+  }, []);
+
+  const onPaneFrame = useCallback((paneId: string, cb: () => void) => {
+    let set = frameListeners.current.get(paneId);
+    if (!set) {
+      set = new Set();
+      frameListeners.current.set(paneId, set);
+    }
+    set.add(cb);
+    return () => {
+      set.delete(cb);
+      if (set.size === 0) frameListeners.current.delete(paneId);
+    };
   }, []);
 
   const signOut = useCallback(() => {
@@ -349,6 +376,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setConnected(true);
       },
       watch: (paneId) => socketRef.current?.watch(paneId),
+      onPaneFrame,
       clearPrompt: (paneId) =>
         setPrompts((current) => {
           const next = { ...current };
@@ -362,7 +390,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setTerminalWidth,
       server,
     }),
-    [ready, connected, session, prompts, link, error, refresh, signOut, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
+    [ready, connected, session, prompts, link, error, refresh, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
