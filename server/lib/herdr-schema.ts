@@ -3,10 +3,10 @@
  * AUTO-GENERATED from herdr's bundled API schema. Do not edit by hand.
  * Regenerate with: bun run gen:types
  *
- * herdr protocol: 17, schema_version: 1
+ * herdr protocol: 19, schema_version: 1
  */
 
-export const HERDR_PROTOCOL = 17;
+export const HERDR_PROTOCOL = 19;
 export const HERDR_SCHEMA_VERSION = 1;
 
 /**
@@ -210,6 +210,9 @@ export type Subscription =
       type: "workspace.moved";
     }
   | {
+      type: "workspace.reordered";
+    }
+  | {
       type: "workspace.closed";
     }
   | {
@@ -311,7 +314,9 @@ export type IntegrationTarget =
   | "hermes"
   | "qodercli"
   | "cursor"
-  | "mastracode";
+  | "mastracode"
+  | "antigravity_cli"
+  | "grok";
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "LayoutNode".
@@ -479,6 +484,10 @@ export type Request =
   | {
       method: "workspace.move";
       params: WorkspaceMoveParams;
+    }
+  | {
+      method: "workspace.move_block";
+      params: WorkspaceMoveBlockParams;
     }
   | {
       method: "workspace.report_metadata";
@@ -821,6 +830,12 @@ export type EventData =
       workspaces: WorkspaceInfo[];
     }
   | {
+      before_workspace_id?: string | null;
+      type: "workspace_reordered";
+      workspace_ids: string[];
+      workspaces: WorkspaceInfo[];
+    }
+  | {
       type: "workspace_focused";
       workspace_id: string;
     }
@@ -944,6 +959,7 @@ export type EventKind =
   | "workspace_closed"
   | "workspace_renamed"
   | "workspace_moved"
+  | "workspace_reordered"
   | "workspace_focused"
   | "worktree_created"
   | "worktree_opened"
@@ -1932,6 +1948,14 @@ export interface WorkspaceCreateParams {
   };
   focus?: boolean;
   label?: string | null;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "WorkspaceMoveBlockParams".
+ */
+export interface WorkspaceMoveBlockParams {
+  before_workspace_id?: string | null;
+  workspace_ids: string[];
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
