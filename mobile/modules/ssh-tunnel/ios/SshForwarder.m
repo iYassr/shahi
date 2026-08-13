@@ -40,6 +40,9 @@ typedef struct Conn {
   int _sessionFd;
   LIBSSH2_SESSION *_ssh;
   volatile BOOL _running;
+  volatile BOOL _loopStarted;
+  BOOL _stopped;
+  dispatch_semaphore_t _loopDone;
   Conn *_conns;
 }
 
@@ -64,6 +67,9 @@ typedef struct Conn {
     _remotePort = remotePort;
     _listenFd = -1;
     _sessionFd = -1;
+    // Signalled by the select loop as it exits, so stop can wait for the loop
+    // to let go of the session before freeing it. See -stop.
+    _loopDone = dispatch_semaphore_create(0);
   }
   return self;
 }
@@ -149,6 +155,9 @@ typedef struct Conn {
   fcntl(fd, F_SETFL, O_NONBLOCK);
   _listenFd = fd;
   _running = YES;
+  // Set before the dispatch so a stop racing this sees a loop is coming and
+  // waits for it, rather than freeing the session out from under it.
+  _loopStarted = YES;
 
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     [self loop];
@@ -198,7 +207,10 @@ typedef struct Conn {
           ssize_t off = 0;
           while (off < n && !dead) {
             ssize_t w = libssh2_channel_write(c->channel, (char *)buf + off, n - off);
-            if (w == LIBSSH2_ERROR_EAGAIN) continue;
+            // On a congested uplink the write returns EAGAIN; block on the
+            // session socket until it drains rather than re-calling in a tight
+            // loop, which pinned a core (native-module audit).
+            if (w == LIBSSH2_ERROR_EAGAIN) { [self waitSocket]; continue; }
             if (w < 0) dead = YES; else off += w;
           }
         } else if (n == 0) {
@@ -234,6 +246,8 @@ typedef struct Conn {
     }
   }
   free(buf);
+  // Tell stop the loop has let go of the session; it is now safe to free it.
+  dispatch_semaphore_signal(_loopDone);
 }
 
 - (LIBSSH2_CHANNEL *)openChannel {
@@ -261,7 +275,18 @@ typedef struct Conn {
 }
 
 - (void)stop {
+  // Idempotent: a second stop must not wait on a semaphore the loop already
+  // signalled (it would block for the full timeout) or double-free anything.
+  if (_stopped) return;
+  _stopped = YES;
   _running = NO;
+  // Wait for the select loop to actually exit before freeing the session it is
+  // reading: libssh2 sessions are not thread-safe, and tearing one down under a
+  // live loop is a use-after-free on every close (native-module audit). The
+  // loop's select caps at 1s and every channel op is non-blocking, so this
+  // returns quickly; the 2s ceiling is insurance against a wedged loop.
+  if (_loopStarted)
+    dispatch_semaphore_wait(_loopDone, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
   Conn *c = _conns;
   while (c) {
     Conn *next = c->next;
