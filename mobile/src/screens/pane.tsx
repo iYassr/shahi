@@ -27,13 +27,13 @@ import { Stack } from "expo-router";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
 // wholesale, so a separately installed @react-navigation/elements would carry
 // its own context and read a height of 0. This one shares the router's.
-import { useHeaderHeight } from "expo-router/build/react-navigation/elements";
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { useKeyboardHeight } from "@/lib/keyboard";
 import { CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
-import { api, connection } from "@/lib/api";
+import { api, connection, UnauthorizedError } from "@/lib/api";
 import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -173,7 +173,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
-  const { watch, session, terminalWidth } = useSession();
+  const { watch, session, terminalWidth, signOut } = useSession();
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -275,7 +275,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       }
       setReadable(true);
       setLoading(false);
-    } catch {
+    } catch (e) {
+      // An expired cookie has to sign out, not be swallowed as "no transcript".
+      // The WebSocket only authenticates at handshake, so without this a stale
+      // session leaves the pane polling 401 forever while `link` still says
+      // LIVE — a dead pane that never recovers. (Found by the data-fetching
+      // audit.)
+      if (e instanceof UnauthorizedError) return signOut();
       // No transcript *yet*. A just-started agent has not written one, so this
       // keeps polling rather than latching — the reader fills in by itself the
       // moment the agent says something.
@@ -290,10 +296,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       // A working agent means a reply is imminent: keep polling fast so it
       // surfaces the instant it is written, not on the next idle tick.
       if (detail.frame?.activity) activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
-    } catch {
+    } catch (e) {
+      if (e instanceof UnauthorizedError) return signOut();
       // Transient; the next poll will catch up.
     }
-  }, [paneId]);
+  }, [paneId, signOut]);
 
   /**
    * Adaptive polling. 2.5s is right for reading, but glacial right after you

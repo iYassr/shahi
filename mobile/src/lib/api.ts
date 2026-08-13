@@ -172,7 +172,9 @@ export const api = {
   readFile: async (path: string): Promise<{ text: string } | { imageUrl: string }> => {
     if (!connection.baseUrl) throw new Error("No server address configured");
     const url = `${connection.baseUrl}/api/file?path=${encodeURIComponent(path)}`;
-    const res = await fetch(url, {
+    // Through fetchWithTimeout like every other request: a raw fetch here hung
+    // the file viewer forever on a dead host (data-fetching audit).
+    const res = await fetchWithTimeout(url, {
       headers: connection.cookie ? { cookie: connection.cookie } : undefined,
       credentials: "omit",
     });
@@ -220,12 +222,18 @@ export const api = {
     const body = new FormData();
     // React Native's FormData takes this shape rather than a File.
     body.append("file", { uri: file.uri, name: file.name, type: file.type } as never);
-    const res = await fetch(`${connection.baseUrl}/api/uploads`, {
-      method: "POST",
-      headers: connection.cookie ? { cookie: connection.cookie } : {},
-      body,
-      credentials: "omit", // see `request`
-    });
+    // A photo over a slow tailnet needs longer than the default 15s, but still
+    // a bound: a raw fetch here hung forever on a dead host (data-fetching audit).
+    const res = await fetchWithTimeout(
+      `${connection.baseUrl}/api/uploads`,
+      {
+        method: "POST",
+        headers: connection.cookie ? { cookie: connection.cookie } : {},
+        body,
+        credentials: "omit", // see `request`
+      },
+      60_000,
+    );
     const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
     if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
     return payload;
