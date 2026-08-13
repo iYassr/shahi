@@ -156,6 +156,15 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [unseen, setUnseen] = useState(0);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
+  /**
+   * Optimistic "working" shown the instant you send, until the agent responds.
+   * The real `activity` comes from a poll, which lags the tap by a round trip —
+   * and when the activity parse misses entirely, nothing showed at all and the
+   * reply appeared out of a silence, which read as the app hanging. This bridges
+   * that gap: shown immediately on send, cleared once a new agent message lands
+   * or the agent goes idle.
+   */
+  const [awaiting, setAwaiting] = useState(false);
   const [readable, setReadable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -195,6 +204,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
   /** While `Date.now()` is under this, the poll runs at the fast cadence. */
   const activeUntil = useRef(0);
+  // Backing refs for the optimistic-working state, so `load` (a stable
+  // useCallback) can read and clear it without being torn down every send.
+  const awaitingRef = useRef(false);
+  const awaitingBaselineAgents = useRef(0);
+  const sawActivity = useRef(false);
+  const awaitingSince = useRef(0);
   /** Topmost visible message, kept fresh by the list's viewability callback. */
   const topItem = useRef<string | null>(null);
   /** Whether the restore's own deadline has been armed; see restore(). */
@@ -273,6 +288,15 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         messagesRef.current = folded;
         setMessages(folded);
       }
+      // The reply has landed once a new agent message exists since we sent — or,
+      // as a backstop against a stuck spinner, after ten minutes (an agent can
+      // legitimately think for many minutes, so this is generous).
+      if (
+        awaitingRef.current &&
+        (messagesRef.current.filter((m) => m.role === "agent").length > awaitingBaselineAgents.current ||
+          Date.now() - awaitingSince.current > 10 * 60_000)
+      )
+        endAwaiting();
       setReadable(true);
       setLoading(false);
     } catch (e) {
@@ -291,11 +315,19 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     try {
       const detail = await api.pane(paneId);
       setPrompt(detail.frame?.prompt ?? null);
-      setActivity(detail.frame?.activity ?? null);
+      const act = detail.frame?.activity ?? null;
+      setActivity(act);
       setScreen(detail.frame?.text ?? null);
-      // A working agent means a reply is imminent: keep polling fast so it
-      // surfaces the instant it is written, not on the next idle tick.
-      if (detail.frame?.activity) activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
+      if (act) {
+        // A working agent means a reply is imminent: keep polling fast so it
+        // surfaces the instant it is written, not on the next idle tick.
+        sawActivity.current = true;
+        activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
+      } else if (awaitingRef.current && sawActivity.current) {
+        // We saw it working and now it is idle — done, even if we did not catch
+        // the reply's message on this exact tick.
+        endAwaiting();
+      }
     } catch (e) {
       if (e instanceof UnauthorizedError) return signOut();
       // Transient; the next poll will catch up.
@@ -334,6 +366,22 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     void load();
   }
 
+  // Show "working" now, before any poll can. Baseline the agent-message count so
+  // `load` can tell when the reply has actually arrived.
+  function beginAwaiting() {
+    awaitingBaselineAgents.current = messagesRef.current.filter((m) => m.role === "agent").length;
+    sawActivity.current = false;
+    awaitingSince.current = Date.now();
+    awaitingRef.current = true;
+    setAwaiting(true);
+  }
+
+  function endAwaiting() {
+    if (!awaitingRef.current) return;
+    awaitingRef.current = false;
+    setAwaiting(false);
+  }
+
   function jumpToLatest() {
     following.current = true;
     scrollMemory.set(paneId, "bottom");
@@ -343,11 +391,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   async function answer(index: number) {
+    setPrompt(null);
+    beginAwaiting();
     try {
       await api.answerPrompt(paneId, index);
-      setPrompt(null);
       chase();
     } catch (e) {
+      endAwaiting();
       setError((e as Error).message);
     }
   }
@@ -356,12 +406,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     const text = draft.trim();
     if (!text) return;
     setSending(true);
+    // Before the send round-trip even starts, so the reader reacts the instant
+    // you tap rather than after the first poll lands.
+    beginAwaiting();
     try {
       await api.send(paneId, text);
       committed();
       setDraft("");
       chase();
     } catch (e) {
+      endAwaiting();
       refused();
       setError((e as Error).message);
     } finally {
@@ -497,7 +551,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             }
             if (following.current) listRef.current?.scrollToEnd({ animated: false });
           }}
-          ListFooterComponent={activity ? <Working activity={activity} /> : null}
+          ListFooterComponent={
+            activity ? (
+              <Working activity={activity} />
+            ) : awaiting ? (
+              <Working activity={AWAITING_ACTIVITY} />
+            ) : null
+          }
         />
 
         {view === "reader" && away && (
@@ -909,6 +969,9 @@ function Screen({
     </View>
   );
 }
+
+/** The optimistic "working" shown between tapping send and the first poll. */
+const AWAITING_ACTIVITY: Activity = { verb: "Working", elapsed: "", detail: null };
 
 /** Stands in for the message still being written. */
 function Working({ activity }: { activity: Activity }) {
