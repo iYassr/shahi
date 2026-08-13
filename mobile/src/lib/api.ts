@@ -114,7 +114,15 @@ export const api = {
       // `request`.
       credentials: "omit",
     });
-    if (!res.ok) throw new Error("That passcode did not work.");
+    // Only a 401 is actually a bad passcode. A 502/503/504 means the address is
+    // reached but the sidecar behind it is not (e.g. a `tailscale serve` proxy
+    // pointing at the wrong port) — calling that "wrong passcode" sent people
+    // hunting for the wrong problem.
+    if (res.status === 401) throw new Error("That passcode did not work.");
+    if (!res.ok)
+      throw new Error(
+        `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,
+      );
     connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
     if (!connection.cookie) throw new Error("Server did not return a session");
     return connection.cookie;
