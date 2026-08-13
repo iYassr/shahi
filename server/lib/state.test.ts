@@ -45,8 +45,8 @@ const agent = (id: string, workspaceId: string, over: Partial<AgentInfo> = {}): 
 
 function snapshot(over: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
-    version: "0.7.5",
-    protocol: 17,
+    version: "0.8.0",
+    protocol: 19,
     workspaces: [workspace("w1")],
     tabs: [tab("w1:t1", "w1")],
     panes: [pane("w1:p1", "w1")],
@@ -74,7 +74,7 @@ describe("SessionStore", () => {
     const store = new SessionStore(client);
     await store.resync();
 
-    expect(store.state.version).toBe("0.7.5");
+    expect(store.state.version).toBe("0.8.0");
     expect(store.state.panes).toHaveLength(1);
     expect(store.pane("w1:p1")?.pane_id).toBe("w1:p1");
     expect(store.agent("w1:p1")?.pane_id).toBe("w1:p1");
