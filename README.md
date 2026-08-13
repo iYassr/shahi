@@ -1,49 +1,50 @@
 # Shahi
 
-A phone-shaped view of a running [herdr](https://herdr.dev) session: which agent
-needs you, what it is asking, and a way to answer it.
+**See and answer your terminal agents from your phone.**
+
+Shahi shows the AI agents running on a server you control — Claude Code, codex,
+plain shells — and lets you reply from anywhere. When an agent stops to ask a
+question, your phone shows the real question with its real options as native
+buttons; tap one and the answer goes back to the terminal. Everything else
+collapses to a single line, so a screen full of panes reads at a glance.
+
+<p align="center">
+  <img src="docs/screenshots/02-agents.png" width="23%" alt="Agents — what needs you right now, with a blocked agent's question rebuilt as native buttons" />
+  <img src="docs/screenshots/04-reader.png" width="23%" alt="Reader — an agent's conversation, reflowed to fit the phone, with a reply box" />
+  <img src="docs/screenshots/03-spaces.png" width="23%" alt="Spaces — where things live: spaces, their tabs, and their panes" />
+  <img src="docs/screenshots/01-onboarding.png" width="23%" alt="Onboarding — one command on your server, then connect" />
+</p>
+
+It talks to a small helper you install once on the machine your agents run on.
+Nothing is proxied through a server of ours — there is no "us" in the path.
+
+## What it is, and what it talks to
+
+Shahi is a native iOS app plus a sidecar you run next to your agents. Today the
+sidecar speaks to [**herdr**](https://herdr.dev), a terminal multiplexer.
+**tmux is the planned second backend** — the adapter is deliberately isolated
+(`server/lib/herdr-*.ts`) so a sibling can slot in beside it, and the app was
+named for the phone-shaped window rather than for one multiplexer. For now,
+**herdr is the only supported backend.**
 
 herdr's TUI is excellent on a desktop and painful on a phone — 146-column output
 on a four-inch screen, chord keybindings an iOS keyboard cannot produce, and
-dozens of panes to navigate blind. The project lists "no web view" as an explicit
-non-goal, so this is a sidecar rather than a fork: it owns herdr's unix socket
+dozens of panes to navigate blind. herdr lists "no web view" as an explicit
+non-goal, so Shahi is a sidecar rather than a fork: it owns herdr's unix socket
 and adds the three things herdr deliberately omits — HTTP, WebSocket, and
 authentication.
 
-Two views, matching how herdr splits its own sidebar. **Agents** is triage —
-what needs you right now. **Spaces** is structure — where things live, which
-tabs are in them, and where new work goes. Plain shells are reachable from
+The app has two views, matching how herdr splits its own sidebar. **Agents** is
+triage — what needs you right now. **Spaces** is structure — where things live,
+which tabs are in them, and where new work goes. Plain shells are reachable from
 Spaces; on a phone that is the only way to get at roughly half the panes in a
 real session.
 
-The home screen is not a terminal. A blocked agent gets a card carrying its real
-question and its real options, rebuilt as native buttons; everything else
-collapses to one line.
-
-```
-┌─────────────────────────────────────┐
-│ herdr                2 WAITING LIVE │
-├─────────────────────────────────────┤
-│ ● WAITING ON YOU                    │
-│ security program                    │
-│ claude · w4:p2 · enrich-reg-map-001 │
-│                                     │
-│ Claude has written up a plan and is │
-│ ready to execute. Would you like to │
-│ proceed?                            │
-│                                     │
-│ ❯ 1. Yes, and bypass permissions    │
-│   2. Yes, manually approve edits    │
-│   3. No, refine with Ultraplan      │
-│   4. Tell Claude what to change     │
-├─────────────────────────────────────┤
-│ EVERYTHING ELSE                     │
-│ ◐ herdr-mobile-dashboard       test │
-│ ○ ringtone-bird-prank          Naif │
-└─────────────────────────────────────┘
-```
-
 ## Setup
+
+Two parts: install the sidecar on your server, then connect the app.
+
+### 1. The server
 
 One command, on the machine herdr runs on:
 
@@ -51,16 +52,16 @@ One command, on the machine herdr runs on:
 curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
 ```
 
-It checks that herdr is there, fetches and builds, generates a passcode and the
-push keys, installs a systemd user service, enables lingering so it survives
-logout, and prints the address. Running it again upgrades in place and leaves
-your passcode alone.
+It checks that herdr is there, fetches and builds, generates a passcode, installs
+a systemd user service, enables lingering so it survives logout, and prints the
+address. Running it again upgrades in place and leaves your passcode alone.
 
-To do it by hand instead:
+<details>
+<summary>By hand instead</summary>
 
 ```sh
 bun install
-bun run gen:types                                          # from herdr's own schema
+bun run gen:types                                           # from herdr's own schema
 bun run server/scripts/init-secrets.ts --passcode <digits>  # writes .env, mode 0600
 bun run build:web
 bun run server/index.ts
@@ -73,37 +74,25 @@ cp deploy/shahi.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now shahi
 sudo loginctl enable-linger "$USER"     # survive logout
 ```
+</details>
 
-### Reaching it from a phone
+### 2. The app
 
-Two options, and the choice is really about notifications.
+Enter the address and passcode the installer printed. Two ways to reach the
+server, and the choice is really about how you already log in.
 
-**Bind the tailnet directly** — what the shipped unit does. Set
-`HOST=<your 100.x.y.z>` and the app answers on
-`http://<node>.<tailnet>.ts.net:7171` with no extra moving parts and no root.
+- **Over Tailscale** — bind the sidecar to your tailnet address and the app
+  connects to `https://<host>.<tailnet>.ts.net` directly. Put TLS in front with
+  `tailscale serve --bg --https=443 http://127.0.0.1:7171` so the connection is
+  a [secure context](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts)
+  — that is what lets notifications through.
+- **Over SSH** — the app opens its own SSH tunnel to the box (the same
+  credentials you already use) and forwards to the sidecar on loopback. Nothing
+  needs to be exposed on the tailnet at all. The server's host key is pinned on
+  first connect, so a changed key is refused before any credential is sent.
 
-Bind the Tailscale address specifically, not `0.0.0.0`: the latter also
-publishes on your LAN, which is a far larger audience than your tailnet.
-
-The cost is real, though. Plain HTTP is not a
-[secure context](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts),
-so the browser refuses to register a service worker — and a service worker is
-the only delivery path for Web Push. **Notifications will not arrive.** The
-dashboard, prompt answering and terminal all work normally. The server says so
-at startup rather than letting you discover it later.
-
-**Put TLS in front** — keeps `HOST` at loopback:
-
-```sh
-sudo tailscale serve --bg --https=443 http://127.0.0.1:7171
-```
-
-Tailscale supplies a real certificate for your node's name, so the page is a
-secure context: the PWA installs to the home screen and Web Push works. This is
-the option to choose if you want your phone to buzz when an agent blocks.
-
-**Never `tailscale funnel`** — that would put an unauthenticated-by-default
-herdr proxy on the public internet.
+**Never `tailscale funnel`** — that would put an unauthenticated-by-default herdr
+proxy on the public internet.
 
 ## Security
 
@@ -112,184 +101,96 @@ shell execution as you. Three layers, in order of importance:
 
 1. **Bind address.** Defaults to loopback. Widen it to a Tailscale address
    deliberately, never to `0.0.0.0`, which also publishes on your LAN.
-2. **Tailnet only.** Optionally tighten further with a tailnet ACL restricting
-   this node's port to your own devices.
-3. **App passcode.** Tailscale authenticates the *device*; the passcode
-   authenticates the person holding it. This is what protects you if a phone is
-   unlocked by someone else — and when bound off loopback it is the only layer
-   between the port and full control of every agent on the machine.
+2. **Tailnet or SSH only.** The port is never on the public internet; reach it
+   across your own tailnet, or tunnel to it over SSH.
+3. **App passcode.** Tailscale (or SSH) authenticates the *device*; the passcode
+   authenticates the *person* holding it. When the sidecar is bound off loopback
+   it is the only layer between the port and full control of every agent on the
+   machine.
 
 Terminal output is never logged — those screens carry whatever is in your
-terminals.
+terminals. Credentials (passcode, SSH key, host fingerprints) live only in the
+iOS Keychain and are never sent to anyone but your own server.
 
-## What herdr's API does and does not give you
+## Under the hood
 
-Everything below was measured against herdr 0.7.5 (protocol 17), and several
-points contradict the official docs. They shape the whole design.
+The parts that were surprising enough to be worth writing down. The full account
+for anyone changing the code is in [`CLAUDE.md`](CLAUDE.md).
+
+### The reader reads the agent's own transcript, not the terminal
+
+The pane screen herdr exposes is pre-wrapped at the server's width, ~42 rows
+deep, with no scrollback — anything built on it is scraping a redrawing TUI. But
+Claude Code writes its own structured JSONL transcript per session under
+`~/.claude/projects/`, and herdr's session id **is that file's name**. So the
+reader is a file read plus a renderer, with no terminal parsing at all, and it
+can reflow text because the text was never wrapped to begin with.
+
+Measured across 48 transcripts and 8,298 records, the format has one trap that
+dominates: **87% of `user` records are not from the user** — they carry
+`tool_result` blocks, because that is how tool output returns through the API.
+Rendering `type: "user"` as "you said" misattributes almost all tool output to
+the human, so tool calls are paired with their results and shown as one
+collapsible row. Only Claude Code writes this format; codex keeps its own store,
+and shells have no transcript, so the terminal view stays the universal fallback.
+
+### What herdr's API does and does not give you
+
+Measured against herdr 0.7.5 (protocol 17); several points contradict the
+official docs, and they shape the whole design.
 
 | | |
 |---|---|
 | **Transport** | Unix socket, newline-delimited JSON. No network surface at all — hence a sidecar. |
 | **Connections** | The server closes after **one** response, despite the docs saying connections are persistent. `events.subscribe` is the sole exception. |
-| **Live output** | There is none. `pane_output_changed` carries `{pane_id, revision}` and no content. Output only arrives by calling `pane.read`. |
-| **`revision`** | Does not track output. It stayed at `0` across four reads of a pane whose text was visibly changing. Change detection is a content hash. |
-| **Scrollback** | None. `lines=50`, `200` and `2000` all return the same 42 rows, and there is no scroll method. |
-| **Client size** | Cannot be declared. Output is pre-wrapped at the server's width, and `recent_unwrapped` returns the same text because Claude Code wraps its own output. |
-| **Status events** | `pane.updated` does **not** report `agent_status` transitions. Only `pane.agent_status_changed` does, and it needs a `pane_id` per subscription. |
-| **`cwd` on create** | Not tilde-expanded, and not rejected either — `~/foo` silently becomes `$HOME`. Always pass absolute paths. |
+| **Live output** | There is none. Change events carry `{pane_id, revision}` and no content; output arrives only by calling `pane.read`. |
+| **`revision`** | Does not track output — it stayed at `0` across four reads of a pane whose text was visibly changing. Change detection is a content hash. |
+| **Scrollback** | None from the API. Shahi records its own, diffing successive screens so the phone can read further back than the TUI can. |
+| **Client size** | Cannot be declared. Output is pre-wrapped at the server's width, so the app renders faithfully and lets you scale rather than re-wrapping. |
+| **Status events** | `pane.updated` does **not** report agent-status transitions. Relying on events alone drifted on 18 of 18 checks, so the mirror is re-snapshotted every few seconds. |
 
-Two of those turned into features rather than limitations:
+### Attachments
 
-- **The scrollback recorder** (`server/lib/transcript.ts`) diffs successive
-  screens and archives what scrolls off the top, so the phone can read further
-  back than the TUI can. Where output outran the poll interval it records a gap
-  marker rather than splicing unrelated output into something that reads as
-  continuous.
-- **Periodic re-snapshotting** (`server/lib/state.ts`) is what makes the
-  dashboard trustworthy. Relying on events alone drifted on 18 of 18 checks,
-  including `mirror=idle herdr=blocked` — the app silently missing the one agent
-  it exists to surface.
+Both a phone photo/file and a file browsed on the server end as an absolute path
+in the message, because that is what an agent can act on. Uploads never land in
+the agent's working directory, names are reduced to a safe basename
+(`../../../etc/passwd` becomes `passwd`), files are timestamped so two `IMG_0001.jpg`
+cannot collide, anything over 32MB is refused, and uploads older than two weeks
+are swept.
 
-## Reader view
+## Development
 
-The pane screen herdr exposes is pre-wrapped at the server's width, 42 rows
-deep, with no scrollback — anything built on it is scraping a redrawing TUI. But
-Claude Code writes its own structured JSONL transcript per session under
-`~/.claude/projects/`, and herdr's `agent_session.value` **is that file's name**.
-So the reader view is a file read plus a renderer, with no terminal parsing at
-all, and it can reflow text because the text was never wrapped to begin with.
-
-Measured across 48 transcripts and 8,298 records, the format has one trap that
-dominates everything else: **87% of `user` records are not from the user.** 1,509
-of 1,736 carry nothing but `tool_result` blocks, because that is how tool output
-returns through the API. Rendering `type: "user"` as "you said" misattributes
-almost all tool output to the human. `<task-notification>` blocks are the same
-trap in miniature. Tool calls are therefore paired with their results and shown
-as one collapsible row.
-
-Existing viewers for this format are worth knowing about —
-[claude-code-trace](https://github.com/delexw/claude-code-trace),
-[claude-code-log](https://github.com/daaain/claude-code-log),
-[claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) —
-but all are standalone apps with their own servers and UI, so none could sit
-above the answer buttons for a blocked agent. `claude-code-log`'s renderer was
-read as a reference for edge cases.
-
-Only Claude Code writes this format. `codex`, `pi` and `opencode` keep their own
-stores, and shells have no transcript at all, so the terminal view stays the
-universal fallback rather than a legacy one.
-
-## Grouping the agent list
-
-Three modes, using herdr's own vocabulary: **Priority** (its attention queue),
-**Space**, and **Agent**. The default is read from your `ui.agent_panel_sort` in
-`~/.config/herdr/config.toml`, so the phone opens the way your TUI already does;
-an explicit choice is remembered per device. herdr's socket API can reload
-config but cannot report it, so the file is read directly, and any failure just
-means "no preference stated".
-
-Blocked agents are deliberately **not** grouped. They stay pinned above the
-grouping control, because burying the one agent waiting on you inside the fifth
-space would defeat the screen.
-
-## Attachments
-
-Both sources end as an absolute path in the message, because that is what an
-agent can act on — it cannot receive a file over a terminal, but it can read one
-off disk, images included.
-
-- **From the phone** — photo library, Files, or straight to the camera. The file
-  uploads to `~/.local/share/shahi/uploads/` and is referenced by path.
-- **On the server** — browse from the pane's own directory and tap a file.
-
-Uploads never land in the agent's working directory: a file arriving from a
-phone should not be able to overwrite a source file the agent is mid-edit on.
-Names are reduced to a safe basename before use, so `../../../etc/passwd`
-becomes `passwd` inside the upload directory, and files are timestamped so two
-photos both called `IMG_0001.jpg` cannot overwrite each other. Anything over
-32MB is refused. Uploads older than two weeks are swept on the next write.
-
-## Checking it still works
-
-Unit tests cover the parser, the transcript recorder, auth, config, and the
-state mirror. The scripts talk to the live server; all are read-only except the
-last, which creates and closes its own scratch workspace.
+```
+shared/    the wire contract, types only — both clients import it
+server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
+mobile/    the Expo (React Native) app — the product, where new work goes
+web/       the React PWA, archived: still builds and passes, no longer developed
+e2e/       Playwright + Maestro, against a stub of the server
+```
 
 ```sh
-bun test server web/src
-
-bun run server/scripts/smoke.ts               # socket client end-to-end
-bun run server/scripts/check-parser-live.ts   # prompt parser across every pane
-bun run server/scripts/check-mirror-drift.ts  # mirror vs live snapshots
-bun run server/scripts/check-transcript-live.ts
-bun run server/scripts/check-http-live.ts     # auth boundary, WS, frame scoping
-bun run server/scripts/measure-poll-cost.ts   # polling load on the herdr server
-
-bun run server/scripts/verify-key-delivery.ts # what send_keys actually delivers
-
-# See what the phone sees, without a phone. Logs in properly rather than
-# disabling the gate, and emulates an iPhone viewport.
-SHAHI_PASSCODE=**** bun run server/scripts/screenshot.ts /pane/wE%3Ap1 out.png
+bun test shared/src server web/src        # unit
+cd mobile && bun run test                 # native unit tests (jest)
+bun run test:e2e                           # web engines, against the stub
+maestro test .maestro/                     # native flows, against the stub
+bun run typecheck                          # both clients share shared/, so this catches drift
 ```
 
-`check-parser-live` is the one worth re-running after a Claude Code upgrade: it
-sweeps every pane and fails on a false positive, which is the costly direction —
-offering answer buttons for a question nobody asked.
+The suite runs against `e2e/stub/server.ts`, which speaks the same contract with
+no herdr behind it and records writes instead of performing them — so tests never
+touch a live session. See [`CLAUDE.md`](CLAUDE.md) for how the pieces fit and the
+decisions worth not relitigating.
 
-## Answering strategy
-
-Key delivery is verified: `keys: ["2"]` puts a literal `2` on the process's
-stdin, and `["Down","Down","Enter"]` arrives in order as `\x1b[B \x1b[B \r`.
-
-Digits are the default because they do not depend on knowing where the cursor
-sits. If a tap ever fails to move a real prompt, flip `ANSWER_STRATEGY` in
-`web/src/api.ts` to `"arrows"`, which walks the cursor from the option the parser
-saw selected to the one you tapped.
-
-## The shared contract
-
-`shared/` holds every type that crosses the HTTP or WebSocket boundary, and
-nothing else — no runtime code, no `node:` or `bun:` imports, so a React Native
-client can import the same module.
-
-It exists because those types were previously declared twice: once in the server
-module that produced them, once by hand in the web client, with nothing
-enforcing agreement. Nine had drifted or nearly drifted — adding `activity` to
-`PaneFrame` meant remembering to edit two files, and `cwdPath` was briefly
-missing on the client.
-
-TypeScript now catches a mismatch, but not someone quietly declaring a fresh
-local copy — which is how the drift started. `shared/src/contract.test.ts`
-catches that, and fails if any contract name is re-declared outside `shared`.
-The one exemption is `server/lib/herdr-schema.ts`, which is generated from
-herdr's own API schema and legitimately declares herdr's `AgentStatus`.
-
-## Layout
-
-```
-shared/src/index.ts      every type that crosses the wire
-server/
-  index.ts               entry point
-  lib/herdr-client.ts    the socket: one connection per RPC, one held for events
-  lib/state.ts           session mirror — events plus periodic re-snapshot
-  lib/poller.ts          adaptive pane.read polling, hash-based change detection
-  lib/transcript.ts      scrollback herdr does not keep
-  lib/prompt-parser.ts   blocked screen -> question + options
-  lib/http.ts            REST, WebSocket, static assets
-  lib/auth.ts            passcode gate
-  lib/push.ts            Web Push on transition into blocked
-  fixtures/              real captured screens — see fixtures/README.md
-web/
-  src/components/Prompt.tsx  the answer list, rebuilt from the terminal's own
-```
+Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## More
 
-- [`docs/operations.md`](docs/operations.md) — running it: TLS, health, where
-  state lives, what to do when the phone cannot reach it
-- [`docs/notifications.md`](docs/notifications.md) — which combinations of
-  browser, install method and build can actually deliver a notification
-- [`docs/verify-on-device.md`](docs/verify-on-device.md) — the five minutes of
-  checking that no test on a Linux box can do for you
-- [`CLAUDE.md`](CLAUDE.md) — for anyone changing the code: what herdr actually
-  does as measured, and the decisions worth not relitigating
+- [`docs/operations.md`](docs/operations.md) — running it: TLS, health, where state lives
+- [`docs/notifications.md`](docs/notifications.md) — which setups can actually deliver a notification
+- [`docs/app-store.md`](docs/app-store.md) — what the iOS build needs before submission
+- [`docs/privacy-policy.md`](docs/privacy-policy.md) — draft privacy policy
+- [`CLAUDE.md`](CLAUDE.md) — the measured truth about herdr, and the architecture
+
+## License
+
+[MIT](LICENSE).
