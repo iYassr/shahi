@@ -107,11 +107,32 @@ export function onNotificationTapped(open: (paneId: string) => void): () => void
   let remove: (() => void) | undefined;
   let cancelled = false;
 
+  const route = (response: import("expo-notifications").NotificationResponse | null): string | null => {
+    const paneId = response?.notification.request.content.data?.paneId;
+    return typeof paneId === "string" && paneId ? paneId : null;
+  };
+
   void load().then((notifications) => {
     if (!notifications || cancelled) return;
+
+    // The tap that cold-launched the app from a killed state is delivered before
+    // any listener can attach — and this listener attaches only after the connect
+    // gate — so the live listener alone misses it. getLastNotificationResponseAsync
+    // returns that launching response so the deep link still lands; clear it after
+    // routing, since it persists and would otherwise re-open the pane on a later
+    // remount. (router audit)
+    void notifications.getLastNotificationResponseAsync().then((response) => {
+      if (cancelled) return;
+      const paneId = route(response);
+      if (paneId) {
+        open(paneId);
+        void notifications.clearLastNotificationResponseAsync();
+      }
+    });
+
     const subscription = notifications.addNotificationResponseReceivedListener((response) => {
-      const paneId = response.notification.request.content.data?.paneId;
-      if (typeof paneId === "string" && paneId) open(paneId);
+      const paneId = route(response);
+      if (paneId) open(paneId);
     });
     remove = () => subscription.remove();
   });
