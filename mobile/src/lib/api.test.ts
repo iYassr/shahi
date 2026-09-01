@@ -257,12 +257,12 @@ describe("semantic requests", () => {
     expect(body.clientMessageId.length).toBeGreaterThan(8);
   });
 
-  test("answering a numbered prompt presses its digit", async () => {
+  test("answering a prompt posts the option, never a keystroke", async () => {
     ok({ ok: true });
-    await api.answerPrompt("w1:p1", 2);
+    await api.answerPrompt("w1:p1", { index: 2, label: "Yes, I trust this folder" });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://localhost:7272/api/panes/w1%3Ap1/keys");
-    expect(JSON.parse(init.body)).toEqual({ keys: ["2"] });
+    expect(url).toBe("http://localhost:7272/api/panes/w1%3Ap1/answer");
+    expect(JSON.parse(init.body)).toEqual({ index: 2, label: "Yes, I trust this folder" });
   });
 
   test("a new space is a workspace request", async () => {

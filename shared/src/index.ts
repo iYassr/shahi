@@ -30,7 +30,7 @@ export * from "./relay";
  * carries `x-shahi-api`, and a mismatch is a clear 426 rather than a screen that
  * half-works.
  */
-export const SHAHI_API_VERSION = 2;
+export const SHAHI_API_VERSION = 3;
 
 /** What `GET /api/meta` answers, before any authentication. */
 export interface ServerInfo {
@@ -118,7 +118,10 @@ export interface InstalledAgent {
 /* ----------------------------------------------------------------- prompts */
 
 export interface PromptOption {
-  /** The number the user would press — 1-based, as displayed. */
+  /**
+   * 1-based, in display order. In a numbered menu it is the digit shown and
+   * the one the server presses; in a cursor menu it only names the row.
+   */
   index: number;
   label: string;
   /** True for the option currently under the cursor. */
@@ -135,6 +138,15 @@ export interface PromptOption {
 
 export interface ParsedPrompt {
   question: string;
+  /**
+   * How the terminal takes an answer: a `digit` menu (`❯ 1. Yes`) by its
+   * number, a `cursor` menu (Claude Code's folder-trust question) by arrow
+   * keys and Enter. The phone never presses either itself — it posts the
+   * option to `/api/panes/:id/answer` and the server, holding a fresh read of
+   * the screen, decides the keystrokes. Shown so the card can drop the
+   * numbers where they would mean nothing.
+   */
+  answer: "digit" | "cursor";
   options: PromptOption[];
   /**
    * What sits between the question and the options — the command an agent

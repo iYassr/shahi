@@ -1,0 +1,46 @@
+# Claude Code's first question in a new folder is an unnumbered menu:
+#
+#       No, exit
+#     ❯ Yes, I trust this folder
+#     Enter to confirm · Esc to cancel
+#
+# For months the phone showed "Nothing to read yet" over it, and the row it
+# defaults to quits the agent. The card must render it without digits (there
+# are none to press) and a tap must post the option to `/answer`, where the
+# server walks the cursor — never a digit to `/keys`.
+appId: app.shahi.mobile
+name: A cursor menu is answered from the card
+onFlowComplete:
+  - runScript: stub/reset.js
+---
+- runScript:
+    file: stub/set-scenario.js
+    env:
+      NAME: "trust"
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: "Agents"
+- extendedWaitUntil:
+    visible: ".*Yes, I trust this folder.*"
+    timeout: 15000
+# No "1." / "2." in front of the rows: nothing to press.
+- assertNotVisible: ".*1\\. No, exit.*"
+- assertNotVisible: ".*2\\. Yes, I trust this folder.*"
+- tapOn: ".*Yes, I trust this folder.*"
+- runScript:
+    file: stub/expect-answer.js
+    env:
+      LABEL: "Yes, I trust this folder"

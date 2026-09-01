@@ -299,3 +299,51 @@ describe("other agents", () => {
     ]);
   });
 });
+
+describe("an unnumbered cursor menu", () => {
+  test("parses Claude Code's folder-trust question, cursor and all", () => {
+    const parsed = parsePrompt(readFixture("blocked__trust-folder__text.txt"));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.answer).toBe("cursor");
+    expect(parsed!.question).toBe(
+      "Quick safety check: Is this a project you created or one you trust? (Like your own code, a " +
+        "well-known open source project, or work from your team). If not, take a moment to review " +
+        "what's in this folder first.",
+    );
+    // What sits between the question and the rows is context, same as codex's
+    // command block — it is the sentence that says what trusting means.
+    expect(parsed!.context).toEqual([
+      "Claude Code'll be able to read, edit, and execute files here.",
+      "Security guide",
+    ]);
+    expect(parsed!.options).toEqual([
+      { index: 1, label: "No, exit", selected: false },
+      { index: 2, label: "Yes, I trust this folder", selected: true },
+    ]);
+  });
+
+  test("a numbered menu still answers by digit", () => {
+    expect(parsePrompt(readFixture("blocked__w4-p2__text.txt"))!.answer).toBe("digit");
+  });
+
+  test("needs the rows to line up and exactly one cursor", () => {
+    // Prose above a confirm hint: the shell's `❯` echo and an indented note
+    // are not a menu, because their labels start in different columns.
+    const echo = ["❯ claude", "   Loading…", "", " Enter to confirm · Esc to cancel"].join("\n");
+    expect(parsePrompt(echo)).toBeNull();
+    // Two lit rows is a corrupted screen, not a choice.
+    const two = ["Pick?", "", " ❯ One", " ❯ Two", "", " Enter to confirm"].join("\n");
+    expect(parsePrompt(two)).toBeNull();
+    // Aligned rows with a hint but no cursor at all is a list, not a menu.
+    const none = ["Pick?", "", "   One", "   Two", "", " Enter to confirm"].join("\n");
+    expect(parsePrompt(none)).toBeNull();
+  });
+
+  test("without the confirm hint, aligned rows with a cursor are prose", () => {
+    // Claude Code's composer is a `❯` on its own line above the status bar;
+    // the glyph alone must never make a menu (see the header comment).
+    const composer = ["Done. Anything else?", "", " ❯ ", "   next step", ""].join("\n");
+    expect(parsePrompt(composer)).toBeNull();
+  });
+});

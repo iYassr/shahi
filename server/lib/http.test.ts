@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Auth } from "./auth";
@@ -25,6 +25,9 @@ import { TranscriptStore } from "./transcript";
 
 const PANE = "w1:p1";
 const PASSCODE = "2468";
+
+/** What the fake pane shows; tests that answer a prompt set it. */
+let screen = "";
 
 /** Enough of herdr for the routes under test; anything else is refused. */
 function fakeHerdr(calls: { method: string; params: unknown }[]): HerdrClient {
@@ -61,6 +64,8 @@ function fakeHerdr(calls: { method: string; params: unknown }[]): HerdrClient {
         case "pane.send_keys":
         case "pane.send_text":
           return {};
+        case "pane.read":
+          return { read: { text: screen } };
         case "workspace.list":
           return { workspaces: snapshot.workspaces };
         default:
@@ -186,6 +191,51 @@ describe("the routes anyone can reach are rate limited by address", () => {
     // The gated routes are not behind the limiter: the flood above did not
     // touch them.
     expect((await fetch(`${s.base}/api/session`, { headers: { cookie: s.cookie, "x-forwarded-for": "203.0.113.9" } })).status).toBe(200);
+  });
+});
+
+describe("answering a prompt", () => {
+  const url = () => `${s.base}/api/panes/${encodeURIComponent(PANE)}/answer`;
+  const post = (body: unknown) =>
+    fetch(url(), {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const pressed = (from: number) =>
+    s.calls.slice(from).filter((c) => c.method === "pane.send_keys").map((c) => (c.params as { keys: string[] }).keys);
+
+  test("walks a cursor menu from the lit row and confirms, in one send", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    const before = s.calls.length;
+    expect((await post({ index: 1, label: "No, exit" })).status).toBe(200);
+    expect(pressed(before)).toEqual([["Up", "Enter"]]);
+  });
+
+  test("presses the digit of a numbered menu", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__w4-p2__text.txt"), "utf8");
+    const before = s.calls.length;
+    expect((await post({ index: 2, label: "Yes, manually approve edits" })).status).toBe(200);
+    expect(pressed(before)).toEqual([["2"]]);
+  });
+
+  test("is a 409 and no keystroke once the prompt is gone or has changed", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "idle__w4-p1__text.txt"), "utf8");
+    const before = s.calls.length;
+    const gone = await post({ index: 1, label: "No, exit" });
+    expect(gone.status).toBe(409);
+    expect(((await gone.json()) as { code: string }).code).toBe("prompt_gone");
+
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    const changed = await post({ index: 1, label: "Yes, and bypass permissions" });
+    expect(changed.status).toBe(409);
+    expect(((await changed.json()) as { code: string }).code).toBe("prompt_changed");
+    expect(pressed(before)).toEqual([]);
+  });
+
+  test("refuses a body without the option it is answering", async () => {
+    expect((await post({ index: 1 })).status).toBe(400);
+    expect((await post({ label: "No, exit" })).status).toBe(400);
   });
 });
 

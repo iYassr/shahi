@@ -32,7 +32,7 @@ import { useKeyboardHeight } from "@/lib/keyboard";
 import { CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
+import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption } from "@shahi/shared";
 import { api, connection, UnauthorizedError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { committed, refused } from "@/lib/feel";
@@ -444,7 +444,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     listRef.current?.scrollToEnd({ animated: true });
   }
 
-  async function answer(index: number) {
+  async function answer(option: PromptOption) {
     setPrompt(null);
     beginAwaiting();
     // Chase from the tap, not from the reply to the request: the agent starts
@@ -452,7 +452,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // running when it does.
     chase();
     try {
-      await api.answerPrompt(paneId, index);
+      await api.answerPrompt(paneId, option);
     } catch (e) {
       endAwaiting();
       setError((e as Error).message);
@@ -759,7 +759,7 @@ function Prompt({
   onAnswer,
 }: {
   prompt: ParsedPrompt;
-  onAnswer: (index: number) => Promise<void>;
+  onAnswer: (option: PromptOption) => Promise<void>;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
   return (
@@ -774,13 +774,14 @@ function Prompt({
             disabled={armed !== null}
             onPress={() => {
               setArmed(option.index);
-              void onAnswer(option.index).catch(() => setArmed(null));
+              void onAnswer(option).catch(() => setArmed(null));
             }}
           >
             <Text style={styles.cursor}>
               {isArmed || (armed === null && option.selected) ? "❯" : " "}
             </Text>
-            <Text style={styles.choiceIndex}>{option.index}.</Text>
+            {/* The digit is what the terminal takes; a cursor menu has none. */}
+            {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
             <View style={styles.choiceBody}>
               <Text style={styles.choiceLabel}>{option.label}</Text>
               {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}

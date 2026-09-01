@@ -329,7 +329,7 @@ Bun.serve({
 
     // The semantic routes the native app uses. One prompt is one request; the
     // server, not the phone, knows about herdr methods and codex's paste delay.
-    const paneWrite = pathname.match(/^\/api\/panes\/([^/]+)\/(prompt|keys)$/);
+    const paneWrite = pathname.match(/^\/api\/panes\/([^/]+)\/(prompt|keys|answer)$/);
     if (paneWrite && req.method === "POST") {
       await record(req, pathname);
       const body = writes[writes.length - 1]!.body as { clientMessageId?: string } | null;

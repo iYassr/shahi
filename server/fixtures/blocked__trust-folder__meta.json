@@ -1,0 +1,19 @@
+{
+  "agent": "claude",
+  "agent_status": "blocked",
+  "cwd": "/private/tmp/trust-probe.vt9D",
+  "focused": false,
+  "foreground_cwd": "/private/tmp/trust-probe.vt9D",
+  "pane_id": "w4:p2",
+  "revision": 2,
+  "scroll": {
+    "max_offset_from_bottom": 0,
+    "offset_from_bottom": 0,
+    "viewport_rows": 39
+  },
+  "tab_id": "w4:t2",
+  "terminal_id": "term_65a732d6a3bb58",
+  "terminal_title": "claude",
+  "terminal_title_stripped": "claude",
+  "workspace_id": "w4"
+}
