@@ -8,13 +8,51 @@
  * adding `activity` to `PaneFrame` meant remembering to edit two files, and
  * adding `cwdPath` to a space was briefly forgotten on the client side.
  *
- * Deliberately types only, with no runtime code. A React Native client will
- * import this same module, and anything importing `node:` or `bun:` would stop
- * that working. Server-internal shapes — the session mirror, herdr's own schema
- * — stay in the server, because a client has no business knowing them.
+ * Deliberately types only, with one exception: `SHAHI_API_VERSION` is a value,
+ * because both sides must agree on one number and a type cannot be compared at
+ * runtime. A React Native client imports this same module, and anything
+ * importing `node:` or `bun:` would stop that working. Server-internal shapes
+ * — the session mirror, herdr's own schema — stay in the server, because a
+ * client has no business knowing them.
  */
 
 export * from "./modes";
+
+/* --------------------------------------------------------------- handshake */
+
+/**
+ * The version of this contract — the app↔sidecar API, not herdr's protocol.
+ *
+ * Bump it when a route or payload here changes in a way an older client would
+ * misread. A phone cannot be forced to update on the day the sidecar does, so
+ * the two negotiate: `GET /api/meta` says what the server speaks, every request
+ * carries `x-shahi-api`, and a mismatch is a clear 426 rather than a screen that
+ * half-works.
+ */
+export const SHAHI_API_VERSION = 1;
+
+/** What `GET /api/meta` answers, before any authentication. */
+export interface ServerInfo {
+  /** Stable per installation, minted once and kept in the database. */
+  serverId: string;
+  serverVersion: string;
+  /** The contract versions this server accepts, inclusive. */
+  api: { min: number; max: number };
+  herdr: { version: string; protocol: number };
+}
+
+/**
+ * The answer to `POST /api/panes/:id/prompt`: the prompt was handed to herdr.
+ *
+ * It confirms delivery only, never the agent's reply — that arrives through the
+ * transcript. `clientMessageId` is echoed so a retry after a timeout can be
+ * recognised as the same message and not sent twice.
+ */
+export interface PromptReceipt {
+  accepted: true;
+  clientMessageId: string;
+  acceptedAt: number;
+}
 
 /* ------------------------------------------------------------------ agents */
 
@@ -267,7 +305,14 @@ export type SocketMessage =
   | { type: "session"; session: Session }
   | { type: "frame"; frame: PaneFrame }
   | { type: "prompt"; paneId: string; prompt: ParsedPrompt }
-  | { type: "status"; change: StatusChange };
+  | { type: "status"; change: StatusChange }
+  /**
+   * The watched pane's transcript file grew. Sent only to the client watching
+   * that pane, and carrying no content: the reader fetches the tail it needs.
+   * `offset` is the file size seen, so a client can drop an event for data it
+   * already has.
+   */
+  | { type: "log_changed"; paneId: string; offset: number };
 
 /** What a client sends back. */
 export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch" };

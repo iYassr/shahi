@@ -8,8 +8,9 @@
  * Terminal output is never logged: these screens carry whatever is in the user's
  * terminals, including secrets.
  */
-import type { DashboardPane } from "@shahi/shared";
+import { SHAHI_API_VERSION, type DashboardPane, type PromptReceipt, type ServerInfo } from "@shahi/shared";
 import type { Server, ServerWebSocket } from "bun";
+import pkg from "../package.json" with { type: "json" };
 
 export type { DashboardPane };
 import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
@@ -18,8 +19,10 @@ import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor
 import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
-import { readCodexLog } from "./codex-log";
-import { previewFor, readSessionImage, readSessionLog } from "./session-log";
+import { findCodexRollout, readCodexLog } from "./codex-log";
+import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
+import { PromptReceipts, submitPrompt } from "./prompt";
+import { watchTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
@@ -32,6 +35,8 @@ interface SocketData {
   /** Pane this client currently has open, if any. */
   watchedPaneId: string | null;
   releaseWatch: (() => void) | null;
+  /** Stops the transcript-file watch that goes with `watchedPaneId`. */
+  releaseLog: (() => void) | null;
 }
 
 type Client = ServerWebSocket<SocketData>;
@@ -44,6 +49,8 @@ export interface HttpDeps {
   poller: Poller;
   transcript: TranscriptStore;
   push: PushService;
+  /** Minted once per installation; see `identity.ts`. */
+  serverId: string;
 }
 
 /**
@@ -69,8 +76,31 @@ const json = (body: unknown, init?: ResponseInit) =>
   });
 
 export function createServer(deps: HttpDeps): Server<SocketData> {
-  const { config, auth, client, store, poller, transcript, push } = deps;
+  const { config, auth, client, store, poller, transcript, push, serverId } = deps;
   const clients = new Set<Client>();
+
+  /** What a client learns before it authenticates. */
+  const serverInfo = (): ServerInfo => ({
+    serverId,
+    serverVersion: pkg.version,
+    api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
+    herdr: { version: store.state.version, protocol: store.state.protocol },
+  });
+
+  // Prompts already handed to herdr, by the phone's own message id, so a retry
+  // after a timeout gets the receipt back rather than a second delivery.
+  const receipts = new PromptReceipts<PromptReceipt>();
+
+  // The untyped view of the client the prompt module takes: it names three
+  // methods and a test wants to fake them.
+  const herdrRpc = (method: string, params: Record<string, unknown>) =>
+    client.rpc(method as Method, params as ParamsFor<Method>);
+
+  /** herdr said no (400, with its code) or something else broke (500). */
+  const failure = (err: unknown) =>
+    err instanceof HerdrError
+      ? json({ error: err.message, code: err.code }, { status: 400 })
+      : json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
 
   // herdr's own agent-panel preference, cached rather than re-read on every
   // broadcast. Refreshed whenever the dashboard is fetched, so editing
@@ -162,6 +192,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
       close(ws) {
         ws.data.releaseWatch?.();
+        ws.data.releaseLog?.();
         clients.delete(ws);
         poller.setClientCount(clients.size);
       },
@@ -179,6 +210,8 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         } else if (msg.type === "unwatch") {
           ws.data.releaseWatch?.();
           ws.data.releaseWatch = null;
+          ws.data.releaseLog?.();
+          ws.data.releaseLog = null;
           ws.data.watchedPaneId = null;
         }
       },
@@ -204,6 +237,30 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         const { pathname } = url;
 
         // --- unauthenticated ---
+        if (pathname === "/api/meta") return json(serverInfo());
+
+        // The contract version rides on every request, so a phone that kept its
+        // cookie across a server upgrade learns of a mismatch on the first call
+        // rather than from a screen that half-works. Absent means an older
+        // client that predates negotiation, or the archived web client, and is
+        // let through.
+        const claimed = req.headers.get("x-shahi-api");
+        if (claimed !== null) {
+          const n = Number(claimed);
+          if (!Number.isInteger(n) || n < SHAHI_API_VERSION || n > SHAHI_API_VERSION) {
+            return json(
+              {
+                error:
+                  n > SHAHI_API_VERSION
+                    ? "This server runs an older Shahi than the app. Update Shahi on this computer — run install.sh again."
+                    : "This app is older than the Shahi on this server. Update the app.",
+                api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
+              },
+              { status: 426 },
+            );
+          }
+        }
+
         if (pathname === "/api/auth/status") {
           return json({ required: !auth.disabled, authenticated: authorized(req) });
         }
@@ -230,7 +287,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
         if (pathname === "/ws") {
           const upgraded = srv.upgrade(req, {
-            data: { watchedPaneId: null, releaseWatch: null } satisfies SocketData,
+            data: { watchedPaneId: null, releaseWatch: null, releaseLog: null } satisfies SocketData,
           });
           return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
         }
@@ -309,6 +366,26 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
               return json({ error: err.message, code: err.code }, { status: 400 });
             }
             return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+          }
+        }
+
+        // A new space. Semantic rather than raw RPC so the phone never learns a
+        // herdr method name — the shape herdr wants stays the server's business.
+        if (pathname === "/api/workspaces" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { label?: string | null; cwd?: string | null };
+          // herdr does not expand `~`; it silently uses $HOME instead.
+          if (body.cwd && !body.cwd.startsWith("/")) {
+            return json({ error: "cwd must be an absolute path" }, { status: 400 });
+          }
+          try {
+            const created = await client.rpc("workspace.create", {
+              label: body.label ?? null,
+              cwd: body.cwd ?? null,
+              focus: false,
+            });
+            return json({ workspaceId: created.workspace.workspace_id });
+          } catch (err) {
+            return failure(err);
           }
         }
 
@@ -406,6 +483,52 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
           if (!store.pane(paneId)) return json({ error: "no such pane" }, { status: 404 });
 
+          // A conversational prompt: one request from the phone, and the choice
+          // between herdr's `agent.prompt` and the terminal sequence made here.
+          // See `prompt.ts` for why a blocked agent takes the terminal path.
+          if (sub === "/prompt" && req.method === "POST") {
+            const body = (await req.json().catch(() => ({}))) as { text?: string; clientMessageId?: string };
+            if (typeof body.text !== "string" || body.text.length === 0) {
+              return json({ error: "text is required" }, { status: 400 });
+            }
+            if (typeof body.clientMessageId !== "string" || body.clientMessageId.length === 0) {
+              return json({ error: "clientMessageId is required" }, { status: 400 });
+            }
+            const key = `${paneId}:${body.clientMessageId}`;
+            const seen = receipts.get(key);
+            if (seen) return json(seen);
+            const agent = store.agent(paneId);
+            try {
+              await submitPrompt(
+                herdrRpc,
+                { paneId, isAgent: agent !== undefined, status: agent?.agent_status ?? null },
+                body.text,
+              );
+            } catch (err) {
+              return failure(err);
+            }
+            const receipt: PromptReceipt = {
+              accepted: true,
+              clientMessageId: body.clientMessageId,
+              acceptedAt: Date.now(),
+            };
+            receipts.put(key, receipt);
+            return json(receipt);
+          }
+
+          // Key presses: a numbered answer, Escape, an arrow. Not a prompt.
+          if (sub === "/keys" && req.method === "POST") {
+            const body = (await req.json().catch(() => ({}))) as { keys?: unknown };
+            const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];
+            if (keys.length === 0) return json({ error: "keys is required" }, { status: 400 });
+            try {
+              await client.rpc("pane.send_keys", { pane_id: paneId, keys });
+              return json({ ok: true });
+            } catch (err) {
+              return failure(err);
+            }
+          }
+
           // Claude Code's own structured transcript, when this pane has one.
           // Far better than the recorded screen: real messages, full history,
           // and tool calls already paired with their results.
@@ -495,8 +618,10 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           }
         }
 
-        // Full control, as chosen: any herdr method may be invoked. The gate above
-        // is the boundary, not an allowlist here.
+        // Raw RPC, kept for the archived web client, which still speaks it. The
+        // native app does not: its writes go through the semantic routes above,
+        // so a herdr method rename never reaches a phone. Full control, as
+        // chosen — the gate above is the boundary, not an allowlist here.
         if (pathname === "/api/rpc" && req.method === "POST") {
           const body = (await req.json().catch(() => ({}))) as { method?: string; params?: unknown };
           if (!body.method) return json({ error: "method is required" }, { status: 400 });
@@ -532,6 +657,66 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     const frame = poller.frame(paneId);
     if (frame) ws.send(JSON.stringify({ type: "frame", frame }));
     else void poller.refresh(paneId);
+
+    ws.data.releaseLog?.();
+    ws.data.releaseLog = watchLog(ws, paneId);
+  }
+
+  /**
+   * Watches the pane's transcript file and tells this client when it grows.
+   *
+   * The reader is fed by the transcript, not the terminal, so this is the
+   * signal it actually wants: a reply lands in the file and the phone hears
+   * within the debounce window, instead of on its next 2.5s poll. The file may
+   * not exist yet for a just-started agent, so resolution is retried on each
+   * pushed frame — frames arrive while an agent works, and the first one after
+   * it has said something is when the file appears.
+   */
+  function watchLog(ws: Client, paneId: string): () => void {
+    let stopFile: (() => void) | null = null;
+    let resolving = false;
+    let stopped = false;
+
+    const resolveAndWatch = async () => {
+      if (stopped || stopFile || resolving) return;
+      resolving = true;
+      try {
+        const path = await transcriptPathFor(paneId);
+        if (stopped || !path) return;
+        stopFile = watchTranscript(path, (offset) => {
+          if (ws.data.watchedPaneId !== paneId) return;
+          ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));
+        });
+      } catch {
+        // Resolution is best-effort; the reader's own poll still covers it.
+      } finally {
+        resolving = false;
+      }
+    };
+
+    const onFrame = (frame: PaneFrame) => {
+      if (frame.paneId === paneId && !stopFile) void resolveAndWatch();
+    };
+    poller.on("frame", onFrame);
+    void resolveAndWatch();
+
+    return () => {
+      stopped = true;
+      poller.off("frame", onFrame);
+      stopFile?.();
+      stopFile = null;
+    };
+  }
+
+  /** The file the reader for this pane reads, if it has one yet. */
+  async function transcriptPathFor(paneId: string): Promise<string | null> {
+    const pane = store.pane(paneId);
+    if (!pane) return null;
+    if (pane.agent === "codex") {
+      return findCodexRollout(client, paneId, pane.cwd ?? null, pane.agent_session?.value ?? null);
+    }
+    const sessionId = pane.agent_session?.value;
+    return sessionId ? findTranscript(sessionId) : null;
   }
 
   return server;

@@ -37,6 +37,8 @@ const CONTRACT = [
   "InstalledAgent",
   "SocketMessage",
   "StatusChange",
+  "ServerInfo",
+  "PromptReceipt",
 ];
 
 function sourceFiles(dir: string): string[] {
