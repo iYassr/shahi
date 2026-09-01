@@ -35,8 +35,17 @@ The first run compiles the native project and takes a while; later runs are
 quick, and JavaScript edits arrive without a rebuild. This is the loop worth
 having — an EAS build is five minutes and this is a save away.
 
-Add a native module or change `app.json`, and the native project has to be built
-again: `npx expo run:ios` handles that too.
+Add a native module or change `app.json`, and the native project has to be
+regenerated *and* built again:
+
+```sh
+npx expo prebuild --platform ios && npx expo run:ios
+```
+
+`run:ios` alone does not re-read `app.json` once `ios/` exists. Measured: a
+build made that way still had `NSAllowsArbitraryLoads` false, so every plain
+`http://` address except localhost was refused by App Transport Security, and
+an afternoon went to a "TLS" error on a server with no TLS.
 
 ## Give it something to talk to
 
@@ -80,10 +89,13 @@ Two things the first local run taught:
   clears it; a simulator that has stopped answering `simctl` needs a shutdown
   and boot.
 
-Two flows today. One signs in, crosses the tab bar both ways and opens a pane —
-the route restructure and the native tab bar, which nothing else can verify. The
-other opens New agent and checks every claude permission mode is offered,
-because getting that wrong means an agent runs with flags nobody chose.
+Ten flows today, all against the stub. The first signs in, crosses the tab bar
+both ways and opens a pane — the route restructure and the native tab bar,
+which nothing else can verify. Another opens New agent and checks every claude
+permission mode is offered, because getting that wrong means an agent runs with
+flags nobody chose. `cannot-reach-the-server.yaml` needs no stub at all: it
+connects to a name that cannot resolve and to a port with nothing behind it,
+and checks the words that come back name the address and not a Swift file.
 
 `maestro studio` opens an inspector against the running app, which is the
 fastest way to write the next flow: it shows you the selectors that exist rather
@@ -93,11 +105,21 @@ than the ones you hoped for.
 
 ```sh
 bun test shared/src server web/src   # 313, no device
-bun run test:mobile                  # 18 component tests, no simulator
+bun run test:mobile                  # 98 unit and component tests, no simulator
 bun run test:e2e                     # 164 browser tests, both engines
 ```
 
 The last one needs `bunx playwright install chromium webkit` first.
+
+The live suite against a real herdr runs here too, and this Mac has one. Start
+a second, headless herdr on its own socket so nothing touches your session —
+the path must be short, `sun_path` is about 104 bytes on macOS:
+
+```sh
+HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server &
+SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server stop
+```
 
 Two of the unit tests — the `installedAgents` detections in
 `server/lib/agents.test.ts` — can fail here with agents resolving to nothing.

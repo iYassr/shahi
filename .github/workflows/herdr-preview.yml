@@ -1,0 +1,78 @@
+# Tomorrow's herdr, tonight.
+#
+# herdr publishes a prerelease most days. Running Shahi's live suite against
+# the newest one turns "the next release broke us" into an issue filed the
+# night the change landed, with a week or more to react before it is stable.
+# It never blocks a push: a preview failure opens or updates an issue and
+# nothing else.
+name: herdr preview
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  preview:
+    name: real herdr (latest preview)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+
+      - name: Install the newest prerelease
+        id: herdr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api "repos/herdrdev/herdr/releases?per_page=20" --jq 'map(select(.prerelease))[0].tag_name')
+          url=$(gh api "repos/herdrdev/herdr/releases?per_page=20" \
+            --jq 'map(select(.prerelease))[0].assets[] | select(.name == "herdr-linux-x86_64") | .browser_download_url')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/herdr" "$url"
+          chmod +x "$HOME/.local/bin/herdr"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/herdr" --version
+
+      - name: Start a headless herdr
+        run: |
+          export HERDR_SOCKET_PATH=/tmp/shahi-ci.sock
+          nohup herdr server > /tmp/herdr-server.log 2>&1 &
+          for i in $(seq 1 60); do [ -S "$HERDR_SOCKET_PATH" ] && break; sleep 0.5; done
+          herdr status server
+
+      # PREVIEW relaxes only the exact-protocol check: a bump is reported in
+      # the log, and the behaviours are what have to hold.
+      - run: SHAHI_HERDR_LIVE=1 SHAHI_HERDR_PREVIEW=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+
+      - name: File or update the issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.herdr.outputs.tag }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="herdr preview $TAG breaks the live suite"
+          existing=$(gh issue list --state open --search "in:title \"herdr preview\" breaks the live suite" --json number --jq '.[0].number')
+          body="The nightly run against herdr prerelease \`$TAG\` failed: $RUN"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label herdr
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: herdr-preview-server-log
+          path: /tmp/herdr-server.log
+          if-no-files-found: ignore
+          retention-days: 7
