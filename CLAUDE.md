@@ -179,12 +179,15 @@ key, because a fresh install that ended at "no address to give a phone yet"
 was the whole onboarding problem: with the relay the first QR works from
 anywhere. The default is in code, not written to the user's file — on disk it
 would be every install's trust anchor for life, and the relay could never
-move. `RELAY_URL=` empty means direct-only. What the hook has to say also
-goes to herdr's notification tray (`herdr notification show`), without the
-passcode digits: the plugin log is where nobody looks, and a toast is every
-attached client. `plugin/bun.sh` installs bun during `herdr plugin install`
-only, and the `uninstall` action does the whole uninstall, service first,
-then `herdr plugin uninstall`.
+move. `RELAY_URL=` empty means direct-only. herdr 0.8.2 has no menu for plugin
+actions (the CLI and a bound key are the ways in) and its notifications are
+off by default, so the `pair` popup runs the setup itself when the service is
+missing: "install, then pair" is the whole flow and the first run's output is
+on a screen a person is looking at. `herdr notification show` is sent too,
+without the passcode digits — a toast is every attached client.
+`plugin/bun.sh` installs bun during `herdr plugin install` only, and the
+`uninstall` action does the whole uninstall, service first, then
+`herdr plugin uninstall`.
 
 **A phone is introduced by a code, and can be revoked.** `bun run
 server/scripts/pair.ts` prints a single-use, ten-minute code as a QR; the app

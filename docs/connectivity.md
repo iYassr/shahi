@@ -62,6 +62,16 @@ The honest cost: the E2E layer is **load-bearing, not decorative.** Get the key
 derivation or nonce handling wrong and a "blind" pipe becomes a plaintext pipe in
 front of a shell. This part gets a real crypto review, not a vibe check.
 
+Where that stands (2026-09-02): the relay became the herdr plugin's default
+way in (plugin 0.2.0) on two internal reviews — `docs/security-review.md`,
+E1–E3 and R1–R8, whose findings are fixed — and before an outside one. The
+reasons: the construction is small and standard (X25519, HKDF-SHA-256,
+ChaCha20-Poly1305, a counter nonce, strict ordering), the relay reads
+nothing, every install can turn it off with one line, and a first install
+that could not be reached from a phone at all was the larger risk to the
+product. What would revoke the default: an outside finding that the envelope
+leaks, which would be fixed before any relay carried a frame again.
+
 ### 2. SSH — kept for power users
 
 Already built (the native tunnel forwards to loopback, host key pinned on first
@@ -130,7 +140,9 @@ unfinished one.
    reachable from anywhere, and step 1 guarantees the tunnel only carries
    ciphertext.
 4. **Make it the default onboarding** in the app and the installer, with SSH and
-   Tailscale demoted to explicit alternatives.
+   Tailscale demoted to explicit alternatives. Done in the plugin (0.2.0).
 
-Step 1 is the one that matters most and the one most easily gotten wrong — do it
-first, in isolation, and have the crypto reviewed.
+Step 1 is the one that matters most and the one most easily gotten wrong — it
+was done first, in isolation, reviewed twice internally, and still wants an
+outside pair of eyes; the paragraph under "The honest cost" says why the
+default did not wait for that.
