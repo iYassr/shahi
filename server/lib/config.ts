@@ -40,6 +40,11 @@ export interface Config {
   vapid: { publicKey: string; privateKey: string; subject: string } | null;
   /** Directory of built frontend assets, when serving them from this process. */
   webRoot: string | null;
+  /**
+   * Base URL of a blind relay to dial into (`docs/relay.md`), or null to be
+   * reachable only directly. The box connects out; nothing is opened here.
+   */
+  relayUrl: string | null;
 }
 
 const DEFAULT_PORT = 7171;
@@ -82,6 +87,25 @@ function decodePasscodeHash(encoded: string | undefined): string {
   return hash;
 }
 
+/**
+ * The relay address, checked here rather than at dial time: a typo would
+ * otherwise be a reconnect loop in the log forever, with the box believing
+ * it was reachable from anywhere.
+ */
+function relayUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`RELAY_URL is not a URL: ${value}`);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(`RELAY_URL must be http(s), the address the Worker is deployed at: ${value}`);
+  }
+  return value.replace(/\/+$/, "");
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const vapidPublic = env.VAPID_PUBLIC_KEY;
   const vapidPrivate = env.VAPID_PRIVATE_KEY;
@@ -107,6 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           }
         : null,
     webRoot: env.WEB_ROOT ?? null,
+    relayUrl: relayUrl(env.RELAY_URL),
   };
 }
 
