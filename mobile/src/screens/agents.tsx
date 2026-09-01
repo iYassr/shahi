@@ -12,16 +12,17 @@ import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
-import { api } from "@/lib/api";
+import { api, IncompatibleServerError, UnreachableError } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
+import { Unreachable } from "@/components/unreachable";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
-  const { session, prompts, link, error, clearPrompt, pins, togglePin, server } = useSession();
+  const { session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, signOut } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   /** The row a long-press opened actions for. */
@@ -42,7 +43,29 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // session is on screen, a transient error must not replace the live list —
   // the next successful poll clears it (see `refresh`), and blanking the herd
   // over one blip was the "sticky failure" this review flagged.
-  if ((error ?? failure) && !session) return <Centered>{error ?? failure}</Centered>;
+  //
+  // When the server could not be read at all, say so properly: what was tried,
+  // what to check, a way to retry and a way out. The platform's own words used
+  // to land here — "A server with the specified hostname could not be found. at
+  // ExpoModulesCore/Promise.swift:56" — which reads as a crash, not a network.
+  if (error && !session) {
+    return (
+      <Unreachable
+        title={
+          error instanceof IncompatibleServerError
+            ? "Update needed"
+            : error instanceof UnreachableError
+              ? "Can't reach your server"
+              : "Your server returned an error"
+        }
+        message={error.message}
+        server={server}
+        onRetry={reconnect}
+        onSwitch={signOut}
+      />
+    );
+  }
+  if (failure && !session) return <Centered>{failure}</Centered>;
   if (!session) {
     return (
       <View style={styles.centered}>

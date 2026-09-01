@@ -1,0 +1,58 @@
+# A server that cannot be reached says so in words, not in Swift.
+#
+# Reported from a phone: connecting to an address that did not resolve showed
+# "fetch failed: unexpected exception: A server with the specified hostname
+# could not be found. at ExpoModulesCore/Promise.swift:56". This drives the two
+# failures anyone can produce on a simulator with no network tricks — a name
+# that cannot exist (`.invalid` is reserved to never resolve) and a local port
+# with nothing behind it — and checks the words that come back name the
+# address and never the file.
+appId: app.shahi.mobile
+name: A server that cannot be reached says so plainly
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
+
+# A hostname that does not exist.
+- tapOn:
+    id: "server-address"
+- inputText: "http://nowhere.invalid:7171"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- extendedWaitUntil:
+    visible: ".*Couldn't find nowhere.invalid:7171.*"
+    timeout: 20000
+- assertNotVisible: ".*Promise.swift.*"
+- assertNotVisible: ".*unexpected exception.*"
+
+# A port with nothing listening. The simulator shares the Mac's network, so
+# localhost is the Mac, and 7299 is nobody's. A fresh launch rather than
+# editing the field: a tap lands the cursor wherever the finger is, and
+# eraseText works backwards from there — the first draft left ":7171" behind.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7299"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- extendedWaitUntil:
+    visible: ".*Nothing answered at localhost:7299.*"
+    timeout: 20000
+- assertNotVisible: ".*Promise.swift.*"

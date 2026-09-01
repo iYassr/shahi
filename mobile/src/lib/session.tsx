@@ -44,20 +44,37 @@ interface SessionValue {
   session: Session | null;
   prompts: Record<string, ParsedPrompt>;
   link: LinkState;
-  error: string | null;
+  /**
+   * Why the session could not be read, when it could not. An `UnreachableError`
+   * from `lib/api` when the server was never reached; the object rather than
+   * its message, so a screen can tell that apart from a server that answered
+   * with a failure.
+   */
+  error: Error | null;
   /** Called by Connect once `api.login` has succeeded on a direct connection. */
   signIn: () => void;
   /** Called by Connect after an SSH tunnel is open and login has succeeded. */
   signInSsh: (profile: SshProfile) => void;
   signOut: () => void;
-  /** Ask the server for a fresh snapshot — after creating a space or a tab. */
-  refresh: () => void;
+  /**
+   * Ask the server for a fresh snapshot — after creating a space or a tab.
+   * Settles once the answer, or the failure, has been applied.
+   */
+  refresh: () => Promise<void>;
+  /**
+   * Reconnects the socket if it is down and re-reads the session. What coming
+   * back to the app does, and what "Try again" does when the server could not
+   * be reached — one path, so they cannot drift.
+   */
+  reconnect: () => Promise<void>;
   /** Puts a pane on the fast poll interval while it is on screen. */
   watch: (paneId: string | null) => void;
   /**
-   * Fires whenever the server pushes a fresh frame for a pane. The server
-   * already emits one on every content change; the reader turns it into an
-   * immediate refresh rather than waiting for its own poll tick.
+   * Fires whenever the server says a pane has something new: a pushed frame
+   * (the screen changed) or a `log_changed` (the transcript file grew). The
+   * reader treats both as "refresh now" rather than waiting for its own poll
+   * tick — the second is what makes a reply appear as soon as the agent writes
+   * it, not when the terminal happens to repaint.
    */
   onPaneFrame: (paneId: string, cb: () => void) => () => void;
   /** Drops a remembered prompt once it has been answered. */
@@ -167,7 +184,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
   const [link, setLink] = useState<LinkState>("connecting");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [pins, setPins] = useState<Set<string>>(new Set());
   // 100 columns: readable text that still shows most of a real line.
   const [terminalWidth, setWidth] = useState(100);
@@ -274,6 +291,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // — the reader turns this into an immediate refresh, so a reply appears as
       // fast as the server sees it rather than on the next client tick.
       frameListeners.current.get(msg.frame.paneId)?.forEach((fn) => fn());
+    } else if (msg.type === "log_changed") {
+      // The transcript itself grew — the signal the reader actually wants,
+      // since it is fed by the transcript and not the screen. Same wake-up.
+      frameListeners.current.get(msg.paneId)?.forEach((fn) => fn());
     }
   }, []);
 
@@ -304,7 +325,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refresh = useCallback(() => {
-    void api
+    return api
       .session()
       .then((s) => {
         setSession((prev) => reconcileSession(prev, s));
@@ -316,14 +337,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       .catch((e: Error) => {
         // An expired cookie is not an error to display; it is a sign-out.
         if (e instanceof UnauthorizedError) signOut();
-        else setError(e.message);
+        else setError(e);
       });
   }, [signOut]);
+
+  const reconnect = useCallback(() => {
+    socketRef.current?.ensureConnected();
+    return refresh();
+  }, [refresh]);
 
   useEffect(() => {
     if (!connected) return;
     setError(null);
-    refresh();
+    void refresh();
     const socket = new SessionSocket(onMessage, setLink);
     socket.connect();
     socketRef.current = socket;
@@ -340,11 +366,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!connected) return;
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
-      socketRef.current?.ensureConnected();
-      refresh();
+      void reconnect();
     });
     return () => sub.remove();
-  }, [connected, refresh]);
+  }, [connected, reconnect]);
 
   const value = useMemo<SessionValue>(
     () => ({
@@ -355,6 +380,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       link,
       error,
       refresh,
+      reconnect,
       signOut,
       signIn: () => {
         sshProfile.current = null;
@@ -390,7 +416,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setTerminalWidth,
       server,
     }),
-    [ready, connected, session, prompts, link, error, refresh, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
+    [ready, connected, session, prompts, link, error, refresh, reconnect, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
