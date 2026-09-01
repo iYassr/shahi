@@ -9,18 +9,21 @@ before changing anything.
 ```
 shared/    the wire contract, types only — both clients import it
 server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
+plugin/    the herdr plugin: startup hook, actions, the service it installs
 mobile/    the Expo app — the product, and where new work goes
 web/       the React PWA, archived: kept working, no longer developed
 e2e/       Playwright, against a stub of the server
 ```
 
-One command to a running install: `bash install.sh` (idempotent; upgrades in
-place and keeps your passcode). Building the iOS app needs a Mac — see
+`herdr-plugin.toml` at the root is how the sidecar is distributed: `herdr
+plugin install iYassr/shahi` (see `docs/plugin.md`). `bash install.sh` is the
+older path and still works (idempotent; upgrades in place and keeps your
+passcode). Building the iOS app needs a Mac — see
 `docs/on-a-mac.md`, which is also where the iOS tests are free rather than
 behind a paid EAS plan.
 
 ```sh
-bun test shared/src server web/src        # unit
+bun test shared/src server web/src plugin # unit
 bun run test:e2e                          # both engines, against the stub
 bun run test:e2e --project=ios            # WebKit only — what the phone runs
 bun run build:web && systemctl --user restart shahi   # deploy
@@ -141,6 +144,15 @@ in `shared/` is the number; `GET /api/meta` (unauthenticated) says what the
 server speaks, every request carries `x-shahi-api`, and a mismatch is a 426
 whose text says which side to update. Bump the number when a route or payload
 changes in a way an older client would misread — not for additions.
+
+**The plugin's startup hook installs a service; it is not the service.**
+herdr's `[[startup]]` commands are one-shot by contract — "not supervised
+daemons" — so `plugin/shahi.ts setup` renders a LaunchAgent or a systemd user
+unit, (re)starts it, and exits. It runs on every herdr start and always
+restarts, because a reinstall replaces the checkout under a sidecar that keeps
+running the old code from memory. Secrets live in herdr's per-plugin config
+directory, named by `SHAHI_ENV_FILE`, never in the checkout. The service
+follows the socket of whichever herdr ran the hook last.
 
 **A phone is introduced by a code, and can be revoked.** `bun run
 server/scripts/pair.ts` prints a single-use, ten-minute code as a QR; the app

@@ -46,18 +46,34 @@ Two parts: install the sidecar on your server, then connect the app.
 
 ### 1. The server
 
-One command, on the machine herdr runs on:
+Shahi is a herdr plugin. On the machine herdr runs on, with
+[bun](https://bun.sh) installed:
+
+```sh
+herdr plugin install iYassr/shahi
+# then start (or restart) herdr
+```
+
+herdr clones and builds it; on its next start it generates a passcode,
+installs a user service (launchd or systemd) that keeps the sidecar running,
+and prints where everything is — `herdr plugin log list --plugin shahi`
+shows that output, passcode included. Then **Pair a phone** from herdr's
+command palette (or `herdr plugin action invoke shahi.pair`) shows a QR to
+scan. Reinstalling upgrades in place and leaves your passcode alone.
+[`docs/plugin.md`](docs/plugin.md) has the rest: what goes where, the actions,
+updating, uninstalling cleanly.
+
+<details>
+<summary>The older installer, and by hand</summary>
+
+`install.sh` predates the plugin and still works — clone, build, secrets, a
+systemd user service, lingering enabled:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
 ```
 
-It checks that herdr is there, fetches and builds, generates a passcode, installs
-a systemd user service, enables lingering so it survives logout, and prints the
-address. Running it again upgrades in place and leaves your passcode alone.
-
-<details>
-<summary>By hand instead</summary>
+Or by hand:
 
 ```sh
 bun install
@@ -78,8 +94,9 @@ sudo loginctl enable-linger "$USER"     # survive logout
 
 ### 2. The app
 
-Enter the address and passcode the installer printed. Two ways to reach the
-server, and the choice is really about how you already log in.
+Scan the code from **Pair a phone**, or enter the address and passcode by
+hand. Two ways to reach the server, and the choice is really about how you
+already log in.
 
 - **Over Tailscale** — bind the sidecar to your tailnet address and the app
   connects to `https://<host>.<tailnet>.ts.net` directly. Put TLS in front with
@@ -185,6 +202,7 @@ Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## More
 
+- [`docs/plugin.md`](docs/plugin.md) — the herdr plugin: what it installs where, the actions, updating, uninstalling
 - [`docs/operations.md`](docs/operations.md) — running it: TLS, health, where state lives
 - [`docs/notifications.md`](docs/notifications.md) — which setups can actually deliver a notification
 - [`docs/app-store.md`](docs/app-store.md) — what the iOS build needs before submission
