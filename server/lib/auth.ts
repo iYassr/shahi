@@ -7,9 +7,12 @@
  * the user — so an unlocked phone in someone else's hand is the threat this
  * exists to stop.
  *
- * Sessions are stateless: an HMAC-signed `expiry.signature` cookie. There is one
- * user and one device class here; a session table would add moving parts without
- * adding safety.
+ * Sessions are stateless: an HMAC-signed `expiry[.deviceId].signature` cookie.
+ * There is one user, so there is no session table — but a phone that paired by
+ * scanning a code carries its device id in the token, and `deviceActive` is
+ * asked about it on every request. That is what makes revoking a phone take
+ * effect on its next request rather than when its cookie runs out, without a
+ * table of live sessions to keep in step.
  */
 import { password as bunPassword } from "bun";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -20,6 +23,17 @@ export interface AuthOptions {
   passcodeHash: string;
   sessionSecret: string;
   sessionTtlMs: number;
+  /**
+   * Whether a paired device may still act. Consulted every time a token that
+   * names a device is checked. Absent means every device token is accepted
+   * for as long as it is valid — fine for tests, never for the server.
+   */
+  deviceActive?: (deviceId: string) => boolean;
+}
+
+/** Who a valid token belongs to: a paired device, or a passcode login (null). */
+export interface Identity {
+  deviceId: string | null;
 }
 
 export class Auth {
@@ -44,27 +58,49 @@ export class Auth {
     }
   }
 
-  /** Mints a signed token valid for `sessionTtlMs`. */
-  issue(now = Date.now()): string {
+  /**
+   * Mints a signed token valid for `sessionTtlMs`, bound to a device when the
+   * session came from pairing. The id rides inside the signed part, so a token
+   * cannot be re-pointed at another device any more than its expiry can be
+   * extended.
+   */
+  issue(now = Date.now(), deviceId: string | null = null): string {
     const expiry = String(now + this.options.sessionTtlMs);
-    return `${expiry}.${this.#sign(expiry)}`;
+    const claims = deviceId ? `${expiry}.${deviceId}` : expiry;
+    return `${claims}.${this.#sign(claims)}`;
   }
 
   verifyToken(token: string | undefined, now = Date.now()): boolean {
-    if (this.disabled) return true;
-    if (!token) return false;
+    return this.identify(token, now) !== null;
+  }
+
+  /**
+   * Who is behind a token, or null when it does not grant a session.
+   *
+   * With the gate disabled everything is a session, but a valid device token
+   * still says which device — Settings can then name the phone it is on.
+   */
+  identify(token: string | undefined, now = Date.now()): Identity | null {
+    const open: Identity | null = this.disabled ? { deviceId: null } : null;
+    if (!token) return open;
 
     const separator = token.lastIndexOf(".");
-    if (separator <= 0) return false;
+    if (separator <= 0) return open;
 
-    const expiry = token.slice(0, separator);
+    const claims = token.slice(0, separator);
     const signature = token.slice(separator + 1);
 
-    // Check the signature before trusting the expiry it protects.
-    if (!this.#signatureMatches(expiry, signature)) return false;
+    // Check the signature before trusting anything it protects.
+    if (!this.#signatureMatches(claims, signature)) return open;
+
+    const dot = claims.indexOf(".");
+    const expiry = dot === -1 ? claims : claims.slice(0, dot);
+    const deviceId = dot === -1 ? null : claims.slice(dot + 1);
 
     const expiresAt = Number(expiry);
-    return Number.isFinite(expiresAt) && expiresAt > now;
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) return open;
+    if (deviceId !== null && (deviceId === "" || !(this.options.deviceActive?.(deviceId) ?? true))) return open;
+    return { deviceId };
   }
 
   cookie(token: string): string {
