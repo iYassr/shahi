@@ -74,11 +74,17 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
  * and the real peer is in `x-forwarded-for`; the header is believed only then,
  * because from anywhere else it is just a header the client typed. Direct
  * tailnet binds see the peer itself.
+ *
+ * The *last* hop, not the first. A proxy appends the address it saw to
+ * whatever `x-forwarded-for` the client already sent (Go's reverse proxy and
+ * Cloudflare both do), so the first entry is the client's to choose and the
+ * last is the proxy's — and a limiter keyed on the first was a limiter the
+ * client could reset per request by rotating the header. Caught in review.
  */
 export function clientAddress(peer: string | null, forwardedFor: string | null): string {
   if (peer !== null && LOOPBACK.has(peer) && forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) return first;
+    const last = forwardedFor.split(",").at(-1)?.trim();
+    if (last) return last;
   }
   return peer ?? "unknown";
 }

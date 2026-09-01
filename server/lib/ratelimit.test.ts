@@ -48,8 +48,11 @@ describe("isRateLimitedPath", () => {
 });
 
 describe("clientAddress", () => {
-  test("believes x-forwarded-for only from a loopback peer", () => {
-    expect(clientAddress("127.0.0.1", "100.64.0.7, 10.0.0.1")).toBe("100.64.0.7");
+  test("believes x-forwarded-for only from a loopback peer, and only its last hop", () => {
+    // The proxy appends the address it saw; anything before it was typed by
+    // the client. A limiter keyed on the first entry was resettable per request.
+    expect(clientAddress("127.0.0.1", "1.2.3.4, 100.64.0.7")).toBe("100.64.0.7");
+    expect(clientAddress("127.0.0.1", "spoofed, also-spoofed, 100.64.0.7")).toBe("100.64.0.7");
     expect(clientAddress("::1", "100.64.0.7")).toBe("100.64.0.7");
     // A remote peer's header is just a header.
     expect(clientAddress("100.64.0.9", "1.2.3.4")).toBe("100.64.0.9");
