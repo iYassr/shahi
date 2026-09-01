@@ -34,7 +34,7 @@ jobs:
       # otherwise invisible until someone tries to build the one nobody runs.
       - run: bun run typecheck
 
-      - run: bun test shared/src server web/src
+      - run: bun test shared/src server web/src plugin
 
       # The native app runs on a different runner: jest-expo renders real
       # components in a JS environment, which is the only automated coverage
