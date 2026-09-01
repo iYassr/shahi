@@ -39,6 +39,10 @@ const CONTRACT = [
   "StatusChange",
   "ServerInfo",
   "PromptReceipt",
+  "PairingPayload",
+  "PairingCode",
+  "PairedDevice",
+  "DeviceList",
 ];
 
 function sourceFiles(dir: string): string[] {

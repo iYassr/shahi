@@ -16,6 +16,7 @@ import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrProtocolMismatch, HerdrSubscriber } from "./lib/herdr-client";
 import { createServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
+import { Devices, Pairing } from "./lib/pairing";
 import { Poller } from "./lib/poller";
 import { PushService } from "./lib/push";
 import { SessionStore } from "./lib/state";
@@ -47,10 +48,15 @@ const store = new SessionStore(client);
 const transcript = new TranscriptStore(config.dataPath);
 const poller = new Poller(client, store, transcript);
 const push = new PushService(db, config);
+const devices = new Devices(db);
+const pairing = new Pairing();
 const auth = new Auth({
   passcodeHash: config.passcodeHash,
   sessionSecret: config.sessionSecret,
   sessionTtlMs: config.sessionTtlMs,
+  // Asked on every request that carries a device token, so a revoked phone is
+  // out immediately rather than at cookie expiry. See pairing.ts.
+  deviceActive: (id) => devices.isActive(id),
 });
 
 store.on("error", (err) => console.error("state:", err.message));
@@ -84,7 +90,7 @@ store.startSync();
 poller.start();
 
 const serverId = serverIdentity(db);
-const server = createServer({ config, auth, client, store, poller, transcript, push, serverId });
+const server = createServer({ config, auth, client, store, poller, transcript, push, pairing, devices, serverId });
 
 const agents = store.state.agents.length;
 const blocked = store.state.agents.filter((a) => a.agent_status === "blocked").length;
@@ -96,6 +102,7 @@ console.log(
 );
 console.log(`  passcode ${auth.disabled ? "DISABLED — anyone reaching this port has full control" : "required"}`);
 console.log(`  push ${push.enabled ? `enabled, ${push.count()} subscription(s)` : "disabled (no VAPID keys)"}`);
+console.log(`  devices ${devices.list().length} paired — pair a phone: bun run server/scripts/pair.ts`);
 console.log(`  data ${config.dataPath}`);
 
 const loopback = config.host === "127.0.0.1" || config.host === "localhost" || config.host === "::1";

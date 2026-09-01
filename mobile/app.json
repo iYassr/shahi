@@ -50,7 +50,16 @@
         }
       ],
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Shahi uses the camera to scan the pairing code your server prints.",
+          "_comment": "Scanning only: no microphone string and no RECORD_AUDIO, so the app never claims a permission it has no use for.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

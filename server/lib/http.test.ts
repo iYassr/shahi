@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Auth } from "./auth";
+import { Devices, Pairing } from "./pairing";
 import type { Config } from "./config";
 import type { HerdrClient } from "./herdr-client";
 import { createServer } from "./http";
@@ -94,14 +95,27 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000 } = {}): Promi
     vapid: null,
     webRoot: null,
   };
-  const auth = new Auth({ passcodeHash, sessionSecret: config.sessionSecret, sessionTtlMs });
+  // Wired the way index.ts wires them: device sessions are checked against the
+  // devices table on every request, so revocation is immediate.
+  const db = new Database(dataPath, { create: true });
+  const devices = new Devices(db);
+  const pairing = new Pairing();
+  const auth = new Auth({
+    passcodeHash,
+    sessionSecret: config.sessionSecret,
+    sessionTtlMs,
+    deviceActive: (id) => devices.isActive(id),
+  });
   const store = new SessionStore(client);
   await store.resync();
   const transcript = new TranscriptStore(join(scratch, `t-${booted}.sqlite`));
   const poller = new Poller(client, store, transcript);
   poller.on("error", () => undefined);
-  const push = new PushService(new Database(dataPath, { create: true }), config);
-  const server = createServer({ config, auth, client, store, poller, transcript, push, serverId: "test-server" }, { heartbeatMs });
+  const push = new PushService(db, config);
+  const server = createServer(
+    { config, auth, client, store, poller, transcript, push, pairing, devices, serverId: "test-server" },
+    { heartbeatMs },
+  );
   const base = `http://127.0.0.1:${server.port}`;
   const login = await fetch(`${base}/api/auth/login`, {
     method: "POST",

@@ -8,7 +8,13 @@
  * Terminal output is never logged: these screens carry whatever is in the user's
  * terminals, including secrets.
  */
-import { SHAHI_API_VERSION, type DashboardPane, type PromptReceipt, type ServerInfo } from "@shahi/shared";
+import {
+  SHAHI_API_VERSION,
+  type DashboardPane,
+  type DeviceList,
+  type PromptReceipt,
+  type ServerInfo,
+} from "@shahi/shared";
 import type { Server, ServerWebSocket } from "bun";
 import pkg from "../package.json" with { type: "json" };
 
@@ -27,12 +33,15 @@ import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
+import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
 interface SocketData {
+  /** The paired device behind this socket, so revoking it can close it. */
+  deviceId: string | null;
   /** Pane this client currently has open, if any. */
   watchedPaneId: string | null;
   releaseWatch: (() => void) | null;
@@ -57,6 +66,8 @@ export interface HttpDeps {
   poller: Poller;
   transcript: TranscriptStore;
   push: PushService;
+  pairing: Pairing;
+  devices: Devices;
   /** Minted once per installation; see `identity.ts`. */
   serverId: string;
 }
@@ -159,7 +170,7 @@ export interface ServerOptions {
 }
 
 export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): Server<SocketData> {
-  const { config, auth, client, store, poller, transcript, push, serverId } = deps;
+  const { config, auth, client, store, poller, transcript, push, pairing, devices, serverId } = deps;
   const clients = new Set<Client>();
 
   // The routes that answer before the gate are the only ones anyone can hit.
@@ -196,8 +207,16 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     defaultGrouping = value;
   });
 
-  const authorized = (req: Request) =>
-    auth.verifyToken(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
+  const identify = (req: Request) => auth.identify(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
+
+  // A revoked device fails here, on its next request — `Auth` asks `devices`
+  // about every device token it sees. A live one is marked seen, so Settings
+  // can say which phones are still in use.
+  const authorized = (req: Request) => {
+    const who = identify(req);
+    if (who?.deviceId) devices.touch(who.deviceId);
+    return who !== null;
+  };
 
   // One throttle for the whole server: login attempts are serialised and slowed
   // after failures so the small passcode space cannot be brute-forced.
@@ -402,6 +421,26 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
         }
 
+        // A scanned code being redeemed. Through the same throttle as the
+        // passcode: a code is 256 bits and unguessable, but this route answers
+        // without a session and nothing unauthenticated should be free to hammer.
+        // The session it grants is bound to the new device, which is what
+        // makes it revocable — a passcode login is not, and never appears in
+        // the device list.
+        if (pathname === "/api/pair/claim" && req.method === "POST") {
+          const body = (await req.json().catch(() => ({}))) as { secret?: unknown; deviceName?: unknown };
+          const secret = typeof body.secret === "string" ? body.secret : "";
+          const ok = await loginThrottle.attempt(async () => pairing.claim(secret));
+          if (!ok) {
+            return json(
+              { error: "That pairing code is not valid. A code works once and for ten minutes — print a new one." },
+              { status: 401 },
+            );
+          }
+          const device = devices.create(typeof body.deviceName === "string" ? body.deviceName : "");
+          return json({ device }, { headers: { "set-cookie": auth.cookie(auth.issue(Date.now(), device.id)) } });
+        }
+
         // --- everything below requires a session ---
         if (pathname.startsWith("/api/") || pathname === "/ws") {
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
@@ -410,6 +449,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         if (pathname === "/ws") {
           const upgraded = srv.upgrade(req, {
             data: {
+              deviceId: identify(req)?.deviceId ?? null,
               watchedPaneId: null,
               releaseWatch: null,
               releaseLog: null,
@@ -417,6 +457,31 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             } satisfies SocketData,
           });
           return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
+        }
+
+        // Minting a code needs a session: `server/scripts/pair.ts` signs one
+        // for itself from the same SESSION_SECRET, so whoever can read .env on
+        // the box — the owner — can pair a phone, and nobody else can.
+        if (pathname === "/api/pair" && req.method === "POST") {
+          return json(pairing.mint());
+        }
+
+        if (pathname === "/api/devices" && req.method === "GET") {
+          const list: DeviceList = { devices: devices.list(), thisDeviceId: identify(req)?.deviceId ?? null };
+          return json(list);
+        }
+
+        // Revoking a phone: its cookie stops working on the next request (the
+        // gate above asks `devices`), and its open socket is closed here rather
+        // than left streaming the dashboard until it happens to drop.
+        const deviceMatch = pathname.match(/^\/api\/devices\/([^/]+)$/);
+        if (deviceMatch && req.method === "DELETE") {
+          const id = decodeURIComponent(deviceMatch[1]!);
+          if (!devices.revoke(id)) return json({ error: "no such device" }, { status: 404 });
+          for (const ws of clients) {
+            if (ws.data.deviceId === id) ws.close(4001, "device revoked");
+          }
+          return json({ ok: true });
         }
 
         if (pathname === "/api/session") {
