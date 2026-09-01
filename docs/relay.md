@@ -109,7 +109,9 @@ a replayed frame refused.
 id for the link and attaches it to every request it dispatches, so the sidecar's
 HTTP layer — the gate, revocation on every request, the 426 check, the routes —
 runs unchanged. Revoking the device closes its links. A link that opened with
-`auth.kind == "pairing"` may call exactly one route, `POST /api/pair/claim`,
+`auth.kind == "pairing"` may call exactly two routes: `GET /api/meta`, so the
+phone can check the `serverId` in the code against the box it reached before
+it hands over the secret, and `POST /api/pair/claim`,
 which consumes the code as today and now also answers
 `{"ok":true,"deviceId":"…","deviceSecret":"<base64url 32>"}`; the phone stores
 both and reconnects as a device. Any other path on a pairing link is `403`.
