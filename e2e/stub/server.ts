@@ -116,6 +116,18 @@ Bun.serve({
 
     /* ------------------------------------------------------------- auth -- */
 
+    // The handshake, before any authentication: what this server is and which
+    // contract versions it speaks. The values mirror the real server's shape;
+    // the app compares them before it ever asks for a passcode.
+    if (pathname === "/api/meta") {
+      return json({
+        serverId: "stub-0000",
+        serverVersion: "0.1.0",
+        api: { min: 1, max: 1 },
+        herdr: { version: scenario.session.version, protocol: scenario.session.protocol },
+      });
+    }
+
     if (pathname === "/api/auth/status") {
       return json({ required: true, authenticated: authorised(req) });
     }
@@ -242,6 +254,23 @@ Bun.serve({
 
     /* ------------------------------------------------------------ writes -- */
 
+    // The semantic routes the native app uses. One prompt is one request; the
+    // server, not the phone, knows about herdr methods and codex's paste delay.
+    const paneWrite = pathname.match(/^\/api\/panes\/([^/]+)\/(prompt|keys)$/);
+    if (paneWrite && req.method === "POST") {
+      await record(req, pathname);
+      const body = writes[writes.length - 1]!.body as { clientMessageId?: string } | null;
+      return paneWrite[2] === "prompt"
+        ? json({ accepted: true, clientMessageId: body?.clientMessageId ?? "", acceptedAt: Date.now() })
+        : json({ ok: true });
+    }
+
+    if (pathname === "/api/workspaces" && req.method === "POST") {
+      await record(req, pathname);
+      return json({ workspaceId: "w9" });
+    }
+
+    // Raw RPC stays for the archived web client, which still speaks it.
     if (pathname === "/api/rpc" && req.method === "POST") {
       await record(req, pathname);
       return json({ result: { type: "ok" } });

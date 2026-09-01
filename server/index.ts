@@ -15,6 +15,7 @@ import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrProtocolMismatch, HerdrSubscriber } from "./lib/herdr-client";
 import { createServer } from "./lib/http";
+import { serverIdentity } from "./lib/identity";
 import { Poller } from "./lib/poller";
 import { PushService } from "./lib/push";
 import { SessionStore } from "./lib/state";
@@ -82,7 +83,8 @@ subscriber.start();
 store.startSync();
 poller.start();
 
-const server = createServer({ config, auth, client, store, poller, transcript, push });
+const serverId = serverIdentity(db);
+const server = createServer({ config, auth, client, store, poller, transcript, push, serverId });
 
 const agents = store.state.agents.length;
 const blocked = store.state.agents.filter((a) => a.agent_status === "blocked").length;

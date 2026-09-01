@@ -60,7 +60,7 @@ export type { LogMessage, SessionLog };
  * round-trip through that encoding, would simply not be found. The id is a
  * UUID, so a scan is unambiguous.
  */
-async function findTranscript(sessionId: string): Promise<string | null> {
+export async function findTranscript(sessionId: string): Promise<string | null> {
   if (!/^[0-9a-f-]{16,64}$/i.test(sessionId)) return null;
 
   let projects: string[];
