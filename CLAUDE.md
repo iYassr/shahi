@@ -337,13 +337,22 @@ stream, and the HTTP routes including the 426 gate. CI runs it twice per push
 whatever `install.sh` hands out today — and nightly against the newest
 prerelease (`herdr-preview.yml`), which files an issue rather than failing a
 push. It writes only into a workspace it creates and closes, on a herdr you
-point it at explicitly:
+point it at explicitly — and that herdr must be a **named session**:
 
 ```sh
-HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server &     # a short path: sun_path is ~104 bytes
-SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
-HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server stop
+herdr --session shahi-ci server &                       # a named session: its own directory, starts empty
+export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
+herdr session stop shahi-ci
 ```
+
+`HERDR_SOCKET_PATH=/tmp/x.sock herdr server` is not isolation, and this was
+learned the expensive way: a second server on a new socket restores the
+*default* session's persisted state, and with `resume_agents_on_restore` (the
+default) it re-launches every agent in it — measured here as four duplicate
+`claude --resume` processes of the owner's live sessions, sitting in PTYs
+under the scratch server until it was stopped. A named session has its own
+directory under `~/.config/herdr/sessions/` and starts with nothing in it.
 
 A newer stable protocol fails the pinned job on purpose: regenerate
 (`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.

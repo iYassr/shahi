@@ -9,14 +9,18 @@
  * and nightly against the preview channel.
  *
  * It writes — into a scratch workspace it creates and closes, on a herdr it is
- * pointed at explicitly:
+ * pointed at explicitly, which must be a *named session*:
  *
- *   HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server &
- *   SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+ *   herdr --session shahi-ci server &
+ *   export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+ *   SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
  *
  * Both variables are required on purpose: without an explicit socket the
  * client would pick up the default session, and a scratch workspace appearing
- * in somebody's real session is not something a test should ever do.
+ * in somebody's real session is not something a test should ever do. And the
+ * session must be named, not just a socket override: `HERDR_SOCKET_PATH=/tmp/x
+ * herdr server` restores the default session's saved state and re-launches its
+ * agents as duplicates (measured: four extra `claude --resume` processes).
  *
  * SHAHI_HERDR_PREVIEW=1 relaxes the exact-protocol check to `>=`, so the
  * nightly run reports a protocol bump without failing on the bump alone —

@@ -44,14 +44,15 @@ jobs:
 
       - name: Start a headless herdr
         run: |
-          export HERDR_SOCKET_PATH=/tmp/shahi-ci.sock
-          nohup herdr server > /tmp/herdr-server.log 2>&1 &
+          nohup herdr --session shahi-ci server > /tmp/herdr-server.log 2>&1 &
+          export HERDR_SOCKET_PATH="$HOME/.config/herdr/sessions/shahi-ci/herdr.sock"
           for i in $(seq 1 60); do [ -S "$HERDR_SOCKET_PATH" ] && break; sleep 0.5; done
-          herdr status server
+          echo "HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH" >> "$GITHUB_ENV"
+          herdr session list
 
       # PREVIEW relaxes only the exact-protocol check: a bump is reported in
       # the log, and the behaviours are what have to hold.
-      - run: SHAHI_HERDR_LIVE=1 SHAHI_HERDR_PREVIEW=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+      - run: SHAHI_HERDR_LIVE=1 SHAHI_HERDR_PREVIEW=1 bun test server/lib/herdr-live.test.ts
 
       - name: File or update the issue
         if: failure()

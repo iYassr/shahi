@@ -111,14 +111,17 @@ bun run test:e2e                     # 164 browser tests, both engines
 
 The last one needs `bunx playwright install chromium webkit` first.
 
-The live suite against a real herdr runs here too, and this Mac has one. Start
-a second, headless herdr on its own socket so nothing touches your session —
-the path must be short, `sun_path` is about 104 bytes on macOS:
+The live suite against a real herdr runs here too, and this Mac has one. Run
+it against a **named session**, never a bare socket override: a second server
+started with only `HERDR_SOCKET_PATH` restores your default session's saved
+state and re-launches its agents as duplicates (four extra `claude --resume`
+processes, measured). A named session has its own directory and starts empty.
 
 ```sh
-HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server &
-SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
-HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server stop
+herdr --session shahi-ci server &                       # a named session: its own directory, starts empty
+export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
+herdr session stop shahi-ci
 ```
 
 Two of the unit tests — the `installedAgents` detections in
