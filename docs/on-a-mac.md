@@ -89,7 +89,7 @@ Two things the first local run taught:
   clears it; a simulator that has stopped answering `simctl` needs a shutdown
   and boot.
 
-Ten flows today, all against the stub. The first signs in, crosses the tab bar
+Eleven flows today, all against the stub. The first signs in, crosses the tab bar
 both ways and opens a pane — the route restructure and the native tab bar,
 which nothing else can verify. Another opens New agent and checks every claude
 permission mode is offered, because getting that wrong means an agent runs with
@@ -105,7 +105,7 @@ than the ones you hoped for.
 
 ```sh
 bun test shared/src server web/src   # 313, no device
-bun run test:mobile                  # 98 unit and component tests, no simulator
+bun run test:mobile                  # 121 unit and component tests, no simulator
 bun run test:e2e                     # 164 browser tests, both engines
 ```
 

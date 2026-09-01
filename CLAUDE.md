@@ -133,13 +133,23 @@ to `$HOME` and `/tmp` for tidiness rather than security.
 sidecar translates, so a herdr rename or a change in how a prompt is submitted
 never reaches an App Store binary that cannot be updated on the same day.
 `/api/rpc` still exists for the archived web client and for debugging; the
-native app must not call it.
+native app must not call it — and cannot: the server answers 403 to any
+request carrying `x-shahi-api`, which every native request does.
 
 **The app and the sidecar negotiate a contract version.** `SHAHI_API_VERSION`
 in `shared/` is the number; `GET /api/meta` (unauthenticated) says what the
 server speaks, every request carries `x-shahi-api`, and a mismatch is a 426
 whose text says which side to update. Bump the number when a route or payload
 changes in a way an older client would misread — not for additions.
+
+**A phone is introduced by a code, and can be revoked.** `bun run
+server/scripts/pair.ts` prints a single-use, ten-minute code as a QR; the app
+scans it, checks the server's identity against the code, and receives a
+session bound to a per-device row that Settings can revoke — immediately, on
+the next request and on the open socket. The passcode stays as the fallback
+and is not a device. See `docs/pairing.md`. The security posture of the whole
+surface, what was fixed and what is deferred to whom, is in
+`docs/security-review.md`.
 
 **The reader is pushed, and polls only to recover.** While a phone watches a
 pane the server watches that pane's transcript file and sends `log_changed`
@@ -256,10 +266,14 @@ Stated plainly, because a vague gaps list is worse than none.
   invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
 - **The native app's automated coverage is thin but no longer zero.** `mobile/`
-  has fourteen unit suites (the libs: `reconcile`, `feel`, `api`, `ssh`,
-  `tunnel`, `push`, `navigate`, `coalesce`; the components: `blocks`,
-  `new-agent`, `markdown`, `error-boundary`, `copy`, `unreachable`) and ten
-  Maestro flows in `.maestro/` that drive the real app against the stub. `web/` still has 164 browser tests,
+  has seventeen unit suites (the libs: `reconcile`, `feel`, `api`, `ssh`,
+  `tunnel`, `push`, `navigate`, `coalesce`, `pairing`; the screens and
+  components: `pane`, `blocks`, `new-agent`, `markdown`, `error-boundary`,
+  `copy`, `unreachable`, `paired-devices`) and eleven Maestro flows in
+  `.maestro/` that drive the real app against the stub. The reader is now
+  proven by `pane.test.tsx` — echo, working state, coalesced refresh,
+  concurrent fetches, sign-out on 401, the restore guard — each checked by
+  mutation: dropping the code fails exactly the test named for it. `web/` still has 164 browser tests,
   so the reader and the poller are still largely proven by hand. Closing that
   gap is the largest remaining test debt now that this is the product. One
   seam was moved to make the SSH and push tests possible: `push.ts` loads
@@ -283,7 +297,10 @@ Stated plainly, because a vague gaps list is worse than none.
   trustworthy transcript is the moment to abstract, not before.
 - **`agent.prompt` is not exercised against a real agent in CI.** The live
   suite proves it refuses a non-agent pane with a code; the runners have no
-  claude or codex to prompt. The terminal path is proven end to end.
+  claude or codex to prompt. On a machine that has one,
+  `SHAHI_HERDR_LIVE_AGENT=1` adds a test that starts a claude in the scratch
+  workspace and proves the agent path end to end. The terminal path is proven
+  everywhere.
 - **No timing instrumentation.** The send path was restructured on the
   proposal's measurements (herdr answers in under a millisecond; the delay was
   two round trips, a 200ms pause and up to 2.5s of polling). Content-free
