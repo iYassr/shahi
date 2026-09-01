@@ -49,6 +49,12 @@ secrets for phones:
   the box `{"t":"open","link":n}`; when the phone goes it tells the box
   `{"t":"close","link":n}`; the box can end a link with the same message.
 
+The relay cannot ping a box (a Durable Object cannot originate one), so the
+box sends the text frame `ping` every sixty seconds once ready; the relay
+answers `pong` without waking and closes a box silent for five minutes, whose
+phones then see `4404`. Both words are plain text, not JSON, and are the only
+text frames on a box socket that are not control messages.
+
 Data is binary frames. On the phone side a frame is the payload as is. On the
 box side every data frame is `link(4 bytes, big-endian) ‖ payload`, so one box
 socket carries every phone. Text frames are relay control only, as above.
