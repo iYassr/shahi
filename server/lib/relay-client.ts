@@ -55,6 +55,13 @@ export interface RelayClientOptions {
   maxBackoffMs?: number;
   /** How long to wait for `ready` before treating the connection as dead. */
   authTimeoutMs?: number;
+  /**
+   * How often to send the relay a text `ping` once ready. The Workers runtime
+   * cannot originate a ping from a Durable Object, so liveness is the box's
+   * job: the relay answers `pong` without waking, and drops a box silent for
+   * five minutes. Sixty seconds leaves four misses before that.
+   */
+  pingMs?: number;
 }
 
 /** The response headers a `res` carries; everything else stays on the box. */
@@ -94,6 +101,8 @@ export class RelayClient {
   #stopped = true;
   #backoffMs: number;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  #pingTimer: ReturnType<typeof setInterval> | undefined;
+  readonly #pingMs: number;
   readonly #links = new Map<number, Link>();
 
   constructor(deps: RelayClientDeps, options: RelayClientOptions = {}) {
@@ -102,6 +111,7 @@ export class RelayClient {
     this.#minBackoffMs = options.minBackoffMs ?? 500;
     this.#maxBackoffMs = options.maxBackoffMs ?? 30_000;
     this.#authTimeoutMs = options.authTimeoutMs ?? RELAY_LIMITS.boxAuthTimeoutMs;
+    this.#pingMs = options.pingMs ?? 60_000;
     this.#backoffMs = this.#minBackoffMs;
   }
 
@@ -120,6 +130,8 @@ export class RelayClient {
     this.#stopped = true;
     clearTimeout(this.#reconnectTimer);
     this.#reconnectTimer = undefined;
+    clearInterval(this.#pingTimer);
+    this.#pingTimer = undefined;
     this.#releaseAll();
     this.#ws?.close(1001, "shutting down");
     this.#ws = null;
@@ -154,6 +166,8 @@ export class RelayClient {
     ws.onclose = (event) => {
       clearTimeout(authTimer);
       if (this.#ws !== ws) return;
+      clearInterval(this.#pingTimer);
+      this.#pingTimer = undefined;
       this.#ws = null;
       const wasReady = this.#ready;
       this.#ready = false;
@@ -186,6 +200,10 @@ export class RelayClient {
         this.#ready = true;
         this.#backoffMs = this.#minBackoffMs;
         this.#log(`relay: connected to ${this.#deps.url} as ${this.#deps.identity.serverId}`);
+        clearInterval(this.#pingTimer);
+        this.#pingTimer = setInterval(() => {
+          if (this.#ws === ws && ws.readyState === WebSocket.OPEN) ws.send("ping");
+        }, this.#pingMs);
         return;
       case "open":
         // A relay reusing a number still held here is a relay that lost track;

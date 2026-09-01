@@ -40,7 +40,7 @@ import { serverIdFor, serverIdentity, type ServerIdentity } from "./identity";
 import { Devices, Pairing } from "./pairing";
 import { Poller } from "./poller";
 import { PushService } from "./push";
-import { RelayClient, boxUrl } from "./relay-client";
+import { RelayClient, boxUrl, type RelayClientOptions } from "./relay-client";
 import { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
 
@@ -77,6 +77,8 @@ interface FakeRelay {
   boxes: Map<string, BoxConn>;
   /** Auth frames seen, good or bad. */
   authAttempts: number;
+  /** Text `ping`s from boxes, each answered with `pong` as the Worker does. */
+  pings: number;
   boxConnections: number;
   /** When set, a box gets no challenge — a relay that accepted the socket and went quiet. */
   silent: boolean;
@@ -89,6 +91,7 @@ function fakeRelay(): FakeRelay {
     url: "",
     boxes: new Map(),
     authAttempts: 0,
+    pings: 0,
     boxConnections: 0,
     silent: false,
     dropBox: (serverId) => state.boxes.get(serverId)?.ws.close(1012, "relay restarting"),
@@ -128,6 +131,11 @@ function fakeRelay(): FakeRelay {
       message(ws, raw) {
         if (ws.data.role === "box") {
           if (typeof raw === "string") {
+            if (raw === "ping") {
+              state.pings += 1;
+              ws.send("pong");
+              return;
+            }
             const msg = JSON.parse(raw) as BoxToRelay;
             if (msg.t === "auth") {
               state.authAttempts += 1;
@@ -419,10 +427,10 @@ async function bootBox(): Promise<Box> {
   };
 }
 
-function dial(relay: FakeRelay, box: Box, identity = box.identity): RelayClient {
+function dial(relay: FakeRelay, box: Box, identity = box.identity, options: RelayClientOptions = {}): RelayClient {
   const client = new RelayClient(
     { url: relay.url, identity, devices: box.devices, pairing: box.pairing, auth: box.auth, server: box.server, log: (l) => box.log.push(l) },
-    { minBackoffMs: 20, maxBackoffMs: 200, authTimeoutMs: 150 },
+    { minBackoffMs: 20, maxBackoffMs: 200, authTimeoutMs: 150, ...options },
   );
   client.start();
   return client;
@@ -458,6 +466,21 @@ describe("box authentication", () => {
   test("a box that signs the challenge is ready, under the id its key hashes to", () => {
     expect(relay.boxes.has(box.identity.serverId)).toBe(true);
     expect(box.log.some((l) => l.startsWith("relay: connected"))).toBe(true);
+  });
+
+  // The Worker cannot ping a box; it drops one silent for five minutes. So
+  // the box pings, and the relay's `pong` must not be mistaken for control.
+  test("a ready box pings the relay on its own clock and shrugs at the pong", async () => {
+    const other = await bootBox();
+    const before = relay.pings;
+    const pinger = dial(relay, other, other.identity, { pingMs: 25 });
+    try {
+      await waitFor(() => relay.pings >= before + 3, "three pings");
+      expect(pinger.connected).toBe(true);
+    } finally {
+      pinger.stop();
+      await other.stop();
+    }
   });
 
   test("a box whose signature does not verify is closed with 4401 and keeps trying, never ready", async () => {
