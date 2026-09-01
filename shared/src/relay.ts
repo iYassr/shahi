@@ -57,7 +57,11 @@ export const RELAY_LIMITS = {
 
 /* --------------------------------------------- phone ↔ box, before sealing */
 
-/** The phone's first frame on a link, in the clear: who it claims to be, and its ephemeral key. */
+/**
+ * The phone's first frame on a link, in the clear: who it claims to be, and its
+ * ephemeral key. Sent as the UTF-8 bytes of the JSON in a *binary* frame — the
+ * relay forwards data frames only and drops text from phones.
+ */
 export interface PhoneHello {
   t: "hello";
   v: typeof RELAY_PROTOCOL;
@@ -69,7 +73,7 @@ export interface PhoneHello {
     | { kind: "pairing"; id: string };
 }
 
-/** The box's answer: its ephemeral key. Everything after this is sealed. */
+/** The box's answer, the same way (JSON bytes in a binary frame): its ephemeral key. Everything after this is sealed. */
 export interface BoxHello {
   t: "hello";
   v: typeof RELAY_PROTOCOL;

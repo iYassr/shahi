@@ -258,19 +258,19 @@ export class RelayLink {
       // against past sessions; the bytes come from the platform's CSPRNG.
       this.#self = ephemeral(getRandomBytes(32));
       const hello: PhoneHello = { t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(this.#self.pub), auth: this.target.auth };
-      socket.send(JSON.stringify(hello));
+      // Bytes, not text: the relay forwards data frames and drops text from
+      // phones, which is relay control. The box answers the same way.
+      socket.send(utf8.encode(JSON.stringify(hello)));
     };
     socket.onmessage = (event: { data: unknown }) => {
       this.#lastMessageAt = Date.now();
       if (typeof event.data === "string") {
-        // Only the hello is text; anything textual after it is not ours to read.
-        if (!this.#session) this.#onHello(event.data);
+        // The relay sends phones no text; whatever this is, it is not ours.
         return;
       }
       if (!this.#session) {
-        // Bytes before a hello: not a box speaking this protocol. Drop the
-        // socket and let the retry find out whether it was a blip.
-        socket.close();
+        // The first data frame is the box's hello, in the clear.
+        this.#onHello(utf8.decode(new Uint8Array(event.data as ArrayBuffer)));
         return;
       }
       let plain: Uint8Array;

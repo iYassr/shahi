@@ -68,7 +68,10 @@ is closed with `4404`, which is honest — the phone reconnects and asks again.
 
 ## What the box and phone do (end to end, opaque to the relay)
 
-**Hello.** The first frame from the phone is text:
+**Hello.** The first frame from the phone is a *binary* frame whose bytes are
+this JSON — binary because the relay forwards only data frames and drops
+text from phones (text is relay control). The box answers the same way: its
+hello is the first data frame back. Nothing else on a link is unsealed.
 
 ```json
 {"t":"hello","v":1,"pub":"<base64url X25519 ephemeral public key>",
