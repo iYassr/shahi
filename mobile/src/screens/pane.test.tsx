@@ -4,6 +4,12 @@ import type { LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, UnauthorizedError } from "@/lib/api";
 import { Pane } from "./pane";
 
+// The first test in this file pays for loading the screen and its mocks under
+// fake timers, and GitHub's ubuntu runner took more than Jest's 5s default
+// for it (a cold run of the whole file was 8.8s there; it is ~1s here). A
+// generous ceiling, not a wait: a passing test still finishes in the same time.
+jest.setTimeout(30_000);
+
 /**
  * The reader's behaviour, which until now was proven by hand on a phone.
  *
