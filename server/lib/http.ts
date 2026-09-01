@@ -28,6 +28,7 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
+import { isLoopback } from "./endpoint";
 import { PromptReceipts, submitPrompt } from "./prompt";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { watchTranscript } from "./transcript-watch";
@@ -117,6 +118,8 @@ export interface HttpDeps {
   devices: Devices;
   /** Minted once per installation; see `identity.ts`. */
   serverId: string;
+  /** The relay client's state, when there is one — read at request time, since it is created after this server. */
+  relay?: () => { url: string; connected: boolean } | null;
 }
 
 /**
@@ -235,13 +238,21 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
    * and a box on the internet should not say which Shahi and which herdr it
    * runs (2026-09-02 review, R5). The phone needs `serverId` and `api` only.
    */
-  const serverInfo = (viaRelay: boolean): ServerInfo => ({
-    serverId,
-    api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
-    ...(viaRelay
-      ? {}
-      : { serverVersion: pkg.version, herdr: { version: store.state.version, protocol: store.state.protocol } }),
-  });
+  // The relay's state only for a caller on this machine — the plugin's
+  // `status` — not for every tailnet peer: with the serverId beside it, a
+  // self-hosted relay's address is enough to fill the box's eight phone slots.
+  const serverInfo = (arrival: Arrival): ServerInfo => {
+    const viaRelay = arrival.viaRelay;
+    const relay = !viaRelay && isLoopback(arrival.rateKey) ? deps.relay?.() : null;
+    return {
+      serverId,
+      api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
+      ...(viaRelay
+        ? {}
+        : { serverVersion: pkg.version, herdr: { version: store.state.version, protocol: store.state.protocol } }),
+      ...(relay ? { relay } : {}),
+    };
+  };
 
   // Prompts already handed to herdr, by the phone's own message id, so a retry
   // after a timeout gets the receipt back rather than a second delivery.
@@ -457,7 +468,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           return json({ error: "cross-origin request refused" }, { status: 403 });
         }
 
-        if (pathname === "/api/meta") return json(serverInfo(arrival.viaRelay));
+        if (pathname === "/api/meta") return json(serverInfo(arrival));
 
         // The contract version rides on every request, so a phone that kept its
         // cookie across a server upgrade learns of a mismatch on the first call

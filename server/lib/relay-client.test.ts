@@ -405,6 +405,9 @@ async function bootBox(): Promise<Box> {
     pairing,
     devices,
     serverId: identity.serverId,
+    // Present, so the assertion that /api/meta over the relay names no relay
+    // is about the route and not about a server that had none.
+    relay: () => ({ url: "https://relay.test", connected: true }),
   });
   const login = await fetch(`http://127.0.0.1:${server.port}/api/auth/login`, {
     method: "POST",

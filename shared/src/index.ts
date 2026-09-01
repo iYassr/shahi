@@ -46,6 +46,8 @@ export interface ServerInfo {
    */
   serverVersion?: string;
   herdr?: { version: string; protocol: number };
+  /** The relay this box dials, and whether it is on it right now. Direct connections only. */
+  relay?: { url: string; connected: boolean };
 }
 
 /**

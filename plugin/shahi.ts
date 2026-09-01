@@ -8,7 +8,7 @@
  *   sh plugin/bun.sh run plugin/shahi.ts logs        the tail of the sidecar's log
  *   sh plugin/bun.sh run plugin/shahi.ts pair        the QR, then wait for Enter (the popup)
  *   sh plugin/bun.sh run plugin/shahi.ts open-pair   open that popup (the action)
- *   sh plugin/bun.sh run plugin/shahi.ts uninstall   remove the service; leave the data
+ *   sh plugin/bun.sh run plugin/shahi.ts uninstall   the service, then the plugin; the data stays
  *
  * Every verb needs the environment herdr injects (HERDR_PLUGIN_ROOT and
  * friends), so the way to run one by hand is `herdr plugin action invoke
@@ -20,9 +20,26 @@
  * that no longer exists would look updated and not be — so the service is
  * always re-rendered and always restarted, and the only difference is that
  * a first run has a passcode to show.
+ *
+ * The service is also pointed at Shahi's relay unless the `.env` says
+ * otherwise. Before it was, a fresh install ended at "no address to give a
+ * phone yet": the sidecar listens on loopback, and reaching it meant
+ * Tailscale or SSH before the first QR could be scanned. With `RELAY_URL` the
+ * box dials out, the pairing code carries the relay's address, and the phone
+ * connects from anywhere (docs/relay.md). The default lives here, in code,
+ * not in the user's file: written to disk it would be every install's trust
+ * anchor for life, and the relay could never move without every user editing
+ * a dotfile. A `RELAY_URL` key in the `.env` — empty for direct-only, or a
+ * Worker of one's own — always wins.
+ *
+ * What the hook has to say goes to herdr's notification tray as well as its
+ * plugin log: the log is where nobody looks, and a passcode printed only
+ * there was found by reading this file. The digits themselves stay in the
+ * log: a toast is also every attached client, a screen share, and on some
+ * terminals the OS notification centre.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { dirname } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
@@ -33,6 +50,53 @@ import { serviceFor, type Service, type ServiceSpec } from "./service";
 
 export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "uninstall"] as const;
 type Verb = (typeof VERBS)[number];
+
+/** Shahi's relay: a blind pipe (docs/relay.md). The plugin's default; any Worker deployed from `relay/` works the same. */
+export const DEFAULT_RELAY_URL = "https://shahi-relay.yasserd99.workers.dev";
+
+/**
+ * The relay the service dials: what the `.env` says if it says anything —
+ * a URL, or empty for direct-only — and Shahi's relay when the key is absent.
+ */
+export function relayUrlFor(env: Map<string, string>): string | null {
+  if (!env.has("RELAY_URL")) return DEFAULT_RELAY_URL;
+  return env.get("RELAY_URL") || null;
+}
+
+/** A line in herdr's tray, for what would otherwise only reach the plugin log. Best effort. */
+function notify(title: string, body: string): void {
+  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
+  try {
+    Bun.spawnSync([herdr, "notification", "show", title, "--body", body, "--sound", "none"], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+  } catch {
+    // No herdr on PATH and no HERDR_BIN_PATH: the plugin log still has it.
+  }
+}
+
+/**
+ * On Linux a user service stops with the user's last session unless lingering
+ * is on — precisely when a phone would want it. The plugin cannot enable it
+ * (it needs sudo on some distributions), so it says so once, with the command.
+ */
+export function lingerHint(platform: NodeJS.Platform, lingerValue: string | null, user: string): string | null {
+  if (platform !== "linux" || lingerValue === null || lingerValue.trim() !== "no") return null;
+  return `This is a user service and lingering is off: it stops when your last session ends. Once:  loginctl enable-linger ${user}`;
+}
+
+function lingerValue(): string | null {
+  try {
+    const proc = Bun.spawnSync(["loginctl", "show-user", process.env.USER ?? userInfo().username, "-p", "Linger", "--value"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    return proc.exitCode === 0 ? proc.stdout.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The bun the service should run. The one on PATH by preference — on a
@@ -53,6 +117,7 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
   const inherited = (process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")
     .split(":")
     .filter((dir) => !dir.endsWith("/node_modules/.bin"));
+  const relay = relayUrlFor(env);
   return {
     bun,
     root: layout.root,
@@ -63,6 +128,9 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
       SHAHI_DATA: layout.dataPath,
       WEB_ROOT: layout.webRoot,
       PORT: env.get("PORT") ?? "7171",
+      // The .env is loaded by the sidecar itself; the relay default is not in
+      // it, so it rides in the service's environment (see the header).
+      ...(relay ? { RELAY_URL: relay } : {}),
       HOME: homedir(),
       PATH: [...new Set([dirname(bun), ...inherited])].join(":"),
     },
@@ -143,8 +211,15 @@ async function install(layout: Layout, service: Service): Promise<void> {
 
   const { url } = address(env);
   const info = await waitForMeta(url);
+  const relayUrl = relayUrlFor(env);
+  const relayDefaulted = !env.has("RELAY_URL");
   if (info) {
     console.log(`Shahi is running at ${url} — herdr ${info.herdr?.version}, protocol ${info.herdr?.protocol}.`);
+    console.log(
+      relayUrl
+        ? `  relay     ${relayUrl}${relayDefaulted ? ` (Shahi's relay, the default; RELAY_URL= in ${layout.envFile} turns it off)` : ""}`
+        : "  relay     off (RELAY_URL is empty): reachable directly only",
+    );
   } else {
     console.log(`Shahi was started but is not answering at ${url} yet. The log says why:\n  ${layout.logPath}`);
   }
@@ -154,8 +229,24 @@ async function install(layout: Layout, service: Service): Promise<void> {
         "  Shown this once; only its hash is kept. A phone paired by code never types it.\n",
     );
   }
+  const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
+  if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));
   console.log("\n  Pair a phone:  herdr plugin action invoke shahi.pair");
+
+  if (info) {
+    notify(
+      "Shahi is running",
+      [
+        "Pair a phone: command palette → Pair a phone.",
+        ...(relayUrl ? [relayDefaulted ? "Reachable from anywhere through Shahi's relay (RELAY_URL= in the plugin's .env turns that off)." : "Reachable through your relay."] : []),
+        ...(passcode ? ["The passcode is in the plugin log: herdr plugin log list --plugin shahi (a scanned code never needs it)."] : []),
+        ...(linger ? [linger] : []),
+      ].join(" "),
+    );
+  } else {
+    notify("Shahi did not start", `See ${layout.logPath}`);
+  }
 }
 
 async function status(layout: Layout, service: Service): Promise<number> {
@@ -171,10 +262,17 @@ async function status(layout: Layout, service: Service): Promise<number> {
     : state.running
       ? `running${state.pid ? ` (pid ${state.pid})` : ""}`
       : "installed, not running";
+  const relayUrl = relayUrlFor(env);
+  const relayLine = !relayUrl
+    ? "off (RELAY_URL is empty): reachable directly only"
+    : info?.relay
+      ? `${info.relay.url} — ${info.relay.connected ? "connected" : "dialling"}`
+      : relayUrl;
   console.log(`  service   ${serviceLine}`);
   console.log(`  address   ${url}`);
+  console.log(`  relay     ${relayLine}`);
   console.log(
-    `  phone     ${phone || "no address to give a phone yet: bind HOST off loopback, or put `tailscale serve` in front"}`,
+    `  phone     ${phone || (relayUrl ? "through the relay, from anywhere" : "no address to give a phone yet: set RELAY_URL, bind HOST off loopback, or put `tailscale serve` in front")}`,
   );
   console.log(
     info
@@ -208,8 +306,11 @@ async function readLine(): Promise<string> {
 
 /** The popup's command. pair.ts prints and exits; the popup closes with it, so hold it open. */
 async function pair(layout: Layout, args: string[]): Promise<void> {
-  const { host, port } = address(readEnvFile(layout.envFile));
-  if (!args.includes("--endpoint") && !phoneEndpoint(await tailscaleStatus(), host, port)) {
+  const env = readEnvFile(layout.envFile);
+  const { host, port } = address(env);
+  // With a relay the code needs no typed address: the phone goes through the
+  // relay, and pair.ts fills the code's endpoint field with the box's own.
+  if (!args.includes("--endpoint") && !relayUrlFor(env) && !phoneEndpoint(await tailscaleStatus(), host, port)) {
     // pair.ts would stop here and say to run it again with --endpoint — which
     // from inside a popup means closing it and typing an env-laden command by
     // hand. Ask for the address here instead; the code is still probed before
@@ -224,7 +325,9 @@ async function pair(layout: Layout, args: string[]): Promise<void> {
   }
   const proc = Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", ...args], {
     cwd: layout.root,
-    env: { ...process.env, SHAHI_ENV_FILE: layout.envFile },
+    // The relay the service actually dials, default included (pair.ts reads
+    // the .env and the environment, and the environment wins).
+    env: { ...process.env, SHAHI_ENV_FILE: layout.envFile, RELAY_URL: relayUrlFor(env) ?? "" },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -236,21 +339,39 @@ async function pair(layout: Layout, args: string[]): Promise<void> {
   await readLine();
 }
 
+/** This plugin's id as herdr registered it — `shahi`, or whatever a fork was linked as. */
+const pluginId = () => process.env.HERDR_PLUGIN_ID ?? "shahi";
+
 function openPair(): number {
   const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
-  const proc = Bun.spawnSync([herdr, "plugin", "pane", "open", "--plugin", "shahi", "--entrypoint", "pair"], {
+  const proc = Bun.spawnSync([herdr, "plugin", "pane", "open", "--plugin", pluginId(), "--entrypoint", "pair"], {
     stdout: "inherit",
     stderr: "inherit",
   });
   return proc.exitCode ?? 1;
 }
 
-function uninstall(layout: Layout, service: Service): void {
+/**
+ * The whole uninstall from one action: the service (which herdr knows nothing
+ * about) and then, through herdr, the plugin itself. Order matters — the
+ * other way round, the service would keep running from a directory that no
+ * longer exists. The checkout vanishes under this very script, which is fine:
+ * bun has read it. The config and state directories stay, because they hold
+ * the passcode, the paired phones and the transcripts.
+ */
+function uninstall(layout: Layout, service: Service): number {
   service.remove();
-  console.log(`Removed ${service.path} and stopped the sidecar.\n`);
-  console.log("Kept, because they hold your passcode, your paired phones and your transcripts:");
-  console.log(`  ${layout.configDir}\n  ${layout.stateDir}`);
-  console.log("\nDelete those by hand if you mean it. Then:  herdr plugin uninstall shahi");
+  console.log(`Stopped the sidecar and removed ${service.path}.`);
+  // Said before the plugin goes: its log goes with it, and this is the one
+  // message the person needs — where their passcode and phones still are.
+  const kept = `Kept, because they hold your passcode, your paired phones and your transcripts: ${layout.configDir} and ${layout.stateDir}. Delete those by hand if you mean it.`;
+  console.log(`\n${kept}`);
+  notify("Shahi removed", `${kept} If it is still listed: herdr plugin uninstall ${pluginId()}`);
+  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
+  const proc = Bun.spawnSync([herdr, "plugin", "uninstall", pluginId()], { stdout: "inherit", stderr: "inherit" });
+  const gone = proc.exitCode === 0;
+  if (!gone) console.log(`The service is gone, but herdr did not uninstall the plugin; run:  herdr plugin uninstall ${pluginId()}`);
+  return gone ? 0 : 1;
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -283,8 +404,7 @@ export async function main(argv: string[]): Promise<number> {
       await pair(layout, args);
       return 0;
     case "uninstall":
-      uninstall(layout, service);
-      return 0;
+      return uninstall(layout, service);
   }
 }
 

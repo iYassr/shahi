@@ -46,22 +46,21 @@ Two parts: install the sidecar on your server, then connect the app.
 
 ### 1. The server
 
-Shahi is a herdr plugin. On the machine herdr runs on, with
-[bun](https://bun.sh) installed:
+Shahi is a herdr plugin. On the machine herdr runs on:
 
 ```sh
 herdr plugin install iYassr/shahi
-# then start (or restart) herdr
+herdr plugin action invoke shahi.restart     # or restart herdr
 ```
 
-herdr clones and builds it; on its next start it generates a passcode,
-installs a user service (launchd or systemd) that keeps the sidecar running,
-and prints where everything is — `herdr plugin log list --plugin shahi`
-shows that output, passcode included. Then **Pair a phone** from herdr's
-command palette (or `herdr plugin action invoke shahi.pair`) shows a QR to
-scan. Reinstalling upgrades in place and leaves your passcode alone.
-[`docs/plugin.md`](docs/plugin.md) has the rest: what goes where, the actions,
-updating, uninstalling cleanly.
+herdr clones and builds it (installing [bun](https://bun.sh) first if there is
+none); the `restart` action — or herdr's next start — generates a passcode,
+points the box at Shahi's relay, installs a user service (launchd or systemd)
+that keeps the sidecar running, and says so in herdr's notification tray.
+Then **Pair a phone** from herdr's command palette shows a QR to scan, and
+the phone connects through the relay from anywhere. Reinstalling upgrades in
+place and leaves your passcode alone. [`docs/plugin.md`](docs/plugin.md) has
+the rest: what goes where, the actions, updating, uninstalling cleanly.
 
 <details>
 <summary>The older installer, and by hand</summary>
@@ -95,8 +94,10 @@ sudo loginctl enable-linger "$USER"     # survive logout
 ### 2. The app
 
 Scan the code from **Pair a phone**, or enter the address and passcode by
-hand. Two ways to reach the server, and the choice is really about how you
-already log in.
+hand. The code carries the relay's address, so a scanned phone connects
+through the relay from anywhere with nothing exposed (`docs/relay.md`). Two
+direct ways exist instead, for a phone on the same network; the choice is
+really about how you already log in.
 
 - **Over Tailscale** — bind the sidecar to your tailnet address and the app
   connects to `https://<host>.<tailnet>.ts.net` directly. Put TLS in front with
