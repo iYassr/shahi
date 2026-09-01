@@ -9,7 +9,7 @@
  *   bun run start          # or `bun run dev` to reload on change
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
@@ -41,8 +41,16 @@ try {
   process.exit(1);
 }
 
-mkdirSync(dirname(config.dataPath), { recursive: true });
+// The database holds the box's identity seed and every device secret — the
+// long-lived half of every relay session's keys. Bun creates it with the
+// process umask (0644 here), so a directory nobody else can enter is the
+// durable fix: it covers the WAL and shm files SQLite makes beside it too
+// (2026-09-02 review, R4). `.env` has been 0600 since it was first written.
+const dataDir = dirname(config.dataPath);
+mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+chmodSync(dataDir, 0o700);
 const db = new Database(config.dataPath, { create: true });
+chmodSync(config.dataPath, 0o600);
 db.exec("PRAGMA journal_mode = WAL");
 
 const store = new SessionStore(client);

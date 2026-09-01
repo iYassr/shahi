@@ -197,7 +197,12 @@ first ran, all now in the protocol: the hello is a *binary* frame, because
 the relay forwards data and drops phone text; a pairing link may read
 `/api/meta` before it claims, because the phone checks the box's id first;
 and the box pings, because a Durable Object cannot — a box silent for five
-minutes is dropped. The `e2e.ts` construction still wants its outside
+minutes is dropped. The `e2e.ts` construction had its second review on
+2026-09-02 (`docs/security-review.md`, R1–R7): the box no longer dies on a
+hello with a low-order point, `open` refuses a gap in the counter so a relay
+cannot silently drop a frame, an empty pairing secret is refused rather than
+degrading to unauthenticated DH, the database is 0600 in a 0700 directory,
+and `/api/meta` over the relay names no versions. It still wants its outside
 review before the relay is the default way in (`docs/connectivity.md`).
 
 **The reader is pushed, and polls only to recover.** While a phone watches a

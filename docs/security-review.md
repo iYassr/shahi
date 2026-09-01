@@ -408,3 +408,67 @@ from, so it is left to the conductor rather than run here.
   reconnect-then-401-then-sign-out path handles it, no change needed.
 - **conductor**: `bun audit fix`; and M5 is the one change that exceeds
   "recommend" — keep or drop.
+
+## Second review — the relay path, 2026-09-02
+
+Requested for public release, with the relay now deployed and a phone paired
+through it: a reviewer agent traced the relay Worker, the box's relay client,
+the envelope, the HTTP surface, the phone's deep-link handling, the plugin and
+the install path, verifying each High/Medium with runnable code. Eight
+findings; the first five are fixed in the commit that adds this section, each
+with a test named for the symptom (`shared/src/e2e.test.ts`,
+`server/lib/relay-client.test.ts`, `server/lib/http.test.ts`).
+
+**R1 (High, fixed). A relay-side frame crashed the sidecar.** A phone hello
+whose `pub` was the all-zero X25519 point made `serverSession` throw inside
+`ws.onmessage`, and under Bun an uncaught throw there exits the process —
+resendable on every reconnect by anyone who knew a `serverId` and a device
+id, which the relay sees in the clear. A sealed request with a non-string
+`path` did the same at `req.path.split`. Both now end the link, as every
+other bad frame does. No process-wide `uncaughtException` handler was added:
+it would hide the next such bug.
+
+**R2 (Medium, fixed). The envelope accepted forward counter gaps.** `open`
+took any counter at or past the next one, so a blind relay could withhold a
+`status`, an `unwatch` or a refusal and the receiver never learned a frame
+existed (E1 above). `open` now requires exactly the next counter; a gap ends
+the link, and reconnecting is the honest recovery. The review also asked for
+the counter as additional authenticated data (E2): it is not added, because
+the counter *is* the nonce — a frame opens only at its own counter, on this
+direction's key, so a spliced or misdelivered frame already fails to
+authenticate once gaps are refused.
+
+**R3 (Medium, fixed). The pairing secret's length was not enforced** (E3
+above): an empty secret degraded the handshake to unauthenticated DH, silently.
+`deriveMaster` now throws unless the secret is `PAIRING_SECRET_LEN` bytes.
+
+**R4 (Medium, fixed). The identity seed and every device secret sat in a
+world-readable SQLite file.** Bun creates the database with the process umask
+(0644 here). The data directory is now 0700 and the file 0600, which also
+covers the WAL and shm files SQLite makes beside it.
+
+**R5 (Low, fixed). `/api/meta` fingerprinted the box over the relay** (L1
+above, re-rated now that a public path exists). Over the relay the route
+answers `serverId` and `api` only; on a direct connection it still names the
+Shahi and herdr versions, which the plugin's status line reads over loopback.
+
+**R6 (Low, accepted).** A pairing-link hello for an unknown code is refused
+with no throttle beyond the relay's per-phone quota. Codes are 256 bits and
+live ten minutes; the claim itself is behind the global login throttle.
+
+**R7 (Low, accepted, documented).** A Durable Object is instantiated per
+attacker-chosen `serverId`. A refusal writes and schedules nothing, so the
+object is evicted with no trace: Worker invocations, never storage. Noted in
+`docs/relay.md`.
+
+**R8 (Info).** Box replacement is proven by key, and phone links are
+unauthenticated at the relay by design; both verified sound.
+
+Found sound on this pass: relay box authentication (key-to-id binding, a
+signed per-connection nonce), frame parsing and per-object limits, the
+pairing-link allowlist on the decrypted path (no `..`, case or query bypass),
+Origin and CSRF checks, revocation on open sockets, path-traversal, SSRF and
+command-injection defences, the phone's serverId-before-secret pairing check,
+SecureStore and SSH host-key pinning, no HTML rendering on the phone, the
+`.env` at 0600, no secrets in git history, and CI not exposing secrets to
+pull requests.

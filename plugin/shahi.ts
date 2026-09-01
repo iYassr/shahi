@@ -144,7 +144,7 @@ async function install(layout: Layout, service: Service): Promise<void> {
   const { url } = address(env);
   const info = await waitForMeta(url);
   if (info) {
-    console.log(`Shahi is running at ${url} — herdr ${info.herdr.version}, protocol ${info.herdr.protocol}.`);
+    console.log(`Shahi is running at ${url} — herdr ${info.herdr?.version}, protocol ${info.herdr?.protocol}.`);
   } else {
     console.log(`Shahi was started but is not answering at ${url} yet. The log says why:\n  ${layout.logPath}`);
   }
@@ -178,7 +178,7 @@ async function status(layout: Layout, service: Service): Promise<number> {
   );
   console.log(
     info
-      ? `  api       answering — shahi ${info.serverVersion}, api ${info.api.min}–${info.api.max}, herdr ${info.herdr.version} (protocol ${info.herdr.protocol})`
+      ? `  api       answering — shahi ${info.serverVersion}, api ${info.api.min}–${info.api.max}, herdr ${info.herdr?.version} (protocol ${info.herdr?.protocol})`
       : `  api       not answering at ${url}/api/meta`,
   );
   console.log(`  devices   ${devices === null ? "unknown" : `${devices} paired`}`);
