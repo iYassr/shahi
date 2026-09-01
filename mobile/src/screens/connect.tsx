@@ -5,10 +5,12 @@
  * QR (`bun run server/scripts/pair.ts`), the phone reads the address and a
  * one-time secret off it, checks it is talking to the server that printed it,
  * and comes away with a session bound to this device — which Settings can
- * later revoke. **Direct** is a tailnet address plus the passcode, typed.
- * **SSH** is for a server you already reach over SSH, with no tailnet and no
- * sidecar port exposed: the app opens an SSH session, forwards a local port
- * to the sidecar behind it, and signs in over that — see `lib/tunnel.ts`.
+ * later revoke. A code that also names a relay is taken up through the relay
+ * instead, because that works from anywhere (`docs/relay.md`). **Direct** is
+ * a tailnet address plus the passcode, typed. **SSH** is for a server you
+ * already reach over SSH, with no tailnet and no sidecar port exposed: the
+ * app opens an SSH session, forwards a local port to the sidecar behind it,
+ * and signs in over that — see `lib/tunnel.ts`.
  * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState } from "react";
@@ -16,7 +18,8 @@ import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, Text,
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import type { PairingPayload } from "@shahi/shared";
-import { api, connection } from "@/lib/api";
+import { api, connection, UnauthorizedError } from "@/lib/api";
+import { closeRelay, pairingTarget, type RelayIdentity } from "@/lib/relay";
 import { Logo } from "@/components/icons";
 import { Scanner } from "@/components/scanner";
 import { parsePairingUrl } from "@/lib/pairing";
@@ -47,9 +50,11 @@ type Mode = "direct" | "ssh";
 export function Connect({
   onConnected,
   onConnectedSsh,
+  onConnectedRelay,
 }: {
   onConnected: () => void;
   onConnectedSsh: (profile: SshProfile) => void;
+  onConnectedRelay: (identity: RelayIdentity) => void;
 }) {
   // First run opens on the setup guide, not a bare form: a new user has nothing
   // to connect to yet, and the old screen assumed a server they had not been
@@ -70,17 +75,21 @@ export function Connect({
    * A scanned code. The endpoint on it is trusted only as far as `/api/meta`
    * agreeing about who it is: a code aimed at the wrong address — or a
    * stranger's server at the right one — is refused before the secret is
-   * ever sent there.
+   * ever sent there. Through a relay the same check runs on a link keyed
+   * from the code's secret; the claim then answers with the device this phone
+   * becomes, and the session reconnects as that device.
    */
   async function pair(payload: PairingPayload) {
     setBusy(true);
     setError(null);
+    const where = payload.relay ?? payload.endpoint;
     try {
-      connection.baseUrl = payload.endpoint;
       connection.cookie = null;
+      connection.baseUrl = payload.relay ? "" : payload.endpoint;
+      connection.relay = payload.relay ? pairingTarget(payload.relay, payload.server, payload.secret) : null;
       const info = await api.meta();
       if (info.serverId !== payload.server) {
-        throw new Error(`${payload.endpoint} is a Shahi server, but not the one that printed this code.`);
+        throw new Error(`${where} is a Shahi server, but not the one that printed this code.`);
       }
       // The name is what Settings lists, on every phone; expo-device knows it
       // on a device and answers null on a simulator.
@@ -89,10 +98,30 @@ export function Connect({
       // indistinguishable in Settings; the model name is always populated.
       const label =
         Device.deviceName && Device.deviceName !== "iPhone" ? Device.deviceName : (Device.modelName ?? "iPhone");
-      await api.claimPairing(payload.secret, label);
-      onConnected();
+      if (payload.relay) {
+        const claim = await api.claimRelayPairing(payload.secret, label);
+        onConnectedRelay({
+          relay: payload.relay,
+          serverId: payload.server,
+          deviceId: claim.deviceId,
+          deviceSecret: claim.deviceSecret,
+        });
+      } else {
+        await api.claimPairing(payload.secret, label);
+        onConnected();
+      }
     } catch (e) {
-      setError((e as Error).message);
+      // A box that refuses the link does not know this code — spent, expired,
+      // or minted before a restart. The transport's words are about a device
+      // that is no longer paired; here there was never a device, so say what
+      // is true instead. The half-open pairing link is closed either way.
+      connection.relay = null;
+      closeRelay();
+      setError(
+        e instanceof UnauthorizedError
+          ? "That pairing code is not valid. A code works once and for ten minutes — print a new one."
+          : (e as Error).message,
+      );
       setBusy(false);
     }
   }
@@ -119,6 +148,7 @@ export function Connect({
     setBusy(true);
     setError(null);
     try {
+      connection.relay = null;
       connection.baseUrl = url.trim().replace(/\/$/, "");
       // Handshake before the passcode: a typo that lands on some other server,
       // or a Shahi too old for this app, is reported as exactly that rather
@@ -136,6 +166,7 @@ export function Connect({
     setBusy(true);
     setError(null);
     try {
+      connection.relay = null;
       connection.baseUrl = await openTunnel(ssh);
       connection.cookie = null;
       await api.meta();
