@@ -11,6 +11,7 @@ import {
   questionsOf,
   readWindow,
   summariseToolInput,
+  imageMediaType,
 } from "./session-log";
 import type { LogMessage } from "@shahi/shared";
 
@@ -535,5 +536,23 @@ describe("previewOf", () => {
   test("nothing to say is null, not an invented line", () => {
     expect(previewOf([])).toBeNull();
     expect(previewOf([msg("agent", [{ kind: "text", text: "   " }])])).toBeNull();
+  });
+});
+
+describe("imageMediaType", () => {
+  // `media_type` is written by the agent from whatever it was handed, and
+  // `/api/panes/:id/image` serves it as the content type — so a planted
+  // `text/html` was a page on the app's own origin. Only real image types
+  // pass; everything else is an opaque download.
+  test("passes the image types a phone can show", () => {
+    for (const type of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+      expect(imageMediaType(type)).toBe(type);
+    }
+  });
+
+  test("turns anything else into an opaque download, script-bearing types included", () => {
+    for (const type of ["text/html", "image/svg+xml", "application/xhtml+xml", "text/html; charset=utf-8", "", 42, undefined]) {
+      expect(imageMediaType(type)).toBe("application/octet-stream");
+    }
   });
 });

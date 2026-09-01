@@ -532,7 +532,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         const download = url.searchParams.get("download") === "1";
         try {
           const file = await readWithinHome({ path, download });
-          const safeName = file.name.replace(/["\\]/g, "_");
+          // Quotes and backslashes would end the quoted-string; control
+          // characters (a newline is a legal filename on Linux) would end the
+          // header, and `Headers` throws on them — a 500 for a file that
+          // merely has an odd name.
+          const safeName = file.name.replace(/[\x00-\x1f\x7f"\\]/g, "_");
           return new Response(file.bytes, {
             headers: {
               "content-type": file.contentType,
@@ -779,8 +783,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             const method = body.method as Method;
             const result = await client.rpc(method, (body.params ?? {}) as ParamsFor<Method>, {
               // agent.start and friends block waiting for something to happen;
-              // the default ceiling would fail them every time.
-              timeoutMs: SLOW_METHODS[method],
+              // the default ceiling would fail them every time. Own keys only:
+              // a method named `constructor` found one on the prototype.
+              timeoutMs: Object.hasOwn(SLOW_METHODS, method) ? SLOW_METHODS[method] : undefined,
             });
             return json({ result });
           } catch (err) {
