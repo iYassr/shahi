@@ -11,9 +11,11 @@ blind relay can do with ciphertext*.
 Reviewed by hand, file by file, with a second read by a separate reviewer
 agent applying the `/security-review` methodology to the same files (that
 skill is diff-driven and this branch had no diff, so it was applied to the
-week's files rather than to a change set). Everything marked **Fixed** has a
-test named after the symptom in `server/lib/http.test.ts`,
-`server/lib/ratelimit.test.ts` or `server/lib/codex-log.test.ts`.
+week's files rather than to a change set). The second read found one thing
+the first missed (H4) and corrected one fix (M1's choice of `x-forwarded-for`
+hop); both are folded in below. Everything marked **Fixed** has a test named
+after the symptom in `server/lib/http.test.ts`, `server/lib/ratelimit.test.ts`,
+`server/lib/codex-log.test.ts` or `server/lib/session-log.test.ts`.
 
 ## Findings, by severity
 
@@ -62,7 +64,27 @@ exposure is limited because only `event_msg`/tool rows render, but a
 crafted JSONL anywhere on disk would render, and the path itself leaks. The
 `/proc` route already required a rollout under the sessions directory.
 **Fixed:** one rule, `rolloutWithinSessions` (`codex-log.ts:71`), on all
-three routes: under `$CODEX_HOME/sessions/`, ending `.jsonl`, no `..`.
+three routes: under `$CODEX_HOME/sessions/`, ending `.jsonl`, no `..`. It is
+a string check, not a `realpath`: a symlink *inside* the sessions directory
+would be followed, but only by something that already has the user's shell,
+to something the user can already read (see L9).
+
+**H4. `/api/panes/:id/image` served whatever content type the transcript named.**
+`server/lib/http.ts:681`, `session-log.ts:609`. `media_type` is a string in a
+JSONL file the agent writes, and the agent writes what it was handed — an
+image from an MCP tool result, a fetched page. It was echoed verbatim as the
+response's `Content-Type`, with the record's `data` as the body: an
+arbitrary-bytes, arbitrary-type responder on the app's own origin.
+`nosniff` (M3) is no defence against a type the server *declared*. A planted
+`{"type":"image","source":{"media_type":"text/html","data":"<base64 page>"}}`
+plus a markdown link to its `/image?ref=` URL — which the PWA renders as a
+real link — is a page running on this origin with the session cookie, and
+`/api/rpc` one same-origin `fetch` away. The native app is not a victim
+(`Image` does not execute HTML; a link opens in the system browser, which has
+no cookie); the archived PWA, still served from this origin, is. Found by the
+second reviewer. **Fixed:** `imageMediaType` (`session-log.ts:598`) — the same
+rule `/api/file` uses: a short allowlist (`png`, `jpeg`, `gif`, `webp`; no
+SVG, which runs script), anything else served as `application/octet-stream`.
 
 ### Medium
 
@@ -74,12 +96,20 @@ busy — each `/api/meta` is trivial, but nothing stopped ten thousand a second.
 **Fixed:** `server/lib/ratelimit.ts` — a fixed window of 30 per minute per
 client address, bounded to 10,000 keys, fronting `/api/meta`,
 `/api/auth/status` and `/api/pair/*` (`ratelimit.ts:19`; adding a route is
-one line). The address is the socket peer, or the first `x-forwarded-for`
-hop when the peer is loopback (`ratelimit.ts:78`) — which is every request
+one line). The address is the socket peer, or the **last** `x-forwarded-for`
+hop when the peer is loopback (`ratelimit.ts:84`) — which is every request
 behind `tailscale serve` or `cloudflared`, and which is exactly when the
-header can be believed. Refusals are 429 with `retry-after`.
-`/api/auth/login` is deliberately *not* behind it: it has `LoginThrottle`,
-whose behaviour this stream was told not to change. See D1.
+header can be believed. The first draft took the *first* hop, and the second
+reviewer caught it: a proxy appends the address it saw to whatever header the
+client already sent (Go's reverse proxy and Cloudflare both append), so the
+first entry is the client's to choose and a limiter keyed on it could be
+reset per request by rotating the header. The last entry is the proxy's.
+Refusals are 429 with `retry-after`. `/api/auth/login` is deliberately *not*
+behind it: it has `LoginThrottle`, whose behaviour this stream was told not
+to change. See L6 — and note for the pairing owner: a pairing code is a
+low-entropy secret, and a per-address limit is the wrong *only* defence for
+one; `/api/pair/*` wants a global serialising throttle like `LoginThrottle`
+as well, which no header can influence.
 
 **M2. Request bodies were buffered before any size limit was consulted.**
 `server/lib/http.ts:258`. `MAX_UPLOAD_BYTES` (32MB, `uploads.ts:27`) is checked
@@ -88,21 +118,23 @@ after `req.formData()` has already read the whole body, so Bun's default
 process hold — and `clientMessageId` had no length cap, so 500 receipts × a
 large id was the receipt table's real bound, not the 500.
 **Fixed:** `maxRequestBodySize` 40MB on the server, and `clientMessageId`
-capped at 128 characters (a phone mints ~20).
+capped at 128 characters (a phone mints ~20). Still true: `req.formData()`
+materialises up to 40MB per in-flight upload and nothing caps concurrency;
+streaming to disk would close that, and is not worth it for one user's phone.
 
 **M3. `/api/file` served agent-written files with no `nosniff`.**
 `server/lib/http.ts:528`, `files.ts:63`. HTML and SVG are already served as
 `text/plain` so they cannot run in this origin — but the type is chosen from
 the extension, and a browser that second-guesses a `.txt` or an
 `application/octet-stream` into HTML runs it with the session cookie.
-**Fixed:** `harden` (`http.ts:973`) puts `x-content-type-options: nosniff`,
+**Fixed:** `harden` (`http.ts:978`) puts `x-content-type-options: nosniff`,
 `x-frame-options: DENY` and `referrer-policy: same-origin` on every response,
 at the same edge as compression. Framing and referrers were closed for the
 same reason the cookie is `SameSite=Strict`: nothing legitimate embeds this
 app or needs to know which `/api/file?path=` was open.
 
 **M4. Hostile inputs were answered with stack traces, or obeyed.**
-`server/lib/http.ts:606` and the query handling of `/session` and
+`server/lib/http.ts:610` and the query handling of `/session` and
 `/transcript`. A JSON body of `null` was a 500 with a stack (every route read
 a property off `req.json()`); `%zz` in a pane id threw from
 `decodeURIComponent` — a 500; `limit=NaN` or `limit=-1` on `/session` made
@@ -112,7 +144,7 @@ a property off `req.json()`); `%zz` in a pane id threw from
 caught as 404; `intParam` clamps `limit`/`before` to integer ranges.
 
 **M5. `/api/rpc` is reachable by any authenticated client, including the native app.**
-`server/lib/http.ts:772`. It is raw herdr: every method, no server-side
+`server/lib/http.ts:776`. It is raw herdr: every method, no server-side
 validation (the absolute-`cwd` checks on `/api/workspaces` and
 `/api/agents/start` do not apply), and a direct coupling to herdr method
 names that the contract exists to keep off the phone. It adds no
@@ -162,9 +194,15 @@ TTL, oldest evicted on insert) and holds a 40-byte receipt per entry.
 `server/lib/auth.ts:48`. Logout clears the cookie on the client only; a
 copied cookie stays valid for the rest of its 30 days. This is a stated
 design decision ("a session table would add moving parts without adding
-safety") and the phone keeps the cookie in the keychain. **Deferred to the
-auth owner**, with one observation: with H2 fixed, rotating `SESSION_SECRET`
-and restarting is now a complete revocation — it ends every socket too.
+safety") and the phone keeps the cookie in the keychain. But `auth.ts`'s own
+header names "an unlocked phone in someone else's hand" as the threat, and a
+logout that does not revoke does not answer it. **Deferred to the auth
+owner**, with a shape that keeps sessions stateless: a single integer
+"session version" in the existing `meta` table (`identity.ts` already owns
+one), signed into the token and bumped by logout — one column, and logout
+means something. One observation meanwhile: with H2 fixed, rotating
+`SESSION_SECRET` and restarting is now a complete revocation — it ends every
+socket too.
 
 **L5. The cookie is never `Secure`.**
 `server/lib/auth.ts:72`. The comment's reason is that direct `http://127.0.0.1`
@@ -186,7 +224,7 @@ serialisation also caps bcrypt CPU at one verify at a time, which is a
 property worth keeping.
 
 **L7. `/api/push/subscribe` makes the server POST to any `https://` endpoint.**
-`server/lib/push.ts:80`, `http.ts:571`. An authenticated web client can
+`server/lib/push.ts:80`, `http.ts:575`. An authenticated web client can
 register any HTTPS URL as a push endpoint; the server then sends it a
 VAPID-signed, encrypted, content-free POST on every `blocked` transition and
 on `/api/push/test`. Host-controlled SSRF, but only for the person who already
@@ -206,6 +244,36 @@ the result against `$HOME` and the temp dir, so a symlink *out* is refused;
 the window between `realpath` and the read is a TOCTOU only the account
 owner can exploit. **Accepted** — CLAUDE.md already states file scoping is
 tidiness, not the boundary.
+
+**L10. A `Content-Disposition` filename with a control character was a 500.**
+`server/lib/http.ts:539`. `/api/file` quoted the basename after replacing
+only `"` and `\`; a newline is a legal filename on Linux and `Headers` throws
+on it. **Fixed:** control characters are replaced too.
+
+**L11. `SLOW_METHODS[method]` found prototype members.**
+`server/lib/http.ts:788`. A `method` of `constructor` on `/api/rpc` read
+`Object.prototype.constructor` as the timeout, which coerced to `NaN` and
+failed the call instantly — a self-inflicted refusal, nothing more.
+**Fixed:** `Object.hasOwn`.
+
+**L12. Behind the gate, more is returned than the reader needs.**
+`SessionLog.path` and `sessionId` are absolute paths under `$HOME`;
+`/api/dirs` returns `path` beside `display`. The phone uses the absolute path
+to round-trip into herdr, which does not expand `~`, so it is needed there.
+**Accepted.**
+
+**L13. No Content-Security-Policy on the app shell.**
+A `default-src 'self'` on the PWA's HTML would have blunted H4's payload. The
+shell is `web/`, archived, and its bundle's needs (xterm.js inline styles)
+were not measured here. **Deferred to the web owner**; the native app has no
+shell to protect.
+
+**L14. `readSessionImage` streams the whole transcript per request.**
+`session-log.ts:609`. A 38MB file is scanned end to end for each image
+fetch; the client caches the response as `immutable`, the server memoises
+nothing. Authenticated, self-inflicted, and bounded by the reader's own
+behaviour. **Accepted**; the byte-offset index already built for messages is
+the shape of a fix if it is ever measured to matter.
 
 ## `shared/src/e2e.ts` — review only, not modified
 
@@ -248,7 +316,12 @@ as "replayed or out-of-order". Either route all encrypted traffic over the
 single ordered WebSocket, or replace the strict check with a sliding
 anti-replay window (the WireGuard/DTLS bitmap: accept any unseen counter
 within N of the highest seen). This is the one that will bite in testing, not
-in an attack.
+in an attack. The same check has a quieter consequence: a *forward* gap is
+accepted and `recv.next` jumps past it, so a relay can drop any frame — an
+error, an `unwatch`, a refusal — and the receiver never learns one existed;
+and on a reordering transport, accepting frame 50 first discards 5–49 for
+good. Reject gaps on the ordered-stream design, or use the window on the
+other; either way the header comment should say which the transport must be.
 
 **E2. Nothing binds a response to its request, or a frame to its type.**
 ChaCha20-Poly1305 takes additional authenticated data and none is passed. A
@@ -296,9 +369,12 @@ from, so it is left to the conductor rather than run here.
 - The 426 contract gate (`http.ts:367`): runs before auth, discloses only the
   version range, treats an absent header as the archived client, and a
   non-integer as a mismatch.
-- `findTranscript` and `readSessionImage` (`session-log.ts:63`, `:591`): the
+- `findTranscript` and `readSessionImage` (`session-log.ts:63`, `:609`): the
   id and the ref are constrained; the image is located by record uuid inside
-  a file already scoped by the id.
+  a file already scoped by the id (its declared type is now allowlisted, H4).
+- Every SQL statement (`push.ts`, `codex-log.ts`, `identity.ts`) is
+  parameterised; herdr RPC framing is `JSON.stringify` of an object, so no
+  delimiter reaches the socket from a client-supplied method or params.
 - `transcript-watch.ts`: reports a size only, never content; watches a path
   that is now always inside a known directory (H3).
 - `/api/uploads`: name sanitised (`safeName` strips separators, leading dots,
@@ -324,7 +400,9 @@ from, so it is left to the conductor rather than run here.
   `x-forwarded-proto: https`), L6 (a per-address throttle in front of the
   global one — `clientAddress` in `ratelimit.ts` is the key to use).
 - **pairing / contract**: L1 (trim `/api/meta` once a public tunnel exists),
-  E1–E3 before the envelope carries anything.
+  a global serialising throttle on `/api/pair/*` in addition to the per-address
+  limiter it already inherits (M1), E1–E3 before the envelope carries anything.
+- **web** (archived): L13, a CSP on the shell.
 - **mobile**: `decode-uri-component` on the deep-link path; and note that the
   server now closes a socket with 4001 when its session lapses — the existing
   reconnect-then-401-then-sign-out path handles it, no change needed.
