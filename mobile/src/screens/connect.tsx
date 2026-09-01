@@ -1,19 +1,25 @@
 /**
  * First run: how to reach the server.
  *
- * Two ways in. **Direct** is a tailnet address plus the passcode — the original
- * path, for a box on your tailnet. **SSH** is for everyone else, which for a
- * mass-market app is most people: a server they already reach over SSH, with no
- * tailnet to set up and no sidecar port exposed to the internet. The app opens
- * an SSH session, forwards a local port to the sidecar behind it, and signs in
- * over that — see `lib/tunnel.ts`. Credentials go straight to the Keychain and
- * never leave the phone.
+ * Three ways in. **Scanning a code** is the intended one: the server prints a
+ * QR (`bun run server/scripts/pair.ts`), the phone reads the address and a
+ * one-time secret off it, checks it is talking to the server that printed it,
+ * and comes away with a session bound to this device — which Settings can
+ * later revoke. **Direct** is a tailnet address plus the passcode, typed.
+ * **SSH** is for a server you already reach over SSH, with no tailnet and no
+ * sidecar port exposed: the app opens an SSH session, forwards a local port
+ * to the sidecar behind it, and signs in over that — see `lib/tunnel.ts`.
+ * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState } from "react";
 import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import * as Device from "expo-device";
+import type { PairingPayload } from "@shahi/shared";
 import { api, connection } from "@/lib/api";
 import { Logo } from "@/components/icons";
+import { Scanner } from "@/components/scanner";
+import { parsePairingUrl } from "@/lib/pairing";
 import { openTunnel, closeTunnel, sshTunnelAvailable } from "@/lib/tunnel";
 import { committed } from "@/lib/feel";
 import {
@@ -56,8 +62,50 @@ export function Connect({
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   if (phase === "intro") return <Intro onContinue={() => setPhase("form")} />;
+
+  /**
+   * A scanned code. The endpoint on it is trusted only as far as `/api/meta`
+   * agreeing about who it is: a code aimed at the wrong address — or a
+   * stranger's server at the right one — is refused before the secret is
+   * ever sent there.
+   */
+  async function pair(payload: PairingPayload) {
+    setBusy(true);
+    setError(null);
+    try {
+      connection.baseUrl = payload.endpoint;
+      connection.cookie = null;
+      const info = await api.meta();
+      if (info.serverId !== payload.server) {
+        throw new Error(`${payload.endpoint} is a Shahi server, but not the one that printed this code.`);
+      }
+      // The name is what Settings lists, on every phone; expo-device knows it
+      // on a device and answers null on a simulator.
+      await api.claimPairing(payload.secret, Device.deviceName ?? "iPhone");
+      onConnected();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  if (scanning) {
+    return (
+      <Scanner
+        onCancel={() => setScanning(false)}
+        onScanned={(data) => {
+          const payload = parsePairingUrl(data);
+          if (!payload) return false;
+          setScanning(false);
+          void pair(payload);
+          return true;
+        }}
+      />
+    );
+  }
 
   // Narrow updates so the nested auth object stays a discriminated union.
   const patch = (fields: Partial<SshProfile>) => setSsh((p) => ({ ...p, ...fields }));
@@ -119,7 +167,15 @@ export function Connect({
           <Text style={styles.title}>shahi</Text>
         </View>
 
-        {/* Two ways in, as a segmented control. */}
+        {/* The intended way in: nothing to type, and a session Settings can revoke. */}
+        <Pressable style={styles.scan} onPress={() => setScanning(true)} disabled={busy} testID="scan-code">
+          <Text style={styles.scanText}>Scan a code</Text>
+          <Text style={styles.scanHint}>On the server: bun run server/scripts/pair.ts</Text>
+        </Pressable>
+
+        <Text style={styles.or}>or by hand</Text>
+
+        {/* The typed ways in, as a segmented control. */}
         <View style={styles.segment}>
           <Pressable
             style={[styles.segItem, mode === "direct" && styles.segItemOn]}
@@ -240,8 +296,11 @@ function Intro({ onContinue }: { onContinue: () => void }) {
         . When it finishes it prints your server's address and a passcode.
       </Text>
 
-      <Text style={styles.step}>2 — Enter those here.</Text>
-      <Text style={styles.introText}>Over Tailscale with the address, or over SSH the way you already log in.</Text>
+      <Text style={styles.step}>2 — Pair this phone.</Text>
+      <Text style={styles.introText}>
+        Scan the code that <Text style={styles.mono}>bun run server/scripts/pair.ts</Text> prints on the server — or
+        enter the address and passcode, over Tailscale or over SSH the way you already log in.
+      </Text>
 
       <Pressable style={styles.button} onPress={onContinue} testID="intro-continue">
         <Text style={styles.buttonText}>Connect your server</Text>
@@ -392,6 +451,21 @@ const styles = StyleSheet.create({
   brand: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 6 },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 26, fontWeight: "500", letterSpacing: -0.5 },
   hint: { color: theme.dim, fontSize: 14, marginBottom: 12 },
+  scan: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.peach,
+    borderRadius: 10,
+    borderCurve: "continuous",
+    minHeight: 64,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    gap: 3,
+  },
+  scanText: { color: theme.peach, fontSize: 16, fontWeight: "600" },
+  scanHint: { color: theme.dim, fontFamily: theme.mono, fontSize: 11.5 },
+  or: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, textAlign: "center", marginTop: 6 },
+  mono: { fontFamily: theme.mono, color: theme.fg },
 
   // Intro / setup guide
   introBody: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 14 },
