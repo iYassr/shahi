@@ -17,6 +17,7 @@
  */
 
 export * from "./modes";
+export * from "./relay";
 
 /* --------------------------------------------------------------- handshake */
 
@@ -70,6 +71,12 @@ export interface PairingPayload {
   server: string;
   /** Base URL the phone should talk to, e.g. `https://box.tailnet.ts.net`. */
   endpoint: string;
+  /**
+   * Base URL of a blind relay the box is dialled into (`docs/relay.md`), when
+   * it has one. The phone prefers it: it works from anywhere. `endpoint` stays
+   * for a phone on the same tailnet.
+   */
+  relay?: string;
   /** Single use, ten minutes, held in the server's memory only. */
   secret: string;
 }
