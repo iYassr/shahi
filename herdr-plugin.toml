@@ -1,0 +1,76 @@
+# Shahi as a herdr plugin: `herdr plugin install iYassr/shahi`.
+#
+# The sidecar is a long-running server and herdr's startup hooks are one-shot
+# by contract, so the hook installs a user service (launchd or systemd) that
+# supervises it, and every action here is a small command against that
+# service. See docs/plugin.md. Every command goes through plugin/bun.sh, which
+# finds bun wherever it is installed and says how to install it when it is not.
+
+id = "shahi"
+name = "Shahi"
+version = "0.1.0"
+min_herdr_version = "0.8.2"
+description = "See and answer your terminal agents from your phone"
+platforms = ["linux", "macos"]
+
+# Run once on `herdr plugin install`, in this order, in the checkout. The
+# sidecar serves the archived web client from web/dist, which is how a laptop
+# reaches a session without a build of the app.
+[[build]]
+command = ["sh", "plugin/bun.sh", "install", "--frozen-lockfile"]
+
+[[build]]
+command = ["sh", "plugin/bun.sh", "run", "build:web"]
+
+# Every herdr start: generate secrets the first time, (re)install the service
+# so it runs whatever code is checked out now, and exit.
+[[startup]]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "setup"]
+
+[[actions]]
+id = "pair"
+title = "Pair a phone"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "open-pair"]
+
+[[actions]]
+id = "status"
+title = "Shahi status"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "status"]
+
+[[actions]]
+id = "restart"
+title = "Restart Shahi"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "restart"]
+
+[[actions]]
+id = "stop"
+title = "Stop Shahi"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "stop"]
+
+[[actions]]
+id = "logs"
+title = "Shahi logs"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "logs"]
+
+# `herdr plugin uninstall shahi` removes the checkout and knows nothing about
+# the service; this removes the service and keeps your data. Run it first.
+[[actions]]
+id = "uninstall"
+title = "Remove Shahi's service"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "uninstall"]
+
+# The QR, inside herdr. A popup closes when its command exits, so the command
+# waits for Enter after printing.
+[[panes]]
+id = "pair"
+title = "Pair a phone"
+placement = "popup"
+width = "80%"
+height = "90%"
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "pair"]

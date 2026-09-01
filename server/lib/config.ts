@@ -8,6 +8,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readEnvFile } from "./secrets";
 
 export interface Config {
   /**
@@ -83,6 +84,12 @@ function decodePasscodeHash(encoded: string | undefined): string {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  // Bun only auto-loads `.env` from the working directory. The herdr plugin
+  // keeps the file in its config directory instead — the plugin root is a
+  // managed checkout that a reinstall replaces — and names it here. The
+  // process environment still wins over the file, as with Bun's own loader.
+  if (env.SHAHI_ENV_FILE) env = { ...Object.fromEntries(readEnvFile(env.SHAHI_ENV_FILE)), ...env };
+
   const vapidPublic = env.VAPID_PUBLIC_KEY;
   const vapidPrivate = env.VAPID_PRIVATE_KEY;
 
