@@ -166,19 +166,27 @@ export function Connect({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* The horizontal lockup: cup mark + lowercase mono wordmark. */}
+        {/* The horizontal lockup: cup mark + lowercase mono wordmark — and the
+            intended way in beside it. It sits in the title row on purpose: as
+            a card above the form it pushed the Connect button under the
+            keyboard on an iPhone 17, which every flow, and every person typing
+            by hand, then had to scroll for. The intro already says where the
+            code comes from. */}
         <View style={styles.brand}>
-          <Logo color={theme.peach} size={30} />
-          <Text style={styles.title}>shahi</Text>
+          <View style={styles.lockup}>
+            <Logo color={theme.peach} size={30} />
+            <Text style={styles.title}>shahi</Text>
+          </View>
+          <Pressable
+            style={styles.scan}
+            onPress={() => setScanning(true)}
+            disabled={busy}
+            testID="scan-code"
+            accessibilityHint="On the server: bun run server/scripts/pair.ts"
+          >
+            <Text style={styles.scanText}>Scan a code</Text>
+          </Pressable>
         </View>
-
-        {/* The intended way in: nothing to type, and a session Settings can revoke. */}
-        <Pressable style={styles.scan} onPress={() => setScanning(true)} disabled={busy} testID="scan-code">
-          <Text style={styles.scanText}>Scan a code</Text>
-          <Text style={styles.scanHint}>On the server: bun run server/scripts/pair.ts</Text>
-        </Pressable>
-
-        <Text style={styles.or}>or by hand</Text>
 
         {/* The typed ways in, as a segmented control. */}
         <View style={styles.segment}>
@@ -453,23 +461,19 @@ function SshForm({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
   body: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 10 },
-  brand: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 6 },
+  brand: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+  lockup: { flexDirection: "row", alignItems: "center", gap: 12 },
   title: { color: theme.fg, fontFamily: theme.mono, fontSize: 26, fontWeight: "500", letterSpacing: -0.5 },
   hint: { color: theme.dim, fontSize: 14, marginBottom: 12 },
   scan: {
-    backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.peach,
-    borderRadius: 10,
-    borderCurve: "continuous",
-    minHeight: 64,
+    borderRadius: 999,
+    minHeight: 36,
     justifyContent: "center",
-    paddingHorizontal: 16,
-    gap: 3,
+    paddingHorizontal: 14,
   },
-  scanText: { color: theme.peach, fontSize: 16, fontWeight: "600" },
-  scanHint: { color: theme.dim, fontFamily: theme.mono, fontSize: 11.5 },
-  or: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, textAlign: "center", marginTop: 6 },
+  scanText: { color: theme.peach, fontSize: 14, fontWeight: "600" },
   mono: { fontFamily: theme.mono, color: theme.fg },
 
   // Intro / setup guide
