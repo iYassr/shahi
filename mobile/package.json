@@ -4,11 +4,13 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.14",
+    "@noble/hashes": "^2.3.0",
     "@shahi/shared": "0.1.0",
     "expo": "~57.0.18",
     "expo-camera": "~57.0.3",
     "expo-clipboard": "~57.0.1",
     "expo-constants": "~57.0.16",
+    "expo-crypto": "~57.0.2",
     "expo-device": "~57.0.1",
     "expo-document-picker": "~57.0.1",
     "expo-font": "~57.0.2",
@@ -56,6 +58,7 @@
     "test": "jest"
   },
   "private": true,
+  "//jest.transformIgnorePatterns": "jest-expo's list plus @noble: the e2e module's crypto ships as ESM only, and untransformed it fails every suite that reaches the relay with 'Cannot use import statement outside a module'.",
   "jest": {
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
@@ -64,6 +67,11 @@
     "testMatch": [
       "<rootDir>/src/**/*.test.ts",
       "<rootDir>/src/**/*.test.tsx"
+    ],
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@noble))",
+      "/node_modules/react-native-reanimated/plugin/",
+      "/node_modules/@react-native/babel-preset/"
     ]
   }
 }
