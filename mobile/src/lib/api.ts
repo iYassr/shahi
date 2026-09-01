@@ -15,6 +15,7 @@
  */
 import {
   SHAHI_API_VERSION,
+  type ClaimResult,
   type DeviceList,
   type DirListing,
   type InstalledAgent,
@@ -29,72 +30,18 @@ import {
   type TranscriptLine,
 } from "@shahi/shared";
 
-export class UnauthorizedError extends Error {
-  constructor() {
-    super("unauthorized");
-    this.name = "UnauthorizedError";
-  }
-}
+import {
+  IncompatibleServerError,
+  UnauthorizedError,
+  UnreachableError,
+  hostOf,
+  type UnreachableReason,
+} from "./errors";
+import { relayLink, toBase64Url, type LinkState, type LinkSubscriber, type RelayLink, type RelayTarget, type Reply } from "./relay";
 
-/**
- * The server and this app do not speak a common contract version.
- *
- * Distinct from unreachable and from unauthorized: the server is there and
- * answering, it just cannot be talked to by this build. The message says which
- * side to update, because "update" alone sends people to the wrong device.
- */
-export class IncompatibleServerError extends Error {
-  constructor(
-    message: string,
-    readonly serverApi: { min: number; max: number },
-  ) {
-    super(message);
-    this.name = "IncompatibleServerError";
-  }
-}
-
-export type UnreachableReason =
-  | "address"
-  | "ats"
-  | "dns"
-  | "refused"
-  | "offline"
-  | "lost"
-  | "timeout"
-  | "tls"
-  | "unknown";
-
-/**
- * The server could not be reached at all — as opposed to reached and refusing.
- *
- * `fetch` rejects with whatever the platform said. On iOS that is Expo wrapping
- * an NSURLError description — "fetch failed: UnexpectedException: A server
- * with the specified hostname could not be found. (at
- * ExpoModulesCore/Promise.swift:56)" — and that string reached the Connect
- * screen and the Agents screen verbatim, reading as a crash rather than a
- * network. This carries a message written for the person holding the phone,
- * naming the host they typed, and a `reason` so a screen can decide what to
- * offer.
- */
-export class UnreachableError extends Error {
-  constructor(
-    readonly reason: UnreachableReason,
-    readonly host: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "UnreachableError";
-  }
-}
-
-/**
- * `host:port` of a URL, for messages. A regex rather than `URL`, because a
- * malformed address is one of the cases being described and must produce a
- * message rather than a second exception.
- */
-function hostOf(url: string): string {
-  return /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(url)?.[1] ?? url;
-}
+// The screens import the error classes from here; they moved to `errors.ts`
+// so the relay transport can throw them without importing this module.
+export { IncompatibleServerError, UnauthorizedError, UnreachableError, type UnreachableReason };
 
 /**
  * Turns a `fetch` rejection into an `UnreachableError`.
@@ -182,13 +129,22 @@ export interface Connection {
   baseUrl: string;
   /** `shahi_session=…`, held here because there is no browser cookie jar. */
   cookie: string | null;
+  /**
+   * Set when the box is reached through a blind relay (`lib/relay`): every
+   * request and the socket then travel inside sealed frames on one link,
+   * and `baseUrl` and `cookie` are unused — the link is the session.
+   */
+  relay: RelayTarget | null;
 }
 
 /**
  * Mutable so the socket and every request see the same credentials without
  * threading them through each call site.
  */
-export const connection: Connection = { baseUrl: "", cookie: null };
+export const connection: Connection = { baseUrl: "", cookie: null, relay: null };
+
+/** Something to talk to, of either kind. */
+const configured = () => !!connection.relay || !!connection.baseUrl;
 
 /**
  * How long any single request may hang before it is aborted. A dead host used
@@ -223,20 +179,24 @@ function baseHeaders(extra: Record<string, string> = {}): Record<string, string>
   return headers;
 }
 
-/** A 426 is the server declining this contract version; say so, in its words. */
-async function incompatible(res: Response): Promise<IncompatibleServerError> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; api?: { min: number; max: number } };
-  return new IncompatibleServerError(
-    body.error ?? "This app and the Shahi server do not speak the same version.",
-    body.api ?? { min: 0, max: 0 },
-  );
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (!connection.baseUrl) throw new Error("No server address configured");
-
-  const headers = baseHeaders(init.headers as Record<string, string>);
-
+/**
+ * How a request travels: over HTTP to the address, or through the relay link.
+ *
+ * The one place that decides, so every route builds the same method, path,
+ * headers and body regardless — the version header included — and a relay
+ * request is indistinguishable to the code that reads the answer. The relay
+ * gets bytes rather than a `RequestInit`: there is no fetch behind it to
+ * understand strings and `FormData`.
+ */
+async function dispatch(
+  path: string,
+  init: { method?: string; headers: Record<string, string>; body?: string | Uint8Array },
+  ms = REQUEST_TIMEOUT_MS,
+): Promise<Reply> {
+  if (connection.relay) {
+    const body = typeof init.body === "string" ? new TextEncoder().encode(init.body) : (init.body ?? null);
+    return relayLink(connection.relay).request({ method: init.method ?? "GET", path, headers: init.headers, body }, ms);
+  }
   // `credentials: "omit"` turns off the native cookie jar for this request. On
   // iOS, NSURLSession manages cookies itself and overrides a manually-set
   // `cookie` header with whatever its jar holds — observed live: login returns
@@ -244,11 +204,25 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // demonstrably set, and the resulting UnauthorizedError signs the app out
   // again. This client owns its cookie, because there is no browser to own it;
   // the jar must not compete for the job.
-  const res = await fetchWithTimeout(`${connection.baseUrl}${path}`, {
-    ...init,
-    headers,
-    credentials: "omit",
-  });
+  return fetchWithTimeout(`${connection.baseUrl}${path}`, { ...init, credentials: "omit" } as RequestInit, ms);
+}
+
+/** A 426 is the server declining this contract version; say so, in its words. */
+async function incompatible(res: Reply): Promise<IncompatibleServerError> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string; api?: { min: number; max: number } };
+  return new IncompatibleServerError(
+    body.error ?? "This app and the Shahi server do not speak the same version.",
+    body.api ?? { min: 0, max: 0 },
+  );
+}
+
+async function request<T>(
+  path: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+): Promise<T> {
+  if (!configured()) throw new Error("No server address configured");
+
+  const res = await dispatch(path, { ...init, headers: baseHeaders(init.headers) });
   if (res.status === 401) throw new UnauthorizedError();
   if (res.status === 426) throw await incompatible(res);
   if (!res.ok) {
@@ -277,11 +251,8 @@ export const api = {
    * route happens to fail first.
    */
   meta: async (): Promise<ServerInfo> => {
-    if (!connection.baseUrl) throw new Error("No server address configured");
-    const res = await fetchWithTimeout(`${connection.baseUrl}/api/meta`, {
-      headers: { "x-shahi-api": String(SHAHI_API_VERSION) },
-      credentials: "omit",
-    });
+    if (!configured()) throw new Error("No server address configured");
+    const res = await dispatch("/api/meta", { headers: { "x-shahi-api": String(SHAHI_API_VERSION) } });
     if (res.status === 426) throw await incompatible(res);
     const info = (await res.json().catch(() => null)) as ServerInfo | null;
     const api = info?.api;
@@ -305,14 +276,12 @@ export const api = {
 
   /** Captures the session cookie, since there is no browser to hold it. */
   login: async (passcode: string) => {
-    const res = await fetchWithTimeout(`${connection.baseUrl}/api/auth/login`, {
+    // The response cookie stays out of the native jar (see `dispatch`): this
+    // client stores it itself, and a jar copy would then fight the header.
+    const res = await dispatch("/api/auth/login", {
       method: "POST",
       headers: baseHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({ passcode }),
-      // Keep the response cookie out of the native jar: this client stores it
-      // itself, and a jar copy would then fight the manual header. See
-      // `request`.
-      credentials: "omit",
     });
     // Only a 401 is actually a bad passcode. A 502/503/504 means the address is
     // reached but the sidecar behind it is not (e.g. a `tailscale serve` proxy
@@ -337,11 +306,10 @@ export const api = {
    * code — not a signed-out session, which is what `request` would make of it.
    */
   claimPairing: async (secret: string, deviceName: string): Promise<PairedDevice> => {
-    const res = await fetchWithTimeout(`${connection.baseUrl}/api/pair/claim`, {
+    const res = await dispatch("/api/pair/claim", {
       method: "POST",
       headers: baseHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({ secret, deviceName }),
-      credentials: "omit", // see `request`
     });
     if (res.status === 426) throw await incompatible(res);
     const body = (await res.json().catch(() => ({}))) as { device?: PairedDevice; error?: string };
@@ -354,6 +322,30 @@ export const api = {
     connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
     if (!connection.cookie) throw new Error("Server did not return a session");
     return body.device;
+  },
+
+  /**
+   * The same claim, over a relay link opened with the pairing secret.
+   *
+   * There is no cookie to keep: a relay link *is* its device, so what comes
+   * back is the identity to reconnect with — a device id and the secret the
+   * box will key that device's frames from. `connection.relay` must be a
+   * pairing target when this is called; the caller stores the result and
+   * reconnects as a device.
+   */
+  claimRelayPairing: async (secret: string, deviceName: string): Promise<ClaimResult> => {
+    const res = await dispatch("/api/pair/claim", {
+      method: "POST",
+      headers: baseHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ secret, deviceName }),
+    });
+    if (res.status === 426) throw await incompatible(res);
+    const body = (await res.json().catch(() => ({}))) as Partial<ClaimResult> & { error?: string };
+    if (res.status === 401) throw new Error(body.error ?? "That pairing code is not valid.");
+    if (!res.ok || !body.deviceId || !body.deviceSecret) {
+      throw new Error(body.error ?? `The box answered the claim with HTTP ${res.status} and no device.`);
+    }
+    return { ok: true, deviceId: body.deviceId, deviceSecret: body.deviceSecret };
   },
 
   /** Phones that paired by scanning a code. A passcode login is not among them. */
@@ -418,23 +410,28 @@ export const api = {
    * to $HOME and /tmp server-side.
    */
   readFile: async (path: string): Promise<{ text: string } | { imageUrl: string }> => {
-    if (!connection.baseUrl) throw new Error("No server address configured");
-    const url = `${connection.baseUrl}/api/file?path=${encodeURIComponent(path)}`;
-    // Through fetchWithTimeout like every other request: a raw fetch here hung
+    if (!configured()) throw new Error("No server address configured");
+    const route = `/api/file?path=${encodeURIComponent(path)}`;
+    // Through the timeout like every other request: a raw fetch here hung
     // the file viewer forever on a dead host (data-fetching audit).
-    const res = await fetchWithTimeout(url, {
-      headers: baseHeaders(),
-      credentials: "omit",
-    });
+    const res = await dispatch(route, { headers: baseHeaders() });
     if (res.status === 401) throw new UnauthorizedError();
     if (res.status === 426) throw await incompatible(res);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `could not read that file (${res.status})`);
     }
-    // The URL is handed back rather than the bytes: `Image` fetches it itself,
-    // and passing megabytes of base64 through JS to get there would be worse.
-    if ((res.headers.get("content-type") ?? "").startsWith("image/")) return { imageUrl: url };
+    const type = res.headers.get("content-type") ?? "";
+    if (type.startsWith("image/")) {
+      // Over HTTP the URL is handed back rather than the bytes: `Image` fetches
+      // it itself, and passing megabytes of base64 through JS to get there
+      // would be worse. Over the relay there is no URL an `Image` could fetch —
+      // the bytes only exist inside a sealed frame — so they are handed over as
+      // a data URL, which is the one form of "here are the bytes" it accepts.
+      if (!connection.relay) return { imageUrl: `${connection.baseUrl}${route}` };
+      const base64 = toBase64Url(await res.bytes()).replace(/-/g, "+").replace(/_/g, "/");
+      return { imageUrl: `data:${type.split(";")[0]};base64,${base64}` };
+    }
     return { text: await res.text() };
   },
 
@@ -473,21 +470,20 @@ export const api = {
     postJson<{ ok: boolean }>("/api/push/expo/unsubscribe", { token }),
 
   upload: async (file: { uri: string; name: string; type: string }): Promise<StoredUpload> => {
-    const body = new FormData();
-    // React Native's FormData takes this shape rather than a File.
-    body.append("file", { uri: file.uri, name: file.name, type: file.type } as never);
     // A photo over a slow tailnet needs longer than the default 15s, but still
     // a bound: a raw fetch here hung forever on a dead host (data-fetching audit).
-    const res = await fetchWithTimeout(
-      `${connection.baseUrl}/api/uploads`,
-      {
-        method: "POST",
-        headers: baseHeaders(),
-        body,
-        credentials: "omit", // see `request`
-      },
-      60_000,
-    );
+    const res = connection.relay
+      ? await dispatch("/api/uploads", await multipart(file), 60_000)
+      : await (async () => {
+          const body = new FormData();
+          // React Native's FormData takes this shape rather than a File.
+          body.append("file", { uri: file.uri, name: file.name, type: file.type } as never);
+          return fetchWithTimeout(
+            `${connection.baseUrl}/api/uploads`,
+            { method: "POST", headers: baseHeaders(), body, credentials: "omit" }, // see `dispatch`
+            60_000,
+          );
+        })();
     if (res.status === 426) throw await incompatible(res);
     const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
     if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
@@ -495,9 +491,41 @@ export const api = {
   },
 };
 
+/**
+ * The multipart body `FormData` would have built, as bytes, for the relay.
+ *
+ * There is no fetch behind a relay request to read a `file://` URI and frame
+ * it, so the file is read here — `fetch` on the URI is how React Native reads
+ * local files without another module — and framed by hand. The box parses it
+ * with the same `formData()` the HTTP route uses; nothing server-side knows
+ * the difference.
+ */
+async function multipart(file: {
+  uri: string;
+  name: string;
+  type: string;
+}): Promise<{ method: string; headers: Record<string, string>; body: Uint8Array }> {
+  const bytes = new Uint8Array(await (await fetch(file.uri)).arrayBuffer());
+  const boundary = `shahi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const head = new TextEncoder().encode(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name.replace(/["\r\n]/g, "_")}"\r\n` +
+      `Content-Type: ${file.type || "application/octet-stream"}\r\n\r\n`,
+  );
+  const tail = new TextEncoder().encode(`\r\n--${boundary}--\r\n`);
+  const body = new Uint8Array(head.length + bytes.length + tail.length);
+  body.set(head, 0);
+  body.set(bytes, head.length);
+  body.set(tail, head.length + bytes.length);
+  return {
+    method: "POST",
+    headers: baseHeaders({ "content-type": `multipart/form-data; boundary=${boundary}` }),
+    body,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 
-export type LinkState = "connecting" | "live" | "lost";
+export type { LinkState };
 
 /** How long the server may be silent before the connection counts as dead. */
 const SILENCE_LIMIT_MS = 70_000;
@@ -518,6 +546,18 @@ export class SessionSocket {
   #lastMessageAt = 0;
   #closed = false;
   #watching: string | null = null;
+  // Through a relay the stream arrives on the same link the requests use, so
+  // there is nothing to open here: this socket subscribes to that link and
+  // forwards the same three callbacks. Everything above sees one socket.
+  #relay: RelayLink | undefined;
+  readonly #subscriber: LinkSubscriber = {
+    onMessage: (msg) => this.onMessage(msg),
+    onLink: (state) => this.onLink(state),
+    onExpired: () => {
+      this.close();
+      this.onExpired?.();
+    },
+  };
 
   constructor(
     private readonly onMessage: (msg: SocketMessage) => void,
@@ -528,6 +568,10 @@ export class SessionSocket {
 
   connect(): void {
     this.#closed = false;
+    if (connection.relay) {
+      this.#attachRelay(connection.relay);
+      return;
+    }
     this.#open();
     // A socket can die without saying so — a phone sleeping, a network changing
     // under it, a proxy dropping it without a close frame — leaving the app
@@ -543,6 +587,9 @@ export class SessionSocket {
     this.#watchdog = undefined;
     this.#socket?.close();
     this.#socket = undefined;
+    // The link itself stays: requests still need it. It goes with sign-out.
+    this.#relay?.unsubscribe(this.#subscriber);
+    this.#relay = undefined;
   }
 
   /** Reconnects now if the connection is not up — for coming back to the app. */
@@ -550,6 +597,10 @@ export class SessionSocket {
     // Closed on purpose (a 426, say) is re-openable: "Try again" lands here.
     if (this.#closed) {
       this.connect();
+      return;
+    }
+    if (connection.relay) {
+      this.#attachRelay(connection.relay);
       return;
     }
     if (this.#socket?.readyState === 1) {
@@ -573,8 +624,23 @@ export class SessionSocket {
 
   watch(paneId: string | null): void {
     this.#watching = paneId;
+    if (this.#relay) {
+      this.#relay.watch(paneId);
+      return;
+    }
     if (this.#socket?.readyState !== 1) return;
     this.#socket.send(JSON.stringify(paneId ? { type: "watch", paneId } : { type: "unwatch" }));
+  }
+
+  /** Follows the link for the current target, re-subscribing if pairing or sign-in replaced it. */
+  #attachRelay(target: RelayTarget): void {
+    const link = relayLink(target);
+    if (this.#relay !== link) {
+      this.#relay?.unsubscribe(this.#subscriber);
+      this.#relay = link;
+      link.subscribe(this.#subscriber);
+    }
+    link.ensureConnected();
   }
 
   #open(): void {
