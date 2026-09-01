@@ -90,7 +90,14 @@ if (!endpoint) {
 const there = await serverInfo(endpoint);
 const reachable = there?.serverId === here.serverId;
 
-const url = pairingUrl({ v: 1, server: here.serverId, endpoint, secret: code.secret });
+const url = pairingUrl({
+  v: 1,
+  server: here.serverId,
+  endpoint,
+  // The phone prefers the relay when the box has one: it works from anywhere.
+  ...(config.relayUrl ? { relay: config.relayUrl } : {}),
+  secret: code.secret,
+});
 
 console.log(await QRCode.toString(url, { type: "terminal", small: true }));
 console.log(`  Scan this with Shahi — Connect, then "Scan a code".`);
