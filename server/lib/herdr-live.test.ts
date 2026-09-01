@@ -324,8 +324,8 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
         herdr: { version: string; protocol: number };
       };
       expect(info.serverId).toMatch(/^[0-9a-f-]{36}$/);
-      expect(info.api.min).toBeLessThanOrEqual(1);
-      expect(info.api.max).toBeGreaterThanOrEqual(1);
+      expect(info.api.min).toBeLessThanOrEqual(SHAHI_API_VERSION);
+      expect(info.api.max).toBeGreaterThanOrEqual(SHAHI_API_VERSION);
       expect(info.herdr.protocol).toBeGreaterThanOrEqual(HERDR_PROTOCOL);
       expect(typeof info.herdr.version).toBe("string");
     });
