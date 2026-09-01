@@ -32,11 +32,13 @@
  * a dotfile. A `RELAY_URL` key in the `.env` — empty for direct-only, or a
  * Worker of one's own — always wins.
  *
- * What the hook has to say goes to herdr's notification tray as well as its
- * plugin log: the log is where nobody looks, and a passcode printed only
- * there was found by reading this file. The digits themselves stay in the
- * log: a toast is also every attached client, a screen share, and on some
- * terminals the OS notification centre.
+ * What the hook has to say goes to a herdr notification as well as the
+ * plugin log — when `[ui.toast] delivery` is on, which it is not by default,
+ * so the log stays the record and the popup is where a person actually
+ * reads it: `pair` runs the setup itself when the service is missing, so
+ * "install, then pair" is the whole flow and its output is on screen. The
+ * passcode digits stay out of the toast: a toast is also every attached
+ * client, a screen share, and on some terminals the OS notification centre.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
@@ -50,6 +52,10 @@ import { serviceFor, type Service, type ServiceSpec } from "./service";
 
 export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "uninstall"] as const;
 type Verb = (typeof VERBS)[number];
+
+/** herdr 0.8.2 has no menu for plugin actions: the CLI, or a key the person binds. */
+const PAIR_HINT = "Pair a phone:  herdr plugin action invoke shahi.pair";
+const KEY_HINT = 'or bind a key in herdr\'s config.toml:  [[keys.command]] key = "prefix+P", type = "plugin_action", command = "shahi.pair"';
 
 /** Shahi's relay: a blind pipe (docs/relay.md). The plugin's default; any Worker deployed from `relay/` works the same. */
 export const DEFAULT_RELAY_URL = "https://shahi-relay.yasserd99.workers.dev";
@@ -232,13 +238,13 @@ async function install(layout: Layout, service: Service): Promise<void> {
   const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));
-  console.log("\n  Pair a phone:  herdr plugin action invoke shahi.pair");
+  console.log(`\n  ${PAIR_HINT}\n  ${KEY_HINT}`);
 
   if (info) {
     notify(
       "Shahi is running",
       [
-        "Pair a phone: command palette → Pair a phone.",
+        `${PAIR_HINT}.`,
         ...(relayUrl ? [relayDefaulted ? "Reachable from anywhere through Shahi's relay (RELAY_URL= in the plugin's .env turns that off)." : "Reachable through your relay."] : []),
         ...(passcode ? ["The passcode is in the plugin log: herdr plugin log list --plugin shahi (a scanned code never needs it)."] : []),
         ...(linger ? [linger] : []),
@@ -304,8 +310,23 @@ async function readLine(): Promise<string> {
   return value ? new TextDecoder().decode(value).trim() : "";
 }
 
-/** The popup's command. pair.ts prints and exits; the popup closes with it, so hold it open. */
-async function pair(layout: Layout, args: string[]): Promise<void> {
+/**
+ * The popup's command. pair.ts prints and exits; the popup closes with it, so
+ * hold it open.
+ *
+ * It also does the setup when there is none: `herdr plugin install` cannot
+ * run the startup hook (build commands get no plugin context), and the only
+ * other way to run it is an action whose output lands in a log. This popup
+ * is a PTY a person is looking at, so "install, then pair" is the whole flow
+ * and the first run's passcode and paths print where they are read.
+ */
+async function pair(layout: Layout, service: Service, args: string[]): Promise<void> {
+  const before = address(readEnvFile(layout.envFile));
+  if (!service.status().running || !(await meta(before.url))) {
+    console.log("Shahi is not running yet — setting it up first.\n");
+    await install(layout, service);
+    console.log("");
+  }
   const env = readEnvFile(layout.envFile);
   const { host, port } = address(env);
   // With a relay the code needs no typed address: the phone goes through the
@@ -401,7 +422,7 @@ export async function main(argv: string[]): Promise<number> {
       logs(layout, args);
       return 0;
     case "pair":
-      await pair(layout, args);
+      await pair(layout, service, args);
       return 0;
     case "uninstall":
       return uninstall(layout, service);

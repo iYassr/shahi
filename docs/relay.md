@@ -23,7 +23,12 @@ that module together, and by bumping `RELAY_PROTOCOL`.
 - **Relay.** One Worker, one Durable Object per `serverId`. It authenticates
   boxes (so nobody can sit on someone else's id) and forwards frames between a
   box and its phones. It never sees a key, a passcode, a request path or a byte
-  of a terminal.
+  of a terminal. What it does see, and Cloudflare with it: both ends' IP
+  addresses; the `serverId` (in the box's URL, so in request analytics) and
+  the box's public key; a presence timeline (the box pings every minute); each
+  phone's `deviceId` or pairing-code hash, in the clear in its hello; how many
+  phones a box has; and the size and timing of every frame. The default relay
+  is `shahi-relay.yasserd99.workers.dev`, run by Shahi's author.
 - **Phone.** Holds, per box, a `deviceId` and a 32-byte **device secret**
   handed to it at pairing, in the Keychain. Before pairing it holds only the
   32-byte **pairing secret** from the QR.
@@ -149,8 +154,9 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
   evicted with no trace: the cost is a Worker invocation, bounded by
   Cloudflare's own limits, never storage (2026-09-02 review, R7).
 - No history, no store-and-forward, no direct WebRTC. The relay is a pipe.
-- No protection of frame *sizes and timing* from the relay. That is the
-  metadata a blind pipe still sees.
+- No protection of frame *sizes and timing*, addresses or identifiers from
+  the relay. That is the metadata a blind pipe still sees; the list is under
+  "Who is who".
 
 ## Operating the relay
 
