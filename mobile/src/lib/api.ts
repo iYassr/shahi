@@ -522,6 +522,8 @@ export class SessionSocket {
   constructor(
     private readonly onMessage: (msg: SocketMessage) => void,
     private readonly onLink: (state: LinkState) => void,
+    /** The server closed with 4001: the session no longer verifies. */
+    private readonly onExpired?: () => void,
   ) {}
 
   connect(): void {
@@ -545,7 +547,11 @@ export class SessionSocket {
 
   /** Reconnects now if the connection is not up — for coming back to the app. */
   ensureConnected(): void {
-    if (this.#closed) return;
+    // Closed on purpose (a 426, say) is re-openable: "Try again" lands here.
+    if (this.#closed) {
+      this.connect();
+      return;
+    }
     if (this.#socket?.readyState === 1) {
       this.#checkAlive();
       return;
@@ -614,8 +620,16 @@ export class SessionSocket {
         // A malformed frame is not worth tearing the connection down for.
       }
     };
-    socket.onclose = () => {
+    socket.onclose = (event: { code?: number }) => {
       this.onLink("lost");
+      // 4001 is the server's heartbeat finding this session expired or
+      // revoked. Retrying would be refused at the gate forever, and React
+      // Native surfaces that refusal as another close, never as a 401.
+      if (event?.code === 4001) {
+        this.close();
+        this.onExpired?.();
+        return;
+      }
       this.#retry();
     };
     socket.onerror = () => socket.close();

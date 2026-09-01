@@ -60,3 +60,12 @@ describe("clientAddress", () => {
     expect(clientAddress(null, "1.2.3.4")).toBe("unknown");
   });
 });
+
+// The documented deployment binds the tailnet IP and `tailscale serve` dials
+// it, so the peer is the box's own address rather than loopback. Without this
+// every phone and laptop behind the proxy shared one bucket (review finding).
+test("clientAddress trusts x-forwarded-for when the peer is the bind address", () => {
+  expect(clientAddress("100.64.0.5", "100.64.0.7", "100.64.0.5")).toBe("100.64.0.7");
+  expect(clientAddress("100.64.0.5", "100.64.0.7", "127.0.0.1")).toBe("100.64.0.5");
+  expect(clientAddress("100.64.0.5", "100.64.0.7")).toBe("100.64.0.5");
+});

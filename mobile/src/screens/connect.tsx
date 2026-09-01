@@ -84,7 +84,12 @@ export function Connect({
       }
       // The name is what Settings lists, on every phone; expo-device knows it
       // on a device and answers null on a simulator.
-      await api.claimPairing(payload.secret, Device.deviceName ?? "iPhone");
+      // `deviceName` is the model class ("iPhone") on iOS 16+ without an
+      // entitlement Apple grants case by case, so two phones would be
+      // indistinguishable in Settings; the model name is always populated.
+      const label =
+        Device.deviceName && Device.deviceName !== "iPhone" ? Device.deviceName : (Device.modelName ?? "iPhone");
+      await api.claimPairing(payload.secret, label);
       onConnected();
     } catch (e) {
       setError((e as Error).message);

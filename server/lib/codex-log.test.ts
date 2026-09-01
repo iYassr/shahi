@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -238,4 +238,20 @@ describe("rolloutWithinSessions", () => {
     expect(rolloutWithinSessions(undefined, sessions)).toBeNull();
     expect(rolloutWithinSessions(42, sessions)).toBeNull();
   });
+});
+
+// codex canonicalises CODEX_HOME, so with a symlinked home its index holds real
+// paths while a bare join of our own would be the link; both spellings must
+// resolve to the same file or every indexed rollout is refused.
+test("rolloutWithinSessions follows a symlinked sessions directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-codex-"));
+  const real = join(root, "real", "sessions");
+  mkdirSync(join(real, "2026"), { recursive: true });
+  writeFileSync(join(real, "2026", "rollout-x.jsonl"), "");
+  symlinkSync(join(root, "real"), join(root, "link"));
+  const viaLink = join(root, "link", "sessions", "2026", "rollout-x.jsonl");
+  const resolved = join(realpathSync(real), "2026", "rollout-x.jsonl");
+  expect(rolloutWithinSessions(viaLink, join(root, "link", "sessions"))).toBe(viaLink);
+  expect(rolloutWithinSessions(resolved, join(root, "link", "sessions"))).toBe(resolved);
+  expect(rolloutWithinSessions(join(root, "real", "sessions", "..", "..", "etc.jsonl"), real)).toBeNull();
 });

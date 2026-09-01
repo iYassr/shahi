@@ -7,6 +7,7 @@
  * server is the real `createServer`; only herdr is faked, with the three
  * methods these routes reach.
  */
+import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -252,7 +253,7 @@ describe("raw RPC", () => {
         headers: { cookie: s.cookie, "content-type": "application/json", ...headers },
         body: JSON.stringify({ method: "workspace.list", params: {} }),
       });
-    expect((await rpc({ "x-shahi-api": "1" })).status).toBe(403);
+    expect((await rpc({ "x-shahi-api": String(SHAHI_API_VERSION) })).status).toBe(403);
     expect((await rpc({})).status).toBe(200);
   });
 });
