@@ -57,6 +57,14 @@ title = "Shahi logs"
 contexts = ["workspace"]
 command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "logs"]
 
+# `herdr plugin uninstall shahi` removes the checkout and knows nothing about
+# the service; this removes the service and keeps your data. Run it first.
+[[actions]]
+id = "uninstall"
+title = "Remove Shahi's service"
+contexts = ["workspace"]
+command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "uninstall"]
+
 # The QR, inside herdr. A popup closes when its command exits, so the command
 # waits for Enter after printing.
 [[panes]]
