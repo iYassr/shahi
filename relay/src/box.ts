@@ -238,8 +238,13 @@ export class RelayBox extends DurableObject<unknown> {
   /** A socket the peer closed, or that errored: tidy what it was holding. */
   private async gone(ws: WebSocket): Promise<void> {
     const state = ws.deserializeAttachment() as Attachment | null;
-    if (state?.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, "gone");
-    else if (state?.role === "box") this.closeBox(ws, state, CLOSE_NORMAL, "gone");
+    // A refused socket held nothing and changed no deadline; re-arming the
+    // alarm for it is a storage write per refusal, and a phone whose box is
+    // offline reconnects all day (measured: ~100k refusals per phone-day
+    // before the app backed off properly). Nothing to schedule.
+    if (!state) return;
+    if (state.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, "gone");
+    else if (state.role === "box") this.closeBox(ws, state, CLOSE_NORMAL, "gone");
     await this.schedule();
   }
 
