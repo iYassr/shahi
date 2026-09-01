@@ -32,6 +32,16 @@ const PASSCODE = "1234";
 const COOKIE = "shahi_session=stub";
 
 let scenario: Scenario = SCENARIOS.busy();
+/**
+ * The contract range `/api/meta` advertises and requests are held to.
+ *
+ * The real server speaks exactly one version; the stub can be told to speak
+ * some other range so the app can be shown a server it cannot talk to —
+ * which is the one situation nothing but a mismatch can stage. Reset with the
+ * scenario, so an override cannot leak into the next test.
+ */
+const APP_SPEAKS = { min: 1, max: 1 };
+let apiRange = { ...APP_SPEAKS };
 /** Everything the app tried to change, in order, for tests to assert on. */
 let writes: { method: string; path: string; body: unknown; at: number }[] = [];
 const sockets = new Set<ServerWebSocket<unknown>>();
@@ -95,12 +105,25 @@ Bun.serve({
       const body = (await req.json()) as { name?: ScenarioName; patch?: Partial<Scenario> };
       if (body.name) scenario = SCENARIOS[body.name]();
       if (body.patch) scenario = { ...scenario, ...body.patch };
+      apiRange = { ...APP_SPEAKS };
       writes = [];
       broadcast({ type: "session", session: scenario.session });
       return json({ ok: true });
     }
 
     if (pathname === "/__stub/writes") return json({ writes });
+
+    if (pathname === "/__stub/meta" && req.method === "POST") {
+      // Advertise a contract range and refuse everything outside it — a
+      // server behind the app (`{ min: 0, max: 0 }`) or ahead of it
+      // (`{ min: 2, max: 2 }`), until the next scenario resets it.
+      const body = (await req.json()) as { api?: { min: number; max: number } };
+      if (!body.api || !Number.isInteger(body.api.min) || !Number.isInteger(body.api.max)) {
+        return json({ error: "api: { min, max } required" }, { status: 400 });
+      }
+      apiRange = { min: body.api.min, max: body.api.max };
+      return json({ ok: true, api: apiRange });
+    }
 
     if (pathname === "/__stub/push" && req.method === "POST") {
       // Lets a test push a frame, a prompt or a status change down the socket.
@@ -123,9 +146,29 @@ Bun.serve({
       return json({
         serverId: "stub-0000",
         serverVersion: "0.1.0",
-        api: { min: 1, max: 1 },
+        api: apiRange,
         herdr: { version: scenario.session.version, protocol: scenario.session.protocol },
       });
+    }
+
+    // The version gate, in the same place and the same words as the real
+    // server's: before auth, before the socket upgrade, on any request that
+    // names a version. The archived web client names none and is let through.
+    const claimed = req.headers.get("x-shahi-api");
+    if (claimed !== null) {
+      const n = Number(claimed);
+      if (!Number.isInteger(n) || n < apiRange.min || n > apiRange.max) {
+        return json(
+          {
+            error:
+              n > apiRange.max
+                ? "This server runs an older Shahi than the app. Update Shahi on this computer — run install.sh again."
+                : "This app is older than the Shahi on this server. Update the app.",
+            api: apiRange,
+          },
+          { status: 426 },
+        );
+      }
     }
 
     if (pathname === "/api/auth/status") {
