@@ -27,7 +27,7 @@
   "overrides": {
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "expo-constants": "~57.0.8",
+    "expo-constants": "~57.0.16",
     "react-test-renderer": "19.2.3"
   }
 }

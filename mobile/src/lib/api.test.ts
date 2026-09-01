@@ -1,3 +1,4 @@
+import { SHAHI_API_VERSION } from "@shahi/shared";
 import { api, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
 
 /**
@@ -280,7 +281,7 @@ describe("semantic requests", () => {
     await api.sendKeys("w1:p1", ["Escape"]);
     await api.readFile("/home/y/x.ts").catch(() => undefined);
     for (const call of fetchMock.mock.calls) {
-      expect(call[1].headers["x-shahi-api"]).toBe("1");
+      expect(call[1].headers["x-shahi-api"]).toBe(String(SHAHI_API_VERSION));
     }
   });
 
@@ -306,7 +307,7 @@ describe("semantic requests", () => {
     }
     expect(opened).toHaveLength(1);
     expect(opened[0]![0]).toBe("ws://localhost:7272/ws");
-    expect(opened[0]![2]).toEqual({ headers: { "x-shahi-api": "1", cookie: "shahi_session=x" } });
+    expect(opened[0]![2]).toEqual({ headers: { "x-shahi-api": String(SHAHI_API_VERSION), cookie: "shahi_session=x" } });
   });
 
   // 426 is the server declining this version, not a generic failure: the
@@ -316,7 +317,7 @@ describe("semantic requests", () => {
       ok: false,
       status: 426,
       headers: new Headers(),
-      json: async () => ({ error: "Update Shahi on this computer.", api: { min: 2, max: 2 } }),
+      json: async () => ({ error: "Update Shahi on this computer.", api: { min: SHAHI_API_VERSION + 1, max: SHAHI_API_VERSION + 1 } }),
     });
     await expect(api.session()).rejects.toBeInstanceOf(IncompatibleServerError);
     await expect(api.session()).rejects.toThrow("Update Shahi on this computer.");
@@ -355,7 +356,7 @@ describe("meta", () => {
   });
 
   test("a matching server is described", async () => {
-    answer(200, info(1, 1));
+    answer(200, info(SHAHI_API_VERSION, SHAHI_API_VERSION));
     await expect(api.meta()).resolves.toMatchObject({ serverId: "abc", herdr: { protocol: 20 } });
     expect(fetchMock.mock.calls[0]![0]).toBe("http://localhost:7272/api/meta");
   });
@@ -371,14 +372,14 @@ describe("meta", () => {
   });
 
   test("a server behind this app says to update the computer", async () => {
-    answer(200, info(0, 0));
+    answer(200, info(SHAHI_API_VERSION - 1, SHAHI_API_VERSION - 1));
     const e = await api.meta().catch((err: unknown) => err);
     expect(e).toBeInstanceOf(IncompatibleServerError);
     expect((e as Error).message).toMatch(/Update Shahi on that computer/);
   });
 
   test("a server ahead of this app says to update the app", async () => {
-    answer(200, info(2, 3));
+    answer(200, info(SHAHI_API_VERSION + 1, SHAHI_API_VERSION + 2));
     const e = await api.meta().catch((err: unknown) => err);
     expect(e).toBeInstanceOf(IncompatibleServerError);
     expect((e as Error).message).toMatch(/Update the app/);

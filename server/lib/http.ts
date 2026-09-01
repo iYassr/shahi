@@ -141,8 +141,11 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
  * against a page on the same *site* — another machine's `*.tailnet.ts.net`
  * name, say. A `text/plain` POST needs no preflight and `req.json()` never
  * looked at the content type, so a page there could have typed into a pane.
- * The native app sends no `Origin` at all, which is what a request with none
- * means: not a browser, and the cookie was attached on purpose.
+ * The native app's `fetch` sends no `Origin`, which is what a request with
+ * none means: not a browser, and the cookie was attached on purpose. Its
+ * WebSocket does send one — React Native builds it from the socket URL — so
+ * it matches `Host` by construction, except that iOS drops the brackets from
+ * an IPv6 literal; hosts are compared with brackets removed for that reason.
  *
  * A reverse proxy in front (`tailscale serve`, `cloudflared`) may rewrite
  * `Host` to this process's address and keep the public name only in
@@ -157,10 +160,13 @@ function originAllowed(req: Request): boolean {
   try {
     originHost = new URL(origin).host;
   } catch {
-    return false;
+    // "http://fd7a:115c::1:7171" — an IPv6 literal with its brackets lost is
+    // not a URL, but it is still this server if the rest matches.
+    originHost = origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
   }
+  const bare = (h: string) => h.split(",")[0]!.trim().replace(/[[\]]/g, "");
   return [req.headers.get("host"), req.headers.get("x-forwarded-host")].some(
-    (host) => host !== null && host.split(",")[0]!.trim() === originHost,
+    (host) => host !== null && bare(host) === bare(originHost),
   );
 }
 
@@ -316,7 +322,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
         // Only a pane herdr knows about: watching one that does not exist
         // still cost a poll, a herdr call and a transcript lookup per message.
-        if (msg.type === "watch" && typeof msg.paneId === "string" && store.pane(msg.paneId)) {
+        // Registered even for a pane the mirror has not seen yet: a phone that
+        // starts an agent and opens it can arrive before the pane_created event
+        // has been applied, and dropping the watch left that screen on the slow
+        // interval for good. Only the work that needs the pane (the first read,
+        // the transcript) waits for it.
+        if (msg.type === "watch" && typeof msg.paneId === "string") {
           watch(ws, msg.paneId);
         } else if (msg.type === "unwatch") {
           ws.data.releaseWatch?.();
@@ -358,7 +369,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
         // --- unauthenticated ---
         if (isRateLimitedPath(pathname)) {
-          const address = clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"));
+          const address = clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host);
           const wait = limiter.hit(address);
           if (wait !== null) {
             return json(
@@ -418,6 +429,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         }
 
         if (pathname === "/api/auth/logout" && req.method === "POST") {
+          // A paired phone signing out ends its identity as well as its cookie.
+          // Otherwise the row stayed "active" for thirty days and every re-pair
+          // added a ghost to the list in Settings.
+          const deviceId = identify(req)?.deviceId;
+          if (deviceId) devices.revoke(deviceId);
           return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
         }
 
@@ -463,6 +479,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // for itself from the same SESSION_SECRET, so whoever can read .env on
         // the box — the owner — can pair a phone, and nobody else can.
         if (pathname === "/api/pair" && req.method === "POST") {
+          // Only a passcode (or script) session may mint. A paired phone that
+          // could mint would hand itself a second identity, and revoking the one
+          // the owner can see would leave its sibling with full access until the
+          // secret rotates — not what Revoke promises (review finding).
+          if (identify(req)?.deviceId) {
+            return json({ error: "a paired device cannot mint pairing codes" }, { status: 403 });
+          }
           return json(pairing.mint());
         }
 
@@ -876,7 +899,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
     const frame = poller.frame(paneId);
     if (frame) ws.send(JSON.stringify({ type: "frame", frame }));
-    else void poller.refresh(paneId);
+    else if (store.pane(paneId)) void poller.refresh(paneId);
 
     ws.data.releaseLog?.();
     ws.data.releaseLog = watchLog(ws, paneId);
