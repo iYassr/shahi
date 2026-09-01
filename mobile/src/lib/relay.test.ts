@@ -87,11 +87,12 @@ class FakeBox {
   /** Reads the phone's hello, answers with the box's, derives the session. */
   handshake(): PhoneHello {
     const first = this.socket.sent[this.#readFrom++];
-    if (typeof first !== "string") throw new Error("the first frame should be the hello, in the clear");
-    this.hello = JSON.parse(first) as PhoneHello;
+    // In the clear but binary: the relay forwards data frames only.
+    if (typeof first === "string") throw new Error("the hello must be a binary frame; the relay drops text from phones");
+    this.hello = JSON.parse(str(first as Uint8Array)) as PhoneHello;
     const self = ephemeral(random(32));
     this.session = serverSession(self, fromBase64Url(this.hello.pub), this.secret);
-    this.socket.text(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(self.pub) }));
+    this.socket.binary(new TextEncoder().encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(self.pub) })));
     return this.hello;
   }
 
@@ -201,7 +202,7 @@ describe("hello", () => {
     const reply = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 1000);
     const socket = FakeSocket.opened.at(-1)!;
     socket.accept();
-    socket.text(JSON.stringify({ t: "hello", v: 2, pub: toBase64Url(new Uint8Array(32)) }));
+    socket.binary(new TextEncoder().encode(JSON.stringify({ t: "hello", v: 2, pub: toBase64Url(new Uint8Array(32)) })));
     await expect(reply).rejects.toThrow(/protocol v2.*speaks v1/);
     await sleep(600);
     expect(FakeSocket.opened).toHaveLength(1);
