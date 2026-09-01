@@ -10,6 +10,7 @@ before changing anything.
 shared/    the wire contract, types only — both clients import it
 server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
 plugin/    the herdr plugin: startup hook, actions, the service it installs
+relay/     the blind relay: a Cloudflare Worker, one Durable Object per box
 mobile/    the Expo app — the product, and where new work goes
 web/       the React PWA, archived: kept working, no longer developed
 e2e/       Playwright, against a stub of the server
@@ -163,6 +164,23 @@ and is not a device. See `docs/pairing.md`. The security posture of the whole
 surface, what was fixed and what is deferred to whom, is in
 `docs/security-review.md`.
 
+**A phone reaches a box from anywhere through a relay that reads nothing.**
+`docs/relay.md` is the protocol and `shared/src/relay.ts` its shapes. The
+box dials out (`RELAY_URL`) and proves an Ed25519 key whose hash is its
+`serverId`; phones are multiplexed onto that one socket by link number; and
+above the relay every frame is sealed with `shared/src/e2e.ts`, keyed from
+the pairing secret or a per-device secret that never travels — the relay
+sees sizes and timing, nothing else. `cd relay && bunx wrangler deploy`
+runs one; the pairing code carries its address, and the app prefers it.
+Measured: 203ms for a request through Cloudflare's edge, 557ms for a first
+hello that wakes a cold Durable Object. Three things learned the day it
+first ran, all now in the protocol: the hello is a *binary* frame, because
+the relay forwards data and drops phone text; a pairing link may read
+`/api/meta` before it claims, because the phone checks the box's id first;
+and the box pings, because a Durable Object cannot — a box silent for five
+minutes is dropped. The `e2e.ts` construction still wants its outside
+review before the relay is the default way in (`docs/connectivity.md`).
+
 **The reader is pushed, and polls only to recover.** While a phone watches a
 pane the server watches that pane's transcript file and sends `log_changed`
 (size only, no content) the moment it grows; the reader fetches its tail then.
@@ -307,6 +325,12 @@ Stated plainly, because a vague gaps list is worse than none.
   `TranscriptAdapter` interface was proposed alongside it and deliberately not
   built: there are two readers, dispatch is one `if`, and a third agent with a
   trustworthy transcript is the moment to abstract, not before.
+- **The relay has no CI of its own beyond `bun test relay` under
+  `wrangler dev`.** The box↔relay↔phone loop was proven by hand against the
+  deployed Worker (a fake phone in `bun`, then the app on a simulator paired
+  by a `shahi://pair` link and running a shell command). A live job that
+  deploys to a preview Worker and runs the fake phone is the obvious next
+  step; it needs a Cloudflare token in CI.
 - **`agent.prompt` is not exercised against a real agent in CI.** The live
   suite proves it refuses a non-agent pane with a code; the runners have no
   claude or codex to prompt. On a machine that has one,

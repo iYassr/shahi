@@ -36,6 +36,10 @@ jobs:
 
       - run: bun test shared/src server web/src plugin
 
+      # The relay's own suite starts a local `wrangler dev` — no account, no
+      # network beyond the loopback — and proves the Worker end of the protocol.
+      - run: bun run test:relay
+
       # The native app runs on a different runner: jest-expo renders real
       # components in a JS environment, which is the only automated coverage
       # `mobile/` has and the only kind that needs no simulator.

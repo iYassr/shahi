@@ -94,11 +94,14 @@ test("a remembered relay connection comes back as that device, through the relay
   // The box greets, keyed from the same device secret the keychain held.
   ws.readyState = 1;
   act(() => ws.onopen?.());
-  const hello = JSON.parse(ws.sent[0] as string) as PhoneHello;
+  // Bytes, not text: the relay forwards data frames and drops phone text.
+  const hello = JSON.parse(new TextDecoder().decode(ws.sent[0] as Uint8Array)) as PhoneHello;
   expect(hello.auth).toEqual({ kind: "device", deviceId: "dev-1" });
   const self = ephemeral(random(32));
   const box: Session = serverSession(self, fromBase64Url(hello.pub), fromBase64Url(stored.deviceSecret));
-  act(() => ws.onmessage?.({ data: JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(self.pub) }) }));
+  act(() =>
+    ws.onmessage?.({ data: new TextEncoder().encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(self.pub) })).buffer }),
+  );
   await waitFor(() => expect(screen.getByTestId("link").props.children).toBe("live"));
 
   // The session read that restore triggers went through the link, sealed —
