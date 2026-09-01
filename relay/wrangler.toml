@@ -1,0 +1,20 @@
+# The blind relay: one Worker, one Durable Object per box. `docs/relay.md` is
+# the protocol; "Operating the relay" at the end of it is how to deploy this.
+name = "shahi-relay"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Anonymous usage metrics off: this is somebody's private relay, and the
+# default is to phone home from every `wrangler` invocation.
+send_metrics = false
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayBox"
+
+# SQLite-backed rather than the older key-value flavour: it is the only kind
+# the free plan allows, and the relay stores nothing anyway — every byte of
+# state lives on the WebSocket attachments, which hibernate with the socket.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayBox"]
