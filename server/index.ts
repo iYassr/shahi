@@ -19,6 +19,7 @@ import { serverIdentity } from "./lib/identity";
 import { Devices, Pairing } from "./lib/pairing";
 import { Poller } from "./lib/poller";
 import { PushService } from "./lib/push";
+import { RelayClient } from "./lib/relay-client";
 import { SessionStore } from "./lib/state";
 import { TranscriptStore } from "./lib/transcript";
 
@@ -89,8 +90,24 @@ subscriber.start();
 store.startSync();
 poller.start();
 
-const serverId = serverIdentity(db);
-const server = createServer({ config, auth, client, store, poller, transcript, push, pairing, devices, serverId });
+const identity = serverIdentity(db);
+const server = createServer({
+  config,
+  auth,
+  client,
+  store,
+  poller,
+  transcript,
+  push,
+  pairing,
+  devices,
+  serverId: identity.serverId,
+});
+
+// Dialled out, never listened on: with a relay the box is reachable from
+// anywhere the relay is, with nothing opened here. See docs/relay.md.
+const relay = config.relayUrl ? new RelayClient({ url: config.relayUrl, identity, devices, pairing, auth, server }) : null;
+relay?.start();
 
 const agents = store.state.agents.length;
 const blocked = store.state.agents.filter((a) => a.agent_status === "blocked").length;
@@ -103,6 +120,7 @@ console.log(
 console.log(`  passcode ${auth.disabled ? "DISABLED — anyone reaching this port has full control" : "required"}`);
 console.log(`  push ${push.enabled ? `enabled, ${push.count()} subscription(s)` : "disabled (no VAPID keys)"}`);
 console.log(`  devices ${devices.list().length} paired — pair a phone: bun run server/scripts/pair.ts`);
+console.log(`  relay ${config.relayUrl ? `dialling ${config.relayUrl} as ${identity.serverId}` : "none (RELAY_URL not set); reachable directly only"}`);
 console.log(`  data ${config.dataPath}`);
 
 const loopback = config.host === "127.0.0.1" || config.host === "localhost" || config.host === "::1";
@@ -156,6 +174,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     subscriber.stop();
     store.stopSync();
     poller.stop();
+    relay?.stop();
     server.stop();
     transcript.close();
     db.close();

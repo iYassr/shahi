@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { Auth } from "./auth";
 import { Devices, PAIRING_TTL_MS, Pairing, pairingUrl } from "./pairing";
 
@@ -16,6 +17,25 @@ describe("pairing codes", () => {
   test("two codes are never the same", () => {
     const pairing = new Pairing();
     expect(pairing.mint().secret).not.toBe(pairing.mint().secret);
+  });
+
+  // Over the relay a phone names its code by the hash of the secret bytes,
+  // and the box must find the secret to derive the same key the phone will.
+  test("an outstanding code is found by the hash of its bytes, until claimed or expired", () => {
+    const pairing = new Pairing();
+    const { secret } = pairing.mint(1_000);
+    const bytes = new Uint8Array(Buffer.from(secret, "base64url"));
+    const hash = Buffer.from(sha256(bytes)).toString("base64url");
+    expect(pairing.secretByHash(hash, 2_000)).toEqual(bytes);
+    // Looking is not claiming.
+    expect(pairing.secretByHash(hash, 2_000)).toEqual(bytes);
+    expect(pairing.secretByHash("nope", 2_000)).toBeNull();
+    expect(pairing.claim(secret, 3_000)).toBe(true);
+    expect(pairing.secretByHash(hash, 3_000)).toBeNull();
+
+    const expiring = pairing.mint(0);
+    const expiringHash = Buffer.from(sha256(Buffer.from(expiring.secret, "base64url"))).toString("base64url");
+    expect(pairing.secretByHash(expiringHash, PAIRING_TTL_MS)).toBeNull();
   });
 
   test("a code nobody minted is refused", () => {
@@ -49,6 +69,21 @@ describe("pairing codes", () => {
     expect(params.get("server")).toBe("0c5e1b9c-6d4d-4a0f-9d5e-9f4a2b1c3d7e");
     expect(params.get("endpoint")).toBe("https://box.tailnet.ts.net");
     expect(params.get("secret")).toBe("a_b-c");
+    // No relay, no key: the phone reads absence as "reach it directly".
+    expect(params.has("relay")).toBe(false);
+  });
+
+  test("a box dialled into a relay puts the relay in the code beside the endpoint", () => {
+    const url = pairingUrl({
+      v: 1,
+      server: "id",
+      endpoint: "https://box.tailnet.ts.net",
+      relay: "https://relay.example.workers.dev",
+      secret: "s",
+    });
+    const params = new URLSearchParams(url.slice("shahi://pair#".length));
+    expect(params.get("relay")).toBe("https://relay.example.workers.dev");
+    expect(params.get("endpoint")).toBe("https://box.tailnet.ts.net");
   });
 });
 
@@ -57,7 +92,7 @@ describe("devices", () => {
 
   test("a created device is listed, active, and named after the phone", () => {
     const devices = fresh();
-    const device = devices.create("  Yasser's iPhone  ", 5_000);
+    const { device } = devices.create("  Yasser's iPhone  ", 5_000);
     expect(device.name).toBe("Yasser's iPhone");
     expect(device.createdAt).toBe(5_000);
     expect(devices.list()).toEqual([device]);
@@ -66,14 +101,30 @@ describe("devices", () => {
 
   test("a blank name becomes something, and a long one is cut", () => {
     const devices = fresh();
-    expect(devices.create("   ").name).toBe("Phone");
-    expect(devices.create("x".repeat(200)).name).toHaveLength(64);
+    expect(devices.create("   ").device.name).toBe("Phone");
+    expect(devices.create("x".repeat(200)).device.name).toHaveLength(64);
+  });
+
+  // The secret is the phone's half of the relay key: handed over once, never
+  // listed, and gone from the box's answers the moment the device is revoked.
+  test("each device gets its own 32-byte secret, readable while it is active and never listed", () => {
+    const devices = fresh();
+    const a = devices.create("a");
+    const b = devices.create("b");
+    expect(a.secret).toHaveLength(32);
+    expect(a.secret).not.toEqual(b.secret);
+    expect(devices.secret(a.device.id)).toEqual(a.secret);
+    expect(devices.secret("never-existed")).toBeNull();
+    expect(JSON.stringify(devices.list())).not.toContain(Buffer.from(a.secret).toString("base64url"));
+    devices.revoke(a.device.id);
+    expect(devices.secret(a.device.id)).toBeNull();
+    expect(devices.secret(b.device.id)).toEqual(b.secret);
   });
 
   test("revoking removes a device from the list and from the gate, once", () => {
     const devices = fresh();
-    const keep = devices.create("keep", 1);
-    const gone = devices.create("gone", 2);
+    const keep = devices.create("keep", 1).device;
+    const gone = devices.create("gone", 2).device;
     expect(devices.revoke(gone.id)).toBe(true);
     expect(devices.revoke(gone.id)).toBe(false);
     expect(devices.revoke("never-existed")).toBe(false);
@@ -85,7 +136,7 @@ describe("devices", () => {
   // a minute is as fresh as "last seen" needs to be.
   test("last seen moves at most once a minute", () => {
     const devices = fresh();
-    const device = devices.create("p", 0);
+    const { device } = devices.create("p", 0);
     devices.touch(device.id, 30_000);
     expect(devices.list()[0]!.lastSeenAt).toBe(0);
     devices.touch(device.id, 60_000);
@@ -125,7 +176,7 @@ describe("a session bound to a device", () => {
       sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
       deviceActive: (id) => devices.isActive(id),
     });
-    const device = devices.create("phone");
+    const { device } = devices.create("phone");
     const token = auth.issue(Date.now(), device.id);
     expect(auth.verifyToken(token)).toBe(true);
     devices.revoke(device.id);

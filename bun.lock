@@ -61,6 +61,8 @@
       "name": "@shahi/server",
       "version": "0.1.0",
       "dependencies": {
+        "@noble/curves": "^2.3.0",
+        "@noble/hashes": "^2.3.0",
         "qrcode": "^1.5.4",
         "web-push": "^3.6.7",
       },

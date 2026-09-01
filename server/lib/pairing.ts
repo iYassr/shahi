@@ -16,6 +16,7 @@
  */
 import type { Database } from "bun:sqlite";
 import { randomBytes, randomUUID } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
 import type { PairedDevice, PairingCode, PairingPayload } from "@shahi/shared";
 
 export const PAIRING_TTL_MS = 10 * 60 * 1000;
@@ -33,12 +34,20 @@ const LAST_SEEN_GRANULARITY_MS = 60_000;
 export class Pairing {
   /** secret → expiresAt */
   readonly #codes = new Map<string, number>();
+  /**
+   * base64url(sha256(secret bytes)) → secret. A phone reaching the box over
+   * the relay names its code by this hash, never by the secret itself, which
+   * it must keep for the key derivation (`docs/relay.md`).
+   */
+  readonly #byHash = new Map<string, string>();
 
   mint(now = Date.now()): PairingCode {
     this.#prune(now);
-    const secret = randomBytes(32).toString("base64url");
+    const bytes = randomBytes(32);
+    const secret = bytes.toString("base64url");
     const expiresAt = now + PAIRING_TTL_MS;
     this.#codes.set(secret, expiresAt);
+    this.#byHash.set(hashOf(bytes), secret);
     return { secret, expiresAt };
   }
 
@@ -52,8 +61,19 @@ export class Pairing {
     this.#prune(now);
     const expiresAt = this.#codes.get(secret);
     if (expiresAt === undefined) return false;
-    this.#codes.delete(secret);
+    this.#forget(secret);
     return expiresAt > now;
+  }
+
+  /**
+   * The bytes of an outstanding code, found by their hash — what a pairing
+   * link's hello carries. Looking is not claiming: the code stays until the
+   * phone posts it to `/api/pair/claim` over the link it opened with it.
+   */
+  secretByHash(hash: string, now = Date.now()): Uint8Array | null {
+    this.#prune(now);
+    const secret = this.#byHash.get(hash);
+    return secret === undefined ? null : new Uint8Array(Buffer.from(secret, "base64url"));
   }
 
   /** Codes minted and neither claimed nor expired. */
@@ -64,9 +84,18 @@ export class Pairing {
 
   #prune(now = Date.now()): void {
     for (const [secret, expiresAt] of this.#codes) {
-      if (expiresAt <= now) this.#codes.delete(secret);
+      if (expiresAt <= now) this.#forget(secret);
     }
   }
+
+  #forget(secret: string): void {
+    this.#codes.delete(secret);
+    this.#byHash.delete(hashOf(Buffer.from(secret, "base64url")));
+  }
+}
+
+function hashOf(secretBytes: Uint8Array): string {
+  return Buffer.from(sha256(secretBytes)).toString("base64url");
 }
 
 /** The text the QR encodes. See `PairingPayload` for why it is a fragment. */
@@ -75,9 +104,19 @@ export function pairingUrl(payload: PairingPayload): string {
     v: String(payload.v),
     server: payload.server,
     endpoint: payload.endpoint,
+    // Only when the box has one: an absent key is what "no relay" looks like
+    // to the phone, not an empty string it would have to special-case.
+    ...(payload.relay ? { relay: payload.relay } : {}),
     secret: payload.secret,
   });
   return `shahi://pair#${params.toString()}`;
+}
+
+/** What a claim hands the phone: the device, and its share of the relay key. */
+export interface CreatedDevice {
+  device: PairedDevice;
+  /** 32 bytes. Sent once, at pairing; the phone keeps it in the Keychain. */
+  secret: Uint8Array;
 }
 
 /**
@@ -86,6 +125,13 @@ export function pairingUrl(payload: PairingPayload): string {
  * A revoked row is kept, not deleted: `revoked_at` is the record of when a
  * phone lost access, and a token minted for that id must keep failing rather
  * than start matching nothing.
+ *
+ * Each device also has a **secret**: 32 bytes minted at pairing and shared
+ * with that phone alone, the long-lived half of the end-to-end key when the
+ * phone comes in through the relay (`docs/relay.md`). Stored raw — this
+ * process already holds `SESSION_SECRET` in the clear, and a hash would be
+ * useless here because the secret is an input to a key derivation, not
+ * something to compare.
  */
 export class Devices {
   constructor(private readonly db: Database) {
@@ -93,6 +139,7 @@ export class Devices {
       CREATE TABLE IF NOT EXISTS devices (
         id           TEXT PRIMARY KEY,
         name         TEXT NOT NULL,
+        secret       BLOB NOT NULL,
         created_at   INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL,
         revoked_at   INTEGER
@@ -100,13 +147,22 @@ export class Devices {
     `);
   }
 
-  create(name: string, now = Date.now()): PairedDevice {
+  create(name: string, now = Date.now()): CreatedDevice {
     const cleaned = name.trim().slice(0, DEVICE_NAME_MAX) || "Phone";
     const device: PairedDevice = { id: randomUUID(), name: cleaned, createdAt: now, lastSeenAt: now };
+    const secret = new Uint8Array(randomBytes(32));
     this.db
-      .query("INSERT INTO devices (id, name, created_at, last_seen_at) VALUES (?, ?, ?, ?)")
-      .run(device.id, device.name, device.createdAt, device.lastSeenAt);
-    return device;
+      .query("INSERT INTO devices (id, name, secret, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)")
+      .run(device.id, device.name, secret, device.createdAt, device.lastSeenAt);
+    return { device, secret };
+  }
+
+  /** The relay key share of a device that can still act; null once revoked or never known. */
+  secret(id: string): Uint8Array | null {
+    const row = this.db
+      .query<{ secret: Uint8Array }, [string]>("SELECT secret FROM devices WHERE id = ? AND revoked_at IS NULL")
+      .get(id);
+    return row ? new Uint8Array(row.secret) : null;
   }
 
   /** Devices that can still act, oldest first. */
