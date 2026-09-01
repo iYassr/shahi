@@ -218,7 +218,7 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
     try {
       // Absolute only: herdr does not expand `~` and does not reject it either,
       // it silently uses $HOME.
-      await api.rpc("workspace.create", { label: name.trim() || "new space", cwd, focus: false });
+      await api.createWorkspace({ label: name.trim() || "new space", cwd });
       onCreated();
     } catch (e) {
       setError((e as Error).message);

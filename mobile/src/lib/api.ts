@@ -13,15 +13,18 @@
  * `fetch` and `WebSocket` are both present in React Native, so the transport is
  * otherwise identical.
  */
-import type {
-  DirListing,
-  InstalledAgent,
-  PaneFrame,
-  Session,
-  SessionLog,
-  SocketMessage,
-  StoredUpload,
-  TranscriptLine,
+import {
+  SHAHI_API_VERSION,
+  type DirListing,
+  type InstalledAgent,
+  type PaneFrame,
+  type PromptReceipt,
+  type ServerInfo,
+  type Session,
+  type SessionLog,
+  type SocketMessage,
+  type StoredUpload,
+  type TranscriptLine,
 } from "@shahi/shared";
 
 export class UnauthorizedError extends Error {
@@ -29,6 +32,147 @@ export class UnauthorizedError extends Error {
     super("unauthorized");
     this.name = "UnauthorizedError";
   }
+}
+
+/**
+ * The server and this app do not speak a common contract version.
+ *
+ * Distinct from unreachable and from unauthorized: the server is there and
+ * answering, it just cannot be talked to by this build. The message says which
+ * side to update, because "update" alone sends people to the wrong device.
+ */
+export class IncompatibleServerError extends Error {
+  constructor(
+    message: string,
+    readonly serverApi: { min: number; max: number },
+  ) {
+    super(message);
+    this.name = "IncompatibleServerError";
+  }
+}
+
+export type UnreachableReason =
+  | "address"
+  | "ats"
+  | "dns"
+  | "refused"
+  | "offline"
+  | "lost"
+  | "timeout"
+  | "tls"
+  | "unknown";
+
+/**
+ * The server could not be reached at all — as opposed to reached and refusing.
+ *
+ * `fetch` rejects with whatever the platform said. On iOS that is Expo wrapping
+ * an NSURLError description — "fetch failed: UnexpectedException: A server
+ * with the specified hostname could not be found. (at
+ * ExpoModulesCore/Promise.swift:56)" — and that string reached the Connect
+ * screen and the Agents screen verbatim, reading as a crash rather than a
+ * network. This carries a message written for the person holding the phone,
+ * naming the host they typed, and a `reason` so a screen can decide what to
+ * offer.
+ */
+export class UnreachableError extends Error {
+  constructor(
+    readonly reason: UnreachableReason,
+    readonly host: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "UnreachableError";
+  }
+}
+
+/**
+ * `host:port` of a URL, for messages. A regex rather than `URL`, because a
+ * malformed address is one of the cases being described and must produce a
+ * message rather than a second exception.
+ */
+function hostOf(url: string): string {
+  return /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(url)?.[1] ?? url;
+}
+
+/**
+ * Turns a `fetch` rejection into an `UnreachableError`.
+ *
+ * A rejected fetch — as opposed to a response with a bad status — means the
+ * bytes never made it, so the only question is why, and the only evidence is
+ * the platform's own words: NSURLError descriptions on iOS, OkHttp's on
+ * Android, errno codes under Node and Bun (the tests, and `cause.code` when
+ * it is there). Anything unrecognised keeps the platform's description,
+ * trimmed of the wrapper, so an unknown failure stays diagnosable — it is
+ * just not dressed up as a known one.
+ */
+export function describeTransportFailure(e: unknown, url: string, timeoutMs = REQUEST_TIMEOUT_MS): UnreachableError {
+  if (e instanceof UnreachableError) return e;
+  const host = hostOf(url);
+  const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string } } | undefined;
+
+  if (err?.name === "AbortError") {
+    return new UnreachableError(
+      "timeout",
+      host,
+      `${host} didn't answer within ${Math.round(timeoutMs / 1000)} seconds. It may be asleep, down, or behind a firewall that drops this port.`,
+    );
+  }
+
+  // The description is the useful part of Expo's message; the rest is where it
+  // was thrown, which helps nobody holding a phone. The shape was copied from a
+  // simulator log — "fetch failed: UnexpectedException: <description>. (at
+  // ExpoModulesCore/Promise.swift:56)" — and the first draft, written from a
+  // hand-typed report of it, matched neither the CamelCase nor the brackets.
+  const detail = String(err?.message ?? e ?? "")
+    .replace(/^(TypeError: )?fetch failed(: unexpected ?exception)?:?\s*/i, "")
+    .replace(/\s*\(?at ExpoModulesCore\/[^)\s]+\)?/i, "")
+    .trim()
+    .replace(/\.$/, "");
+  const said = `${detail} ${err?.code ?? ""} ${err?.cause?.code ?? ""}`.toLowerCase();
+  const has = (...needles: string[]) => needles.some((n) => said.includes(n));
+
+  if (has("invalid url", "unsupported url", "only absolute urls", "err_invalid_url")) {
+    return new UnreachableError("address", host, `"${url}" isn't a full address. It needs to start with http:// or https://.`);
+  }
+  // App Transport Security: iOS refused a plain http:// URL before trying it.
+  // Seen on a simulator build whose native project predated the
+  // `NSAllowsArbitraryLoads` entry in app.json — and it says "secure
+  // connection", so without this branch it read as a certificate problem.
+  if (has("app transport security")) {
+    return new UnreachableError(
+      "ats",
+      host,
+      `This build of the app only allows https:// connections, so ${host} was refused before it was tried. Use https://, or rebuild the app from the current app.json, which allows http.`,
+    );
+  }
+  if (has("hostname could not be found", "unable to resolve host", "enotfound", "eai_again", "nodename nor servname", "name or service not known")) {
+    return new UnreachableError(
+      "dns",
+      host,
+      `Couldn't find ${host}. Check the address — and if it's a tailnet name, that Tailscale is connected on this phone.`,
+    );
+  }
+  if (has("appears to be offline", "network is unreachable", "enetunreach", "enetdown", "no internet")) {
+    return new UnreachableError("offline", host, "This phone is offline. Check Wi‑Fi or mobile data, then try again.");
+  }
+  if (has("connection refused", "could not connect to the server", "econnrefused", "failed to connect to", "unable to connect")) {
+    return new UnreachableError(
+      "refused",
+      host,
+      `Nothing answered at ${host}. Check that the Shahi server is running there and that the port is right.`,
+    );
+  }
+  if (has("connection was lost", "econnreset", "socket hang up", "connection abort", "epipe")) {
+    return new UnreachableError("lost", host, `The connection to ${host} dropped mid-request. Try again.`);
+  }
+  if (has("ssl", "tls", "certificate", "secure connection", "handshake")) {
+    return new UnreachableError(
+      "tls",
+      host,
+      `Couldn't make a secure connection to ${host}. If the server has no TLS, use http://; if it does, check its certificate.`,
+    );
+  }
+  return new UnreachableError("unknown", host, detail ? `Couldn't reach ${host} (${detail}).` : `Couldn't reach ${host}.`);
 }
 
 export interface Connection {
@@ -47,7 +191,7 @@ export const connection: Connection = { baseUrl: "", cookie: null };
 /**
  * How long any single request may hang before it is aborted. A dead host used
  * to leave Connect or an action busy forever, because `fetch` has no timeout of
- * its own; this bounds it and surfaces a plain "timed out" the UI can recover
+ * its own; this bounds it and surfaces an `UnreachableError` the UI can recover
  * from. Generous enough for a slow tailnet or a cold agent, short enough not to
  * feel stuck.
  */
@@ -60,18 +204,36 @@ export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQU
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
-    if ((e as Error).name === "AbortError") throw new Error("The server didn't respond — it may be unreachable.");
-    throw e;
+    throw describeTransportFailure(e, url, ms);
   } finally {
     clearTimeout(timer);
   }
 }
 
+/**
+ * What every request carries: the contract version this build speaks, and the
+ * session cookie when there is one. One place, so no route can forget the
+ * version header and slip past the server's compatibility check.
+ */
+function baseHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { "x-shahi-api": String(SHAHI_API_VERSION), ...extra };
+  if (connection.cookie) headers.cookie = connection.cookie;
+  return headers;
+}
+
+/** A 426 is the server declining this contract version; say so, in its words. */
+async function incompatible(res: Response): Promise<IncompatibleServerError> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string; api?: { min: number; max: number } };
+  return new IncompatibleServerError(
+    body.error ?? "This app and the Shahi server do not speak the same version.",
+    body.api ?? { min: 0, max: 0 },
+  );
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!connection.baseUrl) throw new Error("No server address configured");
 
-  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
-  if (connection.cookie) headers.cookie = connection.cookie;
+  const headers = baseHeaders(init.headers as Record<string, string>);
 
   // `credentials: "omit"` turns off the native cookie jar for this request. On
   // iOS, NSURLSession manages cookies itself and overrides a manually-set
@@ -86,6 +248,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "omit",
   });
   if (res.status === 401) throw new UnauthorizedError();
+  if (res.status === 426) throw await incompatible(res);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${path} failed with ${res.status}`);
@@ -103,11 +266,46 @@ const postJson = <T>(path: string, body: unknown) =>
 export const api = {
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
 
+  /**
+   * The handshake: what is at this address, and can this build talk to it.
+   *
+   * Asked before login, so a typo that lands on some other web server is
+   * reported as "not a Shahi server" rather than as a wrong passcode, and a
+   * version gap is reported as which side to update rather than as whatever
+   * route happens to fail first.
+   */
+  meta: async (): Promise<ServerInfo> => {
+    if (!connection.baseUrl) throw new Error("No server address configured");
+    const res = await fetchWithTimeout(`${connection.baseUrl}/api/meta`, {
+      headers: { "x-shahi-api": String(SHAHI_API_VERSION) },
+      credentials: "omit",
+    });
+    if (res.status === 426) throw await incompatible(res);
+    const info = (await res.json().catch(() => null)) as ServerInfo | null;
+    const api = info?.api;
+    if (!res.ok || typeof api?.min !== "number" || typeof api?.max !== "number") {
+      throw new Error("That address answered, but it isn't a Shahi server.");
+    }
+    if (api.max < SHAHI_API_VERSION) {
+      throw new IncompatibleServerError(
+        "This server runs an older Shahi than the app. Update Shahi on that computer — run install.sh again.",
+        api,
+      );
+    }
+    if (api.min > SHAHI_API_VERSION) {
+      throw new IncompatibleServerError(
+        "This app is older than the Shahi on that server. Update the app.",
+        api,
+      );
+    }
+    return info as ServerInfo;
+  },
+
   /** Captures the session cookie, since there is no browser to hold it. */
   login: async (passcode: string) => {
     const res = await fetchWithTimeout(`${connection.baseUrl}/api/auth/login`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: baseHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({ passcode }),
       // Keep the response cookie out of the native jar: this client stores it
       // itself, and a jar copy would then fight the manual header. See
@@ -119,6 +317,7 @@ export const api = {
     // pointing at the wrong port) — calling that "wrong passcode" sent people
     // hunting for the wrong problem.
     if (res.status === 401) throw new Error("That passcode did not work.");
+    if (res.status === 426) throw await incompatible(res);
     if (!res.ok)
       throw new Error(
         `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,
@@ -148,8 +347,13 @@ export const api = {
   dirs: (path = "~", files = false) =>
     request<DirListing>(`/api/dirs?path=${encodeURIComponent(path)}${files ? "&files=1" : ""}`),
 
-  rpc: (method: string, params: unknown = {}) =>
-    postJson<{ result: unknown }>("/api/rpc", { method, params }),
+  /**
+   * Makes a space. The server owns the herdr call; the phone only says what it
+   * wants. Absolute `cwd` only: herdr does not expand `~`, it silently uses
+   * $HOME — and the server refuses a relative path rather than guessing.
+   */
+  createWorkspace: (options: { label: string | null; cwd: string | null }) =>
+    postJson<{ workspaceId: string }>("/api/workspaces", options),
 
   /**
    * Makes a tab and starts an agent in it, in one call.
@@ -183,10 +387,11 @@ export const api = {
     // Through fetchWithTimeout like every other request: a raw fetch here hung
     // the file viewer forever on a dead host (data-fetching audit).
     const res = await fetchWithTimeout(url, {
-      headers: connection.cookie ? { cookie: connection.cookie } : undefined,
+      headers: baseHeaders(),
       credentials: "omit",
     });
     if (res.status === 401) throw new UnauthorizedError();
+    if (res.status === 426) throw await incompatible(res);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `could not read that file (${res.status})`);
@@ -201,24 +406,29 @@ export const api = {
    * Answers a numbered prompt by pressing its digit, exactly as the TUI does.
    * Verified against a live pane: `keys: ["2"]` puts a literal `2` on stdin.
    */
-  answerPrompt: (paneId: string, optionIndex: number) =>
-    api.rpc("pane.send_keys", { pane_id: paneId, keys: [String(optionIndex)] }),
+  answerPrompt: (paneId: string, optionIndex: number) => api.sendKeys(paneId, [String(optionIndex)]),
 
   /**
-   * Sends a message.
+   * Sends a message: one request, and a receipt that says herdr has it.
    *
-   * The gap before Enter is required, not defensive: codex's composer needs a
-   * moment to ingest inserted text before Enter counts as submit, and without
-   * it the message sits in the box and Send silently does nothing.
+   * This used to be two requests with a 200ms pause between them (text, then
+   * Enter — codex's composer needs a moment to ingest inserted text before
+   * Enter counts as submit). That pause and the choice between herdr's semantic
+   * `agent.prompt` and the raw terminal sequence now live in the server, which
+   * knows what the pane is; the phone knows only that it said something.
+   *
+   * `clientMessageId` lets a retry after a timeout be recognised as the same
+   * message, so a bad connection cannot deliver a prompt twice.
    */
-  send: async (paneId: string, text: string) => {
-    await api.rpc("pane.send_text", { pane_id: paneId, text });
-    await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
-    await api.rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
-  },
+  send: (paneId: string, text: string) =>
+    postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, {
+      text,
+      clientMessageId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    }),
 
+  /** Key presses — Escape, arrows, a digit for a numbered prompt. */
   sendKeys: (paneId: string, keys: string[]) =>
-    api.rpc("pane.send_keys", { pane_id: paneId, keys }),
+    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys }),
 
   /** Registers this device for notifications. See `lib/push`. */
   registerPush: (token: string) => postJson<{ ok: boolean }>("/api/push/expo", { token }),
@@ -236,20 +446,18 @@ export const api = {
       `${connection.baseUrl}/api/uploads`,
       {
         method: "POST",
-        headers: connection.cookie ? { cookie: connection.cookie } : {},
+        headers: baseHeaders(),
         body,
         credentials: "omit", // see `request`
       },
       60_000,
     );
+    if (res.status === 426) throw await incompatible(res);
     const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
     if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
     return payload;
   },
 };
-
-/** See `api.send`. Measured against a live codex pane: 150ms sufficed. */
-const SUBMIT_DELAY_MS = 200;
 
 /* -------------------------------------------------------------------------- */
 
