@@ -25,6 +25,15 @@
  * SHAHI_HERDR_PREVIEW=1 relaxes the exact-protocol check to `>=`, so the
  * nightly run reports a protocol bump without failing on the bump alone —
  * the behaviours below are what has to keep working.
+ *
+ * SHAHI_HERDR_LIVE_AGENT=1 adds the one test that needs an agent: it starts
+ * a claude in the scratch workspace and proves a prompt reaches it through
+ * `agent.prompt` rather than the terminal. Off by default because the CI
+ * runners have no `claude` to start, and because the prompt costs tokens on
+ * whatever account that `claude` is signed in as. By hand, on a Mac or box
+ * with claude on PATH and the named session above running:
+ *
+ *   SHAHI_HERDR_LIVE=1 SHAHI_HERDR_LIVE_AGENT=1 bun test server/lib/herdr-live.test.ts
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -37,8 +46,10 @@ import { Poller } from "./poller";
 import { TranscriptStore } from "./transcript";
 import { dashboard } from "./http";
 import { submitPrompt } from "./prompt";
+import { startAgentInTab } from "./agents";
 
 const LIVE = process.env.SHAHI_HERDR_LIVE === "1";
+const LIVE_AGENT = process.env.SHAHI_HERDR_LIVE_AGENT === "1";
 const PREVIEW = process.env.SHAHI_HERDR_PREVIEW === "1";
 const SOCKET = process.env.HERDR_SOCKET_PATH;
 
@@ -152,6 +163,76 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     }
     expect(caught).toBeInstanceOf(HerdrError);
     expect(typeof (caught as HerdrError).code).toBe("string");
+  });
+
+  /**
+   * The path the shell above cannot take. `submitPrompt` chooses `agent.prompt`
+   * for an agent that is not blocked, and CLAUDE.md records that call as the
+   * one thing the live suite has never exercised. This starts a real claude
+   * the way the phone does — `startAgentInTab`, with its retry around the
+   * shell race — and sends it one short prompt with no `wait`, which is the
+   * receipt-not-reply contract the phone relies on.
+   */
+  describe.skipIf(!LIVE_AGENT)("with a real agent", () => {
+    test(
+      "submitPrompt takes the agent path, and agent.prompt is accepted without a wait",
+      async () => {
+        const started = await startAgentInTab(
+          (method, params, options) => client.rpc(method as never, params as never, options) as never,
+          {
+            workspaceId,
+            cwd: scratchDir,
+            label: `shahi-live-agent-${nonce}`,
+            kind: "claude",
+            name: "claude",
+            mode: null,
+          },
+        );
+        const agentPane = started.paneId;
+
+        const store = new SessionStore(client);
+        const status = async () => {
+          await store.resync();
+          return store.agent(agentPane)?.agent_status ?? "unknown";
+        };
+        // herdr answers `agent.start` once the agent is interactively ready —
+        // and in a directory it has never seen, claude's first interactive
+        // screen is the trust question, which herdr reports as `blocked`. A
+        // blocked agent takes the terminal path by design, so answer it the
+        // way a person would: Enter accepts the default on the test's own
+        // empty directory. Anything else that blocks is left alone and fails
+        // below, naming the pane rather than printing its screen.
+        let current = await eventually(status, (s) => s !== "unknown", 20_000);
+        if (current === "blocked" && /trust/i.test(await visible(agentPane))) {
+          await client.rpc("pane.send_keys", { pane_id: agentPane, keys: ["Enter"] });
+          current = await eventually(status, (s) => s !== "blocked", 20_000);
+        }
+        expect(
+          current,
+          `claude in ${agentPane} is ${current}; the agent path needs it promptable — open the pane in herdr to see what it is asking`,
+        ).not.toBe("blocked");
+        expect(store.agent(agentPane)).toBeDefined();
+
+        const rpc = (method: string, params: Record<string, unknown>) =>
+          client.rpc(method as never, params as never) as Promise<unknown>;
+        const marker = `shahi-agent-${nonce}`;
+        const path = await submitPrompt(
+          rpc,
+          { paneId: agentPane, isAgent: true, status: current },
+          `Reply with exactly the word ${marker} and nothing else.`,
+        );
+        expect(path).toBe("agent");
+
+        // Delivered, not just accepted: the prompt is on the agent's screen.
+        // The reply itself is not waited for — that is the transcript's job,
+        // and this test proves the send, not claude.
+        const screen = await eventually(() => visible(agentPane), (t) => t.includes(marker), 15_000);
+        expect(screen).toContain(marker);
+      },
+      // `agent.start` blocks until the agent is interactively ready, and a
+      // cold claude on a slow box can take most of a minute.
+      360_000,
+    );
   });
 
   // Every name the key bar offers has to be one herdr accepts: `S-Tab` was
