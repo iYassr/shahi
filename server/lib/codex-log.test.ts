@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { normaliseCodex } from "./codex-log";
+import { normaliseCodex, rolloutWithinSessions } from "./codex-log";
 
 const event = (type: string, message?: string, timestamp = "2026-07-25T04:51:48.000Z") => ({
   timestamp,
@@ -215,5 +215,27 @@ describe("findCodexRollout, by session id", () => {
     for (const bad of ["../../etc/passwd", `${id}/..`, "", "*"]) {
       expect(await findCodexRollout(noClient, "w1:p1", null, bad)).toBe(null);
     }
+  });
+});
+
+describe("rolloutWithinSessions", () => {
+  // The thread index is a file codex writes and the session id is reported
+  // by the agent process, so a `rollout_path` from either is not this
+  // server's to trust: only a rollout under the sessions directory is read.
+  const sessions = "/home/me/.codex/sessions";
+
+  test("accepts a rollout under the sessions directory", () => {
+    const path = `${sessions}/2026/07/25/rollout-2026-07-25T04-51-48-abc.jsonl`;
+    expect(rolloutWithinSessions(path, sessions)).toBe(path);
+  });
+
+  test("refuses anything outside it, however it is spelled", () => {
+    expect(rolloutWithinSessions("/etc/passwd", sessions)).toBeNull();
+    expect(rolloutWithinSessions("/home/me/.ssh/id_ed25519.jsonl", sessions)).toBeNull();
+    expect(rolloutWithinSessions(`${sessions}/../../.ssh/id_ed25519.jsonl`, sessions)).toBeNull();
+    expect(rolloutWithinSessions(`${sessions}-other/x.jsonl`, sessions)).toBeNull();
+    expect(rolloutWithinSessions(`${sessions}/notes.txt`, sessions)).toBeNull();
+    expect(rolloutWithinSessions(undefined, sessions)).toBeNull();
+    expect(rolloutWithinSessions(42, sessions)).toBeNull();
   });
 });
