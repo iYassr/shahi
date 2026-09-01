@@ -21,6 +21,7 @@ import {
   type InstalledAgent,
   type PairedDevice,
   type PaneFrame,
+  type PromptOption,
   type PromptReceipt,
   type ServerInfo,
   type Session,
@@ -439,7 +440,18 @@ export const api = {
    * Answers a numbered prompt by pressing its digit, exactly as the TUI does.
    * Verified against a live pane: `keys: ["2"]` puts a literal `2` on stdin.
    */
-  answerPrompt: (paneId: string, optionIndex: number) => api.sendKeys(paneId, [String(optionIndex)]),
+  /**
+   * Answers a prompt card by posting the option as it was shown. The server
+   * re-reads the screen and presses the keys: a digit for a numbered menu,
+   * cursor moves and Enter for an unnumbered one (Claude Code's folder-trust
+   * question, where a digit does nothing). A 409 means the question has gone
+   * or changed under the card; the next poll redraws it.
+   */
+  answerPrompt: (paneId: string, option: Pick<PromptOption, "index" | "label">) =>
+    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
+      index: option.index,
+      label: option.label,
+    }),
 
   /**
    * Sends a message: one request, and a receipt that says herdr has it.

@@ -47,6 +47,8 @@ import { Poller } from "./poller";
 import { TranscriptStore } from "./transcript";
 import { dashboard } from "./http";
 import { submitPrompt } from "./prompt";
+import { answerPrompt } from "./answer";
+import { parsePrompt } from "./prompt-parser";
 import { startAgentInTab } from "./agents";
 
 const LIVE = process.env.SHAHI_HERDR_LIVE === "1";
@@ -198,15 +200,22 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
         };
         // herdr answers `agent.start` once the agent is interactively ready —
         // and in a directory it has never seen, claude's first interactive
-        // screen is the trust question, which herdr reports as `blocked`. A
-        // blocked agent takes the terminal path by design, so answer it the
-        // way a person would: Enter accepts the default on the test's own
-        // empty directory. Anything else that blocks is left alone and fails
-        // below, naming the pane rather than printing its screen.
+        // screen is the trust question, which herdr reports as `blocked`. It
+        // is an unnumbered cursor menu whose default is "No, exit" — a bare
+        // Enter, which this test used to send, quit the agent — so it is
+        // answered the way the phone answers it: `answerPrompt` reads the
+        // screen and walks the cursor to the trusting row. Anything else
+        // that blocks is left alone and fails below, naming the pane rather
+        // than printing its screen.
         let current = await eventually(status, (s) => s !== "unknown", 20_000);
-        if (current === "blocked" && /trust/i.test(await visible(agentPane))) {
-          await client.rpc("pane.send_keys", { pane_id: agentPane, keys: ["Enter"] });
-          current = await eventually(status, (s) => s !== "blocked", 20_000);
+        if (current === "blocked") {
+          const trust = parsePrompt(await visible(agentPane))?.options.find((o) => /trust/i.test(o.label));
+          if (trust) {
+            const rpc = (method: string, params: Record<string, unknown>) =>
+              client.rpc(method as never, params as never) as Promise<unknown>;
+            await answerPrompt(rpc, agentPane, trust);
+            current = await eventually(status, (s) => s !== "blocked", 20_000);
+          }
         }
         expect(
           current,
@@ -361,6 +370,19 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(again).toEqual(first);
       const text = await eventually(() => visible(paneId), (t) => t.includes(`shahi-http-${nonce}`));
       expect(text).toContain(`shahi-http-${nonce}`);
+    });
+
+    test("POST /api/panes/:id/answer refuses a pane that is not asking, with a code", async () => {
+      // The scratch shell shows a prompt line, not a menu: nothing is pressed
+      // and the phone learns why, instead of a stray keystroke landing in a
+      // terminal that was not waiting for one.
+      const res = await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/answer`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+        body: JSON.stringify({ index: 1, label: "No, exit" }),
+      });
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { code: string }).code).toBe("prompt_gone");
     });
 
     test("POST /api/panes/:id/keys and /api/workspaces go through", async () => {

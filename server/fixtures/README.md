@@ -6,6 +6,7 @@ Real terminal screens captured from a live herdr session with
 | file | what it exercises |
 |---|---|
 | `blocked__w4-p2__*` | a Claude Code plan-approval prompt — 4 numbered options, #1 selected |
+| `blocked__trust-folder__*` | Claude Code's folder-trust question — an *unnumbered* cursor menu, 2 options, the second selected, `Enter to confirm` under it |
 | `working__wE-p1__*` | an agent mid-turn, no prompt |
 | `idle__w4-p1__*`, `idle__w4-p7__*` | idle agents at the composer |
 | `done__w4-p8__*`, `done__wB-p1__*` | finished turns |

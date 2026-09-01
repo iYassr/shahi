@@ -29,6 +29,7 @@ import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
 import { PromptReceipts, submitPrompt } from "./prompt";
+import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { watchTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
@@ -816,7 +817,27 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             return json(receipt);
           }
 
-          // Key presses: a numbered answer, Escape, an arrow. Not a prompt.
+          // One tap on an option card. The server decides the keystrokes —
+          // a digit, or cursor moves and Enter — against the screen as it is
+          // now, because the phone never learns which menu shape it showed,
+          // and its copy of the screen may be seconds old (see `answer.ts`).
+          if (sub === "/answer" && req.method === "POST") {
+            const body = await jsonObject<{ index: unknown; label: unknown }>(req);
+            if (!Number.isInteger(body.index) || typeof body.label !== "string") {
+              return json({ error: "index and label are required" }, { status: 400 });
+            }
+            try {
+              await answerPrompt(herdrRpc, paneId, { index: body.index as number, label: body.label });
+              return json({ ok: true });
+            } catch (err) {
+              if (err instanceof PromptGone || err instanceof PromptChanged) {
+                return json({ error: err.message, code: err.code }, { status: 409 });
+              }
+              return failure(err);
+            }
+          }
+
+          // Key presses: Escape, an arrow, Enter from the key bar. Not a prompt.
           if (sub === "/keys" && req.method === "POST") {
             const body = await jsonObject<{ keys: unknown }>(req);
             const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];

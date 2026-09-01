@@ -11,7 +11,7 @@ import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, V
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Stack } from "expo-router";
-import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
+import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
 import { api, IncompatibleServerError, UnreachableError } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
@@ -28,9 +28,9 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
 
-  async function answer(paneId: string, index: number) {
+  async function answer(paneId: string, option: PromptOption) {
     try {
-      await api.answerPrompt(paneId, index);
+      await api.answerPrompt(paneId, option);
       landed();
       clearPrompt(paneId);
     } catch (e) {
@@ -166,7 +166,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 key={pane.paneId}
                 pane={pane}
                 prompt={prompts[pane.paneId]}
-                onAnswer={(i) => void answer(pane.paneId, i)}
+                onAnswer={(option) => void answer(pane.paneId, option)}
                 onOpen={() => onOpenPane(pane.paneId)}
               />
             ))}
@@ -377,7 +377,7 @@ function BlockedCard({
 }: {
   pane: DashboardPane;
   prompt: ParsedPrompt | undefined;
-  onAnswer: (index: number) => void;
+  onAnswer: (option: PromptOption) => void;
   onOpen: () => void;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
@@ -416,13 +416,14 @@ function BlockedCard({
                 disabled={armed !== null}
                 onPress={() => {
                   setArmed(option.index);
-                  onAnswer(option.index);
+                  onAnswer(option);
                 }}
               >
                 <Text style={styles.cursor}>
                   {isArmed || (armed === null && option.selected) ? "❯" : " "}
                 </Text>
-                <Text style={styles.choiceIndex}>{option.index}.</Text>
+                {/* The digit is what the terminal takes; a cursor menu has none. */}
+                {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
                 <View style={styles.choiceBody}>
                   <Text style={styles.choiceLabel}>{option.label}</Text>
                   {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
