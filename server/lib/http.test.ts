@@ -362,3 +362,10 @@ describe("hostile inputs are answered, not thrown", () => {
     }
   });
 });
+
+describe("what a client learns before it authenticates", () => {
+  test("on a direct connection, the versions — the plugin's status line reads them over loopback", async () => {
+    const info = (await (await fetch(`${s.base}/api/meta`)).json()) as Record<string, unknown>;
+    expect(Object.keys(info).sort()).toEqual(["api", "herdr", "serverId", "serverVersion"]);
+  });
+});

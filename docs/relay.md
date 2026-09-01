@@ -144,6 +144,10 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
 - No relay-level auth for phones: a phone that knows a `serverId` can open a
   link and will be refused by the box at the first frame. The id is 256 bits
   of hash; the relay's per-phone quota bounds the cost of guessing anyway.
+  Every such attempt does instantiate a Durable Object for the id it names,
+  but a refusal writes nothing and schedules nothing, so the object is
+  evicted with no trace: the cost is a Worker invocation, bounded by
+  Cloudflare's own limits, never storage (2026-09-02 review, R7).
 - No history, no store-and-forward, no direct WebRTC. The relay is a pipe.
 - No protection of frame *sizes and timing* from the relay. That is the
   metadata a blind pipe still sees.

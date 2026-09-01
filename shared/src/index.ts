@@ -36,10 +36,16 @@ export const SHAHI_API_VERSION = 3;
 export interface ServerInfo {
   /** Stable per installation, minted once and kept in the database. */
   serverId: string;
-  serverVersion: string;
   /** The contract versions this server accepts, inclusive. */
   api: { min: number; max: number };
-  herdr: { version: string; protocol: number };
+  /**
+   * Which Shahi and which herdr this is — on a direct connection only. Over
+   * the relay the route is reachable by anyone who knows the serverId, before
+   * any secret is proven, and a box on the internet should not fingerprint
+   * itself (2026-09-02 review, R5). The phone needs neither.
+   */
+  serverVersion?: string;
+  herdr?: { version: string; protocol: number };
 }
 
 /**

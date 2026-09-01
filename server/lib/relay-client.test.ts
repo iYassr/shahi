@@ -556,6 +556,10 @@ describe("a phone through the relay", () => {
     ]);
     expect(session.status).toBe(200);
     expect(session.headers["content-type"]).toBe("application/json");
+    // Over the relay the box names no versions: anyone with the serverId can
+    // ask this before proving a secret.
+    expect(meta.status).toBe(200);
+    expect(Object.keys(JSON.parse(decoder.decode(unb64(meta.body!))) as object).sort()).toEqual(["api", "serverId"]);
     const dashboard = JSON.parse(decoder.decode(unb64(session.body!))) as { panes: { paneId: string }[] };
     expect(dashboard.panes.map((x) => x.paneId)).toEqual([PANE]);
     expect(missing.status).toBe(404);
@@ -605,6 +609,42 @@ describe("a phone through the relay", () => {
     // Nothing was answered, and nothing will be.
     expect(await Promise.race([answer, Bun.sleep(100).then(() => "nothing")])).toBe("nothing");
     expect(box.log.some((l) => l.includes("did not open"))).toBe(true);
+  });
+
+  test("a hello with a low-order public key ends the link, and the box is still there", async () => {
+    // The all-zero X25519 point: noble throws deriving the session, and that
+    // throw used to escape `ws.onmessage` and exit the sidecar — a remote
+    // crash loop for anyone with a serverId and a device id (R1).
+    const ws = new WebSocket(`${relay.url.replace(/^http/, "ws")}/v1/phone/${box.identity.serverId}`);
+    ws.binaryType = "arraybuffer";
+    const closed = new Promise<number>((resolve) => {
+      ws.onclose = (e) => resolve(e.code);
+    });
+    ws.onopen = () => {
+      const hello: PhoneHello = {
+        t: "hello",
+        v: RELAY_PROTOCOL,
+        pub: b64(new Uint8Array(32)),
+        auth: { kind: "device", deviceId: paired.deviceId },
+      };
+      ws.send(JSON.stringify(hello));
+    };
+    expect(await closed).toBe(1000);
+    expect(box.log.some((l) => l.includes("did not derive"))).toBe(true);
+
+    const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
+    await p.hello;
+    expect((await p.request("GET", "/api/meta")).status).toBe(200);
+    p.close();
+    await p.closed;
+  });
+
+  test("a sealed request without a string path ends the link instead of the process", async () => {
+    const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
+    await p.hello;
+    void p.request("GET", 123 as never);
+    expect((await p.closed).code).toBe(1000);
+    expect(box.log.some((l) => l.includes("without a path"))).toBe(true);
   });
 
   test("a replayed frame ends the link", async () => {

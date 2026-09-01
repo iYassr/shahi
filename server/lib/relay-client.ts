@@ -329,8 +329,18 @@ class Link implements StreamClient {
       return;
     }
 
+    // A hello whose public key is a low-order point makes noble throw, which
+    // is the right refusal — but uncaught inside `ws.onmessage` it was the
+    // whole sidecar exiting, resendable on every reconnect by anyone who
+    // knows a serverId and a device id (2026-09-02 review, R1). It ends the
+    // link, like every other bad frame.
     const self = ephemeral(crypto.getRandomValues(new Uint8Array(32)));
-    this.#session = serverSession(self, unb64(hello.pub), secret);
+    try {
+      this.#session = serverSession(self, unb64(hello.pub), secret);
+    } catch {
+      this.end("a hello did not derive");
+      return;
+    }
     this.#kind = hello.auth.kind;
     const answer: BoxHello = { t: "hello", v: RELAY_PROTOCOL, pub: b64(self.pub) };
     this.wire.send(this.id, encoder.encode(JSON.stringify(answer)));
@@ -352,6 +362,13 @@ class Link implements StreamClient {
   }
 
   async #request(req: RelayRequest): Promise<void> {
+    // Shape before meaning: a sealed frame is from a phone that holds the
+    // secret, but a `path` that is not a string still used to throw out of
+    // `onmessage` and take the process with it (R1's second trigger).
+    if (typeof req.path !== "string" || typeof req.method !== "string" || typeof req.id !== "number") {
+      this.end("a request without a path");
+      return;
+    }
     // A pairing link may look at `/api/meta` (unauthenticated over HTTP too:
     // the phone checks the serverId in the code against the box it reached
     // before it hands over the secret) and claim. Nothing else.
