@@ -5,22 +5,23 @@ there is nothing for Shahi to show.
 
 ```sh
 herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.restart     # or restart herdr
+herdr plugin action invoke shahi.pair
 ```
 
-Then **Pair a phone** from herdr's command palette and scan the QR with the
-app. That is the whole setup: the phone reaches the box through Shahi's relay
-from anywhere, so nothing has to be exposed, tunnelled or typed.
+The second command opens a popup inside herdr. The first time, it sets Shahi
+up in front of you and then shows the QR; scan it with the app and the phone
+connects through Shahi's relay from anywhere, so nothing has to be exposed,
+tunnelled or typed. That is the whole setup.
 
 `herdr plugin install` clones the repository, shows you the manifest and the
 commands it will run, runs the build steps (`bun install --frozen-lockfile`,
-`bun run build:web`) and registers the plugin. The `restart` action — or the
-next herdr start, which runs the plugin's startup hook — does the rest:
-generates a passcode and the keys that go with it, points the box at the
-relay, installs a user service that supervises the sidecar, starts it, and
-tells you it is running in herdr's notification tray. The hook runs on every
-herdr start and is idempotent: the second run keeps your passcode and simply
-restarts the service on whatever code is checked out.
+`bun run build:web`) and registers the plugin. The setup — a passcode and
+the keys that go with it, the relay, a user service that supervises the
+sidecar — is done by the plugin's startup hook on every herdr start, and by
+the `pair` popup when it finds no service. It is idempotent: a later run
+keeps your passcode and simply restarts the service on whatever code is
+checked out. herdr 0.8.2 has no menu for plugin actions, so the ways to run
+one are the CLI above and a key you bind (below).
 
 It needs **herdr 0.8.2 or newer** on **macOS or Linux**. It also needs
 [bun](https://bun.sh), and installs it if there is none: every command in the
@@ -131,11 +132,12 @@ faster on the same network; the README's Setup section covers both.
 herdr plugin action invoke shahi.pair
 ```
 
-or **Pair a phone** from herdr's command palette. Either opens a popup inside
-herdr that prints the QR (`server/scripts/pair.ts`, run with the plugin's
-`.env`), waits for you to scan it, and closes on Enter. On the phone: Connect
-→ **Scan a code**. The code works once and for ten minutes; open the popup
-again for another phone.
+opens a popup inside herdr that prints the QR (`server/scripts/pair.ts`, run
+with the plugin's `.env`), waits for you to scan it, and closes on Enter. If
+the sidecar's service is missing — the first time, or after `uninstall` — it
+runs the setup first, in the same popup. On the phone: Connect → **Scan a
+code**. The code works once and for ten minutes; open the popup again for
+another phone.
 
 The code carries the relay's address, and the phone uses that and nothing
 else. The code's format also wants a direct address, so the box fills it
@@ -158,7 +160,7 @@ description = "pair a phone with Shahi"
 ## The actions
 
 All of them run through herdr (which injects the plugin's directories and
-socket), from the command palette or:
+socket):
 
 ```sh
 herdr plugin action invoke shahi.<action>
@@ -174,9 +176,12 @@ herdr plugin log list --plugin shahi        # their output
 | `logs` | the last 80 lines of the sidecar's log (`tail -f` the file to follow) |
 | `uninstall` | the whole uninstall: stops the sidecar, removes the service file, then `herdr plugin uninstall shahi`; keeps the config and state directories |
 
-What `setup` and `restart` have to say — it is running, the passcode the
-first time, the lingering command on Linux — also lands in herdr's
-notification tray, because the plugin log is where nobody looks.
+`herdr plugin action invoke` prints a JSON record, not the action's output;
+the output is in the log above. What `setup` and `restart` have to say — it
+is running, where the passcode is, the lingering command on Linux — is also
+shown as a herdr notification when `[ui.toast] delivery` is on in herdr's
+`config.toml` (it is off by default). The `pair` popup is the one place the
+first run's output is simply on screen.
 
 ## Updating
 
@@ -192,7 +197,7 @@ memory until then.
 
 ## Uninstalling cleanly
 
-One action, from the palette (**Uninstall Shahi**) or:
+One action:
 
 ```sh
 herdr plugin action invoke shahi.uninstall

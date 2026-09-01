@@ -16,7 +16,10 @@ collapses to a single line, so a screen full of panes reads at a glance.
 </p>
 
 It talks to a small helper you install once on the machine your agents run on.
-Nothing is proxied through a server of ours — there is no "us" in the path.
+By default the phone reaches it through a blind relay — a Cloudflare Worker
+the author runs, which carries ciphertext it cannot read, and sees only
+addresses, ids and traffic sizes ([`docs/relay.md`](docs/relay.md)). Turn it
+off and the path is Tailscale or SSH, with nobody in between.
 
 ## What it is, and what it talks to
 
@@ -50,17 +53,17 @@ Shahi is a herdr plugin. On the machine herdr runs on:
 
 ```sh
 herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.restart     # or restart herdr
+herdr plugin action invoke shahi.pair
 ```
 
 herdr clones and builds it (installing [bun](https://bun.sh) first if there is
-none); the `restart` action — or herdr's next start — generates a passcode,
-points the box at Shahi's relay, installs a user service (launchd or systemd)
-that keeps the sidecar running, and says so in herdr's notification tray.
-Then **Pair a phone** from herdr's command palette shows a QR to scan, and
-the phone connects through the relay from anywhere. Reinstalling upgrades in
-place and leaves your passcode alone. [`docs/plugin.md`](docs/plugin.md) has
-the rest: what goes where, the actions, updating, uninstalling cleanly.
+none). The `pair` action opens a popup inside herdr that, the first time, sets
+everything up in front of you — a passcode, a user service (launchd or
+systemd) that keeps the sidecar running, the relay — and then shows the QR.
+Scan it and the phone connects through the relay from anywhere. Reinstalling
+upgrades in place and leaves your passcode alone.
+[`docs/plugin.md`](docs/plugin.md) has the rest: what goes where, the
+actions, a key to bind, updating, uninstalling cleanly.
 
 <details>
 <summary>The older installer, and by hand</summary>
