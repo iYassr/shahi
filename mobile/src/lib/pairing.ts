@@ -1,7 +1,8 @@
 /**
  * Reads a pairing code off a scanned QR.
  *
- * The code is `shahi://pair#v=1&server=…&endpoint=…&secret=…` — the server's
+ * The code is `shahi://pair#v=1&server=…&endpoint=…&secret=…`, with `relay=…`
+ * beside the endpoint when the box is dialled into one — the server's
  * `pairingUrl` writes it and this is its inverse. Parsed by hand rather than
  * with `URL`, because a fragment is the one part of a URL every parser treats
  * as opaque, and because anything short of a full parse must answer null: a
@@ -30,11 +31,20 @@ export function parsePairingUrl(data: string): PairingPayload | null {
   const server = fields.get("server");
   const endpoint = fields.get("endpoint");
   const secret = fields.get("secret");
+  const relay = fields.get("relay");
   if (fields.get("v") !== "1" || !server || !endpoint || !secret) return null;
-  if (!/^https?:\/\/[^/?#\s]+/i.test(endpoint)) return null;
+  if (!isBaseUrl(endpoint)) return null;
+  // A relay that is present but not an address is a broken code, not a code
+  // without a relay: falling back to the endpoint would pair over a path the
+  // person printing the code did not expect to be used.
+  if (relay !== undefined && !isBaseUrl(relay)) return null;
 
-  return { v: 1, server, endpoint: endpoint.replace(/\/+$/, ""), secret };
+  const payload: PairingPayload = { v: 1, server, endpoint: endpoint.replace(/\/+$/, ""), secret };
+  if (relay) payload.relay = relay.replace(/\/+$/, "");
+  return payload;
 }
+
+const isBaseUrl = (s: string) => /^https?:\/\/[^/?#\s]+/i.test(s);
 
 /** `URLSearchParams` encodes a space as `+`; `decodeURIComponent` does not know that. */
 const decode = (s: string) => decodeURIComponent(s.replace(/\+/g, " "));
