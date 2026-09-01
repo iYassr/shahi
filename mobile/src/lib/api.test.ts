@@ -1,4 +1,4 @@
-import { api, connection, fetchWithTimeout, IncompatibleServerError, UnreachableError } from "./api";
+import { api, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
 
 /**
  * The client's own decisions, below the screens.
@@ -282,6 +282,31 @@ describe("semantic requests", () => {
     for (const call of fetchMock.mock.calls) {
       expect(call[1].headers["x-shahi-api"]).toBe("1");
     }
+  });
+
+  // The socket is a request too. Left without the header, a server that had
+  // just answered 426 still upgraded it and pushed a session over the top of
+  // "Update needed".
+  test("the socket handshake says which contract version it speaks, and carries the cookie", () => {
+    const opened: unknown[][] = [];
+    const realWebSocket = globalThis.WebSocket;
+    class FakeWebSocket {
+      constructor(...args: unknown[]) {
+        opened.push(args);
+      }
+      close() {}
+    }
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+    try {
+      const socket = new SessionSocket(jest.fn(), jest.fn());
+      socket.connect();
+      socket.close();
+    } finally {
+      (globalThis as { WebSocket: unknown }).WebSocket = realWebSocket;
+    }
+    expect(opened).toHaveLength(1);
+    expect(opened[0]![0]).toBe("ws://localhost:7272/ws");
+    expect(opened[0]![2]).toEqual({ headers: { "x-shahi-api": "1", cookie: "shahi_session=x" } });
   });
 
   // 426 is the server declining this version, not a generic failure: the
