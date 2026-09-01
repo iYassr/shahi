@@ -178,6 +178,17 @@ now cover them are named after the symptom.
 - **A service worker bypasses `page.route`.** In WebKit, completely. This is why
   the suite blocks service workers and why a fuse fails any write that leaves for
   a host other than the stub: mocked writes once reached real agents.
+- **A FlatList's content size changes while you swipe through it**, as cells
+  above the fold get measured for the first time. The reader used
+  `onContentSizeChange → scrollToEnd` to follow new output, gated on a
+  `following` flag that the throttled `onScroll` only cleared 200ms into a
+  swipe — so a swipe up was snapped back to the tail before it had gone
+  anywhere. Three swipes, three snaps, and the keep-your-place flow failed
+  about one run in three on a loaded machine. A drag now ends following the
+  instant it begins (`onScrollBeginDrag`); the position is re-derived from the
+  first handled scroll event. Same shape for restoring a remembered place: it
+  now ends when the anchor is seen at the top, not on a 1.5s timer that a slow
+  measure could outlast.
 
 ## Rules with reasons behind them
 
