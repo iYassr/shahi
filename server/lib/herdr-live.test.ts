@@ -323,7 +323,8 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
         api: { min: number; max: number };
         herdr: { version: string; protocol: number };
       };
-      expect(info.serverId).toMatch(/^[0-9a-f-]{36}$/);
+      // base64url(sha256(box key)): 43 characters, the id a relay can verify.
+      expect(info.serverId).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(info.api.min).toBeLessThanOrEqual(SHAHI_API_VERSION);
       expect(info.api.max).toBeGreaterThanOrEqual(SHAHI_API_VERSION);
       expect(info.herdr.protocol).toBeGreaterThanOrEqual(HERDR_PROTOCOL);
