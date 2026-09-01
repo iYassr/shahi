@@ -55,7 +55,10 @@ them.
 ## What herdr actually does, as measured
 
 The docs are wrong in places. These were established against herdr 0.7.5,
-protocol 17, and every one of them cost an afternoon.
+protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
+an afternoon. They are now also asserted by `server/lib/herdr-live.test.ts`
+against a real herdr on every push (see Testing), so the next drift is a red
+job rather than a report from a phone.
 
 - **One response per connection.** The socket API closes after answering, though
   the docs describe persistent connections. Open one socket per RPC. The single
@@ -84,6 +87,15 @@ protocol 17, and every one of them cost an afternoon.
 - **`agent.start` races the shell it needs.** The pane exists before its shell
   does, so starting immediately fails with `agent_pane_busy`. The server owns
   the retry (`startAgentInTab`), and clients call one route.
+- **`agent.prompt` refuses a blocked agent.** herdr's own semantic submit
+  (protocol 20) is how a prompt reaches an agent — one call, no paste delay,
+  herdr drives the composer. But "if the agent is already blocked, submission
+  is rejected with `agent_blocked` before any input is sent", and a blocked
+  agent is exactly the one you type a free-text answer into. So `prompt.ts`
+  sends blocked agents, shells and unknown programs the terminal sequence —
+  `pane.send_text`, 200ms, Enter — and falls back to it if herdr answers
+  `agent_blocked` under a stale status. The 200ms is measured: codex's composer
+  drops Enter that arrives too soon after pasted text (150ms sufficed).
 
 ## Decisions worth not relitigating
 
@@ -115,6 +127,26 @@ network reach (tailnet only) plus the passcode. Given that, file reads are scope
 to `$HOME` and `/tmp` for tidiness rather than security.
 
 **Never log `pane.read` output.** It contains whatever is on your terminals.
+
+**The phone speaks Shahi routes, never herdr methods.** `POST
+/api/panes/:id/prompt`, `/keys`, `/api/workspaces`, `/api/agents/start` — the
+sidecar translates, so a herdr rename or a change in how a prompt is submitted
+never reaches an App Store binary that cannot be updated on the same day.
+`/api/rpc` still exists for the archived web client and for debugging; the
+native app must not call it.
+
+**The app and the sidecar negotiate a contract version.** `SHAHI_API_VERSION`
+in `shared/` is the number; `GET /api/meta` (unauthenticated) says what the
+server speaks, every request carries `x-shahi-api`, and a mismatch is a 426
+whose text says which side to update. Bump the number when a route or payload
+changes in a way an older client would misread — not for additions.
+
+**The reader is pushed, and polls only to recover.** While a phone watches a
+pane the server watches that pane's transcript file and sends `log_changed`
+(size only, no content) the moment it grows; the reader fetches its tail then.
+The 2.5s poll stays as the backstop for a dropped socket or a missed file
+event. `fs.watch` alone is not enough — it can miss — so a 1s size check backs
+it (`transcript-watch.ts`).
 
 **The mirror is re-snapshotted every 3s.** Events alone drift: `pane.updated`
 does not report status transitions, and 18 of 18 panes were wrong after a few
@@ -213,11 +245,15 @@ Stated plainly, because a vague gaps list is worse than none.
   invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
 - **The native app's automated coverage is thin but no longer zero.** `mobile/`
-  has a handful of unit tests (`reconcile`, `feel`, `api`, `blocks`,
-  `new-agent`) and seven Maestro flows in `.maestro/` that drive the real app
-  against the stub. `web/` still has 164 browser tests to its five-or-so, so the
-  reader, the poller, and the SSH path are still largely proven by hand. Closing
-  that gap is the largest remaining test debt now that this is the product.
+  has fourteen unit suites (the libs: `reconcile`, `feel`, `api`, `ssh`,
+  `tunnel`, `push`, `navigate`, `coalesce`; the components: `blocks`,
+  `new-agent`, `markdown`, `error-boundary`, `copy`, `unreachable`) and ten
+  Maestro flows in `.maestro/` that drive the real app against the stub. `web/` still has 164 browser tests,
+  so the reader and the poller are still largely proven by hand. Closing that
+  gap is the largest remaining test debt now that this is the product. One
+  seam was moved to make the SSH and push tests possible: `push.ts` loads
+  `expo-notifications` with an inline `require` rather than `import()`, which
+  Metro defers identically and Jest can actually execute.
 - **The refresh problem is not root-caused.** The owner reports needing to
   refresh the page; two plausible causes were fixed (a render crash with no
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
@@ -226,6 +262,23 @@ Stated plainly, because a vague gaps list is worse than none.
 - **Codex tool calls are unrendered.** `codex-log.ts` reads only `event_msg`
   records and drops unknown types rather than guessing. No sample of a codex tool
   call has ever been captured, so nobody knows what is being dropped.
+- **The codex reader still parses the whole rollout file.** Claude's reader
+  indexes by byte offset and reads a window; codex's does not, and a 12MB
+  rollout re-read on every poll was measured pushing the process toward 196MB.
+  Not the latency problem — a parse is 7–13ms — but a memory one that grows
+  with session length. The fix is the same index Claude has. A
+  `TranscriptAdapter` interface was proposed alongside it and deliberately not
+  built: there are two readers, dispatch is one `if`, and a third agent with a
+  trustworthy transcript is the moment to abstract, not before.
+- **`agent.prompt` is not exercised against a real agent in CI.** The live
+  suite proves it refuses a non-agent pane with a code; the runners have no
+  claude or codex to prompt. The terminal path is proven end to end.
+- **No timing instrumentation.** The send path was restructured on the
+  proposal's measurements (herdr answers in under a millisecond; the delay was
+  two round trips, a 200ms pause and up to 2.5s of polling). Content-free
+  timings from tap to render were proposed and not added; measure with a
+  one-off script first, and add permanent instrumentation only if a number
+  keeps being asked for.
 - **WebKit is not Safari.** It is the closest thing available on a Linux box and
   it has earned its place, but the phone remains the only place some faults
   appear. `docs/verify-on-device.md` is the five-minute list of those.
@@ -263,6 +316,26 @@ CI runs all of this on every push and pull request: `bun run typecheck` — whic
 includes the parked Expo app, the only automatic check that the two clients have
 not drifted apart — then the unit tests, then a web build and both engines.
 Traces from a failing run are uploaded as an artifact.
+
+**And a real herdr.** `server/lib/herdr-live.test.ts` runs the adapter and the
+sidecar against a headless herdr: the protocol pin, snapshot shapes, the
+mirror and dashboard projection, `pane.read` in every form the app uses, a
+prompt typed into a scratch shell and read back, every key-bar name, the event
+stream, and the HTTP routes including the 426 gate. CI runs it twice per push
+— against `v0.8.2`, the minimum supported release, pinned by tag, and against
+whatever `install.sh` hands out today — and nightly against the newest
+prerelease (`herdr-preview.yml`), which files an issue rather than failing a
+push. It writes only into a workspace it creates and closes, on a herdr you
+point it at explicitly:
+
+```sh
+HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server &     # a short path: sun_path is ~104 bytes
+SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+HERDR_SOCKET_PATH=/tmp/shahi-ci.sock herdr server stop
+```
+
+A newer stable protocol fails the pinned job on purpose: regenerate
+(`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.
 
 ## The two clients
 
