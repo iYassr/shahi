@@ -3,10 +3,10 @@
  * AUTO-GENERATED from herdr's bundled API schema. Do not edit by hand.
  * Regenerate with: bun run gen:types
  *
- * herdr protocol: 19, schema_version: 1
+ * herdr protocol: 20, schema_version: 1
  */
 
-export const HERDR_PROTOCOL = 19;
+export const HERDR_PROTOCOL = 20;
 export const HERDR_SCHEMA_VERSION = 1;
 
 /**
@@ -313,6 +313,7 @@ export type IntegrationTarget =
   | "kilo"
   | "hermes"
   | "qodercli"
+  | "qwen"
   | "cursor"
   | "mastracode"
   | "antigravity_cli"
@@ -368,7 +369,12 @@ export type PaneDirection = "left" | "right" | "up" | "down";
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneGraphicsFormat".
  */
-export type PaneGraphicsFormat = "png" | "rgb" | "rgba";
+export type PaneGraphicsFormat = "png" | "rgb" | "rgba" | "bgra";
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneRightClickTarget".
+ */
+export type PaneRightClickTarget = "herdr" | "pane";
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneMoveDestination".
@@ -656,6 +662,10 @@ export type Request =
   | {
       method: "pane.focus";
       params: PaneTarget;
+    }
+  | {
+      method: "pane.input.set";
+      params: PaneInputSetParams;
     }
   | {
       method: "pane.rename";
@@ -1180,8 +1190,28 @@ export type ResponseResult =
       type: "pane_read";
     }
   | {
+      revision: number;
+      sequence: number;
+      type: "pane_graphics_frame_ack";
+    }
+  | {
       cell_height_px: number;
       cell_width_px: number;
+      /**
+       * Accepts damage metadata while still consuming a complete canonical file.
+       */
+      file_frame_damage?: boolean;
+      file_frame_direct_max_bytes?: number | null;
+      file_frame_directory?: string | null;
+      file_frame_formats?: string[];
+      file_frame_max_bytes?: number | null;
+      file_frame_transport?: string | null;
+      max_layers_per_pane?: number;
+      /**
+       * True only when this pane is on the currently rendered terminal surface.
+       */
+      pane_visible: boolean;
+      pixel_mouse?: boolean;
       type: "pane_graphics_info";
     }
   | {
@@ -1514,6 +1544,7 @@ export interface PaneFocusDirectionParams {
  * via the `definition` "PaneGraphicsClearParams".
  */
 export interface PaneGraphicsClearParams {
+  layer_id?: string | null;
   pane_id: string;
 }
 /**
@@ -1535,14 +1566,24 @@ export interface PaneGraphicsSetParams {
   format: PaneGraphicsFormat;
   image_height: number;
   image_width: number;
+  layer_id?: string | null;
   pane_id: string;
   placement?: PaneGraphicsPlacementParams1;
+  z_index?: number;
 }
 export interface PaneGraphicsPlacementParams1 {
   grid_cols?: number;
   grid_rows?: number;
   viewport_col?: number;
   viewport_row?: number;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneInputSetParams".
+ */
+export interface PaneInputSetParams {
+  pane_id: string;
+  right_click: PaneRightClickTarget;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
@@ -1707,6 +1748,7 @@ export interface PaneSplitParams {
   };
   focus?: boolean;
   ratio?: number | null;
+  right_click?: "herdr" | "pane";
   target_pane_id?: string | null;
   workspace_id?: string | null;
 }
