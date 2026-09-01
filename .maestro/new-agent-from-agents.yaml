@@ -1,0 +1,38 @@
+# A new agent, from the tab where you watch them: "+ New agent" on the
+# Agents tab asks which space, then shows the same form a space's own button
+# opens. Before this the only way in was Spaces → the space → + New agent,
+# three taps away from where the work is watched.
+#
+# The stub records what was asked for rather than starting anything; the
+# script at the end checks the start landed in the space that was picked.
+appId: app.shahi.mobile
+name: Start an agent from the Agents tab, picking its space
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your server"
+    timeout: 15000
+- tapOn:
+    id: "intro-continue"
+- tapOn:
+    id: "server-address"
+- inputText: "http://localhost:7272"
+- tapOn:
+    id: "passcode"
+- inputText: "1234"
+- tapOn: "Connect"
+- assertVisible: "Agents"
+- tapOn:
+    id: "new-agent"
+- assertVisible: ".*in which space.*"
+- tapOn:
+    id: "pick-w1"
+- assertVisible: "New agent in project"
+- assertVisible: "PERMISSIONS"
+- tapOn: ".*Start claude.*"
+- runScript:
+    file: stub/expect-start.js
+    env:
+      WORKSPACE: "w1"
