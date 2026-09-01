@@ -27,6 +27,16 @@ describe("loadConfig", () => {
     expect(loadConfig({ ...base, PORT: "9000" }).port).toBe(9000);
   });
 
+  test("has no relay unless RELAY_URL names one, and refuses one that is not an http(s) URL", () => {
+    expect(loadConfig(base).relayUrl).toBeNull();
+    expect(loadConfig({ ...base, RELAY_URL: "" }).relayUrl).toBeNull();
+    expect(loadConfig({ ...base, RELAY_URL: "https://relay.example.workers.dev/" }).relayUrl).toBe(
+      "https://relay.example.workers.dev",
+    );
+    expect(() => loadConfig({ ...base, RELAY_URL: "relay.example.workers.dev" })).toThrow(/RELAY_URL/);
+    expect(() => loadConfig({ ...base, RELAY_URL: "wss://relay.example.workers.dev" })).toThrow(/http\(s\)/);
+  });
+
   test("treats a missing passcode as gate-disabled", () => {
     expect(loadConfig(base).passcodeHash).toBe("");
     expect(loadConfig({ ...base, PASSCODE_HASH_B64: "" }).passcodeHash).toBe("");
