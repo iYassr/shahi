@@ -249,6 +249,44 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
   );
 }
 
+/**
+ * The first step of "new agent" when it starts from the Agents tab rather
+ * than from inside a space: which space. The form under it is the same one
+ * a space's own "+ New agent" opens — the agent is the thing being made, and
+ * where it lives is a choice, not a place you have to navigate to first.
+ */
+export function PickSpace({ session, onPick }: { session: Session; onPick: (space: Space) => void }) {
+  return (
+    <SheetBody title="New agent — in which space?">
+      {session.workspaces.length === 0 ? (
+        <Pressable style={styles.action} onPress={() => router.replace("/new-space")}>
+          <Text style={styles.actionText}>No spaces yet — make one first</Text>
+        </Pressable>
+      ) : (
+        <FlatList
+          style={styles.pick}
+          data={session.workspaces}
+          keyExtractor={(w) => w.workspaceId}
+          renderItem={({ item, index }) => (
+            <Pressable style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
+              <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
+                <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>{index + 1}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.spaceName}>{item.label}</Text>
+                <Text style={styles.spaceMeta} numberOfLines={1}>
+                  {item.cwd ?? item.workspaceId}
+                </Text>
+              </View>
+            </Pressable>
+          )}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+        />
+      )}
+    </SheetBody>
+  );
+}
+
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState<string | null>(null);
@@ -419,6 +457,9 @@ const styles = StyleSheet.create({
   actionPrimaryText: { color: theme.void, fontWeight: "600" },
 
   sheet: { padding: 16, gap: 10 },
+  // A fit-to-contents sheet with a crowded session would grow past the
+  // screen; the list scrolls inside a bound instead.
+  pick: { maxHeight: 420 },
   sheetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600" },
   sheetClose: { color: theme.peach, fontSize: 15 },

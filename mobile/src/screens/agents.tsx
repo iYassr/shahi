@@ -10,7 +10,7 @@ import { memo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
 import { api, IncompatibleServerError, UnreachableError } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
@@ -161,6 +161,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 </Pressable>
               ))}
             </ScrollView>
+            {/* Where the work starts, not three taps away under Spaces: the
+                sheet asks which space, then the same form a space opens. */}
+            <Pressable style={styles.newAgent} onPress={() => router.push("/new-agent")} testID="new-agent">
+              <Text style={styles.newAgentText}>+ New agent</Text>
+            </Pressable>
             {blocked.map((pane) => (
               <BlockedCard
                 key={pane.paneId}
@@ -477,6 +482,19 @@ const styles = StyleSheet.create({
   },
 
   filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  newAgent: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    minHeight: 44,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: theme.lineBright,
+    borderRadius: 10,
+    borderCurve: "continuous",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  newAgentText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
   filter: {
     borderWidth: 1,
     borderColor: theme.line,
