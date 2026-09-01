@@ -582,6 +582,24 @@ export function summariseToolInput(name: string, input: Record<string, unknown>)
 
 
 /**
+ * The only types an image out of a transcript is ever served as.
+ *
+ * `media_type` is a string in a file the agent writes, and the agent writes
+ * what it was given — a tool result from an MCP server, a fetched page. Served
+ * verbatim it made `/api/panes/:id/image` an arbitrary-bytes,
+ * arbitrary-content-type responder on the app's own origin: `text/html` there
+ * is a page with this origin's cookie, and `nosniff` does nothing against a
+ * type the server *declared*. So the same rule as `/api/file`: a short list,
+ * and anything else is an opaque download. SVG is deliberately absent — it
+ * runs script.
+ */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+export function imageMediaType(declared: unknown): string {
+  return typeof declared === "string" && IMAGE_TYPES.has(declared) ? declared : "application/octet-stream";
+}
+
+/**
  * Recovers an image's bytes from a transcript.
  *
  * `ref` is `<record uuid>:<nth image in that record>`, which survives the
@@ -628,7 +646,7 @@ export async function readSessionImage(
         if (!data) return;
         found = {
           bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
-          mediaType: part.source?.media_type ?? "application/octet-stream",
+          mediaType: imageMediaType(part.source?.media_type),
         };
         return;
       }
