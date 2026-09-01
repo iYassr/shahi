@@ -23,6 +23,7 @@ import { getRandomBytes } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
   RELAY_CLOSE,
+  RELAY_LIMITS,
   RELAY_PROTOCOL,
   type BoxHello,
   type BoxToPhone,
@@ -252,7 +253,11 @@ export class RelayLink {
     this.#ws = socket;
 
     socket.onopen = () => {
-      this.#backoffMs = 500;
+      // The backoff is reset on the box's hello, not here: a refused link
+      // (a ninth phone, a box that is offline) *opens* and then closes with
+      // a code, and resetting on open made the phone knock every ~0.8s for
+      // as long as the app was up — ~100k relay requests a day from one
+      // phone, the free plan's whole quota (measured, 2026-09-02).
       this.#lastMessageAt = Date.now();
       // A fresh key per connection is what makes a leaked secret useless
       // against past sessions; the bytes come from the platform's CSPRNG.
@@ -285,11 +290,12 @@ export class RelayLink {
       }
       this.#receive(plain);
     };
-    socket.onclose = (event: { code?: number }) => {
+    socket.onclose = (event: { code?: number; reason?: string }) => {
       if (this.#ws !== socket) return;
       this.#ws = undefined;
       this.#session = null;
       const code = event?.code ?? 0;
+      const reason = event?.reason ?? "";
       if (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) {
         // The box does not know this device, or could not open our first
         // frame: not paired. Retrying would be refused forever, so stop, and
@@ -297,7 +303,7 @@ export class RelayLink {
         this.#refuse("This phone is no longer paired with that box.");
         return;
       }
-      this.#rejectAll(closeError(code, this.host));
+      this.#rejectAll(closeError(code, reason, this.host));
       this.#setState("lost");
       this.#retry();
     };
@@ -305,6 +311,8 @@ export class RelayLink {
   }
 
   #onHello(text: string): void {
+    // The box answered: this link is real, so the next drop starts over.
+    this.#backoffMs = 500;
     let hello: Partial<BoxHello> = {};
     try {
       hello = JSON.parse(text) as BoxHello;
@@ -402,7 +410,10 @@ export class RelayLink {
   #retry(): void {
     if (this.#closed || this.#timer) return;
     const delay = this.#backoffMs;
-    this.#backoffMs = Math.min(this.#backoffMs * 2, 10_000);
+    // Capped at half a minute, like the box's own dial: a phone that keeps
+    // being refused is waiting for its box, and every attempt is a relay
+    // request the box's owner pays for.
+    this.#backoffMs = Math.min(this.#backoffMs * 2, 30_000);
     this.#timer = setTimeout(() => {
       this.#timer = undefined;
       this.#open();
@@ -410,15 +421,32 @@ export class RelayLink {
   }
 }
 
-/** The relay's close codes, in words for the person holding the phone. */
-function closeError(code: number, host: string): UnreachableError {
+/**
+ * The relay's close codes, in words for the person holding the phone.
+ *
+ * 4429 covers three different refusals and the reason string tells them
+ * apart; before it was read, a photo too big for one frame was reported as
+ * "the relay is throttling this phone", and retrying failed the same way.
+ */
+function closeError(code: number, reason: string, host: string): UnreachableError {
   if (code === RELAY_CLOSE.boxOffline) {
     return new UnreachableError("box", host, "Your box is offline — its Shahi service is not connected to the relay.");
   }
   if (code === RELAY_CLOSE.quota) {
+    if (reason === "frame too large") {
+      return new UnreachableError("relay", host, `That was too big to send through the relay: one message carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)}.`);
+    }
+    if (reason === "too many phones") {
+      return new UnreachableError("relay", host, `This box already has ${RELAY_LIMITS.maxPhonesPerBox} phones on the relay. Revoke one in Settings on another phone.`);
+    }
     return new UnreachableError("relay", host, "The relay is throttling this phone. Wait a moment, then try again.");
   }
   return new UnreachableError("lost", host, `The connection through ${host} dropped. Try again.`);
+}
+
+/** Bytes as a person reads them: KB under a megabyte, so a cap of 783,360 is "765 KB" and not "0.7 MB". */
+export function humanSize(bytes: number): string {
+  return bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function reply(res: RelayResponse): Reply {

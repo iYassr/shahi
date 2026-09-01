@@ -7,7 +7,7 @@
  * faked the way `fetch` is in `api.test.ts`: a class that records what was
  * opened and sent, with methods a test uses to play the relay and the box.
  */
-import { SHAHI_API_VERSION, RELAY_PROTOCOL, type BoxToPhone, type PhoneHello, type PhoneToBox, type RelayRequest } from "@shahi/shared";
+import { RELAY_CLOSE, RELAY_LIMITS, SHAHI_API_VERSION, RELAY_PROTOCOL, type BoxToPhone, type PhoneHello, type PhoneToBox, type RelayRequest } from "@shahi/shared";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ephemeral, open, seal, serverSession, type Session } from "../../../shared/src/e2e";
 import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedError, UnreachableError } from "./api";
@@ -35,7 +35,7 @@ class FakeSocket {
   binaryType = "blob";
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: ((event: { code?: number }) => void) | null = null;
+  onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: unknown[] = [];
 
@@ -65,10 +65,10 @@ class FakeSocket {
   binary(bytes: Uint8Array) {
     this.onmessage?.({ data: bytes.slice().buffer });
   }
-  /** The relay closing the phone's socket with one of its codes. */
-  drop(code: number) {
+  /** The relay closing the phone's socket with one of its codes, and its reason. */
+  drop(code: number, reason = "") {
     this.readyState = 3;
-    this.onclose?.({ code });
+    this.onclose?.({ code, reason });
   }
 }
 
@@ -182,6 +182,42 @@ describe("hello", () => {
     expect(frame).toBeInstanceOf(Uint8Array);
     expect(str(frame)).not.toContain("prompt");
     expect(str(frame)).not.toContain("rm -rf");
+  });
+
+  test("a link the relay refuses backs off, instead of knocking every half second", async () => {
+    // A refused link opens and then closes with a code. Resetting the
+    // backoff on open made a phone whose box was offline reconnect every
+    // ~0.8s all day: measured at ~100k relay requests per phone-day.
+    const target = deviceTarget(identity);
+    connection.relay = target;
+    relayLink(target).ensureConnected();
+    const first = FakeSocket.opened.at(-1)!;
+    first.accept();
+    first.drop(RELAY_CLOSE.boxOffline, "box offline");
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(2);
+    const second = FakeSocket.opened.at(-1)!;
+    second.accept();
+    second.drop(RELAY_CLOSE.boxOffline, "box offline");
+    await sleep(600); // the backoff is 1s now: nothing yet
+    expect(FakeSocket.opened).toHaveLength(2);
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(3);
+    // A box that answers is what resets it: the next drop retries in 500ms.
+    const third = FakeSocket.opened.at(-1)!;
+    third.accept();
+    new FakeBox(third, secret).handshake();
+    await tick();
+    third.drop(1006);
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(4);
+  });
+
+  test("a frame the relay would not carry is reported as too big, not as throttling", async () => {
+    const { link, socket } = await openLink();
+    const call = link.request({ method: "POST", path: "/api/uploads", headers: {}, body: new Uint8Array(10) }, 1000);
+    socket.drop(RELAY_CLOSE.quota, "frame too large");
+    await expect(call).rejects.toThrow(/too big to send through the relay: one message carries up to 765 KB/);
   });
 
   test("every connection uses a different ephemeral key", async () => {
@@ -439,6 +475,21 @@ describe("files over the relay", () => {
     await tick();
     box.answer(box.read()[0] as RelayRequest, 200, "const x = 1; // ünïcödé", { "content-type": "text/plain; charset=utf-8" });
     await expect(call).resolves.toEqual({ text: "const x = 1; // ünïcödé" });
+  });
+
+  test("an upload the relay cannot carry is refused before a byte is sent, with the size", async () => {
+    const { box } = await openLink();
+    const bytes = new Uint8Array(RELAY_LIMITS.maxBodyBytes + 1);
+    const realFetch = globalThis.fetch;
+    (globalThis as { fetch: unknown }).fetch = jest.fn(async () => ({ arrayBuffer: async () => bytes.buffer }));
+    try {
+      await expect(api.upload({ uri: "file:///tmp/big.heic", name: "big.heic", type: "image/heic" })).rejects.toThrow(
+        /This file is 765 KB and the relay carries up to 765 KB/,
+      );
+      expect(box.read()).toEqual([]);
+    } finally {
+      (globalThis as { fetch: unknown }).fetch = realFetch;
+    }
   });
 
   test("an upload is the multipart body FormData would have built, with the file's bytes", async () => {

@@ -81,7 +81,7 @@ const REQUEST_HEADERS_DROPPED = new Set(["cookie", "origin", "host", "x-forwarde
  * expansion. A bigger one — a large file from `/api/file` — is answered 413
  * here rather than dropped by the relay with the link.
  */
-const MAX_RESPONSE_BODY_BYTES = Math.floor(((RELAY_LIMITS.maxFrameBytes - 4096) * 3) / 4);
+const MAX_RESPONSE_BODY_BYTES = RELAY_LIMITS.maxBodyBytes;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

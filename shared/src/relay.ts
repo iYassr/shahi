@@ -47,6 +47,14 @@ export const RELAY_CLOSE = {
 
 export const RELAY_LIMITS = {
   maxFrameBytes: 1024 * 1024,
+  /**
+   * The largest request or response body that fits in one sealed frame:
+   * the frame cap less room for the JSON around a base64 body, times 3/4
+   * for the base64. Measured: a 716,800-byte body sealed to ~955,880 bytes
+   * and crossed the relay; a 921,600-byte frame did, a 1,228,800-byte one
+   * was closed with 4429 before the box saw it.
+   */
+  maxBodyBytes: Math.floor(((1024 * 1024 - 4096) * 3) / 4),
   maxPhonesPerBox: 8,
   /** Sustained bytes per second per phone, and the burst it may bank. */
   phoneBytesPerSecond: 64 * 1024,

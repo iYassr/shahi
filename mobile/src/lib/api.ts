@@ -20,6 +20,7 @@ import {
   type DirListing,
   type InstalledAgent,
   type PairedDevice,
+  RELAY_LIMITS,
   type PaneFrame,
   type PromptOption,
   type PromptReceipt,
@@ -38,7 +39,7 @@ import {
   hostOf,
   type UnreachableReason,
 } from "./errors";
-import { relayLink, toBase64Url, type LinkState, type LinkSubscriber, type RelayLink, type RelayTarget, type Reply } from "./relay";
+import { relayLink, toBase64Url, type LinkState, type LinkSubscriber, type RelayLink, type RelayTarget, type Reply, humanSize } from "./relay";
 
 // The screens import the error classes from here; they moved to `errors.ts`
 // so the relay transport can throw them without importing this module.
@@ -485,7 +486,7 @@ export const api = {
     // A photo over a slow tailnet needs longer than the default 15s, but still
     // a bound: a raw fetch here hung forever on a dead host (data-fetching audit).
     const res = connection.relay
-      ? await dispatch("/api/uploads", await multipart(file), 60_000)
+      ? await dispatch("/api/uploads", tooBigForRelay(await multipart(file)), 60_000)
       : await (async () => {
           const body = new FormData();
           // React Native's FormData takes this shape rather than a File.
@@ -502,6 +503,20 @@ export const api = {
     return payload;
   },
 };
+
+/**
+ * A relay request is one sealed frame and the relay closes the link on one
+ * over its cap — which the app reported as "the relay is throttling this
+ * phone" and which retrying repeated (measured: every iPhone photo is over
+ * it). Refused here, before anything is sent, with the number.
+ */
+function tooBigForRelay<T extends { body: Uint8Array }>(request: T): T {
+  if (request.body.length <= RELAY_LIMITS.maxBodyBytes) return request;
+  throw new Error(
+    `This file is ${humanSize(request.body.length)} and the relay carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)} in one message. ` +
+      "On the same network as the box, connect directly to send it.",
+  );
+}
 
 /**
  * The multipart body `FormData` would have built, as bytes, for the relay.
