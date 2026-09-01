@@ -29,7 +29,7 @@ export * from "./modes";
  * carries `x-shahi-api`, and a mismatch is a clear 426 rather than a screen that
  * half-works.
  */
-export const SHAHI_API_VERSION = 1;
+export const SHAHI_API_VERSION = 2;
 
 /** What `GET /api/meta` answers, before any authentication. */
 export interface ServerInfo {

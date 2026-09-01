@@ -17,6 +17,7 @@
  * Tests drive it through `/__stub/*`: set a scenario, read back what the app
  * tried to write, or push an event down the socket.
  */
+import { SHAHI_API_VERSION } from "@shahi/shared";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +43,7 @@ let scenario: Scenario = SCENARIOS.busy();
  * which is the one situation nothing but a mismatch can stage. Reset with the
  * scenario, so an override cannot leak into the next test.
  */
-const APP_SPEAKS = { min: 1, max: 1 };
+const APP_SPEAKS = { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION };
 let apiRange = { ...APP_SPEAKS };
 /** Everything the app tried to change, in order, for tests to assert on. */
 let writes: { method: string; path: string; body: unknown; at: number }[] = [];

@@ -27,7 +27,7 @@ is labelled as one.
 
 The passcode still works, typed, over Tailscale or SSH. A passcode login is
 not a device: it carries no identity, so it cannot be listed or revoked — the
-section says so. Change the passcode on the server to end those.
+section says so. To end them all at once, rotate `SESSION_SECRET` in the server's `.env` and restart — the passcode itself is only checked at login, so changing it does nothing to sessions that already exist. (That rotation signs every paired phone out too.)
 
 ## What the code is
 

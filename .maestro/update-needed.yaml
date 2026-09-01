@@ -22,8 +22,8 @@ onFlowComplete:
 - runScript:
     file: stub/set-meta.js
     env:
-      MIN: "2"
-      MAX: "2"
+      MIN: "3"
+      MAX: "3"
 - launchApp:
     clearState: true
     clearKeychain: true
@@ -100,8 +100,8 @@ onFlowComplete:
 - runScript:
     file: stub/set-meta.js
     env:
-      MIN: "2"
-      MAX: "2"
+      MIN: "3"
+      MAX: "3"
 - launchApp
 - extendedWaitUntil:
     visible: "Update needed"

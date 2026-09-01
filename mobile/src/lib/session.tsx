@@ -17,7 +17,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
-import { api, connection, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
+import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
 import { closeTunnel, openTunnel } from "@/lib/tunnel";
 import type { SshProfile } from "@/lib/ssh";
 
@@ -337,7 +337,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       .catch((e: Error) => {
         // An expired cookie is not an error to display; it is a sign-out.
         if (e instanceof UnauthorizedError) signOut();
-        else setError(e);
+        else {
+          setError(e);
+          // A server that has said it cannot talk to this build must not be
+          // hammered by the socket's reconnect loop: React Native cannot see
+          // the upgrade's 426, only a close, so it would retry forever. "Try
+          // again" goes through reconnect(), which re-opens it.
+          if (e instanceof IncompatibleServerError) socketRef.current?.close();
+        }
       });
   }, [signOut]);
 
@@ -350,7 +357,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!connected) return;
     setError(null);
     void refresh();
-    const socket = new SessionSocket(onMessage, setLink);
+    // A 4001 close is the server saying this session no longer verifies —
+    // expired or revoked — which is a sign-out, not a connection to retry.
+    const socket = new SessionSocket(onMessage, setLink, signOut);
     socket.connect();
     socketRef.current = socket;
     return () => {

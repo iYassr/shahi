@@ -35,6 +35,7 @@
  *
  *   SHAHI_HERDR_LIVE=1 SHAHI_HERDR_LIVE_AGENT=1 bun test server/lib/herdr-live.test.ts
  */
+import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -227,7 +228,8 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
         // The reply itself is not waited for — that is the transcript's job,
         // and this test proves the send, not claude.
         const screen = await eventually(() => visible(agentPane), (t) => t.includes(marker), 15_000);
-        expect(screen).toContain(marker);
+        // Not `toContain`: a failure would print the agent's screen into CI.
+        expect(screen.includes(marker), `prompt did not reach ${agentPane} within 15s — open the pane in herdr`).toBe(true);
       },
       // `agent.start` blocks until the agent is interactively ready, and a
       // cold claude on a slow box can take most of a minute.
@@ -337,7 +339,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     });
 
     test("GET /api/session lists the scratch pane", async () => {
-      const session = (await (await fetch(`${base}/api/session`, { headers: { "x-shahi-api": "1" } })).json()) as {
+      const session = (await (await fetch(`${base}/api/session`, { headers: { "x-shahi-api": String(SHAHI_API_VERSION) } })).json()) as {
         panes: { paneId: string; status: string }[];
       };
       const row = session.panes.find((p) => p.paneId === paneId);
@@ -347,7 +349,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
 
     test("POST /api/panes/:id/prompt delivers once and answers a retry with the same receipt", async () => {
       const body = JSON.stringify({ text: `printf 'shahi-http-%s\\n' ${nonce}`, clientMessageId: `cm-${nonce}` });
-      const headers = { "content-type": "application/json", "x-shahi-api": "1" };
+      const headers = { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) };
       const first = (await (await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/prompt`, { method: "POST", headers, body })).json()) as {
         accepted: boolean;
         clientMessageId: string;
@@ -361,7 +363,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     });
 
     test("POST /api/panes/:id/keys and /api/workspaces go through", async () => {
-      const headers = { "content-type": "application/json", "x-shahi-api": "1" };
+      const headers = { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) };
       const keys = await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/keys`, {
         method: "POST",
         headers,

@@ -35,7 +35,8 @@
 import { Database } from "bun:sqlite";
 import { readdir, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
 import { parseLines, type Block, type LogMessage, type SessionLog } from "./session-log";
 
@@ -48,6 +49,18 @@ const TOOL_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
 const TOOL_OUTPUT_TYPES = new Set(["function_call_output", "custom_tool_call_output"]);
 
 const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+/** A path as the filesystem knows it, or unchanged if it does not exist yet. */
+function realpathIfExists(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+// Kept as spelt: the glob route joins matches onto it and callers expect that
+// spelling back. Whether a path is *inside* it is decided on resolved paths in
+// `rolloutWithinSessions`, because codex canonicalises CODEX_HOME and stores
+// real paths in its index while this would be the symlink (review finding).
 const SESSIONS_DIR = join(CODEX_HOME, "sessions");
 
 /**
@@ -69,10 +82,13 @@ const STATE_DB = join(CODEX_HOME, "state_5.sqlite");
  * `rollout_path` can do is name a different rollout.
  */
 export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR): string | null {
-  if (typeof path !== "string") return null;
-  if (!path.startsWith(`${sessionsDir}/`) || !path.endsWith(".jsonl")) return null;
-  if (path.split("/").includes("..")) return null;
-  return path;
+  if (typeof path !== "string" || !path.endsWith(".jsonl")) return null;
+  // Compared as resolved paths: `resolve` folds any `..` away and `realpath`
+  // follows a symlinked directory, so the check is on where the file actually
+  // is rather than on how it was spelt.
+  const resolved = resolve(path);
+  const candidate = join(realpathIfExists(dirname(resolved)), basename(resolved));
+  return candidate.startsWith(`${realpathIfExists(sessionsDir)}/`) ? path : null;
 }
 
 /**

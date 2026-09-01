@@ -82,8 +82,7 @@ export function PairedDevices({ onRevokedSelf }: { onRevokedSelf: () => void }) 
       )}
       <Text style={styles.note}>
         {list.thisDeviceId === null ? "This phone signed in with the passcode. " : ""}
-        Passcode sign-ins aren't devices and can't be revoked here; change the passcode on the server to end
-        them.
+        Passcode sign-ins aren't devices and can't be revoked here; to sign every passcode session out at once, rotate SESSION_SECRET in the server's .env and restart.
       </Text>
     </View>
   );
