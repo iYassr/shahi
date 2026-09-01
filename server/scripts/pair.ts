@@ -16,33 +16,22 @@
  * if it is not loopback, and otherwise it stops and asks. Whatever it picks is
  * probed before printing, so a wrong guess is said here and not on the phone.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import QRCode from "qrcode";
 import { SHAHI_API_VERSION, type PairingCode, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../lib/auth";
 import { loadConfig } from "../lib/config";
+import { phoneEndpoint, tailscaleStatus } from "../lib/endpoint";
 import { PAIRING_TTL_MS, pairingUrl } from "../lib/pairing";
+import { envFilePath, readEnvFile } from "../lib/secrets";
 
-const ENV_PATH = join(import.meta.dir, "..", "..", ".env");
-
-/** Bun loads .env from the working directory; this may be run from elsewhere. */
-function readEnv(path: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  if (!existsSync(path)) return values;
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq > 0) values[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
-  }
-  return values;
-}
+// Bun loads .env from the working directory; this may be run from elsewhere,
+// and the herdr plugin keeps the file outside the checkout (SHAHI_ENV_FILE).
+const ENV_PATH = envFilePath();
 
 const args = process.argv.slice(2);
 const endpointArg = args.includes("--endpoint") ? args[args.indexOf("--endpoint") + 1] : undefined;
 
-const config = loadConfig({ ...readEnv(ENV_PATH), ...process.env });
+const config = loadConfig({ ...Object.fromEntries(readEnvFile(ENV_PATH)), ...process.env });
 const local = `http://${config.host}:${config.port}`;
 const auth = new Auth({
   passcodeHash: config.passcodeHash,
@@ -106,20 +95,11 @@ if (!reachable) {
   );
 }
 
-/** What install.sh tells people to open, derived the same way it derives it. */
+/**
+ * What install.sh tells people to open, derived the same way it derives it.
+ * `tailscale serve` fronts the loopback bind on 443; the probe above confirms
+ * whether that is actually set up.
+ */
 async function defaultEndpoint(): Promise<string> {
-  try {
-    const proc = Bun.spawn(["tailscale", "status", "--json"], { stdout: "pipe", stderr: "ignore" });
-    const out = await new Response(proc.stdout).text();
-    if ((await proc.exited) === 0) {
-      const name = (JSON.parse(out) as { Self?: { DNSName?: string } }).Self?.DNSName?.replace(/\.$/, "");
-      // `tailscale serve` fronts the loopback bind on 443; the probe above
-      // confirms whether that is actually set up.
-      if (name) return `https://${name}`;
-    }
-  } catch {
-    // No tailscale on this box; fall through.
-  }
-  const loopback = config.host === "127.0.0.1" || config.host === "localhost" || config.host === "::1";
-  return loopback ? "" : local;
+  return phoneEndpoint(await tailscaleStatus(), config.host, config.port);
 }
