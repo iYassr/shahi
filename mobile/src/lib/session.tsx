@@ -18,6 +18,8 @@ import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
 import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
+import { hostOf } from "@/lib/errors";
+import { closeRelay, deviceTarget, type RelayIdentity } from "@/lib/relay";
 import { closeTunnel, openTunnel } from "@/lib/tunnel";
 import type { SshProfile } from "@/lib/ssh";
 
@@ -30,12 +32,16 @@ const KEY = "shahi.connection";
  * credential. An SSH connection remembers the whole profile instead: the local
  * tunnel port changes every launch, so the old base URL is worthless, and the
  * profile's passcode lets us re-open the tunnel and sign in fresh without
- * asking again. Both shapes live at the same key; `kind` tells them apart, and
- * an entry written before SSH existed has no `kind` and reads as direct.
+ * asking again. A relay connection remembers the relay, the box's id and the
+ * device this phone became when it paired — the device secret is the
+ * credential, the way the cookie is for a direct one. All three shapes live
+ * at the same key; `kind` tells them apart, and an entry written before SSH
+ * existed has no `kind` and reads as direct.
  */
 type Stored =
   | { kind?: "direct"; baseUrl: string; cookie: string }
-  | { kind: "ssh"; ssh: SshProfile };
+  | { kind: "ssh"; ssh: SshProfile }
+  | ({ kind: "relay" } & RelayIdentity);
 
 interface SessionValue {
   /** Null until the keychain has been read, so nothing flashes the wrong screen. */
@@ -55,6 +61,8 @@ interface SessionValue {
   signIn: () => void;
   /** Called by Connect after an SSH tunnel is open and login has succeeded. */
   signInSsh: (profile: SshProfile) => void;
+  /** Called by Connect once a pairing over a relay has answered with a device. */
+  signInRelay: (identity: RelayIdentity) => void;
   signOut: () => void;
   /**
    * Ask the server for a fresh snapshot — after creating a space or a tab.
@@ -146,6 +154,21 @@ function reconcileSession(prev: Session | null, next: Session): Session {
   return { ...next, panes, tabs, workspaces };
 }
 
+/**
+ * Points every request and the socket at the box through its relay. The
+ * server string is the relay's host with its own scheme, the way SSH shows
+ * `ssh://`: Settings shows what the phone is actually talking to.
+ */
+function connectRelay(identity: RelayIdentity): void {
+  connection.baseUrl = "";
+  connection.cookie = null;
+  connection.relay = deviceTarget(identity);
+}
+
+function relayLabel(identity: RelayIdentity): string {
+  return `relay://${hostOf(identity.relay)}`;
+}
+
 const Ctx = createContext<SessionValue | null>(null);
 
 export function useSession(): SessionValue {
@@ -214,6 +237,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             connection.cookie = null;
             await api.login(stored.ssh.passcode);
             setServer(`ssh://${stored.ssh.username}@${stored.ssh.host}`);
+            setConnected(true);
+          } else if (stored.kind === "relay") {
+            // Nothing to open here: the link is opened by the first request,
+            // and a box that is offline or has forgotten this device says so
+            // then, on the Agents screen, rather than at the gate.
+            connectRelay(stored);
+            setServer(relayLabel(stored));
             setConnected(true);
           } else {
             connection.baseUrl = stored.baseUrl;
@@ -314,6 +344,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     void SecureStore.deleteItemAsync(KEY);
     connection.cookie = null;
+    // The link goes with the credentials it carried.
+    connection.relay = null;
+    closeRelay();
     setConnected(false);
     setSession(null);
     // Drop the SSH session with the app session — a live tunnel to a box you
@@ -393,6 +426,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signOut,
       signIn: () => {
         sshProfile.current = null;
+        connection.relay = null;
         void SecureStore.setItemAsync(
           KEY,
           JSON.stringify({ kind: "direct", baseUrl: connection.baseUrl, cookie: connection.cookie ?? "" }),
@@ -406,8 +440,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // start can rebuild the tunnel.
       signInSsh: (profile: SshProfile) => {
         sshProfile.current = profile;
+        connection.relay = null;
         void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "ssh", ssh: profile }));
         setServer(`ssh://${profile.username}@${profile.host}`);
+        setConnected(true);
+      },
+      // Pointing `connection` at the device target retires the pairing link
+      // the next time anything asks for one — the socket effect below does,
+      // and comes up on the device link.
+      signInRelay: (identity: RelayIdentity) => {
+        sshProfile.current = null;
+        void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "relay", ...identity }));
+        connectRelay(identity);
+        setServer(relayLabel(identity));
         setConnected(true);
       },
       watch: (paneId) => socketRef.current?.watch(paneId),
