@@ -115,16 +115,18 @@ jobs:
 
       # `herdr server` runs in the foreground by design ("for supervised or
       # service-style setups"), so it is backgrounded here and polled for its
-      # socket. A short path: sun_path is 104-108 bytes and a runner temp dir
-      # plus a name can exceed it.
+      # socket. A named session, for the same reason as on a developer's Mac:
+      # a bare socket override restores the default session's saved state and
+      # re-launches its agents, and one recipe everywhere is one to get wrong.
       - name: Start a headless herdr
         run: |
-          export HERDR_SOCKET_PATH=/tmp/shahi-ci.sock
-          nohup herdr server > /tmp/herdr-server.log 2>&1 &
+          nohup herdr --session shahi-ci server > /tmp/herdr-server.log 2>&1 &
+          export HERDR_SOCKET_PATH="$HOME/.config/herdr/sessions/shahi-ci/herdr.sock"
           for i in $(seq 1 60); do [ -S "$HERDR_SOCKET_PATH" ] && break; sleep 0.5; done
-          herdr status server
+          echo "HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH" >> "$GITHUB_ENV"
+          herdr session list
 
-      - run: SHAHI_HERDR_LIVE=1 HERDR_SOCKET_PATH=/tmp/shahi-ci.sock bun test server/lib/herdr-live.test.ts
+      - run: SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
 
       - uses: actions/upload-artifact@v4
         if: failure()
