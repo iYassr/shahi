@@ -352,8 +352,14 @@ class Link implements StreamClient {
   }
 
   async #request(req: RelayRequest): Promise<void> {
-    if (this.#kind === "pairing" && !(req.method === "POST" && req.path === "/api/pair/claim")) {
-      this.#answer(req.id, jsonResponse(403, { error: "a pairing link may only claim its code" }));
+    // A pairing link may look at `/api/meta` (unauthenticated over HTTP too:
+    // the phone checks the serverId in the code against the box it reached
+    // before it hands over the secret) and claim. Nothing else.
+    const allowed =
+      (req.method === "GET" && req.path.split("?")[0] === "/api/meta") ||
+      (req.method === "POST" && req.path === "/api/pair/claim");
+    if (this.#kind === "pairing" && !allowed) {
+      this.#answer(req.id, jsonResponse(403, { error: "a pairing link may only read /api/meta and claim its code" }));
       return;
     }
 
