@@ -174,14 +174,17 @@ domain is optional and is the usual Workers route: add `routes` to
 as well. There is nothing to configure in the Worker itself — the `serverId`
 in the URL is all it needs.
 
-**Point a box at it.** The sidecar dials out when `RELAY_URL` is set:
+**Point a box at it.** The herdr plugin's service dials Shahi's relay unless
+its `.env` has a `RELAY_URL` line — empty for direct-only, or your Worker's
+address. By hand, the sidecar dials out when `RELAY_URL` is set:
 
 ```sh
-RELAY_URL=wss://shahi-relay.<your-subdomain>.workers.dev
+RELAY_URL=https://shahi-relay.<your-subdomain>.workers.dev   # what `wrangler deploy` prints; the box speaks wss to it
 ```
 
-in the sidecar's environment (`~/.config/shahi/env` under the systemd unit,
-see `operations.md`). Pairing codes minted after that carry the relay beside
+in the sidecar's environment (the plugin's `.env` is at `herdr plugin
+config-dir shahi`; under the hand-made systemd unit it is
+`~/.config/shahi/env`, see `operations.md`). Pairing codes minted after that carry the relay beside
 the LAN endpoint, and the app prefers the relay because it works from
 anywhere. Nothing on the box needs a port opened.
 

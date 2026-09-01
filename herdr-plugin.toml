@@ -4,11 +4,14 @@
 # by contract, so the hook installs a user service (launchd or systemd) that
 # supervises it, and every action here is a small command against that
 # service. See docs/plugin.md. Every command goes through plugin/bun.sh, which
-# finds bun wherever it is installed and says how to install it when it is not.
+# finds bun wherever it is installed. During `herdr plugin install` only, if
+# there is none, it runs bun's own installer (curl -fsSL https://bun.sh/install
+# | bash) into ~/.bun — which, as that installer always does, also adds
+# ~/.bun/bin to your shell's rc file, and needs curl, unzip and bash.
 
 id = "shahi"
 name = "Shahi"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.8.2"
 description = "See and answer your terminal agents from your phone"
 platforms = ["linux", "macos"]
@@ -57,11 +60,12 @@ title = "Shahi logs"
 contexts = ["workspace"]
 command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "logs"]
 
-# `herdr plugin uninstall shahi` removes the checkout and knows nothing about
-# the service; this removes the service and keeps your data. Run it first.
+# The whole uninstall: stops the sidecar, removes its service (which herdr
+# knows nothing about), then runs `herdr plugin uninstall shahi`. Your
+# passcode, paired phones and transcripts stay in the config and state dirs.
 [[actions]]
 id = "uninstall"
-title = "Remove Shahi's service"
+title = "Uninstall Shahi"
 contexts = ["workspace"]
 command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "uninstall"]
 

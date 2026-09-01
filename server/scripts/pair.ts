@@ -64,19 +64,27 @@ if (!mintRes.ok) {
 }
 const code = (await mintRes.json()) as PairingCode;
 
-const endpoint = (endpointArg ?? (await defaultEndpoint())).replace(/\/$/, "");
+// The code's format requires an endpoint, and a phone that finds a relay on
+// the code never uses it (connect.tsx takes `relay ?? endpoint`). So with a
+// relay the field is filled with the best guess or, failing one, this box's
+// own loopback — rather than a refusal that sent people off to type an
+// address the phone would then ignore.
+const endpoint = (endpointArg ?? (await defaultEndpoint()) ?? (config.relayUrl ? local : "")).replace(/\/$/, "");
 if (!endpoint) {
   console.error(
     "Cannot tell what address the phone should use. Pass it:\n" +
-      "  bun run server/scripts/pair.ts --endpoint https://your-box.your-tailnet.ts.net",
+      "  bun run server/scripts/pair.ts --endpoint https://your-box.your-tailnet.ts.net\n" +
+      "or set RELAY_URL in .env so the phone can reach this box through the relay from anywhere.",
   );
   process.exit(1);
 }
 
 // The same check the phone will make, made here first: a guessed endpoint that
 // answers with a different serverId (or nothing) is reported as this box's
-// problem, not as a mysterious refusal on the phone.
-const there = await serverInfo(endpoint);
+// problem, not as a mysterious refusal on the phone. Not with a relay: the
+// phone will not contact that address, and probing a Tailscale name that has
+// no `tailscale serve` behind it held the QR back for the five-second timeout.
+const there = config.relayUrl ? null : await serverInfo(endpoint);
 const reachable = there?.serverId === here.serverId;
 
 const url = pairingUrl({
@@ -91,9 +99,14 @@ const url = pairingUrl({
 console.log(await QRCode.toString(url, { type: "terminal", small: true }));
 console.log(`  Scan this with Shahi — Connect, then "Scan a code".`);
 console.log(`  Or paste it:  ${url}\n`);
-console.log(`  Server   ${endpoint}`);
+if (config.relayUrl) {
+  console.log(`  Relay    ${config.relayUrl} — the phone connects through this, from anywhere`);
+  console.log(`  Server   ${endpoint} (on the code; unused by a phone that has the relay)`);
+} else {
+  console.log(`  Server   ${endpoint}`);
+}
 console.log(`  Expires  ${new Date(code.expiresAt).toLocaleTimeString()} (${PAIRING_TTL_MS / 60_000} minutes, one use)\n`);
-if (!reachable) {
+if (!config.relayUrl && !reachable) {
   console.warn(
     there
       ? `  WARNING: ${endpoint} answers, but as a different Shahi server. The phone will refuse this code.`
@@ -107,6 +120,6 @@ if (!reachable) {
  * `tailscale serve` fronts the loopback bind on 443; the probe above confirms
  * whether that is actually set up.
  */
-async function defaultEndpoint(): Promise<string> {
-  return phoneEndpoint(await tailscaleStatus(), config.host, config.port);
+async function defaultEndpoint(): Promise<string | undefined> {
+  return phoneEndpoint(await tailscaleStatus(), config.host, config.port) || undefined;
 }

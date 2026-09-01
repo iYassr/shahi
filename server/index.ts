@@ -110,6 +110,8 @@ const server = createServer({
   pairing,
   devices,
   serverId: identity.serverId,
+  // Created below, because it needs this server; read at request time.
+  relay: () => (relay ? { url: config.relayUrl!, connected: relay.connected } : null),
 });
 
 // Dialled out, never listened on: with a relay the box is reachable from

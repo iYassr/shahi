@@ -1,27 +1,36 @@
 # Shahi as a herdr plugin
 
 The way to install the sidecar if you already run herdr — which you do, or
-there is nothing for Shahi to show. Two lines:
+there is nothing for Shahi to show.
 
 ```sh
 herdr plugin install iYassr/shahi
-# then start (or restart) herdr
+herdr plugin action invoke shahi.restart     # or restart herdr
 ```
 
-`herdr plugin install` clones the repository, shows you the manifest and the
-commands it will run, runs the two build steps (`bun install
---frozen-lockfile`, `bun run build:web`), and registers the plugin. The next
-time herdr starts it runs the plugin's startup hook, which does the rest:
-generates a passcode and the keys that go with it, installs a user service
-that supervises the sidecar, starts it, and prints where everything is. The
-hook runs on every herdr start and is idempotent — the second run keeps your
-passcode and simply restarts the service on whatever code is checked out.
+Then **Pair a phone** from herdr's command palette and scan the QR with the
+app. That is the whole setup: the phone reaches the box through Shahi's relay
+from anywhere, so nothing has to be exposed, tunnelled or typed.
 
-It needs **bun** (`curl -fsSL https://bun.sh/install | bash`), **herdr 0.8.2
-or newer**, and **macOS or Linux**. Every command in the manifest goes
-through `plugin/bun.sh`, which finds bun in the places herdr's PATH may not
-include and, when there is none, prints that install line instead of a spawn
-error.
+`herdr plugin install` clones the repository, shows you the manifest and the
+commands it will run, runs the build steps (`bun install --frozen-lockfile`,
+`bun run build:web`) and registers the plugin. The `restart` action — or the
+next herdr start, which runs the plugin's startup hook — does the rest:
+generates a passcode and the keys that go with it, points the box at the
+relay, installs a user service that supervises the sidecar, starts it, and
+tells you it is running in herdr's notification tray. The hook runs on every
+herdr start and is idempotent: the second run keeps your passcode and simply
+restarts the service on whatever code is checked out.
+
+It needs **herdr 0.8.2 or newer** on **macOS or Linux**. It also needs
+[bun](https://bun.sh), and installs it if there is none: every command in the
+manifest goes through `plugin/bun.sh`, which finds bun in the places herdr's
+PATH may not include and otherwise — during `herdr plugin install` only,
+never from a hook or an action — runs bun's own installer into `~/.bun`.
+That installer also adds `~/.bun/bin` to your shell's rc file, as it always
+does, and needs `curl`, `unzip` and `bash` on the box (`apt install unzip`
+is the usual missing one on a fresh Debian or Ubuntu). On a headless Linux
+box, see the lingering note under *What gets created*.
 
 `install.sh` still exists and still works. Prefer the plugin: it is the path
 the public release will be judged on, and the installer will go once the
@@ -84,21 +93,37 @@ Unlike a checkout, the plugin does not let the gate be off: an empty
 `PASSCODE_HASH_B64` gets a new passcode on the next herdr start, because this
 port is full control of every agent on the machine.
 
-## Port and address
+## Reaching it
 
-The `.env` is also where `PORT` and `HOST` go. Create it before the first
-herdr start to choose a port, or edit it later and restart:
+The sidecar listens on `7171` on loopback and dials out to Shahi's relay
+(`docs/relay.md`), so the first pairing code already works from anywhere:
+the code carries the relay's address, the phone connects through it, and the
+relay sees ciphertext and nothing else — what it does see is that a box with
+your `serverId` is online, and the timing and sizes of its frames. The relay
+is `https://shahi-relay.yasserd99.workers.dev`, a Cloudflare Worker run by
+Shahi's author; the default lives in the plugin's code, not in your files,
+and a `RELAY_URL` line in the `.env` always wins:
+
+```sh
+echo 'RELAY_URL=' >> "$(herdr plugin config-dir shahi)/.env"           # direct only: the box never dials out
+echo 'RELAY_URL=https://…' >> "$(herdr plugin config-dir shahi)/.env"  # your own Worker (docs/relay.md, "Operating the relay")
+herdr plugin action invoke shahi.restart
+```
+
+Written before the first `restart`, the empty line means the box never
+dials out at all. `PORT` and `HOST` go in the same file, the same way:
 
 ```sh
 echo PORT=7275 >> "$(herdr plugin config-dir shahi)/.env"
 herdr plugin action invoke shahi.restart
 ```
 
-The defaults are `7171` on loopback. Reaching it from a phone is the same
-choice as with `install.sh` — `tailscale serve --bg --https=443
-http://127.0.0.1:7171` in front of the loopback bind, or the app's SSH
-tunnel — and the README's Setup section covers both. **Never `tailscale
-funnel`.**
+A phone paired by a code that carries the relay connects through the relay
+and nothing else. The direct ways in — the app's SSH tunnel to the box, or
+`tailscale serve --bg --https=443 http://127.0.0.1:7171` in front of the
+loopback bind, then the address typed by hand — are a different pairing,
+faster on the same network; the README's Setup section covers both.
+**Never `tailscale funnel`.**
 
 ## Pairing a phone
 
@@ -112,12 +137,23 @@ herdr that prints the QR (`server/scripts/pair.ts`, run with the plugin's
 → **Scan a code**. The code works once and for ten minutes; open the popup
 again for another phone.
 
-The popup has to guess the address the phone will use. It picks the Tailscale
-name if there is one and the bind address if it is not loopback, and probes
-whichever it picked before printing, so a wrong guess is a warning on that
-screen and not a refusal on the phone. When there is nothing to guess from —
-loopback, no Tailscale — it asks you to type the address first. The details
-of what the code carries and how the server checks it are in `pairing.md`.
+The code carries the relay's address, and the phone uses that and nothing
+else. The code's format also wants a direct address, so the box fills it
+with the best guess it has — the Tailscale name, the bind address if it is
+not loopback, otherwise its own loopback — and a phone that has the relay
+ignores it. Without a relay and without a guess, the popup asks you to type
+the address first. What the code carries and how the server checks it is in
+`pairing.md`.
+
+A keybinding, if you pair often — in herdr's `config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+P"
+type = "plugin_action"
+command = "shahi.pair"
+description = "pair a phone with Shahi"
+```
 
 ## The actions
 
@@ -132,11 +168,15 @@ herdr plugin log list --plugin shahi        # their output
 | action | does |
 |---|---|
 | `pair` | opens the QR popup |
-| `status` | service state and pid, the address, what `GET /api/meta` says, how many phones are paired, where everything is. Exit 1 when the API is not answering. |
+| `status` | service state and pid, the address, the relay and whether the box is on it, what `GET /api/meta` says, how many phones are paired, where everything is. Exit 1 when the API is not answering. |
 | `restart` | re-renders the service from the current checkout and `.env`, restarts it, waits up to six seconds for `/api/meta` |
 | `stop` | stops the sidecar until the next herdr start or `restart` |
 | `logs` | the last 80 lines of the sidecar's log (`tail -f` the file to follow) |
-| `uninstall` | stops the sidecar and removes the service file; keeps the config and state directories |
+| `uninstall` | the whole uninstall: stops the sidecar, removes the service file, then `herdr plugin uninstall shahi`; keeps the config and state directories |
+
+What `setup` and `restart` have to say — it is running, the passcode the
+first time, the lingering command on Linux — also lands in herdr's
+notification tray, because the plugin log is where nobody looks.
 
 ## Updating
 
@@ -146,21 +186,24 @@ herdr plugin action invoke shahi.restart   # or restart herdr
 ```
 
 herdr has no `plugin update`; reinstalling is the update. Your `.env` and
-database are outside the checkout and untouched.
+database are outside the checkout and untouched, and the restart is what
+puts the new code in front of the phone — a sidecar keeps the old code in
+memory until then.
 
 ## Uninstalling cleanly
 
-`herdr plugin uninstall shahi` removes the checkout and the registration but
-knows nothing about the service the hook installed, which would keep running
-from a directory that no longer exists. So, in this order:
+One action, from the palette (**Uninstall Shahi**) or:
 
 ```sh
-herdr plugin action invoke shahi.uninstall   # stops the sidecar, removes the plist / unit
-herdr plugin uninstall shahi                 # removes the checkout and the registration
+herdr plugin action invoke shahi.uninstall
 ```
 
-That leaves the config and state directories — the passcode hash, the paired
-phones, the transcripts — for you to delete by hand if you mean it:
+It stops the sidecar, removes the plist or unit, and then runs `herdr plugin
+uninstall shahi` itself — in that order, because `herdr plugin uninstall`
+knows nothing about the service the hook installed and would leave it
+running from a directory that no longer exists. What stays is the config and
+state directories — the passcode hash, the paired phones, the transcripts —
+for you to delete by hand if you mean it:
 
 ```sh
 rm -r "$(herdr plugin config-dir shahi)" ~/.local/state/herdr/plugins/shahi
@@ -212,3 +255,6 @@ rescans when the default branch moves. Nothing in the code is involved.
   it here and herdr's own Windows support is newer than this plugin.
 - **A compiled single binary** would remove the bun requirement and the
   build step. That is a release-asset job, not a plugin change.
+- **The relay's default is a `workers.dev` hostname.** It is in code, so a
+  reinstall can move it — but a custom domain on the Worker (`docs/relay.md`,
+  "Operating the relay") is what lets it move without a release.
