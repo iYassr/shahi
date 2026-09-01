@@ -7,17 +7,19 @@
     "shared",
     "server",
     "web",
-    "mobile"
+    "mobile",
+    "relay"
   ],
   "scripts": {
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
     "test": "bun test shared/src server web/src",
-    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p web && tsc --noEmit -p mobile",
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p web && tsc --noEmit -p mobile && tsc --noEmit -p relay && tsc --noEmit -p relay/test",
     "build:web": "bun run --cwd web build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
-    "test:mobile": "bun run --cwd mobile test"
+    "test:mobile": "bun run --cwd mobile test",
+    "test:relay": "bun test relay/test"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
