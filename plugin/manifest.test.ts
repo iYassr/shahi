@@ -116,7 +116,7 @@ describe("herdr-plugin.toml", () => {
 
   test("offers the actions the docs promise", () => {
     const ids = (manifest.actions ?? []).map((a) => a.id).sort();
-    expect(ids).toEqual(["logs", "pair", "restart", "status", "stop"]);
+    expect(ids).toEqual(["logs", "pair", "restart", "status", "stop", "uninstall"]);
     for (const action of manifest.actions ?? []) {
       expect(action.title).toBeTruthy();
       expect(action.contexts?.length).toBeGreaterThan(0);
