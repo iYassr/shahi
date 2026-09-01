@@ -81,8 +81,15 @@ function deriveMaster(
   serverPub: Uint8Array,
 ): { c2s: Uint8Array; s2c: Uint8Array } {
   // ikm binds the pairing secret to the ECDH result — this is the authentication
-  // step. salt binds both public keys so the derived keys are unique to this
-  // exact exchange.
+  // step, and it only authenticates if the secret is actually there: with an
+  // empty one the handshake is unauthenticated Diffie–Hellman and nothing
+  // would say so (2026-09-02 review, E3). Fixed length also keeps
+  // `ECDH ‖ secret` unambiguous.
+  if (pairingSecret.length !== PAIRING_SECRET_LEN) {
+    throw new Error(`e2e: the pairing secret must be ${PAIRING_SECRET_LEN} bytes`);
+  }
+  // salt binds both public keys so the derived keys are unique to this exact
+  // exchange.
   const ikm = concat(shared, pairingSecret);
   const salt = concat(clientPub, serverPub);
   const master = hkdf(sha256, ikm, salt, HKDF_INFO, 2 * KEY_LEN);
@@ -125,14 +132,29 @@ export function seal(session: Session, plaintext: Uint8Array): Uint8Array {
 }
 
 /**
- * Opens a received message, throwing on a bad tag (tamper) or a replayed/old
- * counter. On success the receive counter advances past the accepted message,
- * so re-delivering the same frame is refused.
+ * Opens a received message, throwing on a bad tag (tamper) or on any counter
+ * but the next one. On success the receive counter advances past the accepted
+ * message.
+ *
+ * Exactly the next counter, not "any later one": a session is one ordered
+ * WebSocket link per direction, sealed at the moment of sending, so a gap can
+ * only be a frame the relay dropped or reordered — and a blind relay that can
+ * silently withhold a `status`, an `unwatch` or a refusal is not blind enough
+ * (2026-09-02 review, E1). Refusing the frame after a gap ends the link, and
+ * a link that reconnects is the honest recovery. The counter is the nonce, so
+ * no additional authenticated data is needed to bind a frame to its place:
+ * a frame opens only at its own counter, and only on this direction's key.
  */
 export function open(session: Session, wire: Uint8Array): Uint8Array {
   if (wire.length < 8 + 16) throw new Error("e2e: message too short");
   const counter = readCounter(wire);
-  if (counter < session.recv.next) throw new Error("e2e: replayed or out-of-order message");
+  if (counter !== session.recv.next) {
+    throw new Error(
+      counter < session.recv.next
+        ? "e2e: replayed or out-of-order message"
+        : "e2e: a message is missing — the link dropped or reordered a frame",
+    );
+  }
   const nonce = nonceFor(counter);
   const plaintext = chacha20poly1305(session.recv.key, nonce).decrypt(wire.slice(8));
   session.recv.next = counter + 1n;

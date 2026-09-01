@@ -102,4 +102,31 @@ describe("e2e", () => {
     const wire = seal(client, utf8("hello"));
     expect(() => open(server, wire.slice(0, 10))).toThrow();
   });
+
+  // The three properties the 2026-09-02 review demonstrated were missing,
+  // each pinned by the demonstration turned around.
+  test("a frame after a gap is refused: a relay cannot silently drop one", () => {
+    const { client, server } = handshake();
+    const withheld = seal(server, utf8('{"t":"ws","data":{"type":"status"}}'));
+    const later = seal(server, utf8('{"t":"res","id":1,"status":200}'));
+    void withheld;
+    expect(() => open(client, later)).toThrow(/missing|dropped/i);
+    // And the window did not move: the withheld frame, delivered late, still opens.
+    expect(client.recv.next).toBe(0n);
+    expect(str(open(client, withheld))).toContain("status");
+    expect(str(open(client, later))).toContain("res");
+  });
+
+  test("a pairing secret of the wrong length is refused, never unauthenticated DH", () => {
+    expect(() => handshake(new Uint8Array(0))).toThrow(/pairing secret/);
+    expect(() => handshake(rand(16))).toThrow(/pairing secret/);
+  });
+
+  test("a low-order public key is refused at the handshake", () => {
+    // What a hostile peer, or a relay rewriting the hello, can send as `pub`:
+    // the all-zero point. noble throws; callers must catch (relay-client does).
+    const self = ephemeral(rand(32));
+    expect(() => serverSession(self, new Uint8Array(32), rand(PAIRING_SECRET_LEN))).toThrow();
+    expect(() => clientSession(self, new Uint8Array(32), rand(PAIRING_SECRET_LEN))).toThrow();
+  });
 });

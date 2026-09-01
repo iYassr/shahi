@@ -81,6 +81,8 @@ export interface StreamClient {
  */
 export interface Arrival {
   rateKey: string;
+  /** Came through the relay: reachable from the internet before any secret is proven. */
+  viaRelay: boolean;
   /** Turns the request into a socket carrying `data`; null where that is impossible. */
   upgrade: ((data: SocketData) => boolean) | null;
 }
@@ -227,12 +229,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   // The routes that answer before the gate are the only ones anyone can hit.
   const limiter = new RateLimiter();
 
-  /** What a client learns before it authenticates. */
-  const serverInfo = (): ServerInfo => ({
+  /**
+   * What a client learns before it authenticates. The versions only on a
+   * direct connection: over the relay anyone who knows the serverId can ask,
+   * and a box on the internet should not say which Shahi and which herdr it
+   * runs (2026-09-02 review, R5). The phone needs `serverId` and `api` only.
+   */
+  const serverInfo = (viaRelay: boolean): ServerInfo => ({
     serverId,
-    serverVersion: pkg.version,
     api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
-    herdr: { version: store.state.version, protocol: store.state.protocol },
+    ...(viaRelay
+      ? {}
+      : { serverVersion: pkg.version, herdr: { version: store.state.version, protocol: store.state.protocol } }),
   });
 
   // Prompts already handed to herdr, by the phone's own message id, so a retry
@@ -330,6 +338,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     async fetch(req, srv) {
       const response = await handle(req, {
         rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
+        viaRelay: false,
         upgrade: (data) => srv.upgrade(req, { data }),
       });
       // Compression happens here and nowhere else: routes stay unaware of it,
@@ -448,7 +457,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           return json({ error: "cross-origin request refused" }, { status: 403 });
         }
 
-        if (pathname === "/api/meta") return json(serverInfo());
+        if (pathname === "/api/meta") return json(serverInfo(arrival.viaRelay));
 
         // The contract version rides on every request, so a phone that kept its
         // cookie across a server upgrade learns of a mismatch on the first call
@@ -1055,7 +1064,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     stop: (force) => server.stop(force),
     // A relay link cannot become a socket; `/ws` over one is answered 400,
     // which nothing sends — the link *is* the stream.
-    dispatch: async (req, rateKey) => (await handle(req, { rateKey, upgrade: null })) ?? new Response(null, { status: 400 }),
+    dispatch: async (req, rateKey) =>
+      (await handle(req, { rateKey, viaRelay: true, upgrade: null })) ?? new Response(null, { status: 400 }),
     attach,
     detach,
     receive,
