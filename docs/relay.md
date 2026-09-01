@@ -136,3 +136,86 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
 - No history, no store-and-forward, no direct WebRTC. The relay is a pipe.
 - No protection of frame *sizes and timing* from the relay. That is the
   metadata a blind pipe still sees.
+
+## Operating the relay
+
+The relay is `relay/`: a Worker, one Durable Object class (`RelayBox`, one
+instance per `serverId`), and nothing else — no KV, no database, no secrets.
+It runs on Cloudflare's free plan; a box that is idle costs nothing because
+its sockets hibernate and the object is evicted between frames.
+
+**Deploy.** Once, from a machine with a Cloudflare account:
+
+```sh
+cd relay
+bunx wrangler login       # opens the browser; once per machine
+bunx wrangler deploy      # prints https://shahi-relay.<your-subdomain>.workers.dev
+```
+
+That address is the relay. Every later `bunx wrangler deploy` upgrades it in
+place; connected boxes are dropped for a second and reconnect. A custom
+domain is optional and is the usual Workers route: add `routes` to
+`wrangler.toml` or attach one in the dashboard, and the relay answers there
+as well. There is nothing to configure in the Worker itself — the `serverId`
+in the URL is all it needs.
+
+**Point a box at it.** The sidecar dials out when `RELAY_URL` is set:
+
+```sh
+RELAY_URL=wss://shahi-relay.<your-subdomain>.workers.dev
+```
+
+in the sidecar's environment (`~/.config/shahi/env` under the systemd unit,
+see `operations.md`). Pairing codes minted after that carry the relay beside
+the LAN endpoint, and the app prefers the relay because it works from
+anywhere. Nothing on the box needs a port opened.
+
+**Run one yourself.** Anyone may: the app takes the relay address from the
+pairing code, so a box and its phones agree on whichever relay the box was
+told about. The relay never holds a key, a passcode or a readable byte, so
+running it for other people costs them nothing in trust beyond what a blind
+pipe sees — frame sizes and timing.
+
+**Run it locally, with no account:**
+
+```sh
+cd relay && bunx wrangler dev      # http://localhost:8787, workerd on this machine
+bun run test:relay                 # starts and stops its own wrangler dev on 8787
+```
+
+`wrangler dev` runs the real runtime (workerd) with Durable Objects,
+hibernation and alarms, which is why the test suite needs no mocks: it opens
+sockets as a box and as phones and checks every close code in the table
+above. A `wrangler dev` already on the port is used as is, so the suite can be
+re-run against one left open.
+
+**Liveness.** The Workers runtime cannot send WebSocket ping frames from a
+Durable Object, so a dead box is detected the other way round: **a box sends
+the text frame `ping` once a minute.** The runtime answers `pong` from
+outside the object (`setWebSocketAutoResponse`), so a healthy idle box never
+wakes it; an alarm every five minutes reads the timestamp of the last such
+answer and closes any box not heard from in five minutes (code `1000`,
+reason `silent`), which closes that box's phones with `4404`. A box that does
+not ping is therefore dropped every five minutes: the sidecar's relay client
+must ping. Phones may ping too and get the same `pong`, but nothing depends
+on it — an idle phone is closed after the ten-minute limit regardless.
+
+**What it logs.** Nothing about frames. wrangler's own request log shows
+each socket opening and the close codes; that is the whole observability
+story, on purpose.
+
+**Close codes, as sent by this relay:**
+
+| code   | reason              | to    | when                                              |
+| ------ | ------------------- | ----- | ------------------------------------------------- |
+| `4401` | `unauthorized`      | box   | bad `auth`, or anything that is not one           |
+| `4401` | `auth timeout`      | box   | ten seconds after the challenge with no `auth`    |
+| `4409` | `replaced`          | box   | another connection proved the same key            |
+| `1000` | `silent`            | box   | five minutes without a frame or a `ping`          |
+| `4429` | `frame too large`   | box   | a data frame over 1 MiB (its phones get `4404`)   |
+| `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away |
+| `4429` | `too many phones`   | phone | the ninth phone                                   |
+| `4429` | `frame too large`   | phone | a frame over 1 MiB                                |
+| `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry   |
+| `1000` | `idle`              | phone | ten minutes without a frame either way            |
+| `1000` | `closed by box`     | phone | the box sent `close` for the link                 |
