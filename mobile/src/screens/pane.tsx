@@ -260,9 +260,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     }
     if (!restoreArmed.current) {
       restoreArmed.current = true;
+      // A backstop only. The restore normally ends the moment the anchor is
+      // seen at the top of the viewport (in onScroll below); this exists for
+      // an anchor that never lands, so scroll events are not ignored forever.
+      // It used to be the *only* end, at 1.5s — and a retry that overshot to
+      // the tail, then a slow measure, meant the list's own settle was read
+      // as the reader scrolling to the bottom, which dropped the pill and the
+      // place with it. Seen as a flake in the keep-your-place flow.
       setTimeout(() => {
         pendingRestore.current = false;
-      }, 1_500);
+      }, 4_000);
     }
     listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
   }
@@ -583,8 +590,30 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           initialNumToRender={12}
           maxToRenderPerBatch={10}
           windowSize={9}
+          // A drag ends following immediately, before any scroll event is
+          // handled. onScroll is throttled to 200ms and its first event of a
+          // swipe is usually still within 80px of the bottom, so `following`
+          // stayed true into the swipe — and a FlatList's content size changes
+          // as it measures cells on the way up, which fired onContentSizeChange
+          // and scrolled straight back to the end. Three swipes, three snaps,
+          // and the reader never left the tail: the page fighting your finger.
+          // Reproduced in the keep-your-place flow; the position is re-derived
+          // from the first handled scroll event, so a drag back to the bottom
+          // still re-enables following.
+          onScrollBeginDrag={() => {
+            following.current = false;
+            pendingRestore.current = false;
+          }}
           onScroll={({ nativeEvent: e }) => {
-            if (pendingRestore.current) return;
+            if (pendingRestore.current) {
+              // The restore has landed once the anchor is the topmost visible
+              // message; from here the scroll events are the reader's own.
+              const spot = scrollMemory.get(paneId);
+              if (typeof spot === "object" && topItem.current === spot.id) {
+                pendingRestore.current = false;
+              }
+              return;
+            }
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             following.current = fromBottom < 80;
