@@ -13,7 +13,7 @@
  * and signs in over that — see `lib/tunnel.ts`.
  * Credentials go straight to the Keychain and never leave the phone.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
@@ -23,6 +23,7 @@ import { closeRelay, pairingTarget, type RelayIdentity } from "@/lib/relay";
 import { Logo } from "@/components/icons";
 import { Scanner } from "@/components/scanner";
 import { parsePairingUrl } from "@/lib/pairing";
+import { useURL } from "expo-linking";
 import { openTunnel, closeTunnel, sshTunnelAvailable } from "@/lib/tunnel";
 import { committed } from "@/lib/feel";
 import {
@@ -68,6 +69,19 @@ export function Connect({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+
+  // A pairing code can arrive as a link as well as a picture: `shahi://pair#…`
+  // tapped in a terminal or a message, or opened by a test — the simulator has
+  // no camera to point at anything. It is the same payload the scanner reads,
+  // so it takes the same path; an unparseable link is ignored rather than
+  // reported, since nothing on screen asked for it.
+  const openedUrl = useURL();
+  useEffect(() => {
+    const payload = openedUrl ? parsePairingUrl(openedUrl) : null;
+    if (payload) void pair(payload);
+    // `pair` is a plain function of this render; re-running on it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openedUrl]);
 
   if (phase === "intro") return <Intro onContinue={() => setPhase("form")} />;
 
