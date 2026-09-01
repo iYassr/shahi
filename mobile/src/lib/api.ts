@@ -552,9 +552,14 @@ export class SessionSocket {
       options?: { headers?: Record<string, string> },
     ) => WebSocket;
 
-    const socket = new RNWebSocket(`${url}/ws`, undefined, {
-      headers: connection.cookie ? { cookie: connection.cookie } : {},
-    });
+    // The contract version rides on the handshake too, through `baseHeaders`
+    // like every request. Without it a server that had just refused this
+    // build with a 426 still upgraded the socket and pushed a session — so
+    // "Update needed" was on screen for a moment and then replaced by a live
+    // list from a server the app cannot otherwise talk to. Found writing the
+    // update-needed flow, where that state could not be held long enough to
+    // assert on.
+    const socket = new RNWebSocket(`${url}/ws`, undefined, { headers: baseHeaders() });
     this.#socket = socket;
 
     socket.onopen = () => {
