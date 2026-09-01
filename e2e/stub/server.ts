@@ -30,6 +30,8 @@ const WEB_ROOT = process.env.STUB_WEB_ROOT ?? join(import.meta.dir, "../../web/d
 // pad. "test" here meant the native flows could never sign in.
 const PASSCODE = "1234";
 const COOKIE = "shahi_session=stub";
+// One fixed pairing code, so a flow can pair without a server printing one.
+const PAIR_SECRET = "stub-pair";
 
 let scenario: Scenario = SCENARIOS.busy();
 /** Everything the app tried to change, in order, for tests to assert on. */
@@ -138,8 +140,35 @@ Bun.serve({
       return json({ ok: true }, { headers: { "set-cookie": `${COOKIE}; Path=/; HttpOnly` } });
     }
 
+    // Pairing, unauthenticated like the real route: the right secret is a
+    // session, anything else is the same 401 the server gives a spent code.
+    if (pathname === "/api/pair/claim" && req.method === "POST") {
+      await record(req, pathname);
+      const body = writes[writes.length - 1]!.body as { secret?: string; deviceName?: string } | null;
+      if (body?.secret !== PAIR_SECRET) return json({ error: "That pairing code is not valid." }, { status: 401 });
+      return json(
+        { device: { id: "dev-stub", name: body.deviceName ?? "Phone", createdAt: Date.now(), lastSeenAt: Date.now() } },
+        { headers: { "set-cookie": `${COOKIE}; Path=/; HttpOnly` } },
+      );
+    }
+
     if (pathname.startsWith("/api/") || pathname === "/ws") {
       if (!authorised(req)) return json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    if (pathname === "/api/pair" && req.method === "POST") {
+      return json({ secret: PAIR_SECRET, expiresAt: Date.now() + 600_000 });
+    }
+
+    // A passcode login's view by default: no devices, and not one itself.
+    if (pathname === "/api/devices" && req.method === "GET") {
+      return json({ devices: [], thisDeviceId: null });
+    }
+
+    const device = pathname.match(/^\/api\/devices\/([^/]+)$/);
+    if (device && req.method === "DELETE") {
+      await record(req, pathname);
+      return json({ ok: true });
     }
 
     if (pathname === "/ws") {
