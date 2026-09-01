@@ -10,12 +10,13 @@
  */
 import {
   SHAHI_API_VERSION,
+  type ClaimResult,
   type DashboardPane,
   type DeviceList,
+  type PairedDevice,
   type PromptReceipt,
   type ServerInfo,
 } from "@shahi/shared";
-import type { Server, ServerWebSocket } from "bun";
 import pkg from "../package.json" with { type: "json" };
 
 export type { DashboardPane };
@@ -39,7 +40,7 @@ import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
-interface SocketData {
+export interface SocketData {
   /** The paired device behind this socket, so revoking it can close it. */
   deviceId: string | null;
   /** Pane this client currently has open, if any. */
@@ -56,7 +57,50 @@ interface SocketData {
   token: string | undefined;
 }
 
-type Client = ServerWebSocket<SocketData>;
+/**
+ * A client of the dashboard stream: a `/ws` socket, or a link through the
+ * relay (`relay-client.ts`). Everything here that pushes — session, frame,
+ * prompt, status, log_changed, ping — and everything that ends a client (a
+ * revoked device, an expired session) goes through this, so a relay link is
+ * treated exactly as a socket is rather than by a second copy of the logic.
+ * `send` takes the JSON already serialised: one stringify per broadcast,
+ * however many clients.
+ */
+export interface StreamClient {
+  readonly data: SocketData;
+  send(payload: string): void;
+  close(code: number, reason: string): void;
+}
+
+/**
+ * How a request arrived, for the parts of handling that depend on the
+ * transport: what the rate limiter keys on, and whether `/ws` can be upgraded.
+ * A relay link has no peer address, so it names its device instead; a request
+ * from the port names the address it came from.
+ */
+export interface Arrival {
+  rateKey: string;
+  /** Turns the request into a socket carrying `data`; null where that is impossible. */
+  upgrade: ((data: SocketData) => boolean) | null;
+}
+
+/** What `createServer` returns: the port, and the same handling for clients that did not come through it. */
+export interface ShahiServer {
+  port: number;
+  stop(force?: boolean): void;
+  /**
+   * Handles a request exactly as the port would — gate, revocation, the 426
+   * check, every route — for one that arrived some other way. Uncompressed:
+   * the caller owns the bytes from here.
+   */
+  dispatch(req: Request, rateKey: string): Promise<Response>;
+  /** Registers a client of the dashboard stream, as a `/ws` open does. */
+  attach(client: StreamClient): void;
+  /** Releases everything the client held, as a `/ws` close does. */
+  detach(client: StreamClient): void;
+  /** A message from the client: `watch` / `unwatch`. */
+  receive(client: StreamClient, message: unknown): void;
+}
 
 export interface HttpDeps {
   config: Config;
@@ -175,9 +219,9 @@ export interface ServerOptions {
   heartbeatMs?: number;
 }
 
-export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): Server<SocketData> {
+export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): ShahiServer {
   const { config, auth, client, store, poller, transcript, push, pairing, devices, serverId } = deps;
-  const clients = new Set<Client>();
+  const clients = new Set<StreamClient>();
 
   // The routes that answer before the gate are the only ones anyone can hit.
   const limiter = new RateLimiter();
@@ -283,7 +327,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
     async fetch(req, srv) {
-      const response = await handle(req, srv);
+      const response = await handle(req, {
+        rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
+        upgrade: (data) => srv.upgrade(req, { data }),
+      });
       // Compression happens here and nowhere else: routes stay unaware of it,
       // and a websocket upgrade (which returns undefined) passes through.
       return response ? harden(await compress(req, response, compressionKey(response))) : response;
@@ -298,47 +345,61 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
       perMessageDeflate: true,
 
       open(ws) {
-        clients.add(ws);
-        poller.setClientCount(clients.size);
-        void dashboard(store, poller, defaultGrouping).then((session) =>
-          ws.send(JSON.stringify({ type: "session", session })),
-        );
+        attach(ws);
       },
 
       close(ws) {
-        ws.data.releaseWatch?.();
-        ws.data.releaseLog?.();
-        clients.delete(ws);
-        poller.setClientCount(clients.size);
+        detach(ws);
       },
 
       message(ws, raw) {
-        let msg: { type?: string; paneId?: string };
+        let msg: unknown;
         try {
           msg = JSON.parse(String(raw));
         } catch {
           return;
         }
-
-        // Only a pane herdr knows about: watching one that does not exist
-        // still cost a poll, a herdr call and a transcript lookup per message.
-        // Registered even for a pane the mirror has not seen yet: a phone that
-        // starts an agent and opens it can arrive before the pane_created event
-        // has been applied, and dropping the watch left that screen on the slow
-        // interval for good. Only the work that needs the pane (the first read,
-        // the transcript) waits for it.
-        if (msg.type === "watch" && typeof msg.paneId === "string") {
-          watch(ws, msg.paneId);
-        } else if (msg.type === "unwatch") {
-          ws.data.releaseWatch?.();
-          ws.data.releaseWatch = null;
-          ws.data.releaseLog?.();
-          ws.data.releaseLog = null;
-          ws.data.watchedPaneId = null;
-        }
+        receive(ws, msg);
       },
     },
   });
+
+  function attach(ws: StreamClient): void {
+    clients.add(ws);
+    poller.setClientCount(clients.size);
+    void dashboard(store, poller, defaultGrouping).then((session) =>
+      ws.send(JSON.stringify({ type: "session", session })),
+    );
+  }
+
+  function detach(ws: StreamClient): void {
+    ws.data.releaseWatch?.();
+    ws.data.releaseWatch = null;
+    ws.data.releaseLog?.();
+    ws.data.releaseLog = null;
+    clients.delete(ws);
+    poller.setClientCount(clients.size);
+  }
+
+  function receive(ws: StreamClient, message: unknown): void {
+    if (typeof message !== "object" || message === null) return;
+    const msg = message as { type?: unknown; paneId?: unknown };
+
+    // Registered even for a pane the mirror has not seen yet: a phone that
+    // starts an agent and opens it can arrive before the pane_created event
+    // has been applied, and dropping the watch left that screen on the slow
+    // interval for good. Only the work that needs the pane (the first read,
+    // the transcript) waits for it.
+    if (msg.type === "watch" && typeof msg.paneId === "string") {
+      watch(ws, msg.paneId);
+    } else if (msg.type === "unwatch") {
+      ws.data.releaseWatch?.();
+      ws.data.releaseWatch = null;
+      ws.data.releaseLog?.();
+      ws.data.releaseLog = null;
+      ws.data.watchedPaneId = null;
+    }
+  }
 
   // See the `ping` message in the shared contract: silence has to be
   // distinguishable from a dead connection, and a phone's socket dies quietly.
@@ -363,14 +424,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
    * Returns undefined for a websocket upgrade, which Bun takes as "already
    * handled".
    */
-  async function handle(req: Request, srv: Server<SocketData>): Promise<Response | undefined> {
+  async function handle(req: Request, arrival: Arrival): Promise<Response | undefined> {
         const url = new URL(req.url);
         const { pathname } = url;
 
         // --- unauthenticated ---
         if (isRateLimitedPath(pathname)) {
-          const address = clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host);
-          const wait = limiter.hit(address);
+          const wait = limiter.hit(arrival.rateKey);
           if (wait !== null) {
             return json(
               { error: "too many requests" },
@@ -453,8 +513,17 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
               { status: 401 },
             );
           }
-          const device = devices.create(typeof body.deviceName === "string" ? body.deviceName : "");
-          return json({ device }, { headers: { "set-cookie": auth.cookie(auth.issue(Date.now(), device.id)) } });
+          const { device, secret: deviceSecret } = devices.create(typeof body.deviceName === "string" ? body.deviceName : "");
+          // The secret rides in the body, not a cookie: a phone that came in
+          // through the relay sees no Set-Cookie (the link keeps its own
+          // session), and the secret is what lets it come back as this device.
+          const result: ClaimResult & { device: PairedDevice } = {
+            ok: true,
+            device,
+            deviceId: device.id,
+            deviceSecret: Buffer.from(deviceSecret).toString("base64url"),
+          };
+          return json(result, { headers: { "set-cookie": auth.cookie(auth.issue(Date.now(), device.id)) } });
         }
 
         // --- everything below requires a session ---
@@ -463,14 +532,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         }
 
         if (pathname === "/ws") {
-          const upgraded = srv.upgrade(req, {
-            data: {
-              deviceId: identify(req)?.deviceId ?? null,
-              watchedPaneId: null,
-              releaseWatch: null,
-              releaseLog: null,
-              token: readCookie(req.headers.get("cookie"), SESSION_COOKIE),
-            } satisfies SocketData,
+          const upgraded = arrival.upgrade?.({
+            deviceId: identify(req)?.deviceId ?? null,
+            watchedPaneId: null,
+            releaseWatch: null,
+            releaseLog: null,
+            token: readCookie(req.headers.get("cookie"), SESSION_COOKIE),
           });
           return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
         }
@@ -889,7 +956,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         return serveStatic(pathname, config.webRoot);
   }
 
-  function watch(ws: Client, paneId: string): void {
+  function watch(ws: StreamClient, paneId: string): void {
     // Releasing before acquiring would drop the watch count to zero and let the
     // pane fall back to the slow interval between two views of the same pane.
     const previous = ws.data.releaseWatch;
@@ -915,7 +982,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
    * pushed frame — frames arrive while an agent works, and the first one after
    * it has said something is when the file appears.
    */
-  function watchLog(ws: Client, paneId: string): () => void {
+  function watchLog(ws: StreamClient, paneId: string): () => void {
     let stopFile: (() => void) | null = null;
     let resolving = false;
     let stopped = false;
@@ -962,7 +1029,16 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     return sessionId ? findTranscript(sessionId) : null;
   }
 
-  return server;
+  return {
+    port: server.port ?? config.port,
+    stop: (force) => server.stop(force),
+    // A relay link cannot become a socket; `/ws` over one is answered 400,
+    // which nothing sends — the link *is* the stream.
+    dispatch: async (req, rateKey) => (await handle(req, { rateKey, upgrade: null })) ?? new Response(null, { status: 400 }),
+    attach,
+    detach,
+    receive,
+  };
 }
 
 
