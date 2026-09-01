@@ -60,6 +60,22 @@ const SESSIONS_DIR = join(CODEX_HOME, "sessions");
 const STATE_DB = join(CODEX_HOME, "state_5.sqlite");
 
 /**
+ * A path the thread index or a process handed back, if it is a rollout.
+ *
+ * The index is a file codex writes and a session id is a value the agent
+ * process reports, so neither is this server's to trust with a path. The
+ * `/proc` route already required a rollout under the sessions directory;
+ * this holds the two index routes to the same rule, so the worst a doctored
+ * `rollout_path` can do is name a different rollout.
+ */
+export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR): string | null {
+  if (typeof path !== "string") return null;
+  if (!path.startsWith(`${sessionsDir}/`) || !path.endsWith(".jsonl")) return null;
+  if (path.split("/").includes("..")) return null;
+  return path;
+}
+
+/**
  * Finds the rollout file a pane's codex process is writing.
  *
  * Three routes, best first. The session id is exact and survives the process
@@ -103,7 +119,8 @@ function rolloutFromSessionId(sessionId: string): string | null {
       .query<{ rollout_path: string }, [string]>("SELECT rollout_path FROM threads WHERE id = ?")
       .get(sessionId);
     db.close();
-    if (row?.rollout_path) return row.rollout_path;
+    const indexed = rolloutWithinSessions(row?.rollout_path);
+    if (indexed) return indexed;
   } catch {
     // A migrated or missing index is not fatal — fall through to the glob.
   }
@@ -140,8 +157,8 @@ async function rolloutFromProcess(client: HerdrClient, paneId: string): Promise<
     }
     for (const fd of fds) {
       try {
-        const target = await readlink(`/proc/${pid}/fd/${fd}`);
-        if (target.startsWith(SESSIONS_DIR) && target.endsWith(".jsonl")) return target;
+        const target = rolloutWithinSessions(await readlink(`/proc/${pid}/fd/${fd}`));
+        if (target) return target;
       } catch {
         // Descriptor closed between listing and reading; normal on a live process.
       }
@@ -166,7 +183,7 @@ function rolloutFromIndex(cwd: string): string | null {
       )
       .get(cwd);
     db.close();
-    return row?.rollout_path ?? null;
+    return rolloutWithinSessions(row?.rollout_path);
   } catch {
     return null;
   }
