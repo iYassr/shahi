@@ -25,6 +25,11 @@ name: Settings shows the connection and signs out
 - tapOn: "Settings"
 - assertVisible: ".*localhost:7272.*"
 - assertVisible: ".*protocol 19.*"
+# Settings is longer than a screen now that it lists paired devices, and the
+# floating tab bar covers whatever sits under it at rest — a tap there lands on
+# the bar. Scroll first, as a person does.
+- swipe:
+    direction: UP
 - tapOn: "Sign out"
 - assertVisible: "Shahi"
 
