@@ -17,6 +17,7 @@ import { enablePush } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Icon, type IconName } from "@/components/icons";
+import { PairedDevices } from "@/components/paired-devices";
 
 const TERMINAL_WIDTHS = [60, 100, 146];
 
@@ -102,6 +103,25 @@ export function Settings() {
           value={pins.size > 0 ? `Clear ${pins.size}` : "None"}
           disabled={pins.size === 0}
           onPress={clearPins}
+        />
+      </View>
+
+      {/* Who else is in. Only phones that paired by code have an identity to
+          list; the section says so for a passcode login. Revoking the phone in
+          hand is a sign-out, so it leaves the same way the red row does. */}
+      <View style={styles.group}>
+        <View style={styles.row}>
+          <View style={styles.rowLine}>
+            <IconBadge name="server" tint={theme.peach} />
+            <Text style={styles.rowLabel}>Paired devices</Text>
+          </View>
+        </View>
+        <Separator />
+        <PairedDevices
+          onRevokedSelf={() => {
+            signOut();
+            router.replace("/connect");
+          }}
         />
       </View>
 

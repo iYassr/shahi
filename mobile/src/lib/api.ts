@@ -15,8 +15,10 @@
  */
 import {
   SHAHI_API_VERSION,
+  type DeviceList,
   type DirListing,
   type InstalledAgent,
+  type PairedDevice,
   type PaneFrame,
   type PromptReceipt,
   type ServerInfo,
@@ -326,6 +328,40 @@ export const api = {
     if (!connection.cookie) throw new Error("Server did not return a session");
     return connection.cookie;
   },
+
+  /**
+   * Redeems a scanned pairing code for a session bound to this phone.
+   *
+   * Shaped like `login` rather than `request`, for the same reasons: the
+   * cookie in the answer is the point, and a 401 here means a spent or expired
+   * code — not a signed-out session, which is what `request` would make of it.
+   */
+  claimPairing: async (secret: string, deviceName: string): Promise<PairedDevice> => {
+    const res = await fetchWithTimeout(`${connection.baseUrl}/api/pair/claim`, {
+      method: "POST",
+      headers: baseHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ secret, deviceName }),
+      credentials: "omit", // see `request`
+    });
+    if (res.status === 426) throw await incompatible(res);
+    const body = (await res.json().catch(() => ({}))) as { device?: PairedDevice; error?: string };
+    if (res.status === 401) throw new Error(body.error ?? "That pairing code is not valid.");
+    if (!res.ok || !body.device) {
+      throw new Error(
+        `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,
+      );
+    }
+    connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
+    if (!connection.cookie) throw new Error("Server did not return a session");
+    return body.device;
+  },
+
+  /** Phones that paired by scanning a code. A passcode login is not among them. */
+  devices: () => request<DeviceList>("/api/devices"),
+
+  /** Throws a paired phone out: its very next request is refused. */
+  revokeDevice: (id: string) =>
+    request<{ ok: boolean }>(`/api/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   session: () => request<Session>("/api/session"),
 
