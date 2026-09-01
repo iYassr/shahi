@@ -40,7 +40,11 @@ const canLoad = Constants.executionEnvironment !== ExecutionEnvironment.StoreCli
 async function load(): Promise<Notifications | null> {
   if (!canLoad) return null;
   try {
-    return await import("expo-notifications");
+    // An inline require rather than import(): Metro defers both until this
+    // line runs, so the laziness is identical on the device — but Jest's CJS
+    // sandbox cannot execute a native import() at all, and this path was
+    // untestable as one.
+    return require("expo-notifications") as Notifications;
   } catch {
     return null;
   }
