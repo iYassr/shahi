@@ -26,6 +26,7 @@ import { watchTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
+import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
@@ -37,6 +38,13 @@ interface SocketData {
   releaseWatch: (() => void) | null;
   /** Stops the transcript-file watch that goes with `watchedPaneId`. */
   releaseLog: (() => void) | null;
+  /**
+   * The session token presented at upgrade. Re-verified on every heartbeat,
+   * because a socket outlives the cookie that opened it: a phone left on the
+   * dashboard would otherwise keep receiving screens for as long as the
+   * connection held, however long ago its session expired.
+   */
+  token: string | undefined;
 }
 
 type Client = ServerWebSocket<SocketData>;
@@ -69,15 +77,93 @@ const SESSION_BROADCAST_INTERVAL_MS = 250;
  */
 const HEARTBEAT_MS = 20_000;
 
+/**
+ * The largest body any route accepts. Uploads are the biggest legitimate
+ * request and are capped at 32MB in `uploads.ts` — but that check runs after
+ * `req.formData()` has already buffered the whole body, so without this Bun's
+ * default (128MB) was the real ceiling on what one request could make the
+ * process hold.
+ */
+const MAX_REQUEST_BODY_BYTES = 40 * 1024 * 1024;
+
+/** A phone mints these as ~20 characters; anything long is not a message id. */
+const MAX_CLIENT_MESSAGE_ID = 128;
+
+/** Closing a socket because its session is no longer valid. */
+const CLOSE_SESSION_EXPIRED = 4001;
+
 const json = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
     ...init,
     headers: { "content-type": "application/json", ...init?.headers },
   });
 
-export function createServer(deps: HttpDeps): Server<SocketData> {
+/**
+ * A JSON body as an object, or an empty one. `req.json()` happily returns
+ * `null` or a string for a body that is valid JSON, and every route then read
+ * a property off it — a 500 with a stack trace for a body of `null`.
+ */
+async function jsonObject<T extends object>(req: Request): Promise<Partial<T>> {
+  const body: unknown = await req.json().catch(() => null);
+  return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Partial<T>) : {};
+}
+
+/**
+ * A query parameter as an integer inside `[min, max]`, or `fallback`.
+ *
+ * `Number(...)` alone let `limit=NaN` and `limit=-1` through, and both made
+ * the transcript window start at offset zero — the whole file, parsed, for a
+ * request that asked for less than one message.
+ */
+function intParam(value: string | null, fallback: number, min: number, max: number): number {
+  if (value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Whether a request's `Origin` is this server.
+ *
+ * Browsers attach the cookie to a cross-origin POST or WebSocket upgrade just
+ * as readily as to a same-origin one, and `SameSite=Strict` does not help
+ * against a page on the same *site* — another machine's `*.tailnet.ts.net`
+ * name, say. A `text/plain` POST needs no preflight and `req.json()` never
+ * looked at the content type, so a page there could have typed into a pane.
+ * The native app sends no `Origin` at all, which is what a request with none
+ * means: not a browser, and the cookie was attached on purpose.
+ *
+ * A reverse proxy in front (`tailscale serve`, `cloudflared`) may rewrite
+ * `Host` to this process's address and keep the public name only in
+ * `x-forwarded-host`, so either may match. Believing that header is safe
+ * here: a browser cannot set it on a WebSocket upgrade at all, and setting it
+ * on a fetch forces a preflight this server never answers.
+ */
+function originAllowed(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (origin === null) return true;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return false;
+  }
+  return [req.headers.get("host"), req.headers.get("x-forwarded-host")].some(
+    (host) => host !== null && host.split(",")[0]!.trim() === originHost,
+  );
+}
+
+export interface ServerOptions {
+  /** How often to ping and to re-check every socket's session. */
+  heartbeatMs?: number;
+}
+
+export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): Server<SocketData> {
   const { config, auth, client, store, poller, transcript, push, serverId } = deps;
   const clients = new Set<Client>();
+
+  // The routes that answer before the gate are the only ones anyone can hit.
+  const limiter = new RateLimiter();
 
   /** What a client learns before it authenticates. */
   const serverInfo = (): ServerInfo => ({
@@ -167,11 +253,15 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
     hostname: config.host,
     port: config.port,
 
+    // See MAX_REQUEST_BODY_BYTES: the upload limit is only real if the body
+    // is refused before it is buffered.
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+
     async fetch(req, srv) {
       const response = await handle(req, srv);
       // Compression happens here and nowhere else: routes stay unaware of it,
       // and a websocket upgrade (which returns undefined) passes through.
-      return response ? compress(req, response, compressionKey(response)) : response;
+      return response ? harden(await compress(req, response, compressionKey(response))) : response;
     },
 
     websocket: {
@@ -205,7 +295,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           return;
         }
 
-        if (msg.type === "watch" && msg.paneId) {
+        // Only a pane herdr knows about: watching one that does not exist
+        // still cost a poll, a herdr call and a transcript lookup per message.
+        if (msg.type === "watch" && typeof msg.paneId === "string" && store.pane(msg.paneId)) {
           watch(ws, msg.paneId);
         } else if (msg.type === "unwatch") {
           ws.data.releaseWatch?.();
@@ -220,10 +312,19 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
   // See the `ping` message in the shared contract: silence has to be
   // distinguishable from a dead connection, and a phone's socket dies quietly.
+  //
+  // The same tick re-checks every socket's session. The gate runs at upgrade
+  // and nowhere else on a socket, so this is what turns a 30-day cookie into
+  // a 30-day socket rather than an indefinite one. `verifyToken` is the same
+  // check the upgrade made, so a rotated secret and an expired cookie are
+  // both caught, and the token's format stays auth's business.
   setInterval(() => {
+    for (const ws of clients) {
+      if (!auth.verifyToken(ws.data.token)) ws.close(CLOSE_SESSION_EXPIRED, "session expired");
+    }
     if (clients.size === 0) return;
     broadcast({ type: "ping", at: Date.now() });
-  }, HEARTBEAT_MS);
+  }, heartbeatMs);
 
 
   /**
@@ -237,6 +338,25 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         const { pathname } = url;
 
         // --- unauthenticated ---
+        if (isRateLimitedPath(pathname)) {
+          const address = clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"));
+          const wait = limiter.hit(address);
+          if (wait !== null) {
+            return json(
+              { error: "too many requests" },
+              { status: 429, headers: { "retry-after": String(Math.ceil(wait / 1000)) } },
+            );
+          }
+        }
+
+        // A browser on another origin gets no further than this with the
+        // cookie it carries. Reads are left alone: CORS already denies the
+        // page the response, and the archived web client's static assets
+        // are fetched cross-origin by nothing.
+        if ((pathname === "/ws" || (pathname.startsWith("/api/") && req.method !== "GET")) && !originAllowed(req)) {
+          return json({ error: "cross-origin request refused" }, { status: 403 });
+        }
+
         if (pathname === "/api/meta") return json(serverInfo());
 
         // The contract version rides on every request, so a phone that kept its
@@ -266,10 +386,12 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         }
 
         if (pathname === "/api/auth/login" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { passcode?: string };
+          const body = await jsonObject<{ passcode: string }>(req);
           // Serialised + backing off: concurrency buys an attacker nothing, and
           // each failure slows the next. See LoginThrottle.
-          const ok = await loginThrottle.attempt(() => auth.verifyPasscode(body.passcode ?? ""));
+          const ok = await loginThrottle.attempt(() =>
+            auth.verifyPasscode(typeof body.passcode === "string" ? body.passcode : ""),
+          );
           if (!ok) {
             return json({ error: "invalid passcode" }, { status: 401 });
           }
@@ -287,7 +409,12 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
         if (pathname === "/ws") {
           const upgraded = srv.upgrade(req, {
-            data: { watchedPaneId: null, releaseWatch: null, releaseLog: null } satisfies SocketData,
+            data: {
+              watchedPaneId: null,
+              releaseWatch: null,
+              releaseLog: null,
+              token: readCookie(req.headers.get("cookie"), SESSION_COOKIE),
+            } satisfies SocketData,
           });
           return upgraded ? undefined : new Response("expected a websocket upgrade", { status: 400 });
         }
@@ -327,20 +454,20 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // Starting an agent is two herdr calls with a race between them, so it is
         // one call from here. See `startAgentInTab`.
         if (pathname === "/api/agents/start" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as {
-            workspaceId?: string;
-            cwd?: string | null;
-            label?: string | null;
-            kind?: string;
-            name?: string;
-            mode?: string | null;
-          };
-          if (!body.workspaceId || !body.kind) {
+          const body = await jsonObject<{
+            workspaceId: string;
+            cwd: string | null;
+            label: string | null;
+            kind: string;
+            name: string;
+            mode: string | null;
+          }>(req);
+          if (typeof body.workspaceId !== "string" || !body.workspaceId || typeof body.kind !== "string" || !body.kind) {
             return json({ error: "workspaceId and kind are required" }, { status: 400 });
           }
           // herdr does not expand `~`; it silently uses $HOME instead, which puts
           // the agent somewhere the user did not ask for.
-          if (body.cwd && !body.cwd.startsWith("/")) {
+          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
             return json({ error: "cwd must be an absolute path" }, { status: 400 });
           }
           try {
@@ -372,9 +499,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // A new space. Semantic rather than raw RPC so the phone never learns a
         // herdr method name — the shape herdr wants stays the server's business.
         if (pathname === "/api/workspaces" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { label?: string | null; cwd?: string | null };
+          const body = await jsonObject<{ label: string | null; cwd: string | null }>(req);
           // herdr does not expand `~`; it silently uses $HOME instead.
-          if (body.cwd && !body.cwd.startsWith("/")) {
+          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
             return json({ error: "cwd must be an absolute path" }, { status: 400 });
           }
           try {
@@ -442,7 +569,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         }
 
         if (pathname === "/api/push/subscribe" && req.method === "POST") {
-          const body = await req.json().catch(() => null);
+          const body = await jsonObject(req);
           if (!push.isSubscription(body)) return json({ error: "malformed subscription" }, { status: 400 });
           push.subscribe(body);
           return json({ ok: true });
@@ -451,7 +578,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // The native app's channel. No VAPID, no service worker — Expo's push
         // service takes a token and hands the notification to FCM or APNs.
         if (pathname === "/api/push/expo" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+          const body = await jsonObject<{ token: unknown }>(req);
           if (!push.isExpoToken(body.token)) {
             return json({ error: "malformed expo push token" }, { status: 400 });
           }
@@ -460,14 +587,14 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         }
 
         if (pathname === "/api/push/expo/unsubscribe" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { token?: unknown };
+          const body = await jsonObject<{ token: unknown }>(req);
           if (typeof body.token === "string") push.unsubscribeExpo(body.token);
           return json({ ok: true });
         }
 
         if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { endpoint?: string };
-          if (body.endpoint) push.unsubscribe(body.endpoint);
+          const body = await jsonObject<{ endpoint: unknown }>(req);
+          if (typeof body.endpoint === "string" && body.endpoint) push.unsubscribe(body.endpoint);
           return json({ ok: true });
         }
 
@@ -478,7 +605,14 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
         const paneMatch = pathname.match(/^\/api\/panes\/([^/]+)(\/[a-z]+)?$/);
         if (paneMatch) {
-          const paneId = decodeURIComponent(paneMatch[1]!);
+          // A malformed escape (`%zz`) throws here, and used to be a 500 with
+          // a stack trace for what is simply not a pane.
+          let paneId: string;
+          try {
+            paneId = decodeURIComponent(paneMatch[1]!);
+          } catch {
+            return json({ error: "no such pane" }, { status: 404 });
+          }
           const sub = paneMatch[2];
 
           if (!store.pane(paneId)) return json({ error: "no such pane" }, { status: 404 });
@@ -487,14 +621,21 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
           // between herdr's `agent.prompt` and the terminal sequence made here.
           // See `prompt.ts` for why a blocked agent takes the terminal path.
           if (sub === "/prompt" && req.method === "POST") {
-            const body = (await req.json().catch(() => ({}))) as { text?: string; clientMessageId?: string };
+            const body = await jsonObject<{ text: string; clientMessageId: string }>(req);
             if (typeof body.text !== "string" || body.text.length === 0) {
               return json({ error: "text is required" }, { status: 400 });
             }
-            if (typeof body.clientMessageId !== "string" || body.clientMessageId.length === 0) {
+            if (
+              typeof body.clientMessageId !== "string" ||
+              body.clientMessageId.length === 0 ||
+              body.clientMessageId.length > MAX_CLIENT_MESSAGE_ID
+            ) {
               return json({ error: "clientMessageId is required" }, { status: 400 });
             }
-            const key = `${paneId}:${body.clientMessageId}`;
+            // Pane ids contain ':' (`w4:p1`), so the two parts are framed
+            // rather than joined — a bare join could make two different
+            // (pane, message) pairs the same key.
+            const key = JSON.stringify([paneId, body.clientMessageId]);
             const seen = receipts.get(key);
             if (seen) return json(seen);
             const agent = store.agent(paneId);
@@ -518,7 +659,7 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
           // Key presses: a numbered answer, Escape, an arrow. Not a prompt.
           if (sub === "/keys" && req.method === "POST") {
-            const body = (await req.json().catch(() => ({}))) as { keys?: unknown };
+            const body = await jsonObject<{ keys: unknown }>(req);
             const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];
             if (keys.length === 0) return json({ error: "keys is required" }, { status: 400 });
             try {
@@ -550,9 +691,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
           if (sub === "/session") {
             const pane = store.pane(paneId);
-            const limit = Math.min(Number(url.searchParams.get("limit") ?? 60), 400);
+            const limit = intParam(url.searchParams.get("limit"), 60, 1, 400);
             const before = url.searchParams.get("before")
-              ? Number(url.searchParams.get("before"))
+              ? intParam(url.searchParams.get("before"), 0, 0, Number.MAX_SAFE_INTEGER)
               : undefined;
 
             // Each agent keeps its transcript its own way, so the reader dispatches
@@ -598,9 +739,9 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
 
           if (sub === "/transcript") {
             const before = url.searchParams.get("before");
-            const limit = Math.min(Number(url.searchParams.get("limit") ?? 500), 2_000);
+            const limit = intParam(url.searchParams.get("limit"), 500, 1, 2_000);
             const lines = before
-              ? transcript.before(paneId, Number(before), limit)
+              ? transcript.before(paneId, intParam(before, 0, 0, Number.MAX_SAFE_INTEGER), limit)
               : transcript.tail(paneId, limit);
             return json({ paneId, lines, total: transcript.count(paneId) });
           }
@@ -622,9 +763,18 @@ export function createServer(deps: HttpDeps): Server<SocketData> {
         // native app does not: its writes go through the semantic routes above,
         // so a herdr method rename never reaches a phone. Full control, as
         // chosen — the gate above is the boundary, not an allowlist here.
+        //
+        // A client that negotiates a contract version is the native app, and
+        // the contract says it never calls this — so a request carrying
+        // `x-shahi-api` is refused, and a build that regressed into raw RPC
+        // fails in development rather than shipping a dependency on herdr's
+        // method names. The web client and `curl` send no version header.
         if (pathname === "/api/rpc" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { method?: string; params?: unknown };
-          if (!body.method) return json({ error: "method is required" }, { status: 400 });
+          if (req.headers.has("x-shahi-api")) {
+            return json({ error: "raw RPC is not part of the app contract; use the Shahi routes" }, { status: 403 });
+          }
+          const body = await jsonObject<{ method: string; params: unknown }>(req);
+          if (typeof body.method !== "string" || !body.method) return json({ error: "method is required" }, { status: 400 });
           try {
             const method = body.method as Method;
             const result = await client.rpc(method, (body.params ?? {}) as ParamsFor<Method>, {
@@ -810,6 +960,22 @@ const CONTENT_TYPES: Record<string, string> = {
   ico: "image/x-icon",
   webmanifest: "application/manifest+json",
 };
+
+/**
+ * Headers every response carries, set once at the edge like compression.
+ *
+ * `nosniff` is the one that matters: `/api/file` serves agent-written files
+ * under a type chosen from the extension, and a browser second-guessing that
+ * type is how a `.txt` becomes a page with this origin's cookie. Frames and
+ * referrers are refused for the same reason the cookie is `SameSite=Strict`:
+ * nothing legitimate embeds this app or needs to know which file was open.
+ */
+function harden(response: Response): Response {
+  response.headers.set("x-content-type-options", "nosniff");
+  response.headers.set("x-frame-options", "DENY");
+  response.headers.set("referrer-policy", "same-origin");
+  return response;
+}
 
 /**
  * A cache key for compressed bytes, or undefined for anything that changes.
