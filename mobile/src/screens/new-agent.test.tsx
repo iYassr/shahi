@@ -1,5 +1,26 @@
 import { render, screen, userEvent } from "@testing-library/react-native";
-import { modesFor } from "@shahi/shared";
+import { modesFor, type Session } from "@shahi/shared";
+import { PickSpace } from "./spaces";
+
+jest.mock("expo-router", () => ({ router: { back: jest.fn(), push: jest.fn(), replace: jest.fn() }, Stack: { Screen: () => null } }));
+// The picker draws a plain numbered circle, not the working-state Avatar, but
+// importing the screen pulls Reanimated in through it. The library's own mock
+// still loads react-native-worklets, which needs native bindings a Linux Jest
+// has not; a stub of just the surface Avatar imports keeps the module loadable.
+jest.mock("react-native-reanimated", () => {
+  const { View } = require("react-native");
+  return {
+    __esModule: true,
+    default: { View },
+    useSharedValue: (v: unknown) => ({ value: v }),
+    useAnimatedStyle: () => ({}),
+    useReducedMotion: () => true,
+    withRepeat: (v: unknown) => v,
+    withSequence: (v: unknown) => v,
+    withTiming: (v: unknown) => v,
+    cancelAnimation: () => undefined,
+  };
+});
 
 /**
  * The permission picker, which is the one place on the phone where being wrong
@@ -32,5 +53,30 @@ describe("permission modes", () => {
     for (const kind of ["claude", "codex"]) {
       expect(modesFor(kind).filter((m) => m.unsafe)).toHaveLength(1);
     }
+  });
+});
+
+describe("PickSpace", () => {
+  const session = {
+    workspaces: [
+      { workspaceId: "w1", label: "project", cwd: "~/project", status: "blocked", tabCount: 3, paneCount: 3 },
+      { workspaceId: "w2", label: "notes", cwd: "~/notes", status: "idle", tabCount: 1, paneCount: 1 },
+    ],
+    tabs: [],
+    panes: [],
+  } as unknown as Session;
+
+  test("lists every space and hands back the one tapped", async () => {
+    const onPick = jest.fn();
+    render(<PickSpace session={session} onPick={onPick} />);
+    expect(screen.getByText("project")).toBeTruthy();
+    expect(screen.getByText("notes")).toBeTruthy();
+    await userEvent.press(screen.getByTestId("pick-w2"));
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "w2", label: "notes" }));
+  });
+
+  test("with no spaces, offers to make one instead of an empty list", () => {
+    render(<PickSpace session={{ ...session, workspaces: [] } as Session} onPick={jest.fn()} />);
+    expect(screen.getByText(/make one first/)).toBeTruthy();
   });
 });
