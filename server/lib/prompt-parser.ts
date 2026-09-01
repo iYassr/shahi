@@ -36,6 +36,19 @@
  * panes that are perfectly idle. Only a well-formed numbered run counts, and
  * even then the caller should be acting on herdr's own `agent_status` too.
  *
+ * One menu has no numbers at all — Claude Code's folder-trust question:
+ *
+ *       No, exit
+ *     ❯ Yes, I trust this folder
+ *
+ *     Enter to confirm · Esc to cancel
+ *
+ * It is the first thing a new agent asks, its default quits the agent, and
+ * for months the phone showed "Nothing to read yet" over it. Digits do
+ * nothing there (measured), so it is answered by moving the cursor; `answer`
+ * on the result says which kind of menu the caller is looking at, and the
+ * confirm hint under it is what makes it a menu rather than prose.
+ *
  * Anything this cannot parse returns `null`, and the UI falls back to the raw
  * terminal plus a free-text composer. A parser miss is an inconvenience, not a
  * breakage — keep it that way.
@@ -52,6 +65,12 @@ const OPTION_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s*)?(?<index>\d{1,2})
 
 /** A line opening with a selection or prompt marker, rather than prose. */
 const MARKER_LINE_RE = /^\s*[❯›>»▶]\s/u;
+
+/** A row of an unnumbered menu: an optional cursor, then the label. */
+const CURSOR_ROW_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s+)?(?<label>\S.*)$/u;
+
+/** The line Claude Code prints under a cursor menu; a numbered prompt has no such line. */
+const CONFIRM_HINT_RE = /\bEnter to confirm\b/;
 
 /** Box-drawing, block, and arrow glyphs Claude Code and herdr use for chrome. */
 const CHROME_ONLY_RE = /^[\s─-╿▀-▟←-⇿■-◿·—–-]*$/u;
@@ -107,7 +126,7 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
   const start = Math.max(0, allLines.length - scanLines);
   const lines = allLines.slice(start);
 
-  const run = findOptionRun(lines);
+  const run = findOptionRun(lines) ?? findCursorMenu(lines);
   if (!run) return null;
 
   const question = findQuestion(lines, run.startLine);
@@ -115,12 +134,14 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
 
   return {
     question: question.text,
+    answer: run.answer,
     options: run.options,
     ...(question.context.length > 0 ? { context: question.context } : {}),
   };
 }
 
 interface OptionRun {
+  answer: ParsedPrompt["answer"];
   options: PromptOption[];
   /** Index within `lines` of the first option line, for finding the question. */
   startLine: number;
@@ -173,6 +194,7 @@ function findOptionRun(lines: string[]): OptionRun | null {
     if (entries.filter((e) => e.selected).length !== 1) return;
 
     candidate = {
+      answer: "digit",
       options: entries.map(({ index, label, selected, detail }) => ({
         index,
         label,
@@ -221,6 +243,54 @@ function findOptionRun(lines: string[]): OptionRun | null {
   flush();
 
   return candidate;
+}
+
+/**
+ * Finds an unnumbered cursor menu: rows sharing a label column, exactly one
+ * of them lit, with "Enter to confirm" printed beneath.
+ *
+ * The hint is the anchor, not the glyph. On the very screen this was written
+ * for, the shell's echo of the `claude` command sits two `❯` lines above the
+ * menu, and Claude Code's composer is a `❯` on its own — so rows are only
+ * collected directly above a confirm hint, and only while their labels line
+ * up. A blank line, a row whose label starts elsewhere, or anything that is
+ * not a row ends the block; fewer than two rows, or any number of cursors
+ * but one, is not a menu.
+ */
+function findCursorMenu(lines: string[]): OptionRun | null {
+  let hint = -1;
+  for (let n = lines.length - 1; n >= 0; n--) {
+    if (CONFIRM_HINT_RE.test(lines[n]!)) {
+      hint = n;
+      break;
+    }
+  }
+  if (hint < 0) return null;
+
+  let i = hint - 1;
+  while (i >= 0 && lines[i]!.trim() === "") i--;
+
+  const rows: { label: string; selected: boolean }[] = [];
+  let column: number | null = null;
+  for (; i >= 0; i--) {
+    const match = lines[i]!.match(CURSOR_ROW_RE);
+    if (!match?.groups) break;
+    const { indent, marker, label } = match.groups as { indent: string; marker?: string; label: string };
+    const at = indent.length + (marker?.length ?? 0);
+    if (column === null) column = at;
+    else if (at !== column) break;
+    rows.unshift({ label: label.trim(), selected: Boolean(marker) });
+  }
+  if (rows.length < 2) return null;
+  if (rows.filter((r) => r.selected).length !== 1) return null;
+
+  return {
+    answer: "cursor",
+    // Numbered in display order so a tap names a row the same way it does in
+    // a numbered menu; the digit is never pressed for one of these.
+    options: rows.map((row, n) => ({ index: n + 1, label: row.label, selected: row.selected })),
+    startLine: i + 1,
+  };
 }
 
 /**
@@ -287,9 +357,14 @@ function findQuestion(
    * but not the question being asked. The question is the one line without a
    * label in front of it.
    */
-  const asked = joined.findIndex((p) => p.endsWith("?") && !LABELLED_RE.test(p));
-
-  // No question mark anywhere: the nearest block is the best guess, as before.
+  // A paragraph ending in "?" is the question. Failing that, one with a "?"
+  // inside it: the folder-trust question asks and then keeps talking ("Is
+  // this a project you created or one you trust? (Like your own code…). If
+  // not, take a moment…"), and the paragraph nearest its options is the
+  // "Security guide" link. Failing both, the nearest block is the best
+  // guess, as before.
+  const ended = joined.findIndex((p) => p.endsWith("?") && !LABELLED_RE.test(p));
+  const asked = ended >= 0 ? ended : joined.findIndex((p) => p.includes("?"));
   if (asked < 0) return { text: joined[0] ?? "", context: [] };
 
   return {

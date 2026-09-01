@@ -69,6 +69,7 @@ export const pane = (
 /** The prompt shape Claude Code's question tool renders. */
 export const question = (): ParsedPrompt => ({
   question: "Which colour do you prefer?",
+  answer: "digit",
   options: [
     { index: 1, label: "Red", selected: true, detail: "Warm, high-contrast." },
     { index: 2, label: "Green", selected: false, detail: "Reads as success." },
@@ -87,6 +88,7 @@ export const question = (): ParsedPrompt => ({
  */
 export const approval = (): ParsedPrompt => ({
   question: "Would you like to run the following command?",
+  answer: "digit",
   context: [
     "Environment: local",
     "Reason: May I inspect the failing E2E tests to separate product defects from harness failures?",
@@ -102,10 +104,29 @@ export const approval = (): ParsedPrompt => ({
 /** The prompt shape a permission request renders. */
 export const permission = (): ParsedPrompt => ({
   question: "Do you want to make this edit to index.ts?",
+  answer: "digit",
   options: [
     { index: 1, label: "Yes", selected: true },
     { index: 2, label: "Yes, and don't ask again this session", selected: false },
     { index: 3, label: "No, and tell Claude what to do differently", selected: false },
+  ],
+});
+
+/**
+ * Claude Code's folder-trust question: an unnumbered cursor menu whose
+ * default row quits the agent. The card must show no digits and the answer
+ * must go to `/answer`, not `/keys` — a digit does nothing in this menu.
+ */
+export const trust = (): ParsedPrompt => ({
+  question:
+    "Quick safety check: Is this a project you created or one you trust? (Like your own code, a " +
+    "well-known open source project, or work from your team). If not, take a moment to review " +
+    "what's in this folder first.",
+  answer: "cursor",
+  context: ["Claude Code'll be able to read, edit, and execute files here.", "Security guide"],
+  options: [
+    { index: 1, label: "No, exit", selected: false },
+    { index: 2, label: "Yes, I trust this folder", selected: true },
   ],
 });
 
@@ -336,6 +357,15 @@ export function everyoneWaiting(): Scenario {
   };
 }
 
+/** The everyday case with a freshly started claude asking whether to trust its folder. */
+export function trustQuestion(): Scenario {
+  const base = busySession();
+  const panes = base.session.panes.map((p) =>
+    p.paneId === "w1:p1" ? { ...p, title: "claude", prompt: trust() } : p,
+  );
+  return { ...base, session: { ...base.session, panes }, prompts: { "w1:p1": trust() } };
+}
+
 /** A great many agents, for scrolling and grouping. */
 export function crowdedSession(): Scenario {
   const base = busySession();
@@ -370,6 +400,7 @@ export const SCENARIOS = {
   busy: busySession,
   empty: emptySession,
   waiting: everyoneWaiting,
+  trust: trustQuestion,
   crowded: crowdedSession,
 } satisfies Record<string, () => Scenario>;
 

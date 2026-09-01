@@ -100,6 +100,14 @@ job rather than a report from a phone.
   `pane.send_text`, 200ms, Enter — and falls back to it if herdr answers
   `agent_blocked` under a stale status. The 200ms is measured: codex's composer
   drops Enter that arrives too soon after pasted text (150ms sufficed).
+- **Claude Code's folder-trust question is an unnumbered menu, and its
+  default quits.** `❯ No, exit` over `Yes, I trust this folder`, no digits,
+  `Enter to confirm` beneath. Measured on a live pane: a digit does nothing
+  there; `up`, `down`, `j`, `k` and the key bar's `Up`/`Down` all move the
+  cursor; several keys in one `pane.send_keys` land in order; and herdr reports
+  the pane `unknown` for a few seconds after `agent.start` before `blocked`.
+  The parser anchors this shape on the confirm hint, and the server walks the
+  cursor to answer it (`answer.ts`).
 
 ## Decisions worth not relitigating
 
@@ -123,7 +131,18 @@ question nobody asked.
 
 **The prompt parser requires exactly one cursor.** An agent writing a numbered
 list in prose is common; a rendered menu always has its cursor on exactly one
-row. Without that rule the dashboard offers to answer prose.
+row. Without that rule the dashboard offers to answer prose. An unnumbered
+menu needs more: rows whose labels line up, directly above an `Enter to
+confirm` hint — the `❯` glyph alone is the shell's echo and the composer.
+
+**A prompt is answered by the server, against a fresh read of the screen.**
+The phone posts the option it showed (index and label) to `/answer`; the
+server re-reads the pane, re-parses, and only if the same option is still on
+offer presses the keys — the digit for a numbered menu, cursor moves and Enter
+for an unnumbered one. The phone's copy of the screen can be seconds old, a
+move computed from a stale cursor lands on the wrong row, and the trust menu's
+wrong row exits the agent. A 409 with `prompt_gone` or `prompt_changed` is the
+answer when the screen moved on; nothing is pressed.
 
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
@@ -133,8 +152,8 @@ to `$HOME` and `/tmp` for tidiness rather than security.
 **Never log `pane.read` output.** It contains whatever is on your terminals.
 
 **The phone speaks Shahi routes, never herdr methods.** `POST
-/api/panes/:id/prompt`, `/keys`, `/api/workspaces`, `/api/agents/start` — the
-sidecar translates, so a herdr rename or a change in how a prompt is submitted
+/api/panes/:id/prompt`, `/answer`, `/keys`, `/api/workspaces`,
+`/api/agents/start` — the sidecar translates, so a herdr rename or a change in how a prompt is submitted
 never reaches an App Store binary that cannot be updated on the same day.
 `/api/rpc` still exists for the archived web client and for debugging; the
 native app must not call it — and cannot: the server answers 403 to any
