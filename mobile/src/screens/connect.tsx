@@ -67,6 +67,10 @@ export function Connect({
     setError(null);
     try {
       connection.baseUrl = url.trim().replace(/\/$/, "");
+      // Handshake before the passcode: a typo that lands on some other server,
+      // or a Shahi too old for this app, is reported as exactly that rather
+      // than as a wrong passcode.
+      await api.meta();
       await api.login(passcode);
       onConnected();
     } catch (e) {
@@ -81,6 +85,7 @@ export function Connect({
     try {
       connection.baseUrl = await openTunnel(ssh);
       connection.cookie = null;
+      await api.meta();
       await api.login(ssh.passcode);
       onConnectedSsh(ssh);
     } catch (e) {

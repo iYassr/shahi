@@ -6,7 +6,7 @@
  * The terminal itself is not here yet; xterm.js has no React Native port and
  * would have to run inside a WebView.
  */
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   BackHandler,
@@ -34,6 +34,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt } from "@shahi/shared";
 import { api, connection, UnauthorizedError } from "@/lib/api";
+import { coalesce } from "@/lib/coalesce";
 import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -238,6 +239,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    */
   function restore() {
     const spot = scrollMemory.get(paneId);
+    // Nothing fetched yet means nothing to judge: the anchor cannot have
+    // "fallen out" of a window that does not exist. Now that the pane detail is
+    // fetched alongside the transcript, the activity footer can render first
+    // and change the content size before any message is here; judging then
+    // would give up, jump to the tail and drop the pill. Waiting makes the
+    // arrival order irrelevant.
+    if (typeof spot === "object" && messagesRef.current.length === 0) return;
     const index =
       typeof spot === "object" ? messagesRef.current.findIndex((m) => m.id === spot.id) : -1;
     if (index < 0) {
@@ -283,9 +291,17 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     return () => watch(null);
   }, [paneId, watch]);
 
-  const load = useCallback(async () => {
+  const loadOnce = useCallback(async () => {
+    // Both requests at once: neither depends on the other, and in sequence the
+    // pane detail waited a full transcript round trip for nothing. Each is
+    // awaited inside its own handler below so their failure modes stay
+    // separate — a missing transcript is "not yet", a 401 is a sign-out.
+    const logRequest = api.sessionLog(paneId, 60);
+    const detailRequest = api.pane(paneId);
+    logRequest.catch(() => undefined);
+    detailRequest.catch(() => undefined);
     try {
-      const log = await api.sessionLog(paneId, 60);
+      const log = await logRequest;
       const folded = merge(messagesRef.current, log.messages);
       if (folded !== messagesRef.current) {
         const prevLen = messagesRef.current.length;
@@ -332,7 +348,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setLoading(false);
     }
     try {
-      const detail = await api.pane(paneId);
+      const detail = await detailRequest;
       setPrompt(detail.frame?.prompt ?? null);
       const act = detail.frame?.activity ?? null;
       setActivity(act);
@@ -352,6 +368,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       // Transient; the next poll will catch up.
     }
   }, [paneId, signOut]);
+  // One load in flight at most. The timer, a pushed frame and a `log_changed`
+  // all call this; while a terminal repaints they arrive faster than a fetch
+  // returns, and un-coalesced that was several identical requests outstanding
+  // per open reader. Memoised on `loadOnce` so its identity stays stable and
+  // the polling effect below is not torn down on every render.
+  const load = useMemo(() => coalesce(loadOnce), [loadOnce]);
 
   /**
    * Adaptive polling. 2.5s is right for reading, but glacial right after you
@@ -418,9 +440,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   async function answer(index: number) {
     setPrompt(null);
     beginAwaiting();
+    // Chase from the tap, not from the reply to the request: the agent starts
+    // moving as soon as herdr has the key, and the fast poll should already be
+    // running when it does.
+    chase();
     try {
       await api.answerPrompt(paneId, index);
-      chase();
     } catch (e) {
       endAwaiting();
       setError((e as Error).message);
@@ -441,10 +466,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     setPending((prev) => [...prev, { message: echo, youBaseline: youNow + prev.length, at: Date.now() }]);
     setDraft("");
     beginAwaiting();
+    // Fast polling starts now, before the request even leaves. It used to start
+    // after the send returned — which, when the send was two requests with a
+    // 200ms pause between them, meant the first fast tick landed noticeably
+    // after the agent had already begun. The send itself is one request now,
+    // and the server confirms only that herdr accepted it; the haptic marks
+    // that receipt.
+    chase();
     try {
       await api.send(paneId, text);
       committed();
-      chase();
     } catch (e) {
       // The send did not land: pull the echo back and return the text to retry.
       setPending((prev) => prev.filter((p) => p.message.id !== id));
