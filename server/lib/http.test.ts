@@ -86,7 +86,7 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000 } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
@@ -120,7 +120,19 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000 } = {}): Promi
   poller.on("error", () => undefined);
   const push = new PushService(db, config);
   const server = createServer(
-    { config, auth, client, store, poller, transcript, push, pairing, devices, serverId: "test-server" },
+    {
+      config,
+      auth,
+      client,
+      store,
+      poller,
+      transcript,
+      push,
+      pairing,
+      devices,
+      serverId: "test-server",
+      ...(relay ? { relay: () => ({ url: "https://relay.test", connected: true }) } : {}),
+    },
     { heartbeatMs },
   );
   const base = `http://127.0.0.1:${server.port}`;
@@ -367,5 +379,18 @@ describe("what a client learns before it authenticates", () => {
   test("on a direct connection, the versions — the plugin's status line reads them over loopback", async () => {
     const info = (await (await fetch(`${s.base}/api/meta`)).json()) as Record<string, unknown>;
     expect(Object.keys(info).sort()).toEqual(["api", "herdr", "serverId", "serverVersion"]);
+  });
+
+  test("and the relay's state, from this machine only", async () => {
+    const r = await boot({ relay: true });
+    try {
+      const local = (await (await fetch(`${r.base}/api/meta`)).json()) as Record<string, unknown>;
+      expect(local.relay).toEqual({ url: "https://relay.test", connected: true });
+      // The same request as a tailnet peer would make it: no relay line.
+      const peer = (await (await fetch(`${r.base}/api/meta`, { headers: { "x-forwarded-for": "100.64.0.9" } })).json()) as Record<string, unknown>;
+      expect(peer).not.toHaveProperty("relay");
+    } finally {
+      r.stop();
+    }
   });
 });

@@ -147,7 +147,8 @@ answer when the screen moved on; nothing is pressed.
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
 network reach (tailnet only) plus the passcode. Given that, file reads are scoped
-to `$HOME` and `/tmp` for tidiness rather than security.
+to `$HOME` and the OS temp directory (`tmpdir()`, which on macOS is
+`/var/folders/…` and not `/tmp`) for tidiness rather than security.
 
 **Never log `pane.read` output.** It contains whatever is on your terminals.
 
@@ -172,7 +173,18 @@ unit, (re)starts it, and exits. It runs on every herdr start and always
 restarts, because a reinstall replaces the checkout under a sidecar that keeps
 running the old code from memory. Secrets live in herdr's per-plugin config
 directory, named by `SHAHI_ENV_FILE`, never in the checkout. The service
-follows the socket of whichever herdr ran the hook last.
+follows the socket of whichever herdr ran the hook last. The service's
+environment carries `RELAY_URL` (Shahi's relay) unless the `.env` has the
+key, because a fresh install that ended at "no address to give a phone yet"
+was the whole onboarding problem: with the relay the first QR works from
+anywhere. The default is in code, not written to the user's file — on disk it
+would be every install's trust anchor for life, and the relay could never
+move. `RELAY_URL=` empty means direct-only. What the hook has to say also
+goes to herdr's notification tray (`herdr notification show`), without the
+passcode digits: the plugin log is where nobody looks, and a toast is every
+attached client. `plugin/bun.sh` installs bun during `herdr plugin install`
+only, and the `uninstall` action does the whole uninstall, service first,
+then `herdr plugin uninstall`.
 
 **A phone is introduced by a code, and can be revoked.** `bun run
 server/scripts/pair.ts` prints a single-use, ten-minute code as a QR; the app
@@ -202,8 +214,11 @@ minutes is dropped. The `e2e.ts` construction had its second review on
 hello with a low-order point, `open` refuses a gap in the counter so a relay
 cannot silently drop a frame, an empty pairing secret is refused rather than
 degrading to unauthenticated DH, the database is 0600 in a 0700 directory,
-and `/api/meta` over the relay names no versions. It still wants its outside
-review before the relay is the default way in (`docs/connectivity.md`).
+and `/api/meta` over the relay names no versions. The relay became the
+plugin's default way in with plugin 0.2.0, ahead of an outside review of the
+construction, because the relay reads nothing and `RELAY_URL=` opts out; an
+outside review would change the envelope, not that default
+(`docs/connectivity.md`).
 
 **The reader is pushed, and polls only to recover.** While a phone watches a
 pane the server watches that pane's transcript file and sends `log_changed`
