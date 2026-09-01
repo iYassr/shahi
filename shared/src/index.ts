@@ -54,6 +54,50 @@ export interface PromptReceipt {
   acceptedAt: number;
 }
 
+/* ----------------------------------------------------------------- pairing */
+
+/**
+ * What a pairing code carries, in the fragment of `shahi://pair#…`.
+ *
+ * A fragment, not a query string, so the secret never reaches a web server if
+ * the code is ever opened as a link. `server` is the `ServerInfo.serverId` of
+ * the server that minted it: the phone fetches `/api/meta` at `endpoint` and
+ * refuses to claim unless the ids match, so a code pointing at the wrong
+ * address fails as a mismatch rather than pairing with whatever answered.
+ */
+export interface PairingPayload {
+  v: 1;
+  server: string;
+  /** Base URL the phone should talk to, e.g. `https://box.tailnet.ts.net`. */
+  endpoint: string;
+  /** Single use, ten minutes, held in the server's memory only. */
+  secret: string;
+}
+
+/** What `POST /api/pair` answers: a fresh code, not yet shown to anyone. */
+export interface PairingCode {
+  secret: string;
+  expiresAt: number;
+}
+
+/**
+ * A phone that was introduced by scanning a code. Passcode logins are not
+ * devices: they carry no identity, so there is nothing to list or revoke.
+ */
+export interface PairedDevice {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+/** What `GET /api/devices` answers. */
+export interface DeviceList {
+  devices: PairedDevice[];
+  /** The device the asking session is bound to; null for a passcode login. */
+  thisDeviceId: string | null;
+}
+
 /* ------------------------------------------------------------------ agents */
 
 export type AgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
