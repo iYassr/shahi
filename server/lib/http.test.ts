@@ -95,6 +95,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000 } = {}): Promi
     sessionTtlMs,
     vapid: null,
     webRoot: null,
+    relayUrl: null,
   };
   // Wired the way index.ts wires them: device sessions are checked against the
   // devices table on every request, so revocation is immediate.
@@ -242,6 +243,27 @@ describe("a socket does not outlive its session", () => {
     } finally {
       short.stop();
     }
+  });
+});
+
+describe("claiming a pairing code", () => {
+  // The relay transport cannot carry a cookie, so the claim's body says who
+  // the phone now is and hands over its half of the relay key; the cookie
+  // stays for a phone that reached the box directly.
+  test("answers the device id and secret in the body beside the cookie", async () => {
+    const mint = await fetch(`${s.base}/api/pair`, { method: "POST", headers: { cookie: s.cookie } });
+    const { secret } = (await mint.json()) as { secret: string };
+    const res = await fetch(`${s.base}/api/pair/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ secret, deviceName: "Phone" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; deviceId: string; deviceSecret: string; device: { id: string } };
+    expect(body.ok).toBe(true);
+    expect(body.deviceId).toBe(body.device.id);
+    expect(Buffer.from(body.deviceSecret, "base64url")).toHaveLength(32);
+    expect(res.headers.get("set-cookie")).toContain(`.${body.deviceId}.`);
   });
 });
 
