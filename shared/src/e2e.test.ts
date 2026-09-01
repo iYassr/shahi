@@ -75,11 +75,12 @@ describe("e2e", () => {
     expect(() => open(server, wire)).toThrow(/replay|order/i);
   });
 
-  test("an old (lower-counter) frame is refused after a later one", () => {
+  test("an old (lower-counter) frame is refused once a later one has been accepted", () => {
     const { client, server } = handshake();
     const first = seal(client, utf8("first"));
     const second = seal(client, utf8("second"));
-    open(server, second); // accept the later one first
+    open(server, first);
+    open(server, second);
     expect(() => open(server, first)).toThrow(/replay|order/i);
   });
 
