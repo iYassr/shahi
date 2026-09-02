@@ -1,0 +1,23 @@
+# Keeps dependencies current and surfaces advisories as PRs. The runtime crypto
+# (@noble/*) and the server's own deps are what matter most; the bulk of the
+# tree is the Expo/Metro/Jest toolchain, whose advisories are build-time DoS
+# in parsers, not reachable by the 1000 users the app serves. Grouped so a
+# weekly run is one or two PRs, not thirty.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      crypto:
+        patterns: ["@noble/*"]
+      expo:
+        patterns: ["expo", "expo-*", "@expo/*", "react-native", "@react-native/*"]
+      dev-tooling:
+        dependency-type: development
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
