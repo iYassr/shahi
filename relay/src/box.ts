@@ -25,6 +25,7 @@ import {
   type RelayToBox,
 } from "@shahi/shared/relay";
 import { ROUTE } from "./route.ts";
+import { record, type TelemetryEnv } from "./telemetry.ts";
 
 /**
  * How long a box may go without being heard from before the relay decides it
@@ -55,6 +56,8 @@ interface BoxState {
 interface PhoneState {
   role: "phone";
   link: number;
+  /** The box this link belongs to, so a close event names it (telemetry). */
+  serverId: string;
   /** False once the relay has closed the link itself, so the box is told exactly once. */
   open: boolean;
   /** When the socket was accepted: the clock for the first-frame deadline. */
@@ -74,8 +77,11 @@ type Attachment = BoxState | PhoneState;
 const CLOSE_NORMAL = 1000;
 
 export class RelayBox extends DurableObject<unknown> {
+  #env: TelemetryEnv;
+
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
+    this.#env = env as TelemetryEnv;
     // `ping` → `pong` is answered inside the runtime, without waking this
     // object, and the answer's timestamp is what the liveness sweep reads.
     // Setting it on every construction is idempotent and keeps it from
@@ -93,7 +99,7 @@ export class RelayBox extends DurableObject<unknown> {
     const client = pair[0];
     const server = pair[1];
     if (role === "box") await this.acceptBox(server, serverId);
-    else await this.acceptPhone(server);
+    else await this.acceptPhone(server, serverId);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -110,11 +116,11 @@ export class RelayBox extends DurableObject<unknown> {
     await this.schedule();
   }
 
-  private async acceptPhone(ws: WebSocket): Promise<void> {
+  private async acceptPhone(ws: WebSocket, serverId: string): Promise<void> {
     const box = this.readyBox();
-    if (!box) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline");
+    if (!box) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
     if (this.phones().length >= RELAY_LIMITS.maxPhonesPerBox) {
-      return this.refuse(ws, RELAY_CLOSE.quota, "too many phones");
+      return this.refuse(ws, RELAY_CLOSE.quota, "too many phones", serverId);
     }
     const boxState = box.deserializeAttachment() as BoxState;
     const link = boxState.nextLink;
@@ -124,6 +130,7 @@ export class RelayBox extends DurableObject<unknown> {
     const state: PhoneState = {
       role: "phone",
       link,
+      serverId,
       open: true,
       since: now,
       spoke: false,
@@ -133,6 +140,7 @@ export class RelayBox extends DurableObject<unknown> {
     };
     ws.serializeAttachment(state);
     this.tell(box, { t: "open", link });
+    record(this.#env, { kind: "phone_open", serverId, value: this.phones().length });
     await this.schedule();
   }
 
@@ -144,8 +152,9 @@ export class RelayBox extends DurableObject<unknown> {
    * an uncaught error on every refusal, because the close ran before the
    * response's pump was attached.
    */
-  private refuse(ws: WebSocket, code: number, reason: string): void {
+  private refuse(ws: WebSocket, code: number, reason: string, serverId: string): void {
     this.ctx.acceptWebSocket(ws, ["refused"]);
+    record(this.#env, { kind: "refused", serverId, detail: reason, value: code });
     ws.close(code, reason);
   }
 
@@ -230,6 +239,7 @@ export class RelayBox extends DurableObject<unknown> {
     const now = Date.now();
     ws.serializeAttachment({ ...state, ready: true, since: now, heard: now });
     this.tell(ws, { t: "ready" });
+    record(this.#env, { kind: "box_auth", serverId: state.serverId });
     await this.schedule();
   }
 
@@ -262,6 +272,7 @@ export class RelayBox extends DurableObject<unknown> {
       ws.serializeAttachment({ ...state, open: false });
       const box = this.readyBox();
       if (box) this.tell(box, { t: "close", link: state.link });
+      record(this.#env, { kind: "phone_close", serverId: state.serverId, detail: reason, value: code });
     }
     ws.close(code, reason);
   }
@@ -270,6 +281,7 @@ export class RelayBox extends DurableObject<unknown> {
   private closeBox(ws: WebSocket, state: BoxState, code: number, reason: string): void {
     if (state.ready) {
       ws.serializeAttachment({ ...state, ready: false });
+      record(this.#env, { kind: "box_gone", serverId: state.serverId, detail: reason, value: code });
       for (const phone of this.phones()) {
         // `open: false` first: the box being told about these links is the one
         // that is leaving, and a `close` on the ready socket would otherwise
