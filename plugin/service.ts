@@ -109,6 +109,11 @@ export function renderSystemd(spec: ServiceSpec): string {
 [Unit]
 Description=Shahi — a phone-shaped window onto herdr
 After=default.target
+# Never give up like launchd's KeepAlive does: systemd's default start-rate
+# limiter (5 starts / 10s) would wedge the sidecar off after a fast crash-loop
+# — precisely when a phone wants it back — and leave it dead until a manual
+# reset. RestartSec=3 already paces the retries (pre-release review).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

@@ -71,12 +71,17 @@ const auth = new Auth({
 store.on("error", (err) => console.error("state:", err.message));
 poller.on("error", (err) => console.error("poller:", err.message));
 
-// A closed pane should not keep its transcript or poll slot alive.
+// A closed pane should not keep its transcript or poll slot alive. Both
+// `forget`s were meant to run here — the transcript's docstring even says
+// "Called when herdr reports the pane closed" — but only the poller's was
+// wired, so a box that runs for weeks kept every dead pane's recorded rows in
+// SQLite and two in-memory maps forever (pre-release review). Now both drop.
 store.on("changed", () => {
   const live = new Set(store.state.panes.map((p) => p.pane_id));
   for (const paneId of trackedPanes) {
     if (!live.has(paneId)) {
       poller.forget(paneId);
+      transcript.forget(paneId);
       trackedPanes.delete(paneId);
     }
   }

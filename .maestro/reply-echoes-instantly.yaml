@@ -22,6 +22,9 @@ name: Your reply echoes into the thread instantly
 - inputText: "1234"
 - tapOn: "Connect"
 - assertVisible: "Agents"
+- swipe:
+    direction: UP
+    duration: 400
 - tapOn: ".*Summarise the meeting.*"
 - tapOn: "Reply to this agent…"
 - inputText: "optimistic echo check 42"
