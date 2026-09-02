@@ -23,7 +23,7 @@ jobs:
     name: types and unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.13"
@@ -49,7 +49,7 @@ jobs:
     name: playwright, both engines
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.13"
@@ -98,7 +98,7 @@ jobs:
         # job means the same thing next month. The second floats.
         herdr: [v0.8.2, stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.13"
