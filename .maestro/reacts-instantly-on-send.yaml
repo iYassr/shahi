@@ -26,6 +26,9 @@ name: The reader reacts instantly on send
 - inputText: "1234"
 - tapOn: "Connect"
 - assertVisible: "Agents"
+- swipe:
+    direction: UP
+    duration: 400
 - tapOn: ".*Summarise the meeting.*"
 - tapOn: "Reply to this agent…"
 - inputText: "does it react instantly"

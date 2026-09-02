@@ -26,6 +26,9 @@ name: Pin a conversation and it stays pinned
     id: "passcode"
 - inputText: "1234"
 - tapOn: "Connect"
+- swipe:
+    direction: UP
+    duration: 400
 - assertVisible: ".*Summarise the meeting.*"
 
 - longPressOn: ".*Summarise the meeting.*"

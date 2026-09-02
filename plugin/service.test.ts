@@ -71,6 +71,12 @@ describe("renderLaunchd", () => {
 });
 
 describe("renderSystemd", () => {
+  test("never gives up on a crash-loop the way launchd does not", () => {
+    const unit = renderSystemd(spec);
+    expect(unit).toContain("StartLimitIntervalSec=0");
+    expect(unit).toContain("Restart=always");
+  });
+
   const unit = renderSystemd(spec);
 
   test("runs bun from the plugin root, logs to the state dir, restarts", () => {

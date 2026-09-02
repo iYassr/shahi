@@ -22,8 +22,8 @@ onFlowComplete:
 - runScript:
     file: stub/set-meta.js
     env:
-      MIN: "3"
-      MAX: "3"
+      MIN: "99"
+      MAX: "99"
 - launchApp:
     clearState: true
     clearKeychain: true
