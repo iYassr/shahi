@@ -325,6 +325,51 @@ describe("semantic requests", () => {
 });
 
 /**
+ * The reader's transcript poll, which runs every 2.5s forever.
+ *
+ * The server tags each response and answers a matching `if-none-match` with a
+ * bodiless 304, but only a browser revalidates on its own — this client never
+ * sent the tag, so every poll re-downloaded the whole conversation. These pin
+ * that it now offers the tag and treats a 304 as unchanged without a body.
+ */
+describe("transcript revalidation", () => {
+  const fetchMock = jest.fn();
+
+  beforeEach(() => {
+    connection.baseUrl = "http://localhost:7272";
+    connection.cookie = "shahi_session=x";
+    connection.relay = null;
+    fetchMock.mockReset();
+    (globalThis as { fetch: unknown }).fetch = fetchMock;
+  });
+
+  test("sends no ETag first, then offers it and reads a 304 without a body", async () => {
+    const body = { paneId: "w9:p9", messages: [{ id: "m1", role: "agent", text: "hi" }], total: 1 };
+    const json304 = jest.fn();
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json", etag: 'W/"abc"' }),
+        json: async () => body,
+      })
+      .mockResolvedValueOnce({ ok: false, status: 304, headers: new Headers({ etag: 'W/"abc"' }), json: json304 });
+
+    const first = await api.sessionLog("w9:p9", 60);
+    expect(first).toEqual(body);
+    // Nothing to revalidate on the first poll.
+    expect(fetchMock.mock.calls[0]![1].headers["if-none-match"]).toBeUndefined();
+
+    const second = await api.sessionLog("w9:p9", 60);
+    // The tag it was given goes back, the server answers 304, and the same
+    // conversation is returned from the kept body — json() is never touched.
+    expect(fetchMock.mock.calls[1]![1].headers["if-none-match"]).toBe('W/"abc"');
+    expect(second).toEqual(body);
+    expect(json304).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * The handshake, asked before the passcode.
  *
  * Without it a typo that lands on some other web server, or a Shahi too old for

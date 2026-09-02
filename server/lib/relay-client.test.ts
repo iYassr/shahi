@@ -206,6 +206,8 @@ interface Phone {
   unwatch(): void;
   /** Sends the previous sealed frame again, byte for byte. */
   replayLast(): void;
+  /** True once the box has sent a sealed `bye` — its terminal sign-out signal. */
+  sawBye(): boolean;
   closed: Promise<{ code: number; reason: string }>;
   isClosed: boolean;
   close(): void;
@@ -219,6 +221,7 @@ function phone(relay: FakeRelay, serverId: string, auth: PhoneHello["auth"], sec
   let nextId = 1;
   const pending = new Map<number, (res: RelayResponse) => void>();
   const stream: SocketMessage[] = [];
+  let sawBye = false;
 
   let resolveHello!: (hello: BoxHello) => void;
   let rejectHello!: (err: Error) => void;
@@ -264,6 +267,8 @@ function phone(relay: FakeRelay, serverId: string, auth: PhoneHello["auth"], sec
       pending.delete(msg.id);
     } else if (msg.t === "ws") {
       stream.push(msg.data as SocketMessage);
+    } else if (msg.t === "bye") {
+      sawBye = true;
     }
   };
   const result: Phone = {
@@ -292,6 +297,7 @@ function phone(relay: FakeRelay, serverId: string, auth: PhoneHello["auth"], sec
       if (!lastFrame) throw new Error("phone: nothing sent yet");
       ws.send(lastFrame);
     },
+    sawBye: () => sawBye,
     close: () => ws.close(1000, "done"),
   };
   ws.onclose = (event) => {
@@ -518,6 +524,27 @@ describe("box authentication", () => {
       other.stop();
     }
   });
+
+  // The pings prove the box can write, not that the relay still answers. A
+  // wedged or half-open socket that goes silent used to leave the box thinking
+  // it was reachable forever, with no phone able to get to it. The read-side
+  // watchdog is the mirror of the phone's: no frame within the limit — not even
+  // the runtime's pong — and the box drops the socket and redials.
+  test("a ready box that stops hearing from the relay drops the socket and redials", async () => {
+    const other = await bootBox();
+    // A tiny silence limit and no ping within the window, so nothing refreshes
+    // the read side: exactly the wedged-relay case.
+    const wedged = dial(relay, other, other.identity, { pingMs: 10_000, silenceMs: 60, watchdogMs: 20, minBackoffMs: 20, maxBackoffMs: 100 });
+    try {
+      await waitFor(() => wedged.connected, "the box to authenticate");
+      const before = relay.boxConnections;
+      await waitFor(() => relay.boxConnections > before, "a redial after the read-silence limit");
+      expect(other.log.some((l) => l.includes("silent"))).toBe(true);
+    } finally {
+      wedged.stop();
+      other.stop();
+    }
+  });
 });
 
 describe("a phone through the relay", () => {
@@ -672,7 +699,7 @@ describe("a phone through the relay", () => {
     await p.closed;
   });
 
-  test("revoking the device closes its link and refuses its next hello", async () => {
+  test("revoking the device sends the phone a sealed bye, closes its link, and refuses its next hello", async () => {
     const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
     await p.hello;
     expect((await p.request("GET", "/api/session")).status).toBe(200);
@@ -684,6 +711,10 @@ describe("a phone through the relay", () => {
     expect(revoke.status).toBe(200);
     const end = await p.closed;
     expect(end.code).toBe(1000);
+    // The relay flattens the close to 1000, which the phone would retry; the
+    // terminal reason reaches it as a sealed `bye` before the link ends, so it
+    // signs out instead of reconnecting into a refused hello forever.
+    expect(p.sawBye()).toBe(true);
     expect(box.log.some((l) => l.includes("device revoked"))).toBe(true);
 
     const again = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
