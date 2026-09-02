@@ -18,10 +18,20 @@
  * records nothing.
  */
 
+/**
+ * The one method this module calls on the Analytics Engine binding. Declared
+ * locally rather than pulled from the global `AnalyticsEngineDataset` type so
+ * telemetry.ts typechecks under any project that imports it (the test project
+ * does not load @cloudflare/workers-types).
+ */
+export interface Dataset {
+  writeDataPoint(point: { blobs?: (string | ArrayBuffer)[]; doubles?: number[]; indexes?: (string | ArrayBuffer)[] }): void;
+}
+
 /** The bindings this module reads. All optional: absent means telemetry off. */
 export interface TelemetryEnv {
   /** The Analytics Engine dataset, declared in wrangler.toml. */
-  TELEMETRY?: AnalyticsEngineDataset;
+  TELEMETRY?: Dataset;
   /** Bearer token the /stats endpoint requires. Unset hides the endpoint entirely. */
   STATS_TOKEN?: string;
   /** For /stats to query Analytics Engine: the account id and an API token with Account Analytics Read. */

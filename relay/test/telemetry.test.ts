@@ -63,7 +63,7 @@ describe("handleStats", () => {
 
   test("200 with a shaped summary when fully configured", async () => {
     const realFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ n: 7 }] }), { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ n: 7 }] }), { status: 200 })) as unknown as typeof fetch;
     try {
       const env: TelemetryEnv = { STATS_TOKEN: "s3cret", CF_ACCOUNT_ID: "acc", CF_ANALYTICS_TOKEN: "tok" };
       const res = (await handleStats(get({ authorization: "Bearer s3cret" }), env))!;
