@@ -6,10 +6,11 @@
  */
 import { RelayBox } from "./box.ts";
 import { ROUTE } from "./route.ts";
+import { handleStats, record, type TelemetryEnv } from "./telemetry.ts";
 
 export { RelayBox };
 
-export interface Env {
+export interface Env extends TelemetryEnv {
   RELAY: DurableObjectNamespace<RelayBox>;
   /**
    * A per-IP connection limiter at the edge, before a Durable Object is even
@@ -28,7 +29,11 @@ const SERVER_ID = /^[A-Za-z0-9_-]{43}$/;
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const match = ROUTE.exec(new URL(request.url).pathname);
+    const path = new URL(request.url).pathname;
+    // A read of the fleet telemetry, off the hot path. Hidden unless a token
+    // is set (see telemetry.ts); never touches a Durable Object.
+    if (path === "/stats") return (await handleStats(request, env)) ?? new Response("not found", { status: 404 });
+    const match = ROUTE.exec(path);
     if (!match) return new Response("not found", { status: 404 });
     const serverId = match[2]!;
     if (!SERVER_ID.test(serverId)) {
@@ -46,10 +51,21 @@ export default {
     const ip = request.headers.get("cf-connecting-ip");
     if (env.CONNECT_LIMIT && ip && ip !== "127.0.0.1" && ip !== "::1") {
       const { success } = await env.CONNECT_LIMIT.limit({ key: ip });
-      if (!success) return new Response("too many connections; slow down", { status: 429 });
+      if (!success) {
+        record(env, { kind: "rate_limited", serverId, colo: coloOf(request) });
+        return new Response("too many connections; slow down", { status: 429 });
+      }
     }
+    // A connection that passed the wall and is being routed: raw volume, by
+    // region and role, for the "how busy / who is hammering" view.
+    record(env, { kind: "connect", serverId, detail: match[1]!, colo: coloOf(request) });
     // One object per serverId, addressed by the id itself: a box and its
     // phones land on the same instance wherever in the world they connect.
     return env.RELAY.get(env.RELAY.idFromName(serverId)).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+/** The Cloudflare colo (data centre) a request landed in, for a by-region view. */
+function coloOf(request: Request): string {
+  return (request.cf?.colo as string | undefined) ?? "";
+}
