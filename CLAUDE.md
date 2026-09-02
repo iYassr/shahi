@@ -123,11 +123,15 @@ Reading those files is what makes a phone-shaped conversation possible at all �
 terminal text arrives pre-wrapped at 146 columns and cannot be reflowed. The
 terminal is still there, on the Screen tab, for when you need the real screen.
 
-**Unknown shapes are dropped, never guessed.** The codex reader reads only
-`event_msg` records; an unrecognised type renders nothing rather than something
-invented. Same for the prompt parser: no confident parse means the raw terminal
-and a free-text box, which is a far better failure than answer buttons for a
-question nobody asked.
+**Unknown shapes are dropped, never guessed.** The codex reader renders a
+fixed set of shapes and nothing else: conversation, reasoning, tool calls, MCP
+and web-search activity, and native `apply_patch` edits — an unrecognised type
+renders nothing rather than something invented. The Claude reader's system-note
+handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`) for the same reason:
+`away_summary` and `model_refusal_fallback` carry text the person saw, every
+other `system` subtype is chrome and stays dropped. Same for the prompt parser:
+no confident parse means the raw terminal and a free-text box, which is a far
+better failure than answer buttons for a question nobody asked.
 
 **The prompt parser requires exactly one cursor.** An agent writing a numbered
 list in prose is common; a rendered menu always has its cursor on exactly one
@@ -356,9 +360,16 @@ Stated plainly, because a vague gaps list is worse than none.
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
   to be *the* one. If it recurs, what matters is which of three shapes it takes —
   blank, frozen-with-stale-data, or claiming LIVE while not updating.
-- **Codex tool calls are unrendered.** `codex-log.ts` reads only `event_msg`
-  records and drops unknown types rather than guessing. No sample of a codex tool
-  call has ever been captured, so nobody knows what is being dropped.
+- **Codex output is now read in full, against a captured corpus — but only
+  what that corpus held.** Every record, block and event type across the
+  owner's real transcripts (79 Claude sessions, 23 codex rollouts) was
+  enumerated and classified rendered-or-dropped; the dropped-but-real buckets
+  were closed (codex reasoning, MCP, web search, native `apply_patch`; Claude
+  model switches and `away_summary`/`model_refusal_fallback` notes). What
+  remains unproven is a codex tool shape that never appeared in those 23
+  rollouts — it degrades to dropped, never guessed, so the failure is silence,
+  not invention. Re-run the census (`server/lib/*-log.test.ts` document each
+  shape) when a new agent version or a new tool lands.
 - **The codex reader still parses the whole rollout file.** Claude's reader
   indexes by byte offset and reads a window; codex's does not, and a 12MB
   rollout re-read on every poll was measured pushing the process toward 196MB.
