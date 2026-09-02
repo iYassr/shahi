@@ -109,8 +109,10 @@ really about how you already log in.
   — that is what lets notifications through.
 - **Over SSH** — the app opens its own SSH tunnel to the box (the same
   credentials you already use) and forwards to the sidecar on loopback. Nothing
-  needs to be exposed on the tailnet at all. The server's host key is pinned on
-  first connect, so a changed key is refused before any credential is sent.
+  needs to be exposed on the tailnet at all. The server's host key is trusted
+  on first use and pinned; any later change is refused before a credential is
+  sent. (Like SSH itself, the very first connection has no prior key to check,
+  so pair over a network you trust — after that a swapped key is caught.)
 
 **Never `tailscale funnel`** — that would put an unauthenticated-by-default herdr
 proxy on the public internet.
@@ -157,7 +159,8 @@ and shells have no transcript, so the terminal view stays the universal fallback
 
 ### What herdr's API does and does not give you
 
-Measured against herdr 0.7.5 (protocol 17); several points contradict the
+Measured against herdr (protocol 17 on 0.7.5, re-checked on 0.8.2 / protocol
+20, which is the minimum Shahi supports); several points contradict the
 official docs, and they shape the whole design.
 
 | | |
