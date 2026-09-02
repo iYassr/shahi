@@ -69,6 +69,12 @@ export function Connect({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  // A code that arrived as a link (useURL), not from the camera. It is shown
+  // for confirmation before anything is sent: a tapped or injected
+  // shahi://pair link must not silently repoint the app at a stranger's box
+  // (pentest M2). The camera scanner is already an explicit act and pairs
+  // directly.
+  const [pending, setPending] = useState<PairingPayload | null>(null);
 
   // A pairing code can arrive as a link as well as a picture: `shahi://pair#…`
   // tapped in a terminal or a message, or opened by a test — the simulator has
@@ -78,10 +84,44 @@ export function Connect({
   const openedUrl = useURL();
   useEffect(() => {
     const payload = openedUrl ? parsePairingUrl(openedUrl) : null;
-    if (payload) void pair(payload);
-    // `pair` is a plain function of this render; re-running on it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Show it, do not act on it: the confirm card is the tap the finding wants
+    // between an untrusted link and this phone's secret.
+    if (payload) setPending(payload);
   }, [openedUrl]);
+
+  // A link is asking to pair. Confirm the target before a byte is sent.
+  if (pending) {
+    const host = (pending.relay ?? pending.endpoint).replace(/^https?:\/\//, "");
+    return (
+      <View style={styles.introBody}>
+        <Text style={styles.lede}>Pair this phone?</Text>
+        <Text style={styles.introText}>
+          A link is asking to connect this phone to a Shahi server. Only continue if you opened this
+          code yourself, from a server you control.
+        </Text>
+        <Text style={styles.label}>SERVER</Text>
+        <Text style={styles.mono}>{host}</Text>
+        <Text style={styles.label}>IDENTITY</Text>
+        <Text style={styles.mono}>{pending.server.slice(0, 16)}…</Text>
+        {error && <Text style={styles.error}>{error}</Text>}
+        <Pressable
+          style={[styles.button, busy && styles.buttonOff]}
+          disabled={busy}
+          testID="confirm-pair"
+          onPress={() => {
+            const payload = pending;
+            setPending(null);
+            void pair(payload);
+          }}
+        >
+          <Text style={styles.buttonText}>{busy ? "Pairing…" : `Pair with ${host}`}</Text>
+        </Pressable>
+        <Pressable style={styles.link} onPress={() => { setPending(null); setError(null); }} testID="confirm-cancel">
+          <Text style={styles.link}>Cancel</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (phase === "intro") return <Intro onContinue={() => setPhase("form")} />;
 

@@ -209,6 +209,16 @@ export class RelayClient {
         // A relay reusing a number still held here is a relay that lost track;
         // whatever that link was, it is gone.
         this.#links.get(msg.link)?.release();
+        // The relay enforces maxPhonesPerBox, so more open links than that means
+        // a relay that has lost track or a hostile one trying to grow this map
+        // without bound and take the sidecar down with it (pentest L4). Refuse
+        // the surplus rather than trust the far end's count.
+        if (!this.#links.has(msg.link) && this.#links.size >= RELAY_LIMITS.maxPhonesPerBox) {
+          this.#log(`relay: refused link ${msg.link} — already holding ${this.#links.size}`);
+          const message: BoxToRelay = { t: "close", link: msg.link };
+          if (this.#ws && this.#ready) this.#ws.send(JSON.stringify(message));
+          return;
+        }
         this.#links.set(msg.link, new Link(msg.link, this.#wire, this.#deps, this.#log));
         this.#log(`relay: link ${msg.link} opened`);
         return;

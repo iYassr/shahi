@@ -111,7 +111,12 @@ function lingerValue(): string | null {
  * the symlink that survives it. bun.sh's fallbacks are absolute already.
  */
 export function bunPath(): string {
-  return Bun.which("bun") ?? process.execPath;
+  // Refuse a bun that lives under the checkout: the service must not run a
+  // binary a dependency dropped there (pentest M4; the PATH is also cleaned of
+  // node_modules/.bin in main()). Fall back to the interpreter running this.
+  const found = Bun.which("bun");
+  if (found && !found.includes("/node_modules/")) return found;
+  return process.execPath;
 }
 
 /** What the service runs with. The .env decides PORT and HOST; this mirrors PORT so the plist says it too. */
@@ -396,6 +401,16 @@ function uninstall(layout: Layout, service: Service): number {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  // `bun run` prepends every ancestor's node_modules/.bin to PATH, so a
+  // dependency shipping a `bun` bin would be picked by bunPath() and become the
+  // launchd/systemd-supervised service, and bare-name spawns (launchctl,
+  // systemctl, tailscale) would resolve from .bin first (pentest M4). Strip
+  // those entries once, before any which() or spawn in this process.
+  process.env.PATH = (process.env.PATH ?? "")
+    .split(":")
+    .filter((dir) => !dir.endsWith("/node_modules/.bin"))
+    .join(":");
+
   const verb = argv[0] as Verb | undefined;
   const args = argv.slice(1);
   if (!verb || !VERBS.includes(verb)) {

@@ -201,6 +201,29 @@ describe("phone", () => {
     boxPeer.close();
   });
 
+  test("a phone that opens a link but never speaks is closed, freeing the slot", async () => {
+    // Eight silent sockets would otherwise hold every slot for the full idle
+    // window and lock the owner's real phone out (pentest H2). A phone hellos
+    // the instant it opens; one that says nothing is cut after phoneHelloMs.
+    const box = newBox();
+    const boxPeer = await connectBox(box);
+    const squatter = await connectPhone(box);
+    expect(await boxPeer.text()).toEqual({ t: "open", link: 1 });
+    // It never sends a frame. The relay closes it normally and tells the box.
+    const closed = await squatter.closed;
+    expect(closed.code).toBe(1000);
+    expect(closed.reason).toBe("no hello");
+    expect(await boxPeer.text()).toEqual({ t: "close", link: 1 });
+    // A phone that does speak keeps its slot: its frame reaches the box, and
+    // it is not cut when the deadline it would have had passes.
+    const real = await connectPhone(box);
+    expect(await boxPeer.text()).toEqual({ t: "open", link: 2 });
+    real.send(new Uint8Array([7, 8, 9]));
+    expect(unframe(await boxPeer.binary())).toMatchObject({ link: 2 });
+    real.close();
+    boxPeer.close();
+  }, RELAY_LIMITS.phoneHelloMs + 8_000);
+
   test("a frame over 1 MiB closes the phone with 4429 and the box is told", async () => {
     const box = newBox();
     const boxPeer = await connectBox(box);
