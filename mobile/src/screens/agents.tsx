@@ -136,6 +136,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       />
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
+        // The native tab bar floats over the list; without room past it the
+        // last agent sits under the bar and a tap on it lands on the tab
+        // instead — the more so since the "+ New agent" header pushed the list
+        // down. Padding lets the last row scroll clear of the bar.
+        contentContainerStyle={styles.listContent}
         data={rest}
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
@@ -482,6 +487,8 @@ const styles = StyleSheet.create({
   },
 
   filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  // Clears the floating native tab bar so the last agent is tappable, not under it.
+  listContent: { paddingBottom: 96 },
   newAgent: {
     marginHorizontal: 16,
     marginVertical: 8,
