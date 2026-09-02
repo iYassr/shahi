@@ -73,7 +73,7 @@ jobs:
 
       - run: bun run test:e2e
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-traces
@@ -132,7 +132,7 @@ jobs:
 
       - run: SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: herdr-server-log-${{ matrix.herdr }}
