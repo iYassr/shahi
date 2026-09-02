@@ -97,11 +97,15 @@ onFlowComplete:
 - assertVisible: "Agents"
 - assertVisible: ".*Waiting on you.*"
 
+# A real sidecar version change restarts the sidecar while the phone may be
+# backgrounded. Stop the app first so this is a genuine persisted-session cold
+# start, not Maestro's `launchApp` merely foregrounding an already-active app.
+- stopApp
 - runScript:
     file: stub/set-meta.js
     env:
-      MIN: "3"
-      MAX: "3"
+      MIN: "99"
+      MAX: "99"
 - launchApp
 - extendedWaitUntil:
     visible: "Update needed"

@@ -20,6 +20,7 @@ import { theme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { Unreachable } from "@/components/unreachable";
+import { shouldTakeOverSession } from "@/lib/agents-error";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
   const { session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, signOut } = useSession();
@@ -48,7 +49,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // what to check, a way to retry and a way out. The platform's own words used
   // to land here — "A server with the specified hostname could not be found. at
   // ExpoModulesCore/Promise.swift:56" — which reads as a crash, not a network.
-  if (error && !session) {
+  // A transient failure should leave the last useful snapshot on screen, but
+  // an incompatible snapshot is not useful: every action against it will be
+  // refused. Always replace stale data with the upgrade instructions for a
+  // 426, including when the server changed versions while the app was open.
+  if (error && shouldTakeOverSession(error, session)) {
     return (
       <Unreachable
         title={

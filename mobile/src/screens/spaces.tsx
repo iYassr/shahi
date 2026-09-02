@@ -257,7 +257,7 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
  */
 export function PickSpace({ session, onPick }: { session: Session; onPick: (space: Space) => void }) {
   return (
-    <SheetBody title="New agent — in which space?">
+    <SheetBody title="Choose a space">
       {session.workspaces.length === 0 ? (
         <Pressable style={styles.action} onPress={() => router.replace("/new-space")}>
           <Text style={styles.actionText}>No spaces yet — make one first</Text>
@@ -265,6 +265,7 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
       ) : (
         <FlatList
           style={styles.pick}
+          contentContainerStyle={styles.pickContent}
           data={session.workspaces}
           keyExtractor={(w) => w.workspaceId}
           renderItem={({ item, index }) => (
@@ -398,7 +399,11 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
 function SheetBody({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.sheet}>
-      <View style={styles.sheetHead}>
+      {/* react-native-screens requires a non-collapsible header beside a
+          ScrollView/FlatList in a formSheet. When React flattened this View,
+          iOS counted the title and Close as separate native children and laid
+          the first workspace underneath them. */}
+      <View style={styles.sheetHead} collapsable={false}>
         <Text style={styles.sheetTitle}>{title}</Text>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text style={styles.sheetClose}>Close</Text>
@@ -460,8 +465,11 @@ const styles = StyleSheet.create({
   // A fit-to-contents sheet with a crowded session would grow past the
   // screen; the list scrolls inside a bound instead.
   pick: { maxHeight: 420 },
+  pickContent: { paddingTop: 4 },
   sheetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600" },
+  // Leave the close action its own lane. A long title previously measured
+  // through it and into the first workspace row on an iPhone form sheet.
+  sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600", flex: 1, marginRight: 12 },
   sheetClose: { color: theme.peach, fontSize: 15 },
   label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2 },
   input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },

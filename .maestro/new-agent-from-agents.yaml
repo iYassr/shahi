@@ -26,7 +26,7 @@ name: Start an agent from the Agents tab, picking its space
 - assertVisible: "Agents"
 - tapOn:
     id: "new-agent"
-- assertVisible: ".*in which space.*"
+- assertVisible: "Choose a space"
 - tapOn:
     id: "pick-w1"
 - assertVisible: "New agent in project"

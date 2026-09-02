@@ -206,7 +206,16 @@ async function dispatch(
   // demonstrably set, and the resulting UnauthorizedError signs the app out
   // again. This client owns its cookie, because there is no browser to own it;
   // the jar must not compete for the job.
-  return fetchWithTimeout(`${connection.baseUrl}${path}`, { ...init, credentials: "omit" } as RequestInit, ms);
+  // Every API response is live state. NSURLSession may otherwise satisfy a
+  // cold-start GET from its disk cache after the sidecar has been upgraded,
+  // which leaves an old session on screen and hides the new server's 426.
+  // The server also sends no-store, but declaring it here protects the client
+  // from proxies and test servers that forget that header.
+  return fetchWithTimeout(
+    `${connection.baseUrl}${path}`,
+    { ...init, credentials: "omit", cache: "no-store" } as RequestInit,
+    ms,
+  );
 }
 
 /** A 426 is the server declining this contract version; say so, in its words. */
@@ -614,7 +623,10 @@ export class SessionSocket {
   #relay: RelayLink | undefined;
   readonly #subscriber: LinkSubscriber = {
     onMessage: (msg) => this.onMessage(msg),
-    onLink: (state) => this.onLink(state),
+    onLink: (state) => {
+      this.onLink(state);
+      if (state === "lost" && !this.#closed) this.onDisconnected?.();
+    },
     onExpired: () => {
       this.close();
       this.onExpired?.();
@@ -626,6 +638,8 @@ export class SessionSocket {
     private readonly onLink: (state: LinkState) => void,
     /** The server closed with 4001: the session no longer verifies. */
     private readonly onExpired?: () => void,
+    /** Re-check HTTP when a link dies; a rejected WS handshake hides its 426. */
+    private readonly onDisconnected?: () => void,
   ) {}
 
   connect(): void {
@@ -758,6 +772,7 @@ export class SessionSocket {
         this.onExpired?.();
         return;
       }
+      if (!this.#closed) this.onDisconnected?.();
       this.#retry();
     };
     socket.onerror = () => socket.close();
