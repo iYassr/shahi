@@ -241,6 +241,21 @@ const postJson = <T>(path: string, body: unknown) =>
     body: JSON.stringify(body),
   });
 
+/**
+ * The last transcript body and its ETag, per polled path.
+ *
+ * The reader polls `sessionLog` every 2.5s forever, and an unchanged
+ * conversation is most polls. The server already tags each response and
+ * answers a matching `if-none-match` with a bodiless 304 — but only a browser
+ * revalidates on its own. This native client never sent the tag, so it
+ * re-downloaded the whole transcript every poll; over the relay, which carries
+ * no HTTP cache and no compression, that was the full uncompressed JSON in a
+ * sealed frame every 2.5s. Sending the tag turns an unchanged poll into a 304
+ * (measured on the web client: 224 bytes against 15KB gzipped). The kept body
+ * is returned unchanged on a 304, so the reader's `merge` sees no difference.
+ */
+const transcriptCache = new Map<string, { etag: string; value: SessionLog }>();
+
 export const api = {
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
 
@@ -364,8 +379,28 @@ export const api = {
       `/api/panes/${encodeURIComponent(paneId)}`,
     ),
 
-  sessionLog: (paneId: string, limit = 60) =>
-    request<SessionLog>(`/api/panes/${encodeURIComponent(paneId)}/session?limit=${limit}`),
+  sessionLog: async (paneId: string, limit = 60): Promise<SessionLog> => {
+    if (!configured()) throw new Error("No server address configured");
+    const path = `/api/panes/${encodeURIComponent(paneId)}/session?limit=${limit}`;
+    const cached = transcriptCache.get(path);
+    // Offer the tag when there is one; the server answers 304 if the
+    // conversation has not moved. `if-none-match` is forwarded intact over the
+    // relay (it is not among the headers a link may not set), so the same
+    // revalidation works on both transports.
+    const res = await dispatch(path, { headers: baseHeaders(cached ? { "if-none-match": cached.etag } : {}) });
+    if (res.status === 401) throw new UnauthorizedError();
+    if (res.status === 426) throw await incompatible(res);
+    if (res.status === 304 && cached) return cached.value;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `${path} failed with ${res.status}`);
+    }
+    const value = (await res.json()) as SessionLog;
+    const etag = res.headers.get("etag");
+    if (etag) transcriptCache.set(path, { etag, value });
+    else transcriptCache.delete(path);
+    return value;
+  },
 
   transcript: (paneId: string) =>
     request<{ lines: TranscriptLine[]; total: number }>(

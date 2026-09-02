@@ -356,6 +356,13 @@ export class RelayLink {
       // The heartbeat's only job is the timestamp the watchdog reads.
       if (msg.data.type === "ping") return;
       this.#subscribers.forEach((s) => s.onMessage(msg.data as SocketMessage));
+    } else if (msg.t === "bye") {
+      // The box is ending this link because our session is gone — revoked in
+      // Settings, or expired. The relay could only close us with 1000, which
+      // we would retry; this sealed signal is how that reaches the app,
+      // exactly as a `/ws` close with 4001 does on a direct connection. Sign
+      // out and stop, rather than reconnecting into a refusal forever.
+      this.#refuse("This phone is no longer paired with that box.");
     }
   }
 

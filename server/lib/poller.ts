@@ -21,7 +21,7 @@
  */
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { HerdrClient } from "./herdr-client";
+import { HerdrError, type HerdrClient } from "./herdr-client";
 import type { PaneFrame } from "@shahi/shared";
 import { parseActivity } from "./activity";
 
@@ -44,6 +44,9 @@ const ACTIVE_INTERVAL_MS = 2_000;
 const BACKGROUND_INTERVAL_MS = 15_000;
 /** Panes to read per tick, to avoid bursting the socket. */
 const BATCH_SIZE = 6;
+/** First wait after herdr is found unreachable; doubles up to the cap. */
+const BACKOFF_BASE_MS = 1_000;
+const BACKOFF_MAX_MS = 30_000;
 
 interface PaneRecord {
   hash: string;
@@ -60,6 +63,9 @@ export class Poller extends EventEmitter<PollerEvents> {
   #timer: ReturnType<typeof setInterval> | undefined;
   #ticking = false;
   #clientCount = 0;
+  /** Consecutive ticks that found herdr unreachable, and when to try again. */
+  #connectFailures = 0;
+  #retryAt = 0;
 
   constructor(
     private readonly client: HerdrClient,
@@ -135,6 +141,13 @@ export class Poller extends EventEmitter<PollerEvents> {
     // connection; skip rather than queue.
     if (this.#ticking) return;
 
+    // herdr is unreachable and we are waiting out the backoff. Without this a
+    // tick fired every 200ms and opened BATCH_SIZE connections that each
+    // failed — measured at ~30 failed connects and 30 error log lines a second
+    // against a herdr that was simply down. The wait grows on each consecutive
+    // failure and is cleared the instant a read succeeds again.
+    if (Date.now() < this.#retryAt) return;
+
     // Nobody is looking. Watched panes still poll — a client may hold a pane
     // open through a brief reconnect — and so do blocked ones, so that a prompt
     // is already parsed by the time a push notification is tapped. Everything
@@ -166,22 +179,44 @@ export class Poller extends EventEmitter<PollerEvents> {
         })
         .slice(0, BATCH_SIZE);
 
-      await Promise.all(
-        due.map((paneId) =>
-          this.#read(paneId).catch((err) => {
-            // A pane closing between the snapshot and the read is routine, and
-            // the only case that should drop the watch. A transient read
-            // failure (a hiccup on herdr's socket) must NOT forget the pane —
-            // doing so tore down a watcher the WebSocket still believed was
-            // live, and it never recovered. Keep it; the next tick retries.
-            if (isMissingPane(err)) {
-              this.forget(paneId);
-            } else {
-              this.emit("error", err instanceof Error ? err : new Error(String(err)));
-            }
-          }),
-        ),
-      );
+      const results = await Promise.allSettled(due.map((paneId) => this.#read(paneId)));
+
+      let anyOk = false;
+      let unreachable: Error | null = null;
+      results.forEach((result, i) => {
+        if (result.status === "fulfilled") {
+          anyOk = true;
+          return;
+        }
+        const err = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+        // A pane closing between the snapshot and the read is routine, and the
+        // only case that should drop the watch. A transient read failure must
+        // NOT forget the pane — doing so tore down a watcher the WebSocket
+        // still believed was live, and it never recovered. Keep it; the next
+        // tick retries.
+        if (isMissingPane(err)) {
+          this.forget(due[i]!);
+        } else if (err instanceof HerdrError) {
+          // herdr answered, with a per-pane refusal: not a connection problem,
+          // so it is surfaced as before and does not trip the backoff.
+          this.emit("error", err);
+        } else {
+          // A connection or timeout error: herdr itself is unreachable. The
+          // whole batch fails the same way, so it is reported once, not once
+          // per pane.
+          unreachable = err;
+        }
+      });
+
+      if (anyOk) {
+        this.#connectFailures = 0;
+        this.#retryAt = 0;
+      } else if (unreachable) {
+        this.#connectFailures += 1;
+        const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** (this.#connectFailures - 1));
+        this.#retryAt = Date.now() + delay;
+        this.emit("error", new Error(`herdr unreachable (${(unreachable as Error).message}); backing off ${delay}ms`));
+      }
     } finally {
       this.#ticking = false;
     }

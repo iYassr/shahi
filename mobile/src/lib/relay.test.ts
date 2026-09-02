@@ -322,6 +322,31 @@ describe("requests", () => {
   });
 });
 
+describe("the transcript poll over the relay", () => {
+  // The reader polls this every 2.5s, and over the relay there is no HTTP
+  // cache to revalidate for it — so it re-shipped the whole transcript every
+  // poll until the phone sent the ETag itself. It rides in the sealed request
+  // headers, and a 304 comes back with no body for the reader to parse.
+  test("offers its ETag on the next poll, and a 304 needs no body", async () => {
+    const { box } = await openLink();
+    const first = api.sessionLog("relay:etag", 60);
+    await tick();
+    const [req1] = box.read() as RelayRequest[];
+    expect(req1!.path).toBe("/api/panes/relay%3Aetag/session?limit=60");
+    expect(req1!.headers["if-none-match"]).toBeUndefined();
+    box.answer(req1!, 200, { paneId: "relay:etag", messages: [] }, { "content-type": "application/json", etag: 'W/"t1"' });
+    await expect(first).resolves.toMatchObject({ paneId: "relay:etag" });
+
+    const second = api.sessionLog("relay:etag", 60);
+    await tick();
+    const [req2] = box.read() as RelayRequest[];
+    expect(req2!.headers["if-none-match"]).toBe('W/"t1"');
+    box.answer(req2!, 304, null, { etag: 'W/"t1"' });
+    // The same conversation is returned, from the kept body, not the wire.
+    await expect(second).resolves.toMatchObject({ paneId: "relay:etag", messages: [] });
+  });
+});
+
 describe("the relay's close codes", () => {
   test("4404 is the box being offline, said so, and retried", async () => {
     const target = deviceTarget(identity);
@@ -375,6 +400,26 @@ describe("the relay's close codes", () => {
     socket.connect();
     FakeSocket.opened.at(-1)!.drop(4401);
     expect(expired).toHaveBeenCalledTimes(1);
+  });
+
+  // Revocation cannot travel as a close code: the relay flattens a box-driven
+  // close to 1000, which the phone would retry — reconnecting into a refused
+  // hello forever, cut off but never signed out. The box sends a sealed `bye`
+  // instead, and it is the mirror of a `/ws` 4001: sign out, and do not retry.
+  test("a sealed bye from the box signs out and stops retrying", async () => {
+    connection.relay = deviceTarget(identity);
+    const expired = jest.fn();
+    const socket = new SessionSocket(jest.fn(), jest.fn(), expired);
+    socket.connect();
+    const ws = FakeSocket.opened.at(-1)!;
+    ws.accept();
+    const box = new FakeBox(ws, secret);
+    box.handshake();
+    box.push({ t: "bye" });
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(ws.readyState).toBe(3);
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(1); // nothing reconnected
   });
 
   // The mirror image: the phone cannot open the box's frames. A box that

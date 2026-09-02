@@ -150,8 +150,8 @@ const MAX_REQUEST_BODY_BYTES = 40 * 1024 * 1024;
 /** A phone mints these as ~20 characters; anything long is not a message id. */
 const MAX_CLIENT_MESSAGE_ID = 128;
 
-/** Closing a socket because its session is no longer valid. */
-const CLOSE_SESSION_EXPIRED = 4001;
+/** Closing a socket because its session is no longer valid (revoked or expired). */
+export const CLOSE_SESSION_EXPIRED = 4001;
 
 const json = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
