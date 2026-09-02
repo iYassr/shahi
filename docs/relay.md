@@ -238,9 +238,82 @@ not ping is therefore dropped every five minutes: the sidecar's relay client
 must ping. Phones may ping too and get the same `pong`, but nothing depends
 on it — an idle phone is closed after the ten-minute limit regardless.
 
-**What it logs.** Nothing about frames. wrangler's own request log shows
-each socket opening and the close codes; that is the whole observability
-story, on purpose.
+**What it logs.** Nothing about frames. Beyond wrangler's own request log,
+the relay records one **Workers Analytics Engine** data point per lifecycle
+event, and nothing else — it stays as blind here as on the wire.
+
+## Observability
+
+The relay is the one place with a fleet view, because it is your
+infrastructure and already sees the metadata (who is connected, how a
+connection ended, from where) while it reads not one byte of a session.
+`relay/src/telemetry.ts` writes one Analytics Engine point per event to the
+`shahi_relay` dataset. Recorded: the event kind, the `serverId` (a key hash,
+not an identity), a close reason or refusal cause, a close code or live phone
+count, and the Cloudflare colo. Never recorded: a request path, a frame body,
+or a raw client IP (Cloudflare's own analytics and WAF hold per-IP data
+transiently; the dataset does not).
+
+**The schema** (Analytics Engine columns): `blob1` kind
+(`box_auth`, `box_gone`, `phone_open`, `phone_close`, `refused`, `connect`,
+`rate_limited`), `blob2` serverId, `blob3` detail, `blob4` colo, `double1`
+value (a close code, a phone count, or 1), `index1` kind.
+
+**Queries.** Run these in the dashboard (Workers → the Worker →
+your dataset → the SQL query box), or via the SQL API. Each sums
+`_sample_interval` so counts stay right under Analytics Engine's sampling.
+
+```sql
+-- boxes seen online in the last 10 minutes (a live-ish estimate)
+SELECT COUNT(DISTINCT blob2) FROM shahi_relay
+WHERE blob1 = 'box_auth' AND timestamp > NOW() - INTERVAL '10' MINUTE;
+
+-- what is happening, by event, in the last hour
+SELECT blob1 AS kind, SUM(_sample_interval) AS n FROM shahi_relay
+WHERE timestamp > NOW() - INTERVAL '1' HOUR GROUP BY kind ORDER BY n DESC;
+
+-- why links are closing (watch for a spike in one code)
+SELECT double1 AS close_code, SUM(_sample_interval) AS n FROM shahi_relay
+WHERE blob1 = 'phone_close' AND timestamp > NOW() - INTERVAL '1' HOUR
+GROUP BY close_code ORDER BY n DESC;
+
+-- refusals, by cause (box offline vs too many phones vs rate)
+SELECT blob3 AS reason, SUM(_sample_interval) AS n FROM shahi_relay
+WHERE blob1 = 'refused' AND timestamp > NOW() - INTERVAL '1' HOUR
+GROUP BY reason ORDER BY n DESC;
+
+-- a box that reconnects too often is failing; find it
+SELECT blob2 AS serverId, SUM(_sample_interval) AS reconnects FROM shahi_relay
+WHERE blob1 = 'box_auth' AND timestamp > NOW() - INTERVAL '1' HOUR
+GROUP BY serverId HAVING reconnects > 20 ORDER BY reconnects DESC;
+```
+
+**A live `/stats` endpoint** (optional). `GET /stats` returns those figures as
+JSON, gated so it discloses nothing by default. Set three secrets to turn it
+on and let it read:
+
+```sh
+cd relay
+bunx wrangler secret put STATS_TOKEN        # a bearer the caller must send
+bunx wrangler secret put CF_ACCOUNT_ID      # your account id
+bunx wrangler secret put CF_ANALYTICS_TOKEN # an API token with Account Analytics Read
+```
+
+Then `curl -H "Authorization: Bearer <STATS_TOKEN>" https://<relay>/stats`.
+With no `STATS_TOKEN` the endpoint is a 404; with it but no query credentials
+it is a 503 that says so.
+
+**Alerts** (no code, set once in the Cloudflare dashboard, Notifications):
+
+- **Workers error rate** on `shahi-relay` — the unavailability alarm.
+- A **spend / usage** notification — so an abuse spike on the paid plan
+  arrives as a message, not a surprise bill.
+- Optionally a **WAF rate-limit rule** on `/v1/*` keyed on client IP, a second
+  wall beyond the in-Worker limiter.
+
+What the relay still cannot tell you is a box that is *up but wedged* (herdr
+down behind a healthy socket); that needs a status byte in the box's
+ping, which lives in the sidecar, not here — a deliberate next step.
 
 **Close codes, as sent by this relay:**
 

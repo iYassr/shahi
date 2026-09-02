@@ -26,6 +26,17 @@ new_sqlite_classes = ["RelayBox"]
 # /v1/* — see docs/relay.md, "Operating the relay". The binding is read
 # optionally in src/index.ts, so `wrangler dev` and the test harness (which set
 # no binding) are unaffected.
+# Telemetry: one Analytics Engine data point per relay event (box auth, phone
+# open/close with its code, refusals). Free to write, stores no row to prune,
+# and the relay stays blind — only the serverId (a hash) and coarse signals are
+# recorded, never a path or a byte. Queried with SQL for active-session counts,
+# close-code and refusal breakdowns; see docs/relay.md "Observability". The GET
+# /stats endpoint is off unless STATS_TOKEN (and, to read, CF_ACCOUNT_ID +
+# CF_ANALYTICS_TOKEN with Account Analytics Read) are set as secrets.
+[[analytics_engine_datasets]]
+binding = "TELEMETRY"
+dataset = "shahi_relay"
+
 [[unsafe.bindings]]
 name = "CONNECT_LIMIT"
 type = "ratelimit"

@@ -31,6 +31,12 @@ describe("front door", () => {
     expect((await fetch(`${HTTP}/v1/phone/${"+".repeat(43)}`)).status).toBe(400);
   });
 
+  test("/stats is hidden (404) unless a stats token is configured", async () => {
+    // The endpoint exists but discloses nothing without STATS_TOKEN set.
+    expect((await fetch(`${HTTP}/stats`)).status).toBe(404);
+    expect((await fetch(`${HTTP}/stats`, { headers: { authorization: "Bearer anything" } })).status).toBe(404);
+  });
+
   test("anything but the two endpoints is a 404", async () => {
     expect((await fetch(`${HTTP}/`)).status).toBe(404);
     expect((await fetch(`${HTTP}/v1/box`)).status).toBe(404);
