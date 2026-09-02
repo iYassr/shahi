@@ -42,6 +42,9 @@ const PROJECTS_DIR = join(homedir(), ".claude", "projects");
 /** Tool output can be enormous; the phone gets a readable slice. */
 const MAX_RESULT_CHARS = 2_000;
 
+/** The `system` subtypes whose top-level `content` is real, user-visible text. */
+const SYSTEM_NOTE_SUBTYPES = new Set(["away_summary", "model_refusal_fallback"]);
+
 /** `Block` is the local name for the contract's `LogBlock`. */
 export type Block = LogBlock;
 export type { LogMessage, SessionLog };
@@ -337,6 +340,27 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
   for (const [index, row] of rows.entries()) {
     const type = row.type;
+
+    // A few `system` records carry real content the person saw, in a top-level
+    // string rather than in `message.content`, so they were dropped — shown now
+    // as system notes. The set is an explicit allowlist, not "any system
+    // record", because most system subtypes (turn_duration, compact_boundary,
+    // informational "Backgrounding…") are ephemeral chrome; the rule is still
+    // "unknown shapes are dropped, never guessed". The two that count:
+    //   - away_summary: Claude Code recounting what it did while you were gone.
+    //   - model_refusal_fallback: a safeguard flagged a message and switched
+    //     models mid-session; its `content` explains the switch the user saw.
+    // (measured across the real transcripts: 82 and 2.)
+    if (type === "system" && SYSTEM_NOTE_SUBTYPES.has(row.subtype as string) && typeof row.content === "string" && (row.content as string).trim()) {
+      messages.push({
+        id: (row.uuid as string) ?? `row-${index}`,
+        role: "system",
+        at: Date.parse((row.timestamp as string) ?? "") || 0,
+        blocks: [{ kind: "text", text: (row.content as string).trim() }],
+      });
+      continue;
+    }
+
     if (type !== "user" && type !== "assistant") continue;
 
     // Slash-command expansions are written for the model, not the reader.
@@ -344,6 +368,9 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     const blocks: LogBlock[] = [];
     let imageIndex = 0;
+    // A row that produced only chrome (a model switch) reads as a system note,
+    // not as the agent speaking.
+    let onlyNotes = true;
     const content = (row.message as { content?: unknown } | undefined)?.content;
 
     if (typeof content === "string") {
@@ -354,11 +381,11 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
         switch (block.type) {
           case "text": {
             const rendered = renderUserText(block.text ?? "");
-            if (rendered) blocks.push(rendered);
+            if (rendered) { blocks.push(rendered); onlyNotes = false; }
             break;
           }
           case "thinking":
-            if (block.thinking?.trim()) blocks.push({ kind: "thinking", text: block.thinking });
+            if (block.thinking?.trim()) { blocks.push({ kind: "thinking", text: block.thinking }); onlyNotes = false; }
             break;
           case "tool_use":
             blocks.push({
@@ -369,6 +396,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
               ...questionsOf(block.name ?? "", block.input ?? {}),
               result: (block.id && results.get(block.id)) || null,
             });
+            onlyNotes = false;
             break;
           case "image":
             // The bytes stay on disk. A transcript here holds 3.3MB of base64
@@ -379,7 +407,15 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
               mediaType: block.source?.media_type ?? "image",
               ref: `${row.uuid as string}:${imageIndex++}`,
             });
+            onlyNotes = false;
             break;
+          // A model switch (Fable to Opus, say): chrome worth a quiet note,
+          // not silence. Real occurrences (13) carry only `to.model`.
+          case "fallback": {
+            const to = (block as { to?: { model?: string } }).to?.model;
+            blocks.push({ kind: "text", text: to ? `Switched to ${to}` : "Model switched" });
+            break;
+          }
           // tool_result was already folded into its tool_use above.
           default:
             break;
@@ -391,7 +427,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     messages.push({
       id: (row.uuid as string) ?? `row-${index}`,
-      role: type === "assistant" ? "agent" : "you",
+      role: onlyNotes && type === "assistant" ? "system" : type === "assistant" ? "agent" : "you",
       at: Date.parse((row.timestamp as string) ?? "") || 0,
       blocks,
     });

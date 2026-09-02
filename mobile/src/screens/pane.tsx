@@ -805,9 +805,12 @@ const Message = memo(function Message({
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
   const mine = message.role === "you";
+  const system = message.role === "system";
   return (
-    <View style={[styles.msg, mine && styles.msgYou]}>
-      <Text style={[styles.who, mine && styles.whoYou]}>{mine ? "YOU" : "AGENT"}</Text>
+    <View style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
+      <Text style={[styles.who, mine && styles.whoYou, system && styles.whoSystem]}>
+        {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
+      </Text>
       {message.blocks.map((block, i) => (
         <Block key={i} block={block} paneId={paneId} onOpenFile={onOpenFile} />
       ))}
@@ -1298,6 +1301,10 @@ const styles = StyleSheet.create({
   },
   who: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, letterSpacing: 1.2, marginBottom: 6 },
   whoYou: { color: theme.peach },
+  // A system note (a model switch, an away-summary): quiet chrome, not the
+  // agent speaking — dim, set off by a rule, never the loud "you" fill.
+  msgSystem: { borderLeftWidth: 2, borderLeftColor: theme.lineBright, paddingHorizontal: 12, opacity: 0.85 },
+  whoSystem: { color: theme.dim },
 
   thinkingLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1, paddingVertical: 6 },
   thinking: { color: theme.dim, fontSize: 13, lineHeight: 19, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: theme.lineBright },
