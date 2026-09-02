@@ -12,7 +12,7 @@
  * is a managed checkout that a reinstall replaces — secrets kept there would
  * be lost on the first update.
  */
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import webpush from "web-push";
@@ -132,10 +132,16 @@ export function renderEnvFile(env: Map<string, string>): string {
 }
 
 /**
- * Always mode 0600, not only on creation: a file someone made by hand to set
- * PORT is 0644, and this is about to put the session key in it.
+ * Writes the `.env` atomically: a fresh 0600 temp file, then a rename over the
+ * path. Rewriting in place kept the same inode, so a co-user who had opened a
+ * hand-made 0644 file read-only (the docs' `echo RELAY_URL= >> .env` pre-seed
+ * step) kept reading the session key and VAPID secret written into it after the
+ * chmod (pentest L8). A rename gives that descriptor the old, empty inode and
+ * the secrets land on a new one that was never anything but 0600.
  */
 export function writeEnvFile(path: string, env: Map<string, string>): void {
-  writeFileSync(path, renderEnvFile(env), { mode: 0o600 });
-  chmodSync(path, 0o600);
+  const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+  writeFileSync(tmp, renderEnvFile(env), { mode: 0o600 });
+  chmodSync(tmp, 0o600); // umask can clear bits at create time; pin them before the rename
+  renameSync(tmp, path);
 }

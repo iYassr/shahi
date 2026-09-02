@@ -291,6 +291,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   // One throttle for the whole server: login attempts are serialised and slowed
   // after failures so the small passcode space cannot be brute-forced.
   const loginThrottle = new LoginThrottle();
+  // A separate throttle for pairing claims: sharing one with login let a flood
+  // of bad claims pin the owner's own login backoff at 30s (pentest L1). Each
+  // is a serialized global backoff over its own low-entropy-or-not secret.
+  const claimThrottle = new LoginThrottle();
 
   const broadcast = (message: unknown) => {
     const payload = JSON.stringify(message);
@@ -341,6 +345,16 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   const server = Bun.serve<SocketData, never>({
     hostname: config.host,
     port: config.port,
+
+    // Never Bun's dev error page: it embeds the source, the absolute
+    // `/Users/<name>/…` path and a stack trace, and one trigger (a malformed
+    // Host header failing `new URL(req.url)`) is reachable before auth
+    // (pentest M1). `development: false` is pinned here rather than left to
+    // NODE_ENV, which the service does not set, and the handler is the floor.
+    development: false,
+    error() {
+      return new Response("internal error", { status: 500 });
+    },
 
     // See MAX_REQUEST_BODY_BYTES: the upload limit is only real if the body
     // is refused before it is buffered.
@@ -527,7 +541,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         if (pathname === "/api/pair/claim" && req.method === "POST") {
           const body = (await req.json().catch(() => ({}))) as { secret?: unknown; deviceName?: unknown };
           const secret = typeof body.secret === "string" ? body.secret : "";
-          const ok = await loginThrottle.attempt(async () => pairing.claim(secret));
+          const ok = await claimThrottle.attempt(async () => pairing.claim(secret));
           if (!ok) {
             return json(
               { error: "That pairing code is not valid. A code works once and for ten minutes — print a new one." },
@@ -587,7 +601,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // than left streaming the dashboard until it happens to drop.
         const deviceMatch = pathname.match(/^\/api\/devices\/([^/]+)$/);
         if (deviceMatch && req.method === "DELETE") {
-          const id = decodeURIComponent(deviceMatch[1]!);
+          // A malformed %-escape throws out of decodeURIComponent; a 404 is the
+          // honest answer, not a 500 with a stack trace (pentest M1).
+          let id: string;
+          try {
+            id = decodeURIComponent(deviceMatch[1]!);
+          } catch {
+            return json({ error: "no such device" }, { status: 404 });
+          }
           if (!devices.revoke(id)) return json({ error: "no such device" }, { status: 404 });
           for (const ws of clients) {
             if (ws.data.deviceId === id) ws.close(4001, "device revoked");

@@ -11,6 +11,16 @@ export { RelayBox };
 
 export interface Env {
   RELAY: DurableObjectNamespace<RelayBox>;
+  /**
+   * A per-IP connection limiter at the edge, before a Durable Object is even
+   * addressed. Optional: absent in `wrangler dev` and the test harness, set in
+   * production `wrangler.toml`. It is the cheap first wall against the
+   * unauthenticated amplification in pentest C1 — a stranger opening sockets
+   * to arbitrary serverIds to burn the account's daily quota and take every
+   * box offline. The real ceiling is a paid plan plus a WAF rule; this bounds
+   * the per-source rate so one host cannot do it alone.
+   */
+  CONNECT_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
 
 /** base64url(sha256(pub)) is 32 bytes unpadded: exactly 43 characters of the base64url alphabet. */
@@ -26,6 +36,17 @@ export default {
     }
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("expected a WebSocket upgrade", { status: 426 });
+    }
+    // Rate the source before addressing an object: an over-quota IP is refused
+    // here, so a flood of connects to random serverIds cannot each spin up a
+    // Durable Object and burn the account's daily quota (pentest C1). Only real
+    // edge traffic is rated: `cf-connecting-ip` is set by Cloudflare and cannot
+    // be spoofed there, while `wrangler dev` and the test harness present a
+    // loopback address, which is not a threat surface and is skipped.
+    const ip = request.headers.get("cf-connecting-ip");
+    if (env.CONNECT_LIMIT && ip && ip !== "127.0.0.1" && ip !== "::1") {
+      const { success } = await env.CONNECT_LIMIT.limit({ key: ip });
+      if (!success) return new Response("too many connections; slow down", { status: 429 });
     }
     // One object per serverId, addressed by the id itself: a box and its
     // phones land on the same instance wherever in the world they connect.

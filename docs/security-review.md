@@ -287,10 +287,14 @@ direction, counter nonces, and replay rejection. Checked against the code:
   implicit authentication: without it, a man in the middle derives different
   keys and every `open` fails — the test "MITM refused" covers it. Ephemeral
   keys give forward secrecy for the pairing secret.
-- **Low-order points.** `@noble/curves` 2.3.0 rejects the all-zero shared
-  secret (`abstract/montgomery.js` throws "invalid private or public key"),
-  so a peer sending a small-order point gets an exception rather than a
-  predictable key. Even without that, the pairing secret in `ikm` means a
+- **Low-order points.** noble does not fully validate X25519 public keys
+  (non-canonical encodings are accepted), so point validation is *not* the
+  guarantee here (corrected by the 2026-09-02 pentest, I2). What protects the
+  handshake is that the pairing secret is mixed into the HKDF `ikm`: a peer
+  who forces a predictable or low-order shared secret still cannot derive the
+  keys without the secret, and every `open` on the far side fails. The
+  all-zero point does throw, which the box now catches and turns into a link
+  close rather than a crash (R1); but the security does not rest on that. Even without that, the pairing secret in `ikm` means a
   predictable ECDH output does not yield the keys.
 - **Nonces cannot repeat on one key.** Separate c2s/s2c keys, an 8-byte
   counter per direction that advances on every `seal` (`e2e.ts:119`), and a
@@ -457,8 +461,10 @@ with no throttle beyond the relay's per-phone quota. Codes are 256 bits and
 live ten minutes; the claim itself is behind the global login throttle.
 
 **R7 (Low, accepted, documented).** A Durable Object is instantiated per
-attacker-chosen `serverId`. A refusal writes and schedules nothing, so the
-object is evicted with no trace: Worker invocations, never storage. Noted in
+attacker-chosen `serverId`. A *phone* refusal writes and schedules nothing;
+a *box* connection schedules a ten-second auth-timeout alarm, one storage
+write per attempt (corrected by the 2026-09-02 pentest, L3), bounded by the
+per-IP front-door limiter and evicted at the timeout. Noted in
 `docs/relay.md`.
 
 **R8 (Info).** Box replacement is proven by key, and phone links are

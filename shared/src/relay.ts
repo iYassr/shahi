@@ -61,6 +61,14 @@ export const RELAY_LIMITS = {
   phoneBurstBytes: 1024 * 1024,
   phoneIdleMs: 10 * 60_000,
   boxAuthTimeoutMs: 10_000,
+  /**
+   * How long a phone socket may hold a link before it sends its first frame.
+   * A phone hellos the instant it opens, so a socket that has said nothing is
+   * either broken or squatting — and eight silent squatters would hold every
+   * slot for the full idle window, locking the owner's real phone out with
+   * 4429 (2026-09-02 pentest, H2). Mirrors the box's own auth timeout.
+   */
+  phoneHelloMs: 15_000,
 } as const;
 
 /* --------------------------------------------- phone ↔ box, before sealing */

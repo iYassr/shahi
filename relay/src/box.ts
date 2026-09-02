@@ -57,6 +57,10 @@ interface PhoneState {
   link: number;
   /** False once the relay has closed the link itself, so the box is told exactly once. */
   open: boolean;
+  /** When the socket was accepted: the clock for the first-frame deadline. */
+  since: number;
+  /** True once the phone has sent a frame — its hello. A socket that never does is squatting. */
+  spoke: boolean;
   /** Last frame in either direction: a phone that only listens is not idle. */
   seen: number;
   /** Token bucket: bytes banked, and when they were last topped up. */
@@ -121,6 +125,8 @@ export class RelayBox extends DurableObject<unknown> {
       role: "phone",
       link,
       open: true,
+      since: now,
+      spoke: false,
       seen: now,
       tokens: RELAY_LIMITS.phoneBurstBytes,
       refilled: now,
@@ -168,7 +174,9 @@ export class RelayBox extends DurableObject<unknown> {
     // No history and no store-and-forward: a frame with nobody to give it to
     // is dropped and the phone told why, so it reconnects and asks again.
     if (!box) return this.closePhone(ws, state, RELAY_CLOSE.boxOffline, "box offline");
-    ws.serializeAttachment({ ...state, seen: now, tokens: banked - size, refilled: now });
+    // First frame: the phone has spoken, so it holds its slot for the full
+    // idle window rather than the short hello deadline.
+    ws.serializeAttachment({ ...state, spoke: true, seen: now, tokens: banked - size, refilled: now });
     const framed = new Uint8Array(LINK_PREFIX_BYTES + size);
     new DataView(framed.buffer).setUint32(0, state.link);
     framed.set(new Uint8Array(message), LINK_PREFIX_BYTES);
@@ -300,7 +308,7 @@ export class RelayBox extends DurableObject<unknown> {
       const deadline = this.deadline(ws);
       if (deadline === null || deadline > now) continue;
       const state = ws.deserializeAttachment() as Attachment;
-      if (state.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, "idle");
+      if (state.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, state.spoke ? "idle" : "no hello");
       else if (state.ready) this.closeBox(ws, state, CLOSE_NORMAL, "silent");
       else this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "auth timeout");
     }
@@ -311,7 +319,12 @@ export class RelayBox extends DurableObject<unknown> {
   private deadline(ws: WebSocket): number | null {
     const state = ws.deserializeAttachment() as Attachment | null;
     if (!state) return null;
-    if (state.role === "phone") return state.open ? state.seen + RELAY_LIMITS.phoneIdleMs : null;
+    if (state.role === "phone") {
+      if (!state.open) return null;
+      // A phone that has not spoken yet is on a short leash; once it has, the
+      // idle window (measured from its last frame) takes over.
+      return state.spoke ? state.seen + RELAY_LIMITS.phoneIdleMs : state.since + RELAY_LIMITS.phoneHelloMs;
+    }
     if (!state.ready) return state.since + RELAY_LIMITS.boxAuthTimeoutMs;
     const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
     return Math.max(state.since, state.heard, pong) + BOX_SILENCE_MS;

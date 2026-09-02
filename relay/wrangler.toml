@@ -18,3 +18,16 @@ class_name = "RelayBox"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayBox"]
+
+# A per-IP connection limiter at the front door (pentest C1): an over-quota
+# source is refused before a Durable Object is addressed, so a stranger cannot
+# open sockets to arbitrary serverIds and burn the account's daily quota. This
+# bounds one source; the account-wide ceiling is a paid plan plus a WAF rule on
+# /v1/* — see docs/relay.md, "Operating the relay". The binding is read
+# optionally in src/index.ts, so `wrangler dev` and the test harness (which set
+# no binding) are unaffected.
+[[unsafe.bindings]]
+name = "CONNECT_LIMIT"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 30, period = 10 }
