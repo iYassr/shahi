@@ -170,6 +170,53 @@ describe("normalise", () => {
     expect(normalise([user("<system-reminder>only this</system-reminder>")])).toEqual([]);
   });
 
+  // An away-summary is real content Claude Code writes onto a `system` record
+  // with a top-level string, not in message.content — dropped for months.
+  test("renders an away_summary system record as a system message", () => {
+    const messages = normalise([
+      { type: "system", subtype: "away_summary", uuid: "s1", timestamp: "2026-07-25T02:00:00.000Z", content: "While you were away I fixed the build and pushed." },
+    ]);
+    expect(messages).toEqual([
+      { id: "s1", role: "system", at: Date.parse("2026-07-25T02:00:00.000Z"), blocks: [{ kind: "text", text: "While you were away I fixed the build and pushed." }] },
+    ]);
+  });
+
+  test("ignores an away_summary with no content, and unlisted system subtypes", () => {
+    expect(normalise([
+      { type: "system", subtype: "away_summary", content: "   " },
+      { type: "system", subtype: "hook_result", content: "not a summary" },
+      { type: "system", subtype: "informational", content: "Backgrounding after the current tool finishes…" },
+    ])).toEqual([]);
+  });
+
+  // A safeguard flagging a message and switching models is a system record with
+  // a top-level content string, the same shape as an away-summary; it explains
+  // a switch the person saw, so it renders as a system note.
+  test("renders a model_refusal_fallback as a system message", () => {
+    const [message] = normalise([
+      { type: "system", subtype: "model_refusal_fallback", uuid: "r1", timestamp: "2026-07-25T02:00:00.000Z", content: "Safeguards flagged this. Switched to Opus 4.8." },
+    ]);
+    expect(message).toMatchObject({ id: "r1", role: "system", blocks: [{ kind: "text", text: "Safeguards flagged this. Switched to Opus 4.8." }] });
+  });
+
+  // A model switch is a `fallback` block on an assistant row. Alone, the row is
+  // chrome and reads as a quiet system note, not as the agent speaking (13 real
+  // occurrences, all dropped before).
+  test("renders a lone model switch as a system note", () => {
+    const [message] = normalise([
+      assistant([{ type: "fallback", to: { model: "claude-opus-5" } }]),
+    ]);
+    expect(message).toMatchObject({ role: "system", blocks: [{ kind: "text", text: "Switched to claude-opus-5" }] });
+  });
+
+  test("a model switch alongside real text stays the agent's", () => {
+    const [message] = normalise([
+      assistant([{ type: "fallback", to: { model: "claude-opus-5" } }, { type: "text", text: "Continuing." }]),
+    ]);
+    expect(message!.role).toBe("agent");
+    expect(message!.blocks).toEqual([{ kind: "text", text: "Switched to claude-opus-5" }, { kind: "text", text: "Continuing." }]);
+  });
+
   test("ignores record types that are not conversation", () => {
     expect(
       normalise([

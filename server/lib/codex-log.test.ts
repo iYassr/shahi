@@ -139,6 +139,112 @@ describe("normaliseCodex", () => {
     expect(message!.blocks[0]).toMatchObject({ kind: "tool", name: "shell", result: null });
   });
 
+  // Reasoning is plaintext only in the agent_reasoning event_msg; the matching
+  // response_item is encrypted. It was dropped for months (335 events across
+  // the real rollouts) — the phone showed an agent that thought silently.
+  test("renders agent_reasoning as a thinking block", () => {
+    const [message] = normaliseCodex([
+      { type: "event_msg", timestamp: "2026-07-25T04:51:48.000Z", payload: { type: "agent_reasoning", text: "**Planning the edit**\n\nI should read the file first." } },
+    ]);
+    expect(message).toMatchObject({ role: "agent", blocks: [{ kind: "thinking", text: "**Planning the edit**\n\nI should read the file first." }] });
+  });
+
+  // codex streams reasoning as a run of small events; the reader joins a run
+  // into one block so the view is not a stack of one-line headers.
+  test("coalesces a run of reasoning events into one thinking block", () => {
+    const messages = normaliseCodex([
+      { type: "event_msg", payload: { type: "agent_reasoning", text: "First thought." } },
+      { type: "event_msg", payload: { type: "agent_reasoning_raw_content", text: "Second thought." } },
+      { type: "event_msg", payload: { type: "agent_reasoning", text: "Third thought." } },
+    ]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.blocks).toEqual([{ kind: "thinking", text: "First thought.\n\nSecond thought.\n\nThird thought." }]);
+  });
+
+  // A message between two reasoning events breaks the run, so the second one
+  // starts a fresh block rather than joining across the reply.
+  test("does not coalesce reasoning across an agent message", () => {
+    const messages = normaliseCodex([
+      { type: "event_msg", payload: { type: "agent_reasoning", text: "Before." } },
+      { type: "event_msg", payload: { type: "agent_message", message: "Here is the answer." } },
+      { type: "event_msg", payload: { type: "agent_reasoning", text: "After." } },
+    ]);
+    expect(messages.map((m) => m.blocks[0])).toEqual([
+      { kind: "thinking", text: "Before." },
+      { kind: "text", text: "Here is the answer." },
+      { kind: "thinking", text: "After." },
+    ]);
+  });
+
+  test("skips a reasoning event with no text", () => {
+    expect(normaliseCodex([{ type: "event_msg", payload: { type: "agent_reasoning", text: "   " } }])).toEqual([]);
+  });
+
+  // MCP activity lives only in event_msg (334 mcp_tool_call_end dropped before).
+  // The _end event names the server and tool and carries the {Ok}/{Err} result.
+  test("renders an mcp_tool_call_end as a tool block with its result", () => {
+    const [message] = normaliseCodex([
+      {
+        type: "event_msg",
+        payload: {
+          type: "mcp_tool_call_end",
+          invocation: { server: "playwright", tool: "browser_navigate", arguments: { url: "https://example.com" } },
+          result: { Ok: { content: [{ type: "text", text: "navigated to https://example.com" }] } },
+        },
+      },
+    ]);
+    expect(message).toMatchObject({
+      role: "agent",
+      blocks: [{ kind: "tool", name: "playwright.browser_navigate", summary: "https://example.com", result: { text: "navigated to https://example.com", isError: false } }],
+    });
+  });
+
+  test("marks an mcp Err result as an error", () => {
+    const [message] = normaliseCodex([
+      { type: "event_msg", payload: { type: "mcp_tool_call_end", invocation: { server: "db", tool: "query", arguments: { title: "count rows" } }, result: { Err: "connection refused" } } },
+    ]);
+    expect(message!.blocks[0]).toMatchObject({ kind: "tool", name: "db.query", summary: "count rows", result: { text: "connection refused", isError: true } });
+  });
+
+  // apply_patch via codex's native tool is recorded only as patch_apply_end,
+  // never as a response_item — dropping it hid every native file edit.
+  test("renders patch_apply_end as an apply_patch tool block", () => {
+    const [message] = normaliseCodex([
+      {
+        type: "event_msg",
+        payload: {
+          type: "patch_apply_end",
+          call_id: "exec-1",
+          stdout: "Success. Updated the following files:\nM src/app.ts\n",
+          stderr: "",
+          success: true,
+          changes: { "/repo/src/app.ts": { type: "update", content: "…" }, "/repo/old.ts": { type: "delete", content: "…" } },
+        },
+      },
+    ]);
+    expect(message).toMatchObject({
+      role: "agent",
+      blocks: [{ kind: "tool", name: "apply_patch", summary: "update app.ts, delete old.ts", result: { isError: false } }],
+    });
+    expect((message!.blocks[0] as { result: { text: string } }).result.text).toContain("Success");
+  });
+
+  test("marks a failed patch_apply_end as an error", () => {
+    const [message] = normaliseCodex([
+      { type: "event_msg", payload: { type: "patch_apply_end", success: false, stderr: "patch does not apply", changes: {} } },
+    ]);
+    expect(message!.blocks[0]).toMatchObject({ kind: "tool", name: "apply_patch", result: { text: "patch does not apply", isError: true } });
+  });
+
+  // web_search_end also lives only in event_msg; its query is the summary and
+  // there is no result payload to render.
+  test("renders web_search_end as a web_search tool block", () => {
+    const [message] = normaliseCodex([
+      { type: "event_msg", payload: { type: "web_search_end", query: "cloudflare durable object limits" } },
+    ]);
+    expect(message).toMatchObject({ role: "agent", blocks: [{ kind: "tool", name: "web_search", summary: "cloudflare durable object limits", result: null }] });
+  });
+
   test("skips lifecycle events that carry no message", () => {
     expect(normaliseCodex([event("task_started"), event("token_count")])).toEqual([]);
   });
