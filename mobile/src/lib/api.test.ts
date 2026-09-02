@@ -282,6 +282,7 @@ describe("semantic requests", () => {
     await api.readFile("/home/y/x.ts").catch(() => undefined);
     for (const call of fetchMock.mock.calls) {
       expect(call[1].headers["x-shahi-api"]).toBe(String(SHAHI_API_VERSION));
+      expect(call[1].cache).toBe("no-store");
     }
   });
 
@@ -308,6 +309,28 @@ describe("semantic requests", () => {
     expect(opened).toHaveLength(1);
     expect(opened[0]![0]).toBe("ws://localhost:7272/ws");
     expect(opened[0]![2]).toEqual({ headers: { "x-shahi-api": String(SHAHI_API_VERSION), cookie: "shahi_session=x" } });
+  });
+
+  test("a dropped socket asks the session layer to check HTTP for a hidden 426", () => {
+    let opened: { onclose?: (event: { code?: number }) => void; close(): void } | undefined;
+    const realWebSocket = globalThis.WebSocket;
+    class FakeWebSocket {
+      readyState = 0;
+      onclose?: (event: { code?: number }) => void;
+      constructor() { opened = this; }
+      close() {}
+    }
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+    const disconnected = jest.fn();
+    try {
+      const socket = new SessionSocket(jest.fn(), jest.fn(), jest.fn(), disconnected);
+      socket.connect();
+      opened!.onclose?.({ code: 1006 });
+      socket.close();
+    } finally {
+      (globalThis as { WebSocket: unknown }).WebSocket = realWebSocket;
+    }
+    expect(disconnected).toHaveBeenCalledTimes(1);
   });
 
   // 426 is the server declining this version, not a generic failure: the
