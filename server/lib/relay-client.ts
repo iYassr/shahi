@@ -34,7 +34,7 @@ import {
 } from "@shahi/shared";
 import { PUBLIC_KEY_LEN, ephemeral, open, seal, serverSession, type Session } from "@shahi/shared/e2e";
 import { SESSION_COOKIE, type Auth } from "./auth";
-import type { ShahiServer, SocketData, StreamClient } from "./http";
+import { CLOSE_SESSION_EXPIRED, type ShahiServer, type SocketData, type StreamClient } from "./http";
 import type { ServerIdentity } from "./identity";
 import type { Devices, Pairing } from "./pairing";
 
@@ -62,6 +62,19 @@ export interface RelayClientOptions {
    * five minutes. Sixty seconds leaves four misses before that.
    */
   pingMs?: number;
+  /**
+   * How long the relay may be silent before the box gives up on the socket and
+   * redials. The pings above are only half of liveness: they prove the box can
+   * *write*, not that the relay still answers. A half-open or wedged socket —
+   * the relay gone, a middlebox holding the connection open — leaves the box
+   * believing it is reachable while no phone can get to it and it never
+   * redials. So the box watches the read side too, exactly as the phone does
+   * (`mobile/src/lib/relay.ts`): if nothing arrives (not even the runtime's
+   * `pong`) within this window, drop the socket and reconnect.
+   */
+  silenceMs?: number;
+  /** How often to check the read-side silence above. */
+  watchdogMs?: number;
 }
 
 /** The response headers a `res` carries; everything else stays on the box. */
@@ -102,7 +115,12 @@ export class RelayClient {
   #backoffMs: number;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   #pingTimer: ReturnType<typeof setInterval> | undefined;
+  #watchdogTimer: ReturnType<typeof setInterval> | undefined;
+  /** When the last frame of any kind — a pong, a phone frame — arrived. */
+  #lastFrameAt = 0;
   readonly #pingMs: number;
+  readonly #silenceMs: number;
+  readonly #watchdogMs: number;
   readonly #links = new Map<number, Link>();
 
   constructor(deps: RelayClientDeps, options: RelayClientOptions = {}) {
@@ -112,6 +130,10 @@ export class RelayClient {
     this.#maxBackoffMs = options.maxBackoffMs ?? 30_000;
     this.#authTimeoutMs = options.authTimeoutMs ?? RELAY_LIMITS.boxAuthTimeoutMs;
     this.#pingMs = options.pingMs ?? 60_000;
+    // Two and a half missed pings, and well inside the relay's own five-minute
+    // drop, so the box redials before the relay would have given up on it.
+    this.#silenceMs = options.silenceMs ?? 150_000;
+    this.#watchdogMs = options.watchdogMs ?? 30_000;
     this.#backoffMs = this.#minBackoffMs;
   }
 
@@ -132,6 +154,8 @@ export class RelayClient {
     this.#reconnectTimer = undefined;
     clearInterval(this.#pingTimer);
     this.#pingTimer = undefined;
+    clearInterval(this.#watchdogTimer);
+    this.#watchdogTimer = undefined;
     this.#releaseAll();
     this.#ws?.close(1001, "shutting down");
     this.#ws = null;
@@ -157,6 +181,10 @@ export class RelayClient {
 
     ws.onmessage = (event) => {
       if (this.#ws !== ws) return;
+      // Any frame is proof the relay is still answering: a phone frame, or the
+      // runtime's own `pong` (text that is not JSON, dropped below but counted
+      // here). This is the read-side liveness the watchdog reads.
+      this.#lastFrameAt = Date.now();
       if (typeof event.data === "string") this.#control(ws, event.data);
       else this.#frame(new Uint8Array(event.data as ArrayBuffer));
     };
@@ -168,6 +196,8 @@ export class RelayClient {
       if (this.#ws !== ws) return;
       clearInterval(this.#pingTimer);
       this.#pingTimer = undefined;
+      clearInterval(this.#watchdogTimer);
+      this.#watchdogTimer = undefined;
       this.#ws = null;
       const wasReady = this.#ready;
       this.#ready = false;
@@ -199,11 +229,22 @@ export class RelayClient {
       case "ready":
         this.#ready = true;
         this.#backoffMs = this.#minBackoffMs;
+        this.#lastFrameAt = Date.now();
         this.#log(`relay: connected to ${this.#deps.url} as ${this.#deps.identity.serverId}`);
         clearInterval(this.#pingTimer);
         this.#pingTimer = setInterval(() => {
           if (this.#ws === ws && ws.readyState === WebSocket.OPEN) ws.send("ping");
         }, this.#pingMs);
+        clearInterval(this.#watchdogTimer);
+        this.#watchdogTimer = setInterval(() => {
+          if (this.#ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+          if (Date.now() - this.#lastFrameAt < this.#silenceMs) return;
+          // The relay accepted the socket but has stopped answering — not even
+          // a pong. Drop it; onclose redials on the usual backoff. A box that
+          // sat on a dead socket was unreachable and silently stayed that way.
+          this.#log(`relay: silent for ${this.#silenceMs}ms, redialling`);
+          ws.close(4000, "relay silent");
+        }, this.#watchdogMs);
         return;
       case "open":
         // A relay reusing a number still held here is a relay that lost track;
@@ -435,7 +476,16 @@ class Link implements StreamClient {
     this.#sendSealed(`{"t":"ws","data":${payload}}`);
   }
 
-  close(_code: number, reason: string): void {
+  close(code: number, reason: string): void {
+    // The HTTP layer closes a `StreamClient` with 4001 when its session no
+    // longer verifies — the device was revoked in Settings, or the session
+    // expired. On a `/ws` socket that code reaches the phone and signs it out;
+    // through the relay it cannot, because a box-driven close is flattened to
+    // 1000 (a routine drop the phone retries). Without this a revoked phone
+    // reconnected on a backoff loop forever — cut off, but never told to sign
+    // out. So the terminal reason travels as a sealed `bye` the phone acts on,
+    // sent before the link ends.
+    if (code === CLOSE_SESSION_EXPIRED) this.#sendSealed(`{"t":"bye"}`);
     this.end(reason);
   }
 

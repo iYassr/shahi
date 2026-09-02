@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { HerdrClient } from "./herdr-client";
+import { HerdrError, type HerdrClient } from "./herdr-client";
 import { Poller } from "./poller";
 import type { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
@@ -169,5 +169,90 @@ describe("answering sooner than the mirror knows", () => {
 
     expect(calls.filter((call) => call === "pane.read")).toHaveLength(4);
     expect(calls.filter((call) => call === "pane.get")).toHaveLength(1);
+  });
+});
+
+/**
+ * When herdr's socket is unreachable, every read fails on connect. The tick
+ * fires every 200ms and opens a batch of connections each time, so a herdr
+ * that is simply down was measured spinning at ~30 failed connects and ~30
+ * error log lines a second. The poller backs off instead, and recovers the
+ * instant herdr answers again.
+ */
+describe("backing off a herdr that is down", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /** A store with one watched-eligible pane, so a tick has something due every time. */
+  function storeWithOnePane(): SessionStore {
+    const pane = { pane_id: "w1:p1", agent_status: "idle" };
+    return { state: { panes: [pane] }, pane: () => pane } as unknown as SessionStore;
+  }
+
+  test("does not hammer herdr while it is unreachable, and resumes when it answers", async () => {
+    let calls = 0;
+    let mode: "down" | "up" = "down";
+    const client = {
+      rpc: async () => {
+        calls++;
+        // A plain connect error, the way `HerdrClient` surfaces a dead socket
+        // — not a `HerdrError`, which is herdr answering with a per-pane code.
+        if (mode === "down") throw new Error("no herdr socket at /x — is the server running?");
+        return { read: { text: "$ " } };
+      },
+    } as unknown as HerdrClient;
+
+    const poller = new Poller(client, storeWithOnePane(), new TranscriptStore(":memory:"));
+    poller.on("error", () => undefined);
+    poller.setClientCount(1);
+    poller.watch("w1:p1"); // 400ms interval: without backoff it would retry ~every tick
+    poller.start();
+    try {
+      await sleep(300);
+      const afterFirstFailure = calls;
+      expect(afterFirstFailure).toBeGreaterThanOrEqual(1);
+
+      // The window where an un-backed-off poller would have polled again (at
+      // ~400ms and ~800ms). Backed off, it makes no further attempts.
+      await sleep(600);
+      expect(calls).toBe(afterFirstFailure);
+
+      // herdr comes back: the next retry succeeds, clears the backoff, and the
+      // fast cadence resumes rather than staying stuck.
+      mode = "up";
+      await sleep(900); // past the ~1s backoff, a retry tick lands and succeeds
+      const afterRecovery = calls;
+      expect(afterRecovery).toBeGreaterThan(afterFirstFailure);
+      await sleep(500);
+      expect(calls).toBeGreaterThan(afterRecovery);
+    } finally {
+      poller.stop();
+    }
+  });
+
+  test("a per-pane herdr error is surfaced, not treated as the socket being down", async () => {
+    // A HerdrError means herdr answered — so it must not trip the backoff, or
+    // one bad pane would stall polling for every other.
+    const errors: string[] = [];
+    const client = {
+      rpc: async () => {
+        throw new HerdrError("pane_busy", "the pane is busy", "pane.read");
+      },
+    } as unknown as HerdrClient;
+    const poller = new Poller(client, storeWithOnePane(), new TranscriptStore(":memory:"));
+    poller.on("error", (e) => errors.push(e.message));
+    poller.setClientCount(1);
+    poller.watch("w1:p1");
+    poller.start();
+    try {
+      await sleep(300);
+      const early = errors.length;
+      expect(early).toBeGreaterThanOrEqual(1);
+      expect(errors.every((m) => !m.includes("backing off"))).toBe(true);
+      // Still polling on the fast cadence — the error did not engage a backoff.
+      await sleep(600);
+      expect(errors.length).toBeGreaterThan(early);
+    } finally {
+      poller.stop();
+    }
   });
 });

@@ -123,8 +123,25 @@ export interface RelayStream {
   data: SocketMessage | { type: "watch"; paneId: string } | { type: "unwatch" };
 }
 
+/**
+ * The box ending this link because the phone's session is gone — revoked in
+ * Settings, or expired. The mirror of a `/ws` socket closing with 4001: the
+ * phone signs out rather than reconnecting. It cannot learn that from the
+ * relay's close code (the relay flattens a box-driven close to 1000,
+ * indistinguishable from a routine drop, and forwards this sealed frame like
+ * any other without reading it), so the box says so in a sealed frame before
+ * ending the link. Additive and unversioned on purpose: a box that predates
+ * it simply never sends it, and a phone that predates it ignores an unknown
+ * `t` and reconnects as before — bumping `RELAY_PROTOCOL` would instead sever
+ * every existing relay phone from an upgraded box, for a message the relay
+ * never sees.
+ */
+export interface RelayBye {
+  t: "bye";
+}
+
 export type PhoneToBox = RelayRequest | RelayStream;
-export type BoxToPhone = RelayResponse | RelayStream;
+export type BoxToPhone = RelayResponse | RelayStream | RelayBye;
 
 /** What `POST /api/pair/claim` answers over a pairing link (and over HTTP, additively). */
 export interface ClaimResult {

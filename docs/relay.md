@@ -58,7 +58,11 @@ The relay cannot ping a box (a Durable Object cannot originate one), so the
 box sends the text frame `ping` every sixty seconds once ready; the relay
 answers `pong` without waking and closes a box silent for five minutes, whose
 phones then see `4404`. Both words are plain text, not JSON, and are the only
-text frames on a box socket that are not control messages.
+text frames on a box socket that are not control messages. The pings only
+prove the box can write, so the box also watches its read side, as the phone
+does: if no frame — not even a `pong` — arrives within 150 seconds, it drops
+the socket and redials, rather than sitting on a wedged connection no phone can
+reach.
 
 Data is binary frames. On the phone side a frame is the payload as is. On the
 box side every data frame is `link(4 bytes, big-endian) ‖ payload`, so one box
@@ -111,6 +115,13 @@ a replayed frame refused.
   `ping`) — and `{"t":"ws","data":{"type":"watch","paneId":"…"}}` /
   `{"type":"unwatch"}` from the phone. One link is therefore both the request
   channel and the dashboard stream; the app opens exactly one.
+- `{"t":"bye"}` from the box: the phone's session is gone — revoked in Settings,
+  or expired — so it signs out and stops reconnecting, the mirror of a `/ws`
+  close with `4001`. It has to be a sealed message rather than a close code
+  because the relay flattens a box-driven close to `1000`, which the phone would
+  retry; without it a revoked phone reconnected on a backoff loop forever, cut
+  off but never told to sign out. Additive and unversioned: an older box never
+  sends it, an older phone ignores an unknown `t`.
 
 **Authentication inside the box.** A link that opened with `auth.kind ==
 "device"` *is* that device: the box mints a session token bound to the device
