@@ -208,6 +208,80 @@ function rolloutFromIndex(cwd: string): string | null {
 /** The non-null half of a `tool` block's `result`, extracted for reuse. */
 type ToolResult = NonNullable<(Block & { kind: "tool" })["result"]>;
 
+/**
+ * An MCP tool call, from an `mcp_tool_call_end` event. Its `invocation` names
+ * the server and tool and carries the arguments; its `result` is the MCP
+ * `{ Ok }` / `{ Err }` union, whose text (or error) becomes the tool result.
+ */
+function mcpToolBlock(payload: Record<string, unknown>): Block & { kind: "tool" } {
+  const inv = (payload.invocation as Record<string, unknown> | undefined) ?? {};
+  const server = typeof inv.server === "string" ? inv.server : "";
+  const tool = typeof inv.tool === "string" ? inv.tool : "tool";
+  const args = inv.arguments as Record<string, unknown> | undefined;
+  const title = args && typeof args.title === "string" ? args.title : undefined;
+  return {
+    kind: "tool",
+    name: server ? `${server}.${tool}` : tool,
+    summary: title ?? firstArg(args) ?? tool,
+    result: mcpResult(payload.result),
+  };
+}
+
+/**
+ * A file edit from codex's native `apply_patch`. Unlike a shell `apply_patch`
+ * heredoc — which arrives as a `custom_tool_call` and is rendered like any exec
+ * — the native tool is recorded *only* as a `patch_apply_end` event with no
+ * matching `response_item`, so without this branch a codex session that edits
+ * with the built-in patcher reads as if it never touched a file. The `changes`
+ * map names each path and how it changed; the summary is that list, the result
+ * is the tool's own stdout.
+ */
+function patchApplyBlock(payload: Record<string, unknown>): Block & { kind: "tool" } {
+  const changes = (payload.changes as Record<string, { type?: string }> | undefined) ?? {};
+  const parts = Object.entries(changes).map(([path, c]) => `${c?.type ?? "edit"} ${basename(path)}`);
+  const stdout = typeof payload.stdout === "string" ? payload.stdout.trim() : "";
+  const stderr = typeof payload.stderr === "string" ? payload.stderr.trim() : "";
+  const text = [stdout, stderr].filter(Boolean).join("\n");
+  return {
+    kind: "tool",
+    name: "apply_patch",
+    summary: parts.join(", ") || "apply_patch",
+    result: text ? { text: cap(text), isError: payload.success === false, truncated: text.length > MAX_RESULT_CHARS, images: [] } : null,
+  };
+}
+
+/** The text (or error) inside an MCP `{ Ok: { content } }` / `{ Err }` result. */
+function mcpResult(result: unknown): ToolResult | null {
+  if (!result || typeof result !== "object") return null;
+  const r = result as { Ok?: { content?: unknown }; Err?: unknown };
+  if (r.Err !== undefined) {
+    const text = typeof r.Err === "string" ? r.Err : JSON.stringify(r.Err);
+    return { text: cap(text), isError: true, truncated: text.length > MAX_RESULT_CHARS, images: [] };
+  }
+  const content = r.Ok?.content;
+  const text = Array.isArray(content)
+    ? content
+        .map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : ""))
+        .join("")
+    : typeof content === "string"
+      ? content
+      : "";
+  return { text: cap(text), isError: false, truncated: text.length > MAX_RESULT_CHARS, images: [] };
+}
+
+/** A short label from an MCP call's arguments when it named no title. */
+function firstArg(args: Record<string, unknown> | undefined): string | undefined {
+  if (!args) return undefined;
+  for (const v of Object.values(args)) {
+    if (typeof v === "string" && v.trim()) return v.trim().split("\n")[0]!.slice(0, 160);
+  }
+  return undefined;
+}
+
+function cap(text: string): string {
+  return text.length > MAX_RESULT_CHARS ? text.slice(0, MAX_RESULT_CHARS) : text;
+}
+
 /** codex tool output is either a plain string or a list of `input_text` parts. */
 function codexResult(payload: Record<string, unknown>): ToolResult {
   const raw = payload.output;
@@ -298,16 +372,64 @@ export function normaliseCodex(rows: Record<string, unknown>[]): LogMessage[] {
     const at = Date.parse((row.timestamp as string) ?? "") || 0;
 
     if (row.type === "event_msg") {
-      const payload = row.payload as { type?: string; message?: string } | undefined;
-      const text = payload?.message?.trim();
+      const payload = row.payload as Record<string, unknown> | undefined;
+      const kind = payload?.type as string | undefined;
+
+      // Reasoning. codex streams it as `agent_reasoning` events carrying
+      // plaintext — the matching `response_item` of type `reasoning` is
+      // encrypted, so this is the only place its text exists (measured: 335
+      // agent_reasoning events across the real rollouts, all dropped before).
+      // A run of them is coalesced into one thinking block, the way Claude
+      // writes a single block per turn, so the reader is not a stack of
+      // one-line headers.
+      if (kind === "agent_reasoning" || kind === "agent_reasoning_raw_content") {
+        const text = (payload?.text as string | undefined)?.trim();
+        if (!text) continue;
+        const last = messages[messages.length - 1];
+        const lastBlock = last?.blocks[0];
+        if (last && last.role === "agent" && last.blocks.length === 1 && lastBlock?.kind === "thinking") {
+          last.blocks[0] = { kind: "thinking", text: `${lastBlock.text}
+
+${text}` };
+        } else {
+          messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [{ kind: "thinking", text }] });
+        }
+        continue;
+      }
+
+      // MCP and web-search tool activity lives only in `event_msg`, never as a
+      // `response_item`, so it is read here (measured: 334 mcp_tool_call_end
+      // events dropped before). The `_end` event carries the full invocation
+      // and result; the `_begin` is redundant and skipped.
+      if (kind === "mcp_tool_call_end") {
+        messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [mcpToolBlock(payload!)] });
+        continue;
+      }
+      // A native apply_patch edit — recorded only here, never as a
+      // response_item (a shell `apply_patch` heredoc is the custom_tool_call
+      // path instead). The `_end` carries the changes and stdout; `_begin` is
+      // skipped as redundant, the same way mcp `_begin` is.
+      if (kind === "patch_apply_end") {
+        messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [patchApplyBlock(payload!)] });
+        continue;
+      }
+      if (kind === "web_search_end") {
+        const q = (payload?.query as string | undefined)?.trim();
+        messages.push({
+          id: `codex-${index}`,
+          role: "agent",
+          at,
+          blocks: [{ kind: "tool", name: "web_search", summary: q ?? "web search", result: null }],
+        });
+        continue;
+      }
+
+      // Conversation text. task_started, task_complete, token_count and
+      // anything codex adds later are lifecycle, not conversation.
+      const text = (payload?.message as string | undefined)?.trim();
       if (!text) continue;
-
-      const role =
-        payload?.type === "user_message" ? "you" : payload?.type === "agent_message" ? "agent" : null;
-      // task_started, task_complete, token_count and anything codex adds later
-      // are lifecycle, not conversation.
+      const role = kind === "user_message" ? "you" : kind === "agent_message" ? "agent" : null;
       if (!role) continue;
-
       messages.push({ id: `codex-${index}`, role, at, blocks: [{ kind: "text", text }] });
       continue;
     }

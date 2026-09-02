@@ -229,6 +229,19 @@ describe("sending a reply", () => {
     await view.findByText(/Done: shipped\./);
     expect(view.queryByText("Working")).toBeNull();
   });
+
+  // A model switch and an away-summary reach the reader as role "system": they
+  // render under a muted SYSTEM label, neither YOU nor AGENT.
+  test("a system message renders under its own SYSTEM label", async () => {
+    mocked.sessionLog.mockResolvedValue(
+      log([said("a1", "agent", "On it."), said("s1", "system", "Switched to claude-opus-5"), said("a2", "agent", "Continuing.")]),
+    );
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Switched to claude-opus-5/);
+    expect(view.getAllByText("SYSTEM")).toHaveLength(1);
+    expect(view.getAllByText("AGENT")).toHaveLength(2);
+    expect(view.queryByText("YOU")).toBeNull();
+  });
 });
 
 describe("loading", () => {
