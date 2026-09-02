@@ -118,13 +118,19 @@ Bun.serve({
 
     if (pathname === "/__stub/meta" && req.method === "POST") {
       // Advertise a contract range and refuse everything outside it — a
-      // server behind the app (`{ min: 0, max: 0 }`) or ahead of it
-      // (`{ min: 2, max: 2 }`), until the next scenario resets it.
+      // server behind the app (`{ min: 0, max: 0 }`) or far ahead of it
+      // (`{ min: 99, max: 99 }`), until the next scenario resets it.
       const body = (await req.json()) as { api?: { min: number; max: number } };
       if (!body.api || !Number.isInteger(body.api.min) || !Number.isInteger(body.api.max)) {
         return json({ error: "api: { min, max } required" }, { status: 400 });
       }
       apiRange = { min: body.api.min, max: body.api.max };
+      // A real sidecar cannot change its compiled API range in place: an
+      // upgrade restarts it and therefore drops every existing socket. Mirror
+      // that here so the signed-in upgrade scenario exercises reconnection,
+      // rather than leaving an impossible old socket streaming new-version
+      // data forever.
+      for (const socket of sockets) socket.close();
       return json({ ok: true, api: apiRange });
     }
 

@@ -392,7 +392,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void refresh();
     // A 4001 close is the server saying this session no longer verifies —
     // expired or revoked — which is a sign-out, not a connection to retry.
-    const socket = new SessionSocket(onMessage, setLink, signOut);
+    // A failed WebSocket handshake does not expose its HTTP status in React
+    // Native. Re-read over HTTP when the link drops so a server restart onto a
+    // newer contract becomes an actionable 426 instead of a stale LIVE list.
+    const socket = new SessionSocket(onMessage, setLink, signOut, () => void refresh());
     socket.connect();
     socketRef.current = socket;
     return () => {

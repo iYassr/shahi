@@ -69,6 +69,7 @@ describe("PickSpace", () => {
   test("lists every space and hands back the one tapped", async () => {
     const onPick = jest.fn();
     render(<PickSpace session={session} onPick={onPick} />);
+    expect(screen.getByText("Choose a space")).toBeTruthy();
     expect(screen.getByText("project")).toBeTruthy();
     expect(screen.getByText("notes")).toBeTruthy();
     await userEvent.press(screen.getByTestId("pick-w2"));
