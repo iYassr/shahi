@@ -12,8 +12,9 @@ in one calm mobile inbox — the real conversation, not a shrunken terminal.
 ![Platform](https://img.shields.io/badge/sidecar-macOS%20%7C%20Linux-lightgrey)
 ![herdr](https://img.shields.io/badge/herdr-%E2%89%A5%200.8.2-blue)
 
-[Quick start](#quick-start) · [How it connects](#how-it-connects) ·
-[Security](#private-by-design) · [Docs](#documentation)
+[getshahi.dev](https://getshahi.dev) · [Quick start](#quick-start) ·
+[How it connects](#how-it-connects) · [Security](#private-by-design) ·
+[Docs](#documentation)
 
 </div>
 
@@ -194,7 +195,17 @@ rules; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change.
 | [Operating the sidecar](docs/operations.md) | Service, logs, manual setup |
 | [Notifications](docs/notifications.md) | Push, and what is not proven yet |
 | [Building on a Mac](docs/on-a-mac.md) | iOS builds and device testing |
-| [Privacy policy](docs/privacy-policy.md) | Draft, for the App Store |
+| [Privacy policy](docs/privacy-policy.md) | Published at [getshahi.dev/privacy](https://getshahi.dev/privacy) |
+
+## Support
+
+Questions, bug reports and anything the docs do not answer:
+**[support@getshahi.dev](mailto:support@getshahi.dev)**, or open an
+[issue](https://github.com/iYassr/shahi/issues). Privacy questions go to
+[privacy@getshahi.dev](mailto:privacy@getshahi.dev).
+
+If you are reporting something security-sensitive, mail it rather than opening
+an issue, and say so in the subject.
 
 ---
 
