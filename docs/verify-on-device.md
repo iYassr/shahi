@@ -1,8 +1,10 @@
 # Ten minutes on the actual phone
 
-The native app has no automated tests at all. `web/` has 164 browser tests and
-`mobile/` has none, so **this list is the entire test suite for the product**
-until that changes. It is not a nice-to-have.
+The native app has Jest component/unit coverage and Maestro simulator flows,
+but neither can prove behavior that exists only in a signed binary on physical
+hardware. This checklist is the release-candidate complement to automation: it
+covers APNs, camera behavior, haptics, Keychain upgrades, radio changes,
+assistive technology, and actual touch ergonomics.
 
 It is ordered by what is most likely to be broken, not by what a user does
 first. Anything a type checker cannot confirm — a route, a native module, a

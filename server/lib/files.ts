@@ -85,13 +85,6 @@ export function contentTypeFor(path: string, { download = false } = {}): string 
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }
 
-/** True for the types the reader can show inline rather than hand to the OS. */
-export function isViewable(path: string): boolean {
-  const type = contentTypeFor(path);
-  return type.startsWith("text/") || type.startsWith("image/") || type === "application/pdf" ||
-    type.startsWith("application/json");
-}
-
 /**
  * The roots a file may be read from. See the note at the top.
  *
