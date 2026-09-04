@@ -14,6 +14,7 @@
  */
 import { memo, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { api } from "@/lib/api";
@@ -27,6 +28,8 @@ export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
   const { server, link } = useSession();
+  // Above the `!session` return below: hooks cannot be called conditionally.
+  const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId);
   if (!session) return <Centered>Connecting…</Centered>;
 
   return (
@@ -46,6 +49,7 @@ export function Spaces({ session }: { session: Session | null }) {
         }}
       />
       <FlatList
+        {...spaceScroll}
         contentInsetAdjustmentBehavior="automatic"
         data={session.workspaces}
         keyExtractor={(w) => w.workspaceId}
@@ -106,6 +110,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
     () => session.tabs.filter((t) => t.workspaceId === space.workspaceId),
     [session, space],
   );
+  const tabScroll = useRememberedScroll(`space:${space.workspaceId}`, () => tabs, (t) => t.tabId);
 
   return (
     <View style={styles.screen}>
@@ -121,6 +126,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
       />
 
       <FlatList
+        {...tabScroll}
         contentInsetAdjustmentBehavior="automatic"
         data={tabs}
         keyExtractor={(t) => t.tabId}

@@ -6,8 +6,9 @@
  * because that decision was the point of the product, not an artefact of the
  * platform. What differs is only how it is drawn.
  */
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useRememberedScroll } from "@/lib/scroll-memory";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, Stack } from "expo-router";
@@ -23,6 +24,11 @@ import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
 
 export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
+  // Where this list was, restored when you come back from a conversation.
+  // Declared here, above the early returns below, because a hook cannot be
+  // called conditionally; the rows are read lazily when the restore happens.
+  const rows = useRef<DashboardPane[]>([]);
+  const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
   const { session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, signOut } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
@@ -120,6 +126,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
     ...shown.filter((p) => p.status !== "blocked" && pins.has(p.paneId)),
     ...shown.filter((p) => p.status !== "blocked" && !pins.has(p.paneId)),
   ];
+  rows.current = rest;
 
   return (
     <View style={styles.screen}>
@@ -140,6 +147,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         }}
       />
       <FlatList
+        {...agentScroll}
         contentInsetAdjustmentBehavior="automatic"
         // The native tab bar floats over the list; without room past it the
         // last agent sits under the bar and a tap on it lands on the tab
