@@ -1,0 +1,18 @@
+# The landing page at getshahi.dev. A static-assets Worker: no server code, no
+# build step, just the files in ./public served from Cloudflare's edge.
+#
+# It lives beside the relay's config rather than in a separate repository so a
+# claim on the page and the code that backs it move together — the page states
+# what the product does, and this repo is where that becomes untrue first.
+name = "shahi-site"
+compatibility_date = "2026-08-01"
+
+# Anonymous usage metrics off, for the same reason as the relay's.
+send_metrics = false
+
+[assets]
+directory = "./public"
+
+[[routes]]
+pattern = "getshahi.dev"
+custom_domain = true

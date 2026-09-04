@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shahi — see and answer your terminal agents from your phone</title>
+<meta name="description" content="Claude Code, Codex and every agent running in herdr, in one calm mobile inbox. Read the real conversation, answer permission prompts, from anywhere.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Shahi">
+<meta property="og:description" content="See and answer your terminal agents from your phone.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getshahi.dev">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* The app's own palette, so the site looks like the product rather than
+     like a page about it. These are the tokens in mobile/src/lib/theme.ts. */
+  :root {
+    --void: #0E0D0B;
+    --surface: #14120F;
+    --raised: #1C1915;
+    --line: #2A2620;
+    --line-bright: #3A352C;
+    --fg: #F0EFEA;
+    --dim: #A6A099;
+    --peach: #E8A33D;
+    --mint: #5FB88A;
+    --rose: #D96A4A;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  /* Committed to one visual world: a terminal is dark. Painted explicitly so
+     the page holds on any host ground. */
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--void);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  header { padding: 72px 0 8px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark { width: 26px; height: 26px; flex: none; }
+  .wordmark {
+    font-family: var(--mono); font-weight: 600; font-size: 26px;
+    letter-spacing: -0.02em; color: var(--fg);
+  }
+  h1 {
+    font-family: var(--sans); font-weight: 600;
+    font-size: clamp(30px, 5.5vw, 44px); line-height: 1.15;
+    letter-spacing: -0.02em; text-wrap: balance;
+    margin: 28px 0 16px;
+  }
+  .lede { color: var(--dim); font-size: 18px; margin: 0 0 36px; max-width: 60ch; }
+
+  /* The product's own vocabulary: the agents inbox, with the real status
+     glyphs and the real colours they carry in the app. */
+  .inbox {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; overflow: hidden; margin: 0 0 12px;
+  }
+  .inbox-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    color: var(--dim); text-transform: uppercase;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-bright); }
+  .row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 13px 16px; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .glyph { font-family: var(--mono); font-size: 15px; width: 14px; flex: none; }
+  .g-blocked { color: var(--peach); }
+  .g-working { color: var(--mint); }
+  .g-done    { color: var(--dim); }
+  .g-idle    { color: var(--line-bright); }
+  .row-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+  .row-name { display: block; font-family: var(--mono); font-size: 13px; color: var(--fg); }
+  .row-sub {
+    display: block; font-size: 13px; color: var(--dim); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-state {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--dim); flex: none;
+  }
+  .row-state.on { color: var(--peach); }
+  .caption { font-size: 13px; color: var(--dim); margin: 0 0 52px; }
+
+  h2 {
+    font-family: var(--mono); font-weight: 500;
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--peach); margin: 56px 0 18px;
+  }
+  h3 { font-size: 17px; font-weight: 600; margin: 30px 0 6px; letter-spacing: -0.01em; }
+  p { margin: 0 0 18px; max-width: 66ch; }
+  a { color: var(--fg); text-decoration-color: var(--line-bright); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--peach); }
+  strong { font-weight: 600; }
+
+  pre {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px; margin: 0 0 14px;
+    overflow-x: auto; font-family: var(--mono); font-size: 13.5px; line-height: 1.8;
+  }
+  pre .p { color: var(--peach); }
+  pre .c { color: var(--dim); }
+  code { font-family: var(--mono); font-size: 0.9em; color: var(--fg); }
+
+  /* A grid, not wrapping flex: five tracks keep node-arrow-node-arrow-node in
+     order at any width, and collapse to one column on a phone. Flex-wrap put
+     the second arrow and the phone on their own line, out of sequence. */
+  .flow {
+    font-family: var(--mono); color: var(--dim);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 22px 18px; margin: 0 0 14px;
+    display: grid; grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: start; gap: 10px; text-align: center;
+  }
+  .flow .node b { display: block; color: var(--fg); font-weight: 500; font-size: 12.5px; }
+  .flow .node span { display: block; font-size: 11px; line-height: 1.5; margin-top: 4px; }
+  .flow .arrow { padding-top: 1px; }
+  .flow .arrow b { display: block; color: var(--peach); font-weight: 400; font-size: 13px; }
+  .flow .arrow span { display: block; font-size: 10px; line-height: 1.4; margin-top: 4px; max-width: 92px; }
+  @media (max-width: 640px) {
+    .flow { grid-template-columns: 1fr; gap: 14px; }
+    .flow .arrow b { transform: rotate(90deg); display: inline-block; }
+    .flow .arrow span { max-width: none; }
+  }
+
+  .note {
+    border-left: 2px solid var(--line-bright);
+    padding: 2px 0 2px 18px; margin: 0 0 18px;
+    color: var(--dim); font-size: 15px;
+  }
+  footer {
+    margin: 72px 0 56px; padding-top: 26px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--dim);
+  }
+  footer p { margin: 0 0 6px; }
+  @media (max-width: 520px) {
+    header { padding-top: 48px; }
+    .row-state { display: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .g-working { animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .45 } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="7" y="1.5" width="10" height="21" rx="3" stroke="#E8A33D" stroke-width="1.6"/>
+        <rect x="10" y="12" width="4" height="6" rx="1" fill="#E8A33D"/>
+      </svg>
+      <span class="wordmark">shahi</span>
+    </div>
+
+    <h1>See and answer your terminal agents from your phone.</h1>
+    <p class="lede">
+      Claude Code, Codex, and every agent running in
+      <a href="https://herdr.dev">herdr</a> — in one calm inbox. The real
+      conversation, not a shrunken terminal.
+    </p>
+  </header>
+
+  <div class="inbox" role="img" aria-label="The Agents screen: one agent blocked and waiting for an answer, one working, one finished, one idle.">
+    <div class="inbox-head"><span class="dot"></span> Agents</div>
+    <div class="row">
+      <span class="glyph g-blocked">●</span>
+      <span class="row-main">
+        <span class="row-name">claude · api-gateway</span>
+        <span class="row-sub">Do you want to make this edit to router.ts?</span>
+      </span>
+      <span class="row-state on">Needs you</span>
+    </div>
+    <div class="row">
+      <span class="glyph g-working">◐</span>
+      <span class="row-main">
+        <span class="row-name">codex · billing</span>
+        <span class="row-sub">Running the migration suite…</span>
+      </span>
+      <span class="row-state">Working</span>
+    </div>
+    <div class="row">
+      <span class="glyph g-done">✓</span>
+      <span class="row-main">
+        <span class="row-name">claude · docs</span>
+        <span class="row-sub">Rewrote the operations guide.</span>
+      </span>
+      <span class="row-state">Done</span>
+    </div>
+    <div class="row">
+      <span class="glyph g-idle">○</span>
+      <span class="row-main">
+        <span class="row-name">zsh · infra</span>
+        <span class="row-sub">~/infra</span>
+      </span>
+      <span class="row-state">Idle</span>
+    </div>
+  </div>
+  <p class="caption">Waiting agents rise to the top, with the question and its real choices already visible.</p>
+
+  <h2>The problem</h2>
+  <p>
+    Agents stop. Claude Code hits a permission prompt, Codex asks which option
+    you meant, a long run finishes and waits. Each one blocks until you are
+    back at your desk — and you find out by walking over and checking.
+  </p>
+  <p>Shahi turns that wait into something you can answer from your pocket.</p>
+
+  <h2>Quick start</h2>
+  <p>On the machine where herdr runs:</p>
+  <pre><span class="p">herdr</span> plugin install iYassr/shahi
+<span class="p">herdr</span> plugin action invoke shahi.pair</pre>
+  <p>
+    That installs the sidecar as a user service, generates its secrets, and
+    prints a QR code. Scan it in the app and your agents appear. There is
+    nothing else to configure — no port to forward, no domain, no reverse proxy.
+  </p>
+
+  <h2>How it connects</h2>
+  <p>
+    Your machine dials <strong>out</strong> and holds the connection open. Your
+    phone dials out to the same relay. Neither side needs an inbound port, and
+    the relay cannot read what it carries.
+  </p>
+  <div class="flow" role="img" aria-label="Your machine dials out to the relay and holds the connection open. Your phone dials out to the same relay, sending sealed frames. The relay sees sizes and timing, never content.">
+    <div class="node">
+      <b>your machine</b>
+      <span>herdr + sidecar</span>
+    </div>
+    <div class="arrow">
+      <b>──▶</b>
+      <span>dials out, stays open</span>
+    </div>
+    <div class="node">
+      <b>relay</b>
+      <span>sees sizes and timing, never content</span>
+    </div>
+    <div class="arrow">
+      <b>◀──</b>
+      <span>sealed frames</span>
+    </div>
+    <div class="node">
+      <b>your phone</b>
+      <span>scan once</span>
+    </div>
+  </div>
+  <p>
+    Every frame is sealed end to end between phone and sidecar, keyed from the
+    pairing secret — which never travels. If you would rather have no third
+    party in the path at all, the app can reach your box over an SSH tunnel
+    instead.
+  </p>
+
+  <h2>What makes it different</h2>
+
+  <h3>It reads the transcript, not the screen</h3>
+  <p>
+    Claude Code and Codex each write a structured log of the real conversation.
+    Shahi reads that on your machine and renders messages, reasoning, tool
+    calls, patches and results as a phone-shaped thread. Terminal text arrives
+    hard-wrapped at 146 columns and cannot be reflowed — which is why every
+    "mobile tmux" is a pinch-and-scroll exercise, and why Shahi does not try to
+    be one.
+  </p>
+
+  <h3>Permission prompts become buttons</h3>
+  <p>
+    When an agent renders a menu, Shahi parses it and offers the real choices
+    with the context above them. The answer is checked against a fresh read of
+    the screen, so a stale tap cannot press the wrong row.
+  </p>
+
+  <h3>Unknown shapes are dropped, never guessed</h3>
+  <p>
+    Output Shahi does not recognise renders nothing, rather than something
+    plausible and wrong. The failure mode is silence, not fiction.
+  </p>
+
+  <h3>It runs on your machine</h3>
+  <p>
+    Your agents, your code, your credentials and your transcripts stay on
+    hardware you own. There is no account and no backend of ours holding your
+    data.
+  </p>
+
+  <h2>Status</h2>
+  <p class="note">
+    The iOS app is in private testing — there is no public App Store or
+    TestFlight link yet. <strong>Android and a browser PWA are coming</strong>;
+    iPhone is simply where this started.
+  </p>
+  <p>
+    The sidecar, the herdr plugin and the relay are working today. herdr is the
+    only backend so far; tmux is plausible and not built.
+  </p>
+
+  <footer>
+    <p>Shahi is MIT licensed. The source opens with the public release.</p>
+    <p>Built for <a href="https://herdr.dev">herdr</a>.</p>
+  </footer>
+
+</div>
+</body>
+</html>
