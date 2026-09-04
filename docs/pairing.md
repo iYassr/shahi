@@ -3,8 +3,9 @@
 How a phone is introduced to a Shahi server without typing an address or a
 passcode, and what that buys beyond convenience: a session that belongs to a
 *device*, which can be seen and revoked. This is step 2 of the build order in
-`connectivity.md`, done over the transports that exist today — Tailscale and
-SSH. The E2E relay transport is not part of it and nothing here assumes it.
+`connectivity.md`, and it works over every transport: Tailscale, SSH, and the
+relay — a pairing code carries the relay address, which is what makes the first
+QR work from anywhere.
 
 ## Using it
 

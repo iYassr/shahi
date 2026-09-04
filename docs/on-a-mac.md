@@ -105,7 +105,7 @@ than the ones you hoped for.
 
 ```sh
 bun test shared/src server web/src   # 313, no device
-bun run test:mobile                  # 121 unit and component tests, no simulator
+bun run test:mobile                  # unit and component tests, no simulator
 bun run test:e2e                     # 164 browser tests, both engines
 ```
 

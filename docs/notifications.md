@@ -55,10 +55,14 @@ noise.
 The payload carries the pane id, so tapping the notification opens that pane
 rather than the list.
 
-## The native app, and why it does not have this
+## The native app, and what is left to prove
 
-`mobile/` registers an Expo push token and the server has a second delivery
-channel for it, tested. It is unused because:
+Native push is wired end to end: a Settings toggle calls `enablePush()`, which
+registers an Expo token with `/api/push/expo`; the server sends on the
+transition to `blocked` and drops tokens Expo reports as `DeviceNotRegistered`;
+tapping a notification routes to its pane. None of it is missing.
+
+What is missing is a device. The history is why it took so long:
 
 - **Expo Go cannot receive remote push since SDK 53.** Not a configuration
   problem — the capability was removed. The app detects Expo Go and says so
@@ -70,9 +74,14 @@ channel for it, tested. It is unused because:
   so a free-signed build cannot register for APNs at all. Push on iOS needs the
   paid Apple Developer Program.
 
-So on iOS the choice is: the PWA (free, works, needs the home screen) or $99/yr
-for a native app that can do the same thing. The PWA is why the native app is
-parked.
+That last point is settled: a paid Apple account arrived in August 2026, and
+with it the decision that native is where this goes. The PWA is archived.
+
+So the only thing standing between this and working push is running it on a
+real iPhone. The simulator reports `Device.isDevice === false` and refuses to
+mint a token, so nothing here can be proven from a Mac alone — the
+`expo_push_token` table is still empty, and the first token to land in it is
+the proof. Do not go looking for missing wiring; flip the toggle on a phone.
 
 ## Server side
 

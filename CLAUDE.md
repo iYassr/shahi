@@ -341,12 +341,9 @@ Stated plainly, because a vague gaps list is worse than none.
   not built: it is premature for a table with zero rows, and the common
   invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
-- **The native app's automated coverage is thin but no longer zero.** `mobile/`
-  has seventeen unit suites (the libs: `reconcile`, `feel`, `api`, `ssh`,
-  `tunnel`, `push`, `navigate`, `coalesce`, `pairing`; the screens and
-  components: `pane`, `blocks`, `new-agent`, `markdown`, `error-boundary`,
-  `copy`, `unreachable`, `paired-devices`) and eleven Maestro flows in
-  `.maestro/` that drive the real app against the stub. The reader is now
+- **The native app's automated coverage is thin but no longer zero.** What
+  `bun run test:mobile` and `.maestro/` cover is the answer — the counts used
+  to be written here and rotted within weeks, so they are not any more. The reader is now
   proven by `pane.test.tsx` — echo, working state, coalesced refresh,
   concurrent fetches, sign-out on 401, the restore guard — each checked by
   mutation: dropping the code fails exactly the test named for it. `web/` still has 164 browser tests,
@@ -430,8 +427,9 @@ because Playwright replaces the worker process after a failure and module state
 goes with it.
 
 CI runs all of this on every push and pull request: `bun run typecheck` — which
-includes the parked Expo app, the only automatic check that the two clients have
-not drifted apart — then the unit tests, then a web build and both engines.
+includes the Expo app, the only automatic check that the two clients have not
+drifted apart — then the unit tests, the relay suite (`test:relay`) and the
+app's own (`test:mobile`), then a web build and both Playwright engines.
 Traces from a failing run are uploaded as an artifact.
 
 **And a real herdr.** `server/lib/herdr-live.test.ts` runs the adapter and the
@@ -485,9 +483,15 @@ bare question with nothing to judge it by. All four are ported. The lesson is
 cheap to state and was expensive to find: **a feature that only exists in
 `web/` does not exist.**
 
-Still only in the PWA, and worth porting when someone next needs them: the
-redesigned agent list and the spaces view. The reader's jump-to-latest pill
-is ported.
+Still only in the PWA: the recorded-terminal history view — `api.transcript`
+and the `GAP_MARKER` that explains a break in it. The native app's unused
+client method for it has been deleted — an API method with no caller reads as
+coverage that is not there — so porting the view means adding it back. The terminal
+itself is a separate matter: xterm.js has no React Native port, so the Screen
+tab would have to run in a WebView.
+
+The spaces view and the reader's jump-to-latest pill are both ported; this
+paragraph claimed otherwise for months.
 
 ## House style
 

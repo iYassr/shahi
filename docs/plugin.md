@@ -119,7 +119,7 @@ A phone paired by a code that carries the relay connects through the relay
 and nothing else. The direct ways in — the app's SSH tunnel to the box, or
 `tailscale serve --bg --https=443 http://127.0.0.1:7171` in front of the
 loopback bind, then the address typed by hand — are a different pairing,
-faster on the same network; the README's Setup section covers both.
+faster on the same network; [connectivity.md](connectivity.md) covers both.
 **Never `tailscale funnel`.**
 
 ## Pairing a phone
