@@ -1,0 +1,9 @@
+# Language stats, for the marketplace card.
+#
+# herdr's plugin index shows a repository's GitHub-computed primary language on
+# its listing card. Vendored OpenSSL and libssh2 headers are 4.2MB of C against
+# 1.45MB of our TypeScript, so Shahi listed itself as a C project — the one
+# technical signal on the card, and the wrong one. These are third-party binary
+# frameworks bundled for the iOS SSH module; nobody here writes or reviews them.
+mobile/modules/ssh-tunnel/ios/OpenSSL.xcframework/** linguist-vendored
+mobile/modules/ssh-tunnel/ios/libssh2.xcframework/** linguist-vendored
