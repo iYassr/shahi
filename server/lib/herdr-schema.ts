@@ -426,7 +426,8 @@ export type ReadFormat = "text" | "ansi";
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "Request".
  */
-export type Request =
+export type Request = Request1 & Request2;
+export type Request1 =
   | {
       method: "ping";
       params: PingParams;
@@ -2075,6 +2076,9 @@ export interface WorktreeOpenParams {
 export interface WorktreeRemoveParams {
   force?: boolean;
   workspace_id: string;
+}
+export interface Request2 {
+  id: string;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
