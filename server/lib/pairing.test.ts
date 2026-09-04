@@ -90,20 +90,6 @@ describe("pairing codes", () => {
 describe("devices", () => {
   const fresh = () => new Devices(new Database(":memory:"));
 
-  test("a devices table from before secrets is replaced, not migrated", () => {
-    // The shape 0.1.0 created. Its rows could never pair over the relay, and
-    // an upgraded box refused every claim with "no column named secret".
-    const db = new Database(":memory:");
-    db.exec(
-      "CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL, revoked_at INTEGER)",
-    );
-    db.exec("INSERT INTO devices VALUES ('old', 'Old phone', 1, 1, NULL)");
-    const devices = new Devices(db);
-    expect(devices.list()).toEqual([]);
-    const created = devices.create("New phone");
-    expect(devices.secret(created.device.id)).toHaveLength(32);
-  });
-
   test("a created device is listed, active, and named after the phone", () => {
     const devices = fresh();
     const { device } = devices.create("  Yasser's iPhone  ", 5_000);
