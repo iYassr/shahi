@@ -3,8 +3,9 @@
  * nothing throws when a list forgets where it was, you just find yourself at
  * the top again. Every test here is named after the symptom it prevents.
  */
-import { renderHook, act } from "@testing-library/react-native";
-import type { ViewToken } from "react-native";
+import { renderHook, render, fireEvent, act } from "@testing-library/react-native";
+import { createElement } from "react";
+import { View, type ViewToken } from "react-native";
 import { forgetScrollPlace, scrollPlace, useRememberedScroll } from "./scroll-memory";
 
 type Row = { id: string };
@@ -121,4 +122,66 @@ test("an unmeasured row falls back to an estimated offset", () => {
   const { api, list } = mount("list", rows("a", "b", "c"));
   act(() => api().onScrollToIndexFailed({ index: 2, averageItemLength: 80 }));
   expect(list.scrollToOffset).toHaveBeenCalledWith({ offset: 160, animated: false });
+});
+
+test("returning preserves a point inside a tall row even if earlier rows changed height", () => {
+  const data = rows("a", "b", "c");
+  const first = mount("list", data);
+  const cell = render(createElement(first.api().CellRendererComponent, { item: data[2]!, cellKey: "c", index: 2, children: null, style: undefined }));
+  fireEvent(cell.UNSAFE_getByType(View), "layout", { nativeEvent: { layout: { y: 200, height: 1000 } } });
+  const event = { nativeEvent: { contentOffset: { y: 655 } } } as never;
+  act(() => first.api().onScrollBeginDrag());
+  act(() => first.api().onScroll(event));
+  act(() => first.api().onScrollEndDrag(event));
+  // Native navigation settling is programmatic and must not erase the place.
+  act(() => first.api().onScroll({ nativeEvent: { contentOffset: { y: 0 } } } as never));
+  // Viewability can report an earlier row after onScroll. It must not replace
+  // the measured anchor with that stale row or erase the intra-row offset.
+  act(() => first.api().onViewableItemsChanged(viewable("b", "c")));
+  first.unmount();
+  cell.unmount();
+  const again = mount("list", data);
+  act(() => again.api().onContentSizeChange());
+  expect(again.list.scrollToIndex).toHaveBeenCalledWith({ index: 2, animated: false, viewPosition: 0, viewOffset: -455 });
+  act(() => again.api().onViewableItemsChanged(viewable("a")));
+  expect(scrollPlace("list")).toBe("c");
+});
+
+test("failed index restoration retries without accepting the estimated landing as the saved place", () => {
+  jest.useFakeTimers();
+  const first = mount("list", rows("a", "b", "c"));
+  act(() => first.api().onViewableItemsChanged(viewable("c")));
+  first.unmount();
+  const again = mount("list", rows("a", "b", "c"));
+  act(() => again.api().onContentSizeChange());
+  act(() => again.api().onScrollToIndexFailed({ index: 2, averageItemLength: 80 }));
+  act(() => again.api().onViewableItemsChanged(viewable("b")));
+  act(() => jest.advanceTimersByTime(100));
+  expect(scrollPlace("list")).toBe("c");
+  expect(again.list.scrollToIndex).toHaveBeenCalledTimes(2);
+  again.unmount();
+  jest.useRealTimers();
+});
+
+test("a middle row in a long agents list survives repeated visits and insertion above it", () => {
+  const data = Array.from({ length: 150 }, (_, i) => ({ id: `agent-${i}` }));
+  const first = mount("list", data);
+  const cell = render(createElement(first.api().CellRendererComponent, {
+    item: data[75]!, cellKey: "agent-75", index: 75, children: null, style: undefined,
+  }));
+  fireEvent(cell.UNSAFE_getByType(View), "layout", { nativeEvent: { layout: { y: 6000, height: 80 } } });
+  act(() => first.api().onScrollBeginDrag());
+  act(() => first.api().onScroll({ nativeEvent: { contentOffset: { y: 6023 } } } as never));
+  first.unmount();
+  cell.unmount();
+  for (const shifted of [data, [{ id: "new-agent" }, ...data]]) {
+    const again = mount("list", shifted);
+    act(() => again.api().onViewableItemsChanged(viewable(shifted[0]!.id)));
+    act(() => again.api().onContentSizeChange());
+    expect(again.list.scrollToIndex).toHaveBeenLastCalledWith({
+      index: shifted.findIndex((row) => row.id === "agent-75"),
+      animated: false, viewPosition: 0, viewOffset: -23,
+    });
+    again.unmount();
+  }
 });

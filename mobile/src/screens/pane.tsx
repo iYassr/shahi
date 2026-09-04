@@ -35,6 +35,7 @@ import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption } from "@shahi/shared";
 import { api, connection, UnauthorizedError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
+import { anchorAt, useScrollCells, type ScrollAnchor } from "@/lib/scroll-cells";
 import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -101,16 +102,21 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
  * as its own value so a pane left at the tail still opens at the tail, which
  * is where a pane you were not reading mid-scroll should open.
  *
- * A position is the id of the topmost visible message, not a pixel offset.
+ * A position is the message id AND the pixel offset within that message.
  * Offsets were tried and failed exactly where it matters — leaving the pane
  * and coming back: the remount re-estimates item heights, and the fetched
  * window shifts as the conversation grows, so the saved offset named a
  * different place, and the restore either landed wrong or wedged waiting
  * for a content height that never came back (leaving every later scroll
  * unrecorded, which read as "never remembered"). The message being read is
- * the place; its id survives both remeasurement and window drift.
+ * the place; its id survives both remeasurement and window drift, while the
+ * intra-message offset preserves the paragraph inside a multi-screen answer.
  */
-const scrollMemory = new Map<string, { id: string } | "bottom">();
+const scrollMemory = new Map<string, ScrollAnchor | "bottom">();
+// Pane ids are only unique within a box. Never reuse a transcript after the
+// user signs into another connection that happens to have the same pane id.
+const messageMemory = new Map<string, { owner: unknown; messages: LogMessage[] }>();
+export const paneScrollPlace = (paneId: string) => scrollMemory.get(paneId);
 
 /**
  * Where you were on each pane's *terminal*, and which view you were reading.
@@ -133,6 +139,7 @@ const terminalView = new Map<string, "reader" | "screen">();
 /** Test seam: these maps live for the process, so a test resets them by hand. */
 export function forgetPaneMemory(paneId: string): void {
   scrollMemory.delete(paneId);
+  messageMemory.delete(paneId);
   terminalPlace.delete(paneId);
   terminalView.delete(paneId);
 }
@@ -170,9 +177,18 @@ interface Props {
 }
 
 export function Pane({ paneId, initialView = "reader" }: Props) {
-  const [messages, setMessages] = useState<LogMessage[]>([]);
+  const owner = connection.relay ?? connection.cookie;
+  const [messages, setMessages] = useState<LogMessage[]>(() => {
+    const cached = messageMemory.get(paneId);
+    if (cached && cached.owner !== owner) {
+      forgetPaneMemory(paneId);
+      return [];
+    }
+    return cached?.messages ?? [];
+  });
   /** Mirror of `messages`, so merging does not need a functional setState. */
-  const messagesRef = useRef<LogMessage[]>([]);
+  const messagesRef = useRef<LogMessage[]>(messages);
+  const cells = useScrollCells<LogMessage>((message) => message.id);
   /**
    * Optimistic echo: your own reply, shown in the thread the instant you send,
    * before the transcript poll fetches it back. Reconciled away once the real
@@ -246,7 +262,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * ignored until it clears: they are the restore's own clamped settling, and
    * treating one as the reader's doing is how the position got overwritten.
    */
-  const pendingRestore = useRef(typeof scrollMemory.get(paneId) === "object");
+  const pendingRestore = useRef(scrollMemory.has(paneId));
+  /** Navigation/layout scroll events must never replace the last finger position. */
+  const userScroll = useRef(false);
   /** While `Date.now()` is under this, the poll runs at the fast cadence. */
   const activeUntil = useRef(0);
   // Backing refs for the optimistic-working state, so `load` (a stable
@@ -259,6 +277,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const topItem = useRef<string | null>(null);
   /** Whether the restore's own deadline has been armed; see restore(). */
   const restoreArmed = useRef(false);
+  /** A virtualized list can clamp the first restore before its cells measure. */
+  const restoreRetry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const restoreDeadline = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const trackTop = useRef(({ viewableItems }: { viewableItems: Array<{ item: LogMessage }> }) => {
     if (viewableItems.length > 0) topItem.current = viewableItems[0]!.item.id;
   }).current;
@@ -282,33 +303,55 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // would give up, jump to the tail and drop the pill. Waiting makes the
     // arrival order irrelevant.
     if (typeof spot === "object" && messagesRef.current.length === 0) return;
+    if (spot === "bottom") {
+      armRestoreDeadline();
+      listRef.current?.scrollToEnd({ animated: false });
+      scheduleRestoreRetry();
+      return;
+    }
     const index =
       typeof spot === "object" ? messagesRef.current.findIndex((m) => m.id === spot.id) : -1;
     if (index < 0) {
       // The anchor fell out of the fetched window: the conversation moved on
       // past your place, and the tail is the closest honest answer.
-      pendingRestore.current = false;
+      finishRestore();
       following.current = true;
       scrollMemory.set(paneId, "bottom");
       setAway(false);
       listRef.current?.scrollToEnd({ animated: false });
       return;
     }
-    if (!restoreArmed.current) {
-      restoreArmed.current = true;
-      // A backstop only. The restore normally ends the moment the anchor is
-      // seen at the top of the viewport (in onScroll below); this exists for
-      // an anchor that never lands, so scroll events are not ignored forever.
-      // It used to be the *only* end, at 1.5s — and a retry that overshot to
-      // the tail, then a slow measure, meant the list's own settle was read
-      // as the reader scrolling to the bottom, which dropped the pill and the
-      // place with it. Seen as a flake in the keep-your-place flow.
-      setTimeout(() => {
-        pendingRestore.current = false;
-      }, 4_000);
-    }
-    listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+    armRestoreDeadline();
+    listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0, viewOffset: typeof spot === "object" ? -spot.offset : 0 });
+    scheduleRestoreRetry();
   }
+
+  function finishRestore() {
+    pendingRestore.current = false;
+    clearTimeout(restoreRetry.current);
+    clearTimeout(restoreDeadline.current);
+  }
+
+  function scheduleRestoreRetry() {
+    clearTimeout(restoreRetry.current);
+    restoreRetry.current = setTimeout(() => {
+      if (pendingRestore.current) restore();
+    }, 100);
+  }
+
+  function armRestoreDeadline() {
+    if (restoreArmed.current) return;
+    restoreArmed.current = true;
+    // A backstop only. The restore normally ends when onScroll observes the
+    // requested place. Without a deadline, a deleted anchor could suppress
+    // user-position recording forever.
+    restoreDeadline.current = setTimeout(() => finishRestore(), 4_000);
+  }
+
+  useEffect(() => () => {
+    clearTimeout(restoreRetry.current);
+    clearTimeout(restoreDeadline.current);
+  }, []);
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
@@ -353,6 +396,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         if (!following.current && prevLen > 0)
           setUnseen((u) => u + Math.max(0, folded.length - prevLen));
         messagesRef.current = folded;
+        messageMemory.set(paneId, { owner, messages: folded });
         setMessages(folded);
       }
       // The reply has landed once a new agent message exists since we sent — or,
@@ -608,6 +652,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       ) : (
         <View style={styles.body}>
         <FlatList
+          CellRendererComponent={cells.CellRendererComponent}
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
           data={pending.length ? [...messages, ...pending.map((p) => p.message)] : messages}
@@ -640,29 +685,53 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           // still re-enables following.
           onScrollBeginDrag={() => {
             following.current = false;
-            pendingRestore.current = false;
+            finishRestore();
+            userScroll.current = true;
           }}
           onScroll={({ nativeEvent: e }) => {
             if (pendingRestore.current) {
               // The restore has landed once the anchor is the topmost visible
               // message; from here the scroll events are the reader's own.
               const spot = scrollMemory.get(paneId);
-              if (typeof spot === "object" && topItem.current === spot.id) {
-                pendingRestore.current = false;
-              }
+              const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+              const frame = typeof spot === "object" ? cells.frames.current.get(spot.id) : undefined;
+              if (spot === "bottom" && fromBottom <= 2) finishRestore();
+              else if (typeof spot === "object" && frame && Math.abs(e.contentOffset.y - (frame.y + spot.offset)) < 2)
+                finishRestore();
               return;
             }
+            // A native pop/layout settle can emit one last offset (often zero)
+            // after the person's drag. That event caused the reproducible
+            // lower-paragraph → top jump on reopening.
+            if (!userScroll.current) return;
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             following.current = fromBottom < 80;
-            scrollMemory.set(
-              paneId,
-              following.current || !topItem.current ? "bottom" : { id: topItem.current },
-            );
+            const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
+            // Near the tail is still a distinct reading position. Only the
+            // actual tail follows future output after leaving and reopening.
+            if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
+            else if (anchor) scrollMemory.set(paneId, anchor);
+            else if (topItem.current) scrollMemory.set(paneId, { id: topItem.current, offset: 0 });
             setAway(!following.current);
             if (following.current) setUnseen(0);
           }}
-          scrollEventThrottle={200}
+          onScrollEndDrag={({ nativeEvent: e }) => {
+            const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+            const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
+            if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
+            else if (anchor) scrollMemory.set(paneId, anchor);
+            userScroll.current = false;
+          }}
+          onMomentumScrollBegin={() => { userScroll.current = true; }}
+          onMomentumScrollEnd={({ nativeEvent: e }) => {
+            const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+            const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
+            if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
+            else if (anchor) scrollMemory.set(paneId, anchor);
+            userScroll.current = false;
+          }}
+          scrollEventThrottle={16}
           // Any visible sliver counts: the anchor should be the message at the
           // top of the screen, not the first one half-past it.
           viewabilityConfig={{ itemVisiblePercentThreshold: 1 }}

@@ -1,8 +1,9 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { FlatList } from "react-native";
+import { FlatList, View } from "react-native";
+import { createElement } from "react";
 import type { LogBlock, LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
-import { api, UnauthorizedError } from "@/lib/api";
-import { forgetPaneMemory, Pane } from "./pane";
+import { api, connection, UnauthorizedError } from "@/lib/api";
+import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 
 // The first test in this file pays for loading the screen and its mocks under
 // fake timers, and GitHub's ubuntu runner took more than Jest's 5s default
@@ -373,6 +374,121 @@ describe("keeping your place", () => {
     said("m2", "you", "Message two"),
     said("m3", "agent", "Message three"),
   ];
+
+  test("a different login cannot reuse a cached transcript with the same pane id", async () => {
+    const paneId = "w1:p-cache-owner";
+    const previousCookie = connection.cookie;
+    try {
+      connection.cookie = "first-test-session";
+      mocked.sessionLog.mockResolvedValue(log(thread));
+      const first = render(<Pane paneId={paneId} />);
+      await first.findByText(/Message three/);
+      first.unmount();
+      connection.cookie = "second-test-session";
+      mocked.sessionLog.mockReturnValue(new Promise(() => {}));
+      const second = render(<Pane paneId={paneId} />);
+      expect(second.queryByText(/Message three/)).toBeNull();
+      second.unmount();
+    } finally {
+      connection.cookie = previousCookie;
+      forgetPaneMemory(paneId);
+    }
+  });
+
+  test("back and repeated re-entry preserve the paragraph inside a multi-screen message", async () => {
+    const paneId = "w1:p-tall-paragraph";
+    forgetPaneMemory(paneId);
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    for (const y of [420, 730]) {
+      const visit = render(<Pane paneId={paneId} />);
+      await visit.findByText(/Message three/);
+      const list = visit.UNSAFE_getByType(FlatList);
+      const cell = render(createElement(list.props.CellRendererComponent, {
+        item: thread[0], cellKey: "m1", index: 0, children: null, style: undefined,
+      }));
+      act(() => cell.UNSAFE_getByType(View).props.onLayout({ nativeEvent: { layout: { y: 16, height: 1500 } } }));
+      act(() => list.props.onScrollBeginDrag());
+      const event = { nativeEvent: {
+        contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y },
+      } };
+      act(() => list.props.onScroll(event));
+      act(() => list.props.onScrollEndDrag(event));
+      // iOS can emit a layout/programmatic scroll while popping the route.
+      // It is not the person's position and must not replace the anchor.
+      act(() => list.props.onScroll({ nativeEvent: {
+        contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 0 },
+      } }));
+      expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: y - 16 });
+      visit.unmount();
+      cell.unmount();
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      fireEvent(again.UNSAFE_getByType(FlatList), "contentSizeChange");
+      expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 0, animated: false, viewPosition: 0, viewOffset: -(y - 16) });
+      again.unmount();
+    }
+    scrollToIndex.mockRestore();
+    forgetPaneMemory(paneId);
+  });
+
+  test("near the tail remains an exact place rather than becoming the tail", async () => {
+    const paneId = "w1:p-near-tail";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/Message three/);
+    const list = view.UNSAFE_getByType(FlatList);
+    const cell = render(createElement(list.props.CellRendererComponent, {
+      item: thread[2], cellKey: "m3", index: 2, children: null, style: undefined,
+    }));
+    act(() => cell.UNSAFE_getByType(View).props.onLayout({ nativeEvent: { layout: { y: 1900, height: 500 } } }));
+    const event = { nativeEvent: {
+      contentSize: { height: 2600 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 1950 },
+    } };
+    act(() => list.props.onScrollBeginDrag());
+    act(() => list.props.onScroll(event));
+    act(() => list.props.onScrollEndDrag(event));
+    expect(paneScrollPlace(paneId)).toEqual({ id: "m3", offset: 50 });
+    view.unmount();
+    cell.unmount();
+    forgetPaneMemory(paneId);
+  });
+
+  test("returning to the tail retries until the virtualized list actually reaches it", async () => {
+    const paneId = "w1:p-tail-race";
+    forgetPaneMemory(paneId);
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
+
+    const first = render(<Pane paneId={paneId} />);
+    await first.findByText(/Message three/);
+    const firstList = first.UNSAFE_getByType(FlatList);
+    const atBottom = { nativeEvent: {
+      contentSize: { height: 2600 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 2000 },
+    } };
+    act(() => firstList.props.onScrollBeginDrag());
+    act(() => firstList.props.onScroll(atBottom));
+    act(() => firstList.props.onScrollEndDrag(atBottom));
+    expect(paneScrollPlace(paneId)).toBe("bottom");
+    first.unmount();
+
+    scrollToEnd.mockClear();
+    const again = render(<Pane paneId={paneId} />);
+    await again.findByText(/Message three/);
+    fireEvent(again.UNSAFE_getByType(FlatList), "contentSizeChange");
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    // The first native call can be clamped while FlatList is still measuring.
+    act(() => jest.advanceTimersByTime(100));
+    expect(scrollToEnd).toHaveBeenCalledTimes(2);
+    // Once native reports the real tail, retries stop.
+    fireEvent(again.UNSAFE_getByType(FlatList), "scroll", atBottom);
+    act(() => jest.advanceTimersByTime(500));
+    expect(scrollToEnd).toHaveBeenCalledTimes(2);
+
+    again.unmount();
+    scrollToEnd.mockRestore();
+    forgetPaneMemory(paneId);
+  });
 
   /** Scrolls away from the tail with `m1` at the top, then leaves the pane. */
   async function leaveScrolledAway() {
