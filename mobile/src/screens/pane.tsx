@@ -897,15 +897,28 @@ export function Block({
           {block.result.text.trim().length > 0 && (
             <CopyOnHold text={block.result.text}>
               <ScrollView horizontal style={styles.toolOut}>
-                <Text style={styles.toolOutText}>{block.result.text}</Text>
+                <Text style={styles.toolOutText}>
+                  {block.result.text}
+                  {/* The server caps tool output. Without saying so the cut
+                      reads as the command's own last line. */}
+                  {block.result.truncated && "\n… truncated"}
+                </Text>
               </ScrollView>
             </CopyOnHold>
           )}
           {block.result.images.map((ref) => (
             <TranscriptImage key={ref} paneId={paneId} imageRef={ref} />
           ))}
+          {/* A call that returned nothing is a fact, not an absence: an empty
+              expanded tool is indistinguishable from one still working. */}
+          {block.result.text.trim().length === 0 && block.result.images.length === 0 && (
+            <Text style={styles.toolAside}>(no output)</Text>
+          )}
         </>
       )}
+      {/* No result yet. The web reader has always said this; the native one
+          rendered an empty expansion instead. */}
+      {open && !block.result && <Text style={styles.toolAside}>Still running.</Text>}
     </View>
   );
 }
@@ -1342,6 +1355,7 @@ const styles = StyleSheet.create({
   toolErr: { color: theme.rose, fontFamily: theme.mono, fontSize: 11 },
   toolOut: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", padding: 10, marginBottom: 8, maxHeight: 260 },
   toolOutText: { color: theme.fg, fontFamily: theme.mono, fontSize: 11, lineHeight: 17 },
+  toolAside: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, marginBottom: 8 },
 
   image: {
     width: "100%",

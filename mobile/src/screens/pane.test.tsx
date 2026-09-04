@@ -1,6 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { FlatList } from "react-native";
-import type { LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
+import type { LogBlock, LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, UnauthorizedError } from "@/lib/api";
 import { Pane } from "./pane";
 
@@ -228,6 +228,47 @@ describe("sending a reply", () => {
     logChanged();
     await view.findByText(/Done: shipped\./);
     expect(view.queryByText("Working")).toBeNull();
+  });
+
+  // Three states the web reader has always shown and the native one dropped.
+  // All three rendered as an empty expansion, so a call that returned nothing,
+  // a call whose output was cut, and a call still running looked identical.
+  describe("tool result states", () => {
+    type ToolResult = (LogBlock & { kind: "tool" })["result"];
+    const ranTool = (result: ToolResult): LogMessage => ({
+      id: "t1",
+      role: "agent",
+      at: 1,
+      blocks: [{ kind: "tool", name: "Bash", summary: "ls", result }],
+    });
+    /** The tool row is collapsed by default; its name is the toggle. */
+    const expand = async (result: ToolResult) => {
+      mocked.sessionLog.mockResolvedValue(log([ranTool(result)]));
+      const view = render(<Pane paneId={PANE} />);
+      fireEvent.press(await view.findByText("Bash"));
+      return view;
+    };
+
+    test("says a truncated result was cut, rather than ending mid-output", async () => {
+      const view = await expand({ text: "line one", isError: false, truncated: true, images: [] });
+      expect(view.getByText(/… truncated/)).toBeTruthy();
+    });
+
+    test("does not claim truncation when the result is whole", async () => {
+      const view = await expand({ text: "line one", isError: false, truncated: false, images: [] });
+      expect(view.queryByText(/… truncated/)).toBeNull();
+    });
+
+    test("says a call that returned nothing returned nothing", async () => {
+      const view = await expand({ text: "   ", isError: false, truncated: false, images: [] });
+      expect(view.getByText("(no output)")).toBeTruthy();
+    });
+
+    test("says a call with no result yet is still running", async () => {
+      const view = await expand(null);
+      expect(view.getByText("Still running.")).toBeTruthy();
+      expect(view.queryByText("(no output)")).toBeNull();
+    });
   });
 
   // A model switch and an away-summary reach the reader as role "system": they
