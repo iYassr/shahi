@@ -14,13 +14,18 @@ marked **(you)** need a human — an account, a legal call, or a device.
   the US BIS. When in doubt, confirm with counsel.
 
 ## App Transport Security
-- `NSAllowsArbitraryLoads: true` is set (`mobile/app.json`) because the Direct
-  connection talks plain HTTP to a **user-typed** server address — a tailnet
-  MagicDNS name or a raw `100.x` tailnet IP — so no fixed domain can be
-  whitelisted. **(you)** App Review will ask why: the answer is that the bytes
-  are already encrypted beneath HTTP (Tailscale carries Direct traffic over
-  WireGuard; the SSH mode tunnels to `127.0.0.1`), and the app connects only to
-  a server the user runs and configures. Put that in the review notes.
+- `NSAllowsLocalNetworking: true` is set (`mobile/app.json`), and nothing
+  broader. The app makes exactly one cleartext connection — to `127.0.0.1`, the
+  local end of its own SSH tunnel — and the relay is `https`. ATS stays
+  enforced for every other host.
+- It used to be `NSAllowsArbitraryLoads: true`, because a typed tailnet address
+  was a way in and no fixed domain could be whitelisted. That transport was
+  removed, so the blanket exception went with it — worth knowing because a
+  blanket exception is the one App Review pushes back on hardest, and this one
+  no longer needs defending.
+- **(you)** Verify on a device before submitting: ATS is not enforced
+  identically on a simulator, so SSH mode is the thing to exercise. See
+  `docs/verify-on-device.md`.
 
 ## Privacy
 - **(you)** Publish `docs/privacy-policy.md` at a stable URL and link it in App

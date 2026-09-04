@@ -13,9 +13,9 @@
       "infoPlist": {
         "_comment_encryption": "The SSH module bundles OpenSSL and does general-purpose encryption, so this is 'true' — 'false' would be a false declaration. Standard/mass-market crypto (SSH, TLS) qualifies for the export exemption; ANSWER the export-compliance questions in App Store Connect accordingly at submission (or supply the self-classification report). See docs/app-store.md.",
         "ITSAppUsesNonExemptEncryption": true,
-        "_comment_ats": "The Direct connection talks plain HTTP to a user-typed server address — a tailnet MagicDNS name (host.tailnet.ts.net) or a raw 100.x tailnet IP, so no fixed domain can be whitelisted. iOS App Transport Security blocks that by default (the error 'requires the use of a secure connection'). Arbitrary loads is allowed because the transport is already encrypted underneath: Tailscale carries it over WireGuard, and the SSH mode tunnels to 127.0.0.1. Justify this in App Store review notes. See docs/app-store.md.",
+        "_comment_ats": "The only cleartext this app makes is to 127.0.0.1, the local end of the SSH tunnel — the relay is https. So the exception is the narrow one: NSAllowsLocalNetworking covers loopback and leaves ATS enforced for every other host. It was NSAllowsArbitraryLoads while a typed tailnet address was a way in (no fixed domain could be whitelisted); that transport is gone, and a blanket exception is the hardest kind to justify at review. See docs/app-store.md.",
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsLocalNetworking": true
         }
       }
     },

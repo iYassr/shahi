@@ -24,11 +24,16 @@ way a native one does. Backgrounding and reopening changes nothing.
 ## The checks
 
 **1. It opens, and it opens where it should.**
-Cold-launch from the icon with Tailscale on. You should land on the agent list.
-Force-quit and reopen with Tailscale *off*: it should say it cannot reach the
+Cold-launch from the icon with the network on. You should land on the agent
+list. Force-quit and reopen in airplane mode: it should say it cannot reach the
 server, not hang and not show an empty list as though nothing were running.
-Sign out and back in — the connect screen should take the address and passcode
-and land you back on the list.
+Sign out and back in — scanning a fresh code should land you back on the list.
+
+**1b. SSH mode still reaches loopback.** The one thing only a device answers:
+ATS is narrowed to `NSAllowsLocalNetworking`, so the tunnel's
+`http://127.0.0.1:<port>` is the only cleartext the app is permitted. Connect
+over SSH on a real iPhone and read a pane. A simulator does not enforce ATS the
+same way, so this cannot be proven anywhere else.
 
 **2. The tab bar is real.**
 Tap between Agents and Spaces. The bar should blur what scrolls under it, and

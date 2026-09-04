@@ -36,7 +36,7 @@ Three things must all be true, and the failure of any of them is quiet:
 Setup, once:
 
 ```sh
-sudo tailscale serve --bg --https=443 http://<tailnet-ip>:7171
+sudo tailscale serve --bg --https=443 http://127.0.0.1:7171
 ```
 
 Then on the phone: open `https://<host>.<tailnet>.ts.net`, enter the passcode,

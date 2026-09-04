@@ -1,14 +1,22 @@
 # Connecting a phone to a Shahi server
 
-How a phone reaches the sidecar. This is the onboarding decision record: what the
-default is, why, and what the alternatives cost. `README.md` documents whatever
-is shipped; this documents the direction and the reasoning, including the parts
-that are not obvious.
+How a phone reaches the sidecar. This is the onboarding **decision record**: it
+is written in the present tense of the day it was decided, and kept that way on
+purpose — the reasoning is the point. `README.md` says what ships.
+
+> **What actually shipped, and what changed since.** The outbound relay was
+> built rather than adopted: a Cloudflare Worker of our own (`relay/`), not
+> `cloudflared`, and the envelope is X25519 → HKDF → ChaCha20-Poly1305, not the
+> P-256/AES-GCM sketched below. Option 3, Tailscale, was removed entirely on
+> 2026-09-04: it was never a transport of its own — the SSH tunnel rides on the
+> very HTTP path it used — and keeping it meant a second pairing route, a bind
+> that wanted exposing, and a blanket ATS exception to defend. Two ways in
+> remain: the relay, and SSH.
 
 ## The problem with Tailscale-only
 
-Today the only front doors are **Tailscale** (the phone and the box share a
-tailnet) and **SSH** (the app opens its own tunnel). Both work and both are
+At the time of this decision the only front doors were **Tailscale** (the phone
+and the box share a tailnet) and **SSH** (the app opens its own tunnel). Both work and both are
 private, but both assume the user has already solved reachability — a tailnet set
 up on two devices, or an SSH login they can reach. That is a real adoption
 ceiling: the person who would most benefit from answering an agent from their
@@ -78,13 +86,16 @@ Already built (the native tunnel forwards to loopback, host key pinned on first
 use). Works anywhere SSH does, nothing extra to install, no third party in the
 path. Not the default only because it assumes an SSH login the user can reach.
 
-### 3. Tailscale — kept as the maximum-privacy option
+### 3. Tailscale — kept as the maximum-privacy option *(since removed)*
 
-Demoted from *requirement* to *option*. It remains the strongest posture
-available: WireGuard is end-to-end, and Tailscale's DERP relay only ever forwards
-encrypted packets. For someone who already runs a tailnet and wants **zero**
-third parties — not even a blind one — this stays the right answer, and it costs
-us nothing to keep.
+Decided here as: demoted from *requirement* to *option*, on the grounds that
+WireGuard is end-to-end and it cost nothing to keep.
+
+It turned out to cost something. It was not a transport but a typed address
+pointed at an exposed bind, and SSH already reached the same sidecar over the
+same HTTP client with nothing exposed and no VPN — so it served the "zero third
+parties" case at least as well. Removed 2026-09-04; a phone now reaches a box
+through the relay or over SSH.
 
 ### Not a default: bring-your-own public tunnel
 
@@ -108,20 +119,23 @@ whether that relay is blind.
 | **Moshi** | SSH / Mosh, BYO network | n/a (SSH E2E) | QR "Easy Pair" |
 | **Termius / Blink** | SSH / Mosh, BYO network | n/a (SSH E2E) | manual |
 | **VibeTunnel** | BYO (Tailscale/ngrok/CF) | depends on choice | — |
-| **Shahi (today)** | Tailscale / SSH | No (both E2E) | tailnet URL |
+| **Shahi (when this was written)** | Tailscale / SSH | No (both E2E) | tailnet URL |
+| **Shahi (now)** | blind relay / SSH | **No — E2E on top** | QR |
 
 The tools that reach *and* stay private (Happy, 0cv) are the ones with a **blind
 E2E relay**. That is the target.
 
 ## Connectivity options, at a glance
 
+As surveyed at the time. The two that ship are marked; Tailscale was later
+removed (see the note at the top).
+
 | Option | Inbound port? | Account? | Relay sees plaintext? | Friction |
 |---|---|---|---|---|
-| Tailscale | none | yes | no (E2E) | medium (client both ends) |
-| SSH direct | **yes** (or a VPS jump) | no (keys) | no (E2E) | low if reachable |
-| **Cloudflare Tunnel + E2E** | **none** | yes + domain | **no (E2E on top)** | **medium, one-time** |
+| **Blind relay + E2E** — *ships, default* | **none** | none | **no (E2E on top)** | **none** |
+| **SSH tunnel** — *ships* | none (an SSH login) | no (keys) | no (E2E) | low if reachable |
+| Tailscale — *removed 2026-09-04* | none | yes | no (E2E) | medium (client both ends) |
 | Cloudflare / ngrok, no E2E | none | yes | **yes** | low — but unsafe here |
-| Self-hosted E2E relay (Happy model) | none | your own | no (E2E) | medium (run relay) |
 | Tailscale Funnel | none | yes | **yes** | low — but public + plaintext |
 
 ## Build order

@@ -59,7 +59,8 @@ herdr plugin, so herdr comes first and there is no separate Shahi installer.
 > [!NOTE]
 > The iOS app is in private testing; there is no public App Store or TestFlight
 > link yet. The sidecar, plugin, relay and full source are ready to evaluate
-> today.
+> today. **Android and a browser PWA are coming** — iPhone is simply where this
+> started.
 
 ## How it connects
 
@@ -143,7 +144,7 @@ down in the [security review](docs/security-review.md) and
 
 - A Mac or Linux machine running **herdr 0.8.2+**
 - Claude Code, Codex, or any shell running inside it
-- An iPhone
+- An iPhone (Android and a PWA are coming)
 - Outbound internet for the default relay — or a server you can SSH into
 
 herdr is the only backend today. tmux is plausible and not built; it is not

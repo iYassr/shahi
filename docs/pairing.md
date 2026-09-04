@@ -3,21 +3,21 @@
 How a phone is introduced to a Shahi server without typing an address or a
 passcode, and what that buys beyond convenience: a session that belongs to a
 *device*, which can be seen and revoked. This is step 2 of the build order in
-`connectivity.md`, and it works over every transport: Tailscale, SSH, and the
-relay — a pairing code carries the relay address, which is what makes the first
-QR work from anywhere.
+`connectivity.md`. Pairing is a relay act: a code carries the relay's address,
+the box's id and a one-time secret, which is what makes the first QR work from
+anywhere. A box with no relay mints no codes and is reached over SSH with the
+passcode instead.
 
 ## Using it
 
 On the server, with Shahi running:
 
 ```sh
-bun run server/scripts/pair.ts                       # guesses the address the phone uses
-bun run server/scripts/pair.ts --endpoint https://box.tailnet.ts.net
+bun run server/scripts/pair.ts
 ```
 
 It prints a QR and the same text under it. On the phone: Connect → **Scan a
-code**. The phone reads the address off the code, checks it is talking to the
+code**. The phone reads the relay off the code, checks it is talking to the
 server that printed it, pairs, and lands on the agent list. The code works once
 and for ten minutes; print another for another phone.
 
@@ -26,7 +26,7 @@ it paired and when it was last heard from. **Revoke** throws one out; its very
 next request is refused. Revoking the phone you are holding is a sign-out and
 is labelled as one.
 
-The passcode still works, typed, over Tailscale or SSH. A passcode login is
+The passcode still works, typed, over SSH. A passcode login is
 not a device: it carries no identity, so it cannot be listed or revoked — the
 section says so. To end them all at once, rotate `SESSION_SECRET` in the server's `.env` and restart — the passcode itself is only checked at login, so changing it does nothing to sessions that already exist. (That rotation signs every paired phone out too.)
 
@@ -87,15 +87,15 @@ the dashboard until it happens to drop.
 `last_seen_at` moves at most once a minute — the phone polls forever, and a
 write per poll would say nothing more than "recently".
 
-## The address the script guesses
+## There is no address to guess
 
-`--endpoint` is the address the *phone* will use, which the box cannot know
-for certain. Without it the script guesses, in order: the Tailscale
-name (behind `tailscale serve`, so `https://`) if there is one, the bind
-address if it is not loopback, and otherwise it stops and asks. Whatever it
-picks is probed from the box before printing, and a mismatch or no answer is
-printed as a warning under the code — so a wrong guess is reported here and
-not as a mysterious refusal on the phone.
+There used to be. A code carried a typed address as well as a relay, so the
+script asked `tailscale status --json` for a name, fell back to the bind
+address, probed whichever it picked, and warned when the probe disagreed —
+several failure modes in service of a field the phone ignored whenever it had
+a relay. The transport that needed it is gone, so the code carries the relay
+and nothing else, and a box without one refuses to mint rather than printing
+something unusable.
 
 ## Not done
 
