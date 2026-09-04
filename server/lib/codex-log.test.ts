@@ -26,6 +26,53 @@ describe("normaliseCodex", () => {
     ]);
   });
 
+  test("reads Codex 0.153 item_completed conversation records", () => {
+    const messages = normaliseCodex([
+      {
+        timestamp: "2026-09-04T19:11:23.000Z",
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          item: {
+            type: "UserMessage",
+            id: "user-1",
+            content: [{ type: "text", text: "render every kind" }],
+          },
+        },
+      },
+      {
+        timestamp: "2026-09-04T19:11:24.000Z",
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          item: {
+            type: "Reasoning",
+            id: "reasoning-1",
+            raw_content: [],
+          },
+        },
+      },
+      {
+        timestamp: "2026-09-04T19:11:25.000Z",
+        type: "event_msg",
+        payload: {
+          type: "item_completed",
+          item: {
+            type: "AgentMessage",
+            id: "agent-1",
+            content: [{ type: "Text", text: "# Result\n\n| A | B |\n|---|---|\n| مرحبا | 日本語 |" }],
+            phase: "final_answer",
+          },
+        },
+      },
+    ]);
+
+    expect(messages.map((message) => [message.id, message.role, message.blocks[0]])).toEqual([
+      ["user-1", "you", { kind: "text", text: "render every kind" }],
+      ["agent-1", "agent", { kind: "text", text: "# Result\n\n| A | B |\n|---|---|\n| مرحبا | 日本語 |" }],
+    ]);
+  });
+
   // The trap, still shut. `response_item` message/reasoning records carry
   // developer-role system prompts plus an <environment_context> block delivered
   // as a user turn. Reading them would put codex's own instructions in the

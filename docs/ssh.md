@@ -19,6 +19,23 @@ remembers the whole profile, not a base URL: the local port is a throwaway that
 changes each launch, so a cold start re-opens the tunnel from the stored profile
 and signs in again with the remembered passcode.
 
+The SSH username has no safe universal default. `root` login is commonly
+disabled and unnecessarily privileged; `ubuntu`, `ec2-user`, `debian`, and a
+person's local account are all environment-specific. The app therefore leaves
+it blank and asks for the username that already works for that server.
+
+SSH authentication and the Shahi passcode protect different boundaries. SSH
+admits the phone to the machine; the forwarded connection then arrives at the
+sidecar on loopback, indistinguishable from a request made by any other local
+process. Since a Shahi session can execute arbitrary terminal input, disabling
+the sidecar gate for SSH would silently grant that control to every local
+process that can reach its port. The passcode remains required for SSH mode.
+The plugin prints it once during installation and keeps only its bcrypt hash;
+recover the original installation message with
+`herdr plugin log list --plugin shahi`, or deliberately rotate it with the
+command in `docs/operations.md`. The normal QR pairing flow never asks for the
+passcode: its single-use secret mints a revocable per-device credential instead.
+
 ## The pieces
 
 - `src/lib/ssh.ts` — the profile type and its Keychain-safe shape.

@@ -64,11 +64,11 @@ export function Scanner({
             : "Camera access is off for Shahi. Turn it on in Settings, then come back."}
         </Text>
         {!permission.canAskAgain && (
-          <Pressable style={styles.button} onPress={() => void Linking.openSettings()} testID="open-settings">
+          <Pressable accessibilityRole="button" style={styles.button} onPress={() => void Linking.openSettings()} testID="open-settings">
             <Text style={styles.buttonText}>Open Settings</Text>
           </Pressable>
         )}
-        <Pressable onPress={onCancel} hitSlop={12} testID="scanner-cancel">
+        <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={12} testID="scanner-cancel">
           <Text style={styles.cancel}>Cancel</Text>
         </Pressable>
       </View>
@@ -88,7 +88,7 @@ export function Scanner({
           {rejected ? "That isn't a Shahi pairing code." : "Point at the code your server printed."}
         </Text>
         <View style={styles.frame} />
-        <Pressable style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">
+        <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">
           <Text style={styles.cancel}>Cancel</Text>
         </Pressable>
       </View>

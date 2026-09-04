@@ -1,4 +1,7 @@
 import { argsForMode, type InstalledAgent } from "@shahi/shared";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export type { InstalledAgent };
 
@@ -55,8 +58,25 @@ export async function installedAgents(
   // `-i` is what sources ~/.bashrc; stderr is discarded because an interactive
   // shell without a tty complains about job control and says nothing useful.
   const shell = process.env.SHELL || "/bin/bash";
-  const proc = Bun.spawn([shell, "-ic", script], { stdout: "pipe", stderr: "ignore" });
-  const [stdout] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  // Bun 1.4's test runner can hand a piped child an invalid descriptor on
+  // macOS (EBADF before posix_spawn starts). Redirect inside the shell to a
+  // private temporary file instead; a supervised service has the same
+  // detached-stdio shape, so this also makes discovery robust there.
+  const scratch = mkdtempSync(join(tmpdir(), "shahi-agents-"));
+  const output = join(scratch, "resolved");
+  let stdout = "";
+  try {
+    Bun.spawnSync([shell, "-ic", `exec > \"$1\"; ${script}`, "shahi-agent-discovery", output], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    stdout = readFileSync(output, "utf8");
+  } catch {
+    // A missing or broken shell means no detected agents, not a failed API.
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 
   const agents = stdout
     .split("\n")

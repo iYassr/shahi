@@ -26,6 +26,12 @@ describe("keysFor", () => {
     expect(keysFor(prompt, prompt.options[2]!)).toEqual(["3"]);
   });
 
+  test("a numbered codex trust menu selects its digit and confirms with Enter", () => {
+    const prompt = parsePrompt(fixture("blocked__codex-trust-folder__text.txt"))!;
+    expect(prompt).toMatchObject({ answer: "digit", confirm: true });
+    expect(keysFor(prompt, prompt.options[0]!)).toEqual(["1", "Enter"]);
+  });
+
   test("a cursor menu is walked from the lit row, then confirmed", () => {
     // Cursor on the second of two rows: "Yes, I trust this folder".
     const prompt = parsePrompt(fixture("blocked__trust-folder__text.txt"))!;

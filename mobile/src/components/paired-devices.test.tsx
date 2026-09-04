@@ -47,6 +47,18 @@ describe("paired devices", () => {
     expect(view.getByText(/No phones have paired by code yet/)).toBeTruthy();
   });
 
+  test("a restore-time routing race can be retried and a live transition retries automatically", async () => {
+    api.devices
+      .mockRejectedValueOnce(new Error("No server address configured"))
+      .mockResolvedValue({ devices: [mine], thisDeviceId: "dev-me" });
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} refreshKey="connecting" />);
+    await waitFor(() => view.getByTestId("retry-devices"));
+
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} refreshKey="live" />);
+    await waitFor(() => view.getByText(/Yasser's iPhone/));
+    expect(api.devices).toHaveBeenCalledTimes(2);
+  });
+
   // There is no undo: the server refuses the revoked phone's next request.
   test("revoking another phone asks first, then removes it", async () => {
     api.devices

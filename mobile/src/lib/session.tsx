@@ -385,7 +385,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // A failed WebSocket handshake does not expose its HTTP status in React
     // Native. Re-read over HTTP when the link drops so a server restart onto a
     // newer contract becomes an actionable 426 instead of a stale LIVE list.
-    const socket = new SessionSocket(onMessage, setLink, signOut, () => void refresh());
+    const socket = new SessionSocket(
+      onMessage,
+      (state) => {
+        setLink(state);
+        // A stream reconnect brings a fresh dashboard push, but an earlier
+        // failed HTTP read may still be holding the whole UI on the offline
+        // screen. Re-read on live so recovery clears that error without a
+        // manual "Try again" tap.
+        if (state === "live") void refresh();
+      },
+      signOut,
+      () => void refresh(),
+    );
     socket.connect();
     socketRef.current = socket;
     return () => {

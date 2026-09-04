@@ -371,9 +371,9 @@ describe("the relay's close codes", () => {
     await expect(call).rejects.toMatchObject({ reason: "relay", message: expect.stringContaining("throttling this phone") });
   });
 
-  // The box could not open the phone's first frame — it does not hold this
-  // secret — and closed the link. Retrying would be refused forever.
-  test("4403 means not paired: the request fails, the socket signs out, and nothing retries", async () => {
+  // A close code is relay-visible and unauthenticated. It can be a stale-link
+  // race while a box restarts, so it must never erase a durable pairing.
+  test("4403 retains a device pairing and reconnects", async () => {
     connection.relay = deviceTarget(identity);
     const expired = jest.fn();
     const socket = new SessionSocket(jest.fn(), jest.fn(), expired);
@@ -386,20 +386,21 @@ describe("the relay's close codes", () => {
     expect(() => box.read()).toThrow(); // exactly what the real box hits
     ws.drop(4403);
     const e = await call.catch((err: unknown) => err);
-    expect(e).toBeInstanceOf(UnauthorizedError);
-    expect((e as Error).message).toBe("This phone is no longer paired with that box.");
-    expect(expired).toHaveBeenCalledTimes(1);
+    expect(e).toBeInstanceOf(UnreachableError);
+    expect(expired).not.toHaveBeenCalled();
     await sleep(600);
-    expect(FakeSocket.opened).toHaveLength(1);
+    expect(FakeSocket.opened).toHaveLength(2);
   });
 
-  test("4401 — a device the box does not know — is the same sign-out", async () => {
+  test("4401 also retains a device pairing; only a sealed bye may sign out", async () => {
     connection.relay = deviceTarget(identity);
     const expired = jest.fn();
     const socket = new SessionSocket(jest.fn(), jest.fn(), expired);
     socket.connect();
     FakeSocket.opened.at(-1)!.drop(4401);
-    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).not.toHaveBeenCalled();
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(2);
   });
 
   // Revocation cannot travel as a close code: the relay flattens a box-driven
@@ -422,9 +423,7 @@ describe("the relay's close codes", () => {
     expect(FakeSocket.opened).toHaveLength(1); // nothing reconnected
   });
 
-  // The mirror image: the phone cannot open the box's frames. A box that
-  // derived with a different secret is not one this phone is paired with.
-  test("a box whose frames do not open with this phone's key is treated as not paired", async () => {
+  test("a late frame from another encrypted session drops only this connection", async () => {
     connection.relay = deviceTarget(identity);
     const expired = jest.fn();
     const socket = new SessionSocket(jest.fn(), jest.fn(), expired);
@@ -434,8 +433,10 @@ describe("the relay's close codes", () => {
     const box = new FakeBox(ws, random(32));
     box.handshake();
     box.push({ t: "ws", data: { type: "ping", at: 1 } });
-    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).not.toHaveBeenCalled();
     expect(ws.readyState).toBe(3);
+    await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(2);
   });
 });
 
@@ -464,6 +465,21 @@ describe("the dashboard stream", () => {
     const box2 = new FakeBox(again, secret);
     box2.handshake();
     expect(box2.read()).toEqual([{ t: "ws", data: { type: "watch", paneId: "w1:p2" } }]);
+  });
+
+  test("a watch racing a native socket close does not throw", () => {
+    const socket = new RelayLink(deviceTarget(identity));
+    socket.ensureConnected();
+    const wire = FakeSocket.opened[0]!;
+    const box = new FakeBox(wire, secret);
+    wire.accept();
+    box.handshake();
+
+    // Native can expose CLOSED before delivering onclose, leaving the old
+    // crypto session in place for this event-loop turn.
+    wire.readyState = 3;
+    expect(() => socket.watch("w1:p1")).not.toThrow();
+    expect(box.read()).toEqual([]);
   });
 
   test("the box's stream reaches onMessage; the heartbeat only keeps the link alive", async () => {

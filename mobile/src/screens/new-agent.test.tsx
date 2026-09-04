@@ -1,6 +1,9 @@
 import { render, screen, userEvent } from "@testing-library/react-native";
 import { modesFor, type Session } from "@shahi/shared";
-import { PickSpace } from "./spaces";
+import { NewSpace, PickSpace } from "./spaces";
+
+jest.mock("@/lib/api", () => ({ api: { createWorkspace: jest.fn() } }));
+import { api } from "@/lib/api";
 
 jest.mock("expo-router", () => ({ router: { back: jest.fn(), push: jest.fn(), replace: jest.fn() }, Stack: { Screen: () => null } }));
 // The picker draws a plain numbered circle, not the working-state Avatar, but
@@ -40,6 +43,7 @@ describe("permission modes", () => {
     expect(claude[0]!.unsafe).toBeFalsy();
     expect(codex[0]!.unsafe).toBeFalsy();
     expect(claude.map((m) => m.id)).not.toEqual(codex.map((m) => m.id));
+    expect(claude[0]!.args).toEqual(["--permission-mode", "manual"]);
   });
 
   // An unknown agent gets no options and starts with its own defaults. Inventing
@@ -79,5 +83,23 @@ describe("PickSpace", () => {
   test("with no spaces, offers to make one instead of an empty list", () => {
     render(<PickSpace session={{ ...session, workspaces: [] } as Session} onPick={jest.fn()} />);
     expect(screen.getByText(/make one first/)).toBeTruthy();
+  });
+});
+
+describe("NewSpace", () => {
+  test("a brand-new box can type its first folder and create a space", async () => {
+    const createWorkspace = api.createWorkspace as jest.Mock;
+    createWorkspace.mockResolvedValue({ workspaceId: "w1" });
+    const onCreated = jest.fn();
+    render(<NewSpace session={{ workspaces: [], tabs: [], panes: [] } as unknown as Session} onCreated={onCreated} />);
+
+    expect(screen.getByTestId("create-space").props.accessibilityRole).toBe("button");
+    expect(screen.getByTestId("create-space").props.accessibilityState.disabled).toBe(true);
+    await userEvent.type(screen.getByTestId("new-space-folder"), "/tmp/shahi-first-space");
+    await userEvent.type(screen.getByPlaceholderText("what you are working on"), "production QA");
+    await userEvent.press(screen.getByTestId("create-space"));
+
+    expect(createWorkspace).toHaveBeenCalledWith({ label: "production QA", cwd: "/tmp/shahi-first-space" });
+    expect(onCreated).toHaveBeenCalledTimes(1);
   });
 });

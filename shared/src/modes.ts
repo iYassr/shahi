@@ -31,7 +31,10 @@ const CLAUDE: AgentMode[] = [
     id: "default",
     label: "Ask me",
     description: "Stops for permission before editing files or running commands.",
-    args: [],
+    // Claude persists the last mode selected in its TUI. No flag therefore
+    // means "whatever this machine used last", which can be auto approval.
+    // `manual` is Claude 2.1.261's explicit ask-before-tools contract.
+    args: ["--permission-mode", "manual"],
   },
   {
     id: "acceptEdits",

@@ -10,7 +10,7 @@
  * long ago the last update arrived.
  */
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import { enablePush } from "@/lib/push";
@@ -46,11 +46,15 @@ export function Settings() {
   const isSsh = server.startsWith("ssh://");
   const kind = isSsh ? "ssh" : "shahi relay";
   const name = session?.serverName ?? host;
-  const status = link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "connecting…";
+  const status = link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING";
   const [showReach, setShowReach] = useState(false);
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" style={styles.screen}>
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+    >
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <View style={styles.group}>
@@ -104,9 +108,12 @@ export function Settings() {
           <View style={styles.rowLine}>
             <IconBadge name="terminal" tint={theme.mint} />
             <Text style={styles.rowLabel}>Terminal width</Text>
-            <View style={styles.widths}>
+          </View>
+          <View style={styles.widths}>
             {TERMINAL_WIDTHS.map((w) => (
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: w === terminalWidth }}
                 key={w}
                 style={[styles.width, w === terminalWidth && styles.widthOn]}
                 onPress={() => setTerminalWidth(w)}
@@ -116,7 +123,6 @@ export function Settings() {
                 </Text>
               </Pressable>
             ))}
-            </View>
           </View>
         </View>
         <Separator />
@@ -142,6 +148,7 @@ export function Settings() {
         </View>
         <Separator />
         <PairedDevices
+          refreshKey={link}
           onRevokedSelf={() => {
             signOut();
             router.replace("/connect");
@@ -166,13 +173,25 @@ export function Settings() {
           tint={theme.rose}
           label="Sign out"
           labelColor={theme.rose}
-          onPress={() => {
-            signOut();
-            router.replace("/connect");
-          }}
+          onPress={() =>
+            Alert.alert(
+              "Sign out of Shahi?",
+              "You will need a new pairing code or your SSH details to connect again.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Sign out",
+                  style: "destructive",
+                  onPress: () => {
+                    signOut();
+                    router.replace("/connect");
+                  },
+                },
+              ],
+            )
+          }
         />
       </View>
-      <View style={{ height: 32 }} />
     </ScrollView>
   );
 }
@@ -220,7 +239,7 @@ function Row({
   );
   if (!onPress) return <View style={styles.row}>{body}</View>;
   return (
-    <Pressable style={styles.row} disabled={disabled} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.row} disabled={disabled} onPress={onPress}>
       {body}
     </Pressable>
   );
@@ -228,6 +247,9 @@ function Row({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
+  // The native tab bar floats over content. Keep the destructive final row
+  // fully visible and tappable above it, including at large text sizes.
+  content: { paddingBottom: 112 },
   // The inset-grouped card, the way iOS settings sections sit on the page.
   group: {
     backgroundColor: theme.surface,
@@ -271,7 +293,7 @@ const styles = StyleSheet.create({
   hint: { color: theme.dim, fontSize: 12, paddingLeft: 38 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 50 },
 
-  widths: { flexDirection: "row", gap: 6 },
+  widths: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingLeft: 38 },
   width: {
     borderWidth: 1,
     borderColor: theme.line,

@@ -88,6 +88,19 @@ describe("real captured screens", () => {
     expect(parsed!.options[0]).toMatchObject({ label: "Yes, proceed (y)", selected: true });
   });
 
+  test("marks codex's numbered folder-trust menu as requiring Enter after the digit", () => {
+    const parsed = parsePrompt(readFixture("blocked__codex-trust-folder__text.txt"));
+    expect(parsed).toMatchObject({
+      question: "Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection. Trusting the directory allows project-local config, hooks, and exec policies to load.",
+      answer: "digit",
+      confirm: true,
+      options: [
+        { index: 1, label: "Yes, continue", selected: true },
+        { index: 2, label: "No, quit", selected: false },
+      ],
+    });
+  });
+
   test("produces identical results from the raw-ANSI capture", () => {
     expect(parsePrompt(readFixture("blocked__w4-p2__ansi.txt"))).toEqual(
       parsePrompt(readFixture("blocked__w4-p2__text.txt")),
