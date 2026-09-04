@@ -53,6 +53,9 @@ QR code. Scan it in the app and your agents appear.
 There is nothing else to configure — no port to forward, no domain, no reverse
 proxy. Reinstalling upgrades in place and keeps your passcode.
 
+No herdr yet? `curl -fsSL https://herdr.dev/install.sh | sh` first — Shahi is a
+herdr plugin, so herdr comes first and there is no separate Shahi installer.
+
 > [!NOTE]
 > The iOS app is in private testing; there is no public App Store or TestFlight
 > link yet. The sidecar, plugin, relay and full source are ready to evaluate
