@@ -293,6 +293,7 @@ export function busySession(): Scenario {
   return {
     session: {
       version: "0.8.0",
+      serverName: "stub-box",
       protocol: 19,
       defaultGrouping: null,
       workspaces: [
@@ -329,6 +330,7 @@ export function emptySession(): Scenario {
   return {
     session: {
       version: "0.8.0",
+      serverName: "stub-box",
       protocol: 19,
       defaultGrouping: null,
       workspaces: [],

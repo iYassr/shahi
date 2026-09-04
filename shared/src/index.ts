@@ -250,6 +250,13 @@ export interface SpaceTab {
 export interface Session {
   version: string;
   protocol: number;
+  /**
+   * The box's own hostname, so the app can name the machine it is talking to
+   * rather than the relay it reaches it through. In the authenticated snapshot,
+   * not `/api/meta`: over the relay that pre-auth reply names nothing (R5), and
+   * a hostname identifies the machine more than a version does.
+   */
+  serverName: string;
   /** herdr's own `ui.agent_panel_sort`, so the app opens the way the TUI does. */
   defaultGrouping: "priority" | "space" | null;
   workspaces: Space[];

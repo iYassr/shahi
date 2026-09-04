@@ -35,27 +35,51 @@ export function Settings() {
 
   const age =
     lastUpdateAt === null ? null : Math.max(0, Math.round((Date.now() - lastUpdateAt) / 1000));
-  const host = server.replace(/^https?:\/\//, "") || "—";
+  // Any scheme, not just http: the reach is written `relay://…` or `ssh://…`,
+  // and only the http form was being stripped, so the fallback name showed the
+  // whole URL.
+  const host = server.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "") || "—";
+  // How the phone reaches the box, not the box itself: over SSH the address is
+  // the machine, over the relay it is the relay's host. So name the box by its
+  // own hostname (from the authenticated snapshot) and keep the reach — the
+  // relay URL or ssh target — behind a tap.
+  const isSsh = server.startsWith("ssh://");
+  const kind = isSsh ? "ssh" : "shahi relay";
+  const name = session?.serverName ?? host;
+  const status = link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "connecting…";
+  const [showReach, setShowReach] = useState(false);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={styles.screen}>
       {/* The server is the identity: where WhatsApp puts your face, this app
-          puts the machine you are trusting. */}
+          puts the machine you are trusting. Tap to reveal how it is reached. */}
       <View style={styles.group}>
-        <View style={styles.profile}>
+        <Pressable
+          style={styles.profile}
+          testID="server-identity"
+          onPress={() => setShowReach((v) => !v)}
+          accessibilityRole="button"
+          accessibilityHint="Show the address this server is reached at"
+        >
           <View style={styles.profileIcon}>
             <Icon name="server" color={theme.peach} size={26} />
           </View>
           <View style={styles.profileBody}>
             <Text style={styles.profileName} numberOfLines={1}>
-              {host}
+              {name}
             </Text>
             <Text style={styles.profileSub} numberOfLines={1}>
-              {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "connecting…"}
-              {session ? ` · herdr ${session.version} · protocol ${session.protocol}` : ""}
+              {kind} · {status}
             </Text>
+            {showReach && (
+              <Text style={styles.profileReach} numberOfLines={2}>
+                {server}
+                {session ? ` · herdr ${session.version} · protocol ${session.protocol}` : ""}
+              </Text>
+            )}
           </View>
-        </View>
+          <Icon name={showReach ? "chevron-up" : "chevron-down"} color={theme.dim} size={16} />
+        </Pressable>
       </View>
 
       <View style={styles.group}>
@@ -229,6 +253,7 @@ const styles = StyleSheet.create({
   profileBody: { flex: 1, gap: 2 },
   profileName: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "700" },
   profileSub: { color: theme.dim, fontFamily: theme.mono, fontSize: 10.5 },
+  profileReach: { color: theme.dim, fontFamily: theme.mono, fontSize: 10.5, marginTop: 3, opacity: 0.85 },
 
   row: { paddingHorizontal: 12, paddingVertical: 10, gap: 6 },
   rowLine: { flexDirection: "row", alignItems: "center", gap: 10 },
