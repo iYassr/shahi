@@ -60,8 +60,7 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-font",
-      "expo-image"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
