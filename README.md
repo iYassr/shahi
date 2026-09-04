@@ -1,221 +1,199 @@
+<div align="center">
+
 # Shahi
 
 **See and answer your terminal agents from your phone.**
 
-Shahi shows the AI agents running on a server you control — Claude Code, codex,
-plain shells — and lets you reply from anywhere. When an agent stops to ask a
-question, your phone shows the real question with its real options as native
-buttons; tap one and the answer goes back to the terminal. Everything else
-collapses to a single line, so a screen full of panes reads at a glance.
+Claude Code, Codex, and every agent running in [herdr](https://herdr.dev),
+in one calm mobile inbox — the real conversation, not a shrunken terminal.
+
+[![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/sidecar-macOS%20%7C%20Linux-lightgrey)
+![herdr](https://img.shields.io/badge/herdr-%E2%89%A5%200.8.2-blue)
+
+[Quick start](#quick-start) · [How it connects](#how-it-connects) ·
+[Security](#private-by-design) · [Docs](#documentation)
+
+</div>
+
+---
+
+## The problem
+
+Agents stop. Claude Code hits a permission prompt, Codex asks which option you
+meant, a long run finishes and waits. Each one blocks until you are back at your
+desk — and you find out by walking over and checking.
+
+Shahi turns that wait into a notification you can answer from your pocket.
 
 <p align="center">
-  <img src="docs/screenshots/02-agents.png" width="23%" alt="Agents — what needs you right now, with a blocked agent's question rebuilt as native buttons" />
-  <img src="docs/screenshots/04-reader.png" width="23%" alt="Reader — an agent's conversation, reflowed to fit the phone, with a reply box" />
-  <img src="docs/screenshots/03-spaces.png" width="23%" alt="Spaces — where things live: spaces, their tabs, and their panes" />
-  <img src="docs/screenshots/01-onboarding.png" width="23%" alt="Onboarding — one command on your server, then connect" />
+  <img src="docs/screenshots/02-agents.png" width="230" alt="Agents screen: an agent waiting for an answer, its question and choices already visible" />
+  <img src="docs/screenshots/04-reader.png" width="230" alt="Reader: a Claude Code conversation rendered for a phone" />
+  <img src="docs/screenshots/03-spaces.png" width="230" alt="Spaces: workspaces, tabs and agents" />
+  <img src="docs/screenshots/01-onboarding.png" width="230" alt="Two-step connection screen" />
+</p>
+<p align="center">
+  <sub><b>Agents</b> — what needs you · <b>Reader</b> — the real conversation ·
+  <b>Spaces</b> — the map · <b>Connect</b> — scan once</sub>
 </p>
 
-It talks to a small helper you install once on the machine your agents run on.
-By default the phone reaches it through a blind relay — a Cloudflare Worker
-the author runs, which carries ciphertext it cannot read, and sees only
-addresses, ids and traffic sizes ([`docs/relay.md`](docs/relay.md)). Turn it
-off and the path is Tailscale or SSH, with nobody in between.
+## Quick start
 
-## What it is, and what it talks to
-
-Shahi is a native iOS app plus a sidecar you run next to your agents. Today the
-sidecar speaks to [**herdr**](https://herdr.dev), a terminal multiplexer.
-**tmux is the planned second backend** — the adapter is deliberately isolated
-(`server/lib/herdr-*.ts`) so a sibling can slot in beside it, and the app was
-named for the phone-shaped window rather than for one multiplexer. For now,
-**herdr is the only supported backend.**
-
-herdr's TUI is excellent on a desktop and painful on a phone — 146-column output
-on a four-inch screen, chord keybindings an iOS keyboard cannot produce, and
-dozens of panes to navigate blind. herdr lists "no web view" as an explicit
-non-goal, so Shahi is a sidecar rather than a fork: it owns herdr's unix socket
-and adds the three things herdr deliberately omits — HTTP, WebSocket, and
-authentication.
-
-The app has two views, matching how herdr splits its own sidebar. **Agents** is
-triage — what needs you right now. **Spaces** is structure — where things live,
-which tabs are in them, and where new work goes. Plain shells are reachable from
-Spaces; on a phone that is the only way to get at roughly half the panes in a
-real session.
-
-## Setup
-
-Two parts: install the sidecar on your server, then connect the app.
-
-### 1. The server
-
-Shahi is a herdr plugin. On the machine herdr runs on:
+On the machine where herdr runs:
 
 ```sh
 herdr plugin install iYassr/shahi
 herdr plugin action invoke shahi.pair
 ```
 
-herdr clones and builds it (installing [bun](https://bun.sh) first if there is
-none). The `pair` action opens a popup inside herdr that, the first time, sets
-everything up in front of you — a passcode, a user service (launchd or
-systemd) that keeps the sidecar running, the relay — and then shows the QR.
-Scan it and the phone connects through the relay from anywhere. Reinstalling
-upgrades in place and leaves your passcode alone.
-[`docs/plugin.md`](docs/plugin.md) has the rest: what goes where, the
-actions, a key to bind, updating, uninstalling cleanly.
+That installs the sidecar as a user service, generates its secrets, and prints a
+QR code. Scan it in the app and your agents appear.
 
-<details>
-<summary>The older installer, and by hand</summary>
+There is nothing else to configure — no port to forward, no domain, no reverse
+proxy. Reinstalling upgrades in place and keeps your passcode.
 
-`install.sh` predates the plugin and still works — clone, build, secrets, a
-systemd user service, lingering enabled:
+> [!NOTE]
+> The iOS app is in private testing; there is no public App Store or TestFlight
+> link yet. The sidecar, plugin, relay and full source are ready to evaluate
+> today.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
+## How it connects
+
+Your machine dials **out** to a relay and holds the connection open. Your phone
+dials out to the same relay. Neither side needs an inbound port, and the relay
+cannot read what it forwards.
+
+```mermaid
+flowchart LR
+  subgraph box["Your machine"]
+    herdr["herdr session<br/>Claude Code · Codex · shells"]
+    sidecar["Shahi sidecar"]
+    herdr <--> sidecar
+  end
+  relay["Blind relay<br/>sees sizes and timing,<br/>never content"]
+  phone["Your phone"]
+  sidecar -- "outbound, stays open" --> relay
+  phone -- "sealed frames" --> relay
 ```
 
-Or by hand:
+Every frame above the relay is sealed end to end between phone and sidecar
+(X25519 → HKDF → ChaCha20-Poly1305), keyed from the pairing secret, which never
+travels. The relay multiplexes ciphertext and knows a key hash, not who you are.
 
-```sh
-bun install
-bun run gen:types                                           # from herdr's own schema
-bun run server/scripts/init-secrets.ts --passcode <digits>  # writes .env, mode 0600
-bun run build:web
-bun run server/index.ts
-```
+Two alternatives, if you would rather not use a relay at all:
 
-Then, to keep it running:
+| Mode | Reach | Set-up |
+|---|---|---|
+| **Relay** (default) | Anywhere | None — the first QR just works |
+| **Direct** | Your tailnet | Tailscale on both devices |
+| **SSH tunnel** | Anywhere you can SSH | Host key pinned on first connect |
 
-```sh
-cp deploy/shahi.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now shahi
-sudo loginctl enable-linger "$USER"     # survive logout
-```
-</details>
+`RELAY_URL=` (empty) in the plugin's config opts out of the relay entirely.
 
-### 2. The app
+## What makes it different
 
-Scan the code from **Pair a phone**, or enter the address and passcode by
-hand. The code carries the relay's address, so a scanned phone connects
-through the relay from anywhere with nothing exposed (`docs/relay.md`). Two
-direct ways exist instead, for a phone on the same network; the choice is
-really about how you already log in.
+**It reads the transcript, not the screen.** Claude Code and Codex each write a
+structured log of the real conversation. Shahi reads that on your machine and
+renders messages, reasoning, tool calls, patches, files and results as a
+phone-shaped thread. Terminal text arrives hard-wrapped at 146 columns and
+cannot be reflowed — which is why every "mobile tmux" is a pinch-and-scroll
+exercise, and why Shahi does not try to be one.
 
-- **Over Tailscale** — bind the sidecar to your tailnet address and the app
-  connects to `https://<host>.<tailnet>.ts.net` directly. Put TLS in front with
-  `tailscale serve --bg --https=443 http://127.0.0.1:7171` so the connection is
-  a [secure context](https://developer.mozilla.org/docs/Web/Security/Secure_Contexts)
-  — that is what lets notifications through.
-- **Over SSH** — the app opens its own SSH tunnel to the box (the same
-  credentials you already use) and forwards to the sidecar on loopback. Nothing
-  needs to be exposed on the tailnet at all. The server's host key is trusted
-  on first use and pinned; any later change is refused before a credential is
-  sent. (Like SSH itself, the very first connection has no prior key to check,
-  so pair over a network you trust — after that a swapped key is caught.)
+**Permission prompts become buttons.** When an agent renders a menu, Shahi
+parses it and offers the real choices, with the context above them. A prompt is
+answered by the server against a fresh read of the screen, so a stale tap
+cannot press the wrong row. When the parse is not confident, you get the raw
+terminal and a text box instead of invented buttons.
 
-**Never `tailscale funnel`** — that would put an unauthenticated-by-default herdr
-proxy on the public internet.
+**Unknown shapes are dropped, never guessed.** An agent output Shahi does not
+recognise renders nothing rather than something plausible and wrong. The failure
+mode is silence, not fiction.
 
-## Security
+**Full control stays one tap away.** Reply, answer, attach a file, send terminal
+keys, start a new agent in any workspace, or drop to the raw screen.
 
-The API proxies every herdr method, and `pane.send_text` alone is arbitrary
-shell execution as you. Three layers, in order of importance:
+**It runs on your machine.** Your agents, code, credentials and transcripts stay
+on hardware you own.
 
-1. **Bind address.** Defaults to loopback. Widen it to a Tailscale address
-   deliberately, never to `0.0.0.0`, which also publishes on your LAN.
-2. **Tailnet or SSH only.** The port is never on the public internet; reach it
-   across your own tailnet, or tunnel to it over SSH.
-3. **App passcode.** Tailscale (or SSH) authenticates the *device*; the passcode
-   authenticates the *person* holding it. When the sidecar is bound off loopback
-   it is the only layer between the port and full control of every agent on the
-   machine.
+## Private by design
 
-Terminal output is never logged — those screens carry whatever is in your
-terminals. Credentials (passcode, SSH key, host fingerprints) live only in the
-iOS Keychain and are never sent to anyone but your own server.
+Shahi can type into your terminal, so the boundary is deliberate rather than
+incidental:
 
-## Under the hood
+- The sidecar binds to loopback and is gated by a passcode.
+- Pairing codes are single-use and expire in ten minutes. Each paired device
+  gets its own secret and can be revoked — effective on its next request and on
+  its open socket.
+- The relay is blind: it forwards sealed frames and can observe sizes and
+  timing, never content, paths, or keys.
+- Secrets live in herdr's per-plugin config directory, never in the checkout.
+  On the phone they live in the iOS Keychain.
+- Terminal output is never written to logs.
 
-The parts that were surprising enough to be worth writing down. The full account
-for anyone changing the code is in [`CLAUDE.md`](CLAUDE.md).
+The threat model, the protocol, and what is fixed versus accepted are written
+down in the [security review](docs/security-review.md) and
+[relay specification](docs/relay.md) — including the parts that are still open.
 
-### The reader reads the agent's own transcript, not the terminal
+## Requirements
 
-The pane screen herdr exposes is pre-wrapped at the server's width, ~42 rows
-deep, with no scrollback — anything built on it is scraping a redrawing TUI. But
-Claude Code writes its own structured JSONL transcript per session under
-`~/.claude/projects/`, and herdr's session id **is that file's name**. So the
-reader is a file read plus a renderer, with no terminal parsing at all, and it
-can reflow text because the text was never wrapped to begin with.
+- A Mac or Linux machine running **herdr 0.8.2+**
+- Claude Code, Codex, or any shell running inside it
+- An iPhone
+- Outbound internet for the default relay — or Tailscale, or SSH
 
-Measured across 48 transcripts and 8,298 records, the format has one trap that
-dominates: **87% of `user` records are not from the user** — they carry
-`tool_result` blocks, because that is how tool output returns through the API.
-Rendering `type: "user"` as "you said" misattributes almost all tool output to
-the human, so tool calls are paired with their results and shown as one
-collapsible row. Only Claude Code writes this format; codex keeps its own store,
-and shells have no transcript, so the terminal view stays the universal fallback.
-
-### What herdr's API does and does not give you
-
-Measured against herdr (protocol 17 on 0.7.5, re-checked on 0.8.2 / protocol
-20, which is the minimum Shahi supports); several points contradict the
-official docs, and they shape the whole design.
-
-| | |
-|---|---|
-| **Transport** | Unix socket, newline-delimited JSON. No network surface at all — hence a sidecar. |
-| **Connections** | The server closes after **one** response, despite the docs saying connections are persistent. `events.subscribe` is the sole exception. |
-| **Live output** | There is none. Change events carry `{pane_id, revision}` and no content; output arrives only by calling `pane.read`. |
-| **`revision`** | Does not track output — it stayed at `0` across four reads of a pane whose text was visibly changing. Change detection is a content hash. |
-| **Scrollback** | None from the API. Shahi records its own, diffing successive screens so the phone can read further back than the TUI can. |
-| **Client size** | Cannot be declared. Output is pre-wrapped at the server's width, so the app renders faithfully and lets you scale rather than re-wrapping. |
-| **Status events** | `pane.updated` does **not** report agent-status transitions. Relying on events alone drifted on 18 of 18 checks, so the mirror is re-snapshotted every few seconds. |
-
-### Attachments
-
-Both a phone photo/file and a file browsed on the server end as an absolute path
-in the message, because that is what an agent can act on. Uploads never land in
-the agent's working directory, names are reduced to a safe basename
-(`../../../etc/passwd` becomes `passwd`), files are timestamped so two `IMG_0001.jpg`
-cannot collide, anything over 32MB is refused, and uploads older than two weeks
-are swept.
+herdr is the only backend today. tmux is plausible and not built; it is not
+advertised as working.
 
 ## Development
 
-```
-shared/    the wire contract, types only — both clients import it
-server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
-mobile/    the Expo (React Native) app — the product, where new work goes
-web/       the React PWA, archived: still builds and passes, no longer developed
-e2e/       Playwright + Maestro, against a stub of the server
+A native Expo app, a Bun sidecar, a shared wire contract, and a Cloudflare
+Worker relay.
+
+```text
+mobile/   the native app — the product, and where new work goes
+server/   the sidecar: owns herdr's socket, speaks HTTP + WebSocket
+shared/   the wire contract, relay protocol, end-to-end encryption
+relay/    the blind relay: a Worker, one Durable Object per box
+plugin/   the herdr plugin and its service lifecycle
+web/      the archived PWA — kept working, no longer developed
+e2e/      Playwright, against a stub of the server
 ```
 
 ```sh
-bun test shared/src server web/src        # unit
-cd mobile && bun run test                 # native unit tests (jest)
-bun run test:e2e                           # web engines, against the stub
-maestro test .maestro/                     # native flows, against the stub
-bun run typecheck                          # both clients share shared/, so this catches drift
+bun install
+bun run typecheck
+bun test shared/src server web/src plugin   # unit
+bun run test:mobile                         # the app
+bun run test:e2e                            # both engines, against a stub
+bun run test:relay                          # the relay, under wrangler dev
 ```
 
-The suite runs against `e2e/stub/server.ts`, which speaks the same contract with
-no herdr behind it and records writes instead of performing them — so tests never
-touch a live session. See [`CLAUDE.md`](CLAUDE.md) for how the pieces fit and the
-decisions worth not relitigating.
+Tests run against a stub that records writes instead of performing them, so the
+suite can never type into a real session. CI additionally runs the sidecar
+against a **real headless herdr** on every push — pinned to 0.8.2 and to
+whatever is current — because contract drift is the one thing a stub cannot
+notice.
 
-Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+[AGENTS.md](AGENTS.md) documents herdr's measured behaviour and the engineering
+rules; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change.
 
-## More
+## Documentation
 
-- [`docs/plugin.md`](docs/plugin.md) — the herdr plugin: what it installs where, the actions, updating, uninstalling
-- [`docs/operations.md`](docs/operations.md) — running it: TLS, health, where state lives
-- [`docs/notifications.md`](docs/notifications.md) — which setups can actually deliver a notification
-- [`docs/app-store.md`](docs/app-store.md) — what the iOS build needs before submission
-- [`docs/privacy-policy.md`](docs/privacy-policy.md) — draft privacy policy
-- [`CLAUDE.md`](CLAUDE.md) — the measured truth about herdr, and the architecture
+| | |
+|---|---|
+| [Plugin and pairing](docs/plugin.md) | Install, actions, key bindings, uninstall |
+| [Connection options](docs/connectivity.md) | Relay, tailnet, SSH — and how to choose |
+| [Relay protocol](docs/relay.md) | The wire format, and running your own |
+| [Security review](docs/security-review.md) | Threat model, findings, what is deferred |
+| [Operating the sidecar](docs/operations.md) | Service, logs, manual setup |
+| [Notifications](docs/notifications.md) | Push, and what is not proven yet |
+| [Building on a Mac](docs/on-a-mac.md) | iOS builds and device testing |
+| [Privacy policy](docs/privacy-policy.md) | Draft, for the App Store |
 
-## License
+---
 
-[MIT](LICENSE).
+<div align="center">
+<sub>MIT licensed · Shahi was HerdrUI until August 2026 — a phone-shaped window
+onto a terminal multiplexer need not be named after one.</sub>
+</div>
