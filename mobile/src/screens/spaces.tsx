@@ -38,11 +38,11 @@ export function Spaces({ session }: { session: Session | null }) {
         options={{
           headerRight: () => (
             <View style={styles.status}>
-              <Text style={[styles.statusText, { color: theme.dim }]} numberOfLines={1}>
+              <Text style={[styles.statusText, { color: theme.dim }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
                 {server.replace(/^https?:\/\//, "")}
               </Text>
-              <Text style={[styles.statusText, { color: link === "live" ? theme.mint : theme.dim }]}>
-                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
+              <Text style={[styles.statusText, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
+                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
               </Text>
             </View>
           ),
@@ -69,6 +69,7 @@ export function Spaces({ session }: { session: Session | null }) {
           ).length;
           return (
             <Pressable
+              accessibilityRole="button"
               style={styles.space}
               onPress={() =>
                 router.push({
@@ -96,7 +97,7 @@ export function Spaces({ session }: { session: Session | null }) {
         }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListFooterComponent={
-          <Pressable style={styles.action} onPress={() => router.push("/new-space")}>
+          <Pressable accessibilityRole="button" style={styles.action} onPress={() => router.push("/new-space")}>
             <Text style={styles.actionText}>+ New space</Text>
           </Pressable>
         }
@@ -148,6 +149,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
         }}
         ListFooterComponent={
           <Pressable
+            accessibilityRole="button"
             style={[styles.action, styles.actionPrimary]}
             onPress={() =>
               router.push({
@@ -174,7 +176,7 @@ const PaneRow = memo(function PaneRow({
   onPress: (paneId: string) => void;
 }) {
   return (
-    <Pressable style={styles.row} onPress={() => onPress(pane.paneId)}>
+    <Pressable accessibilityRole="button" style={styles.row} onPress={() => onPress(pane.paneId)}>
       <Avatar pane={pane} />
       <View style={styles.rowBody}>
         <View style={styles.rowLine}>
@@ -224,7 +226,7 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
     try {
       // Absolute only: herdr does not expand `~` and does not reject it either,
       // it silently uses $HOME.
-      await api.createWorkspace({ label: name.trim() || "new space", cwd });
+      await api.createWorkspace({ label: name.trim() || "new space", cwd: cwd.trim() });
       onCreated();
     } catch (e) {
       setError((e as Error).message);
@@ -235,20 +237,39 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
   return (
     <SheetBody title="New space">
       <Text style={styles.label}>NAME</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="what you are working on" placeholderTextColor={theme.dim} />
+      <TextInput
+        style={styles.input}
+        value={name}
+        onChangeText={setName}
+        placeholder="what you are working on"
+        placeholderTextColor={theme.dim}
+        accessibilityLabel="Space name"
+      />
       <Text style={styles.label}>FOLDER</Text>
+      <TextInput
+        style={styles.input}
+        value={cwd}
+        onChangeText={setCwd}
+        autoCapitalize="none"
+        autoCorrect={false}
+        testID="new-space-folder"
+        placeholder="/home/you/project"
+        placeholderTextColor={theme.dim}
+        accessibilityLabel="Space folder"
+      />
       {/* A wrapping row like the agent-kind chips: a FlatList cannot size
           itself inside this fit-to-contents sheet, and the chips floated up
-          over the title. */}
+          over the title. Existing paths are shortcuts; the editable field is
+          what makes the first space on a new box possible at all. */}
       <View style={styles.kinds}>
         {suggestions.map((item) => (
-          <Pressable key={item} style={[styles.chip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: item === cwd }} key={item} style={[styles.chip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
             <Text style={[styles.chipText, item === cwd && styles.chipTextOn]} numberOfLines={1}>{item}</Text>
           </Pressable>
         ))}
       </View>
       {error && <Text style={styles.err}>{error}</Text>}
-      <Pressable style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()}>
+      <Pressable accessibilityRole="button" style={[styles.go, (busy || !cwd.trim()) && styles.goOff]} disabled={busy || !cwd.trim()} onPress={() => void create()} testID="create-space">
         <Text style={styles.goText}>{busy ? "Creating…" : "Create space"}</Text>
       </Pressable>
     </SheetBody>
@@ -265,7 +286,7 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
   return (
     <SheetBody title="Choose a space">
       {session.workspaces.length === 0 ? (
-        <Pressable style={styles.action} onPress={() => router.replace("/new-space")}>
+        <Pressable accessibilityRole="button" style={styles.action} onPress={() => router.replace("/new-space")}>
           <Text style={styles.actionText}>No spaces yet — make one first</Text>
         </Pressable>
       ) : (
@@ -275,7 +296,7 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
           data={session.workspaces}
           keyExtractor={(w) => w.workspaceId}
           renderItem={({ item, index }) => (
-            <Pressable style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
+            <Pressable accessibilityRole="button" style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
               <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
                 <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>{index + 1}</Text>
               </View>
@@ -354,7 +375,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       <Text style={styles.label}>AGENT</Text>
       <View style={styles.kinds}>
         {kinds.map((k) => (
-          <Pressable key={k} style={[styles.chip, k === kind && styles.chipOn]} onPress={() => setKind(k)} disabled={busy}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: k === kind }} key={k} style={[styles.chip, k === kind && styles.chipOn]} onPress={() => setKind(k)} disabled={busy}>
             <Text style={[styles.chipText, k === kind && styles.chipTextOn]}>{k}</Text>
           </Pressable>
         ))}
@@ -365,6 +386,8 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
           <View style={styles.modes}>
             {modes.map((option) => (
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: option.id === mode }}
                 key={option.id}
                 style={[
                   styles.mode,
@@ -384,7 +407,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         </>
       )}
       {error && <Text style={styles.err}>{error}</Text>}
-      <Pressable style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind} onPress={() => void start()}>
+      <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind} onPress={() => void start()}>
         <Text style={styles.goText}>
           {phase === "starting" ? `Waiting for ${kind}…` : `Start ${kind ?? "agent"}`}
         </Text>
@@ -411,7 +434,7 @@ function SheetBody({ title, children }: { title: string; children: React.ReactNo
           the first workspace underneath them. */}
       <View style={styles.sheetHead} collapsable={false}>
         <Text style={styles.sheetTitle}>{title}</Text>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
           <Text style={styles.sheetClose}>Close</Text>
         </Pressable>
       </View>

@@ -375,6 +375,37 @@ export function normaliseCodex(rows: Record<string, unknown>[]): LogMessage[] {
       const payload = row.payload as Record<string, unknown> | undefined;
       const kind = payload?.type as string | undefined;
 
+      // Codex 0.153 replaced the UI-level `user_message` / `agent_message`
+      // events with one `item_completed` event whose item is the public
+      // conversation object. Keep reading the UI-level representation rather
+      // than raw response_item messages: those still contain developer prompts
+      // and synthetic environment context alongside the real conversation.
+      if (kind === "item_completed") {
+        const item = payload?.item as Record<string, unknown> | undefined;
+        if (!item) continue;
+        const itemType = item?.type;
+        const role = itemType === "UserMessage" ? "you" : itemType === "AgentMessage" ? "agent" : null;
+        if (!role) continue;
+        const content = Array.isArray(item?.content) ? item.content : [];
+        const text = content
+          .map((part) => {
+            if (!part || typeof part !== "object") return "";
+            const value = part as Record<string, unknown>;
+            return typeof value.text === "string" ? value.text : "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+        if (!text) continue;
+        messages.push({
+          id: typeof item.id === "string" ? item.id : `codex-${index}`,
+          role,
+          at,
+          blocks: [{ kind: "text", text }],
+        });
+        continue;
+      }
+
       // Reasoning. codex streams it as `agent_reasoning` events carrying
       // plaintext — the matching `response_item` of type `reasoning` is
       // encrypted, so this is the only place its text exists (measured: 335

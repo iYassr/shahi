@@ -26,8 +26,8 @@ describe("modesFor", () => {
     expect(modesFor(null)).toEqual([]);
   });
 
-  test("the default mode passes no flags at all", () => {
-    expect(modesFor("claude")[0]!.args).toEqual([]);
+  test("the default mode explicitly asks instead of inheriting persisted TUI state", () => {
+    expect(modesFor("claude")[0]!.args).toEqual(["--permission-mode", "manual"]);
     expect(modesFor("codex")[0]!.args).toEqual([]);
   });
 

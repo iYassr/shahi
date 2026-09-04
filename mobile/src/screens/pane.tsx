@@ -602,6 +602,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           headerRight: () => (
             <View style={styles.toggle}>
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: view === "reader" }}
                 testID="view-read"
                 style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
                 onPress={() => setView("reader")}
@@ -609,6 +611,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
                 <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>read</Text>
               </Pressable>
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: view === "screen" }}
                 testID="view-screen"
                 style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
                 onPress={() => setView("screen")}
@@ -623,7 +627,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       {/* Readable and dismissible, instead of one truncated line squeezed
           into the old topbar. */}
       {error && (
-        <Pressable style={styles.banner} onPress={() => setError(null)}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error}`} style={styles.banner} onPress={() => setError(null)}>
           <Text style={styles.bannerText} numberOfLines={2}>{error}</Text>
           <Text style={styles.bannerClose}>✕</Text>
         </Pressable>
@@ -645,7 +649,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             Claude and codex sessions appear here once the agent has said
             something. A plain shell keeps none at all.
           </Text>
-          <Pressable style={styles.ghost} onPress={() => setView("screen")}>
+          <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>
             <Text style={styles.ghostText}>Show the screen instead</Text>
           </Pressable>
         </View>
@@ -763,7 +767,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
         {view === "reader" && away && (
           <View style={styles.jumpWrap} pointerEvents="box-none">
-            <Pressable style={styles.jump} onPress={jumpToLatest}>
+            <Pressable accessibilityRole="button" style={styles.jump} onPress={jumpToLatest}>
               <Text style={styles.jumpText}>{unseen > 0 ? `${unseen} new ↓` : "Latest ↓"}</Text>
             </Pressable>
           </View>
@@ -832,6 +836,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             multiline
           />
           <Pressable
+            accessibilityRole="button"
             style={[styles.send, (sending || !draft.trim()) && styles.sendOff]}
             disabled={sending || !draft.trim()}
             onPress={() => void submit()}
@@ -876,6 +881,7 @@ function Prompt({
         const isArmed = armed === option.index;
         return (
           <Pressable
+            accessibilityRole="button"
             key={option.index}
             style={[styles.choice, isArmed && styles.choiceArmed]}
             disabled={armed !== null}
@@ -940,7 +946,7 @@ export function Block({
 
   if (block.kind === "thinking") {
     return (
-      <Pressable onPress={() => setOpen((o) => !o)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((o) => !o)}>
         <Text style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</Text>
         {open && (
           <Text style={styles.thinking} selectable>
@@ -956,7 +962,7 @@ export function Block({
   // Tool calls dominate a real transcript; collapsed, they stop drowning it.
   return (
     <View style={styles.tool}>
-      <Pressable style={styles.toolHead} onPress={() => setOpen((o) => !o)}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.toolHead} onPress={() => setOpen((o) => !o)}>
         <Text style={styles.toolCaret}>{open ? "▾" : "▸"}</Text>
         <Text style={styles.toolName}>{block.name}</Text>
         <Text style={styles.toolSummary} numberOfLines={1}>{block.summary}</Text>
@@ -993,7 +999,7 @@ export function Block({
           on a phone this is usually the part you wanted, and burying it behind
           a second tap defeats the point. */}
       {block.file && (
-        <Pressable style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
+        <Pressable accessibilityRole="button" style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
           <Text style={styles.toolFileName}>{block.file.name}</Text>
           <Text style={styles.toolFileGo}>open</Text>
         </Pressable>
@@ -1067,7 +1073,7 @@ function FileView({
           <Text style={styles.viewerName} numberOfLines={1}>
             {file.name}
           </Text>
-          <Pressable onPress={onClose} hitSlop={12}>
+          <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
             <Text style={styles.fileClose}>Done</Text>
           </Pressable>
         </View>
@@ -1217,6 +1223,8 @@ function Screen({
       <View style={styles.widths}>
         {TERMINAL_SIZES.map((size) => (
           <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: size === columns }}
             key={size}
             testID={`width-${size}`}
             style={[styles.width, size === columns && styles.widthOn]}
@@ -1335,16 +1343,16 @@ function FilePicker({
     <View style={styles.sheet}>
       <View style={styles.sheetHead}>
         <Text style={styles.sheetTitle}>Attach a file</Text>
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
           <Text style={styles.sheetClose}>Done</Text>
         </Pressable>
       </View>
 
       <View style={styles.fromPhone}>
-        <Pressable style={styles.phoneButton} disabled={uploading} onPress={() => void fromPhotos()}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void fromPhotos()}>
           <Text style={styles.phoneButtonText}>Photo</Text>
         </Pressable>
-        <Pressable style={styles.phoneButton} disabled={uploading} onPress={() => void fromFiles()}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void fromFiles()}>
           <Text style={styles.phoneButtonText}>File on phone</Text>
         </Pressable>
       </View>
@@ -1360,6 +1368,7 @@ function FilePicker({
         keyboardShouldPersistTaps="handled"
         renderItem={({ item, index }) => (
           <Pressable
+            accessibilityRole="button"
             style={styles.fileRow}
             onPress={() => (item.isDirectory ? setPath(item.display) : onPick(item.path))}
           >

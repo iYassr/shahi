@@ -71,6 +71,8 @@ const CURSOR_ROW_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s+)?(?<label>\S.*
 
 /** The line Claude Code prints under a cursor menu; a numbered prompt has no such line. */
 const CONFIRM_HINT_RE = /\bEnter to confirm\b/;
+/** Codex's numbered folder-trust menu selects a row, then waits for Enter. */
+const DIGIT_CONFIRM_HINT_RE = /\bPress enter to continue\b/i;
 
 /** Box-drawing, block, and arrow glyphs Claude Code and herdr use for chrome. */
 const CHROME_ONLY_RE = /^[\s─-╿▀-▟←-⇿■-◿·—–-]*$/u;
@@ -136,6 +138,9 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
     question: question.text,
     answer: run.answer,
     options: run.options,
+    ...(run.answer === "digit" && lines.slice(run.startLine).some((line) => DIGIT_CONFIRM_HINT_RE.test(line))
+      ? { confirm: true }
+      : {}),
     ...(question.context.length > 0 ? { context: question.context } : {}),
   };
 }
@@ -381,4 +386,3 @@ const LABELLED_RE = /^[A-Z][A-Za-z ]{1,20}:\s/;
 /** Enough for a question, a reason and a command; not a whole message. */
 const MAX_PARAGRAPHS = 5;
 const MAX_PARAGRAPH_LINES = 8;
-

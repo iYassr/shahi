@@ -87,18 +87,17 @@ export function Connect({
         <Text style={styles.mono}>{pending.server.slice(0, 16)}…</Text>
         {error && <Text style={styles.error}>{error}</Text>}
         <Pressable
+          accessibilityRole="button"
           style={[styles.button, busy && styles.buttonOff]}
           disabled={busy}
           testID="confirm-pair"
           onPress={() => {
-            const payload = pending;
-            setPending(null);
-            void pair(payload);
+            void pair(pending);
           }}
         >
           <Text style={styles.buttonText}>{busy ? "Pairing…" : `Pair with ${host}`}</Text>
         </Pressable>
-        <Pressable style={styles.link} onPress={() => { setPending(null); setError(null); }} testID="confirm-cancel">
+        <Pressable accessibilityRole="button" style={styles.link} onPress={() => { setPending(null); setError(null); }} testID="confirm-cancel">
           <Text style={styles.link}>Cancel</Text>
         </Pressable>
       </View>
@@ -222,6 +221,7 @@ export function Connect({
             <Text style={styles.title}>shahi</Text>
           </View>
           <Pressable
+            accessibilityRole="button"
             style={styles.scan}
             onPress={() => setScanning(true)}
             disabled={busy}
@@ -239,6 +239,7 @@ export function Connect({
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable
+          accessibilityRole="button"
           style={[styles.button, (busy || !canConnect) && styles.buttonOff]}
           disabled={busy || !canConnect}
           onPress={() => void connectSsh()}
@@ -253,7 +254,7 @@ export function Connect({
           </Text>
         )}
 
-        <Pressable onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
+        <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
           <Text style={styles.link}>Haven't set up your server yet?</Text>
         </Pressable>
       </ScrollView>
@@ -294,15 +295,15 @@ function Intro({ onContinue }: { onContinue: () => void }) {
       </Text>
 
       <Text style={styles.step}>1 — On your server, run:</Text>
-      <Pressable style={styles.command} onPress={() => void copy()} testID="copy-install">
-        <Text style={styles.commandText} numberOfLines={2} selectable>
+      <Pressable accessibilityRole="button" style={styles.command} onPress={() => void copy()} testID="copy-install">
+        <Text style={styles.commandText} selectable>
           {INSTALL_COMMAND}
         </Text>
         <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
       </Pressable>
       <Text style={styles.introText}>
         It needs a Mac or Linux machine already running{" "}
-        <Text style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
+        <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
           herdr
         </Text>
         . The second command opens a one-time pairing code inside herdr.
@@ -313,7 +314,7 @@ function Intro({ onContinue }: { onContinue: () => void }) {
         Scan the code in herdr — or connect over SSH, the way you already log in to that machine.
       </Text>
 
-      <Pressable style={styles.button} onPress={onContinue} testID="intro-continue">
+      <Pressable accessibilityRole="button" style={styles.button} onPress={onContinue} testID="intro-continue">
         <Text style={styles.buttonText}>Connect your server</Text>
       </Pressable>
     </ScrollView>
@@ -343,7 +344,7 @@ function SshForm({
 
       <View style={styles.row}>
         <View style={styles.grow}>
-          <Text style={styles.label}>HOST</Text>
+          <Text style={styles.label}>HOSTNAME OR IP ADDRESS</Text>
           <TextInput
             style={styles.input}
             value={ssh.host}
@@ -352,8 +353,9 @@ function SshForm({
             autoCorrect={false}
             keyboardType="url"
             testID="ssh-host"
-            placeholder="server.example.com"
+            placeholder="server.example.com or 192.0.2.10"
             placeholderTextColor={theme.dim}
+            accessibilityLabel="SSH hostname or IP address"
           />
         </View>
         <View style={styles.port}>
@@ -364,6 +366,7 @@ function SshForm({
             onChangeText={(t) => patch({ port: Number(t.replace(/[^0-9]/g, "")) || 0 })}
             keyboardType="number-pad"
             testID="ssh-port"
+            accessibilityLabel="SSH port"
           />
         </View>
       </View>
@@ -376,13 +379,16 @@ function SshForm({
         autoCapitalize="none"
         autoCorrect={false}
         testID="ssh-username"
-        placeholder="ubuntu"
+        placeholder="Your server username"
         placeholderTextColor={theme.dim}
+        accessibilityLabel="SSH username"
       />
 
       <Text style={styles.label}>AUTH</Text>
       <View style={styles.segment}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: ssh.auth.kind === "password" }}
           style={[styles.segItem, ssh.auth.kind === "password" && styles.segItemOn]}
           onPress={() => setAuthKind("password")}
           testID="auth-password"
@@ -390,6 +396,8 @@ function SshForm({
           <Text style={[styles.segText, ssh.auth.kind === "password" && styles.segTextOn]}>Password</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: ssh.auth.kind === "key" }}
           style={[styles.segItem, ssh.auth.kind === "key" && styles.segItemOn]}
           onPress={() => setAuthKind("key")}
           testID="auth-key"
@@ -409,6 +417,7 @@ function SshForm({
           testID="ssh-password"
           placeholder="password"
           placeholderTextColor={theme.dim}
+          accessibilityLabel="SSH password"
         />
       ) : (
         <>
@@ -424,6 +433,7 @@ function SshForm({
             testID="ssh-key"
             placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
             placeholderTextColor={theme.dim}
+            accessibilityLabel="SSH private key"
           />
           <Text style={styles.label}>PASSPHRASE (IF ANY)</Text>
           <TextInput
@@ -436,6 +446,7 @@ function SshForm({
             autoCapitalize="none"
             autoCorrect={false}
             testID="ssh-passphrase"
+            accessibilityLabel="Private key passphrase, if any"
           />
         </>
       )}
@@ -443,7 +454,7 @@ function SshForm({
       {/* No sidecar-port field: the sidecar is always on the installer's
           default (7171), and a mass-market user should not have to know a port
           exists. `remotePort` stays at DEFAULT_SIDECAR_PORT from the profile. */}
-      <Text style={styles.label}>PASSCODE</Text>
+      <Text style={styles.label}>SHAHI PASSCODE</Text>
       <TextInput
         style={[styles.input, styles.passcode]}
         value={ssh.passcode}
@@ -451,7 +462,12 @@ function SshForm({
         secureTextEntry
         keyboardType="number-pad"
         testID="ssh-passcode"
+        accessibilityLabel="Shahi passcode"
       />
+      <Text style={styles.fieldHelp}>
+        Shown once when the Shahi plugin is first installed. To find that message again, run{" "}
+        <Text style={styles.mono}>herdr plugin log list --plugin shahi</Text>. Pairing by QR does not need it.
+      </Text>
     </>
   );
 }
@@ -506,6 +522,7 @@ const styles = StyleSheet.create({
     padding: 13,
   },
   passcode: { letterSpacing: 6, textAlign: "center", fontSize: 20 },
+  fieldHelp: { color: theme.dim, fontSize: 12, lineHeight: 18, marginTop: -2 },
   key: { minHeight: 96, textAlignVertical: "top", fontSize: 12 },
   row: { flexDirection: "row", gap: 10 },
   grow: { flex: 1 },

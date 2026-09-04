@@ -49,6 +49,7 @@ export function Unreachable({
       </Text>
       <Text style={styles.message}>{message}</Text>
       <Pressable
+        accessibilityRole="button"
         style={[styles.button, busy && styles.buttonOff]}
         disabled={busy}
         onPress={() => void retry()}
@@ -56,7 +57,7 @@ export function Unreachable({
       >
         <Text style={styles.buttonText}>{busy ? "Trying…" : "Try again"}</Text>
       </Pressable>
-      <Pressable onPress={onSwitch} hitSlop={12} testID="switch-server">
+      <Pressable accessibilityRole="button" onPress={onSwitch} hitSlop={12} testID="switch-server">
         <Text style={styles.link}>Switch server</Text>
       </Pressable>
     </View>

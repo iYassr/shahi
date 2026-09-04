@@ -56,7 +56,7 @@ export class PromptChanged extends Error {
  * confirms whatever row is lit, and the parser records which one that is.
  */
 export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
-  if (prompt.answer === "digit") return [String(target.index)];
+  if (prompt.answer === "digit") return [String(target.index), ...(prompt.confirm ? ["Enter"] : [])];
   const from = prompt.options.findIndex((o) => o.selected);
   const to = prompt.options.indexOf(target);
   const delta = to - from;

@@ -33,7 +33,7 @@ does, and needs `curl`, `unzip` and `bash` on the box (`apt install unzip`
 is the usual missing one on a fresh Debian or Ubuntu). On a headless Linux
 box, see the lingering note under *What gets created*.
 
-Installed and verified on Debian 12, Fedora 44, Arch and Ubuntu 26.04. **A
+Installed and verified on Debian 12, Fedora 44, Arch, Ubuntu 24.04 and Ubuntu 26.04. **A
 distribution without systemd cannot install the service** — Alpine ships
 busybox init and OpenRC and does not package systemd at all. Shahi itself runs
 there, so the setup action says so and hands you the command to run the sidecar
@@ -248,9 +248,10 @@ rescans when the default branch moves. Nothing in the code is involved.
 
 ## Not done
 
-- **Not run on Linux.** The systemd unit is rendered and asserted, not
-  exercised. The first Linux install should check `systemctl --user status
-  shahi` and that `loginctl enable-linger` was done.
+- **Linux coverage is not exhaustive.** The systemd install, restart, status,
+  pair and stop actions are exercised on Ubuntu 24.04; the other distributions
+  above have had their installation path checked too. A headless deployment
+  still needs `loginctl enable-linger` as described above.
 - **No log rotation.** The log grows until something truncates it; the
   sidecar is quiet, but a box that runs for a year should have `logrotate` or
   `newsyslog` pointed at it.

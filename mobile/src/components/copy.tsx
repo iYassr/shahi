@@ -19,6 +19,8 @@ export function CopyOnHold({ text, children }: { text: string; children: React.R
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Long press to copy"
       onLongPress={() => {
         void Clipboard.setStringAsync(text);
         committed();

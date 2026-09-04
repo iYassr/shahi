@@ -136,11 +136,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         options={{
           headerRight: () => (
             <View style={styles.status}>
-              <Text style={[styles.link, { color: theme.dim }]} numberOfLines={1}>
+              <Text style={[styles.link, { color: theme.dim }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
                 {server.replace(/^https?:\/\//, "")}
               </Text>
-              <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]}>
-                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "…"}
+              <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
+                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
               </Text>
             </View>
           ),
@@ -169,6 +169,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             >
               {chips.map((chip) => (
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: chip.id === active }}
                   key={chip.id}
                   style={[styles.filter, chip.id === active && styles.filterOn]}
                   onPress={() => setFilter(chip.id)}
@@ -181,7 +183,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             </ScrollView>
             {/* Where the work starts, not three taps away under Spaces: the
                 sheet asks which space, then the same form a space opens. */}
-            <Pressable style={styles.newAgent} onPress={() => router.push("/new-agent")} testID="new-agent">
+            <Pressable accessibilityRole="button" style={styles.newAgent} onPress={() => router.push("/new-agent")} testID="new-agent">
               <Text style={styles.newAgentText}>+ New agent</Text>
             </Pressable>
             {blocked.map((pane) => (
@@ -239,12 +241,13 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           {/* The backdrop is a sibling of the card, not its parent: a
               pressable flattens its children into one element, and the whole
               sheet inside it became a single untappable blob. */}
-          <Pressable style={styles.sheetBack} onPress={() => setActing(null)} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss actions" style={styles.sheetBack} onPress={() => setActing(null)} />
           <View style={styles.sheetCard}>
               <Text style={styles.sheetTitle} numberOfLines={1}>
                 {acting.title ?? acting.paneId}
               </Text>
               <Pressable
+                accessibilityRole="button"
                 style={styles.sheetItem}
                 onPress={() => {
                   togglePin(acting.paneId);
@@ -257,6 +260,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 </Text>
               </Pressable>
               <Pressable
+                accessibilityRole="button"
                 style={styles.sheetItem}
                 onPress={() => {
                   setActing(null);
@@ -266,7 +270,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 <Icon name="terminal" color={theme.mint} size={16} />
                 <Text style={styles.sheetItemText}>Open screen</Text>
               </Pressable>
-              <Pressable style={styles.sheetItem} onPress={() => setActing(null)}>
+              <Pressable accessibilityRole="button" style={styles.sheetItem} onPress={() => setActing(null)}>
                 <Text style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</Text>
               </Pressable>
           </View>
@@ -303,6 +307,7 @@ const Row = memo(function Row({
 }) {
   const row = (
       <Pressable
+        accessibilityRole="button"
         style={styles.row}
         // The pinned state rides in the row's own id: children of a pressable
         // flatten into one accessibility element, so a marker inside it is
@@ -407,7 +412,7 @@ function BlockedCard({
 
   return (
     <View style={styles.blocked}>
-      <Pressable onPress={onOpen}>
+      <Pressable accessibilityRole="button" onPress={onOpen}>
         <Text style={styles.badge}>● WAITING ON YOU</Text>
         <Text style={styles.where}>{pane.workspaceLabel}</Text>
         <Text style={styles.task} numberOfLines={1}>
@@ -434,6 +439,7 @@ function BlockedCard({
             const isArmed = armed === option.index;
             return (
               <Pressable
+                accessibilityRole="button"
                 key={option.index}
                 style={[styles.choice, isArmed && styles.choiceArmed]}
                 disabled={armed !== null}
@@ -456,7 +462,7 @@ function BlockedCard({
           })}
         </>
       ) : (
-        <Pressable onPress={onOpen}>
+        <Pressable accessibilityRole="button" onPress={onOpen}>
           <Text style={styles.question}>This one needs a typed reply. Open it →</Text>
         </Pressable>
       )}

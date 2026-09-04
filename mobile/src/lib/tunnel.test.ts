@@ -102,12 +102,28 @@ describe("openTunnel", () => {
     await expect(tunnel.openTunnel(profile())).rejects.toThrow("Host key for box.example has changed");
   });
 
+  test("strips Expo's bridge envelope from a real native reason", async () => {
+    const { tunnel, native } = load();
+    native.open.mockRejectedValue(
+      new Error("ssh_tunnel: Authentication failed (at ExpoModulesCore/Promise.swift:65)"),
+    );
+    await expect(tunnel.openTunnel(profile())).rejects.toThrow(/^Authentication failed$/);
+  });
+
   // The regression behind "Never show 'undefined reason'": a native reject can
   // arrive with no message at all, and what the user saw was the word
   // "undefined". The replacement has to name the host and say what to check.
   test("a reasonless native failure becomes an actionable sentence, not 'undefined'", async () => {
     const { tunnel, native } = load();
     native.open.mockRejectedValue(new Error());
+    await expect(tunnel.openTunnel(profile())).rejects.toThrow(/box\.example:22/);
+  });
+
+  test("Expo's wrapped 'undefined reason' becomes the same actionable sentence", async () => {
+    const { tunnel, native } = load();
+    native.open.mockRejectedValue(
+      new Error("ssh_tunnel: undefined reason (at ExpoModulesCore/Promise.swift:65)"),
+    );
     await expect(tunnel.openTunnel(profile())).rejects.toThrow(/box\.example:22/);
   });
 

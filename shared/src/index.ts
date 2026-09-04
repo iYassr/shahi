@@ -154,6 +154,8 @@ export interface ParsedPrompt {
    * numbers where they would mean nothing.
    */
   answer: "digit" | "cursor";
+  /** Some numbered startup menus select by digit but still require Enter. */
+  confirm?: boolean;
   options: PromptOption[];
   /**
    * What sits between the question and the options — the command an agent

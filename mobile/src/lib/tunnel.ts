@@ -77,6 +77,17 @@ async function rememberHostKey(host: string, port: number, fingerprint: string):
   }
 }
 
+/** Remove Expo's native-bridge envelope before a tunnel error reaches the UI. */
+function tunnelFailureMessage(error: unknown): string | null {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const message = raw
+    .replace(/^ssh_tunnel:\s*/i, "")
+    .replace(/\s*\(at ExpoModulesCore\/Promise\.swift:\d+\)\s*$/i, "")
+    .trim();
+  // Expo uses this placeholder when an Objective-C rejection has no reason.
+  return message && !/^undefined(?: reason)?$/i.test(message) ? message : null;
+}
+
 /**
  * Opens a tunnel for a profile and returns the base URL to point the client at.
  *
@@ -112,11 +123,12 @@ export async function openTunnel(profile: SshProfile): Promise<string> {
       remotePort: profile.remotePort,
     });
   } catch (e) {
-    // The native reject sometimes arrives with no message ("undefined reason"),
-    // which tells the user nothing. Give them something actionable instead.
-    const msg = (e as Error)?.message;
+    // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and
+    // sometimes substitutes "undefined reason". Neither is useful to someone
+    // holding a phone; keep a real native reason, otherwise name what to check.
+    const msg = tunnelFailureMessage(e);
     throw new Error(
-      msg && msg !== "undefined"
+      msg
         ? msg
         : `Couldn't open the SSH tunnel to ${host}:${profile.port}. Check the host, port, username, and key or password — and that the server allows this login.`,
     );

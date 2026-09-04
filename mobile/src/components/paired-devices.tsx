@@ -13,7 +13,14 @@ import type { DeviceList, PairedDevice } from "@shahi/shared";
 import { api } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
-export function PairedDevices({ onRevokedSelf }: { onRevokedSelf: () => void }) {
+export function PairedDevices({
+  onRevokedSelf,
+  refreshKey,
+}: {
+  onRevokedSelf: () => void;
+  /** Retry after a restored connection moves from connecting/offline to live. */
+  refreshKey?: unknown;
+}) {
   const [list, setList] = useState<DeviceList | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +35,7 @@ export function PairedDevices({ onRevokedSelf }: { onRevokedSelf: () => void }) 
         .catch((e: Error) => setError(e.message)),
     [],
   );
-  useEffect(() => void load(), [load]);
+  useEffect(() => void load(), [load, refreshKey]);
 
   const revoke = (device: PairedDevice) => {
     const self = device.id === list?.thisDeviceId;
@@ -52,7 +59,16 @@ export function PairedDevices({ onRevokedSelf }: { onRevokedSelf: () => void }) 
     );
   };
 
-  if (error) return <Text style={styles.note}>Couldn't read the device list: {error}</Text>;
+  if (error) {
+    return (
+      <View style={styles.retryBlock}>
+        <Text style={styles.note}>Couldn't read the device list: {error}</Text>
+        <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retry} testID="retry-devices">
+          <Text style={styles.retryText}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
   if (!list) return <Text style={styles.note}>Loading…</Text>;
 
   return (
@@ -73,7 +89,13 @@ export function PairedDevices({ onRevokedSelf }: { onRevokedSelf: () => void }) 
                   paired {relative(device.createdAt)} · seen {relative(device.lastSeenAt)}
                 </Text>
               </View>
-              <Pressable onPress={() => revoke(device)} hitSlop={8} testID={`revoke-${device.id}`}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={device.id === list.thisDeviceId ? `Sign out ${device.name}` : `Revoke ${device.name}`}
+                onPress={() => revoke(device)}
+                hitSlop={8}
+                testID={`revoke-${device.id}`}
+              >
                 <Text style={styles.revoke}>{device.id === list.thisDeviceId ? "Sign out" : "Revoke"}</Text>
               </Pressable>
             </View>
@@ -108,4 +130,7 @@ const styles = StyleSheet.create({
   revoke: { color: theme.rose, fontSize: 14, fontWeight: "600", minHeight: 32, lineHeight: 32 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 12 },
   note: { color: theme.dim, fontSize: 12, lineHeight: 17, paddingHorizontal: 12, paddingVertical: 10 },
+  retryBlock: { paddingBottom: 10 },
+  retry: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12 },
+  retryText: { color: theme.peach, fontSize: 14, fontWeight: "600" },
 });

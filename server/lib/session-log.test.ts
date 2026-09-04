@@ -228,6 +228,23 @@ describe("normalise", () => {
     ).toHaveLength(1);
   });
 
+  // Captured from Claude Code 2.1.261. These rows are TUI/session bookkeeping,
+  // not words from either participant. Some contain rendered strings, so an
+  // allow-list here is important: a generic "content-looking" fallback would
+  // leak Claude's private UI state into Reader.
+  test("drops Claude 2.1.261 session bookkeeping", () => {
+    expect(
+      normalise([
+        { type: "permission-mode", permissionMode: "default", sessionId: "s1" },
+        { type: "atis-latch", atis: { token: "private-ui-state" }, sessionId: "s1" },
+        { type: "bridge-session", bridgeSessionId: "bridge-1", lastSequenceNum: 4 },
+        { type: "attachment", rendered: "internal attachment chrome", attachment: {} },
+        { type: "last-prompt", lastPrompt: "internal duplicate prompt", leafUuid: "u1" },
+        { type: "file-history-delta", trackingPath: "/private/path" },
+      ]),
+    ).toEqual([]);
+  });
+
   test("carries timestamps through", () => {
     const [message] = normalise([assistant([{ type: "text", text: "hi" }])]);
     expect(message!.at).toBe(Date.parse("2026-07-25T02:00:00.000Z"));

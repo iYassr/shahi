@@ -282,10 +282,14 @@ export class RelayLink {
       try {
         plain = open(this.#session, new Uint8Array(event.data as ArrayBuffer));
       } catch {
-        // The box's frames do not open with the key this phone derived, so
-        // the two sides do not share a secret any more — the mirror of the
-        // box closing with 4403 when our first frame fails on its side.
-        this.#refuse("This phone is no longer paired with that box.");
+        // A box replacement can race a late frame from the old encrypted
+        // session. That says this connection is stale, not that the durable
+        // device credential was revoked. Only an authenticated sealed `bye`
+        // below is authority to erase a saved pairing.
+        this.#rejectAll(new UnreachableError("lost", this.host, `The secure connection through ${this.host} changed. Reconnecting…`));
+        this.#setState("lost");
+        this.#session = null;
+        socket.close();
         return;
       }
       this.#receive(plain);
@@ -296,11 +300,24 @@ export class RelayLink {
       this.#session = null;
       const code = event?.code ?? 0;
       const reason = event?.reason ?? "";
-      if (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) {
-        // The box does not know this device, or could not open our first
-        // frame: not paired. Retrying would be refused forever, so stop, and
-        // tell the app to sign out.
+      if (
+        (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) &&
+        this.target.auth.kind === "pairing"
+      ) {
+        // A one-time pairing link being refused is terminal: there is no
+        // saved identity yet, and retrying a spent/bad code cannot succeed.
         this.#refuse("This phone is no longer paired with that box.");
+        return;
+      }
+      if (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) {
+        // A transport close is not authenticated. During a sidecar restart a
+        // stale/new link race can produce either code, so retain the saved
+        // device and reconnect. Revocation travels as a sealed `bye` instead.
+        this.#rejectAll(
+          new UnreachableError("lost", this.host, `The box rejected this connection through ${this.host}. Reconnecting…`),
+        );
+        this.#setState("lost");
+        this.#retry();
         return;
       }
       this.#rejectAll(closeError(code, reason, this.host));
@@ -367,9 +384,8 @@ export class RelayLink {
   }
 
   #dispatch(pending: Pending): void {
-    pending.sent = true;
     const { request } = pending;
-    this.#sendSealed({
+    pending.sent = this.#sendSealed({
       t: "req",
       id: pending.id,
       method: request.method,
@@ -379,11 +395,22 @@ export class RelayLink {
     });
   }
 
-  #sendSealed(msg: PhoneToBox): void {
-    if (!this.#session || !this.#ws) return;
+  #sendSealed(msg: PhoneToBox): boolean {
+    const socket = this.#ws;
+    if (!this.#session || !socket || socket.readyState !== 1) return false;
     // `seal` returns a fresh, exact-length array, so a view is the frame:
     // React Native's `send` takes typed arrays as binary.
-    this.#ws.send(seal(this.#session, utf8.encode(JSON.stringify(msg))));
+    try {
+      socket.send(seal(this.#session, utf8.encode(JSON.stringify(msg))));
+      return true;
+    } catch {
+      // Native WebSocket state can change between the readyState read and
+      // send while a relay connection is dropping. React Native throws
+      // INVALID_STATE_ERR in that race; let the close/retry path recover
+      // instead of taking down the React error boundary.
+      if (this.#ws === socket) socket.close();
+      return false;
+    }
   }
 
   /** Not paired any more: stop for good and tell the app to sign out. */
