@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Shahi</title>
+<meta name="description" content="Shahi is a client for a server you run. No analytics, no tracking, no backend of ours that reads your data.">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --void: #0E0D0B; --surface: #14120F; --line: #2A2620; --line-bright: #3A352C;
+    --fg: #F0EFEA; --dim: #A6A099; --peach: #E8A33D;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--void); color: var(--fg);
+    font-family: var(--sans); font-size: 16px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 56px 0 0; }
+  .back {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: var(--mono); font-size: 13px; color: var(--dim);
+    text-decoration: none; margin-bottom: 34px;
+  }
+  .back:hover { color: var(--fg); }
+  .mark { width: 18px; height: 18px; flex: none; }
+  h1 {
+    font-weight: 600; font-size: clamp(27px, 5vw, 36px); line-height: 1.2;
+    letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: balance;
+  }
+  .updated { color: var(--dim); font-size: 14px; margin: 0 0 44px; }
+  .updated a { color: var(--dim); }
+  h2 {
+    font-family: var(--mono); font-weight: 500; font-size: 12px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--peach);
+    margin: 46px 0 16px;
+  }
+  p { margin: 0 0 18px; }
+  ul { margin: 0 0 18px; padding-left: 22px; }
+  li { margin: 0 0 9px; }
+  a { color: var(--fg); text-decoration-color: var(--line-bright); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--peach); }
+  strong { font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: 0.88em; color: var(--fg);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 6px;
+  }
+  .lead {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px 22px; margin: 0 0 8px;
+  }
+  .lead p:last-child { margin-bottom: 0; }
+  footer {
+    margin: 66px 0 56px; padding-top: 24px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--dim);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <a class="back" href="/">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="7" y="1.5" width="10" height="21" rx="3" stroke="#E8A33D" stroke-width="1.8"/>
+        <rect x="10" y="12" width="4" height="6" rx="1" fill="#E8A33D"/>
+      </svg>
+      shahi
+    </a>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated 4 September 2026.</p>
+  </header>
+
+  <div class="lead">
+    <h2 style="margin-top:0">The short version</h2>
+    <p>
+      Shahi is a client for a server <strong>you</strong> run. It has no backend
+      of ours that reads your data. Your credentials and your terminal content
+      flow between your phone and your own machine, encrypted end to end. By
+      default that traffic transits a <strong>relay</strong> — a Cloudflare
+      Worker operated by the developer — which cannot read it and keeps nothing;
+      what it sees is listed below, and you can switch it off.
+    </p>
+  </div>
+
+  <h2>What the app stores, and where</h2>
+  <p>
+    All of the following is stored <strong>only on your device</strong>, in the
+    iOS Keychain, and is never transmitted to the developer:
+  </p>
+  <ul>
+    <li>The address of your server (or its SSH host, port, and username).</li>
+    <li>Your sidecar passcode.</li>
+    <li>For SSH connections: your password or private key and its passphrase.</li>
+    <li>Local preferences (pinned conversations, terminal width).</li>
+  </ul>
+  <p>The app holds a session cookie for your server, again only on your device.</p>
+
+  <h2>What the app transmits, and to whom</h2>
+  <ul>
+    <li>
+      <strong>To your server:</strong> requests to read and control your
+      terminal sessions, and the credentials above to authenticate. Over SSH
+      this is carried inside the encrypted SSH tunnel.
+    </li>
+    <li>
+      <strong>Through the relay, by default.</strong> When your server is set up
+      with the Shahi relay (the default in the herdr plugin), the phone and the
+      server each connect out to <code>relay.getshahi.dev</code>, a Cloudflare
+      Worker operated by the developer, and every request and reply passes
+      through it encrypted with keys only your phone and your server hold. The
+      relay, and Cloudflare as its host, can see: the IP addresses of your phone
+      and your server, your server's public identifier, your phone's device
+      identifier, when each is connected, and the size and timing of the
+      encrypted messages. They cannot see request paths, terminal content,
+      credentials or keys, and the relay stores nothing. To use no relay at all,
+      set <code>RELAY_URL=</code> (empty) in the plugin's <code>.env</code> on
+      your server and reach it over SSH instead.
+    </li>
+    <li>
+      <strong>Terminal content</strong> (what your agents and shells display) is
+      fetched from your server to show it to you, and is not stored by us or
+      sent anywhere else.
+    </li>
+  </ul>
+
+  <h2>Analytics and tracking</h2>
+  <p>
+    The app contains <strong>no analytics, no advertising, and no third-party
+    tracking SDKs.</strong> No usage data is collected.
+  </p>
+
+  <h2>Push notifications</h2>
+  <p>
+    Notifications are <strong>off unless you turn them on.</strong> If you
+    enable them, the app obtains a push token and stores it on <strong>your</strong>
+    server, which uses it to alert you when an agent needs input.
+  </p>
+  <p>
+    Be aware of the delivery path, because it is the one place data leaves the
+    loop between your phone and your own machine: the token is an
+    <strong>Expo</strong> push token, and a notification your server sends is
+    relayed through <strong>Expo's push service</strong> and then Apple's Push
+    Notification service before it reaches your phone. The message carries the
+    notification's title and body (for example, the agent's name and that it is
+    waiting) and the id of the pane to open. Expo and Apple are third parties in
+    this path, as the relay above is in the other; the app has no other. If you
+    would rather nothing transit a third party, leave notifications off and turn
+    the relay off — the app is fully usable without either.
+  </p>
+
+  <h2>Children</h2>
+  <p>Shahi is a developer tool and is not directed at children.</p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy:
+    <a href="mailto:privacy@getshahi.dev">privacy@getshahi.dev</a>.
+  </p>
+
+  <footer>
+    <a href="/">← Back to Shahi</a>
+  </footer>
+
+</div>
+</body>
+</html>

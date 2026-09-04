@@ -28,8 +28,11 @@ marked **(you)** need a human — an account, a legal call, or a device.
   `docs/verify-on-device.md`.
 
 ## Privacy
-- **(you)** Publish `docs/privacy-policy.md` at a stable URL and link it in App
-  Store Connect. Have it reviewed first.
+- Published at <https://getshahi.dev/privacy> (`site/public/privacy.html`,
+  rendered from `docs/privacy-policy.md` — edit the markdown, then the page).
+  **(you)** Link it in App Store Connect, and make sure `privacy@getshahi.dev`
+  actually delivers: the policy names it as the contact, and it needs an email
+  route on the zone pointing somewhere you read.
 - **(you)** Fill in App Privacy "nutrition labels" to match: no data collected,
   no tracking — except the push token (Apple category "Identifiers", used for
   app functionality, not tracking) once notifications ship.

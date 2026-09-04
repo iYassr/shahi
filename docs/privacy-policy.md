@@ -1,10 +1,11 @@
-# Shahi — Privacy Policy (draft)
+# Shahi — Privacy Policy
 
-**Draft for review. Have it checked before publishing, and host it at a stable
-URL — the App Store submission requires a privacy-policy link, and the App
-Privacy "nutrition label" answers must match what this says.**
+_Last updated: 4 September 2026. Published at
+<https://getshahi.dev/privacy>; the page there is rendered from this file, so
+this is the copy to edit._
 
-_Last updated: fill in on publish._
+<!-- Maintainer note, not part of the published page: the App Privacy
+     "nutrition label" answers in App Store Connect must match what this says. -->
 
 ## The short version
 
@@ -74,4 +75,4 @@ Shahi is a developer tool and is not directed at children.
 
 ## Contact
 
-Add a contact email/URL before publishing.
+Questions about this policy: **privacy@getshahi.dev**.
