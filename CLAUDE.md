@@ -368,6 +368,14 @@ Stated plainly, because a vague gaps list is worse than none.
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
   to be *the* one. If it recurs, what matters is which of three shapes it takes —
   blank, frozen-with-stale-data, or claiming LIVE while not updating.
+- **The plugin now has been installed on a real Linux box, once, by hand.**
+  Ubuntu 26.04 in an OrbStack VM with systemd as PID 1: herdr's own installer,
+  both build steps, `herdr plugin link`, the startup hook, the systemd **user**
+  service, and the sidecar answering `/api/meta` with `relay.connected: true`.
+  It found a bug nothing else could (`bunPath` writing bun's temporary node
+  shim into `ExecStart=`, see `plugin/shahi.test.ts`), which is the argument
+  for making it a CI job rather than a thing someone remembers to do. Not
+  automated yet; `.maestro` has the same shape of gap.
 - **Codex output is now read in full, against a captured corpus — but only
   what that corpus held.** Every record, block and event type across the
   owner's real transcripts (79 Claude sessions, 23 codex rollouts) was
