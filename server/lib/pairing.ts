@@ -135,14 +135,6 @@ export interface CreatedDevice {
  */
 export class Devices {
   constructor(private readonly db: Database) {
-    // A table from before devices had secrets cannot hold a device that works:
-    // the secret is the relay session's long-lived key. There is no migration
-    // here by rule (CLAUDE.md) — those rows are simply gone and their phones
-    // pair again, which is what an upgrade already means for a serverId. The
-    // first box to upgrade in place answered every claim with "table devices
-    // has no column named secret" and the phone saw only a dropped link.
-    const columns = db.query<{ name: string }, []>("PRAGMA table_info(devices)").all();
-    if (columns.length > 0 && !columns.some((c) => c.name === "secret")) db.exec("DROP TABLE devices");
     db.exec(`
       CREATE TABLE IF NOT EXISTS devices (
         id           TEXT PRIMARY KEY,
