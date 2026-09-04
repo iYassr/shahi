@@ -22,7 +22,7 @@
     "test:relay": "bun test relay/test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "1.62.1",
     "typescript": "~6.0.3"
   },
   "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher — a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
