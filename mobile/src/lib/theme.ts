@@ -26,15 +26,6 @@ export const theme = {
   mono: "Menlo",
 } as const;
 
-/** Status glyphs, matching the web client and the terminal's own vocabulary. */
-export const GLYPH: Record<string, string> = {
-  blocked: "●",
-  working: "◐",
-  done: "✓",
-  idle: "○",
-  unknown: "·",
-};
-
 export const AGENT_COLORS: Record<string, string> = {
   claude: "#d97757",
   codex: "#10a37f",

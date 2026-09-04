@@ -111,8 +111,3 @@ export function AgentIcon({ kind, size = 14 }: Props) {
     </span>
   );
 }
-
-/** The colour for an agent, for callers that want to tint their own element. */
-export function agentColor(kind: string | null | undefined): string {
-  return COLORS[(kind ?? "").toLowerCase()] ?? FALLBACK;
-}
