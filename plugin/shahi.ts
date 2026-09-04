@@ -41,7 +41,7 @@
  * client, a screen share, and on some terminals the OS notification centre.
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
@@ -114,8 +114,27 @@ export function bunPath(): string {
   // binary a dependency dropped there (pentest M4; the PATH is also cleaned of
   // node_modules/.bin in main()). Fall back to the interpreter running this.
   const found = Bun.which("bun");
-  if (found && !found.includes("/node_modules/")) return found;
+  if (found && !unstableBun(found)) return found;
   return process.execPath;
+}
+
+/**
+ * A bun that must never be written into a service unit.
+ *
+ * Two kinds. A `node_modules/.bin/bun` is the supply-chain one (pentest M4).
+ * The other was found by installing on a real Ubuntu (2026-09-04): `bun run`
+ * creates a node-compatibility shim directory — `/tmp/bun-node-<hash>` on
+ * Linux, under `$TMPDIR` on macOS — and *prepends it to PATH*, so
+ * `Bun.which("bun")` inside the startup hook answers with the shim rather than
+ * the real binary. That path was going straight into `ExecStart=`, and /tmp
+ * does not survive a reboot: the service came back pointing at a binary that
+ * no longer existed and failed forever under `Restart=always`. The hook masked
+ * it by re-rendering the unit on every herdr start, so it only bit a box that
+ * rebooted without one. `process.execPath` is the real binary in exactly this
+ * case, which is why the fallback is right and the preference was wrong.
+ */
+function unstableBun(path: string): boolean {
+  return path.includes("/node_modules/") || path.includes("/bun-node-") || path.startsWith(`${tmpdir()}/`);
 }
 
 /** What the service runs with. The .env decides PORT and HOST; this mirrors PORT so the plist says it too. */
@@ -126,7 +145,10 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
   // every ancestor's node_modules/.bin to its child's PATH; those are noise.
   const inherited = (process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")
     .split(":")
-    .filter((dir) => !dir.endsWith("/node_modules/.bin"));
+    // Same two exclusions as `bunPath`, for the same reasons: a dependency's
+    // .bin must not be on the service's PATH, and bun's temporary node shim
+    // would be a stale entry the moment /tmp is cleared.
+    .filter((dir) => !dir.endsWith("/node_modules/.bin") && !unstableBun(`${dir}/x`));
   const relay = relayUrlFor(env);
   return {
     bun,
