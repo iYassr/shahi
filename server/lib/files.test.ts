@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { OutsideHomeError } from "./dirs";
-import { contentTypeFor, isViewable, readWithinHome } from "./files";
+import { contentTypeFor, readWithinHome } from "./files";
 
 /** Under the home directory, which is one of the two roots a read may come from. */
 const dir = await mkdtemp(join(homedir(), ".shahi-files-test-"));
@@ -29,18 +29,6 @@ describe("contentTypeFor", () => {
 
   test("anything unrecognised is bytes too", () => {
     expect(contentTypeFor("/a/thing.xyz")).toBe("application/octet-stream");
-  });
-});
-
-describe("isViewable", () => {
-  test("text, images and PDFs can be shown", () => {
-    expect(isViewable("/a/notes.md")).toBe(true);
-    expect(isViewable("/a/shot.jpg")).toBe(true);
-    expect(isViewable("/a/report.pdf")).toBe(true);
-  });
-
-  test("a spreadsheet is for downloading", () => {
-    expect(isViewable("/a/book.xlsx")).toBe(false);
   });
 });
 

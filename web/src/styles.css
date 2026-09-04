@@ -418,10 +418,6 @@ button {
   color: var(--fg);
 }
 
-.row--exited .row__glyph {
-  color: var(--rose);
-}
-
 /* The blocked card. Everything above is quiet so this can be loud. */
 .blocked {
   margin: 12px var(--gutter);
@@ -907,11 +903,6 @@ button {
   min-height: 0;
 }
 
-.detail__head {
-  padding: 12px var(--gutter);
-  border-bottom: 1px solid var(--line);
-}
-
 .detail__where {
   /* Whatever is left after the title has had what it needs, and gone entirely
      when there is not enough for both. */
@@ -1371,21 +1362,6 @@ button {
 
 .space:active {
   background: var(--surface);
-}
-
-.space__glyph {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--dim);
-  flex: none;
-}
-
-.space__glyph--blocked {
-  color: var(--peach);
-}
-
-.space__glyph--working {
-  color: var(--mint);
 }
 
 .space__body {

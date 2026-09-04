@@ -742,4 +742,32 @@ describe("a phone through the relay", () => {
     after.close();
     await after.closed;
   });
+
+  test("a pairing link cannot walk off /api/meta or /api/pair/claim", async () => {
+    const code = box.pairing.mint();
+    const secretBytes = unb64(code.secret);
+    const p = phone(relay, box.identity.serverId, { kind: "pairing", id: hashOf(secretBytes) }, secretBytes);
+    await p.hello;
+
+    const refused = [
+      await p.request("GET", "/api/session"),
+      await p.request("GET", "/api/rpc"),
+      await p.request("POST", "/api/rpc"),
+      await p.request("POST", "/api/panes/w1:p1/prompt"),
+      await p.request("GET", "/api/meta/../session"),
+      await p.request("GET", "/api/meta%2f../session"),
+      await p.request("POST", "/api/pair/claim/../session"),
+      await p.request("GET", "/api/pair/claim"),
+      await p.request("POST", "/api/pair/claim?extra=1"),
+      await p.request("GET", "/API/meta"),
+      await p.request("get" as "GET", "/api/meta"),
+    ];
+    for (const res of refused) expect(res.status).toBe(403);
+
+    // Query on meta is the one extra the allowlist permits: the phone checks
+    // the box id before it hands over the secret.
+    expect((await p.request("GET", "/api/meta?x=1")).status).toBe(200);
+    p.close();
+    await p.closed;
+  });
 });

@@ -20,7 +20,14 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    # The vendored simulator archive is arm64-only. Without excluding x86_64,
+    # a Release simulator build asks CocoaPods for a universal slice and its
+    # XCFramework copy phase rejects the archive before headers are available.
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64'
+  }
+  s.user_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64'
   }
 
   s.source_files = "*.{h,m,mm,swift}"

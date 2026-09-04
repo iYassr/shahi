@@ -14,6 +14,10 @@ export const WS = `ws://127.0.0.1:${PORT}`;
 
 const RELAY_DIR = new URL("..", import.meta.url).pathname;
 
+let ownedRelay: ReturnType<typeof Bun.spawn> | null = null;
+let relayStart: Promise<"owned" | "external"> | null = null;
+let relayUsers = 0;
+
 /**
  * Starts `wrangler dev` and returns a function that stops it. Waits for the
  * front door to answer 404 — a listening port is not enough, wrangler binds
@@ -23,25 +27,55 @@ const RELAY_DIR = new URL("..", import.meta.url).pathname;
  * any `Bun.spawn` with a piped stdio (EBADF), see `docs/on-a-mac.md`.
  */
 export async function startRelay(): Promise<() => void> {
-  // A relay already on the port (a `wrangler dev` left running to iterate
-  // against) is used as is, and left running.
-  if (await answers()) return () => {};
-  const proc = Bun.spawn(
-    ["bunx", "wrangler", "dev", "--port", String(PORT), "--inspector-port", "0", "--log-level", "warn"],
-    {
-      cwd: RELAY_DIR,
-      stdio: ["ignore", "ignore", "inherit"],
-      env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" },
-    },
-  );
-  const deadline = Date.now() + 90_000;
-  while (Date.now() < deadline) {
-    if (proc.exitCode !== null) throw new Error(`wrangler dev exited with ${proc.exitCode}`);
-    if (await answers()) return () => proc.kill();
-    await Bun.sleep(250);
+  // Bun runs test files concurrently in one process. A second suite can arrive
+  // after the first suite has bound the port but before it has returned from
+  // this function; treating that Worker as external lets the first suite kill
+  // it while the second still has sockets open. Share one owned process and
+  // release it only after the last suite finishes.
+  relayUsers++;
+  relayStart ??= (async () => {
+    // A relay already on the port (a `wrangler dev` left running to iterate
+    // against) is used as is, and left running.
+    if (await answers()) return "external";
+    ownedRelay = Bun.spawn(
+      ["bunx", "wrangler", "dev", "--port", String(PORT), "--inspector-port", "0", "--log-level", "warn"],
+      {
+        cwd: RELAY_DIR,
+        stdio: ["ignore", "ignore", "inherit"],
+        env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" },
+      },
+    );
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      if (ownedRelay?.exitCode !== null) throw new Error(`wrangler dev exited with ${ownedRelay?.exitCode}`);
+      if (await answers()) return "owned";
+      await Bun.sleep(250);
+    }
+    throw new Error("wrangler dev did not come up within 90s");
+  })();
+  try {
+    const kind = await relayStart;
+    if (kind === "external") {
+      relayUsers--;
+      return () => {};
+    }
+    return releaseRelay;
+  } catch (error) {
+    ownedRelay?.kill();
+    ownedRelay = null;
+    relayStart = null;
+    relayUsers = 0;
+    throw error;
   }
-  proc.kill();
-  throw new Error("wrangler dev did not come up within 90s");
+}
+
+function releaseRelay(): void {
+  relayUsers--;
+  if (relayUsers > 0) return;
+  ownedRelay?.kill();
+  ownedRelay = null;
+  relayStart = null;
+  relayUsers = 0;
 }
 
 async function answers(): Promise<boolean> {
