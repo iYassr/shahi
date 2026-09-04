@@ -33,6 +33,12 @@ does, and needs `curl`, `unzip` and `bash` on the box (`apt install unzip`
 is the usual missing one on a fresh Debian or Ubuntu). On a headless Linux
 box, see the lingering note under *What gets created*.
 
+Installed and verified on Debian 12, Fedora 44, Arch and Ubuntu 26.04. **A
+distribution without systemd cannot install the service** — Alpine ships
+busybox init and OpenRC and does not package systemd at all. Shahi itself runs
+there, so the setup action says so and hands you the command to run the sidecar
+under whatever this box supervises with.
+
 ## What gets created, and where
 
 herdr gives every plugin two directories and keeps them apart from the
