@@ -30,8 +30,8 @@ The app holds a session cookie for your server, again only on your device.
 ## What the app transmits, and to whom
 
 - **To your server:** requests to read and control your terminal sessions,
-  and the credentials above to authenticate. Over Tailscale this goes across
-  your tailnet; over SSH it is carried inside the encrypted SSH tunnel.
+  and the credentials above to authenticate. Over SSH this is carried inside
+  the encrypted SSH tunnel.
 - **Through the relay, by default.** When your server is set up with the
   Shahi relay (the default in the herdr plugin), the phone and the server each
   connect out to `shahi-relay.yasserd99.workers.dev`, a Cloudflare Worker
@@ -42,8 +42,7 @@ The app holds a session cookie for your server, again only on your device.
   when each is connected, and the size and timing of the encrypted messages.
   They cannot see request paths, terminal content, credentials or keys, and
   the relay stores nothing. To use no relay at all, set `RELAY_URL=` (empty)
-  in the plugin's `.env` on your server and pair the phone over Tailscale or
-  SSH instead.
+  in the plugin's `.env` on your server and reach it over SSH instead.
 - **Terminal content** (what your agents and shells display) is fetched from
   your server to show it to you, and is not stored by us or sent anywhere else.
 

@@ -14,15 +14,17 @@ phone ──sealed frames──> relay ──> sidecar (bun) ──unix socket�
 ```
 
 The relay is the default and needs nothing configured: the box dials out and
-holds the connection open, so there is no inbound port and no domain. Two
-alternatives reach the same sidecar — the tailnet directly, or an SSH tunnel to
-its loopback bind. See [connectivity.md](connectivity.md) for choosing between
-them, and [relay.md](relay.md) for what the relay can and cannot see.
+holds the connection open, so there is no inbound port and no domain. The one
+alternative is an SSH tunnel to the same loopback bind, for someone who wants
+no third party in the path. See [connectivity.md](connectivity.md) for the
+choice, and [relay.md](relay.md) for what the relay can and cannot see.
 
-`RELAY_URL=` (empty) in the plugin's `.env` opts out of the relay entirely.
+`RELAY_URL=` (empty) in the plugin's `.env` opts out of the relay entirely; the
+phone then reaches the box over SSH.
 
-**Never `tailscale funnel`.** Funnel puts a service on the public internet, and
-this one can run arbitrary commands as you.
+**Do not put this port on a network.** Both transports arrive at `127.0.0.1`,
+so nothing needs it exposed — and it runs arbitrary commands as you. That goes
+double for `tailscale funnel`, which would publish it to the internet.
 
 ## Standing it up
 
@@ -106,8 +108,8 @@ may now be wrong — regenerate with `bun run gen:types` and read the diff.
 `curl http://127.0.0.1:7171/api/meta` should answer. Then check
 `shahi.status` for the relay state. If the relay is connected and the phone
 still cannot reach it, the phone is probably paired to a different `serverId` —
-re-pair. On the tailnet path, if the IP works and the name does not, it is DNS:
-turn on "Use Tailscale DNS" in the phone's Tailscale app.
+re-pair. On the SSH path, check that the tunnel opens at all: a changed host
+key is refused on purpose, and is reported as that rather than as a dead box.
 
 **The app says the server is too old, or too new.** The contract version is
 negotiated: `GET /api/meta` says what the sidecar speaks and every request

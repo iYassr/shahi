@@ -1,10 +1,9 @@
 # Connecting over SSH
 
-Shahi has three ways to reach a server, and this is one of them. The **relay**
-is the default and needs nothing configured. **Tailscale** is a direct address
-plus the passcode, for a box on your tailnet. **SSH** is for a server you
-already reach over SSH, with no tailnet to set up, no sidecar port exposed, and
-no third party in the path at all — the reason to choose it over the relay.
+Shahi has two ways to reach a server, and this is one of them. The **relay** is
+the default and needs nothing configured. **SSH** is for a server you already
+reach over SSH: no sidecar port exposed, and no third party in the path at all
+— which is the reason to choose it over the relay.
 
 ## How it works
 
@@ -24,9 +23,9 @@ and signs in again with the remembered passcode.
 
 - `src/lib/ssh.ts` — the profile type and its Keychain-safe shape.
 - `src/lib/tunnel.ts` — the thin face of the native module; degrades to a clear
-  "needs the native build" message where the module is absent, so Direct always
-  works.
-- `src/screens/connect.tsx` — the Tailscale/SSH mode switch and the form.
+  "needs the native build" message where the module is absent, leaving the
+  relay as the way in.
+- `src/screens/connect.tsx` — the SSH form, beneath Scan a code.
 - `src/lib/session.tsx` — stores the profile, re-opens the tunnel on restore,
   and tears it down on sign-out.
 - `modules/ssh-tunnel/` — the native forwarder, all libssh2, no NMSSH. Swift

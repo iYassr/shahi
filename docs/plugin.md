@@ -115,12 +115,11 @@ echo PORT=7275 >> "$(herdr plugin config-dir shahi)/.env"
 herdr plugin action invoke shahi.restart
 ```
 
-A phone paired by a code that carries the relay connects through the relay
-and nothing else. The direct ways in — the app's SSH tunnel to the box, or
-`tailscale serve --bg --https=443 http://127.0.0.1:7171` in front of the
-loopback bind, then the address typed by hand — are a different pairing,
-faster on the same network; [connectivity.md](connectivity.md) covers both.
-**Never `tailscale funnel`.**
+A phone paired by a code connects through the relay and nothing else. The one
+alternative is the app's SSH tunnel to the box, for someone who wants no third
+party in the path; [connectivity.md](connectivity.md) covers the choice. There
+is no third way in — the sidecar binds loopback and is never given an address
+of its own to expose.
 
 ## Pairing a phone
 
@@ -135,13 +134,10 @@ runs the setup first, in the same popup. On the phone: Connect → **Scan a
 code**. The code works once and for ten minutes; open the popup again for
 another phone.
 
-The code carries the relay's address, and the phone uses that and nothing
-else. The code's format also wants a direct address, so the box fills it
-with the best guess it has — the Tailscale name, the bind address if it is
-not loopback, otherwise its own loopback — and a phone that has the relay
-ignores it. Without a relay and without a guess, the popup asks you to type
-the address first. What the code carries and how the server checks it is in
-`pairing.md`.
+The code carries the relay's address, the box's id and a one-time secret — and
+nothing else. A box with `RELAY_URL=` empty has no address to put on a code, so
+it mints none and says to use SSH. What the code carries and how the server
+checks it is in `pairing.md`.
 
 A keybinding, if you pair often — in herdr's `config.toml`:
 
