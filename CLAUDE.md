@@ -7,7 +7,7 @@ before changing anything.
 ## The shape of it
 
 ```
-shared/    the wire contract, types only — both clients import it
+shared/    the wire contract and the end-to-end crypto — both clients import it
 server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
 plugin/    the herdr plugin: startup hook, actions, the service it installs
 relay/     the blind relay: a Cloudflare Worker, one Durable Object per box
