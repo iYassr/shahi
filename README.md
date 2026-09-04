@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/logo.svg" alt="" width="76" height="76">
+
 # Shahi
 
 **See and answer your terminal agents from your phone.**
