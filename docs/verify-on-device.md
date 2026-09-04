@@ -17,9 +17,9 @@ not enough; the giveaway is a feature you know is new. If the tab bar at the
 bottom is a real iOS tab bar with a blur behind it, you are on August's build or
 later. If it is two words with a line under one, you are not.
 
-A **JS-only** change arrives over the air on the `preview` channel — background
-the app and reopen it. A change touching **native** code needs a new build; when
-in doubt, rebuild.
+**Every change needs a new build.** Updates are not delivered over the air —
+the app never calls `expo-updates` — so a JS-only fix reaches the phone the same
+way a native one does. Backgrounding and reopening changes nothing.
 
 ## The checks
 

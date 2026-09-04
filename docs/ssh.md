@@ -1,9 +1,10 @@
 # Connecting over SSH
 
-Shahi has two ways to reach a server. **Tailscale** is a direct address plus the
-passcode — the original path, for a box on your tailnet. **SSH** is for everyone
-else, which for a published app is most people: a server they already reach over
-SSH, with no tailnet to set up and no sidecar port exposed to the internet.
+Shahi has three ways to reach a server, and this is one of them. The **relay**
+is the default and needs nothing configured. **Tailscale** is a direct address
+plus the passcode, for a box on your tailnet. **SSH** is for a server you
+already reach over SSH, with no tailnet to set up, no sidecar port exposed, and
+no third party in the path at all — the reason to choose it over the relay.
 
 ## How it works
 

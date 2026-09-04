@@ -29,7 +29,6 @@ import {
   type SessionLog,
   type SocketMessage,
   type StoredUpload,
-  type TranscriptLine,
 } from "@shahi/shared";
 
 import {
@@ -411,11 +410,6 @@ export const api = {
     return value;
   },
 
-  transcript: (paneId: string) =>
-    request<{ lines: TranscriptLine[]; total: number }>(
-      `/api/panes/${encodeURIComponent(paneId)}/transcript`,
-    ),
-
   agents: () => request<{ agents: InstalledAgent[]; known: number }>("/api/agents"),
 
   dirs: (path = "~", files = false) =>
@@ -481,10 +475,6 @@ export const api = {
     return { text: await res.text() };
   },
 
-  /**
-   * Answers a numbered prompt by pressing its digit, exactly as the TUI does.
-   * Verified against a live pane: `keys: ["2"]` puts a literal `2` on stdin.
-   */
   /**
    * Answers a prompt card by posting the option as it was shown. The server
    * re-reads the screen and presses the keys: a digit for a numbered menu,
