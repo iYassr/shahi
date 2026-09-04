@@ -368,14 +368,29 @@ Stated plainly, because a vague gaps list is worse than none.
   boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
   to be *the* one. If it recurs, what matters is which of three shapes it takes —
   blank, frozen-with-stale-data, or claiming LIVE while not updating.
-- **The plugin now has been installed on a real Linux box, once, by hand.**
-  Ubuntu 26.04 in an OrbStack VM with systemd as PID 1: herdr's own installer,
-  both build steps, `herdr plugin link`, the startup hook, the systemd **user**
-  service, and the sidecar answering `/api/meta` with `relay.connected: true`.
-  It found a bug nothing else could (`bunPath` writing bun's temporary node
-  shim into `ExecStart=`, see `plugin/shahi.test.ts`), which is the argument
-  for making it a CI job rather than a thing someone remembers to do. Not
-  automated yet; `.maestro` has the same shape of gap.
+- **The plugin has been installed on five Linux distributions, by hand, once.**
+  OrbStack VMs, 2026-09-04. Ubuntu 26.04 by `herdr plugin link`; Debian 12,
+  Fedora 44 and Arch by the documented `herdr plugin install iYassr/shahi`.
+  All four reached the same end state: startup hook, systemd **user** service,
+  `/api/meta` answering, `relay.connected: true`. Debian and Fedora needed no
+  workaround at all. Arch needed several — every one of them the distro's, not
+  ours (`pacman -Sy` is a partial upgrade; it broke curl, which broke pacman).
+  Two bugs came out of it that nothing else could find: `bunPath` writing
+  bun's temporary node shim into `ExecStart=`, and `serviceFor` assuming Linux
+  means systemd. Both fixed, both with tests named after the symptom.
+
+  **Alpine is the honest exception.** busybox init, OpenRC, and no systemd in
+  the repositories at all — `apk search -x systemd` returns nothing, so this is
+  not a missing dependency but a different world. Everything else works there:
+  the sidecar runs on musl, attaches to herdr, serves `/api/meta` and reaches
+  the relay, all verified by running the unit's own ExecStart by hand. Only
+  supervision is missing, and `serviceFor` now says exactly that instead of
+  failing with `Executable not found in $PATH: "systemctl"`. An OpenRC branch
+  would not be a port of the user unit — OpenRC has no per-user services — so
+  it is deliberately not written.
+
+  None of this is automated, which is the argument for a CI job: both bugs were
+  a first install away, and nobody will remember to do it by hand twice.
 - **Codex output is now read in full, against a captured corpus — but only
   what that corpus held.** Every record, block and event type across the
   owner's real transcripts (79 Claude sessions, 23 codex rollouts) was

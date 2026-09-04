@@ -213,8 +213,42 @@ export function systemd(home: string): Service {
   };
 }
 
-export function serviceFor(platform: NodeJS.Platform, home: string, uid: number): Service {
+export function serviceFor(
+  platform: NodeJS.Platform,
+  home: string,
+  uid: number,
+  /** Injected so the Linux branch is testable from a Mac, which has no systemctl. */
+  hasSystemctl: () => boolean = () => Bun.which("systemctl") !== null,
+): Service {
   if (platform === "darwin") return launchd(home, uid);
-  if (platform === "linux") return systemd(home);
+  if (platform === "linux") {
+    // Linux does not imply systemd. Alpine ships busybox init with OpenRC and
+    // does not package systemd at all — `apk search -x systemd` returns
+    // nothing — so there is no version of this that works there (measured on
+    // Alpine 3.23, 2026-09-04). Assuming it wrote a unit file nothing could
+    // load and then failed with `Executable not found in $PATH: "systemctl"`,
+    // which tells the reader neither what went wrong nor what to do.
+    //
+    // Checking first also means no half-installed unit is left behind: this
+    // throws before `install` writes anything.
+    //
+    // Worth saying plainly in the message, because it was measured on that
+    // same box: everything except supervision works there. The sidecar runs on
+    // musl, attaches to herdr, serves /api/meta and reaches the relay. Only
+    // the thing that keeps it running is missing.
+    if (!hasSystemctl()) {
+      throw new Error(
+        "No systemd on this machine, so there is no user service to install.\n" +
+          "Alpine and other busybox/OpenRC systems do not have one, and cannot install it.\n" +
+          "\n" +
+          "Shahi itself works here — the sidecar runs, reaches herdr and dials the relay.\n" +
+          "What is missing is supervision, so start it yourself and let this box's own\n" +
+          "init keep it alive (`herdr plugin action invoke shahi.status` prints the paths):\n" +
+          "\n" +
+          "  cd \"$HERDR_PLUGIN_ROOT\" && bun run server/index.ts",
+      );
+    }
+    return systemd(home);
+  }
   throw new Error(`Shahi's herdr plugin supervises the sidecar with launchd or systemd; ${platform} has neither.`);
 }

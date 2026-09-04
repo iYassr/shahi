@@ -103,9 +103,24 @@ describe("renderSystemd", () => {
 });
 
 describe("serviceFor", () => {
+  const withSystemd = () => true;
+
   test("picks launchd on macOS and systemd on Linux, under the given home", () => {
     expect(serviceFor("darwin", "/Users/me", 501).path).toBe(`/Users/me/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`);
-    expect(serviceFor("linux", "/home/me", 1000).path).toBe("/home/me/.config/systemd/user/shahi.service");
+    expect(serviceFor("linux", "/home/me", 1000, withSystemd).path).toBe("/home/me/.config/systemd/user/shahi.service");
     expect(() => serviceFor("win32", "C:/", 0)).toThrow(/launchd or systemd/);
+  });
+
+  // Measured on Alpine 3.23 (2026-09-04): busybox init, OpenRC, and no systemd
+  // in the repositories at all. The old code assumed Linux meant systemd, wrote
+  // a unit file nothing could load, and failed with `Executable not found in
+  // $PATH: "systemctl"`.
+  test("a Linux without systemd is refused before anything is written, and says what does work", () => {
+    const noSystemd = () => false;
+    expect(() => serviceFor("linux", "/home/me", 1000, noSystemd)).toThrow(/No systemd on this machine/);
+    // The message has to be actionable: name the cause, and the fact that only
+    // supervision is missing — the sidecar itself runs fine there.
+    expect(() => serviceFor("linux", "/home/me", 1000, noSystemd)).toThrow(/OpenRC/);
+    expect(() => serviceFor("linux", "/home/me", 1000, noSystemd)).toThrow(/bun run server\/index\.ts/);
   });
 });
