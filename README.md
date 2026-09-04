@@ -175,7 +175,7 @@ against a **real headless herdr** on every push — pinned to 0.8.2 and to
 whatever is current — because contract drift is the one thing a stub cannot
 notice.
 
-[AGENTS.md](AGENTS.md) documents herdr's measured behaviour and the engineering
+[CLAUDE.md](CLAUDE.md) documents herdr's measured behaviour and the engineering
 rules; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change.
 
 ## Documentation
