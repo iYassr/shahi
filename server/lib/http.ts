@@ -497,7 +497,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
               {
                 error:
                   n > SHAHI_API_VERSION
-                    ? "This server runs an older Shahi than the app. Update Shahi on this computer — run install.sh again."
+                    ? "This server runs an older Shahi than the app. Update Shahi on this computer — run herdr plugin install iYassr/shahi again."
                     : "This app is older than the Shahi on this server. Update the app.",
                 api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
               },

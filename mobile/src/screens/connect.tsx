@@ -2,7 +2,7 @@
  * First run: how to reach the server.
  *
  * Three ways in. **Scanning a code** is the intended one: the server prints a
- * QR (`bun run server/scripts/pair.ts`), the phone reads the address and a
+ * QR (`herdr plugin action invoke shahi.pair`), the phone reads the address and a
  * one-time secret off it, checks it is talking to the server that printed it,
  * and comes away with a session bound to this device — which Settings can
  * later revoke. A code that also names a relay is taken up through the relay
@@ -34,8 +34,8 @@ import {
 import { theme } from "@/lib/theme";
 
 /** The one-time server install, the thing the intro exists to hand over. */
-const INSTALL_COMMAND =
-  "curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash";
+export const INSTALL_COMMAND =
+  "herdr plugin install iYassr/shahi\nherdr plugin action invoke shahi.pair";
 
 /**
  * Deliberately blank rather than a guess.
@@ -267,7 +267,7 @@ export function Connect({
             onPress={() => setScanning(true)}
             disabled={busy}
             testID="scan-code"
-            accessibilityHint="On the server: bun run server/scripts/pair.ts"
+            accessibilityHint="On the server: herdr plugin action invoke shahi.pair"
           >
             <Text style={styles.scanText}>Scan a code</Text>
           </Pressable>
@@ -387,17 +387,16 @@ function Intro({ onContinue }: { onContinue: () => void }) {
         <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
       </Pressable>
       <Text style={styles.introText}>
-        It needs a Linux box already running{" "}
+        It needs a Mac or Linux machine already running{" "}
         <Text style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
           herdr
         </Text>
-        . When it finishes it prints your server's address and a passcode.
+        . The second command opens a one-time pairing code inside herdr.
       </Text>
 
       <Text style={styles.step}>2 — Pair this phone.</Text>
       <Text style={styles.introText}>
-        Scan the code that <Text style={styles.mono}>bun run server/scripts/pair.ts</Text> prints on the server — or
-        enter the address and passcode, over Tailscale or over SSH the way you already log in.
+        Scan the code in herdr — or enter the address and passcode over Tailscale or SSH, the way you already log in.
       </Text>
 
       <Pressable style={styles.button} onPress={onContinue} testID="intro-continue">
