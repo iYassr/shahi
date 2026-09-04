@@ -310,7 +310,7 @@ function Intro({ onContinue }: { onContinue: () => void }) {
 
       <Text style={styles.step}>2 — Pair this phone.</Text>
       <Text style={styles.introText}>
-        Scan the code in herdr — or enter the address and passcode over Tailscale or SSH, the way you already log in.
+        Scan the code in herdr — or connect over SSH, the way you already log in to that machine.
       </Text>
 
       <Pressable style={styles.button} onPress={onContinue} testID="intro-continue">
