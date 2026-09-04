@@ -101,7 +101,7 @@ describe("herdr-plugin.toml", () => {
     expect(existsSync(join(ROOT, "plugin", "shahi.ts"))).toBe(true);
   });
 
-  test("builds the way install.sh does: dependencies, then the web client", () => {
+  test("builds dependencies, then the web client", () => {
     expect(manifest.build?.map((b) => b.command.slice(2))).toEqual([
       ["install", "--frozen-lockfile"],
       ["run", "build:web"],

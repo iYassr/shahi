@@ -103,7 +103,7 @@ export async function ensureSecrets(
 }
 
 /**
- * A passcode of the kind install.sh hands out: four digits, because it is
+ * Four digits, because it is
  * typed on a phone behind a tailnet, and the boundary that matters is the
  * network rather than the length of this.
  */

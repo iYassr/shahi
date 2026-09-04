@@ -85,7 +85,7 @@ jobs:
 
   # The stub cannot notice the day herdr answers differently; this can. It runs
   # the adapter and the sidecar against a real headless herdr — the oldest
-  # release still supported, and whatever `install.sh` hands out today, so the
+  # release still supported, and whatever herdr's own installer hands out, so the
   # next stable release is tried here before anyone installs it. The preview
   # channel runs nightly in herdr-preview.yml.
   herdr:

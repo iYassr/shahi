@@ -1,8 +1,8 @@
 /**
  * The address a phone should use, guessed from this box.
  *
- * The box cannot know it for certain, so this is a guess with a stated order
- * — the same one install.sh prints: the Tailscale name if there is one (which
+ * The box cannot know it for certain, so this is a guess with a stated order:
+ * the Tailscale name if there is one (which
  * assumes `tailscale serve` fronts the loopback bind on 443, and the callers
  * probe it before trusting it), the bind address if it is not loopback, and
  * otherwise nothing, so the caller asks rather than prints a wrong one.

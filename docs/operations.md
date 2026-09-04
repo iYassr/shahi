@@ -5,123 +5,134 @@ Written for the moment you need it rather than for reading through.
 
 ## The shape of a deployment
 
+The plugin's startup hook installs a user service that supervises the sidecar;
+the sidecar owns herdr's unix socket and answers the phone.
+
 ```
-phone ──HTTPS 443──> tailscaled ──proxy──> 100.x.y.z:7171 (bun) ──unix socket──> herdr
-       (tailnet only)                       systemd --user
-```
-
-Two addresses reach the same server, deliberately:
-
-- **`http://<tailnet-ip>:7171`** — direct, no TLS. Convenient, and what the
-  native app was pointed at first.
-- **`https://<host>.<tailnet>.ts.net`** — `tailscale serve` terminating TLS in
-  front of the same port. This one is a *secure context*, which is the only
-  reason notifications can work at all: browsers refuse to register a service
-  worker off one, and on iOS the service worker is the entire delivery path for
-  Web Push.
-
-Use the HTTPS name on the phone. The direct port is a fallback for when DNS is
-misbehaving — which is worth knowing, because "the port works but the name does
-not" is a DNS symptom, not a server one.
-
-## Standing it up
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/iYassr/shahi/master/install.sh | bash
+phone ──sealed frames──> relay ──> sidecar (bun) ──unix socket──> herdr
+                                   launchd or systemd --user
 ```
 
-Idempotent: run it again to upgrade, and it keeps the passcode you already have.
-It refuses to repoint an existing installation somewhere else unless you pass
-`SHAHI_FORCE=1`.
+The relay is the default and needs nothing configured: the box dials out and
+holds the connection open, so there is no inbound port and no domain. Two
+alternatives reach the same sidecar — the tailnet directly, or an SSH tunnel to
+its loopback bind. See [connectivity.md](connectivity.md) for choosing between
+them, and [relay.md](relay.md) for what the relay can and cannot see.
 
-Then, once, for TLS:
-
-```sh
-sudo tailscale serve --bg --https=443 http://<tailnet-ip>:7171
-```
-
-That config lives in tailscaled's state and survives reboots. Check it with
-`tailscale serve status`.
+`RELAY_URL=` (empty) in the plugin's `.env` opts out of the relay entirely.
 
 **Never `tailscale funnel`.** Funnel puts a service on the public internet, and
 this one can run arbitrary commands as you.
 
+## Standing it up
+
+```sh
+herdr plugin install iYassr/shahi
+herdr plugin action invoke shahi.pair
+```
+
+The first builds and registers the plugin; the second installs the service if it
+is missing and prints a pairing QR. Reinstalling upgrades in place and keeps
+your passcode.
+
+The service always restarts on install, deliberately: `enable --now` does
+nothing to a running service, so an in-place upgrade once left the old code
+running from memory while looking applied.
+
+**On a headless Linux box, run `loginctl enable-linger $USER` once.** Without
+it the user service stops when your last SSH session ends — exactly when you
+would want to reach it from a phone. The plugin cannot do this for you because
+it needs sudo on some distributions.
+
 ## Where things live
+
+herdr gives the plugin two directories and keeps them apart from the checkout,
+so an upgrade never touches your secrets or your data.
 
 | what | where |
 |---|---|
-| the app | `~/.local/share/shahi/app` (or wherever you cloned it) |
-| secrets | `.env` in that directory, mode 0600 — never commit it |
-| database | `~/.local/share/shahi/shahi.sqlite` — push subscriptions, transcripts |
-| uploads | `~/.local/share/shahi/uploads` — files sent from the phone |
-| service | `~/.config/systemd/user/shahi.service` |
+| the checkout | `$HERDR_PLUGIN_ROOT` — replaced on upgrade, never edit |
+| secrets | `$HERDR_PLUGIN_CONFIG_DIR/.env`, mode 0600 |
+| database | `$HERDR_PLUGIN_STATE_DIR/shahi.sqlite` — devices, push, transcripts |
+| log | `$HERDR_PLUGIN_STATE_DIR/shahi.log` |
+| service | `~/Library/LaunchAgents/app.shahi.sidecar.plist`, or `~/.config/systemd/user/shahi.service` |
 
-The database is not precious: transcripts are a convenience and subscriptions
-re-register when the phone next opens the app. Deleting it costs a re-grant of
-notifications, nothing more.
+`herdr plugin action invoke shahi.status` prints the resolved paths, which beats
+guessing at them.
+
+The database is not precious: transcripts are a convenience, and a phone
+re-pairs. The `.env` is the one thing that cannot be regenerated — it holds the
+session secret, the passcode hash, the relay identity key and the VAPID keypair.
+Lose the relay key and the box gets a new `serverId`, so every phone pairs
+again.
 
 ## Everyday commands
 
 ```sh
-systemctl --user status shahi        # is it up
-journalctl --user -u shahi -f        # what it is doing
-systemctl --user restart shahi       # after a rebuild
-bun run build:web && systemctl --user restart shahi   # the whole deploy
+herdr plugin action invoke shahi.status     # is it up, and where
+herdr plugin action invoke shahi.logs       # what it is doing
+herdr plugin action invoke shahi.restart    # after a change
+herdr plugin action invoke shahi.pair       # add a phone
+herdr plugin action invoke shahi.stop       # stop the service
+herdr plugin action invoke shahi.uninstall  # service first, then the plugin
 ```
 
-`loginctl enable-linger $USER` is what keeps the service alive when you are not
-logged in — without it, it stops the moment your last SSH session ends, which is
-exactly when you would want to reach it from a phone. The installer does this.
+These work on both platforms. The underlying `launchctl` and `systemctl --user`
+commands still work if you prefer them, but the actions are what the plugin
+keeps in step.
+
+**Rebuild and restart after touching `web/`.** The sidecar serves `web/dist`,
+so an unbuilt change is invisible.
 
 ## What healthy looks like
 
 Startup prints the version, the address, and what it found:
 
 ```
-herdr 0.7.5 (protocol 17) at /home/you/.config/herdr/herdr.sock
-listening on http://100.x.y.z:7171
+herdr 0.8.2 (protocol 20) at /home/you/.config/herdr/herdr.sock
+listening on http://127.0.0.1:7171
   11 workspaces, 47 panes, 14 agents (0 blocked)
   passcode required
-  push enabled, 2 subscription(s)
+  relay: connected
 ```
 
-A protocol other than 17 prints a loud warning. herdr's schema is unversioned
+A protocol other than 20 prints a loud warning. herdr's schema is unversioned
 for third parties, so a mismatch means something in `server/lib/herdr-schema.ts`
 may now be wrong — regenerate with `bun run gen:types` and read the diff.
 
-Bound off loopback, it also warns that the address is not a secure context. That
-is expected here, and answered by `tailscale serve`.
-
 ## When something is wrong
 
-**The phone cannot reach it.** Work outwards: `curl http://127.0.0.1:7171/api/auth/status`
-on the box, then the tailnet IP, then the HTTPS name. If the IP works and the
-name does not, it is DNS — turn on "Use Tailscale DNS" in the phone's Tailscale
-app. If neither works, check `systemctl --user status shahi`.
+**The phone cannot reach it.** Work outwards. On the box,
+`curl http://127.0.0.1:7171/api/meta` should answer. Then check
+`shahi.status` for the relay state. If the relay is connected and the phone
+still cannot reach it, the phone is probably paired to a different `serverId` —
+re-pair. On the tailnet path, if the IP works and the name does not, it is DNS:
+turn on "Use Tailscale DNS" in the phone's Tailscale app.
 
-**The dashboard is stale but says LIVE.** The socket died without saying so. The
-server heartbeats every 20s and the client gives up after 50s of silence, so this
-should self-correct; if it does not, the watchdog in `web/src/api.ts` is the
-place to look.
-
-**Everything looks broken after a deploy.** The app compares its own bundle
-against the served one when it comes to the foreground and reloads if they
-differ, so this should not happen — but backgrounding and reopening forces it.
+**The app says the server is too old, or too new.** The contract version is
+negotiated: `GET /api/meta` says what the sidecar speaks and every request
+carries `x-shahi-api`. A mismatch is a 426 whose text names the side to update.
+Update the sidecar with `herdr plugin install iYassr/shahi`.
 
 **An agent stopped responding to the app.** Check the pane in herdr directly.
 The app sends keystrokes; it cannot make an agent read them, and a pane whose
 process has exited accepts input into nothing.
 
+**The service looks installed but runs old code.** It follows the herdr that
+ran the hook last. If you use named sessions, the one that started most
+recently owns it — `shahi.status` prints the socket it is attached to.
+
 ## Rotating the passcode
 
 ```sh
 bun run server/scripts/init-secrets.ts --passcode <digits>
-systemctl --user restart shahi
+herdr plugin action invoke shahi.restart
 ```
 
 Only the bcrypt hash is stored; the plaintext lives nowhere. The session secret
-is left alone, so other devices stay signed in — sign each one in again with the
-new passcode when convenient.
+is left alone, so paired devices stay signed in. To revoke one phone instead,
+use Settings in the app — revocation takes effect on its next request and on its
+open socket.
 
 Note that the passcode `4821` appears in this repository's early history, in a
 script that hardcoded it as a default. Rotating is the clean fix if that matters
@@ -129,7 +140,6 @@ to you.
 
 ## Backing up
 
-`.env` is the only thing that cannot be regenerated: it holds the session secret,
-the passcode hash, and the VAPID keypair. Lose the VAPID keys and every existing
-push subscription becomes undeliverable, and each device must re-grant
-notifications.
+Back up `$HERDR_PLUGIN_CONFIG_DIR/.env`. Everything else regenerates: the
+checkout comes from `herdr plugin install`, and the database costs a re-pair and
+a re-grant of notifications.

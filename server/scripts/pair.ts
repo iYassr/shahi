@@ -11,7 +11,7 @@
  * passcode into a phone.
  *
  * `--endpoint` is the address the *phone* will use, which this box cannot
- * know for certain. Without it the script does what install.sh does: the
+ * know for certain. Without it the script guesses: the
  * Tailscale name behind `tailscale serve` if there is one, the bind address
  * if it is not loopback, and otherwise it stops and asks. Whatever it picks is
  * probed before printing, so a wrong guess is said here and not on the phone.
@@ -116,7 +116,7 @@ if (!config.relayUrl && !reachable) {
 }
 
 /**
- * What install.sh tells people to open, derived the same way it derives it.
+ * The address to open on the phone, in a stated order.
  * `tailscale serve` fronts the loopback bind on 443; the probe above confirms
  * whether that is actually set up.
  */

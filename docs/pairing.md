@@ -89,7 +89,7 @@ write per poll would say nothing more than "recently".
 ## The address the script guesses
 
 `--endpoint` is the address the *phone* will use, which the box cannot know
-for certain. Without it the script does what `install.sh` does: the Tailscale
+for certain. Without it the script guesses, in order: the Tailscale
 name (behind `tailscale serve`, so `https://`) if there is one, the bind
 address if it is not loopback, and otherwise it stops and asks. Whatever it
 picks is probed from the box before printing, and a mismatch or no answer is
@@ -98,10 +98,6 @@ not as a mysterious refusal on the phone.
 
 ## Not done
 
-- **`install.sh` does not print a code.** It prints the address and the
-  passcode as before; pairing is the script. Folding the script's output into
-  the installer's last screen is the obvious next step and was left out of
-  this change deliberately — the installer is shared ground.
 - **Not verified on a device.** The camera is a native module: `npx expo
   prebuild --platform ios` must run before the next native build
   (`docs/on-a-mac.md` explains why `run:ios` alone does not re-read
