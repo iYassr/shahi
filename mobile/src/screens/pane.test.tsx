@@ -2,7 +2,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { FlatList } from "react-native";
 import type { LogBlock, LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, UnauthorizedError } from "@/lib/api";
-import { Pane } from "./pane";
+import { forgetPaneMemory, Pane } from "./pane";
 
 // The first test in this file pays for loading the screen and its mocks under
 // fake timers, and GitHub's ubuntu runner took more than Jest's 5s default
@@ -437,5 +437,67 @@ describe("keeping your place", () => {
     } finally {
       scrollToEnd.mockRestore();
     }
+  });
+});
+
+// The terminal is a place too, and the one the reader's memory never covered:
+// herdr's `visible` is a static screenful of rows, taller and wider than the
+// phone, so both axes scroll — and both were thrown back to the top-left on
+// every return, which on a wide log meant hunting for your column again. Its
+// memory is a pixel offset, not a row id: the block lays out identically on
+// each remount (unlike the windowed reader), so the offset that failed the
+// reader is the honest place here.
+describe("keeping your terminal place", () => {
+  const P = "w1:p-term";
+
+  /** A pane detail that carries a screenful of text, so the terminal has one. */
+  const withScreen = (text: string) => ({
+    frame: { paneId: P, ansi: "", text, prompt: null, activity: null, at: 1 },
+    layout: null,
+  });
+
+  beforeEach(() => {
+    forgetPaneMemory(P);
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hi")]));
+    mocked.pane.mockResolvedValue(withScreen("top\nmiddle\nbottom\n"));
+  });
+
+  test("leaving the terminal scrolled down and coming back restores both axes", async () => {
+    const first = render(<Pane paneId={P} initialView="screen" />);
+    await first.findByTestId("terminal-body");
+    fireEvent(first.getByTestId("terminal-across"), "scroll", { nativeEvent: { contentOffset: { x: 240, y: 0 } } });
+    fireEvent(first.getByTestId("terminal-down"), "scroll", { nativeEvent: { contentOffset: { x: 0, y: 512 } } });
+    first.unmount();
+
+    // A fresh mount, as a route pop and reopen would be: the remembered offset
+    // is handed to each ScrollView as its initial contentOffset.
+    const again = render(<Pane paneId={P} initialView="screen" />);
+    await again.findByTestId("terminal-body");
+    expect(again.getByTestId("terminal-across").props.contentOffset).toEqual({ x: 240, y: 0 });
+    expect(again.getByTestId("terminal-down").props.contentOffset).toEqual({ x: 0, y: 512 });
+  });
+
+  test("a terminal never scrolled opens at the top-left, not somewhere guessed", async () => {
+    const view = render(<Pane paneId={P} initialView="screen" />);
+    await view.findByTestId("terminal-body");
+    expect(view.getByTestId("terminal-across").props.contentOffset).toEqual({ x: 0, y: 0 });
+    expect(view.getByTestId("terminal-down").props.contentOffset).toEqual({ x: 0, y: 0 });
+  });
+
+  test("leaving a pane on the terminal reopens it on the terminal, not the reader", async () => {
+    // Not readable, so the reader would show its ghost — the terminal showing
+    // instead is the proof the view was remembered. The way onto the screen
+    // here is the ghost's own button, the one path the header toggle is not.
+    mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+    const first = render(<Pane paneId={P} />);
+    fireEvent.press(await first.findByText("Show the screen instead"));
+    await first.findByTestId("terminal-body");
+    first.unmount();
+
+    // Reopened with the default view: memory, not the prop, must land it on
+    // the terminal.
+    const again = render(<Pane paneId={P} />);
+    await again.findByTestId("terminal-body");
+    expect(again.queryByText("Show the screen instead")).toBeNull();
   });
 });

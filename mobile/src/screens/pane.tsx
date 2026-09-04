@@ -113,6 +113,31 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
 const scrollMemory = new Map<string, { id: string } | "bottom">();
 
 /**
+ * Where you were on each pane's *terminal*, and which view you were reading.
+ *
+ * The reader's memory above is by message id, because its list is windowed and
+ * grows under you. The terminal is the opposite: one fixed block of characters
+ * — herdr's `visible` is a screen's worth of rows — laid out the same on every
+ * remount, so a pixel offset is the honest place here and the reason offsets
+ * failed for the reader does not apply. It is a place in two axes: 146 columns
+ * that do not fit across a phone scroll sideways, and a screen taller than the
+ * viewport scrolls down.
+ *
+ * `terminalView` remembers read-vs-screen so leaving a pane on the terminal and
+ * coming back opens on the terminal — before this, every return snapped to the
+ * reader and you lost both the view and your place in it.
+ */
+const terminalPlace = new Map<string, { x: number; y: number }>();
+const terminalView = new Map<string, "reader" | "screen">();
+
+/** Test seam: these maps live for the process, so a test resets them by hand. */
+export function forgetPaneMemory(paneId: string): void {
+  scrollMemory.delete(paneId);
+  terminalPlace.delete(paneId);
+  terminalView.delete(paneId);
+}
+
+/**
  * Folds a freshly fetched tail into what is already shown.
  *
  * Two properties carried over from the web reader, both load-bearing there:
@@ -187,7 +212,18 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * a transcript. A plain shell has none, and without the screen there would be
    * nothing to look at while typing into it.
    */
-  const [view, setView] = useState<"reader" | "screen">(initialView);
+  // A swipe's Screen action (initialView "screen") is an explicit "open the
+  // terminal" and wins; a plain tap defers to where you last left this pane.
+  const [view, setViewState] = useState<"reader" | "screen">(
+    initialView === "screen" ? "screen" : terminalView.get(paneId) ?? "reader",
+  );
+  const setView = useCallback(
+    (v: "reader" | "screen") => {
+      terminalView.set(paneId, v);
+      setViewState(v);
+    },
+    [paneId],
+  );
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
@@ -522,12 +558,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           headerRight: () => (
             <View style={styles.toggle}>
               <Pressable
+                testID="view-read"
                 style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
                 onPress={() => setView("reader")}
               >
                 <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>read</Text>
               </Pressable>
               <Pressable
+                testID="view-screen"
                 style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
                 onPress={() => setView("screen")}
               >
@@ -667,7 +705,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             lose the scroll position. */}
         {view === "screen" && (
           <View style={styles.screenOverlay}>
-            <Screen text={screen} columns={columns} onColumns={setColumns} />
+            <Screen paneId={paneId} text={screen} columns={columns} onColumns={setColumns} />
           </View>
         )}
         </View>
@@ -1020,10 +1058,12 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
  * WebView, and the thing worth seeing on a phone is the words.
  */
 function Screen({
+  paneId,
   text,
   columns,
   onColumns,
 }: {
+  paneId: string;
   text: string | null;
   columns: number;
   onColumns: (columns: number) => void;
@@ -1037,6 +1077,25 @@ function Screen({
   // the longest line is also what makes the horizontal scroll mean anything.
   const longest = body.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
 
+  // Where this terminal was, read once on mount. `place` is the live copy the
+  // scroll handlers keep current; `start` is the frozen value the restore aims
+  // at, so a scroll event mid-restore cannot move the target it is chasing.
+  const start = useRef(terminalPlace.get(paneId));
+  const place = useRef({ x: start.current?.x ?? 0, y: start.current?.y ?? 0 });
+  const across = useRef<ScrollView>(null);
+  const down = useRef<ScrollView>(null);
+  const restored = useRef(false);
+  // `contentOffset` sets the initial position when the content is measured on
+  // the first pass; this catches the case where the text lays out a frame
+  // later (a fresh fetch, a font-size change), where the initial offset would
+  // clamp to zero against not-yet-known content bounds.
+  const restore = useCallback(() => {
+    if (restored.current || !start.current) return;
+    restored.current = true;
+    across.current?.scrollTo({ x: start.current.x, animated: false });
+    down.current?.scrollTo({ y: start.current.y, animated: false });
+  }, []);
+
   return (
     <View style={styles.screenWrap}>
       {/* Off-screen, one line, measured once — see CHAR_ASPECT_GUESS. */}
@@ -1047,9 +1106,31 @@ function Screen({
         {PROBE}
       </Text>
       <CopyOnHold text={body}>
-        <ScrollView horizontal>
-          <ScrollView>
+        <ScrollView
+          ref={across}
+          horizontal
+          testID="terminal-across"
+          contentOffset={{ x: start.current?.x ?? 0, y: 0 }}
+          onScroll={(e) => {
+            place.current.x = e.nativeEvent.contentOffset.x;
+            terminalPlace.set(paneId, { ...place.current });
+          }}
+          onContentSizeChange={restore}
+          scrollEventThrottle={100}
+        >
+          <ScrollView
+            ref={down}
+            testID="terminal-down"
+            contentOffset={{ x: 0, y: start.current?.y ?? 0 }}
+            onScroll={(e) => {
+              place.current.y = e.nativeEvent.contentOffset.y;
+              terminalPlace.set(paneId, { ...place.current });
+            }}
+            onContentSizeChange={restore}
+            scrollEventThrottle={100}
+          >
             <Text
+              testID="terminal-body"
               style={[
                 styles.screenText,
                 {
@@ -1068,6 +1149,7 @@ function Screen({
         {TERMINAL_SIZES.map((size) => (
           <Pressable
             key={size}
+            testID={`width-${size}`}
             style={[styles.width, size === columns && styles.widthOn]}
             onPress={() => onColumns(size)}
           >
