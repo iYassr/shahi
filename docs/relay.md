@@ -28,7 +28,7 @@ that module together, and by bumping `RELAY_PROTOCOL`.
   the box's public key; a presence timeline (the box pings every minute); each
   phone's `deviceId` or pairing-code hash, in the clear in its hello; how many
   phones a box has; and the size and timing of every frame. The default relay
-  is `shahi-relay.yasserd99.workers.dev`, run by Shahi's author.
+  is `relay.getshahi.dev`, run by Shahi's author.
 - **Phone.** Holds, per box, a `deviceId` and a 32-byte **device secret**
   handed to it at pairing, in the Keychain. Before pairing it holds only the
   32-byte **pairing secret** from the QR.
@@ -184,22 +184,33 @@ its sockets hibernate and the object is evicted between frames.
 ```sh
 cd relay
 bunx wrangler login       # opens the browser; once per machine
-bunx wrangler deploy      # prints https://shahi-relay.<your-subdomain>.workers.dev
+bunx wrangler deploy      # prints the address it is reachable at
 ```
 
 That address is the relay. Every later `bunx wrangler deploy` upgrades it in
-place; connected boxes are dropped for a second and reconnect. A custom
-domain is optional and is the usual Workers route: add `routes` to
-`wrangler.toml` or attach one in the dashboard, and the relay answers there
-as well. There is nothing to configure in the Worker itself — the `serverId`
-in the URL is all it needs.
+place; connected boxes are dropped for a second and reconnect. There is
+nothing to configure in the Worker itself — the `serverId` in the URL is all
+it needs.
+
+**Use a domain you own.** `wrangler.toml` here carries a `[[routes]]` entry
+with `custom_domain = true`, which is how the shared relay answers on
+`relay.getshahi.dev`. Two reasons to copy that rather than live on
+`workers.dev`: the URL is a trust anchor baked into every install and pairing
+code, and only a domain you own can be repointed at another host later; and
+Cloudflare's WAF and rate-limiting rules apply to zones you own, so a rule on
+`/v1/*` is not expressible for a `workers.dev` subdomain at all.
+
+One trap, learned here: adding a custom domain does **not** keep the
+`workers.dev` address by default — `wrangler` disables it unless
+`workers_dev = true` is set, which would strand every phone already paired
+against the old URL, since a phone stores the address it paired with.
 
 **Point a box at it.** The herdr plugin's service dials Shahi's relay unless
 its `.env` has a `RELAY_URL` line — empty for direct-only, or your Worker's
 address. By hand, the sidecar dials out when `RELAY_URL` is set:
 
 ```sh
-RELAY_URL=https://shahi-relay.<your-subdomain>.workers.dev   # what `wrangler deploy` prints; the box speaks wss to it
+RELAY_URL=https://relay.example.com   # what `wrangler deploy` prints; the box speaks wss to it
 ```
 
 in the sidecar's environment (the plugin's `.env` is at `herdr plugin
