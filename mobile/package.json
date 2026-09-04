@@ -40,7 +40,7 @@
     "jest": "^29.7.0",
     "jest-expo": "~57.0.5",
     "react-test-renderer": "19.2.3",
-    "typescript": "~6.0.3"
+    "typescript": "7.0.2"
   },
   "scripts": {
     "start": "expo start",
@@ -65,5 +65,13 @@
       "/node_modules/react-native-reanimated/plugin/",
       "/node_modules/@react-native/babel-preset/"
     ]
-  }
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript"
+      ]
+    }
+  },
+  "_comment_typescript": "TypeScript is excluded from expo's version check on purpose. SDK 57 pins ~6.0.3; this monorepo runs 7.0.2 from the root, which is the compiler `bun run typecheck` actually invokes against all seven projects, mobile included, and it passes clean. Declaring ~6.0.3 here would make bun install a second, nested copy that nothing runs \u2014 the duplication bunfig.toml exists to avoid \u2014 so the pin is declined rather than faked."
 }
