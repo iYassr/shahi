@@ -287,7 +287,7 @@ export const api = {
     }
     if (api.max < SHAHI_API_VERSION) {
       throw new IncompatibleServerError(
-        "This server runs an older Shahi than the app. Update Shahi on that computer — run install.sh again.",
+        "This server runs an older Shahi than the app. Update Shahi on that computer — run herdr plugin install iYassr/shahi again.",
         api,
       );
     }

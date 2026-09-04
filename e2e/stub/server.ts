@@ -171,7 +171,7 @@ Bun.serve({
           {
             error:
               n > apiRange.max
-                ? "This server runs an older Shahi than the app. Update Shahi on this computer — run install.sh again."
+                ? "This server runs an older Shahi than the app. Update Shahi on this computer — run herdr plugin install iYassr/shahi again."
                 : "This app is older than the Shahi on this server. Update the app.",
             api: apiRange,
           },
