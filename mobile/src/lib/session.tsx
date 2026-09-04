@@ -35,11 +35,10 @@ const KEY = "shahi.connection";
  * asking again. A relay connection remembers the relay, the box's id and the
  * device this phone became when it paired — the device secret is the
  * credential, the way the cookie is for a direct one. All three shapes live
- * at the same key; `kind` tells them apart, and an entry written before SSH
- * existed has no `kind` and reads as direct.
+ * at the same key; `kind` tells them apart.
  */
 type Stored =
-  | { kind?: "direct"; baseUrl: string; cookie: string }
+  | { kind: "direct"; baseUrl: string; cookie: string }
   | { kind: "ssh"; ssh: SshProfile }
   | ({ kind: "relay" } & RelayIdentity);
 

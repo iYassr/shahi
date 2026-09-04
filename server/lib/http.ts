@@ -793,12 +793,6 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           return json({ ok: true });
         }
 
-        if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
-          const body = await jsonObject<{ endpoint: unknown }>(req);
-          if (typeof body.endpoint === "string" && body.endpoint) push.unsubscribe(body.endpoint);
-          return json({ ok: true });
-        }
-
         if (pathname === "/api/push/test" && req.method === "POST") {
           const sent = await push.sendTest();
           return json({ sent });
