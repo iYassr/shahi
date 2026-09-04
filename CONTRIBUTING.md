@@ -9,11 +9,13 @@ disagrees.
 ## Layout
 
 ```
-shared/   the wire contract, types only — both clients import it
+shared/   the wire contract and the end-to-end crypto — both clients import it
 server/   Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
 mobile/   the Expo app — the product, and where new work goes
-web/       the React PWA, archived: kept working, no longer developed
-e2e/       Playwright, against a stub of the server
+plugin/   the herdr plugin: startup hook, actions, the service it installs
+relay/    the blind relay: a Cloudflare Worker, one Durable Object per box
+web/      the React PWA, archived: kept working, no longer developed
+e2e/      Playwright, against a stub of the server
 ```
 
 The **native app (`mobile/`) is the product**; `web/` is archived and should not
@@ -23,8 +25,8 @@ gain features.
 
 ```sh
 bun install
-bun test shared/src server web/src        # unit tests
-bun run typecheck                          # all four packages, incl. the app
+bun test shared/src server web/src plugin  # unit tests
+bun run typecheck                          # every workspace, incl. the app
 ```
 
 The app needs a Mac to build for iOS. See `docs/on-a-mac.md` and, for the SSH
