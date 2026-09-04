@@ -1,16 +1,14 @@
 /**
  * First run: how to reach the server.
  *
- * Three ways in. **Scanning a code** is the intended one: the server prints a
- * QR (`herdr plugin action invoke shahi.pair`), the phone reads the address and a
+ * Two ways in. **Scanning a code** is the intended one: the server prints a
+ * QR (`herdr plugin action invoke shahi.pair`), the phone reads the relay and a
  * one-time secret off it, checks it is talking to the server that printed it,
  * and comes away with a session bound to this device — which Settings can
- * later revoke. A code that also names a relay is taken up through the relay
- * instead, because that works from anywhere (`docs/relay.md`). **Direct** is
- * a tailnet address plus the passcode, typed. **SSH** is for a server you
- * already reach over SSH, with no tailnet and no sidecar port exposed: the
- * app opens an SSH session, forwards a local port to the sidecar behind it,
- * and signs in over that — see `lib/tunnel.ts`.
+ * later revoke. That works from anywhere (`docs/relay.md`). **SSH** is for a
+ * server you already reach over SSH, with no relay in the path and no sidecar
+ * port exposed: the app opens an SSH session, forwards a local port to the
+ * sidecar behind it, and signs in over that — see `lib/tunnel.ts`.
  * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState, useEffect } from "react";
@@ -37,23 +35,10 @@ import { theme } from "@/lib/theme";
 export const INSTALL_COMMAND =
   "herdr plugin install iYassr/shahi\nherdr plugin action invoke shahi.pair";
 
-/**
- * Deliberately blank rather than a guess.
- *
- * A pre-filled address that happens to be wrong looks configured and fails only
- * at connect time — worse than an obviously empty field. The placeholder shows
- * the shape without claiming to know the answer.
- */
-const URL_PLACEHOLDER = "http://your-host.your-tailnet.ts.net:7171";
-
-type Mode = "direct" | "ssh";
-
 export function Connect({
-  onConnected,
   onConnectedSsh,
   onConnectedRelay,
 }: {
-  onConnected: () => void;
   onConnectedSsh: (profile: SshProfile) => void;
   onConnectedRelay: (identity: RelayIdentity) => void;
 }) {
@@ -62,9 +47,6 @@ export function Connect({
   // told to set up. The guide hands over the one install command and explains
   // where the address and passcode come from; "Connect" moves on to the form.
   const [phase, setPhase] = useState<"intro" | "form">("intro");
-  const [mode, setMode] = useState<Mode>("direct");
-  const [url, setUrl] = useState("");
-  const [passcode, setPasscode] = useState("");
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +73,7 @@ export function Connect({
 
   // A link is asking to pair. Confirm the target before a byte is sent.
   if (pending) {
-    const host = (pending.relay ?? pending.endpoint).replace(/^https?:\/\//, "");
+    const host = pending.relay.replace(/^https?:\/\//, "");
     return (
       <View style={styles.introBody}>
         <Text style={styles.lede}>Pair this phone?</Text>
@@ -136,11 +118,11 @@ export function Connect({
   async function pair(payload: PairingPayload) {
     setBusy(true);
     setError(null);
-    const where = payload.relay ?? payload.endpoint;
+    const where = payload.relay;
     try {
       connection.cookie = null;
-      connection.baseUrl = payload.relay ? "" : payload.endpoint;
-      connection.relay = payload.relay ? pairingTarget(payload.relay, payload.server, payload.secret) : null;
+      connection.baseUrl = "";
+      connection.relay = pairingTarget(payload.relay, payload.server, payload.secret);
       const info = await api.meta();
       if (info.serverId !== payload.server) {
         throw new Error(`${where} is a Shahi server, but not the one that printed this code.`);
@@ -152,18 +134,13 @@ export function Connect({
       // indistinguishable in Settings; the model name is always populated.
       const label =
         Device.deviceName && Device.deviceName !== "iPhone" ? Device.deviceName : (Device.modelName ?? "iPhone");
-      if (payload.relay) {
-        const claim = await api.claimRelayPairing(payload.secret, label);
-        onConnectedRelay({
-          relay: payload.relay,
-          serverId: payload.server,
-          deviceId: claim.deviceId,
-          deviceSecret: claim.deviceSecret,
-        });
-      } else {
-        await api.claimPairing(payload.secret, label);
-        onConnected();
-      }
+      const claim = await api.claimRelayPairing(payload.secret, label);
+      onConnectedRelay({
+        relay: payload.relay,
+        serverId: payload.server,
+        deviceId: claim.deviceId,
+        deviceSecret: claim.deviceSecret,
+      });
     } catch (e) {
       // A box that refuses the link does not know this code — spent, expired,
       // or minted before a restart. The transport's words are about a device
@@ -198,24 +175,6 @@ export function Connect({
   // Narrow updates so the nested auth object stays a discriminated union.
   const patch = (fields: Partial<SshProfile>) => setSsh((p) => ({ ...p, ...fields }));
 
-  async function connectDirect() {
-    setBusy(true);
-    setError(null);
-    try {
-      connection.relay = null;
-      connection.baseUrl = url.trim().replace(/\/$/, "");
-      // Handshake before the passcode: a typo that lands on some other server,
-      // or a Shahi too old for this app, is reported as exactly that rather
-      // than as a wrong passcode.
-      await api.meta();
-      await api.login(passcode);
-      onConnected();
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
-  }
-
   async function connectSsh() {
     setBusy(true);
     setError(null);
@@ -235,7 +194,7 @@ export function Connect({
     }
   }
 
-  const canConnect = mode === "direct" ? !!passcode && !!url.trim() : sshProfileReady(ssh);
+  const canConnect = sshProfileReady(ssh);
 
   return (
     <KeyboardAvoidingView
@@ -273,69 +232,24 @@ export function Connect({
           </Pressable>
         </View>
 
-        {/* The typed ways in, as a segmented control. */}
-        <View style={styles.segment}>
-          <Pressable
-            style={[styles.segItem, mode === "direct" && styles.segItemOn]}
-            onPress={() => setMode("direct")}
-            testID="mode-direct"
-          >
-            <Text style={[styles.segText, mode === "direct" && styles.segTextOn]}>Tailscale</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.segItem, mode === "ssh" && styles.segItemOn]}
-            onPress={() => setMode("ssh")}
-            testID="mode-ssh"
-          >
-            <Text style={[styles.segText, mode === "ssh" && styles.segTextOn]}>SSH</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.hint}>Or reach the sidecar through a server you already SSH into.</Text>
 
-        {mode === "direct" ? (
-          <>
-            <Text style={styles.hint}>Reach the agents on your server over Tailscale.</Text>
-
-            <Text style={styles.label}>SERVER</Text>
-            <TextInput
-              style={styles.input}
-              value={url}
-              onChangeText={setUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              testID="server-address"
-              placeholder={URL_PLACEHOLDER}
-              placeholderTextColor={theme.dim}
-            />
-
-            <Text style={styles.label}>PASSCODE</Text>
-            <TextInput
-              style={[styles.input, styles.passcode]}
-              value={passcode}
-              onChangeText={setPasscode}
-              testID="passcode"
-              secureTextEntry
-              keyboardType="number-pad"
-            />
-          </>
-        ) : (
-          <SshForm ssh={ssh} patch={patch} setAuthKind={(kind) => setAuth(setSsh, kind)} />
-        )}
+        <SshForm ssh={ssh} patch={patch} setAuthKind={(kind) => setAuth(setSsh, kind)} />
 
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable
           style={[styles.button, (busy || !canConnect) && styles.buttonOff]}
           disabled={busy || !canConnect}
-          onPress={() => void (mode === "direct" ? connectDirect() : connectSsh())}
+          onPress={() => void connectSsh()}
           testID="connect"
         >
           <Text style={styles.buttonText}>{busy ? "Connecting…" : "Connect"}</Text>
         </Pressable>
 
-        {mode === "ssh" && !sshTunnelAvailable() && (
+        {!sshTunnelAvailable() && (
           <Text style={styles.note}>
-            SSH needs the native build of the app. This build can connect over Tailscale.
+            SSH needs the native build of the app. Scan a pairing code instead.
           </Text>
         )}
 

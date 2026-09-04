@@ -156,6 +156,17 @@ to `$HOME` and the OS temp directory (`tmpdir()`, which on macOS is
 
 **Never log `pane.read` output.** It contains whatever is on your terminals.
 
+**A phone reaches a box two ways, and typing an address is not one of them.**
+The relay is the default and pairing is a relay act — a `shahi://pair` code
+carries the relay, the box id and a one-time secret, and nothing else. SSH is
+the alternative for someone who wants no third party in the path: it opens a
+tunnel and points the same HTTP client at `127.0.0.1:<forwarded>`, so it is the
+relay's only peer in `dispatch()`. The typed tailnet address that used to be a
+third option is gone (2026-09-04): it was never a transport of its own — SSH
+rides on the very code path it used — and keeping it meant a second pairing
+route, an exposed bind, and an `NSAllowsArbitraryLoads` to defend. A box with
+`RELAY_URL=` empty now mints no codes and is reached over SSH with the passcode.
+
 **The phone speaks Shahi routes, never herdr methods.** `POST
 /api/panes/:id/prompt`, `/answer`, `/keys`, `/api/workspaces`,
 `/api/agents/start` — the sidecar translates, so a herdr rename or a change in how a prompt is submitted

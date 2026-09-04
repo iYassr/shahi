@@ -7,11 +7,11 @@
  * fighting over the same server. So the mirror lives here, above the router,
  * and every screen reads it.
  *
- * It also remembers where the server is. Retyping a tailnet address and a
- * passcode on a phone keyboard at every cold start is the kind of friction that
- * stops an app being opened at all. The address and the session cookie both go
- * into the keychain rather than plain storage, because the cookie *is* the
- * credential — it grants full control of the herdr session.
+ * It also remembers how to reach the server. Re-pairing, or retyping SSH
+ * credentials on a phone keyboard at every cold start, is the kind of friction
+ * that stops an app being opened at all. What is remembered goes into the
+ * keychain rather than plain storage, because it *is* the credential — it
+ * grants full control of the herdr session.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
@@ -28,17 +28,14 @@ const KEY = "shahi.connection";
 /**
  * What is kept in the keychain between launches.
  *
- * A direct connection remembers its address and cookie — the cookie *is* the
- * credential. An SSH connection remembers the whole profile instead: the local
- * tunnel port changes every launch, so the old base URL is worthless, and the
- * profile's passcode lets us re-open the tunnel and sign in fresh without
- * asking again. A relay connection remembers the relay, the box's id and the
- * device this phone became when it paired — the device secret is the
- * credential, the way the cookie is for a direct one. All three shapes live
- * at the same key; `kind` tells them apart.
+ * An SSH connection remembers the whole profile: the local tunnel port changes
+ * every launch, so a base URL would be worthless, and the profile's passcode
+ * lets us re-open the tunnel and sign in fresh without asking again. A relay
+ * connection remembers the relay, the box's id and the device this phone became
+ * when it paired — that device secret is the credential. Both shapes live at
+ * the same key; `kind` tells them apart.
  */
 type Stored =
-  | { kind: "direct"; baseUrl: string; cookie: string }
   | { kind: "ssh"; ssh: SshProfile }
   | ({ kind: "relay" } & RelayIdentity);
 
@@ -56,8 +53,6 @@ interface SessionValue {
    * with a failure.
    */
   error: Error | null;
-  /** Called by Connect once `api.login` has succeeded on a direct connection. */
-  signIn: () => void;
   /** Called by Connect after an SSH tunnel is open and login has succeeded. */
   signInSsh: (profile: SshProfile) => void;
   /** Called by Connect once a pairing over a relay has answered with a device. */
@@ -237,17 +232,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             await api.login(stored.ssh.passcode);
             setServer(`ssh://${stored.ssh.username}@${stored.ssh.host}`);
             setConnected(true);
-          } else if (stored.kind === "relay") {
+          } else {
             // Nothing to open here: the link is opened by the first request,
             // and a box that is offline or has forgotten this device says so
             // then, on the Agents screen, rather than at the gate.
             connectRelay(stored);
             setServer(relayLabel(stored));
-            setConnected(true);
-          } else {
-            connection.baseUrl = stored.baseUrl;
-            connection.cookie = stored.cookie;
-            setServer(stored.baseUrl);
             setConnected(true);
           }
         }
@@ -426,18 +416,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       refresh,
       reconnect,
       signOut,
-      signIn: () => {
-        sshProfile.current = null;
-        connection.relay = null;
-        void SecureStore.setItemAsync(
-          KEY,
-          JSON.stringify({ kind: "direct", baseUrl: connection.baseUrl, cookie: connection.cookie ?? "" }),
-        );
-        setServer(connection.baseUrl);
-        setConnected(true);
-      },
       // The SSH tunnel is already open and login has already succeeded by the
-      // time Connect calls this — same contract as signIn, but it remembers the
+      // time Connect calls this: it remembers the
       // profile (not a base URL, which is a throwaway local port) so a cold
       // start can rebuild the tunnel.
       signInSsh: (profile: SshProfile) => {

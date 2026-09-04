@@ -103,10 +103,7 @@ export function pairingUrl(payload: PairingPayload): string {
   const params = new URLSearchParams({
     v: String(payload.v),
     server: payload.server,
-    endpoint: payload.endpoint,
-    // Only when the box has one: an absent key is what "no relay" looks like
-    // to the phone, not an empty string it would have to special-case.
-    ...(payload.relay ? { relay: payload.relay } : {}),
+    relay: payload.relay,
     secret: payload.secret,
   });
   return `shahi://pair#${params.toString()}`;

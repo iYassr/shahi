@@ -30,7 +30,7 @@ export * from "./relay";
  * carries `x-shahi-api`, and a mismatch is a clear 426 rather than a screen that
  * half-works.
  */
-export const SHAHI_API_VERSION = 3;
+export const SHAHI_API_VERSION = 4;
 
 /** What `GET /api/meta` answers, before any authentication. */
 export interface ServerInfo {
@@ -70,21 +70,20 @@ export interface PromptReceipt {
  *
  * A fragment, not a query string, so the secret never reaches a web server if
  * the code is ever opened as a link. `server` is the `ServerInfo.serverId` of
- * the server that minted it: the phone fetches `/api/meta` at `endpoint` and
- * refuses to claim unless the ids match, so a code pointing at the wrong
- * address fails as a mismatch rather than pairing with whatever answered.
+ * the server that minted it: the phone fetches `/api/meta` through the relay
+ * and refuses to claim unless the ids match, so a code aimed at the wrong box
+ * — or a stranger's box on the right relay — fails as a mismatch rather than
+ * pairing with whatever answered.
  */
 export interface PairingPayload {
   v: 1;
   server: string;
-  /** Base URL the phone should talk to, e.g. `https://box.tailnet.ts.net`. */
-  endpoint: string;
   /**
-   * Base URL of a blind relay the box is dialled into (`docs/relay.md`), when
-   * it has one. The phone prefers it: it works from anywhere. `endpoint` stays
-   * for a phone on the same tailnet.
+   * Base URL of the blind relay the box is dialled into (`docs/relay.md`).
+   * Required: pairing is a relay act. A box with no relay cannot mint a code,
+   * and is reached over SSH with the passcode instead.
    */
-  relay?: string;
+  relay: string;
   /** Single use, ten minutes, held in the server's memory only. */
   secret: string;
 }

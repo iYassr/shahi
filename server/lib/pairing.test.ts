@@ -59,7 +59,7 @@ describe("pairing codes", () => {
     const url = pairingUrl({
       v: 1,
       server: "0c5e1b9c-6d4d-4a0f-9d5e-9f4a2b1c3d7e",
-      endpoint: "https://box.tailnet.ts.net",
+      relay: "https://relay.example.workers.dev",
       secret: "a_b-c",
     });
     expect(url.startsWith("shahi://pair#")).toBe(true);
@@ -67,23 +67,11 @@ describe("pairing codes", () => {
     const params = new URLSearchParams(url.slice("shahi://pair#".length));
     expect(params.get("v")).toBe("1");
     expect(params.get("server")).toBe("0c5e1b9c-6d4d-4a0f-9d5e-9f4a2b1c3d7e");
-    expect(params.get("endpoint")).toBe("https://box.tailnet.ts.net");
-    expect(params.get("secret")).toBe("a_b-c");
-    // No relay, no key: the phone reads absence as "reach it directly".
-    expect(params.has("relay")).toBe(false);
-  });
-
-  test("a box dialled into a relay puts the relay in the code beside the endpoint", () => {
-    const url = pairingUrl({
-      v: 1,
-      server: "id",
-      endpoint: "https://box.tailnet.ts.net",
-      relay: "https://relay.example.workers.dev",
-      secret: "s",
-    });
-    const params = new URLSearchParams(url.slice("shahi://pair#".length));
     expect(params.get("relay")).toBe("https://relay.example.workers.dev");
-    expect(params.get("endpoint")).toBe("https://box.tailnet.ts.net");
+    expect(params.get("secret")).toBe("a_b-c");
+    // The address a phone once typed is gone from the format: a code is a
+    // relay code, and a box without one mints nothing.
+    expect(params.has("endpoint")).toBe(false);
   });
 });
 

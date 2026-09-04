@@ -84,15 +84,16 @@ Every frame above the relay is sealed end to end between phone and sidecar
 (X25519 → HKDF → ChaCha20-Poly1305), keyed from the pairing secret, which never
 travels. The relay multiplexes ciphertext and knows a key hash, not who you are.
 
-Two alternatives, if you would rather not use a relay at all:
+One alternative, if you would rather have no third party in the path at all:
 
 | Mode | Reach | Set-up |
 |---|---|---|
 | **Relay** (default) | Anywhere | None — the first QR just works |
-| **Direct** | Your tailnet | Tailscale on both devices |
 | **SSH tunnel** | Anywhere you can SSH | Host key pinned on first connect |
 
-`RELAY_URL=` (empty) in the plugin's config opts out of the relay entirely.
+`RELAY_URL=` (empty) in the plugin's config opts out of the relay entirely; the
+app then reaches the box over SSH. There is no third mode: the sidecar binds
+loopback and is never given an address of its own to expose.
 
 ## What makes it different
 
@@ -143,7 +144,7 @@ down in the [security review](docs/security-review.md) and
 - A Mac or Linux machine running **herdr 0.8.2+**
 - Claude Code, Codex, or any shell running inside it
 - An iPhone
-- Outbound internet for the default relay — or Tailscale, or SSH
+- Outbound internet for the default relay — or a server you can SSH into
 
 herdr is the only backend today. tmux is plausible and not built; it is not
 advertised as working.
