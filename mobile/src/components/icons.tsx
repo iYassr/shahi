@@ -45,6 +45,8 @@ const ICONS = {
   "log-out": { d: "m16 17l5-5l-5-5m5 5H9m0 9H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", filled: false },
   info: { d: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20M12 16v-4m0-4h.01", filled: false },
   activity: { d: "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2", filled: false },
+  "chevron-down": { d: "m6 9 6 6 6-6", filled: false },
+  "chevron-up": { d: "m18 15-6-6-6 6", filled: false },
 } as const;
 
 export type IconName = keyof typeof ICONS;

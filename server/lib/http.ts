@@ -28,6 +28,7 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
+import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptReceipts, submitPrompt } from "./prompt";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
@@ -1137,6 +1138,9 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
   return {
     version: state.version,
     protocol: state.protocol,
+    // The machine the phone is trusting, named. `hostname()` is cheap and the
+    // authenticated snapshot is the right place for it — see Session.serverName.
+    serverName: hostname(),
     // What herdr's own agent panel is set to, so the phone opens the way the
     // TUI already does. Null when no preference is stated.
     defaultGrouping,

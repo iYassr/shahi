@@ -140,6 +140,7 @@ function reconcileSession(prev: Session | null, next: Session): Session {
   const scalarsSame =
     prev.version === next.version &&
     prev.protocol === next.protocol &&
+    prev.serverName === next.serverName &&
     prev.defaultGrouping === next.defaultGrouping &&
     prev.focusedPaneId === next.focusedPaneId;
   if (scalarsSame && panes === prev.panes && tabs === prev.tabs && workspaces === prev.workspaces) {
