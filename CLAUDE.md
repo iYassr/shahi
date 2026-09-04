@@ -17,9 +17,9 @@ e2e/       Playwright, against a stub of the server
 ```
 
 `herdr-plugin.toml` at the root is how the sidecar is distributed: `herdr
-plugin install iYassr/shahi` (see `docs/plugin.md`). `bash install.sh` is the
-older path and still works (idempotent; upgrades in place and keeps your
-passcode). Building the iOS app needs a Mac — see
+plugin install iYassr/shahi` (see `docs/plugin.md`), and the only way — the
+older `install.sh` was deleted once the plugin covered both platforms.
+Building the iOS app needs a Mac — see
 `docs/on-a-mac.md`, which is also where the iOS tests are free rather than
 behind a paid EAS plan.
 
@@ -440,7 +440,7 @@ mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back, every key-bar name, the event
 stream, and the HTTP routes including the 426 gate. CI runs it twice per push
 — against `v0.8.2`, the minimum supported release, pinned by tag, and against
-whatever `install.sh` hands out today — and nightly against the newest
+whatever herdr's own installer hands out today — and nightly against the newest
 prerelease (`herdr-preview.yml`), which files an issue rather than failing a
 push. It writes only into a workspace it creates and closes, on a herdr you
 point it at explicitly — and that herdr must be a **named session**:

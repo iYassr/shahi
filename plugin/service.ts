@@ -41,8 +41,7 @@ export interface Service {
   /**
    * Writes the file and (re)starts the service from it. Always a restart:
    * `enable --now` does nothing to a running service, so an in-place upgrade
-   * once kept the old code running while looking applied (install.sh learned
-   * this first).
+   * once kept the old code running while looking applied.
    */
   install(spec: ServiceSpec): void;
   stop(): void;

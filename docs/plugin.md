@@ -33,10 +33,6 @@ does, and needs `curl`, `unzip` and `bash` on the box (`apt install unzip`
 is the usual missing one on a fresh Debian or Ubuntu). On a headless Linux
 box, see the lingering note under *What gets created*.
 
-`install.sh` still exists and still works. Prefer the plugin: it is the path
-the public release will be judged on, and the installer will go once the
-plugin has been through a release cycle on a Linux box.
-
 ## What gets created, and where
 
 herdr gives every plugin two directories and keeps them apart from the
@@ -63,8 +59,8 @@ It is re-rendered and restarted on every herdr start, because after
 old code from memory would look updated and not be. **On Linux, a headless
 box needs `loginctl enable-linger $USER`** once, or the user service stops
 when your last SSH session ends — precisely when you would want to reach it
-from a phone. `install.sh` did that for you; the plugin cannot, since it
-needs sudo on some distributions, so it is said here instead.
+from a phone. The plugin cannot do this for you — it needs sudo on some
+distributions — so it is said here instead.
 
 The service follows the herdr that ran the hook last: its `HERDR_SOCKET_PATH`
 is the one herdr injected, so a named session (`herdr --session work`)
