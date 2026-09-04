@@ -1,5 +1,14 @@
 name: iOS end to end
 
+# BROKEN, and dormant, and the second is why the first has not been fixed.
+#
+# Every flow in ../.maestro signs in by typing an address and a passcode. That
+# screen is gone: the app reaches a box through the relay or over SSH, and
+# nothing else. Before this job is ever switched on the flows need a new way in,
+# and neither is free on a worker — a relay means running one (wrangler dev)
+# plus teaching the stub to be a box, and SSH means an sshd the worker does not
+# have. That work is not done, because the job below cannot run to prove it.
+#
 # NOTE: the `maestro` job type requires a paid EAS plan. On the free tier this
 # file validates server-side and refuses to run with:
 #   "Running maestro_test jobs requires a paid plan."

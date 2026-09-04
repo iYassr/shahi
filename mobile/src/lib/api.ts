@@ -324,32 +324,6 @@ export const api = {
   },
 
   /**
-   * Redeems a scanned pairing code for a session bound to this phone.
-   *
-   * Shaped like `login` rather than `request`, for the same reasons: the
-   * cookie in the answer is the point, and a 401 here means a spent or expired
-   * code — not a signed-out session, which is what `request` would make of it.
-   */
-  claimPairing: async (secret: string, deviceName: string): Promise<PairedDevice> => {
-    const res = await dispatch("/api/pair/claim", {
-      method: "POST",
-      headers: baseHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ secret, deviceName }),
-    });
-    if (res.status === 426) throw await incompatible(res);
-    const body = (await res.json().catch(() => ({}))) as { device?: PairedDevice; error?: string };
-    if (res.status === 401) throw new Error(body.error ?? "That pairing code is not valid.");
-    if (!res.ok || !body.device) {
-      throw new Error(
-        `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,
-      );
-    }
-    connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
-    if (!connection.cookie) throw new Error("Server did not return a session");
-    return body.device;
-  },
-
-  /**
    * The same claim, over a relay link opened with the pairing secret.
    *
    * There is no cookie to keep: a relay link *is* its device, so what comes

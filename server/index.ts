@@ -159,26 +159,23 @@ if (!config.webRoot) {
 }
 
 if (!loopback) {
-  // Only loopback is a secure context. Off it, the browser refuses to register
-  // a service worker, which is the sole delivery path for Web Push — so
-  // notifications stop working silently unless this is said out loud.
+  // Binding off loopback used to be how a phone reached this box directly.
+  // Nothing does that any more — the app comes in through the relay, or
+  // through an SSH tunnel to the loopback bind — so an exposed port is now all
+  // risk and no reach, and saying so is more useful than explaining TLS.
   console.warn(
-    `\n  Bound to ${config.host}, not loopback. Two consequences:\n` +
-      "    - This address is not a secure context, so a browser here will not\n" +
-      "      register a service worker and Web Push will not be delivered.\n" +
-      "      The dashboard itself works fine.\n" +
-      "    - The passcode is now the only thing between this port and full\n" +
-      "      control of every agent here.\n" +
-      "  Both are answered by putting TLS in front of it, which also keeps this\n" +
-      "  address working:\n" +
-      `    sudo tailscale serve --bg --https=443 http://${config.host}:${config.port}\n` +
-      "  then use the https:// name rather than the address.\n",
+    `\n  Bound to ${config.host}, not loopback — and nothing needs that.\n` +
+      "  The app reaches this box through the relay, or over an SSH tunnel to\n" +
+      "  the loopback bind. Neither wants an address exposed here, so this\n" +
+      "  only widens what can reach a port that runs commands as you: the\n" +
+      "  passcode is the one thing in front of it.\n" +
+      "  Unset HOST to bind 127.0.0.1 again.\n",
   );
 
   if (config.host === "0.0.0.0" || config.host === "::") {
     console.warn(
-      "  You bound ALL interfaces, which includes your LAN — not just the\n" +
-        "  tailnet. Bind your Tailscale address specifically instead.\n",
+      "  You bound ALL interfaces, which includes your LAN and, behind a\n" +
+        "  forwarded port, the internet. Unset HOST.\n",
     );
   }
 }

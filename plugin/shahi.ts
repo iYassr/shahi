@@ -45,7 +45,6 @@ import { homedir, userInfo } from "node:os";
 import { dirname } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
-import { phoneEndpoint, tailscaleStatus } from "../server/lib/endpoint";
 import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../server/lib/secrets";
 import { layoutFromEnv, type Layout } from "./layout";
 import { serviceFor, type Service, type ServiceSpec } from "./service";
@@ -262,10 +261,9 @@ async function install(layout: Layout, service: Service): Promise<void> {
 
 async function status(layout: Layout, service: Service): Promise<number> {
   const env = readEnvFile(layout.envFile);
-  const { host, port, url } = address(env);
+  const { url } = address(env);
   const state = service.status();
   const info = await meta(url);
-  const phone = phoneEndpoint(await tailscaleStatus(), host, port);
   const devices = info ? await deviceCount(url, env) : null;
 
   const serviceLine = !state.installed
@@ -275,7 +273,7 @@ async function status(layout: Layout, service: Service): Promise<number> {
       : "installed, not running";
   const relayUrl = relayUrlFor(env);
   const relayLine = !relayUrl
-    ? "off (RELAY_URL is empty): reachable directly only"
+    ? "off (RELAY_URL is empty): reachable over SSH only"
     : info?.relay
       ? `${info.relay.url} — ${info.relay.connected ? "connected" : "dialling"}`
       : relayUrl;
@@ -283,7 +281,7 @@ async function status(layout: Layout, service: Service): Promise<number> {
   console.log(`  address   ${url}`);
   console.log(`  relay     ${relayLine}`);
   console.log(
-    `  phone     ${phone || (relayUrl ? "through the relay, from anywhere" : "no address to give a phone yet: set RELAY_URL, bind HOST off loopback, or put `tailscale serve` in front")}`,
+    `  phone     ${relayUrl ? "through the relay, from anywhere" : "no pairing without a relay: set RELAY_URL, or reach this box over SSH"}`,
   );
   console.log(
     info
@@ -333,22 +331,6 @@ async function pair(layout: Layout, service: Service, args: string[]): Promise<v
     console.log("");
   }
   const env = readEnvFile(layout.envFile);
-  const { host, port } = address(env);
-  // With a relay the code needs no typed address: the phone goes through the
-  // relay, and pair.ts fills the code's endpoint field with the box's own.
-  if (!args.includes("--endpoint") && !relayUrlFor(env) && !phoneEndpoint(await tailscaleStatus(), host, port)) {
-    // pair.ts would stop here and say to run it again with --endpoint — which
-    // from inside a popup means closing it and typing an env-laden command by
-    // hand. Ask for the address here instead; the code is still probed before
-    // it is printed, so a wrong one is reported on this screen.
-    console.log(
-      "This box is bound to loopback and has no Tailscale name, so it cannot tell\n" +
-        "what address the phone will use. Type it, then Enter — for example\n" +
-        `https://box.tailnet.ts.net, or http://<this machine's address>:${port}\n`,
-    );
-    const typed = await readLine();
-    if (typed) args = [...args, "--endpoint", typed];
-  }
   const proc = Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", ...args], {
     cwd: layout.root,
     // The relay the service actually dials, default included (pair.ts reads

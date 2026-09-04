@@ -468,36 +468,6 @@ describe("pairing", () => {
     (globalThis as { fetch: unknown }).fetch = fetchMock;
   });
 
-  test("claiming sends the secret and this phone's name, and keeps the cookie it is given", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: new Headers({ "set-cookie": "shahi_session=1.dev-1.sig; Path=/; HttpOnly" }),
-      json: async () => ({ device: { id: "dev-1", name: "Yasser's iPhone", createdAt: 1, lastSeenAt: 1 } }),
-    });
-    const device = await api.claimPairing("s3cret", "Yasser's iPhone");
-    expect(device.id).toBe("dev-1");
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://localhost:7272/api/pair/claim");
-    expect(init.method).toBe("POST");
-    expect(init.credentials).toBe("omit");
-    expect(JSON.parse(init.body)).toEqual({ secret: "s3cret", deviceName: "Yasser's iPhone" });
-    expect(connection.cookie).toBe("shahi_session=1.dev-1.sig");
-  });
-
-  // A 401 here is a spent code, not an expired session — it must not read as
-  // "unauthorized" or sign anything out.
-  test("a spent or expired code is refused in the server's words", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 401,
-      headers: new Headers(),
-      json: async () => ({ error: "That pairing code is not valid. A code works once and for ten minutes — print a new one." }),
-    });
-    await expect(api.claimPairing("old", "iPhone")).rejects.toThrow(/works once/);
-    expect(connection.cookie).toBeNull();
-  });
-
   test("the device list is read with the session, and a revoke is a DELETE of that device", async () => {
     connection.cookie = "shahi_session=x";
     fetchMock.mockResolvedValue({
