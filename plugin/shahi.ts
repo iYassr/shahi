@@ -57,7 +57,7 @@ const PAIR_HINT = "Pair a phone:  herdr plugin action invoke shahi.pair";
 const KEY_HINT = 'or bind a key in herdr\'s config.toml:  [[keys.command]] key = "prefix+P", type = "plugin_action", command = "shahi.pair"';
 
 /** Shahi's relay: a blind pipe (docs/relay.md). The plugin's default; any Worker deployed from `relay/` works the same. */
-export const DEFAULT_RELAY_URL = "https://shahi-relay.yasserd99.workers.dev";
+export const DEFAULT_RELAY_URL = "https://relay.getshahi.dev";
 
 /**
  * The relay the service dials: what the `.env` says if it says anything —

@@ -97,7 +97,7 @@ The sidecar listens on `7171` on loopback and dials out to Shahi's relay
 the code carries the relay's address, the phone connects through it, and the
 relay sees ciphertext and nothing else — what it does see is that a box with
 your `serverId` is online, and the timing and sizes of its frames. The relay
-is `https://shahi-relay.yasserd99.workers.dev`, a Cloudflare Worker run by
+is `https://relay.getshahi.dev`, a Cloudflare Worker run by
 Shahi's author; the default lives in the plugin's code, not in your files,
 and a `RELAY_URL` line in the `.env` always wins:
 
@@ -252,6 +252,7 @@ rescans when the default branch moves. Nothing in the code is involved.
   it here and herdr's own Windows support is newer than this plugin.
 - **A compiled single binary** would remove the bun requirement and the
   build step. That is a release-asset job, not a plugin change.
-- **The relay's default is a `workers.dev` hostname.** It is in code, so a
-  reinstall can move it — but a custom domain on the Worker (`docs/relay.md`,
-  "Operating the relay") is what lets it move without a release.
+- **The relay's default is one anchor for every install.** It is a domain the
+  project owns (`relay.getshahi.dev`), so it can be repointed at another host
+  without a release and cannot be reclaimed by anyone else — but every default
+  box still converges on it. `RELAY_URL` is the way off.

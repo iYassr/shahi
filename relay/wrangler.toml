@@ -8,6 +8,28 @@ compatibility_date = "2026-08-01"
 # default is to phone home from every `wrangler` invocation.
 send_metrics = false
 
+# Keep the workers.dev address answering alongside the custom domain. Adding a
+# custom domain does NOT keep it by default — wrangler disables workers.dev
+# unless this is set, which would stand up every phone already paired against
+# the old URL (a phone stores the relay address it paired with). It stays until
+# those have re-paired.
+workers_dev = true
+
+# The relay answers on a domain we own, not on workers.dev. Two reasons, and
+# the second is the load-bearing one:
+#   - The URL is a trust anchor. It is baked into the plugin's default and
+#     carried on every pairing QR, so a box that dials it dials it for life;
+#     a domain can be repointed at another host, a workers.dev name cannot.
+#   - Cloudflare's WAF and rate-limiting rules apply to zones you own, and a
+#     workers.dev subdomain is not one. This is what makes a rule on /v1/*
+#     expressible at all — CONNECT_LIMIT below bounds one source, the WAF is
+#     what bounds the account (docs/relay.md, "Operating the relay").
+# The workers.dev address keeps answering; a custom domain is additive, so a
+# phone paired before the move still connects until it re-pairs.
+[[routes]]
+pattern = "relay.getshahi.dev"
+custom_domain = true
+
 [[durable_objects.bindings]]
 name = "RELAY"
 class_name = "RelayBox"

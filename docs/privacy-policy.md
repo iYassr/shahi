@@ -34,7 +34,7 @@ The app holds a session cookie for your server, again only on your device.
   the encrypted SSH tunnel.
 - **Through the relay, by default.** When your server is set up with the
   Shahi relay (the default in the herdr plugin), the phone and the server each
-  connect out to `shahi-relay.yasserd99.workers.dev`, a Cloudflare Worker
+  connect out to `relay.getshahi.dev`, a Cloudflare Worker
   operated by the developer, and every request and reply passes through it
   encrypted with keys only your phone and your server hold. The relay, and
   Cloudflare as its host, can see: the IP addresses of your phone and your
