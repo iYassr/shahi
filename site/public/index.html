@@ -19,174 +19,76 @@
 </head>
 <body>
 <div class="wrap">
-
-  <header>
-    <div class="brand">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Shahi home">
       <img class="mark" data-brand-welcome src="/favicon.svg" alt="" width="48" height="48">
-      <img class="wordmark" src="/wordmark.svg" alt="Shahi" width="114" height="48">
-    </div>
-
-    <h1>Coding agents.<br>On your phone.</h1>
-    <p class="lede">
-      Read Claude Code and Codex conversations, answer permission prompts,
-      and manage agents running in <a href="https://herdr.dev">herdr</a>.
-    </p>
-    <div class="hero-actions">
-      <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
-      <a class="button-secondary" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
-    </div>
-    <p class="availability">Available in your browser. iOS is in private testing.</p>
+      <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
+    </a>
+    <a class="quiet-link" href="https://github.com/iYassr/shahi">GitHub <span aria-hidden="true">↗</span></a>
   </header>
-
-  <section class="inbox" aria-label="Interactive agent preview">
-    <div class="inbox-head"><span class="dot"></span> Agents <span class="preview-label">Interactive preview</span></div>
-    <div class="row">
-      <span class="agent-avatar" style="color: #d97757" aria-hidden="true"><img src="/agents/claude.svg" alt="" width="20" height="20"></span>
-      <div class="row-main">
-        <span class="row-name">claude · api-gateway</span>
-        <span class="row-sub demo-question">Do you want to make this edit to router.ts?</span>
-        <details class="answer-demo">
-          <summary><span class="demo-before">Allow once <span aria-hidden="true">↗</span></span><span class="demo-after">Reset preview <span aria-hidden="true">↺</span></span></summary>
-          <p class="demo-result"><span aria-hidden="true">✓</span> Answer sent. Claude can keep going.</p>
-        </details>
+  <main>
+    <section class="hero" aria-labelledby="headline">
+      <p class="eyebrow">For Claude Code &amp; Codex</p>
+      <h1 id="headline">Coding agents.<br><span>On your phone.</span></h1>
+      <p class="lede">Read conversations, review changes, and answer prompts<br class="desktop-break"> from the agents running on your computer.</p>
+      <div class="hero-actions">
+        <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
+        <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <span class="row-state on"><span class="demo-before">Needs you</span><span class="demo-after">Working</span></span>
-    </div>
-    <div class="row">
-      <span class="agent-avatar is-working" style="color: #10a37f" aria-hidden="true"><img src="/agents/codex.svg" alt="" width="20" height="20"></span>
-      <div class="row-main">
-        <span class="row-name">codex · billing</span>
-        <span class="row-sub">Running the migration suite…</span>
+      <p class="availability">Browser app available · iOS in private testing</p>
+    </section>
+
+    <figure class="product">
+      <div class="product-frame">
+        <section class="inbox" aria-label="Example agent list">
+          <div class="panel-heading"><span>Agents</span><span class="subtle">3 sessions</span></div>
+          <div class="agent-row selected">
+            <span class="avatar claude"><img src="/agents/claude.svg" alt="Claude Code" width="20" height="20"></span>
+            <div><strong>Add request validation</strong><span class="meta">api-gateway</span><span class="state attention demo-before">Needs you</span><span class="state working demo-after">Working</span></div>
+          </div>
+          <div class="agent-row">
+            <span class="avatar codex bob"><img src="/agents/codex.svg" alt="Codex" width="20" height="20"></span>
+            <div><strong>Test the billing migration</strong><span class="meta">billing</span><span class="state working">Working</span></div>
+          </div>
+          <div class="agent-row">
+            <span class="avatar claude"><img src="/agents/claude.svg" alt="Claude Code" width="20" height="20"></span>
+            <div><strong>Update the setup guide</strong><span class="meta">docs</span><span class="state done">Done</span></div>
+          </div>
+          <div class="preview-nav" aria-hidden="true"><span>Agents</span><span>Spaces</span><span>Settings</span></div>
+        </section>
+        <section class="reader" aria-label="Example conversation">
+          <div class="panel-heading"><span>Add request validation</span><span class="meta">~/api-gateway</span></div>
+          <div class="reader-tabs" aria-hidden="true"><span class="active">Read</span><span>Screen</span></div>
+          <div class="conversation">
+            <div class="message you"><span class="speaker">You</span><p>Check the request body before creating a user. Return a useful error if the email is missing.</p></div>
+            <div class="message"><span class="speaker">Claude Code</span><p>I’ll add validation to the route and a test for requests without an email.</p></div>
+            <div class="change"><div class="file-label">router.ts <span>+3 lines</span></div><pre><code>app.post('/users', async (req, res) =&gt; {
+<span class="added">+  if (!req.body.email) {
++    return res.status(400).json({ error: 'Email is required' });
++  }</span></code></pre></div>
+            <div class="approval"><p class="demo-before">Allow this edit to router.ts?</p><p class="demo-after sent">✓ Response sent</p>
+              <details class="answer-demo"><summary><span class="demo-before">Allow once</span><span class="demo-after">Reset example</span></summary><p>Claude is applying the change.</p></details>
+            </div>
+          </div>
+        </section>
       </div>
-      <span class="row-state state-working">Working</span>
-    </div>
-    <div class="row">
-      <span class="agent-avatar" style="color: #d97757" aria-hidden="true"><img src="/agents/claude.svg" alt="" width="20" height="20"></span>
-      <div class="row-main">
-        <span class="row-name">claude · docs</span>
-        <span class="row-sub">Rewrote the operations guide.</span>
-      </div>
-      <span class="row-state state-done">Done</span>
-    </div>
-    <div class="row">
-      <span class="agent-avatar" aria-hidden="true">❯</span>
-      <div class="row-main">
-        <span class="row-name">zsh · infra</span>
-        <span class="row-sub">~/infra</span>
-      </div>
-      <span class="row-state state-idle">Idle</span>
-    </div>
-  </section>
-  <p class="caption">Try answering Claude above. This preview stays on this page; it doesn’t control a real agent.</p>
+      <figcaption>Example session · Try “Allow once” to see the response. No agent is connected.</figcaption>
+    </figure>
 
-  <h2>Check on work away from your desk</h2>
-  <p>
-    See which agents are running, finished, or waiting for an answer.
-    Open a conversation to read what happened and respond from your phone.
-  </p>
+    <section class="features" aria-label="Features">
+      <article><span class="feature-number">01</span><h2>Read the conversation</h2><p>Messages, tool calls, and code changes in a layout that fits your phone.</p></article>
+      <article><span class="feature-number">02</span><h2>Answer with context</h2><p>Review the request before approving. Shahi checks that the prompt is still current.</p></article>
+      <article><span class="feature-number">03</span><h2>Keep your setup</h2><p>Your agents run in herdr on your computer. Connect through the relay or use SSH on mobile.</p></article>
+    </section>
 
-  <h2 id="quick-start">Quick start</h2>
-  <p>On the machine where herdr runs:</p>
-  <pre><span class="p">herdr</span> plugin install iYassr/shahi
-<span class="p">herdr</span> plugin action invoke shahi.pair</pre>
-  <p>
-    That installs the sidecar as a user service, generates its secrets, and
-    prints a QR code. Scan it in the app and your agents appear. There is
-    no inbound port to open when using the relay.
-  </p>
-
-  <h2>How it connects</h2>
-  <p>
-    Your machine dials <strong>out</strong> and holds the connection open. Your
-    phone dials out to the same relay. Neither side needs an inbound port, and
-    the relay cannot read what it carries.
-  </p>
-  <div class="flow" role="img" aria-label="Your machine dials out to the relay and holds the connection open. Your phone dials out to the same relay, sending sealed frames. The relay sees sizes and timing, never content.">
-    <div class="node">
-      <b>your machine</b>
-      <span>herdr + sidecar</span>
-    </div>
-    <div class="arrow">
-      <b>──▶</b>
-      <span>dials out, stays open</span>
-    </div>
-    <div class="node">
-      <b>relay</b>
-      <span>sees sizes and timing, never content</span>
-    </div>
-    <div class="arrow">
-      <b>◀──</b>
-      <span>sealed frames</span>
-    </div>
-    <div class="node">
-      <b>your phone</b>
-      <span>scan once</span>
-    </div>
-  </div>
-  <p>
-    Every frame is sealed end to end between phone and sidecar, keyed from the
-    pairing secret — which never travels. If you would rather have no third
-    party in the path at all, the app can reach your box over an SSH tunnel
-    instead.
-  </p>
-
-  <p>
-    The browser app trusts the code delivered by this website. A compromised
-    website or publishing account could access an active session or remembered
-    pairing secret. End-to-end encryption protects against the relay; it cannot
-    protect against compromised app code. The relay can still observe connection
-    metadata. Read the <a href="/privacy">privacy policy</a> for details.
-  </p>
-
-  <h2>What you can do</h2>
-
-  <h3>Read conversations</h3>
-  <p>
-    Shahi displays messages, reasoning, tool calls, and patches from Claude Code
-    and Codex transcripts. Use Screen mode to view terminal output.
-    Transcript entries that Shahi does not support are omitted from the reader.
-  </p>
-
-  <h3>Answer permission prompts</h3>
-  <p>
-    Review the request and choose an answer. Shahi checks that the prompt
-    is still current before sending your response. If a prompt cannot be
-    parsed, use the terminal view and text input.
-  </p>
-
-  <h3>Manage agents</h3>
-  <p>
-    Start agents in your workspaces, send messages, attach files, and use
-    terminal keys from the app.
-  </p>
-
-  <h3>Connect to your computer</h3>
-  <p>
-    Agents run on your computer. Shahi connects to it through an encrypted
-    relay, or through SSH in the mobile app. No Shahi account is required.
-  </p>
-
-  <h2>Availability</h2>
-  <p class="note">
-    The iOS app is in private testing — there is no public App Store or
-    TestFlight link yet. <a href="/pwa/">Open Shahi in your browser</a> on a
-    phone or laptop, then scan or paste a pairing code from the herdr plugin.
-    Android is coming; iPhone is where this started.
-  </p>
-  <p>
-    The sidecar, the herdr plugin and the relay are working today. herdr is the
-    supported backend; tmux is not supported.
-  </p>
-
-  <footer>
-    <p>
-      MIT licensed ·
-      <a href="https://github.com/iYassr/shahi">Source on GitHub</a> ·
-      <a href="mailto:support@getshahi.dev">support@getshahi.dev</a>
-    </p>
-    <p>Built for <a href="https://herdr.dev">herdr</a> · <a href="/privacy">Privacy</a></p>
-  </footer>
-
+    <section class="setup" id="quick-start" aria-labelledby="setup-title">
+      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>Run these commands on your Mac or Linux computer with herdr installed. Then scan the pairing code in Shahi.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Setup documentation <span aria-hidden="true">↗</span></a></div>
+      <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
+herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
+    </section>
+    <p class="connection-note">Pairing grants access to your terminal. The relay carries encrypted messages; the browser app also depends on trusted website code. <a href="https://github.com/iYassr/shahi/blob/master/docs/browser-hosting.md">Connection details</a> · <a href="/privacy">Privacy</a></p>
+  </main>
+  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>
 <script defer src="/welcome.js"></script>
 </body>
