@@ -1,19 +1,33 @@
-# The landing page at getshahi.dev. A static-assets Worker: no server code, no
+# The landing page and beta signup handler at getshahi.dev.
 # build: bun run site/build.ts; ./dist includes the browser client at /pwa/.
 #
 # It lives beside the relay's config rather than in a separate repository so a
 # claim on the page and the code that backs it move together — the page states
 # what the product does, and this repo is where that becomes untrue first.
 name = "shahi-site"
+main = "src/index.ts"
 compatibility_date = "2026-08-01"
 
 # Anonymous usage metrics off, for the same reason as the relay's.
 send_metrics = false
+workers_dev = false
+preview_urls = false
 
 [assets]
+binding = "ASSETS"
+run_worker_first = ["/api/ios-beta"]
 directory = "./dist"
 not_found_handling = "404-page"
 
 [[routes]]
 pattern = "getshahi.dev"
 custom_domain = true
+
+[[send_email]]
+name = "BETA_EMAIL"
+allowed_sender_addresses = ["beta@getshahi.dev"]
+
+[[ratelimits]]
+name = "BETA_LIMIT"
+namespace_id = "26090501"
+simple = { limit = 5, period = 60 }

@@ -102,3 +102,23 @@ paired devices, and transcripts were preserved; the previous checkout and a
 database snapshot were retained for rollback. Legacy unowned notification
 registrations were removed, so notifications must be enabled again. The native
 client also needs an API 5 build; incompatible clients receive the version gate.
+
+## iOS beta requests
+
+The landing-page form posts to `/api/ios-beta`, handled by `site/src/index.ts`.
+Cloudflare Email Routing sends each request to the verified mailbox that receives
+`support@getshahi.dev`; the public alias remains the message's To header and the
+applicant is Reply-To. `BETA_DELIVERY_TO` is a Worker secret containing that
+verified destination. Update it if the support forwarding rule changes.
+The sender is `beta@getshahi.dev`. The domain must have Email Routing enabled.
+
+Requests require a same-origin JSON submission, an email address, and consent.
+A honeypot, a 2 KB body limit, and five requests per minute per IP per Cloudflare
+location limit abuse. This is a lightweight limit, not global bot protection.
+No signup database is maintained. Email acceptance is awaited before success;
+inviting the applicant to TestFlight remains a manual action.
+
+Run `bun test site/signup.test.ts` and `bunx tsc --noEmit -p site` for checks.
+Use `bunx wrangler dev --config site/wrangler.toml` after building to test the
+form locally; a plain static file server cannot handle submissions. Local email
+bindings do not deliver unless explicitly configured for remote email testing.
