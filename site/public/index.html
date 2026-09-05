@@ -35,7 +35,7 @@
         <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability">Browser app available · iOS in private testing</p>
+      <p class="availability">Browser app available · <a href="#ios-beta">Join the iOS beta</a></p>
     </section>
 
     <figure class="product">
@@ -81,6 +81,19 @@
       <article><span class="feature-number">03</span><h2>Keep your setup</h2><p>Your agents run in herdr on your computer. Connect through the relay or use SSH on mobile.</p></article>
     </section>
 
+    <section class="beta" id="ios-beta" aria-labelledby="beta-title">
+      <div><p class="eyebrow">iOS · TestFlight</p><h2 id="beta-title">Try Shahi on your iPhone.</h2><p>Leave your email and we’ll contact you when a beta place is available.</p></div>
+      <form id="beta-form">
+        <label for="beta-email">Email address</label>
+        <div class="beta-fields"><input id="beta-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required><button class="button-primary" type="submit">Request an invite</button></div>
+        <div class="form-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+        <label class="beta-consent"><input name="consent" type="checkbox" required> <span>Email me about the Shahi iOS beta.</span></label>
+        <p class="beta-privacy">Your request goes to our support inbox. <a href="/privacy#ios-beta">How we use your email</a></p>
+        <p id="beta-status" role="status" aria-live="polite"></p>
+        <noscript>Email <a href="mailto:support@getshahi.dev?subject=Shahi%20iOS%20beta">support@getshahi.dev</a> to request an invite.</noscript>
+      </form>
+    </section>
+
     <section class="setup" id="quick-start" aria-labelledby="setup-title">
       <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>Run these commands on your Mac or Linux computer with herdr installed. Then scan the pairing code in Shahi.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Setup documentation <span aria-hidden="true">↗</span></a></div>
       <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
@@ -91,5 +104,6 @@ herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once 
   <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>
 <script defer src="/welcome.js"></script>
+<script defer src="/beta.js"></script>
 </body>
 </html>
