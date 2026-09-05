@@ -30,11 +30,8 @@ interface Props {
   scale: number;
 }
 
-/** Vesper, so the embedded terminal matches the app around it. */
+/** Shahi ground and cursor; preserve the terminal ANSI palette for output. */
 const THEME = {
-  background: "#101010",
-  foreground: "#ffffff",
-  cursor: "#ffc799",
   black: "#101010",
   red: "#ff8080",
   green: "#99ffe4",
@@ -61,10 +58,16 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     const host = hostRef.current;
     if (!host) return;
 
+    const identity = getComputedStyle(document.documentElement);
     const term = new Xterm({
       cols,
       rows,
-      theme: THEME,
+      theme: {
+        ...THEME,
+        background: identity.getPropertyValue("--void").trim(),
+        foreground: identity.getPropertyValue("--text").trim(),
+        cursor: identity.getPropertyValue("--accent").trim(),
+      },
       fontSize: FONT_SIZE,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
       lineHeight: LINE_HEIGHT,
@@ -94,29 +97,15 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     term.write(ansi);
   }, [ansi]);
 
+  // Reserve the scaled footprint once; scaling that same box would square the
+  // zoom factor and clip small views or add blank panning space above 100%.
+  const width = cols * FONT_SIZE * CELL_WIDTH_RATIO;
+  const height = rows * FONT_SIZE * LINE_HEIGHT;
   return (
-    <div
-      className="term"
-      ref={hostRef}
-      /*
-       * The box is sized to what the transform actually draws.
-       *
-       * `scale` shrinks the picture and not the layout, so at "Fit width" this
-       * element still reserved its full unscaled width and the pane scrolled
-       * sideways into empty black. Computed from the grid rather than measured
-       * off the DOM: xterm sizes itself from its container, so measuring the
-       * container and then resizing it chases its own tail.
-       */
-      style={{
-        transform: `scale(${scale})`,
-        width: cols * FONT_SIZE * CELL_WIDTH_RATIO * scale,
-        height: rows * FONT_SIZE * LINE_HEIGHT * scale,
-      }}
-      // The terminal is a rendered image of another screen, not a live region
-      // to be announced; the transcript tab is the readable form.
-      aria-label="Terminal output"
-      role="img"
-    />
+    <div className="term" style={{ width: width * scale, height: height * scale }}
+      aria-label="Terminal output" role="img">
+      <div ref={hostRef} style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }} />
+    </div>
   );
 }
 

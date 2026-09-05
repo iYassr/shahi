@@ -341,3 +341,9 @@ ping, which lives in the sidecar, not here — a deliberate next step.
 | `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry   |
 | `1000` | `idle`              | phone | ten minutes without a frame either way            |
 | `1000` | `closed by box`     | phone | the box sent `close` for the link                 |
+
+Telemetry events are retained by Analytics Engine for three months. The stable
+server identifier can correlate a box's events. The public policy documents
+the fields and retention in `docs/privacy-policy.md`. Omitting `STATS_TOKEN`
+hides `/stats` but does not stop collection; remove the `TELEMETRY` binding to
+stop Shahi event collection on a self-hosted relay.

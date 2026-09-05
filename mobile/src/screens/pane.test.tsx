@@ -166,7 +166,7 @@ describe("sending a reply", () => {
 
     expect(view.getByText(/ship it/)).toBeTruthy();
     expect(view.getAllByText("YOU")).toHaveLength(1);
-    expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it");
+    expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it", expect.any(String));
     // The composer is cleared with the tap, not with the receipt.
     expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
 
@@ -616,4 +616,49 @@ describe("keeping your terminal place", () => {
     await again.findByTestId("terminal-body");
     expect(again.queryByText("Show the screen instead")).toBeNull();
   });
+});
+
+test("a cold reader can prepend messages older than its initial sixty without following the tail", async () => {
+  const all = Array.from({ length: 140 }, (_, i) => said(`history-${i}`, "agent", `Message ${i}`));
+  mocked.sessionLog.mockImplementation(async (_pane, limit, before) => {
+    const end = before ?? all.length;
+    const offset = Math.max(0, end - limit);
+    return { ...log(all.slice(offset, end)), offset: 123456, total: all.length };
+  });
+  const ui = render(<Pane paneId="history-pagination" />);
+  await settle();
+  expect(ui.UNSAFE_getByType(FlatList).props.data).toHaveLength(60);
+  fireEvent.press(ui.getByText("Load earlier messages"));
+  await settle();
+  expect(mocked.sessionLog).toHaveBeenCalledWith("history-pagination", 60, 80);
+  const list = ui.UNSAFE_getByType(FlatList);
+  expect(list.props.data).toHaveLength(120);
+  expect(list.props.data[0].id).toBe("history-20");
+  expect(list.props.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 1 });
+  fireEvent.press(ui.getByText("Load earlier messages"));
+  await settle();
+  expect(ui.UNSAFE_getByType(FlatList).props.data).toHaveLength(140);
+  expect(ui.queryByText("Load earlier messages")).toBeNull();
+  ui.unmount();
+});
+
+test("retrying a lost prompt response reuses its id; a new successful send gets another", async () => {
+  mocked.sessionLog.mockResolvedValue(log([said("retry-agent", "agent", "Ready to retry.")]));
+  mocked.send.mockRejectedValueOnce(new Error("response lost")).mockResolvedValue(receipt);
+  const view = render(<Pane paneId="prompt-retry" />);
+  await settle();
+  const composer = view.getByPlaceholderText("Reply to this agent…");
+  fireEvent.changeText(composer, "do this once");
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  const first = mocked.send.mock.calls[0]![2];
+  expect(typeof first).toBe("string");
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  expect(mocked.send.mock.calls[1]![2]).toBe(first);
+  fireEvent.changeText(composer, "do this once");
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  expect(mocked.send.mock.calls[2]![2]).not.toBe(first);
+  view.unmount();
 });

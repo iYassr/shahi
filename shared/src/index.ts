@@ -30,7 +30,10 @@ export * from "./relay";
  * carries `x-shahi-api`, and a mismatch is a clear 426 rather than a screen that
  * half-works.
  */
-export const SHAHI_API_VERSION = 4;
+export const SHAHI_API_VERSION = 5;
+
+/** Includes herdr readiness (310s), shell retries and transport overhead. */
+export const START_AGENT_TIMEOUT_MS = 325_000;
 
 /** What `GET /api/meta` answers, before any authentication. */
 export interface ServerInfo {

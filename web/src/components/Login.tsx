@@ -1,3 +1,4 @@
+import { Logo, Wordmark } from "./Logo";
 import { useState } from "react";
 import { api } from "../api";
 
@@ -25,7 +26,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form className="login" onSubmit={submit}>
-      <h1 className="login__title">herdr</h1>
+      <h1 className="login__title"><Logo size={40} /><Wordmark /></h1>
       <p className="login__hint">
         Enter your passcode to reach the agents on this machine.
       </p>

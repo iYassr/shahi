@@ -21,6 +21,7 @@ import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedEr
 import { hostOf } from "@/lib/errors";
 import { closeRelay, deviceTarget, type RelayIdentity } from "@/lib/relay";
 import { closeTunnel, openTunnel } from "@/lib/tunnel";
+import { configurePushProfile, forgetPushRegistration, restorePushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 
 const KEY = "shahi.connection";
@@ -158,6 +159,7 @@ function connectRelay(identity: RelayIdentity): void {
   connection.baseUrl = "";
   connection.cookie = null;
   connection.relay = deviceTarget(identity);
+  configurePushProfile(null);
 }
 
 function relayLabel(identity: RelayIdentity): string {
@@ -214,12 +216,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // The active SSH profile, when the connection is tunnelled — kept so sign-out
   // can tear the tunnel down and restore knows to re-open it.
   const sshProfile = useRef<SshProfile | null>(null);
+  const generation = useRef(0);
+  const recovering = useRef<Promise<void> | null>(null);
+  const watched = useRef<string | null>(null);
 
   // Restore before first paint of anything that depends on being signed in.
   useEffect(() => {
+    const current = generation.current;
+    let cancelled = false;
+    const active = () => !cancelled && current === generation.current;
     void (async () => {
       try {
         const raw = await SecureStore.getItemAsync(KEY);
+        if (!active()) return;
         if (raw) {
           const stored = JSON.parse(raw) as Stored;
           if (stored.kind === "ssh") {
@@ -228,9 +237,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             // (box down, key changed) surfaces on the Connect screen rather
             // than pretending to be signed in.
             sshProfile.current = stored.ssh;
-            connection.baseUrl = await openTunnel(stored.ssh);
+            configurePushProfile(stored.ssh);
+            const baseUrl = await openTunnel(stored.ssh);
+            if (!active()) return;
+            connection.baseUrl = baseUrl;
             connection.cookie = null;
-            await api.login(stored.ssh.passcode);
+            await api.login(stored.ssh.passcode, active);
+            if (!active()) return;
+            await restorePushRegistration(active);
+            if (!active()) return;
             setServer(`ssh://${stored.ssh.username}@${stored.ssh.host}`);
             setConnected(true);
           } else {
@@ -243,6 +258,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch {
+        if (!active()) return;
         // A corrupt entry, a dead box or a rejected key all mean the same
         // thing to a cold start: show Connect. The tunnel, if it half-opened,
         // is closed so a retry starts clean.
@@ -256,8 +272,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Lost pins are re-pinnable; nothing to surface.
       }
-      setReady(true);
+      if (active()) setReady(true);
     })();
+    return () => {
+      cancelled = true;
+      generation.current++;
+      if (sshProfile.current) void closeTunnel();
+    };
   }, []);
 
   const togglePin = useCallback((paneId: string) => {
@@ -332,6 +353,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
+    generation.current++;
+    socketRef.current?.close();
+    watched.current = null;
+    void forgetPushRegistration();
+    configurePushProfile(null);
     void SecureStore.deleteItemAsync(KEY);
     connection.cookie = null;
     // The link goes with the credentials it carried.
@@ -348,9 +374,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refresh = useCallback(() => {
+    const current = generation.current;
     return api
       .session()
       .then((s) => {
+        if (current !== generation.current) return;
         setSession((prev) => reconcileSession(prev, s));
         // A poll that succeeds clears a prior transient error, so one blip does
         // not leave the whole screen showing failure until the next unrelated
@@ -358,6 +386,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setError(null);
       })
       .catch((e: Error) => {
+        if (current !== generation.current || recovering.current) return;
         // An expired cookie is not an error to display; it is a sign-out.
         if (e instanceof UnauthorizedError) signOut();
         else {
@@ -372,8 +401,42 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [signOut]);
 
   const reconnect = useCallback(() => {
-    socketRef.current?.ensureConnected();
-    return refresh();
+    if (recovering.current) return recovering.current;
+    const profile = sshProfile.current;
+    if (!profile) {
+      socketRef.current?.ensureConnected();
+      return refresh();
+    }
+    const current = ++generation.current;
+    const active = () => current === generation.current && sshProfile.current === profile;
+    socketRef.current?.close();
+    setLink("connecting");
+    const work = (async () => {
+      try {
+        const baseUrl = await openTunnel(profile);
+        if (!active()) return;
+        connection.baseUrl = baseUrl;
+        connection.cookie = null;
+        await api.login(profile.passcode, active);
+        if (!active()) return;
+        await restorePushRegistration(active);
+        if (!active()) return;
+        const next = await api.session();
+        if (!active()) return;
+        setSession((prev) => reconcileSession(prev, next));
+        setError(null);
+        socketRef.current?.watch(watched.current);
+        socketRef.current?.ensureConnected();
+      } catch (e) {
+        if (active()) {
+          setError(e as Error);
+          setLink("lost");
+        }
+      }
+    })();
+    recovering.current = work;
+    void work.finally(() => { if (recovering.current === work) recovering.current = null; });
+    return work;
   }, [refresh]);
 
   useEffect(() => {
@@ -434,7 +497,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // profile (not a base URL, which is a throwaway local port) so a cold
       // start can rebuild the tunnel.
       signInSsh: (profile: SshProfile) => {
+        generation.current++;
         sshProfile.current = profile;
+        configurePushProfile(profile);
+        void restorePushRegistration(() => sshProfile.current === profile);
         connection.relay = null;
         void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "ssh", ssh: profile }));
         setServer(`ssh://${profile.username}@${profile.host}`);
@@ -444,13 +510,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // the next time anything asks for one — the socket effect below does,
       // and comes up on the device link.
       signInRelay: (identity: RelayIdentity) => {
+        generation.current++;
         sshProfile.current = null;
         void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "relay", ...identity }));
         connectRelay(identity);
         setServer(relayLabel(identity));
         setConnected(true);
       },
-      watch: (paneId) => socketRef.current?.watch(paneId),
+      watch: (paneId) => {
+        watched.current = paneId;
+        socketRef.current?.watch(paneId);
+      },
       onPaneFrame,
       clearPrompt: (paneId) =>
         setPrompts((current) => {

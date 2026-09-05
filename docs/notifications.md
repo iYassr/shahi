@@ -97,3 +97,12 @@ Two independent channels, either usable without the other:
 Losing the VAPID keypair makes every existing subscription undeliverable and
 requires each device to grant permission again. It is the one thing in `.env`
 worth backing up.
+
+## Registration ownership
+
+Registrations belong to the paired device or passcode session that enables
+them. Revoking a device removes its Expo and browser registrations immediately;
+server-side logout removes the signing-out owner's registrations as well.
+The September 2026 ownership update discards older unowned registrations:
+enable notifications again after upgrading. This does not change pairing keys
+or delete agent transcripts.

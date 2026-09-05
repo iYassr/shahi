@@ -43,17 +43,21 @@ export class PushService {
     private readonly config: Config,
   ) {
     this.#db = db;
+    // Unowned registrations cannot be revoked safely. Require a fresh opt-in.
+    db.exec("DROP TABLE IF EXISTS push_subscription; DROP TABLE IF EXISTS expo_push_token");
     this.#db.exec(`
-      CREATE TABLE IF NOT EXISTS push_subscription (
+      CREATE TABLE IF NOT EXISTS device_push_subscription (
         endpoint TEXT PRIMARY KEY,
+        owner    TEXT NOT NULL,
         p256dh   TEXT NOT NULL,
         auth     TEXT NOT NULL,
         added_at INTEGER NOT NULL
       )
     `);
     this.#db.exec(`
-      CREATE TABLE IF NOT EXISTS expo_push_token (
+      CREATE TABLE IF NOT EXISTS device_expo_push_token (
         token    TEXT PRIMARY KEY,
+        owner    TEXT NOT NULL,
         added_at INTEGER NOT NULL
       )
     `);
@@ -88,23 +92,23 @@ export class PushService {
     );
   }
 
-  subscribe(subscription: PushSubscription): void {
+  subscribe(subscription: PushSubscription, owner = "local"): void {
     this.#db.run(
-      `INSERT INTO push_subscription (endpoint, p256dh, auth, added_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth`,
-      [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, Date.now()],
+      `INSERT INTO device_push_subscription (endpoint, p256dh, auth, added_at, owner) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, owner = excluded.owner`,
+      [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, Date.now(), owner],
     );
   }
 
-  unsubscribe(endpoint: string): void {
-    this.#db.run("DELETE FROM push_subscription WHERE endpoint = ?", [endpoint]);
+  unsubscribe(endpoint: string, owner?: string): void {
+    this.#db.run("DELETE FROM device_push_subscription WHERE endpoint = ?" + (owner ? " AND owner = ?" : ""), owner ? [endpoint, owner] : [endpoint]);
   }
 
   count(): number {
     return (
-      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM push_subscription").get()?.n ??
+      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM device_push_subscription").get()?.n ??
         0) +
-      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM expo_push_token").get()?.n ?? 0)
+      (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM device_expo_push_token").get()?.n ?? 0)
     );
   }
 
@@ -117,16 +121,21 @@ export class PushService {
     return typeof value === "string" && /^Expo(nent)?PushToken\[[^\]]+\]$/.test(value);
   }
 
-  subscribeExpo(token: string): void {
+  subscribeExpo(token: string, owner = "local"): void {
     this.#db.run(
-      `INSERT INTO expo_push_token (token, added_at) VALUES (?, ?)
-         ON CONFLICT(token) DO NOTHING`,
-      [token, Date.now()],
+      `INSERT INTO device_expo_push_token (token, added_at, owner) VALUES (?, ?, ?)
+         ON CONFLICT(token) DO UPDATE SET owner = excluded.owner`,
+      [token, Date.now(), owner],
     );
   }
 
-  unsubscribeExpo(token: string): void {
-    this.#db.run("DELETE FROM expo_push_token WHERE token = ?", [token]);
+  unsubscribeExpo(token: string, owner?: string): void {
+    this.#db.run("DELETE FROM device_expo_push_token WHERE token = ?" + (owner ? " AND owner = ?" : ""), owner ? [token, owner] : [token]);
+  }
+
+  unsubscribeOwner(owner: string): void {
+    this.#db.run("DELETE FROM device_push_subscription WHERE owner = ?", [owner]);
+    this.#db.run("DELETE FROM device_expo_push_token WHERE owner = ?", [owner]);
   }
 
   /**
@@ -184,7 +193,7 @@ export class PushService {
    */
   async #sendExpo(payload: PushPayload): Promise<number> {
     const tokens = this.#db
-      .query<{ token: string }, []>("SELECT token FROM expo_push_token")
+      .query<{ token: string }, []>("SELECT token FROM device_expo_push_token")
       .all()
       .map((row) => row.token);
     if (tokens.length === 0) return 0;
@@ -227,7 +236,7 @@ export class PushService {
 
     const rows = this.#db
       .query<{ endpoint: string; p256dh: string; auth: string }, []>(
-        "SELECT endpoint, p256dh, auth FROM push_subscription",
+        "SELECT endpoint, p256dh, auth FROM device_push_subscription",
       )
       .all();
 

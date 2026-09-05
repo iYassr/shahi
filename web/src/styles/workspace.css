@@ -1,0 +1,433 @@
+/* ------------------------------------------------------------- tab bar -- */
+
+/*
+ * The app's two halves, mirroring herdr's own sidebar split: Agents for triage,
+ * Spaces for structure. At the bottom because that is where a thumb reaches —
+ * the top of a modern phone is the hardest part of the screen to touch.
+ */
+
+.tabbar {
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: var(--void);
+  padding-bottom: var(--safe-bottom);
+  flex: none;
+}
+
+.tabbar__item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 52px;
+  font-family: var(--ui);
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tabbar__item.active {
+  color: var(--text);
+}
+
+.tabbar__glyph {
+  display: inline-flex;
+  font-size: 14px;
+}
+
+.tabbar__badge {
+  background: var(--accent);
+  color: var(--void);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tabbar__count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* -------------------------------------------------------------- spaces -- */
+
+.space {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+/* A space with something waiting in it says so from the left edge. */
+.space--blocked {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.space__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.space__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+/* One per agent, coloured by what it is doing. */
+.space__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-bright);
+}
+
+.space__dot--working {
+  background: var(--working);
+}
+
+.space__dot--blocked {
+  background: var(--accent);
+}
+
+.space__dot--done {
+  background: var(--success);
+}
+
+.space__summary {
+  flex: none;
+  color: var(--muted);
+}
+
+/* Shortened in JS — see `fromTheLeft`. */
+.space__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--line-bright);
+  text-align: left;
+}
+
+.space:active {
+  background: var(--surface);
+}
+
+.space__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.space__name {
+  display: block;
+  /* One step above an agent row on purpose: a space contains agents, so it
+     reads as the heading it is. Same face, though. */
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.space__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.space__badge {
+  flex: none;
+  background: var(--accent);
+  color: var(--void);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The one obvious way to add something, sized for a thumb. */
+.bigaction {
+  display: block;
+  width: calc(100% - var(--gutter) * 2);
+  margin: 16px var(--gutter) 24px;
+  min-height: 48px;
+  border: 1px dashed var(--line-bright);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.bigaction:active {
+  background: var(--surface);
+}
+
+/* -------------------------------------------------------------- sheets -- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  width: 100%;
+}
+
+.sheet__panel {
+  position: relative;
+  background: var(--surface);
+  border-top: 1px solid var(--line-bright);
+  border-radius: 16px 16px 0 0;
+  padding: 8px var(--gutter) calc(var(--safe-bottom) + 20px);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12%);
+    opacity: 0;
+  }
+}
+
+.sheet__grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-bright);
+  margin: 4px auto 14px;
+}
+
+.sheet__title {
+  margin: 0 0 16px;
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+
+.sheet__go {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--void);
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.sheet__go:disabled {
+  opacity: 0.4;
+}
+
+.sheet__note {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  margin: 10px 0 0;
+}
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.field__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field input {
+  width: 100%;
+  background: var(--void);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  /* 16px keeps iOS from zooming the viewport on focus. */
+  font-size: 16px;
+  padding: 12px;
+  min-height: 46px;
+}
+
+/* -------------------------------------------------------- folder picker -- */
+
+.picker__current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--void);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 46px;
+}
+
+.picker__path {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /*
+   * Not `direction: rtl` to keep the tail visible — that reorders the leading
+   * "~/" and renders "~/VideoProduction/test" as "VideoProduction/test/~".
+   * A path that ellipsizes at the end is merely truncated; one that lies about
+   * its own order is worse.
+   */
+  text-align: left;
+}
+
+.picker__toggle {
+  flex: none;
+  color: var(--accent);
+  font-size: 13px;
+  min-height: 32px;
+  padding: 0 4px;
+}
+
+.picker__chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 8px;
+  scrollbar-width: none;
+}
+
+.picker__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.picker__chip {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 12px;
+  min-height: 34px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.picker__chip[data-active="true"] {
+  border-color: var(--line-bright);
+  background: var(--raised);
+  color: var(--text);
+}
+
+.picker__browser {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+}
+
+.picker__row:last-child {
+  border-bottom: none;
+}
+
+.picker__row:active {
+  background: var(--raised);
+}
+
+.picker__glyph {
+  color: var(--muted);
+  flex: none;
+}
+
+.picker__empty,
+.picker__error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.picker__error {
+  color: var(--danger);
+}
+
+/* The primary create action, against the dashed secondary one below it. */
+.bigaction--primary {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--void);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.bigaction--primary:active {
+  opacity: 0.85;
+  background: var(--accent);
+}
+
+/* Agent kind picker — one tap, no dropdown. */
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kind {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.kind[data-active="true"] {
+  border-color: var(--line-bright);
+  background: var(--raised);
+  color: var(--text);
+  background: var(--raised);
+}
+
+.kind:disabled {
+  opacity: 0.4;
+}

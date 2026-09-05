@@ -7,6 +7,7 @@
 #import <netdb.h>
 #import <unistd.h>
 #import <fcntl.h>
+#import <stdatomic.h>
 
 // The whole tunnel in libssh2 — connect, handshake, auth, forward. One
 // session, one socket, many channels: libssh2 multiplexes every channel over
@@ -39,7 +40,7 @@ typedef struct Conn {
   int _listenFd;
   int _sessionFd;
   LIBSSH2_SESSION *_ssh;
-  volatile BOOL _running;
+  atomic_bool _running;
   volatile BOOL _loopStarted;
   BOOL _stopped;
   dispatch_semaphore_t _loopDone;
@@ -86,6 +87,7 @@ typedef struct Conn {
   static dispatch_once_t once;
   dispatch_once(&once, ^{ libssh2_init(0); });
   _ssh = libssh2_session_init();
+  if (_ssh) libssh2_session_set_timeout(_ssh, 15000);
   if (_ssh == NULL || libssh2_session_handshake(_ssh, _sessionFd) != 0) {
     if (error) *error = [self errorWithMessage:@"The SSH handshake failed."];
     [self stop];
@@ -184,6 +186,8 @@ typedef struct Conn {
     if (FD_ISSET(_listenFd, &readable)) {
       int local = accept(_listenFd, NULL, NULL);
       if (local >= 0) {
+        int yes = 1;
+        setsockopt(local, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
         LIBSSH2_CHANNEL *ch = [self openChannel];
         if (ch) {
           fcntl(local, F_SETFL, O_NONBLOCK);
@@ -205,12 +209,17 @@ typedef struct Conn {
         ssize_t n = recv(c->localFd, buf, kBufSize, 0);
         if (n > 0) {
           ssize_t off = 0;
-          while (off < n && !dead) {
+          CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 15;
+          while (_running && off < n && !dead) {
             ssize_t w = libssh2_channel_write(c->channel, (char *)buf + off, n - off);
             // On a congested uplink the write returns EAGAIN; block on the
             // session socket until it drains rather than re-calling in a tight
             // loop, which pinned a core (native-module audit).
-            if (w == LIBSSH2_ERROR_EAGAIN) { [self waitSocket]; continue; }
+            if (w == LIBSSH2_ERROR_EAGAIN || w == 0) {
+              if (CFAbsoluteTimeGetCurrent() >= deadline) { dead = YES; break; }
+              [self waitSocket];
+              continue;
+            }
             if (w < 0) dead = YES; else off += w;
           }
         } else if (n == 0) {
@@ -221,13 +230,13 @@ typedef struct Conn {
       // Channel → local. Always drain, since the session socket being readable
       // does not say which channel has data.
       if (!dead) {
-        for (;;) {
+        while (_running) {
           ssize_t n = libssh2_channel_read(c->channel, (char *)buf, kBufSize);
           if (n == LIBSSH2_ERROR_EAGAIN) break;
           if (n < 0) { dead = YES; break; }
           if (n == 0) { if (libssh2_channel_eof(c->channel)) dead = YES; break; }
           ssize_t off = 0;
-          while (off < n) {
+          while (_running && off < n) {
             ssize_t w = send(c->localFd, buf + off, n - off, 0);
             if (w <= 0) { dead = YES; break; }
             off += w;
@@ -253,13 +262,15 @@ typedef struct Conn {
 - (LIBSSH2_CHANNEL *)openChannel {
   // Channel open is itself non-blocking; loop over EAGAIN, waiting on the
   // session socket, rather than spinning.
-  for (;;) {
+  CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 15;
+  while (_running && CFAbsoluteTimeGetCurrent() < deadline) {
     LIBSSH2_CHANNEL *ch = libssh2_channel_direct_tcpip_ex(
         _ssh, _remoteHost.UTF8String, _remotePort, "127.0.0.1", 0);
     if (ch) return ch;
     if (libssh2_session_last_errno(_ssh) != LIBSSH2_ERROR_EAGAIN) return NULL;
     [self waitSocket];
   }
+  return NULL;
 }
 
 // Block until the session socket is ready in whichever direction libssh2 wants.
@@ -277,16 +288,15 @@ typedef struct Conn {
 - (void)stop {
   // Idempotent: a second stop must not wait on a semaphore the loop already
   // signalled (it would block for the full timeout) or double-free anything.
+  @synchronized (self) {
   if (_stopped) return;
   _stopped = YES;
   _running = NO;
-  // Wait for the select loop to actually exit before freeing the session it is
-  // reading: libssh2 sessions are not thread-safe, and tearing one down under a
-  // live loop is a use-after-free on every close (native-module audit). The
-  // loop's select caps at 1s and every channel op is non-blocking, so this
-  // returns quickly; the 2s ceiling is insurance against a wedged loop.
-  if (_loopStarted)
-    dispatch_semaphore_wait(_loopDone, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
+  // Wake pending select/I/O without closing or freeing anything the loop owns.
+  // Every retry checks cancellation. Never free on a timed-out join: that
+  // turns a slow transfer into a use-after-free on sign-out.
+  if (_sessionFd >= 0) shutdown(_sessionFd, SHUT_RDWR);
+  if (_loopStarted) dispatch_semaphore_wait(_loopDone, DISPATCH_TIME_FOREVER);
   Conn *c = _conns;
   while (c) {
     Conn *next = c->next;
@@ -303,6 +313,7 @@ typedef struct Conn {
     _ssh = NULL;
   }
   if (_sessionFd >= 0) { close(_sessionFd); _sessionFd = -1; }
+  }
 }
 
 // A blocking TCP connect, resolving the host. Returns the fd or -1.
@@ -318,7 +329,25 @@ typedef struct Conn {
   for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
     fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
     if (fd < 0) continue;
-    if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) break;
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+    int result = connect(fd, ai->ai_addr, ai->ai_addrlen);
+    if (result < 0 && errno == EINPROGRESS) {
+      fd_set writable;
+      FD_ZERO(&writable);
+      FD_SET(fd, &writable);
+      struct timeval timeout = { .tv_sec = 15, .tv_usec = 0 };
+      if (select(fd + 1, NULL, &writable, NULL, &timeout) > 0) {
+        int status = 0;
+        socklen_t size = sizeof(status);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &status, &size) == 0 && status == 0) result = 0;
+      }
+    }
+    if (result == 0) {
+      fcntl(fd, F_SETFL, 0);
+      break;
+    }
     close(fd);
     fd = -1;
   }

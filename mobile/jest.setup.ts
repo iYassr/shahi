@@ -14,6 +14,7 @@ jest.mock("expo-haptics", () => ({
 
 // The relay's ephemeral keys want the platform's CSPRNG; here that is Node's.
 jest.mock("expo-crypto", () => ({
+  randomUUID: () => require("node:crypto").randomUUID(),
   getRandomBytes: (n: number) => new Uint8Array(require("node:crypto").randomBytes(n)),
 }));
 

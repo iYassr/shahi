@@ -24,7 +24,7 @@ export default function RootLayout() {
         screenOptions={{
           contentStyle: { backgroundColor: theme.void },
           headerStyle: { backgroundColor: theme.void },
-          headerTintColor: theme.peach,
+          headerTintColor: theme.fg,
           headerTitleStyle: { color: theme.fg },
           headerShadowVisible: false,
           // The back button shows the chevron alone. A stack this shallow gains

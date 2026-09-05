@@ -17,7 +17,8 @@ import { api, IncompatibleServerError, UnreachableError } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
-import { theme } from "@/lib/theme";
+import { GreetingLogo } from "@/components/greeting-logo";
+import { theme, statusColor } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { Unreachable } from "@/components/unreachable";
@@ -134,6 +135,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           the card's job said twice, and the bell now lives in Settings. */}
       <Stack.Screen
         options={{
+          headerLeft: () => <GreetingLogo size={36} />,
           headerRight: () => (
             <View style={styles.status}>
               <Text style={[styles.link, { color: theme.dim }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
@@ -476,9 +478,6 @@ const Centered = ({ children }: { children: React.ReactNode }) => (
   </View>
 );
 
-const statusColor = (status: string) =>
-  status === "working" ? theme.mint : status === "blocked" ? theme.peach : theme.dim;
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
@@ -497,7 +496,6 @@ const styles = StyleSheet.create({
 
   groupLabel: {
     color: theme.dim,
-    fontFamily: theme.mono,
     fontSize: 11,
     letterSpacing: 1.2,
     paddingHorizontal: 16,
@@ -520,7 +518,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  newAgentText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
+  newAgentText: { color: theme.fg, fontSize: 14, fontWeight: "500" },
   filter: {
     borderWidth: 1,
     borderColor: theme.line,
@@ -530,9 +528,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.surface,
   },
-  filterOn: { backgroundColor: theme.raised, borderColor: theme.peach },
-  filterText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
-  filterTextOn: { color: theme.peach },
+  filterOn: { backgroundColor: theme.raised, borderColor: theme.lineBright },
+  filterText: { color: theme.dim, fontSize: 14 },
+  filterTextOn: { color: theme.fg, fontWeight: "600" },
 
   separator: {
     height: StyleSheet.hairlineWidth,
@@ -555,7 +553,7 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 4,
   },
-  sheetTitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginBottom: 8 },
+  sheetTitle: { color: theme.dim, fontSize: 12, marginBottom: 8 },
   sheetItem: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48 },
   sheetItemText: { color: theme.fg, fontSize: 16 },
   actions: { flexDirection: "row" },
@@ -566,16 +564,16 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: theme.raised,
   },
-  actionText: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
+  actionText: { color: theme.dim, fontSize: 10 },
 
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15, backgroundColor: theme.void },
   rowBody: { flex: 1, gap: 2 },
   rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
   rowSaid: { color: theme.dim, fontSize: 13, flex: 1 },
-  rowTyping: { color: theme.mint, fontStyle: "italic" },
+  rowTyping: { color: theme.working, fontStyle: "italic" },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
-  rowStatus: { fontFamily: theme.mono, fontSize: 10, letterSpacing: 0.5 },
+  rowStatus: { fontSize: 10, letterSpacing: 0.5 },
 
   blocked: {
     margin: 16,
@@ -585,7 +583,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
     padding: 16,
   },
-  badge: { color: theme.peach, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.4, fontWeight: "600" },
+  badge: { color: theme.peach, fontSize: 11, fontWeight: "600" },
   where: { color: theme.fg, fontSize: 17, fontWeight: "600", marginTop: 8 },
   task: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginTop: 2 },
   context: { borderLeftWidth: 1, borderLeftColor: theme.line, paddingLeft: 10, marginBottom: 12, gap: 4 },
@@ -603,9 +601,9 @@ const styles = StyleSheet.create({
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 11, paddingHorizontal: 4, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
-  choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },
+  choiceIndex: { color: theme.dim, fontSize: 14 },
   choiceBody: { flex: 1 },
-  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, lineHeight: 19 },
+  choiceLabel: { color: theme.fg, fontSize: 16, lineHeight: 22 },
   /** The agent's own explanation of a choice, where it wrote one. */
   choiceDetail: { color: theme.dim, fontSize: 12, lineHeight: 17, marginTop: 3 },
 });

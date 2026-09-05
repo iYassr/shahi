@@ -147,7 +147,7 @@ test.describe("resilience", () => {
 
       await context.setOffline(true);
       await page.goto("/").catch(() => undefined);
-      await expect(page.getByText(/cannot reach herdr/i)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/cannot reach Shahi/i)).toBeVisible({ timeout: 20_000 });
       await expect(page.locator(".login")).toHaveCount(0);
 
       await context.setOffline(false);

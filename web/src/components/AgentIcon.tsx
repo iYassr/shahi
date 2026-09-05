@@ -1,21 +1,5 @@
-/**
- * Per-agent marks.
- *
- * With fifteen agents across ten spaces, "claude" and "codex" as grey text are
- * hard to scan; a coloured mark is legible at a glance and survives being small.
- *
- * On fidelity, deliberately: only marks that can be drawn *correctly* are drawn.
- * Claude's burst, Gemini's four-point sparkle and π are simple, unambiguous
- * shapes. Most of the others — OpenAI's knot, Cursor's, Copilot's — are not
- * reproducible from memory at this size, and a wrong approximation of a
- * recognisable logo looks worse than no logo at all. Those get a lettermark in
- * the agent's own colour, which reads as a deliberate system rather than a set
- * of half-remembered traces.
- *
- * To use official artwork instead, drop an SVG path into `MARKS` keyed by kind;
- * everything else picks it up.
- */
-
+/** Agent identities share the native artwork; unknown providers retain a lettermark. */
+import { agentMarks } from "@shahi/shared/brand";
 import type { ReactElement } from "react";
 
 interface Props {
@@ -25,7 +9,7 @@ interface Props {
 }
 
 /**
- * Accent per agent. Chosen to stay legible on Vesper's near-black and to be
+ * Accent per agent. Chosen to stay legible on Shahi's warm black and to be
  * distinguishable from each other at 14px, which matters more here than exact
  * brand matching.
  */
@@ -36,7 +20,7 @@ const COLORS: Record<string, string> = {
   cursor: "#e6e6e6",
   copilot: "#b0b0b0",
   pi: "#c4a7ff",
-  opencode: "#99ffe4",
+  opencode: "#5FB88A",
   droid: "#a4e05a",
   amp: "#ffd166",
   grok: "#f0f0f0",
@@ -54,18 +38,12 @@ const COLORS: Record<string, string> = {
   omp: "#e0b0ff",
 };
 
-const FALLBACK = "#8b8b8b";
+const FALLBACK = "var(--muted)";
 
 /** Marks confident enough to draw. Everything else falls back to a lettermark. */
 const MARKS: Record<string, (color: string) => ReactElement> = {
-  // Anthropic's burst — the same shape Claude Code spins as `✻` in the terminal.
-  claude: (color) => (
-    <g stroke={color} strokeWidth="2.1" strokeLinecap="round">
-      <line x1="12" y1="3.5" x2="12" y2="20.5" />
-      <line x1="4" y1="7.5" x2="20" y2="16.5" />
-      <line x1="4" y1="16.5" x2="20" y2="7.5" />
-    </g>
-  ),
+  claude: (color) => <path fill={color} d={agentMarks.claudecode} />,
+  codex: (color) => <path fill={color} d={agentMarks.openai} />,
 
   // A four-pointed sparkle with concave sides.
   gemini: (color) => (
@@ -75,6 +53,8 @@ const MARKS: Record<string, (color: string) => ReactElement> = {
     />
   ),
 };
+
+export function agentColor(kind: string | null | undefined) { return COLORS[(kind ?? "").toLowerCase()] ?? FALLBACK; }
 
 export function AgentIcon({ kind, size = 14 }: Props) {
   const key = (kind ?? "").toLowerCase();

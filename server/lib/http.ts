@@ -30,7 +30,9 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
-import { PromptReceipts, submitPrompt } from "./prompt";
+import { submitPrompt } from "./prompt";
+import { OperationError, Operations } from "./operations";
+import { createHash } from "node:crypto";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { watchTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
@@ -87,6 +89,7 @@ export interface Arrival {
   viaRelay: boolean;
   /** Turns the request into a socket carrying `data`; null where that is impossible. */
   upgrade: ((data: SocketData) => boolean) | null;
+  holdOpen?: () => void;
 }
 
 /** What `createServer` returns: the port, and the same handling for clients that did not come through it. */
@@ -257,7 +260,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
   // Prompts already handed to herdr, by the phone's own message id, so a retry
   // after a timeout gets the receipt back rather than a second delivery.
-  const receipts = new PromptReceipts<PromptReceipt>();
+  const operations = new Operations();
 
   // The untyped view of the client the prompt module takes: it names three
   // methods and a test wants to fake them.
@@ -266,7 +269,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
   /** herdr said no (400, with its code) or something else broke (500). */
   const failure = (err: unknown) =>
-    err instanceof HerdrError
+    err instanceof OperationError
+      ? json({ error: err.message }, { status: err.status })
+      : err instanceof HerdrError
       ? json({ error: err.message, code: err.code }, { status: 400 })
       : json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
 
@@ -279,6 +284,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   });
 
   const identify = (req: Request) => auth.identify(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
+  const pushOwner = (req: Request) => identify(req)?.deviceId ?? `session:${createHash("sha256").update(readCookie(req.headers.get("cookie"), SESSION_COOKIE) ?? "local").digest("hex")}`;
 
   // A revoked device fails here, on its next request — `Auth` asks `devices`
   // about every device token it sees. A live one is marked seen, so Settings
@@ -366,6 +372,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
         viaRelay: false,
         upgrade: (data) => srv.upgrade(req, { data }),
+        holdOpen: () => srv.timeout(req, 0),
       });
       // Compression happens here and nowhere else: routes stay unaware of it,
       // and a websocket upgrade (which returns undefined) passes through.
@@ -445,7 +452,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   // a 30-day socket rather than an indefinite one. `verifyToken` is the same
   // check the upgrade made, so a rotated secret and an expired cookie are
   // both caught, and the token's format stays auth's business.
-  setInterval(() => {
+  const heartbeat = setInterval(() => {
     for (const ws of clients) {
       if (!auth.verifyToken(ws.data.token)) ws.close(CLOSE_SESSION_EXPIRED, "session expired");
     }
@@ -529,7 +536,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           // Otherwise the row stayed "active" for thirty days and every re-pair
           // added a ghost to the list in Settings.
           const deviceId = identify(req)?.deviceId;
-          if (deviceId) devices.revoke(deviceId);
+          push.unsubscribeOwner(pushOwner(req));
+          if (deviceId) {
+            devices.revoke(deviceId);
+            for (const ws of clients) if (ws.data.deviceId === deviceId) ws.close(4001, "signed out");
+          }
           return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
         }
 
@@ -611,6 +622,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             return json({ error: "no such device" }, { status: 404 });
           }
           if (!devices.revoke(id)) return json({ error: "no such device" }, { status: 404 });
+          push.unsubscribeOwner(id);
           for (const ws of clients) {
             if (ws.data.deviceId === id) ws.close(4001, "device revoked");
           }
@@ -653,6 +665,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // one call from here. See `startAgentInTab`.
         if (pathname === "/api/agents/start" && req.method === "POST") {
           const body = await jsonObject<{
+            clientRequestId: string;
             workspaceId: string;
             cwd: string | null;
             label: string | null;
@@ -660,6 +673,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             name: string;
             mode: string | null;
           }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (typeof body.workspaceId !== "string" || !body.workspaceId || typeof body.kind !== "string" || !body.kind) {
             return json({ error: "workspaceId and kind are required" }, { status: 400 });
           }
@@ -668,36 +683,59 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
             return json({ error: "cwd must be an absolute path" }, { status: 400 });
           }
+          if (typeof body.clientRequestId !== "string" || !body.clientRequestId || body.clientRequestId.length > 128) {
+            return json({ error: "clientRequestId is required" }, { status: 400 });
+          }
           try {
-            const started = await startAgentInTab(
+            arrival.holdOpen?.();
+            const started = await operations.run(`start:${body.clientRequestId}`, body, () => startAgentInTab(
               (method, params, options) =>
                 client.rpc(method as Method, params as ParamsFor<Method>, options) as never,
               {
-                workspaceId: body.workspaceId,
+                workspaceId: body.workspaceId!,
                 cwd: body.cwd ?? null,
                 label: body.label ?? null,
-                kind: body.kind,
-                name: body.name ?? body.kind,
+                kind: body.kind!,
+                name: body.name ?? body.kind!,
                 // Forwarded, not implied: this was dropped here for months and
                 // every agent silently started with default permissions — found
                 // by ps on a live box showing bare `claude` after "Plan first"
                 // was chosen. The picker was decorative without this line.
                 mode: body.mode ?? null,
               },
-            );
+            ));
             return json(started);
           } catch (err) {
-            if (err instanceof HerdrError) {
-              return json({ error: err.message, code: err.code }, { status: 400 });
-            }
-            return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+            return failure(err);
           }
+        }
+
+        const tabsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/tabs$/);
+        if (tabsMatch && req.method === "POST") {
+          let workspaceId: string;
+          try { workspaceId = decodeURIComponent(tabsMatch[1]!); }
+          catch { return json({ error: "no such workspace" }, { status: 404 }); }
+          if (!store.workspace(workspaceId)) return json({ error: "no such workspace" }, { status: 404 });
+          const body = await jsonObject<{ label: string | null; cwd: string | null }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
+            return json({ error: "cwd must be an absolute path" }, { status: 400 });
+          }
+          try {
+            const result = await client.rpc("tab.create", {
+              workspace_id: workspaceId, label: body.label ?? null, cwd: body.cwd ?? null, focus: false,
+            });
+            return json({ tabId: result.tab.tab_id, paneId: result.root_pane?.pane_id ?? null });
+          } catch (err) { return failure(err); }
         }
 
         // A new space. Semantic rather than raw RPC so the phone never learns a
         // herdr method name — the shape herdr wants stays the server's business.
         if (pathname === "/api/workspaces" && req.method === "POST") {
           const body = await jsonObject<{ label: string | null; cwd: string | null }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           // herdr does not expand `~`; it silently uses $HOME instead.
           if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
             return json({ error: "cwd must be an absolute path" }, { status: 400 });
@@ -772,8 +810,19 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
         if (pathname === "/api/push/subscribe" && req.method === "POST") {
           const body = await jsonObject(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (!push.isSubscription(body)) return json({ error: "malformed subscription" }, { status: 400 });
-          push.subscribe(body);
+          push.subscribe(body, pushOwner(req));
+          return json({ ok: true });
+        }
+
+        if (pathname === "/api/push/unsubscribe" && req.method === "POST") {
+          const body = await jsonObject<{ endpoint: unknown }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+          if (typeof body.endpoint !== "string") return json({ error: "endpoint is required" }, { status: 400 });
+          push.unsubscribe(body.endpoint, pushOwner(req));
           return json({ ok: true });
         }
 
@@ -781,16 +830,20 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // service takes a token and hands the notification to FCM or APNs.
         if (pathname === "/api/push/expo" && req.method === "POST") {
           const body = await jsonObject<{ token: unknown }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (!push.isExpoToken(body.token)) {
             return json({ error: "malformed expo push token" }, { status: 400 });
           }
-          push.subscribeExpo(body.token);
+          push.subscribeExpo(body.token, pushOwner(req));
           return json({ ok: true });
         }
 
         if (pathname === "/api/push/expo/unsubscribe" && req.method === "POST") {
           const body = await jsonObject<{ token: unknown }>(req);
-          if (typeof body.token === "string") push.unsubscribeExpo(body.token);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+          if (typeof body.token === "string") push.unsubscribeExpo(body.token, pushOwner(req));
           return json({ ok: true });
         }
 
@@ -818,6 +871,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           // See `prompt.ts` for why a blocked agent takes the terminal path.
           if (sub === "/prompt" && req.method === "POST") {
             const body = await jsonObject<{ text: string; clientMessageId: string }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (typeof body.text !== "string" || body.text.length === 0) {
               return json({ error: "text is required" }, { status: 400 });
             }
@@ -832,25 +887,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             // rather than joined — a bare join could make two different
             // (pane, message) pairs the same key.
             const key = JSON.stringify([paneId, body.clientMessageId]);
-            const seen = receipts.get(key);
-            if (seen) return json(seen);
-            const agent = store.agent(paneId);
             try {
-              await submitPrompt(
-                herdrRpc,
-                { paneId, isAgent: agent !== undefined, status: agent?.agent_status ?? null },
-                body.text,
-              );
+              const receipt = await operations.run(key, body.text, async (): Promise<PromptReceipt> => {
+                const agent = store.agent(paneId);
+                await submitPrompt(herdrRpc, {
+                  paneId, isAgent: agent !== undefined, status: agent?.agent_status ?? null,
+                }, body.text!);
+                return { accepted: true, clientMessageId: body.clientMessageId!, acceptedAt: Date.now() };
+              });
+              return json(receipt);
             } catch (err) {
               return failure(err);
             }
-            const receipt: PromptReceipt = {
-              accepted: true,
-              clientMessageId: body.clientMessageId,
-              acceptedAt: Date.now(),
-            };
-            receipts.put(key, receipt);
-            return json(receipt);
           }
 
           // One tap on an option card. The server decides the keystrokes —
@@ -859,6 +907,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           // and its copy of the screen may be seconds old (see `answer.ts`).
           if (sub === "/answer" && req.method === "POST") {
             const body = await jsonObject<{ index: unknown; label: unknown }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (!Number.isInteger(body.index) || typeof body.label !== "string") {
               return json({ error: "index and label are required" }, { status: 400 });
             }
@@ -876,6 +926,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           // Key presses: Escape, an arrow, Enter from the key bar. Not a prompt.
           if (sub === "/keys" && req.method === "POST") {
             const body = await jsonObject<{ keys: unknown }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];
             if (keys.length === 0) return json({ error: "keys is required" }, { status: 400 });
             try {
@@ -990,6 +1042,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             return json({ error: "raw RPC is not part of the app contract; use the Shahi routes" }, { status: 403 });
           }
           const body = await jsonObject<{ method: string; params: unknown }>(req);
+          // Revocation can happen while a slow request body is still arriving.
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (typeof body.method !== "string" || !body.method) return json({ error: "method is required" }, { status: 400 });
           try {
             const method = body.method as Method;
@@ -1088,7 +1142,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
   return {
     port: server.port ?? config.port,
-    stop: (force) => server.stop(force),
+    stop: (force) => {
+      clearInterval(heartbeat);
+      if (sessionBroadcastTimer) clearTimeout(sessionBroadcastTimer);
+      for (const ws of [...clients]) { ws.close(1001, "server stopping"); detach(ws); }
+      server.stop(force);
+    },
     // A relay link cannot become a socket; `/ws` over one is answered 400,
     // which nothing sends — the link *is* the stream.
     dispatch: async (req, rateKey) =>

@@ -32,3 +32,31 @@ describe("deployed", () => {
     expect(a).not.toBe(b);
   });
 });
+
+test("finds a hosted /pwa bundle and ignores non-script asset references", () => {
+  expect(bundles.deployed('<script type="module" src="/pwa/assets/index-next.js"></script>')).toBe("/pwa/assets/index-next.js");
+  expect(bundles.deployed('<img src="/pwa/assets/index-next.js">')).toBeNull();
+});
+
+test("a deployed update preserves memory-only access and offers explicit reload", async () => {
+  const { reloadIfStale } = await import("./version");
+  const keys = ["document", "location", "fetch"] as const;
+  const previous = keys.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
+  let reloads = 0;
+  let offers = 0;
+  try {
+    Object.defineProperty(globalThis, "document", { configurable: true, value: { querySelectorAll: () => [{ src: "https://getshahi.dev/pwa/assets/index-old.js" }] } });
+    Object.defineProperty(globalThis, "location", { configurable: true, value: { reload: () => reloads++ } });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: async () => new Response('<script src="/pwa/assets/index-new.js"></script>') });
+    expect(await reloadIfStale(() => 100_000, { canReload: () => false, onAvailable: () => offers++ })).toBe(false);
+    expect(reloads).toBe(0);
+    expect(offers).toBe(1);
+    expect(await reloadIfStale(() => 200_000, { canReload: () => true })).toBe(true);
+    expect(reloads).toBe(1);
+  } finally {
+    keys.forEach((key, index) => {
+      if (previous[index]) Object.defineProperty(globalThis, key, previous[index]!);
+      else Reflect.deleteProperty(globalThis, key);
+    });
+  }
+});

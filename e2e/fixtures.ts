@@ -18,7 +18,7 @@ import { test as base, expect } from "@playwright/test";
  */
 
 /** Requests that change something on the far side. */
-const WRITES = /\/api\/(rpc|uploads|agents\/start|push\/(subscribe|test|expo))/;
+const WRITES = /\/api\//;
 
 const FALLBACK_URL = "http://127.0.0.1:7272";
 
@@ -110,6 +110,7 @@ export const test = base.extend<{ serverAlive: void; noStrayWrites: void }>({
       await context.route(WRITES, async (route) => {
         const request = route.request();
         const target = new URL(request.url());
+        if (["GET", "HEAD", "OPTIONS"].includes(request.method())) { await route.continue(); return; }
 
         // The stub is the intended destination: it records writes rather than
         // performing them, which is the whole point of running against it.

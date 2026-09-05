@@ -1,3 +1,4 @@
+import { Download, RemoteImage } from "./RemoteMedia";
 /**
  * Opening a file the agent touched.
  *
@@ -67,14 +68,12 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
         {/* A plain link, so the browser does the downloading — a fetch would
             mean holding the whole file in memory to hand it back to the same
             browser. */}
-        <a className="viewer__get" href={downloadUrl} download={name}>
-          Download
-        </a>
+        <Download className="viewer__get" path={downloadUrl} name={name}>Download</Download>
       </header>
 
       <div className="viewer__body">
         {isImage && !error ? (
-          <img
+          <RemoteImage
             className="viewer__image"
             src={url}
             alt={name}
@@ -91,9 +90,7 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
           <div className="empty">
             <span className="empty__mark">○</span>
             {error}
-            <a className="empty__action" href={downloadUrl} download={name}>
-              Download it instead
-            </a>
+            <Download className="empty__action" path={downloadUrl} name={name}>Download it instead</Download>
           </div>
         ) : text === null && TEXTUAL.test(name) ? (
           <div className="empty">

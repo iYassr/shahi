@@ -101,3 +101,18 @@ describe("delivery", () => {
     expect(called).toBe(false);
   });
 });
+
+
+test("retiring an owner excludes their token from future deliveries", async () => {
+  const push = service();
+  push.subscribeExpo("ExpoPushToken[revoked]", "a");
+  push.subscribeExpo("ExpoPushToken[active]", "b");
+  push.unsubscribeOwner("a");
+  let sent: unknown;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent = JSON.parse(String(init.body));
+    return Response.json({ data: [{ status: "ok" }] });
+  }) as typeof fetch;
+  expect(await push.sendTest()).toBe(1);
+  expect(sent).toEqual([expect.objectContaining({ to: "ExpoPushToken[active]" })]);
+});

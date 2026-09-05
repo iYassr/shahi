@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Shahi">
-  <!--
-    The app's mark, exactly as mobile/src/components/icons.tsx draws it: a
-    phone, a nub above it, and the block inside that is an agent waiting.
-    Peach (#E8A33D) is the app's accent and reads on both a light and a dark
-    ground, so one file serves every surface — README, site, favicon.
-    If the component changes, change this with it; they are the same drawing.
-  -->
-  <rect x="44" y="6" width="12" height="9" rx="2" fill="#E8A33D"/>
-  <rect x="31" y="24" width="38" height="54" rx="9" fill="none" stroke="#E8A33D" stroke-width="6"/>
-  <rect x="38" y="55" width="24" height="16" rx="4" fill="#E8A33D"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="Shahi"><rect x="44" y="10" width="12" height="12" rx="2" fill="#E8A33D"/><path d="M22 34H78L71 72Q70 80 62 80H38Q30 80 29 72Z" fill="none" stroke="#E8A33D" stroke-width="8" stroke-linejoin="round"/></svg>

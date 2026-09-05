@@ -13,6 +13,8 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Constants from "expo-constants";
 import { router } from "expo-router";
+import { api } from "@/lib/api";
+import { preparePushLogout } from "@/lib/push-registration";
 import { enablePush } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -25,6 +27,7 @@ export function Settings() {
   const { session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server } =
     useSession();
   const lastUpdateAt = useLastUpdate();
+  const [signingOut, setSigningOut] = useState(false);
   const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
   // A ticking "how stale" readout; only this screen pays for the timer.
   const [, tick] = useState(0);
@@ -171,7 +174,8 @@ export function Settings() {
         <Row
           icon="log-out"
           tint={theme.rose}
-          label="Sign out"
+          label={signingOut ? "Signing out…" : "Sign out"}
+          disabled={signingOut}
           labelColor={theme.rose}
           onPress={() =>
             Alert.alert(
@@ -182,9 +186,19 @@ export function Settings() {
                 {
                   text: "Sign out",
                   style: "destructive",
-                  onPress: () => {
-                    signOut();
-                    router.replace("/connect");
+                  onPress: async () => {
+                    setSigningOut(true);
+                    try {
+                      // Revoke server-side push subscriptions while the authenticated
+                      // transport is still open, then discard local credentials.
+                      await preparePushLogout();
+                      await api.logout();
+                    } catch {
+                      // An offline box cannot prevent local sign-out.
+                    } finally {
+                      signOut();
+                      router.replace("/connect");
+                    }
                   },
                 },
               ],
@@ -273,7 +287,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   profileBody: { flex: 1, gap: 2 },
-  profileName: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "700" },
+  profileName: { color: theme.fg, fontSize: 15, fontWeight: "700" },
   profileSub: { color: theme.dim, fontFamily: theme.mono, fontSize: 10.5 },
   profileReach: { color: theme.dim, fontFamily: theme.mono, fontSize: 10.5, marginTop: 3, opacity: 0.85 },
 
@@ -289,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   rowLabel: { color: theme.fg, fontSize: 15, flex: 1 },
-  rowValue: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
+  rowValue: { color: theme.dim, fontSize: 12 },
   hint: { color: theme.dim, fontSize: 12, paddingLeft: 38 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 50 },
 
@@ -302,7 +316,7 @@ const styles = StyleSheet.create({
     minHeight: 32,
     justifyContent: "center",
   },
-  widthOn: { borderColor: theme.peach },
-  widthText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
-  widthTextOn: { color: theme.peach },
+  widthOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
+  widthText: { color: theme.dim, fontSize: 12 },
+  widthTextOn: { color: theme.fg },
 });

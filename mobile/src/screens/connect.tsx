@@ -18,7 +18,8 @@ import * as Device from "expo-device";
 import type { PairingPayload } from "@shahi/shared";
 import { api, connection, UnauthorizedError } from "@/lib/api";
 import { closeRelay, pairingTarget, type RelayIdentity } from "@/lib/relay";
-import { Logo } from "@/components/icons";
+import { Wordmark } from "@/components/icons";
+import { GreetingLogo } from "@/components/greeting-logo";
 import { Scanner } from "@/components/scanner";
 import { parsePairingUrl } from "@/lib/pairing";
 import { useURL } from "expo-linking";
@@ -209,7 +210,7 @@ export function Connect({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* The horizontal lockup: cup mark + lowercase mono wordmark — and the
+        {/* The horizontal lockup: tea glass + lowercase wordmark — and the
             intended way in beside it. It sits in the title row on purpose: as
             a card above the form it pushed the Connect button under the
             keyboard on an iPhone 17, which every flow, and every person typing
@@ -217,8 +218,8 @@ export function Connect({
             code comes from. */}
         <View style={styles.brand}>
           <View style={styles.lockup}>
-            <Logo color={theme.peach} size={30} />
-            <Text style={styles.title}>shahi</Text>
+            <GreetingLogo />
+            <Wordmark color={theme.fg} />
           </View>
           <Pressable
             accessibilityRole="button"
@@ -283,12 +284,12 @@ function Intro({ onContinue }: { onContinue: () => void }) {
 
   return (
     <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator={false}>
-      <View style={styles.brand}>
-        <Logo color={theme.peach} size={30} />
-        <Text style={styles.title}>shahi</Text>
+      <View style={[styles.lockup, { marginBottom: 6 }]}>
+        <GreetingLogo />
+        <Wordmark color={theme.fg} />
       </View>
 
-      <Text style={styles.lede}>See and answer your terminal agents from your phone.</Text>
+      <Text style={styles.lede}>Step away. Stay in control.</Text>
       <Text style={styles.introText}>
         Shahi shows the agents running on a server you control — Claude Code, codex, plain shells — and
         lets you reply from anywhere. It talks to a small helper you install on that server once.
@@ -477,7 +478,6 @@ const styles = StyleSheet.create({
   body: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 10 },
   brand: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   lockup: { flexDirection: "row", alignItems: "center", gap: 12 },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 26, fontWeight: "500", letterSpacing: -0.5 },
   hint: { color: theme.dim, fontSize: 14, marginBottom: 12 },
   scan: {
     borderWidth: 1,
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
   introBody: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 14 },
   lede: { color: theme.fg, fontSize: 20, fontWeight: "600", lineHeight: 27, marginTop: 4 },
   introText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
-  step: { color: theme.peach, fontFamily: theme.mono, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
+  step: { color: theme.peach, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
   command: {
     flexDirection: "row",
     alignItems: "center",
@@ -507,10 +507,10 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   commandText: { flex: 1, color: theme.fg, fontFamily: theme.mono, fontSize: 12.5, lineHeight: 18 },
-  copy: { color: theme.peach, fontFamily: theme.mono, fontSize: 13, fontWeight: "600" },
+  copy: { color: theme.peach, fontSize: 13, fontWeight: "600" },
   linkInline: { color: theme.peach },
   link: { color: theme.dim, fontSize: 14, textAlign: "center", marginTop: 18, textDecorationLine: "underline" },
-  label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, marginTop: 8 },
+  label: { color: theme.dim, fontSize: 11, marginTop: 8 },
   input: {
     backgroundColor: theme.surface,
     borderWidth: 1,
@@ -539,8 +539,8 @@ const styles = StyleSheet.create({
   },
   segItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 7, borderCurve: "continuous" },
   segItemOn: { backgroundColor: theme.raised },
-  segText: { color: theme.dim, fontFamily: theme.mono, fontSize: 13 },
-  segTextOn: { color: theme.peach, fontWeight: "600" },
+  segText: { color: theme.dim, fontSize: 13 },
+  segTextOn: { color: theme.fg, fontWeight: "600" },
   error: { color: theme.rose, fontSize: 13, marginTop: 4 },
   note: { color: theme.dim, fontSize: 12, marginTop: 12, lineHeight: 18 },
   button: {

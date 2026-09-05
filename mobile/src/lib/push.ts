@@ -18,7 +18,7 @@
  */
 import * as Device from "expo-device";
 import Constants, { ExecutionEnvironment } from "expo-constants";
-import { api } from "@/lib/api";
+import { registerEnabledPush } from "@/lib/push-registration";
 
 type Notifications = typeof import("expo-notifications");
 
@@ -94,7 +94,7 @@ export async function enablePush(): Promise<PushResult> {
     }
 
     const { data: token } = await notifications.getExpoPushTokenAsync({ projectId });
-    await api.registerPush(token);
+    await registerEnabledPush(token);
     return { ok: true, token };
   } catch (err) {
     return { ok: false, reason: (err as Error).message };

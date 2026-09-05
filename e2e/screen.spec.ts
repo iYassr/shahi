@@ -1,0 +1,31 @@
+import { expect, test } from "./fixtures";
+import { scenario } from "./stub/control";
+
+test("screen zoom and focus preserve the terminal and draft", async ({ page }) => {
+  await scenario(page, "busy");
+  await page.goto("/pane/w1%3Ap2");
+  await page.getByRole("tab", { name: "Screen", exact: true }).click();
+  await expect(page.locator(".xterm")).toBeVisible();
+  await page.getByRole("textbox", { name: "Message" }).fill("keep this draft");
+  await expect(page.getByRole("textbox", { name: "Message" })).toHaveAttribute("placeholder", "Send text to terminal…");
+  await page.getByRole("button", { name: "Full size", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Full size", exact: true })).toHaveText("100%");
+  const originalWidth = await page.locator(".term").evaluate((el) => el.getBoundingClientRect().width);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Full size", exact: true })).toHaveText("110%");
+  await expect.poll(async () => (await page.locator(".term").evaluate((el) => el.getBoundingClientRect().width)) / originalWidth).toBeCloseTo(1.1, 2);
+  await page.locator(".xterm").evaluate((el) => el.setAttribute("data-focus-check", "preserved"));
+  await page.getByRole("button", { name: "Focus terminal", exact: true }).click();
+  await expect(page.locator(".compose")).toBeHidden();
+  await expect(page.getByRole("tablist")).toBeHidden();
+  await expect(page.locator(".xterm")).toHaveAttribute("data-focus-check", "preserved");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("keep this draft");
+  await expect(page.getByRole("button", { name: "Focus terminal", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Fit width", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Fit width", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.locator(".termwrap").evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(2);
+  await page.getByRole("button", { name: "Focus terminal", exact: true }).click();
+  await page.getByRole("button", { name: "Exit focus view", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+});

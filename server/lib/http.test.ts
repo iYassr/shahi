@@ -66,6 +66,11 @@ function fakeHerdr(calls: { method: string; params: unknown }[]): HerdrClient {
           return {};
         case "pane.read":
           return { read: { text: screen } };
+        case "tab.create":
+          return { root_pane: { pane_id: PANE }, tab: { tab_id: "t1" } };
+        case "agent.start":
+          await Bun.sleep(25);
+          return {};
         case "workspace.list":
           return { workspaces: snapshot.workspaces };
         default:
@@ -79,6 +84,8 @@ interface Booted {
   base: string;
   cookie: string;
   calls: { method: string; params: unknown }[];
+  push: PushService;
+  dispatch: ReturnType<typeof createServer>["dispatch"];
   stop: () => void;
 }
 
@@ -143,7 +150,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
-  return { base, cookie, calls, stop: () => server.stop(true) };
+  return { base, cookie, calls, push, dispatch: server.dispatch, stop: () => server.stop(true) };
 }
 
 /** Opens a socket and resolves with how it ended, or "open" once it is up. */
@@ -392,5 +399,93 @@ describe("what a client learns before it authenticates", () => {
     } finally {
       r.stop();
     }
+  });
+});
+
+
+describe("writes and notification ownership", () => {
+  const post = (path: string, body: unknown, cookie = s.cookie) => fetch(`${s.base}${path}`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  async function pair(name: string) {
+    const { secret } = await (await post("/api/pair", {})).json() as { secret: string };
+    const response = await post("/api/pair/claim", { secret, deviceName: name });
+    return { ...(await response.json() as { deviceId: string }), cookie: response.headers.get("set-cookie")!.split(";")[0]! };
+  }
+
+  test("two concurrent prompt requests deliver text and Enter once", async () => {
+    const start = s.calls.length;
+    const body = { text: "concurrent prompt", clientMessageId: "concurrent-review" };
+    const responses = await Promise.all([post(`/api/panes/${PANE}/prompt`, body), post(`/api/panes/${PANE}/prompt`, body)]);
+    expect(responses.map(r => r.status)).toEqual([200, 200]);
+    expect(await responses[0]!.json()).toEqual(await responses[1]!.json());
+    expect(s.calls.slice(start).filter(c => c.method === "pane.send_text")).toHaveLength(1);
+    expect(s.calls.slice(start).filter(c => c.method === "pane.send_keys")).toHaveLength(1);
+    expect((await post(`/api/panes/${PANE}/prompt`, { ...body, text: "changed" })).status).toBe(409);
+  });
+
+  test("retrying startup creates just one tab and agent", async () => {
+    const start = s.calls.length;
+    const body = { workspaceId: "w1", kind: "claude", clientRequestId: "start-review" };
+    const results = await Promise.all([post("/api/agents/start", body), post("/api/agents/start", body)]);
+    expect(results.map(r => r.status)).toEqual([200, 200]);
+    expect(await results[0]!.json()).toEqual(await results[1]!.json());
+    expect((await post("/api/agents/start", body)).status).toBe(200);
+    expect(s.calls.slice(start).filter(c => c.method === "tab.create")).toHaveLength(1);
+    expect(s.calls.slice(start).filter(c => c.method === "agent.start")).toHaveLength(1);
+    expect((await post("/api/agents/start", { workspaceId: "w1", kind: "claude" })).status).toBe(400);
+  });
+
+  test("the semantic tab route validates its workspace and absolute directory", async () => {
+    const start = s.calls.length;
+    expect((await post("/api/workspaces/missing/tabs", {})).status).toBe(404);
+    expect((await post("/api/workspaces/w1/tabs", { cwd: "~/project" })).status).toBe(400);
+    expect(s.calls.slice(start).filter(c => c.method === "tab.create")).toHaveLength(0);
+    const response = await post("/api/workspaces/w1/tabs", { label: "Shell", cwd: "/tmp" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ tabId: "t1", paneId: PANE });
+    expect(s.calls.slice(start).filter(c => c.method === "tab.create")).toHaveLength(1);
+  });
+
+  test("revocation removes both push channels only for that phone", async () => {
+    const a = await pair("Revoke me");
+    const b = await pair("Keep me");
+    const baseline = s.push.count();
+    expect((await post("/api/push/expo", { token: "ExpoPushToken[revoke]" }, a.cookie)).status).toBe(200);
+    expect((await post("/api/push/subscribe", { endpoint: "https://push.example/revoke", keys: { p256dh: "x", auth: "y" } }, a.cookie)).status).toBe(200);
+    expect((await post("/api/push/expo", { token: "ExpoPushToken[keep]" }, b.cookie)).status).toBe(200);
+    expect(s.push.count()).toBe(baseline + 3);
+    expect((await fetch(`${s.base}/api/devices/${a.deviceId}`, { method: "DELETE", headers: { cookie: s.cookie } })).status).toBe(200);
+    expect(s.push.count()).toBe(baseline + 1);
+    expect((await post("/api/push/expo", { token: "ExpoPushToken[revoke]" }, a.cookie)).status).toBe(401);
+    await post("/api/auth/logout", {}, b.cookie);
+    expect(s.push.count()).toBe(baseline);
+  });
+
+  test("a phone cannot unsubscribe a different owner's token", async () => {
+    const a = await pair("Owner");
+    const b = await pair("Other");
+    const baseline = s.push.count();
+    await post("/api/push/expo", { token: "ExpoPushToken[owned]" }, a.cookie);
+    await post("/api/push/expo/unsubscribe", { token: "ExpoPushToken[owned]" }, b.cookie);
+    expect(s.push.count()).toBe(baseline + 1);
+    await post("/api/auth/logout", {}, a.cookie);
+    expect(s.push.count()).toBe(baseline);
+  });
+
+  test("revocation while a push body arrives cannot resurrect its registration", async () => {
+    const device = await pair("Slow registration");
+    const baseline = s.push.count();
+    let finish!: (body: unknown) => void;
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    const req = new Request(`${s.base}/api/push/expo`, { method: "POST", headers: { cookie: device.cookie } });
+    Object.defineProperty(req, "json", { value: () => { reading(); return new Promise(resolve => { finish = resolve; }); } });
+    const pending = s.dispatch(req, "slow-registration-test");
+    await started;
+    await fetch(`${s.base}/api/devices/${device.deviceId}`, { method: "DELETE", headers: { cookie: s.cookie } });
+    finish({ token: "ExpoPushToken[slow]" });
+    expect((await pending).status).toBe(401);
+    expect(s.push.count()).toBe(baseline);
   });
 });

@@ -1,7 +1,7 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { tap } from "./touch";
-import { rpcs, scenario, writes } from "./stub/control";
+import { paneWrites, scenario, writes } from "./stub/control";
 
 /**
  * Saying something to an agent: the composer, the key bar, attachments.
@@ -23,19 +23,15 @@ const openPane = async (page: Page, paneId = "w1:p1") => {
 };
 
 test.describe("the composer", () => {
-  test("sends the text, then Enter, in that order", async ({ page }) => {
+  test("sends one semantic prompt with a message id", async ({ page }) => {
     await openPane(page);
 
     await page.locator("textarea").fill("hello from a test");
     await tap(page, page.locator(".compose__send"));
 
-    await expect.poll(async () => (await rpcs(page)).length, { timeout: 10_000 }).toBe(2);
-    const sent = await rpcs(page);
-    expect(sent[0]).toMatchObject({
-      method: "pane.send_text",
-      params: { text: "hello from a test" },
-    });
-    expect(sent[1]).toMatchObject({ method: "pane.send_keys", params: { keys: ["Enter"] } });
+    await expect.poll(async () => (await paneWrites(page)).length, { timeout: 10_000 }).toBe(1);
+    const sent = await paneWrites(page);
+    expect(sent[0]).toMatchObject({ path: "/api/panes/w1%3Ap1/prompt", body: { text: "hello from a test", clientMessageId: expect.any(String) } });
   });
 
   test("clears itself once the message is away", async ({ page }) => {
@@ -55,7 +51,7 @@ test.describe("the composer", () => {
   });
 
   test("keeps the draft when a message fails", async ({ page }) => {
-    await page.route("**/api/rpc", (route) =>
+    await page.route("**/api/panes/*/prompt", (route) =>
       route.fulfill({ status: 400, json: { error: "pane is gone" } }),
     );
     await openPane(page);
@@ -76,13 +72,13 @@ test.describe("the composer", () => {
     await page.getByRole("tab", { name: "Screen" }).click();
 
     const expected: Record<string, string> = {
-      esc: "Escape",
-      "^C": "C-c",
-      "⇥": "Tab",
-      "⇧⇥": "shift+tab",
+      Esc: "Escape",
+      "Ctrl+C": "C-c",
+      "Tab": "Tab",
+      "Shift+Tab": "shift+tab",
       "↑": "Up",
       "↓": "Down",
-      "⏎": "Enter",
+      "Enter": "Enter",
     };
 
     for (const label of Object.keys(expected)) {
@@ -96,13 +92,13 @@ test.describe("the composer", () => {
     }
 
     await expect
-      .poll(async () => (await rpcs(page)).length, { timeout: 15_000 })
+      .poll(async () => (await paneWrites(page)).length, { timeout: 15_000 })
       .toBe(Object.keys(expected).length);
 
     // The names herdr accepts, verified against a live pane: `S-Tab` is not one
     // of them, and the key bar swallowed that error for weeks.
-    const sent = await rpcs(page);
-    expect(sent.map((call) => (call.params as { keys: string[] }).keys[0])).toEqual(
+    const sent = await paneWrites(page);
+    expect(sent.map((call) => (call.body as { keys: string[] }).keys[0])).toEqual(
       Object.values(expected),
     );
   });
@@ -124,9 +120,9 @@ test.describe("attachments", () => {
     await page.locator("textarea").fill("have a look at this");
     await tap(page, page.locator(".compose__send"));
 
-    await expect.poll(async () => (await rpcs(page)).length, { timeout: 10_000 }).toBe(2);
-    const sent = await rpcs(page);
-    const body = (sent[0] as { params: { text: string } }).params.text;
+    await expect.poll(async () => (await paneWrites(page)).length, { timeout: 10_000 }).toBe(1);
+    const sent = await paneWrites(page);
+    const body = (sent[0] as { body: { text: string } }).body.text;
     // Path first, message after: an agent reads the path, and the sentence
     // after it is what to do with it.
     expect(body.split("\n")).toHaveLength(2);

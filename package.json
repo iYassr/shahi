@@ -14,22 +14,33 @@
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
-    "test": "bun test shared/src server web/src plugin",
+    "test": "bun test shared/src server web/src plugin && bun run test:dependencies",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p plugin && tsc --noEmit -p web && tsc --noEmit -p mobile && tsc --noEmit -p relay && tsc --noEmit -p relay/test",
     "build:web": "bun run --cwd web build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:mobile": "bun run --cwd mobile test",
-    "test:relay": "bun test relay/test"
+    "test:relay": "bun test relay/test",
+    "test:dependencies": "node --test patches/dependencies.test.mjs",
+    "build:site": "bun run site/build.ts",
+    "test:hosted": "playwright test --config e2e/hosted/playwright.config.ts",
+    "brand:assets": "bun scripts/brand-assets.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "sharp": "0.35.2"
   },
-  "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher — a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
+  "//overrides": "One copy of React and of each native module. Two React instances means hooks read a null dispatcher \u2014 a blank page. Expo SDK 57 pins react 19.2.3 and web accepts it, so that pin wins.",
   "overrides": {
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "expo-constants": "~57.0.17",
-    "react-test-renderer": "19.2.3"
+    "react-test-renderer": "19.2.3",
+    "uuid": "11.1.1"
+  },
+  "//security-overrides": "uuid 11 retains the CommonJS v4 API used by xcode and fixes GHSA-w5hq-g745-h8pq. See patches/README.md for transitive security backports.",
+  "patchedDependencies": {
+    "decode-uri-component@0.2.2": "patches/decode-uri-component@0.2.2.patch",
+    "image-size@1.2.1": "patches/image-size@1.2.1.patch"
   }
 }

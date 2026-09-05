@@ -53,7 +53,7 @@ export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "ope
 type Verb = (typeof VERBS)[number];
 
 /** herdr 0.8.2 has no menu for plugin actions: the CLI, or a key the person binds. */
-const PAIR_HINT = "Pair a phone:  herdr plugin action invoke shahi.pair";
+const PAIR_HINT = "Pair a phone or browser:  herdr plugin action invoke shahi.pair";
 const KEY_HINT = 'or bind a key in herdr\'s config.toml:  [[keys.command]] key = "prefix+P", type = "plugin_action", command = "shahi.pair"';
 
 /** Shahi's relay: a blind pipe (docs/relay.md). The plugin's default; any Worker deployed from `relay/` works the same. */
@@ -365,6 +365,7 @@ async function pair(layout: Layout, service: Service, args: string[]): Promise<v
   if ((await proc.exited) !== 0) {
     console.log("\n  Pairing failed. Is Shahi running?  herdr plugin action invoke shahi.status");
   }
+  if (args.includes("--code-only")) return;
   console.log("  Press Enter to close.");
   await readLine();
 }

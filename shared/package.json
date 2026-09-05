@@ -7,7 +7,11 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./e2e": "./src/e2e.ts"
+    "./e2e": "./src/e2e.ts",
+    "./relay-client": "./src/relay-client.ts",
+    "./errors": "./src/errors.ts",
+    "./pairing": "./src/pairing.ts",
+    "./brand": "./src/brand.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

@@ -1,5 +1,5 @@
 # The landing page at getshahi.dev. A static-assets Worker: no server code, no
-# build step, just the files in ./public served from Cloudflare's edge.
+# build: bun run site/build.ts; ./dist includes the browser client at /pwa/.
 #
 # It lives beside the relay's config rather than in a separate repository so a
 # claim on the page and the code that backs it move together — the page states
@@ -11,7 +11,8 @@ compatibility_date = "2026-08-01"
 send_metrics = false
 
 [assets]
-directory = "./public"
+directory = "./dist"
+not_found_handling = "404-page"
 
 [[routes]]
 pattern = "getshahi.dev"

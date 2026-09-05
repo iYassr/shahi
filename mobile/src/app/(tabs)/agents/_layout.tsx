@@ -14,7 +14,7 @@ export default function AgentsTabLayout() {
         contentStyle: { backgroundColor: theme.void },
         headerStyle: { backgroundColor: theme.void },
         headerLargeStyle: { backgroundColor: theme.void },
-        headerTintColor: theme.peach,
+        headerTintColor: theme.fg,
         headerTitleStyle: { color: theme.fg },
         headerLargeTitleStyle: { color: theme.fg },
         headerShadowVisible: false,

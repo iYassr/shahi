@@ -9,7 +9,7 @@
  * the agent stops.
  */
 import { useEffect } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -20,7 +20,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import type { DashboardPane } from "@shahi/shared";
-import { AGENT_COLORS, theme } from "@/lib/theme";
+import { AGENT_COLORS, theme, statusColor } from "@/lib/theme";
 import { AGENT_ICONS, Icon } from "@/components/icons";
 
 export function Avatar({ pane }: { pane: DashboardPane }) {
@@ -59,6 +59,7 @@ export function Avatar({ pane }: { pane: DashboardPane }) {
       ) : (
         <Text style={[styles.glyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
       )}
+      <View style={[styles.statusDot, { backgroundColor: statusColor(pane.status) }]} />
     </Animated.View>
   );
 }
@@ -73,5 +74,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.surface,
   },
+  statusDot: { position: "absolute", bottom: -1, right: -1, width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: theme.void },
   glyph: { fontFamily: theme.mono, fontSize: 16 },
 });

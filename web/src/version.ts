@@ -27,17 +27,14 @@ function runningBundle(): string | null {
 }
 
 function deployedBundle(html: string): string | null {
-  return /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1] ?? null;
+  return /<script\b[^>]*\bsrc=["']((?:\/pwa)?\/assets\/[^"']+\.js)["']/i.exec(html)?.[1] ?? null;
 }
 
-/**
- * Reloads if the server is serving a different build.
- *
- * Deliberately silent: there is no state in this app worth protecting with a
- * "new version available" prompt, and a prompt on a phone is one more thing to
- * dismiss.
- */
-export async function reloadIfStale(now: () => number = Date.now): Promise<boolean> {
+/** Hosted memory-only credentials must survive discovering an update. */
+export async function reloadIfStale(
+  now: () => number = Date.now,
+  options: { canReload?: () => boolean; onAvailable?: () => void } = {},
+): Promise<boolean> {
   if (now() - lastCheck < MIN_GAP_MS) return false;
   lastCheck = now();
 
@@ -45,7 +42,7 @@ export async function reloadIfStale(now: () => number = Date.now): Promise<boole
   if (!running) return false;
 
   try {
-    const res = await fetch("/", { cache: "no-store" });
+    const res = await fetch(import.meta.env?.BASE_URL ?? "/", { cache: "no-store" });
     if (!res.ok) return false;
     const deployed = deployedBundle(await res.text());
     if (!deployed || deployed === running) return false;
@@ -54,6 +51,7 @@ export async function reloadIfStale(now: () => number = Date.now): Promise<boole
     return false;
   }
 
+  if (options.canReload?.() === false) { options.onAvailable?.(); return false; }
   location.reload();
   return true;
 }
