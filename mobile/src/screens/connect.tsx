@@ -43,10 +43,7 @@ export function Connect({
   onConnectedSsh: (profile: SshProfile) => void;
   onConnectedRelay: (identity: RelayIdentity) => void;
 }) {
-  // First run opens on the setup guide, not a bare form: a new user has nothing
-  // to connect to yet, and the old screen assumed a server they had not been
-  // told to set up. The guide hands over the one install command and explains
-  // where the address and passcode come from; "Connect" moves on to the form.
+  // Relay pairing is the default; SSH fields appear only when requested.
   const [phase, setPhase] = useState<"intro" | "form">("intro");
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
   const [busy, setBusy] = useState(false);
@@ -105,7 +102,6 @@ export function Connect({
     );
   }
 
-  if (phase === "intro") return <Intro onContinue={() => setPhase("form")} />;
 
   /**
    * A scanned code. The endpoint on it is trusted only as far as `/api/meta`
@@ -172,6 +168,13 @@ export function Connect({
     );
   }
 
+  if (phase === "intro") return <Intro
+    onScan={() => { setError(null); setScanning(true); }}
+    onSsh={() => { setError(null); setPhase("form"); }}
+    busy={busy}
+    error={error}
+  />;
+
   // Narrow updates so the nested auth object stays a discriminated union.
   const patch = (fields: Partial<SshProfile>) => setSsh((p) => ({ ...p, ...fields }));
 
@@ -224,7 +227,7 @@ export function Connect({
           <Pressable
             accessibilityRole="button"
             style={styles.scan}
-            onPress={() => setScanning(true)}
+            onPress={() => { setError(null); setPhase("intro"); setScanning(true); }}
             disabled={busy}
             testID="scan-code"
             accessibilityHint="On the server: herdr plugin action invoke shahi.pair"
@@ -264,15 +267,15 @@ export function Connect({
 }
 
 /**
- * The setup guide, shown before the form on first run.
+ * The relay setup guide, with SSH available as a secondary path.
  *
  * Shahi is bring-your-own-server: it shows the agents on a machine you control,
  * reached through a small helper you install once. A new user has none of that,
  * so this owns the prerequisite instead of dropping them onto a form that asks
  * for an address they do not have — the onboarding cliff. It hands over the one
- * command and says plainly where the address and passcode come from.
+ * command and opens the scanner directly once the server has printed its QR code.
  */
-function Intro({ onContinue }: { onContinue: () => void }) {
+function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () => void; busy: boolean; error: string | null }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -312,11 +315,15 @@ function Intro({ onContinue }: { onContinue: () => void }) {
 
       <Text style={styles.step}>2 — Pair this phone.</Text>
       <Text style={styles.introText}>
-        Scan the code in herdr — or connect over SSH, the way you already log in to that machine.
+        Scan the QR code in herdr to pair securely through the relay. No hostname, SSH account, or passcode needed.
       </Text>
 
-      <Pressable accessibilityRole="button" style={styles.button} onPress={onContinue} testID="intro-continue">
-        <Text style={styles.buttonText}>Connect your server</Text>
+      {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
+      <Pressable accessibilityRole="button" style={[styles.button, busy && styles.buttonOff]} disabled={busy} onPress={onScan} testID="intro-continue">
+        <Text style={styles.buttonText}>{busy ? "Pairing…" : "Scan QR code"}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
+        <Text style={styles.link}>Want to use SSH?</Text>
       </Pressable>
     </ScrollView>
   );
