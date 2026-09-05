@@ -47,6 +47,7 @@ export const RELAY_CLOSE = {
 
 export const RELAY_LIMITS = {
   maxFrameBytes: 1024 * 1024,
+  maxControlBytes: 4096,
   /**
    * The largest request or response body that fits in one sealed frame:
    * the frame cap less room for the JSON around a base64 body, times 3/4
@@ -69,6 +70,8 @@ export const RELAY_LIMITS = {
    * 4429 (2026-09-02 pentest, H2). Mirrors the box's own auth timeout.
    */
   phoneHelloMs: 15_000,
+  /** Sidecar deadline for a successfully authenticated frame, not just a hello. */
+  phoneAuthMs: 15_000,
 } as const;
 
 /* --------------------------------------------- phone ↔ box, before sealing */

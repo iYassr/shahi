@@ -161,7 +161,13 @@ export class RelayBox extends DurableObject<unknown> {
   /* -------------------------------------------------------------- frames */
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    const state = ws.deserializeAttachment() as Attachment;
+    const state = ws.deserializeAttachment() as Attachment | null;
+    if (!state) { ws.close(1002, "unexpected frame"); return; }
+    if (typeof message === "string" && message.length > RELAY_LIMITS.maxControlBytes) {
+      if (state.role === "phone") this.closePhone(ws, state, RELAY_CLOSE.quota, "control too large");
+      else this.closeBox(ws, state, RELAY_CLOSE.quota, "control too large");
+      return;
+    }
     if (state.role === "phone") this.fromPhone(ws, state, message);
     else if (state.ready) this.fromReadyBox(ws, state, message);
     else await this.authenticate(ws, state, message);

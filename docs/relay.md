@@ -123,8 +123,17 @@ a replayed frame refused.
   off but never told to sign out. Additive and unversioned: an older box never
   sends it, an older phone ignores an unknown `t`.
 
-**Authentication inside the box.** A link that opened with `auth.kind ==
-"device"` *is* that device: the box mints a session token bound to the device
+**Authentication inside the box.** A plaintext hello naming a device is not
+authentication. The link must prove possession of its secret by sending a valid
+sealed message within fifteen seconds of opening. Both clients immediately send
+a sealed watch/unwatch after deriving device-session keys; a pairing client sends
+its sealed metadata request. The deadline is cleared only by a successfully
+opened message, never by the hello or outbound heartbeats. Before proof, the box
+issues no session and attaches no stream. It rechecks device revocation at proof
+time. Unproved links are closed so they cannot occupy all eight phone slots
+indefinitely. Repeated connection floods can still disrupt availability.
+
+After proof, a device link mints a session token bound to the device
 id for the link and attaches it to every request it dispatches, so the sidecar's
 HTTP layer — the gate, revocation on every request, the 426 check, the routes —
 runs unchanged. Revoking the device closes its links. A link that opened with
@@ -176,8 +185,9 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
 
 The relay is `relay/`: a Worker, one Durable Object class (`RelayBox`, one
 instance per `serverId`), and nothing else — no KV, no database, no secrets.
-It runs on Cloudflare's free plan; a box that is idle costs nothing because
-its sockets hibernate and the object is evicted between frames.
+It supports Cloudflare's free plan. Sockets hibernate and the object can be
+evicted between frames; request, alarm, storage, and telemetry usage still count
+against the account's applicable limits. Verify the actual account plan and usage.
 
 **Deploy.** Once, from a machine with a Cloudflare account:
 
@@ -200,10 +210,11 @@ code, and only a domain you own can be repointed at another host later; and
 Cloudflare's WAF and rate-limiting rules apply to zones you own, so a rule on
 `/v1/*` is not expressible for a `workers.dev` subdomain at all.
 
-One trap, learned here: adding a custom domain does **not** keep the
-`workers.dev` address by default — `wrangler` disables it unless
-`workers_dev = true` is set, which would strand every phone already paired
-against the old URL, since a phone stores the address it paired with.
+Both `workers_dev` and `preview_urls` are explicitly false. Only the owned
+hostname is public, so alternate Worker addresses cannot bypass controls scoped
+to that hostname. Update boxes to the canonical relay before deploying this
+restriction. Devices paired to the retired `shahi-relay.yasserd99.workers.dev`
+address need a fresh pairing; the address is stored with each pairing.
 
 **Point a box at it.** The herdr plugin's service dials Shahi's relay unless
 its `.env` has a `RELAY_URL` line — empty for direct-only, or your Worker's
@@ -314,13 +325,21 @@ Then `curl -H "Authorization: Bearer <STATS_TOKEN>" https://<relay>/stats`.
 With no `STATS_TOKEN` the endpoint is a 404; with it but no query credentials
 it is a 503 that says so.
 
-**Alerts** (no code, set once in the Cloudflare dashboard, Notifications):
+**Abuse limits and alerts.** The `CONNECT_LIMIT` binding allows thirty
+connection attempts per IP per ten seconds at each edge location. It is
+eventually consistent and is not a global traffic or billing ceiling; see
+[Cloudflare's locality and accuracy documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+Retiring alternate hostnames does not itself configure a WAF rule. Review the
+actual account's limits and set these controls in the Cloudflare dashboard:
 
-- **Workers error rate** on `shahi-relay` — the unavailability alarm.
+- **Error/availability monitoring** for `shahi-relay` through monitoring available
+  to the account. A Workers-specific error alert was not offered in the checked
+  account's Notifications catalog on 5 September 2026.
 - A **spend / usage** notification — so an abuse spike on the paid plan
   arrives as a message, not a surprise bill.
 - Optionally a **WAF rate-limit rule** on `/v1/*` keyed on client IP, a second
-  wall beyond the in-Worker limiter.
+  limit ahead of Worker and Durable Object execution. Distributed floods remain
+  an availability risk even with per-IP limits.
 
 What the relay still cannot tell you is a box that is *up but wedged* (herdr
 down behind a healthy socket); that needs a status byte in the box's

@@ -55,6 +55,8 @@ export interface RelayClientOptions {
   maxBackoffMs?: number;
   /** How long to wait for `ready` before treating the connection as dead. */
   authTimeoutMs?: number;
+  /** Deadline from link open to proof of the pairing/device secret. */
+  phoneAuthMs?: number;
   /**
    * How often to send the relay a text `ping` once ready. The Workers runtime
    * cannot originate a ping from a Durable Object, so liveness is the box's
@@ -82,7 +84,7 @@ const RESPONSE_HEADERS = ["content-type", "etag", "cache-control"] as const;
 
 /**
  * Request headers a phone cannot set through a link. The session is the
- * link's own (minted at hello, bound to its device), the Origin check is
+ * link's own (minted after secret possession is proved, bound to its device), the Origin check is
  * satisfied by having no Origin, and the forwarded-for headers would let a
  * link choose its rate-limit bucket.
  */
@@ -108,9 +110,11 @@ export class RelayClient {
   readonly #minBackoffMs: number;
   readonly #maxBackoffMs: number;
   readonly #authTimeoutMs: number;
+  readonly #phoneAuthMs: number;
 
   #ws: WebSocket | null = null;
   #ready = false;
+  #challenged = false;
   #stopped = true;
   #backoffMs: number;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,6 +133,7 @@ export class RelayClient {
     this.#minBackoffMs = options.minBackoffMs ?? 500;
     this.#maxBackoffMs = options.maxBackoffMs ?? 30_000;
     this.#authTimeoutMs = options.authTimeoutMs ?? RELAY_LIMITS.boxAuthTimeoutMs;
+    this.#phoneAuthMs = options.phoneAuthMs ?? RELAY_LIMITS.phoneAuthMs;
     this.#pingMs = options.pingMs ?? 60_000;
     // Two and a half missed pings, and well inside the relay's own five-minute
     // drop, so the box redials before the relay would have given up on it.
@@ -167,6 +172,7 @@ export class RelayClient {
     ws.binaryType = "arraybuffer";
     this.#ws = ws;
     this.#ready = false;
+    this.#challenged = false;
 
     // The relay closes an unauthenticated box after ten seconds; this is the
     // same limit from our side, for a relay that accepted the socket and then
@@ -185,8 +191,16 @@ export class RelayClient {
       // runtime's own `pong` (text that is not JSON, dropped below but counted
       // here). This is the read-side liveness the watchdog reads.
       this.#lastFrameAt = Date.now();
-      if (typeof event.data === "string") this.#control(ws, event.data);
-      else this.#frame(new Uint8Array(event.data as ArrayBuffer));
+      try {
+        if (typeof event.data === "string") this.#control(ws, event.data);
+        else if (this.#ready && event.data instanceof ArrayBuffer && event.data.byteLength <= RELAY_LIMITS.maxFrameBytes + LINK_PREFIX_BYTES) {
+          this.#frame(new Uint8Array(event.data));
+        } else ws.close(1002, "invalid relay frame");
+      } catch {
+        // A hostile relay must not turn a malformed control or a send race
+        // into a process-wide failure of the local HTTP/SSH access path.
+        ws.close(1002, "invalid relay message");
+      }
     };
     ws.onerror = () => {
       // A close event follows every error; that is where the retry lives.
@@ -212,14 +226,16 @@ export class RelayClient {
   }
 
   #control(ws: WebSocket, text: string): void {
-    let msg: RelayToBox;
-    try {
-      msg = JSON.parse(text);
-    } catch {
+    if (text === "pong" && this.#ready) return;
+    const msg = parseControl(text);
+    if (!msg || (msg.t !== "challenge" && msg.t !== "ready" && !this.#ready)) {
+      ws.close(1002, "invalid relay control");
       return;
     }
     switch (msg.t) {
       case "challenge": {
+        if (this.#challenged || this.#ready) { ws.close(1002, "unexpected challenge"); return; }
+        this.#challenged = true;
         const { identity } = this.#deps;
         const signed = encoder.encode(BOX_AUTH_PREFIX + identity.serverId + msg.nonce);
         const auth: BoxToRelay = { t: "auth", pub: b64(identity.publicKey), sig: b64(identity.sign(signed)) };
@@ -227,6 +243,7 @@ export class RelayClient {
         return;
       }
       case "ready":
+        if (!this.#challenged || this.#ready) { ws.close(1002, "unexpected ready"); return; }
         this.#ready = true;
         this.#backoffMs = this.#minBackoffMs;
         this.#lastFrameAt = Date.now();
@@ -260,7 +277,7 @@ export class RelayClient {
           if (this.#ws && this.#ready) this.#ws.send(JSON.stringify(message));
           return;
         }
-        this.#links.set(msg.link, new Link(msg.link, this.#wire, this.#deps, this.#log));
+        this.#links.set(msg.link, new Link(msg.link, this.#wire, this.#deps, this.#log, this.#phoneAuthMs));
         this.#log(`relay: link ${msg.link} opened`);
         return;
       case "close":
@@ -281,7 +298,7 @@ export class RelayClient {
   readonly #wire: Wire = {
     send: (link, payload) => {
       const ws = this.#ws;
-      if (!ws || !this.#ready) return;
+      if (!ws || !this.#ready || ws.readyState !== WebSocket.OPEN) return;
       const frame = new Uint8Array(LINK_PREFIX_BYTES + payload.length);
       new DataView(frame.buffer).setUint32(0, link, false);
       frame.set(payload, LINK_PREFIX_BYTES);
@@ -290,7 +307,7 @@ export class RelayClient {
     end: (link) => {
       this.#links.delete(link);
       const message: BoxToRelay = { t: "close", link };
-      if (this.#ws && this.#ready) this.#ws.send(JSON.stringify(message));
+      if (this.#ws?.readyState === WebSocket.OPEN && this.#ready) this.#ws.send(JSON.stringify(message));
     },
   };
 
@@ -321,13 +338,19 @@ class Link implements StreamClient {
   #rateKey = "";
   #attached = false;
   #released = false;
+  #helloAuth: PhoneHello["auth"] | null = null;
+  #confirmed = false;
+  readonly #authTimer: ReturnType<typeof setTimeout>;
 
   constructor(
     readonly id: number,
     private readonly wire: Wire,
     private readonly deps: RelayClientDeps,
     private readonly log: (line: string) => void,
-  ) {}
+    authMs: number,
+  ) {
+    this.#authTimer = setTimeout(() => this.end("authentication timeout"), authMs);
+  }
 
   receive(payload: Uint8Array): void {
     if (this.#released) return;
@@ -354,6 +377,24 @@ class Link implements StreamClient {
       this.end("a frame was not JSON");
       return;
     }
+    if (!msg || typeof msg !== "object" || Array.isArray(msg) || (msg.t !== "req" && msg.t !== "ws")) {
+      this.end("a malformed message");
+      return;
+    }
+    if (!this.#confirmed) {
+      // Deriving a key is not proof the caller holds it. Only a valid sealed
+      // frame earns a session. Recheck revocation after the hello/claim race.
+      const auth = this.#helloAuth!;
+      if (auth.kind === "device") {
+        if (!this.deps.devices.secret(auth.deviceId)) { this.end("unknown device"); return; }
+        this.data.deviceId = auth.deviceId;
+        this.data.token = this.deps.auth.issue(Date.now(), auth.deviceId);
+        this.deps.server.attach(this);
+        this.#attached = true;
+      }
+      this.#confirmed = true;
+      clearTimeout(this.#authTimer);
+    }
     if (msg.t === "req") {
       // Not awaited: requests on a link are concurrent and answered by id.
       void this.#request(msg);
@@ -363,6 +404,7 @@ class Link implements StreamClient {
   }
 
   #hello(payload: Uint8Array): void {
+    if (payload.byteLength > RELAY_LIMITS.maxControlBytes) { this.end("an oversized hello"); return; }
     const hello = parseHello(payload);
     if (!hello) {
       this.end("a malformed hello");
@@ -393,18 +435,12 @@ class Link implements StreamClient {
       return;
     }
     this.#kind = hello.auth.kind;
+    this.#helloAuth = hello.auth;
     const answer: BoxHello = { t: "hello", v: RELAY_PROTOCOL, pub: b64(self.pub) };
     this.wire.send(this.id, encoder.encode(JSON.stringify(answer)));
 
     if (hello.auth.kind === "device") {
-      // The link *is* this device: one token for its lifetime, bound to the
-      // device id, attached to every request — so the gate, revocation and the
-      // 426 check run in the HTTP layer unchanged.
-      this.data.deviceId = hello.auth.deviceId;
-      this.data.token = this.deps.auth.issue(Date.now(), hello.auth.deviceId);
       this.#rateKey = `relay:${hello.auth.deviceId}`;
-      this.deps.server.attach(this);
-      this.#attached = true;
     } else {
       // A pairing link gets no session and no stream: it may claim, and that
       // is all, until it comes back as the device the claim made.
@@ -465,7 +501,7 @@ class Link implements StreamClient {
       }
       const res: BoxToPhone = { t: "res", id, status, headers, body: body.length > 0 ? b64(body) : null };
       this.#sendSealed(JSON.stringify(res));
-    })();
+    })().catch(() => this.end("response failed"));
   }
 
   /* ------------------------------------------------------- StreamClient */
@@ -503,6 +539,8 @@ class Link implements StreamClient {
   release(): void {
     if (this.#released) return;
     this.#released = true;
+    clearTimeout(this.#authTimer);
+    this.#session = null;
     if (this.#attached) {
       this.#attached = false;
       this.deps.server.detach(this);
@@ -516,6 +554,19 @@ class Link implements StreamClient {
 }
 
 /* -------------------------------------------------------------------------- */
+
+function parseControl(text: string): RelayToBox | null {
+  if (text.length > RELAY_LIMITS.maxControlBytes) return null;
+  try {
+    const msg: unknown = JSON.parse(text);
+    if (!msg || typeof msg !== "object" || Array.isArray(msg)) return null;
+    const m = msg as Record<string, unknown>;
+    if (m.t === "challenge" && typeof m.nonce === "string" && /^[A-Za-z0-9_-]{43}$/.test(m.nonce)) return m as RelayToBox;
+    if (m.t === "ready") return { t: "ready" };
+    if ((m.t === "open" || m.t === "close") && typeof m.link === "number" && Number.isInteger(m.link) && m.link > 0 && m.link <= 0xffffffff) return m as RelayToBox;
+  } catch { /* Invalid JSON is a protocol error, just like invalid fields. */ }
+  return null;
+}
 
 /** `${RELAY_URL}/v1/box/${serverId}`, over ws(s). */
 export function boxUrl(relayUrl: string, serverId: string): string {

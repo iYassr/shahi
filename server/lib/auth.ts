@@ -1,21 +1,11 @@
 /**
- * Passcode gate.
- *
- * Tailscale authenticates the *device*; this authenticates the person holding
- * it. That distinction matters because the API behind this proxies all of
- * herdr's methods, and `pane.send_text` alone is arbitrary shell execution as
- * the user — so an unlocked phone in someone else's hand is the threat this
- * exists to stop.
- *
- * Sessions are stateless: an HMAC-signed `expiry[.deviceId].signature` cookie.
- * There is one user, so there is no session table — but a phone that paired by
- * scanning a code carries its device id in the token, and `deviceActive` is
- * asked about it on every request. That is what makes revoking a phone take
- * effect on its next request rather than when its cookie runs out, without a
- * table of live sessions to keep in step.
+ * Signed, independently revocable sessions. Revoked token digests live in the
+ * sidecar database so logout survives a restart. Offline owner scripts can
+ * still sign short-lived tokens without registering them with the server.
  */
 import { password as bunPassword } from "bun";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { Database } from "bun:sqlite";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 export const SESSION_COOKIE = "shahi_session";
 
@@ -23,25 +13,17 @@ export interface AuthOptions {
   passcodeHash: string;
   sessionSecret: string;
   sessionTtlMs: number;
-  /**
-   * Whether a paired device may still act. Consulted every time a token that
-   * names a device is checked. Absent means every device token is accepted
-   * for as long as it is valid — fine for tests, never for the server.
-   */
   deviceActive?: (deviceId: string) => boolean;
 }
 
-/** Who a valid token belongs to: a paired device, or a passcode login (null). */
-export interface Identity {
-  deviceId: string | null;
-}
+export interface Identity { deviceId: string | null; }
 
 export class Auth {
-  constructor(private readonly options: AuthOptions) {}
-
-  /** True when no passcode is configured and the gate is open. */
-  get disabled(): boolean {
-    return this.options.passcodeHash === "";
+  // The default is for isolated tests and token-signing scripts. The running
+  // server supplies its persistent database, shared with devices/transcripts.
+  constructor(private readonly options: AuthOptions, private readonly db = new Database(":memory:")) {
+    db.exec("CREATE TABLE IF NOT EXISTS revoked_sessions (digest TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)");
+    this.#prune(Date.now());
   }
 
   static async hashPasscode(passcode: string): Promise<string> {
@@ -49,24 +31,16 @@ export class Auth {
   }
 
   async verifyPasscode(passcode: string): Promise<boolean> {
-    if (this.disabled) return true;
-    try {
-      return await bunPassword.verify(passcode, this.options.passcodeHash);
-    } catch {
-      // A malformed hash in .env must not read as a successful login.
-      return false;
-    }
+    if (!this.options.passcodeHash) return false;
+    try { return await bunPassword.verify(passcode, this.options.passcodeHash); }
+    catch { return false; }
   }
 
-  /**
-   * Mints a signed token valid for `sessionTtlMs`, bound to a device when the
-   * session came from pairing. The id rides inside the signed part, so a token
-   * cannot be re-pointed at another device any more than its expiry can be
-   * extended.
-   */
   issue(now = Date.now(), deviceId: string | null = null): string {
-    const expiry = String(now + this.options.sessionTtlMs);
-    const claims = deviceId ? `${expiry}.${deviceId}` : expiry;
+    // Distinct sessions must remain independently revocable even when two
+    // logins happen in the same millisecond.
+    if (deviceId !== null && !/^[A-Za-z0-9_-]+$/.test(deviceId)) throw new Error("invalid device id");
+    const claims = `${now + this.options.sessionTtlMs}.${deviceId ?? ""}.${randomUUID()}`;
     return `${claims}.${this.#sign(claims)}`;
   }
 
@@ -74,51 +48,41 @@ export class Auth {
     return this.identify(token, now) !== null;
   }
 
-  /**
-   * Who is behind a token, or null when it does not grant a session.
-   *
-   * With the gate disabled everything is a session, but a valid device token
-   * still says which device — Settings can then name the phone it is on.
-   */
   identify(token: string | undefined, now = Date.now()): Identity | null {
-    const open: Identity | null = this.disabled ? { deviceId: null } : null;
-    if (!token) return open;
-
-    const separator = token.lastIndexOf(".");
-    if (separator <= 0) return open;
-
-    const claims = token.slice(0, separator);
-    const signature = token.slice(separator + 1);
-
-    // Check the signature before trusting anything it protects.
-    if (!this.#signatureMatches(claims, signature)) return open;
-
-    const dot = claims.indexOf(".");
-    const expiry = dot === -1 ? claims : claims.slice(0, dot);
-    const deviceId = dot === -1 ? null : claims.slice(dot + 1);
-
+    if (!token || token.length > 512) return null;
+    const parts = token.split(".");
+    if (parts.length !== 4) return null;
+    const [expiry, device, nonce, signature] = parts as [string, string, string, string];
+    if (!/^\d+$/.test(expiry) || !/^[A-Za-z0-9_-]*$/.test(device) || !/^[a-f0-9-]{36}$/.test(nonce)) return null;
+    const claims = `${expiry}.${device}.${nonce}`;
+    if (!this.#signatureMatches(claims, signature)) return null;
     const expiresAt = Number(expiry);
-    if (!Number.isFinite(expiresAt) || expiresAt <= now) return open;
-    if (deviceId !== null && (deviceId === "" || !(this.options.deviceActive?.(deviceId) ?? true))) return open;
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return null;
+    if (this.db.query("SELECT 1 FROM revoked_sessions WHERE digest = ?").get(this.#digest(token))) return null;
+    const deviceId = device || null;
+    if (deviceId !== null && !(this.options.deviceActive?.(deviceId) ?? true)) return null;
     return { deviceId };
   }
 
-  cookie(token: string): string {
-    const maxAge = Math.floor(this.options.sessionTtlMs / 1000);
-    // No `Secure`: tailscale serve terminates TLS and forwards over loopback
-    // plain HTTP, and the same build has to work when reached directly at
-    // 127.0.0.1 during development.
-    return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+  revoke(token: string | undefined, now = Date.now()): boolean {
+    if (!token || !this.identify(token, now)) return false;
+    this.#prune(now);
+    this.db.query("INSERT OR IGNORE INTO revoked_sessions (digest, expires_at) VALUES (?, ?)")
+      .run(this.#digest(token), Number(token.split(".")[0]));
+    return true;
   }
 
-  static clearCookie(): string {
-    return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+  cookie(token: string, secure = false): string {
+    return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(this.options.sessionTtlMs / 1000)}${secure ? "; Secure" : ""}`;
   }
 
-  #sign(value: string): string {
-    return createHmac("sha256", this.options.sessionSecret).update(value).digest("base64url");
+  static clearCookie(secure = false): string {
+    return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`;
   }
 
+  #prune(now: number): void { this.db.query("DELETE FROM revoked_sessions WHERE expires_at <= ?").run(now); }
+  #digest(token: string): string { return createHash("sha256").update(token).digest("hex"); }
+  #sign(value: string): string { return createHmac("sha256", this.options.sessionSecret).update(value).digest("base64url"); }
   #signatureMatches(value: string, candidate: string): boolean {
     const expected = Buffer.from(this.#sign(value));
     const actual = Buffer.from(candidate);

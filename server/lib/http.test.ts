@@ -191,6 +191,22 @@ describe("the gate", () => {
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("x-frame-options")).toBe("DENY");
     expect(res.headers.get("referrer-policy")).toBe("same-origin");
+    expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+    expect(res.headers.get("content-security-policy")).toContain("object-src 'none'");
+    expect(res.headers.get("content-security-policy")).not.toContain("unsafe-eval");
+  });
+
+  test("cookies on an HTTPS reverse-proxy hop are Secure, including logout", async () => {
+    const login = await fetch(`${s.base}/api/auth/login`, {
+      method: "POST", headers: { "content-type": "application/json", "x-forwarded-proto": "https" },
+      body: JSON.stringify({ passcode: PASSCODE }),
+    });
+    expect(login.status).toBe(200);
+    expect(login.headers.get("set-cookie")).toContain("; Secure");
+    const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+    const logout = await fetch(`${s.base}/api/auth/logout`, { method: "POST", headers: { cookie, "x-forwarded-proto": "https" } });
+    expect(logout.headers.get("set-cookie")).toContain("; Secure");
+    expect((await fetch(`${s.base}/api/session`, { headers: { cookie } })).status).toBe(401);
   });
 });
 

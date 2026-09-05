@@ -467,6 +467,14 @@ afterAll(() => {
 /* ------------------------------------------------------------------ tests */
 
 describe("box authentication", () => {
+  test("malformed relay controls disconnect and recover without killing the sidecar", async () => {
+    for (const value of ["null", "[]", "true", "{", "{}", '{"t":"open","link":null}', '{"t":"close","link":-1}', '{"t":"open","link":4294967296}', '{"t":"challenge","nonce":{}}', "x".repeat(4097)]) {
+      const before = relay.boxConnections;
+      relay.boxes.get(box.identity.serverId)!.ws.send(value);
+      await waitFor(() => relay.boxConnections > before && client.connected, "controlled relay recovery");
+      expect((await fetch(`http://127.0.0.1:${box.server.port}/api/auth/status`)).status).toBe(200);
+    }
+  });
   test("the box URL is the relay's over ws(s), with the server id on the path", () => {
     expect(boxUrl("https://relay.example.workers.dev", "abc")).toBe("wss://relay.example.workers.dev/v1/box/abc");
     expect(boxUrl("http://127.0.0.1:9999/", "abc")).toBe("ws://127.0.0.1:9999/v1/box/abc");

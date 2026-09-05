@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
+import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const secret = "test-secret-not-used-anywhere-real";
 const auth = (over: Partial<ConstructorParameters<typeof Auth>[0]> = {}) =>
@@ -10,7 +14,6 @@ describe("passcode verification", () => {
     const hash = await Auth.hashPasscode("correct horse");
     const a = auth({ passcodeHash: hash });
 
-    expect(a.disabled).toBe(false);
     expect(await a.verifyPasscode("correct horse")).toBe(true);
     expect(await a.verifyPasscode("wrong")).toBe(false);
     expect(await a.verifyPasscode("")).toBe(false);
@@ -27,11 +30,11 @@ describe("passcode verification", () => {
     expect(await a.verifyPasscode("anything")).toBe(false);
   });
 
-  test("an empty hash disables the gate", async () => {
+  test("an empty hash never opens the gate", async () => {
     const a = auth();
-    expect(a.disabled).toBe(true);
-    expect(await a.verifyPasscode("anything at all")).toBe(true);
-    expect(a.verifyToken(undefined)).toBe(true);
+    expect(await a.verifyPasscode("anything at all")).toBe(false);
+    expect(a.verifyToken(undefined)).toBe(false);
+    expect(a.verifyToken("forged")).toBe(false);
   });
 });
 
@@ -79,6 +82,11 @@ describe("session tokens", () => {
 });
 
 describe("cookies", () => {
+  test("HTTPS session and deletion cookies carry Secure", () => {
+    expect(auth().cookie("token", true)).toContain("; Secure");
+    expect(Auth.clearCookie(true)).toContain("; Secure");
+    expect(auth().cookie("token", false)).not.toContain("Secure");
+  });
   test("marks the session cookie HttpOnly and SameSite", () => {
     const cookie = auth().cookie("token-value");
     expect(cookie).toContain(`${SESSION_COOKIE}=token-value`);
@@ -102,6 +110,33 @@ describe("cookies", () => {
   test("is not fooled by a cookie name that is a suffix of another", () => {
     expect(readCookie(`not_${SESSION_COOKIE}=nope`, SESSION_COOKIE)).toBeUndefined();
   });
+});
+
+test("logout survives a database reopen and leaves independent simultaneous logins valid", () => {
+  const dir = mkdtempSync(join(tmpdir(), "shahi-session-revoke-"));
+  const path = join(dir, "test.sqlite");
+  const options = { passcodeHash: "configured", sessionSecret: secret, sessionTtlMs: 60_000 };
+  let db = new Database(path);
+  try {
+    const first = new Auth(options, db);
+    const now = Date.now();
+    const stolen = first.issue(now);
+    const other = first.issue(now);
+    expect(stolen).not.toBe(other);
+    expect(first.revoke("forged")).toBe(false);
+    expect(first.revoke(stolen, now)).toBe(true);
+    expect(first.verifyToken(stolen, now)).toBe(false);
+    expect(first.verifyToken(other, now)).toBe(true);
+    db.close();
+    db = new Database(path);
+    const restarted = new Auth(options, db);
+    expect(restarted.verifyToken(stolen, now)).toBe(false);
+    expect(restarted.verifyToken(other, now)).toBe(true);
+    // Expired revocations are pruned when a later logout is recorded.
+    const later = restarted.issue(now + 60_001);
+    restarted.revoke(later, now + 60_001);
+    expect(db.query("SELECT COUNT(*) AS n FROM revoked_sessions").get()).toEqual({ n: 1 });
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
 describe("LoginThrottle", () => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Auth } from "./auth";
 import { loadConfig } from "./config";
 
-const base = { SESSION_SECRET: "s".repeat(32) } as NodeJS.ProcessEnv;
+const base = { SESSION_SECRET: "s".repeat(32), PASSCODE_HASH_B64: Buffer.from(await Auth.hashPasscode("config-test")).toString("base64") } as NodeJS.ProcessEnv;
 
 describe("loadConfig", () => {
   test("requires a session secret", () => {
@@ -15,11 +15,10 @@ describe("loadConfig", () => {
     expect(loadConfig(base).host).toBe("127.0.0.1");
   });
 
-  test("binds a Tailscale address when given one", () => {
-    // Reaching it directly over the tailnet, rather than through
-    // `tailscale serve`. Costs the secure context — and therefore Web Push —
-    // which the server warns about at startup.
-    expect(loadConfig({ ...base, HOST: "100.100.100.100" }).host).toBe("100.100.100.100");
+  test("refuses network binds even when a passcode is present", () => {
+    for (const HOST of ["0.0.0.0", "::", "100.100.100.100", "192.168.1.2", "example.com"]) {
+      expect(() => loadConfig({ ...base, HOST })).toThrow(/loopback/);
+    }
   });
 
   test("defaults the port to 7171", () => {
@@ -37,9 +36,16 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, RELAY_URL: "wss://relay.example.workers.dev" })).toThrow(/http\(s\)/);
   });
 
-  test("treats a missing passcode as gate-disabled", () => {
-    expect(loadConfig(base).passcodeHash).toBe("");
-    expect(loadConfig({ ...base, PASSCODE_HASH_B64: "" }).passcodeHash).toBe("");
+  test("refuses missing and empty passcodes instead of opening the gate", () => {
+    expect(() => loadConfig({ SESSION_SECRET: base.SESSION_SECRET })).toThrow(/PASSCODE_HASH_B64 is required/);
+    expect(() => loadConfig({ ...base, PASSCODE_HASH_B64: "" })).toThrow(/PASSCODE_HASH_B64 is required/);
+  });
+
+  test("refuses plaintext and credential-bearing relays except local test origins", () => {
+    for (const RELAY_URL of ["http://relay.example", "https://user:password@relay.example", "https://relay.example/path", "https://relay.example/?key=secret", "https://relay.example/#secret"]) {
+      expect(() => loadConfig({ ...base, RELAY_URL })).toThrow(/RELAY_URL/);
+    }
+    expect(loadConfig({ ...base, RELAY_URL: "http://127.0.0.1:8787" }).relayUrl).toBe("http://127.0.0.1:8787");
   });
 
   describe("passcode hash decoding", () => {
@@ -99,4 +105,3 @@ describe("loadConfig", () => {
     });
   });
 });
-

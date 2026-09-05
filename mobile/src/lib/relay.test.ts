@@ -76,6 +76,7 @@ class FakeSocket {
 class FakeBox {
   session: Session | null = null;
   hello: PhoneHello | null = null;
+  proof: PhoneToBox | null = null;
   received: PhoneToBox[] = [];
   #readFrom = 0;
 
@@ -85,7 +86,7 @@ class FakeBox {
   ) {}
 
   /** Reads the phone's hello, answers with the box's, derives the session. */
-  handshake(): PhoneHello {
+  handshake(prove = true): PhoneHello {
     const first = this.socket.sent[this.#readFrom++];
     // In the clear but binary: the relay forwards data frames only.
     if (typeof first === "string") throw new Error("the hello must be a binary frame; the relay drops text from phones");
@@ -93,6 +94,13 @@ class FakeBox {
     const self = ephemeral(random(32));
     this.session = serverSession(self, fromBase64Url(this.hello.pub), this.secret);
     this.socket.binary(new TextEncoder().encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(self.pub) })));
+    if (prove && this.hello.auth.kind === "device") {
+      // A real box waits for proof before attaching the dashboard. Consume
+      // and verify that first frame separately from subsequent requests.
+      const frame = this.socket.sent[this.#readFrom++] as Uint8Array;
+      this.proof = JSON.parse(str(open(this.session, frame))) as PhoneToBox;
+      expect(this.proof).toMatchObject({ t: "ws", data: { type: expect.stringMatching(/^(watch|unwatch)$/) } });
+    }
     return this.hello;
   }
 
@@ -162,6 +170,8 @@ describe("hello", () => {
     expect(box.hello).toMatchObject({ t: "hello", v: 1, auth: { kind: "device", deviceId: "dev-1" } });
     expect(fromBase64Url(box.hello!.pub)).toHaveLength(32);
     expect(link.state).toBe("live");
+
+    expect(box.proof).toEqual({ t: "ws", data: { type: "unwatch" } });
 
     // The proof of shared keys: a request sealed here opens there, and the
     // answer sealed there opens here.
@@ -382,7 +392,7 @@ describe("the relay's close codes", () => {
     const ws = FakeSocket.opened.at(-1)!;
     ws.accept();
     const box = new FakeBox(ws, random(32)); // a different secret
-    box.handshake();
+    box.handshake(false);
     expect(() => box.read()).toThrow(); // exactly what the real box hits
     ws.drop(4403);
     const e = await call.catch((err: unknown) => err);
@@ -431,7 +441,7 @@ describe("the relay's close codes", () => {
     const ws = FakeSocket.opened.at(-1)!;
     ws.accept();
     const box = new FakeBox(ws, random(32));
-    box.handshake();
+    box.handshake(false);
     box.push({ t: "ws", data: { type: "ping", at: 1 } });
     expect(expired).not.toHaveBeenCalled();
     expect(ws.readyState).toBe(3);
@@ -464,7 +474,8 @@ describe("the dashboard stream", () => {
     again.accept();
     const box2 = new FakeBox(again, secret);
     box2.handshake();
-    expect(box2.read()).toEqual([{ t: "ws", data: { type: "watch", paneId: "w1:p2" } }]);
+    expect(box2.proof).toEqual({ t: "ws", data: { type: "watch", paneId: "w1:p2" } });
+    expect(box2.read()).toEqual([]);
   });
 
   test("a watch racing a native socket close does not throw", () => {

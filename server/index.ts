@@ -66,7 +66,7 @@ const auth = new Auth({
   // Asked on every request that carries a device token, so a revoked phone is
   // out immediately rather than at cookie expiry. See pairing.ts.
   deviceActive: (id) => devices.isActive(id),
-});
+}, db);
 
 store.on("error", (err) => console.error("state:", err.message));
 poller.on("error", (err) => console.error("poller:", err.message));
@@ -132,21 +132,11 @@ console.log(
   `  ${store.state.workspaces.length} workspaces, ${store.state.panes.length} panes, ` +
     `${agents} agents (${blocked} blocked)`,
 );
-console.log(`  passcode ${auth.disabled ? "DISABLED — anyone reaching this port has full control" : "required"}`);
+console.log("  passcode required");
 console.log(`  push ${push.enabled ? `enabled, ${push.count()} subscription(s)` : "disabled (no VAPID keys)"}`);
 console.log(`  devices ${devices.list().length} paired — pair a phone: bun run server/scripts/pair.ts`);
 console.log(`  relay ${config.relayUrl ? `dialling ${config.relayUrl} as ${identity.serverId}` : "none (RELAY_URL not set); reachable directly only"}`);
 console.log(`  data ${config.dataPath}`);
-
-const loopback = config.host === "127.0.0.1" || config.host === "localhost" || config.host === "::1";
-
-if (auth.disabled) {
-  console.warn(
-    "\n  No passcode set. Anyone who can reach this port has full control of\n" +
-      "  every agent on this machine:\n" +
-      "    bun run server/scripts/init-secrets.ts --passcode <digits>\n",
-  );
-}
 
 if (!config.webRoot) {
   // Worth shouting about: everything else works, every health check passes, and
@@ -156,28 +146,6 @@ if (!config.webRoot) {
     "\n  WEB_ROOT is not set, so this is an API with no app in front of it.\n" +
       "  Run `bun run build:web`, then set WEB_ROOT=<repo>/web/dist and restart.\n",
   );
-}
-
-if (!loopback) {
-  // Binding off loopback used to be how a phone reached this box directly.
-  // Nothing does that any more — the app comes in through the relay, or
-  // through an SSH tunnel to the loopback bind — so an exposed port is now all
-  // risk and no reach, and saying so is more useful than explaining TLS.
-  console.warn(
-    `\n  Bound to ${config.host}, not loopback — and nothing needs that.\n` +
-      "  The app reaches this box through the relay, or over an SSH tunnel to\n" +
-      "  the loopback bind. Neither wants an address exposed here, so this\n" +
-      "  only widens what can reach a port that runs commands as you: the\n" +
-      "  passcode is the one thing in front of it.\n" +
-      "  Unset HOST to bind 127.0.0.1 again.\n",
-  );
-
-  if (config.host === "0.0.0.0" || config.host === "::") {
-    console.warn(
-      "  You bound ALL interfaces, which includes your LAN and, behind a\n" +
-        "  forwarded port, the internet. Unset HOST.\n",
-    );
-  }
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
