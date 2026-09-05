@@ -100,7 +100,20 @@ function tunnelFailureMessage(error: unknown): string | null {
  * key before authenticating, and the fingerprint it reports back is stored the
  * first time.
  */
-export async function openTunnel(profile: SshProfile): Promise<string> {
+// Include keychain reads in the queue: a sign-out during that read must close
+// the resulting tunnel, rather than closing first and letting it open later.
+let operations: Promise<unknown> = Promise.resolve();
+function serial<T>(operation: () => Promise<T>): Promise<T> {
+  const next = operations.then(operation, operation);
+  operations = next.catch(() => undefined);
+  return next;
+}
+
+export function openTunnel(profile: SshProfile): Promise<string> {
+  return serial(() => open(profile));
+}
+
+async function open(profile: SshProfile): Promise<string> {
   if (!native) {
     throw new Error(
       "SSH isn't available in this build. It needs the native tunnel module — rebuild the app to use it.",
@@ -142,7 +155,11 @@ export async function openTunnel(profile: SshProfile): Promise<string> {
   return `http://127.0.0.1:${localPort}`;
 }
 
-export async function closeTunnel(): Promise<void> {
+export function closeTunnel(): Promise<void> {
+  return serial(close);
+}
+
+async function close(): Promise<void> {
   if (!native) return;
   try {
     await native.close();

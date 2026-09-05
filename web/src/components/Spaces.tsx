@@ -1,3 +1,4 @@
+import { AgentAvatar } from "./AgentAvatar";
 /**
  * The Spaces half of the app, mirroring how herdr splits its own sidebar.
  *
@@ -8,19 +9,12 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type AgentStatus, type Session } from "../api";
+import { api, type Session } from "../api";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
 import { useScrollMemory } from "../useScrollMemory";
 
-const GLYPH: Record<AgentStatus, string> = {
-  blocked: "●",
-  working: "◐",
-  done: "✓",
-  idle: "○",
-  unknown: "·",
-};
 
 /**
  * Fallback when a space has no path to inherit.
@@ -234,12 +228,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                   className={`row row--${pane.status}`}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
-                  <span className="row__glyph" aria-hidden="true">
-                    {GLYPH[pane.status]}
-                  </span>
-                  {/* No coloured mark here either: the kind is in the dim text
-                      at the end of the row, and two marks per line is what made
-                      the agent list a wall. */}
+                  <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
                   <span className="row__title">
                     {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
                   </span>
@@ -325,9 +314,8 @@ function CreateSpace({
   async function create() {
     setBusy(true);
     try {
-      const { result } = await api.createSpace(name.trim() || "new space", cwd.path);
-      const created = result as { workspace?: { workspace_id: string } };
-      onCreated(created.workspace?.workspace_id ?? "");
+      const { workspaceId } = await api.createSpace(name.trim() || "new space", cwd.path);
+      onCreated(workspaceId);
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Could not create the space");
       setBusy(false);

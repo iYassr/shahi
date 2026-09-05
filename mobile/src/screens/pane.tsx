@@ -24,12 +24,13 @@ import {
   View,
 } from "react-native";
 import { Stack } from "expo-router";
+import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
 // wholesale, so a separately installed @react-navigation/elements would carry
 // its own context and read a height of 0. This one shares the router's.
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useKeyboardHeight } from "@/lib/keyboard";
-import { CopyOnHold } from "@/components/copy";
+import { CopyButton, CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption } from "@shahi/shared";
@@ -83,13 +84,13 @@ const PROBE = "─".repeat(PROBE_CHARS);
 // `spoken` is what VoiceOver reads: the glyphs (⇥, ⇧⇥, ^C) are unintelligible
 // aloud, so each carries the key's real name.
 const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
-  { label: "esc", spoken: "Escape", keys: ["Escape"] },
-  { label: "⇥", spoken: "Tab", keys: ["Tab"] },
-  { label: "⇧⇥", spoken: "Shift Tab", keys: ["shift+tab"] },
-  { label: "^C", spoken: "Control C", keys: ["C-c"] },
+  { label: "Esc", spoken: "Escape", keys: ["Escape"] },
+  { label: "Tab", spoken: "Tab", keys: ["Tab"] },
+  { label: "Shift+Tab", spoken: "Shift Tab", keys: ["shift+tab"] },
   { label: "↑", spoken: "Up arrow", keys: ["Up"] },
   { label: "↓", spoken: "Down arrow", keys: ["Down"] },
-  { label: "⏎", spoken: "Return", keys: ["Enter"] },
+  { label: "Enter", spoken: "Return", keys: ["Enter"] },
+  { label: "Ctrl+C", spoken: "Control C", keys: ["C-c"] },
 ];
 
 /**
@@ -197,6 +198,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    */
   const [pending, setPending] = useState<{ message: LogMessage; youBaseline: number; at: number }[]>([]);
   const pendingSeq = useRef(0);
+  const promptAttempt = useRef<{ key: string; id: string } | null>(null);
+  const promptInFlight = useRef(false);
   /**
    * Away from the tail, as state rather than the `following` ref, because the
    * jump pill has to render when it changes. `unseen` counts what arrived
@@ -247,6 +250,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
+  const olderCursor = useRef<number | null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderInFlight = useRef(false);
+  const [olderError, setOlderError] = useState<string | null>(null);
   /**
    * Whether to follow new output.
    *
@@ -377,6 +385,37 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     return () => watch(null);
   }, [paneId, watch]);
 
+  async function loadOlder() {
+    const before = olderCursor.current;
+    if (olderInFlight.current || before == null || before <= 0) return;
+    olderInFlight.current = true;
+    following.current = false;
+    setLoadingOlder(true);
+    setOlderError(null);
+    try {
+      const page = await api.sessionLog(paneId, 60, before);
+      const known = new Set(messagesRef.current.map((m) => m.id));
+      const prefix = page.messages.filter((m) => !known.has(m.id));
+      const combined = [...prefix, ...messagesRef.current];
+      // Prepending history is not a new reply and must not retire optimistic
+      // prompts or finish the current agent's working indicator.
+      const oldYou = prefix.filter((m) => m.role === "you").length;
+      awaitingBaselineAgents.current += prefix.filter((m) => m.role === "agent").length;
+      setPending((items) => items.map((item) => ({ ...item, youBaseline: item.youBaseline + oldYou })));
+      messagesRef.current = combined;
+      messageMemory.set(paneId, { owner, messages: combined });
+      olderCursor.current = Math.max(0, Math.min(before, page.total) - page.messages.length);
+      setHasOlder(olderCursor.current > 0);
+      setMessages(combined);
+    } catch (e) {
+      if (e instanceof UnauthorizedError) signOut();
+      else setOlderError((e as Error).message);
+    } finally {
+      olderInFlight.current = false;
+      setLoadingOlder(false);
+    }
+  }
+
   const loadOnce = useCallback(async () => {
     // Both requests at once: neither depends on the other, and in sequence the
     // pane detail waited a full transcript round trip for nothing. Each is
@@ -389,6 +428,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     try {
       const log = await logRequest;
       const folded = merge(messagesRef.current, log.messages);
+      const tailStart = log.messages.length ? folded.findIndex((m) => m.id === log.messages[0]!.id) : 0;
+      olderCursor.current = Math.max(0, log.total - log.messages.length - Math.max(0, tailStart));
+      setHasOlder(olderCursor.current > 0);
       if (folded !== messagesRef.current) {
         const prevLen = messagesRef.current.length;
         // Not on the first fill: a remount fetching the same conversation is
@@ -541,7 +583,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
   async function submit() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || promptInFlight.current) return;
+    promptInFlight.current = true;
+    const key = JSON.stringify([paneId, text]);
+    if (promptAttempt.current?.key !== key) promptAttempt.current = { key, id: randomUUID() };
+    setError(null);
     setSending(true);
     // Echo the message into the thread and show "working", both before the send
     // round-trip — the reader reacts the instant you tap, not after a poll. The
@@ -561,16 +607,19 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // that receipt.
     chase();
     try {
-      await api.send(paneId, text);
+      await api.send(paneId, text, promptAttempt.current.id);
+      promptAttempt.current = null;
       committed();
     } catch (e) {
-      // The send did not land: pull the echo back and return the text to retry.
+      // Delivery may have succeeded before the response was lost. Keep the
+      // request id so retry asks for that outcome rather than sending twice.
       setPending((prev) => prev.filter((p) => p.message.id !== id));
       setDraft(text);
       endAwaiting();
       refused();
       setError((e as Error).message);
     } finally {
+      promptInFlight.current = false;
       setSending(false);
     }
   }
@@ -662,6 +711,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           data={pending.length ? [...messages, ...pending.map((p) => p.message)] : messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
+          maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+          ListHeaderComponent={
+            hasOlder ? (
+              <Pressable accessibilityRole="button" style={styles.ghost} disabled={loadingOlder} onPress={() => void loadOlder()}>
+                <Text style={styles.ghostText}>{loadingOlder ? "Loading earlier messages…" : olderError ? `${olderError} — Retry` : "Load earlier messages"}</Text>
+              </Pressable>
+            ) : null
+          }
           // Without this, the first tap anywhere in a scrollable only dismisses
           // the keyboard and is swallowed — so expanding a tool call or
           // pressing a key takes two taps while the composer has focus.
@@ -708,6 +765,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             // after the person's drag. That event caused the reproducible
             // lower-paragraph → top jump on reopening.
             if (!userScroll.current) return;
+            if (e.contentOffset.y < 80 && !olderError) void loadOlder();
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             following.current = fromBottom < 80;
@@ -800,7 +858,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           {KEY_BAR.map(({ label, spoken, keys }) => (
             <Pressable
               key={label}
-              style={styles.key}
+              style={[styles.key, label === "Ctrl+C" && styles.interruptKey]}
               accessibilityRole="button"
               accessibilityLabel={spoken}
               // Reported, not swallowed: this is how an unsupported key name
@@ -831,7 +889,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={pane && !pane.isAgent ? "Run a command…" : "Reply to this agent…"}
+            placeholder={view === "screen" ? "Send text to terminal…" : pane && !pane.isAgent ? "Run a command…" : "Reply to this agent…"}
             placeholderTextColor={theme.dim}
             multiline
           />
@@ -927,6 +985,9 @@ const Message = memo(function Message({
       {message.blocks.map((block, i) => (
         <Block key={i} block={block} paneId={paneId} onOpenFile={onOpenFile} />
       ))}
+      {message.blocks.some((block) => block.kind === "text") && (
+        <CopyButton text={message.blocks.flatMap((block) => block.kind === "text" ? [block.text] : []).join("\n\n")} />
+      )}
     </View>
   );
 });
@@ -1404,7 +1465,7 @@ const styles = StyleSheet.create({
   bannerClose: { color: theme.dim, fontSize: 13 },
 
   headTitle: { alignItems: "center" },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 14 },
+  title: { color: theme.fg, fontSize: 14 },
   subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, marginTop: 1 },
 
   jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 14, alignItems: "center" },
@@ -1417,7 +1478,7 @@ const styles = StyleSheet.create({
     minHeight: 34,
     justifyContent: "center",
   },
-  jumpText: { color: theme.peach, fontFamily: theme.mono, fontSize: 12 },
+  jumpText: { color: theme.peach, fontSize: 12 },
 
   screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void },
   // No boxes at all: two labels, the active one lit. Every boxed version —
@@ -1425,8 +1486,8 @@ const styles = StyleSheet.create({
   toggle: { flexDirection: "row", gap: 16 },
   toggleItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   toggleOn: {},
-  toggleText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
-  toggleTextOn: { color: theme.peach, fontWeight: "700" },
+  toggleText: { color: theme.dim, fontSize: 12 },
+  toggleTextOn: { color: theme.fg, fontWeight: "700" },
 
   screenWrap: { flex: 1 },
   probe: { position: "absolute", opacity: 0, left: 0, top: 0 },
@@ -1447,9 +1508,9 @@ const styles = StyleSheet.create({
     borderColor: theme.line,
     borderRadius: 7, borderCurve: "continuous",
   },
-  widthOn: { borderColor: theme.peach },
-  widthText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
-  widthTextOn: { color: theme.peach },
+  widthOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
+  widthText: { color: theme.dim, fontSize: 12 },
+  widthTextOn: { color: theme.fg },
   ghost: {
     marginTop: 6,
     minHeight: 44,
@@ -1459,27 +1520,25 @@ const styles = StyleSheet.create({
     borderColor: theme.lineBright,
     borderRadius: 8, borderCurve: "continuous",
   },
-  ghostText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
+  ghostText: { color: theme.peach, fontSize: 13 },
 
   list: { padding: 16 },
   msg: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.line },
   msgYou: {
     backgroundColor: theme.surface,
-    borderLeftWidth: 2,
-    borderLeftColor: theme.peach,
     borderBottomWidth: 0,
     borderRadius: 8, borderCurve: "continuous",
     paddingHorizontal: 12,
     marginVertical: 8,
   },
-  who: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, letterSpacing: 1.2, marginBottom: 6 },
-  whoYou: { color: theme.peach },
+  who: { color: theme.dim, fontSize: 10, marginBottom: 6 },
+  whoYou: { color: theme.dim },
   // A system note (a model switch, an away-summary): quiet chrome, not the
   // agent speaking — dim, set off by a rule, never the loud "you" fill.
   msgSystem: { borderLeftWidth: 2, borderLeftColor: theme.lineBright, paddingHorizontal: 12, opacity: 0.85 },
   whoSystem: { color: theme.dim },
 
-  thinkingLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1, paddingVertical: 6 },
+  thinkingLabel: { color: theme.dim, fontSize: 11, letterSpacing: 1, paddingVertical: 6 },
   thinking: { color: theme.dim, fontSize: 13, lineHeight: 19, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: theme.lineBright },
 
   err: { color: theme.rose, fontSize: 13, padding: 16 },
@@ -1510,7 +1569,7 @@ const styles = StyleSheet.create({
   tool: { marginBottom: 6 },
   toolHead: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 7 },
   toolCaret: { color: theme.lineBright, fontFamily: theme.mono, fontSize: 12 },
-  toolName: { color: theme.mint, fontFamily: theme.mono, fontSize: 12 },
+  toolName: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
   toolSummary: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, flex: 1 },
   toolErr: { color: theme.rose, fontFamily: theme.mono, fontSize: 11 },
   toolOut: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", padding: 10, marginBottom: 8, maxHeight: 260 },
@@ -1539,16 +1598,16 @@ const styles = StyleSheet.create({
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
-  choiceIndex: { color: theme.dim, fontFamily: theme.mono, fontSize: 14 },
+  choiceIndex: { color: theme.dim, fontSize: 14 },
   choiceBody: { flex: 1 },
-  choiceLabel: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, lineHeight: 19 },
+  choiceLabel: { color: theme.fg, fontSize: 14, lineHeight: 19 },
   /** The agent's own explanation of a choice, where it wrote one. */
   choiceDetail: { color: theme.dim, fontSize: 12, lineHeight: 17, marginTop: 3 },
 
   working: { flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 14 },
-  workingSpin: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
-  workingVerb: { color: theme.fg, fontFamily: theme.mono, fontSize: 13 },
-  workingMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, flex: 1 },
+  workingSpin: { color: theme.working, fontFamily: theme.mono, fontSize: 13 },
+  workingVerb: { color: theme.fg, fontSize: 13 },
+  workingMeta: { color: theme.dim, fontSize: 12, flex: 1 },
 
   compose: { borderTopWidth: 1, borderTopColor: theme.line, padding: 10, gap: 8 },
   keys: { flexGrow: 0 },
@@ -1561,14 +1620,13 @@ const styles = StyleSheet.create({
     borderRadius: 7, borderCurve: "continuous",
     marginRight: 6,
   },
-  keyText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
-  composeRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  interruptKey: { marginLeft: 10, borderColor: theme.lineBright },
+  keyText: { color: theme.dim, fontSize: 12 },
+  composeRow: { flexDirection: "row", alignItems: "flex-end", gap: 4, padding: 5, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 16, borderCurve: "continuous" },
   attach: {
-    width: 44,
+    width: 40,
     minHeight: 44,
-    borderWidth: 1,
-    borderColor: theme.lineBright,
-    borderRadius: 8, borderCurve: "continuous",
+    borderRadius: 10, borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1576,11 +1634,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.lineBright,
-    borderRadius: 8, borderCurve: "continuous",
     color: theme.fg,
-    fontFamily: theme.mono,
     fontSize: 15,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1624,7 +1678,7 @@ const styles = StyleSheet.create({
     borderColor: theme.lineBright,
     borderRadius: 8, borderCurve: "continuous",
   },
-  phoneButtonText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
+  phoneButtonText: { color: theme.peach, fontSize: 13 },
   uploadErr: { color: theme.rose, fontSize: 12 },
   sheetPath: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
   sheetNote: { color: theme.dim, fontSize: 12, textAlign: "center" },

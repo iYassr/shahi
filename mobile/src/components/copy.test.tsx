@@ -56,3 +56,11 @@ describe("CopyOnHold", () => {
     expect(view.queryByText("Copied")).toBeNull();
   });
 });
+
+it("copies prose through the accessible icon and acknowledges completion", async () => {
+  const { CopyButton } = require("./copy");
+  const view = render(<CopyButton text="Complete response" />);
+  await act(async () => { fireEvent.press(view.getByLabelText("Copy message")); });
+  expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Complete response");
+  expect(view.getByLabelText("Copied")).toBeTruthy();
+});

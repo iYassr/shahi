@@ -33,12 +33,12 @@
  * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
 import { Database } from "bun:sqlite";
-import { readdir, readlink } from "node:fs/promises";
+import { open, readdir, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
-import { parseLines, type Block, type LogMessage, type SessionLog } from "./session-log";
+import type { Block, LogMessage, SessionLog } from "./session-log";
 
 /** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
 const MAX_RESULT_CHARS = 2_000;
@@ -353,7 +353,7 @@ export function summariseCodexCall(payload: Record<string, unknown>): string {
  * context, reasoning, the duplicated assistant message) is left alone; see the
  * module note.
  */
-export function normaliseCodex(rows: Record<string, unknown>[]): LogMessage[] {
+export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0): LogMessage[] {
   // Outputs follow their call in the file, so index them first, then a single
   // forward pass emits calls already knowing their result (or null if the tool
   // has not returned yet — the pending state the client already renders).
@@ -368,7 +368,8 @@ export function normaliseCodex(rows: Record<string, unknown>[]): LogMessage[] {
 
   const messages: LogMessage[] = [];
 
-  for (const [index, row] of rows.entries()) {
+  for (const [relativeIndex, row] of rows.entries()) {
+    const index = firstIndex + relativeIndex;
     const at = Date.parse((row.timestamp as string) ?? "") || 0;
 
     if (row.type === "event_msg") {
@@ -499,24 +500,130 @@ export async function readCodexLog(
   const path = await findCodexRollout(client, paneId, cwd, options.sessionId);
   if (!path) return null;
 
-  const file = Bun.file(path);
-  let text: string;
   try {
-    text = await file.text();
+    const log = await readCodexWindow(path, options);
+    return { ...log, sessionId: basename(path).replace(/\.jsonl$/, "") || paneId };
   } catch {
     return null;
   }
+}
 
-  const all = normaliseCodex(parseLines(text));
-  const limit = options.limit ?? 200;
-  const end = options.before ?? all.length;
-  const start = Math.max(0, end - limit);
+interface RowRange { start: number; end: number; ordinal: number }
+interface MessageRange { rows: RowRange[]; thinking: boolean; callId?: string }
+interface CodexIndex {
+  size: number;
+  fileSize: number;
+  ino: number;
+  mtime: number;
+  ctime: number;
+  rows: number;
+  messages: MessageRange[];
+  outputs: Map<string, RowRange>;
+}
+const codexIndexes = new Map<string, CodexIndex>();
+const codexReads = new Map<string, Promise<unknown>>();
+const MAX_CODEX_INDEXES = 64;
 
-  return {
-    sessionId: path.split("/").pop()?.replace(/\.jsonl$/, "") ?? paneId,
-    path,
-    messages: all.slice(start, end),
-    total: all.length,
-    offset: file.size,
-  };
+/** Optional content-free diagnostics used to verify the reader's I/O budget. */
+export interface CodexReadStats { indexedBytes: number; windowBytes: number; parsedRows: number }
+
+/** Serialize each file's reads so concurrent polls cannot append the same index twice. */
+export async function readCodexWindow(
+  path: string,
+  options: { limit?: number; before?: number; stats?: CodexReadStats } = {},
+): Promise<SessionLog> {
+  const previous = codexReads.get(path) ?? Promise.resolve();
+  const read = previous.catch(() => {}).then(() => readIndexedCodexWindow(path, options));
+  codexReads.set(path, read);
+  try { return await read; }
+  finally { if (codexReads.get(path) === read) codexReads.delete(path); }
+}
+
+async function readIndexedCodexWindow(
+  path: string,
+  options: { limit?: number; before?: number; stats?: CodexReadStats },
+): Promise<SessionLog> {
+  const file = await open(path, "r");
+  try {
+    const stat = await file.stat();
+    const held = codexIndexes.get(path);
+    // An inode replacement, shrink, or same-sized rewrite invalidates offsets.
+    const index: CodexIndex = held && held.ino === stat.ino && stat.size >= held.fileSize &&
+      (stat.size !== held.fileSize || (held.mtime === stat.mtimeMs && held.ctime === stat.ctimeMs))
+      ? held
+      : { size: 0, fileSize: 0, ino: stat.ino, mtime: 0, ctime: 0, rows: 0, messages: [], outputs: new Map() };
+    // Do not retain a partly updated index if reading fails.
+    codexIndexes.delete(path);
+    const stats = options.stats;
+    let cursor = index.size;
+    let pending = Buffer.alloc(0);
+    while (cursor < stat.size) {
+      const chunk = Buffer.alloc(Math.min(64 * 1024, stat.size - cursor));
+      const { bytesRead } = await file.read(chunk, 0, chunk.length, cursor);
+      if (!bytesRead) break;
+      cursor += bytesRead;
+      if (stats) stats.indexedBytes += bytesRead;
+      const buffer = pending.length ? Buffer.concat([pending, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+      let start = 0;
+      for (let end = buffer.indexOf(10); end !== -1; end = buffer.indexOf(10, start)) {
+        const range = { start: index.size, end: index.size + end - start + 1, ordinal: index.rows };
+        const line = buffer.subarray(start, end).toString("utf8");
+        index.size = range.end;
+        start = end + 1;
+        let row: Record<string, unknown>;
+        try { row = JSON.parse(line); } catch { continue; }
+        index.rows++;
+        if (stats) stats.parsedRows++;
+        const payload = row?.payload as Record<string, unknown> | undefined;
+        if (row?.type === "response_item" && payload && TOOL_OUTPUT_TYPES.has(payload.type as string) && typeof payload.call_id === "string") {
+          index.outputs.set(payload.call_id, range);
+        }
+        const message = normaliseCodex([row], range.ordinal)[0];
+        if (!message) continue;
+        const thinking = message.blocks[0]?.kind === "thinking";
+        const last = index.messages.at(-1);
+        if (thinking && last?.thinking) last.rows.push(range);
+        else index.messages.push({ rows: [range], thinking, callId: row.type === "response_item" && typeof payload?.call_id === "string" ? payload.call_id : undefined });
+      }
+      pending = buffer.subarray(start);
+    }
+    index.fileSize = stat.size;
+    index.mtime = stat.mtimeMs;
+    index.ctime = stat.ctimeMs;
+    codexIndexes.set(path, index);
+    while (codexIndexes.size > MAX_CODEX_INDEXES) codexIndexes.delete(codexIndexes.keys().next().value!);
+
+    const total = index.messages.length;
+    const end = Math.min(total, Math.max(0, options.before ?? total));
+    const start = Math.max(0, end - Math.max(0, options.limit ?? 200));
+    const readRow = async (range: RowRange): Promise<Record<string, unknown>> => {
+      const buffer = Buffer.alloc(range.end - range.start);
+      let consumed = 0;
+      while (consumed < buffer.length) {
+        const { bytesRead } = await file.read(buffer, consumed, buffer.length - consumed, range.start + consumed);
+        if (!bytesRead) throw new Error("Codex rollout changed during read");
+        consumed += bytesRead;
+      }
+      if (stats) { stats.windowBytes += consumed; stats.parsedRows++; }
+      return JSON.parse(buffer.toString("utf8"));
+    };
+    const messages: LogMessage[] = [];
+    for (const message of index.messages.slice(start, end)) {
+      let combined: LogMessage | undefined;
+      const output = message.callId ? index.outputs.get(message.callId) : undefined;
+      for (const range of message.rows) {
+        const rows = [await readRow(range)];
+        if (output) rows.push(await readRow(output));
+        const parsed = normaliseCodex(rows, range.ordinal)[0]!;
+        if (!combined) combined = parsed;
+        else {
+          const block = combined.blocks[0];
+          const next = parsed.blocks[0];
+          if (block?.kind === "thinking" && next?.kind === "thinking") block.text += `\n\n${next.text}`;
+        }
+      }
+      if (combined) messages.push(combined);
+    }
+    return { sessionId: path, path, messages, total, offset: index.size };
+  } finally { await file.close(); }
 }

@@ -1,8 +1,10 @@
 import { Alert } from "react-native";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Settings } from "./settings";
 
 const mockSignOut = jest.fn();
+const mockLogout = jest.fn(async () => {});
+jest.mock("@/lib/api", () => ({ api: { logout: () => mockLogout() } }));
 
 jest.mock("expo-router", () => ({ router: { replace: jest.fn() } }));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
@@ -23,7 +25,7 @@ jest.mock("@/lib/session", () => ({
 }));
 import { router } from "expo-router";
 
-test("sign out warns before deleting the connection needed to return", () => {
+test("sign out warns before deleting the connection needed to return", async () => {
   jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
   render(<Settings />);
 
@@ -32,7 +34,9 @@ test("sign out warns before deleting the connection needed to return", () => {
   const [title, message, buttons] = (Alert.alert as jest.Mock).mock.calls[0]!;
   expect(title).toBe("Sign out of Shahi?");
   expect(message).toMatch(/new pairing code or your SSH details/);
-  buttons.find((button: { text: string }) => button.text === "Sign out").onPress();
+  await act(async () => { await buttons.find((button: { text: string }) => button.text === "Sign out").onPress(); });
+  expect(mockLogout).toHaveBeenCalledTimes(1);
+  expect(mockLogout.mock.invocationCallOrder[0]).toBeLessThan(mockSignOut.mock.invocationCallOrder[0]!);
   expect(mockSignOut).toHaveBeenCalledTimes(1);
   expect(router.replace).toHaveBeenCalledWith("/connect");
 });

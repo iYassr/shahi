@@ -22,11 +22,9 @@ export async function writes(
   return (await res.json()).writes;
 }
 
-/** The rpc calls only, which is what most assertions are about. */
-export async function rpcs(page: Page): Promise<{ method: string; params: unknown }[]> {
-  return (await writes(page))
-    .filter((w) => w.path === "/api/rpc")
-    .map((w) => w.body as { method: string; params: unknown });
+/** Semantic pane writes, with the route retained for contract assertions. */
+export async function paneWrites(page: Page): Promise<{ path: string; body: Record<string, any> }[]> {
+  return (await writes(page)).filter((w) => /^\/api\/panes\/[^/]+\/(prompt|answer|keys)$/.test(w.path)) as { path: string; body: Record<string, any> }[];
 }
 
 /** Pushes a message down the socket, as the poller would. */

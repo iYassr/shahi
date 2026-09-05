@@ -21,6 +21,7 @@ concurrency:
 jobs:
   checks:
     name: types and unit tests
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,12 +30,13 @@ jobs:
           bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
 
-      # This also covers the parked Expo app, which is the only automatic check
-      # that it still compiles against `shared/`. Two clients drifting apart is
+      # This also covers the native Expo app, which is a check
+      # that it compiles against `shared/`. Two clients drifting apart is
       # otherwise invisible until someone tries to build the one nobody runs.
       - run: bun run typecheck
 
       - run: bun test shared/src server web/src plugin
+      - run: bun run test:dependencies
 
       # The relay's own suite starts a local `wrangler dev` — no account, no
       # network beyond the loopback — and proves the Worker end of the protocol.
@@ -72,6 +74,10 @@ jobs:
       - run: bunx playwright install --with-deps chromium webkit
 
       - run: bun run test:e2e
+
+      # A separate static origin talks only through encrypted relay frames.
+      - run: bun run build:site
+      - run: bun run test:hosted
 
       - uses: actions/upload-artifact@v4
         if: failure()

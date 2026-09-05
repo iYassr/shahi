@@ -15,6 +15,7 @@
  */
 import {
   SHAHI_API_VERSION,
+  START_AGENT_TIMEOUT_MS,
   type ClaimResult,
   type DeviceList,
   type DirListing,
@@ -229,10 +230,11 @@ async function incompatible(res: Reply): Promise<IncompatibleServerError> {
 async function request<T>(
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ms = REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   if (!configured()) throw new Error("No server address configured");
 
-  const res = await dispatch(path, { ...init, headers: baseHeaders(init.headers) });
+  const res = await dispatch(path, { ...init, headers: baseHeaders(init.headers) }, ms);
   if (res.status === 401) throw new UnauthorizedError();
   if (res.status === 426) throw await incompatible(res);
   if (!res.ok) {
@@ -242,12 +244,12 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-const postJson = <T>(path: string, body: unknown) =>
+const postJson = <T>(path: string, body: unknown, ms = REQUEST_TIMEOUT_MS) =>
   request<T>(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, ms);
 
 /**
  * The last transcript body and its ETag, per polled path.
@@ -300,7 +302,7 @@ export const api = {
   },
 
   /** Captures the session cookie, since there is no browser to hold it. */
-  login: async (passcode: string) => {
+  login: async (passcode: string, active: () => boolean = () => true) => {
     // The response cookie stays out of the native jar (see `dispatch`): this
     // client stores it itself, and a jar copy would then fight the header.
     const res = await dispatch("/api/auth/login", {
@@ -318,9 +320,10 @@ export const api = {
       throw new Error(
         `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,
       );
-    connection.cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
-    if (!connection.cookie) throw new Error("Server did not return a session");
-    return connection.cookie;
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0] || null;
+    if (!cookie) throw new Error("Server did not return a session");
+    if (active()) connection.cookie = cookie;
+    return cookie;
   },
 
   /**
@@ -354,6 +357,8 @@ export const api = {
   revokeDevice: (id: string) =>
     request<{ ok: boolean }>(`/api/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
+  logout: () => postJson<{ ok: boolean }>("/api/auth/logout", {}),
+
   session: () => request<Session>("/api/session"),
 
   pane: (paneId: string) =>
@@ -361,9 +366,9 @@ export const api = {
       `/api/panes/${encodeURIComponent(paneId)}`,
     ),
 
-  sessionLog: async (paneId: string, limit = 60): Promise<SessionLog> => {
+  sessionLog: async (paneId: string, limit = 60, before?: number): Promise<SessionLog> => {
     if (!configured()) throw new Error("No server address configured");
-    const path = `/api/panes/${encodeURIComponent(paneId)}/session?limit=${limit}`;
+    const path = `/api/panes/${encodeURIComponent(paneId)}/session?limit=${limit}${before === undefined ? "" : `&before=${before}`}`;
     const cached = transcriptCache.get(path);
     // Offer the tag when there is one; the server answers 304 if the
     // conversation has not moved. `if-none-match` is forwarded intact over the
@@ -406,6 +411,7 @@ export const api = {
    * tens of seconds.
    */
   startAgent: (options: {
+    clientRequestId: string;
     workspaceId: string;
     cwd: string | null;
     label: string | null;
@@ -413,7 +419,7 @@ export const api = {
     name: string;
     /** A mode id, not flags: the server resolves it. */
     mode: string | null;
-  }) => postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", options),
+  }) => postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", options, START_AGENT_TIMEOUT_MS),
 
   /**
    * Reads a file an agent touched.
@@ -474,10 +480,10 @@ export const api = {
    * `clientMessageId` lets a retry after a timeout be recognised as the same
    * message, so a bad connection cannot deliver a prompt twice.
    */
-  send: (paneId: string, text: string) =>
+  send: (paneId: string, text: string, clientMessageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`) =>
     postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, {
       text,
-      clientMessageId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      clientMessageId,
     }),
 
   /** Key presses — Escape, arrows, a digit for a numbered prompt. */

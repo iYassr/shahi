@@ -12,13 +12,14 @@ import {
   GAP_MARKER,
   UnauthorizedError,
   api,
+  requestId,
   type Session,
   type PaneDetail,
   type PaneFrame,
   type ParsedPrompt,
   type TranscriptLine,
 } from "../api";
-import { AgentIcon } from "./AgentIcon";
+import { AgentAvatar } from "./AgentAvatar";
 import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt } from "./Prompt";
 import { Reader } from "./Reader";
@@ -33,7 +34,7 @@ const Terminal = lazy(() => import("./Terminal"));
 type Tab = "read" | "screen" | "history";
 
 /** Gap between inserting text and pressing Enter. See `submit`. */
-const SUBMIT_DELAY_MS = 200;
+
 
 interface Props {
   /** The dashboard's own view of this pane, so the header can paint at once. */
@@ -97,6 +98,19 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   const [readable, setReadable] = useState(true);
   const [history, setHistory] = useState<TranscriptLine[]>([]);
   const [fitWidth, setFitWidth] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [focused, setFocused] = useState(false);
+  const focusButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    const exit = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setFocused(false); focusButton.current?.focus(); }
+    };
+    window.addEventListener("keydown", exit);
+    return () => window.removeEventListener("keydown", exit);
+  }, [focused]);
+  const pending = useRef<{ body: string; id: string } | null>(null);
+  const [echo, setEcho] = useState<{ text: string; at: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -161,7 +175,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     return () => observer.disconnect();
   }, [tab]);
 
-  const scale = fitWidth && wrapWidth > 0 ? fitScale(cols, wrapWidth) : 1;
+  const scale = fitWidth && wrapWidth > 0 ? fitScale(cols, wrapWidth) : zoom;
+  function adjustZoom(delta: number) {
+    setZoom(Math.min(2, Math.max(0.25, Math.round((scale + delta) * 100) / 100)));
+    setFitWidth(false);
+  }
 
   /**
    * Stable, and that matters more than it looks.
@@ -182,8 +200,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       setSending(true);
       try {
         await action();
-      } catch {
-        onToast(failure);
+      } catch (err) {
+        onToast(err instanceof Error ? err.message : failure);
       } finally {
         setSending(false);
       }
@@ -200,15 +218,12 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     // path is the least ambiguous way to point at it.
     const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
 
-    // Text and Enter are separate calls, and the gap between them is required
-    // rather than defensive. codex's composer needs a moment to ingest inserted
-    // text before Enter counts as submit: with no delay the message sat in the
-    // box and Send silently did nothing, while a second Enter sent it. Measured
-    // against a live codex pane, 150ms was enough; 200ms leaves margin.
+    if (sending) return;
+    if (pending.current?.body !== body) pending.current = { body, id: requestId() };
     await send(async () => {
-      await api.sendText(paneId, body);
-      await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
-      await api.sendKeys(paneId, ["Enter"]);
+      await api.send(paneId, body, pending.current!.id);
+      setEcho({ text: body, at: Date.now() });
+      pending.current = null;
       setDraft("");
       setAttachments([]);
     }, "Message not sent");
@@ -216,7 +231,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
   if (gone) {
     return (
-      <div className="detail">
+      <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"}>
         <header className="topbar">
           <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
             ‹
@@ -236,7 +251,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   }
 
   return (
-    <div className="detail">
+    <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"}>
       {/*
         * One line, and prose set as prose.
         *
@@ -253,7 +268,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         </button>
         <h1 className="detail__task">
           {(detail?.pane?.agent ?? known?.agent) && (
-            <AgentIcon kind={(detail?.pane?.agent ?? known?.agent)!} />
+            <AgentAvatar kind={detail?.pane?.agent ?? known?.agent} status={detail?.pane?.agent_status ?? known?.status ?? "unknown"} isAgent />
           )}
           <span className="detail__title">
             {frame?.prompt ? "Waiting on you" : (known?.title ?? paneId)}
@@ -316,7 +331,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       </div>
 
       {tab === "read" && readable ? (
-        <Reader paneId={paneId} activity={frame?.activity ?? null} onUnavailable={fallBack} />
+        <Reader key={paneId} paneId={paneId} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>
@@ -338,16 +353,15 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
               </div>
             )}
           </div>
-          <div className="zoombar">
-            <button aria-pressed={fitWidth} onClick={() => setFitWidth(true)}>
-              Fit width
+          <div className="zoombar" role="group" aria-label="Terminal view controls">
+            <button aria-label="Zoom out" title="Zoom out" disabled={scale <= 0.25} onClick={() => adjustZoom(-0.1)}>−</button>
+            <button className="zoombar__percent" aria-label="Full size" title="Reset to 100%" aria-pressed={!fitWidth && zoom === 1} onClick={() => { setZoom(1); setFitWidth(false); }}>{Math.round(scale * 100)}%</button>
+            <button aria-label="Zoom in" title="Zoom in" disabled={scale >= 2} onClick={() => adjustZoom(0.1)}>+</button>
+            <button aria-pressed={fitWidth} onClick={() => setFitWidth(true)}>Fit width</button>
+            <span className="zoombar__geometry" title="Terminal columns × rows">{cols}×{rows}</span>
+            <button ref={focusButton} className="zoombar__focus" aria-label={focused ? "Exit focus view" : "Focus terminal"} title={focused ? "Exit focus view (Escape)" : "Focus terminal"} aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
+              {focused ? "Exit focus" : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg>}
             </button>
-            <button aria-pressed={!fitWidth} onClick={() => setFitWidth(false)}>
-              Full size
-            </button>
-            <span>
-              {cols}×{rows}
-            </span>
           </div>
         </>
       ) : (
@@ -380,9 +394,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           {KEY_BAR.filter((key) => tab === "screen" || key.everywhere).map(({ label, keys }) => (
             <button
               key={label}
+              className={tab === "screen" && label === "^C" ? "keys__interrupt" : undefined}
+              title={label === "^C" ? "Interrupt the running process" : undefined}
               onClick={() => void send(() => api.sendKeys(paneId, keys), `${label} not sent`)}
             >
-              {label}
+              {tab === "screen" ? ({ esc: "Esc", "^C": "Ctrl+C", "⇥": "Tab", "⇧⇥": "Shift+Tab", "⏎": "Enter" }[label] ?? label) : label}
             </button>
           ))}
         </div>
@@ -417,7 +433,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Reply to this agent…"
+            placeholder={tab === "screen" ? "Send text to terminal…" : "Reply to this agent…"}
             rows={1}
             aria-label="Message"
           />

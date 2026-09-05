@@ -1,3 +1,6 @@
+import { browserConnection, hosted } from "../connection";
+import { checkPushConnection } from "../push-policy";
+import { preferences } from "../preferences";
 /**
  * Offers notifications, and explains the iOS prerequisite when it applies.
  *
@@ -34,7 +37,8 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   const [state, setState] = useState<State>("hidden");
 
   useEffect(() => {
-    if (localStorage.getItem("shahi.push.dismissed") === "1") return;
+    if (hosted && !browserConnection().remembered) return;
+    if (preferences.get("shahi.push.dismissed") === "1") return;
     if (!("serviceWorker" in navigator)) return;
 
     const api = notifications();
@@ -45,7 +49,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
       return;
     }
 
-    if (api.permission === "granted") {
+    if (api.permission === "granted" && !hosted) {
       void registerPush().catch(() => {});
       return;
     }
@@ -57,6 +61,8 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   async function enable() {
     setState("asking");
     try {
+      const generation = browserConnection().generation;
+      checkPushConnection(hosted, browserConnection(), generation);
       const api = notifications();
       if (!api) throw new Error("This browser cannot show notifications here.");
       if ((await api.requestPermission()) !== "granted") {
@@ -64,7 +70,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
         setState("hidden");
         return;
       }
-      await registerPush();
+      await registerPush(generation);
       setState("done");
       onToast("Notifications on");
     } catch (err) {
@@ -74,7 +80,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   }
 
   function dismiss() {
-    localStorage.setItem("shahi.push.dismissed", "1");
+    preferences.set("shahi.push.dismissed", "1");
     setState("hidden");
   }
 
@@ -103,21 +109,33 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   );
 }
 
-async function registerPush(): Promise<void> {
+export async function registerPush(expectedGeneration = browserConnection().generation): Promise<void> {
+  const check = () => checkPushConnection(hosted, browserConnection(), expectedGeneration);
+  check();
   const { publicKey } = await api.pushKey();
+  check();
   if (!publicKey) throw new Error("Push is not configured on the server");
-
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL });
+  check();
   await navigator.serviceWorker.ready;
-
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    }));
-
-  await api.pushSubscribe(subscription.toJSON());
+  check();
+  let subscription = await registration.pushManager.getSubscription();
+  check();
+  let created = false;
+  try {
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      created = true;
+    }
+    check();
+    await api.pushSubscribe(subscription.toJSON());
+    check();
+  } catch (error) {
+    // Never remove a subscription another newly paired computer may have adopted.
+    const current = browserConnection();
+    if (created && subscription && (current.generation === expectedGeneration || !current.identity)) await subscription.unsubscribe().catch(() => {});
+    throw error;
+  }
 }
 
 /**

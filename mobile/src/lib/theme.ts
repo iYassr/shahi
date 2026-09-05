@@ -1,28 +1,25 @@
-/**
- * The shahi brand palette — amber on warm black (brand guidelines v1.0).
- *
- * A dark terminal with one warm light in it: amber is strong tea and a
- * phosphor cursor, spent sparingly on cursors, CTAs, and live states.
- * Deliberately not shared with the archived web client, which keeps Vesper:
- * the native app is the product and carries the brand.
- */
+import { brandColors } from "@shahi/shared/brand";
+
+/** Shahi: warm neutrals with amber reserved for actions and attention. See docs/brand/README.md. */
 export const theme = {
   /** Kettle Black — backgrounds, ~70% of any screen. */
-  void: "#0E0D0B",
-  surface: "#14120F",
+  void: brandColors.void,
+  surface: brandColors.surface,
   /** Steeped — raised surfaces, ~20%. */
-  raised: "#1C1915",
-  line: "#2A2620",
-  lineBright: "#3A352C",
-  dim: "#A6A099",
+  raised: brandColors.raised,
+  line: brandColors.line,
+  lineBright: brandColors.lineBright,
+  dim: brandColors.muted,
   /** Porcelain — text. */
-  fg: "#F0EFEA",
+  fg: brandColors.text,
   /** Amber — blocked, the one thing that needs you. */
-  peach: "#E8A33D",
-  /** Running. */
-  mint: "#5FB88A",
+  peach: brandColors.accent,
+  /** Completed work and successful connections. */
+  mint: brandColors.success,
+  /** Work in progress; provider artwork keeps its own color. */
+  working: brandColors.working,
   /** Error / exited. */
-  rose: "#D96A4A",
+  rose: brandColors.danger,
   mono: "Menlo",
 } as const;
 
@@ -33,3 +30,11 @@ export const AGENT_COLORS: Record<string, string> = {
   pi: "#c4a7ff",
   opencode: "#5FB88A",
 };
+
+/** Status meaning is shared by every native agent and space surface. */
+export const statusColor = (status: string) =>
+  status === "working" ? theme.working
+    : status === "blocked" ? theme.peach
+    : status === "done" ? theme.mint
+    : status === "exited" ? theme.rose
+    : theme.dim;

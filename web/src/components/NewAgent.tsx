@@ -10,9 +10,9 @@
  * that is not installed does not fail fast; it fails after herdr has waited its
  * full readiness timeout for a process that was never coming.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { modesFor } from "@shahi/shared";
-import { api } from "../api";
+import { api, requestId } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { Sheet } from "./Sheet";
@@ -28,6 +28,7 @@ interface Props {
 type Phase = "idle" | "creating" | "starting";
 
 export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
+  const pending = useRef<{ fingerprint: string; id: string } | null>(null);
   const [available, setAvailable] = useState<{ kind: string; command: string }[] | null>(null);
   const [kind, setKind] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -56,7 +57,9 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   }, [onToast]);
 
   async function start() {
-    if (!kind) return;
+    if (!kind || phase !== "idle") return;
+    const fingerprint = JSON.stringify([space.workspaceId, cwd.path, name, kind, mode]);
+    if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, id: requestId() };
     setPhase("creating");
     try {
       setPhase("starting");
@@ -71,6 +74,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         kind,
         name.trim() || kind,
         mode,
+        pending.current.id,
       );
       onStarted(paneId);
     } catch (err) {
@@ -175,7 +179,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       </button>
       <p className="sheet__note">
         {busy
-          ? "A cold start can take half a minute. This stays open until it is ready."
+          ? "A cold start can take up to five minutes. This stays open until it is ready."
           : "Opens in the background, then takes you to it."}
       </p>
     </Sheet>

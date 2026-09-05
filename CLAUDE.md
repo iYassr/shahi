@@ -12,7 +12,7 @@ server/    Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
 plugin/    the herdr plugin: startup hook, actions, the service it installs
 relay/     the blind relay: a Cloudflare Worker, one Durable Object per box
 mobile/    the Expo app — the product, and where new work goes
-web/       the React PWA, archived: kept working, no longer developed
+web/       the React PWA: mobile behavior with responsive phone/laptop layouts
 e2e/       Playwright, against a stub of the server
 ```
 
@@ -140,10 +140,10 @@ menu needs more: rows whose labels line up, directly above an `Enter to
 confirm` hint — the `❯` glyph alone is the shell's echo and the composer.
 
 **A prompt is answered by the server, against a fresh read of the screen.**
-The phone posts the option it showed (index and label) to `/answer`; the
+Both clients post the option they showed (index and label) to `/answer`; the
 server re-reads the pane, re-parses, and only if the same option is still on
 offer presses the keys — the digit for a numbered menu, cursor moves and Enter
-for an unnumbered one. The phone's copy of the screen can be seconds old, a
+for an unnumbered one. The client's copy of the screen can be seconds old, a
 move computed from a stale cursor lands on the wrong row, and the trust menu's
 wrong row exits the agent. A 409 with `prompt_gone` or `prompt_changed` is the
 answer when the screen moved on; nothing is pressed.
@@ -167,13 +167,12 @@ rides on the very code path it used — and keeping it meant a second pairing
 route, an exposed bind, and an `NSAllowsArbitraryLoads` to defend. A box with
 `RELAY_URL=` empty now mints no codes and is reached over SSH with the passcode.
 
-**The phone speaks Shahi routes, never herdr methods.** `POST
+**Both clients speak Shahi routes, never herdr methods.** `POST
 /api/panes/:id/prompt`, `/answer`, `/keys`, `/api/workspaces`,
 `/api/agents/start` — the sidecar translates, so a herdr rename or a change in how a prompt is submitted
 never reaches an App Store binary that cannot be updated on the same day.
-`/api/rpc` still exists for the archived web client and for debugging; the
-native app must not call it — and cannot: the server answers 403 to any
-request carrying `x-shahi-api`, which every native request does.
+`/api/rpc` still exists for debugging; neither app may call it — and cannot: the server answers 403 to any
+request carrying `x-shahi-api`, which every app request does.
 
 **The app and the sidecar negotiate a contract version.** `SHAHI_API_VERSION`
 in `shared/` is the number; `GET /api/meta` (unauthenticated) says what the
@@ -219,7 +218,7 @@ box dials out (`RELAY_URL`) and proves an Ed25519 key whose hash is its
 `serverId`; phones are multiplexed onto that one socket by link number; and
 above the relay every frame is sealed with `shared/src/e2e.ts`, keyed from
 the pairing secret or a per-device secret that never travels — the relay
-sees sizes and timing, nothing else. `cd relay && bunx wrangler deploy`
+sees connection metadata, sizes and timing; content stays encrypted. `cd relay && bunx wrangler deploy`
 runs one; the pairing code carries its address, and the app prefers it.
 Measured: 203ms for a request through Cloudflare's edge, 557ms for a first
 hello that wakes a cold Durable Object. Three things learned the day it
@@ -345,7 +344,7 @@ Stated plainly, because a vague gaps list is worse than none.
   and drops `DeviceNotRegistered` tokens; the agents screen routes a tapped
   notification to its pane. What is missing is not code but a device: the
   simulator returns `Device.isDevice === false` and refuses to mint a token, so
-  the only place this can be proven is a real iPhone. `expo_push_token` is still
+  the only place this can be proven is a real iPhone. `device_expo_push_token` is still
   empty; the first token to land there is the proof. Do not go looking for
   missing wiring — flip the toggle on the phone. Expo receipt polling (dropping a
   token whose failure only shows in the receipt, not the ticket) is deliberately
@@ -357,7 +356,7 @@ Stated plainly, because a vague gaps list is worse than none.
   to be written here and rotted within weeks, so they are not any more. The reader is now
   proven by `pane.test.tsx` — echo, working state, coalesced refresh,
   concurrent fetches, sign-out on 401, the restore guard — each checked by
-  mutation: dropping the code fails exactly the test named for it. `web/` still has 164 browser tests,
+  mutation: dropping the code fails exactly the test named for it. `web/` has a broader browser suite,
   so the reader and the poller are still largely proven by hand. Closing that
   gap is the largest remaining test debt now that this is the product. One
   seam was moved to make the SSH and push tests possible: `push.ts` loads
@@ -401,14 +400,10 @@ Stated plainly, because a vague gaps list is worse than none.
   rollouts — it degrades to dropped, never guessed, so the failure is silence,
   not invention. Re-run the census (`server/lib/*-log.test.ts` document each
   shape) when a new agent version or a new tool lands.
-- **The codex reader still parses the whole rollout file.** Claude's reader
-  indexes by byte offset and reads a window; codex's does not, and a 12MB
-  rollout re-read on every poll was measured pushing the process toward 196MB.
-  Not the latency problem — a parse is 7–13ms — but a memory one that grows
-  with session length. The fix is the same index Claude has. A
-  `TranscriptAdapter` interface was proposed alongside it and deliberately not
-  built: there are two readers, dispatch is one `if`, and a third agent with a
-  trustworthy transcript is the moment to abstract, not before.
+- **Codex transcript reads are now indexed.** Byte ranges and matching tool
+  output ranges are indexed incrementally; unchanged tail requests parse only
+  their window. `codex-index.test.ts` covers append/truncate/replacement,
+  partial UTF-8 records, pagination and bounded LRU retention.
 - **The relay has no CI of its own beyond `bun test relay` under
   `wrangler dev`.** The box↔relay↔phone loop was proven by hand against the
   deployed Worker (a fake phone in `bun`, then the app on a simulator paired
@@ -502,12 +497,14 @@ build possible, and the decision followed that native is where this goes —
 voice dictation and anything else that needs the device properly are not things
 a web page does well.
 
-**`web/` is archived, not deleted.** It still builds, still passes its 164
-tests, and the server still serves it, which is worth keeping: it is how you
-reach a session from any browser without a build, and it is the reference for
-behaviour the native app has not caught up on yet. It should not gain features.
-When the two disagree about how something should work, the native app is right
-and the PWA is history.
+**`web/` is actively maintained alongside mobile.** The owner restored web
+feature development on 2026-09-05. Mobile is the behavior reference; browser
+implementations use the same semantic Shahi routes and adapt navigation and
+layout to phone and laptop screens. Settings, device management, reader history,
+and startup/retry behavior should stay aligned. Native-only capabilities such
+as an in-app SSH tunnel remain native. The hosted client at getshahi.dev/pwa
+pairs through the shared encrypted relay protocol; the locally served web build
+uses its existing origin or an external tunnel. See docs/browser-hosting.md.
 
 That split has a cost that was already paid once. Every change between January
 and August landed only in the PWA, so the native app arrived on the phone
@@ -560,3 +557,28 @@ bridge a rename nobody else lived through is exactly the debt the rules above
 forbid. If a pre-rename backup ever turns up, move
 `~/.local/share/herdrui` to `~/.local/share/shahi` and rename the database
 inside it by hand.
+
+## Review fixes, September 2026
+
+Prompts and agent starts carry client-generated operation IDs. The sidecar
+retains the in-flight promise and its outcome for ten minutes, including a
+failure whose write may already have reached herdr. Retrying an uncertain
+operation must reuse its ID; a new ID means a new action. This is process-local
+retry protection, not a claim of exactly-once execution across a server crash.
+Agent startup uses the shared 325-second client deadline and disables Bun's
+per-request idle timeout only after authentication and validation.
+
+Push registrations now belong to their device or passcode session. Old unowned
+registrations are discarded on upgrade; enable notifications again. Revocation
+and server-side logout remove the owner's registrations on both push channels.
+
+The relay records operational metadata in Analytics Engine. Keep privacy copy
+in docs/privacy-policy.md and site/public/privacy.html aligned with the fields
+in relay/src/telemetry.ts and the configured retention; do not claim that the
+relay stores nothing.
+
+Hosted browser releases use `bun run build:site` and the existing Cloudflare
+site configuration. Keep /pwa routing and service-worker scope isolated from
+marketing assets; every same-origin page remains in the browser trust boundary.
+Never add third-party scripts or cache decrypted session data. Browser pairing
+is session-only unless remembering is explicitly selected.

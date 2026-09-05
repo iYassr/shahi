@@ -20,6 +20,7 @@ import { Auth } from "../lib/auth";
 import { loadConfig } from "../lib/config";
 import { PAIRING_TTL_MS, pairingUrl } from "../lib/pairing";
 import { envFilePath, readEnvFile } from "../lib/secrets";
+import { copyToClipboard } from "../lib/clipboard";
 
 // Bun loads .env from the working directory; this may be run from elsewhere,
 // and the herdr plugin keeps the file outside the checkout (SHAHI_ENV_FILE).
@@ -73,9 +74,30 @@ const url = pairingUrl({
   secret: code.secret,
 });
 
+// For a normal terminal or a pipe: no QR, clipboard changes, or popup wait.
+if (process.argv.includes("--code-only")) {
+  console.log(url);
+  process.exit(0);
+}
+
+const copied = !process.argv.includes("--no-copy") && copyToClipboard(url);
 console.log(await QRCode.toString(url, { type: "terminal", small: true }));
-console.log(`  Scan this with Shahi — Connect, then "Scan a code".`);
-console.log(`  Or paste it:  ${url}\n`);
+console.log(`  Scan with Shahi or with the browser app at https://getshahi.dev/pwa/.`);
+console.log(`  Or paste this pairing code:  ${url}\n`);
+// A fragment is not sent to the website, referrers, or access logs.
+console.log(`  Open in a browser:  https://getshahi.dev/pwa/#pair=${encodeURIComponent(url)}\n`);
 console.log(`  Relay    ${config.relayUrl} — the phone connects through this, from anywhere`);
 console.log(`  Expires  ${new Date(code.expiresAt).toLocaleTimeString()} (${PAIRING_TTL_MS / 60_000} minutes, one use)\n`);
 
+console.log(copied
+  ? [
+      "",
+      "  ==================================================",
+      "  COPIED TO CLIPBOARD",
+      "  Your pairing code is ready to paste.",
+      `  Open getshahi.dev/pwa/ and press ${process.platform === "darwin" ? "Cmd+V" : "Ctrl+V"}.`,
+      "  No need to select or copy text from this popup.",
+      "  ==================================================",
+      "",
+    ].join("\n")
+  : "\n  Clipboard unavailable. Run the pairing command in a normal terminal with --code-only to copy its output.\n");

@@ -1,3 +1,4 @@
+import { randomUUID } from "expo-crypto";
 /**
  * Spaces: where things live, and where new work goes.
  *
@@ -12,7 +13,7 @@
  * re-teaching any of them, which is exactly what the old BackHandler wiring
  * existed to do.
  */
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
@@ -21,7 +22,7 @@ import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openPane } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
-import { theme } from "@/lib/theme";
+import { theme, statusColor } from "@/lib/theme";
 import { Avatar } from "@/components/avatar";
 
 export function Spaces({ session }: { session: Session | null }) {
@@ -316,6 +317,8 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
 }
 
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
+  const attempt = useRef<{ key: string; id: string } | null>(null);
+  const starting = useRef(false);
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "starting">("idle");
@@ -346,13 +349,18 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
   }, []);
 
   async function start() {
-    if (!kind) return;
+    if (!kind || starting.current) return;
+    starting.current = true;
+    const key = JSON.stringify([space.workspaceId, space.cwdPath, kind, mode]);
+    if (attempt.current?.key !== key) attempt.current = { key, id: randomUUID() };
+    setError(null);
     setPhase("starting");
     try {
       // One call: the server makes the tab, waits for its shell, then starts the
       // agent. herdr blocks until the agent reports readiness, which on a cold
       // start is genuinely slow.
       const { paneId } = await api.startAgent({
+        clientRequestId: attempt.current.id,
         workspaceId: space.workspaceId,
         cwd: space.cwdPath,
         label: null,
@@ -366,6 +374,8 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       refused();
       setError((e as Error).message);
       setPhase("idle");
+    } finally {
+      starting.current = false;
     }
   }
 
@@ -447,14 +457,11 @@ const Centered = ({ children }: { children: React.ReactNode }) => (
   <View style={styles.centered}><Text style={styles.dim}>{children}</Text></View>
 );
 
-const statusColor = (s: string) =>
-  s === "working" ? theme.mint : s === "blocked" ? theme.peach : theme.dim;
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   dim: { color: theme.dim },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 15, fontWeight: "600" },
+  title: { color: theme.fg, fontSize: 15, fontWeight: "600" },
   headTitle: { alignItems: "center" },
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
   statusText: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
@@ -473,20 +480,20 @@ const styles = StyleSheet.create({
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 70 },
   spaceName: { color: theme.fg, fontSize: 16, fontWeight: "600" },
   spaceMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, marginTop: 2 },
-  badge: { backgroundColor: theme.peach, color: theme.void, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontFamily: theme.mono, fontSize: 12, fontWeight: "600", overflow: "hidden" },
+  badge: { backgroundColor: theme.peach, color: theme.void, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontSize: 12, fontWeight: "600", overflow: "hidden" },
 
-  groupLabel: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
+  groupLabel: { color: theme.dim, fontSize: 11, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15 },
   rowBody: { flex: 1, gap: 2 },
   rowLine: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
   rowSaid: { color: theme.dim, fontSize: 13, flex: 1 },
-  rowTyping: { color: theme.mint, fontStyle: "italic" },
-  rowStatus: { fontFamily: theme.mono, fontSize: 10, letterSpacing: 0.5 },
+  rowTyping: { color: theme.working, fontStyle: "italic" },
+  rowStatus: { fontSize: 10, letterSpacing: 0.5 },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
 
   action: { margin: 16, minHeight: 48, borderWidth: 1, borderStyle: "dashed", borderColor: theme.lineBright, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
-  actionText: { color: theme.peach, fontFamily: theme.mono, fontSize: 13 },
+  actionText: { color: theme.peach, fontSize: 13 },
   actionPrimary: { backgroundColor: theme.peach, borderStyle: "solid", borderColor: theme.peach },
   actionPrimaryText: { color: theme.void, fontWeight: "600" },
 
@@ -500,13 +507,13 @@ const styles = StyleSheet.create({
   // through it and into the first workspace row on an iPhone form sheet.
   sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600", flex: 1, marginRight: 12 },
   sheetClose: { color: theme.peach, fontSize: 15 },
-  label: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, letterSpacing: 1.2 },
+  label: { color: theme.dim, fontSize: 11, letterSpacing: 1.2 },
   input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 44, justifyContent: "center", marginRight: 8 },
-  chipOn: { borderColor: theme.peach },
-  chipText: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, maxWidth: 200 },
-  chipTextOn: { color: theme.peach },
+  chipOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
+  chipText: { color: theme.dim, fontSize: 12, maxWidth: 200 },
+  chipTextOn: { color: theme.fg },
   err: { color: theme.rose, fontSize: 13 },
   go: { backgroundColor: theme.peach, borderRadius: 10, borderCurve: "continuous", minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 4 },
   goOff: { opacity: 0.35 },
@@ -520,7 +527,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  modeOn: { borderColor: theme.peach },
+  modeOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
   // The one that asks nothing before acting is worth reading twice.
   modeUnsafe: { borderColor: theme.rose },
   modeLabel: { color: theme.dim, fontSize: 15, fontWeight: "600" },

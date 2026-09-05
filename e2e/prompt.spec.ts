@@ -1,6 +1,6 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
-import { rpcs, scenario } from "./stub/control";
+import { paneWrites, scenario } from "./stub/control";
 import { tap } from "./touch";
 
 /**
@@ -32,17 +32,17 @@ test.describe("answering a prompt", () => {
     await expect(page.locator(".choice").first()).toHaveAttribute("data-selected", "true");
   });
 
-  test("tapping an option presses its digit", async ({ page }) => {
+  test("tapping an option submits its index and displayed label", async ({ page }) => {
     await scenario(page, "busy");
     await page.goto("/");
 
     await page.locator(".choice", { hasText: "Green" }).click();
 
-    await expect.poll(async () => (await rpcs(page)).length).toBe(1);
-    const sent = await rpcs(page);
+    await expect.poll(async () => (await paneWrites(page)).length).toBe(1);
+    const sent = await paneWrites(page);
     expect(sent[0]).toMatchObject({
-      method: "pane.send_keys",
-      params: { pane_id: BLOCKED_PANE, keys: ["2"] },
+      path: `/api/panes/${encodeURIComponent(BLOCKED_PANE)}/answer`,
+      body: { index: 2, label: "Green" },
     });
   });
 
@@ -56,13 +56,13 @@ test.describe("answering a prompt", () => {
     // and a second tap would put a stray keystroke into a live session.
     await expect(page.locator(".choice")).toHaveCount(0);
     await page.waitForTimeout(1_000);
-    expect(await rpcs(page)).toHaveLength(1);
+    expect(await paneWrites(page)).toHaveLength(1);
   });
 
   test("a failure says so and leaves the question answerable", async ({ page }) => {
     await scenario(page, "busy");
     // The one case the stub cannot stage: herdr itself refusing.
-    await page.route("**/api/rpc", (route) =>
+    await page.route("**/api/panes/*/answer", (route) =>
       route.fulfill({ status: 400, json: { error: "herdr pane.send_keys failed" } }),
     );
     await page.goto("/");
@@ -81,9 +81,9 @@ test.describe("answering a prompt", () => {
     // reader's record of it, and the tool summary — so be specific about which.
     await expect(page.locator(".blocked__question")).toHaveText("Which colour do you prefer?");
     await page.locator(".choice", { hasText: "Red" }).click();
-    await expect.poll(async () => (await rpcs(page)).length).toBe(1);
-    const sent = await rpcs(page);
-    expect(sent[0]).toMatchObject({ params: { keys: ["1"] } });
+    await expect.poll(async () => (await paneWrites(page)).length).toBe(1);
+    const sent = await paneWrites(page);
+    expect(sent[0]).toMatchObject({ body: { index: 1, label: "Red" } });
   });
 
   /**

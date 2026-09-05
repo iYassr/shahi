@@ -144,3 +144,19 @@ describe("closeTunnel", () => {
     await expect(tunnel.closeTunnel()).resolves.toBeUndefined();
   });
 });
+
+test("closing during the keychain lookup runs after the pending open", async () => {
+  const { tunnel, native, store } = load();
+  let resolve!: (value: null) => void;
+  store.getItemAsync.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+  const opening = tunnel.openTunnel(profile());
+  await Promise.resolve();
+  const closing = tunnel.closeTunnel();
+  expect(native.close).not.toHaveBeenCalled();
+  resolve(null);
+  await opening;
+  await closing;
+  expect(native.open).toHaveBeenCalledTimes(1);
+  expect(native.close).toHaveBeenCalledTimes(1);
+  expect(native.close.mock.invocationCallOrder[0]).toBeGreaterThan(native.open.mock.invocationCallOrder[0]!);
+});

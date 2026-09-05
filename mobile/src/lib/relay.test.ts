@@ -469,17 +469,21 @@ describe("the dashboard stream", () => {
 
   test("a watch racing a native socket close does not throw", () => {
     const socket = new RelayLink(deviceTarget(identity));
-    socket.ensureConnected();
-    const wire = FakeSocket.opened[0]!;
-    const box = new FakeBox(wire, secret);
-    wire.accept();
-    box.handshake();
+    try {
+      socket.ensureConnected();
+      const wire = FakeSocket.opened[0]!;
+      const box = new FakeBox(wire, secret);
+      wire.accept();
+      box.handshake();
 
-    // Native can expose CLOSED before delivering onclose, leaving the old
-    // crypto session in place for this event-loop turn.
-    wire.readyState = 3;
-    expect(() => socket.watch("w1:p1")).not.toThrow();
-    expect(box.read()).toEqual([]);
+      // Native can expose CLOSED before delivering onclose, leaving the old
+      // crypto session in place for this event-loop turn.
+      wire.readyState = 3;
+      expect(() => socket.watch("w1:p1")).not.toThrow();
+      expect(box.read()).toEqual([]);
+    } finally {
+      socket.close();
+    }
   });
 
   test("the box's stream reaches onMessage; the heartbeat only keeps the link alive", async () => {

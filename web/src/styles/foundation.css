@@ -1,0 +1,225 @@
+/* Global app behavior. Identity tokens live in web/public/identity.css. */
+:root {
+  --gutter: 16px;
+
+  /* Home indicator and notch on iPhone. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * Touch behaviour, applied once rather than per component.
+ *
+ * `touch-action: manipulation` drops the wait for a possible double-tap zoom,
+ * which is what makes a web app's buttons feel a beat behind a native one's.
+ * The tap highlight goes with it — every control here has its own `:active`
+ * state, and the grey flash on top of that reads as a rendering artefact.
+ */
+button,
+a,
+[role="button"],
+[role="tab"],
+label,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Chrome is not text. Long-pressing a row should not select it or raise iOS's
+ * magnifier — that is the single clearest tell that something is a web page.
+ * Anything an agent wrote stays selectable; see below.
+ */
+.topbar,
+.tabbar,
+.row,
+.space,
+.group__label,
+.tabs,
+.keys,
+.zoombar,
+.groupbar,
+.blocked__badge,
+.msg__who {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The conversation itself is worth copying out of. */
+.msg__text,
+.tool__out,
+.transcript,
+.term,
+textarea,
+input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* The app scrolls its own regions; the page itself never should. */
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* WebKit renders a button through its own box unless told not to, which is
+     how an image inside one ends up invisible on a phone and fine everywhere
+     else. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- chrome -- */
+
+/*
+ * Sized from the visual viewport, not the layout viewport — see
+ * src/viewport.ts. On iOS the keyboard overlays rather than resizes, so
+ * `height: 100%` would keep the composer underneath it.
+ */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: var(--app-height, 100%);
+}
+
+/*
+ * Only while the keyboard is open. With it closed there is no transform at all:
+ * even `translateY(0)` makes this a containing block, which changes how
+ * everything inside scrolls and sticks — and on iOS that reads as the page
+ * fighting your finger.
+ */
+:root[data-keyboard="open"] .app {
+  transform: translateY(var(--app-offset, 0px));
+}
+
+/*
+ * Too little room for everything — landscape with the keyboard up leaves under
+ * 200px. What goes is what you are not using while typing: the tab row, and the
+ * second line of the header. The composer never goes.
+ */
+:root[data-cramped] .tabs,
+:root[data-cramped] .detail__where {
+  display: none;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 12px) var(--gutter) 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--void);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar__title {
+  font-weight: 600;
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 20px;
+  letter-spacing: -.025em;
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+.topbar__back {
+  font-family: var(--mono);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  padding: 4px 8px 4px 0;
+  margin-left: -4px;
+}
+
+/* Connection state, stated plainly rather than as a bare coloured dot. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.link__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.link--live .link__dot {
+  background: var(--success);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.link--live {
+  color: var(--success);
+}
+
+.link--lost .link__dot,
+.link--lost {
+  color: var(--danger);
+}
+
+.link--lost .link__dot {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.scroll {
+  flex: 1;
+  /* Without this a flex item refuses to shrink below its content, and the page
+     scrolls instead of the list — which on iOS means the toolbars collapse and
+     expand mid-flick. */
+  min-height: 0;
+  overflow-y: auto;
+  /* Reaching the end of the list should stop there rather than handing the
+     scroll to the page behind it. */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--safe-bottom) + 24px);
+}

@@ -36,3 +36,9 @@ mobile/.expo/
 
 # Generated at the root by eas-cli when run from the wrong directory.
 /eas.json
+
+# Independent /pwa build output.
+web/dist-hosted/
+
+# Local Cloudflare development state.
+.wrangler/

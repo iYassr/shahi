@@ -202,17 +202,17 @@ function inline(text: string): ReactNode {
 }
 
 const styles = StyleSheet.create({
-  p: { color: theme.fg, fontSize: 15, lineHeight: 22, marginBottom: 8 },
+  p: { color: theme.fg, fontSize: 16, lineHeight: 26, marginBottom: 8 },
   h: { color: theme.fg, fontSize: 17, fontWeight: "600", marginTop: 10, marginBottom: 6 },
   hSmall: { fontSize: 15, color: theme.dim },
   hr: { height: 1, backgroundColor: theme.line, marginVertical: 12 },
 
   li: { flexDirection: "row", gap: 8, marginBottom: 4 },
   bullet: { color: theme.dim, fontFamily: theme.mono, fontSize: 13, minWidth: 18 },
-  liText: { color: theme.fg, fontSize: 15, lineHeight: 22, flex: 1 },
+  liText: { color: theme.fg, fontSize: 16, lineHeight: 26, flex: 1 },
 
   quote: { borderLeftWidth: 2, borderLeftColor: theme.lineBright, paddingLeft: 10, marginBottom: 8 },
-  quoteText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
+  quoteText: { color: theme.dim, fontSize: 16, lineHeight: 26 },
 
   // Code keeps its own formatting and scrolls rather than being rewrapped.
   codeBox: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", marginVertical: 6, padding: 10 },

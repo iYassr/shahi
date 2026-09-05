@@ -46,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void, alignItems: "center", justifyContent: "center", padding: 32, gap: 14 },
-  title: { color: theme.fg, fontFamily: theme.mono, fontSize: 18, fontWeight: "600" },
+  title: { color: theme.fg, fontSize: 18, fontWeight: "600" },
   detail: { color: theme.dim, fontSize: 13, textAlign: "center", lineHeight: 19 },
   button: {
     backgroundColor: theme.peach,

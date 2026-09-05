@@ -1,3 +1,4 @@
+import { Download, RemoteImage } from "./RemoteMedia";
 /**
  * Reader view: the agent's conversation, reflowed for a phone.
  *
@@ -12,7 +13,7 @@
  * conversation and a wall of command output.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Activity, type LogBlock, type LogMessage } from "../api";
+import { ApiError, api, type Activity, type LogBlock, type LogMessage } from "../api";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
 
@@ -42,9 +43,11 @@ const TAIL = 12;
  */
 const remembered = new Map<string, LogMessage[]>();
 const REMEMBER_PANES = 4;
+export function clearReaderMemory() { remembered.clear(); }
 
 interface Props {
   paneId: string;
+  echo?: { text: string; at: number } | null;
   /** Live status from the pane's screen; null when the agent is not mid-turn. */
   activity: Activity | null;
   /** Called when this pane has no transcript, so the caller can fall back. */
@@ -76,23 +79,16 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
 
 /** Cheap identity for a rendered list: ids, shape, and how much text is in it. */
 export function signature(messages: LogMessage[]): string {
-  return messages
-    .map((m) => `${m.id}:${m.blocks.length}:${textLength(m)}`)
-    .join("|");
+  return JSON.stringify(messages);
 }
 
-function textLength(message: LogMessage): number {
-  let length = 0;
-  for (const block of message.blocks) {
-    if (block.kind === "text" || block.kind === "thinking") length += block.text.length;
-    else if (block.kind === "tool") length += (block.result?.text.length ?? 0) + block.summary.length;
-  }
-  return length;
-}
-
-export function Reader({ paneId, activity, onUnavailable }: Props) {
+export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
   const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
-  const [total, setTotal] = useState(0);
+  const [error, setError] = useState("");
+  const [offset, setOffset] = useState(0);
+  const busy = useRef(false);
+  const scroller = useRef<HTMLDivElement>(null);
+
   const [loading, setLoading] = useState(() => !remembered.has(paneId));
   const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -113,20 +109,28 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   const knownTotal = useRef(0);
 
   const load = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
     try {
       // A full page when there is nothing on screen, the tail when there is.
       // If more arrived than the tail can bridge — a long silence, or a burst —
       // fall back to a full page rather than leaving a hole in the middle.
       const held = shown.current.length;
-      const behind = knownTotal.current - held;
-      const limit = held === 0 || behind > TAIL - 2 ? PAGE : TAIL;
+      const limit = held === 0 ? PAGE : TAIL;
       const log = await api.sessionLog(paneId, { limit });
       // Merged, not replaced. Replacing threw away everything "Load earlier"
       // had fetched — scroll up through a long conversation and 2.5 seconds
       // later you were back at the last page, with the view yanked along with
       // it. The poll only ever knows about the newest page; what came before it
       // is the reader's to keep.
-      const next = merge(shown.current, log.messages);
+      // A disjoint tail cannot be merged without hiding the missing interval.
+      // Reset to a contiguous window; its explicit offset keeps all history reachable.
+      const overlap = shown.current.some((message) => log.messages.some((fresh) => fresh.id === message.id));
+      const reset = shown.current.length === 0 || !overlap;
+      const next = reset ? log.messages : merge(shown.current, log.messages);
+      if (reset) setOffset(Math.max(0, log.total - log.messages.length));
+      else if (knownTotal.current === 0) setOffset(Math.max(0, log.total - next.length));
+      setError("");
 
       // And nothing re-renders unless something actually changed. A quiet
       // session polled every 2.5s otherwise rebuilt the entire conversation on
@@ -143,11 +147,12 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
       }
       remembered.set(paneId, shown.current);
       knownTotal.current = log.total;
-      setTotal(log.total);
+
       setLoading(false);
-    } catch {
-      onUnavailable();
-    }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) onUnavailable();
+      else { setError(err instanceof Error ? err.message : "Could not read conversation"); setLoading(false); }
+    } finally { busy.current = false; }
   }, [paneId, onUnavailable]);
 
   // Starting on a different pane is the only reason to throw away what is on
@@ -156,6 +161,8 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
   useEffect(() => {
     const seed = remembered.get(paneId) ?? [];
     shown.current = seed;
+    knownTotal.current = 0;
+    setOffset(0);
     setMessages(seed);
     setLoading(seed.length === 0);
     pinnedToBottom.current = true;
@@ -165,8 +172,10 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
 
   useEffect(() => {
     void load();
+    const changed = (event: Event) => { if ((event as CustomEvent).detail === paneId) void load(); };
+    window.addEventListener("shahi:log_changed", changed);
     const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); window.removeEventListener("shahi:log_changed", changed); };
   }, [load]);
 
   // Follow the conversation, but only while the reader is already at the
@@ -181,12 +190,19 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
     if (!oldest || loadingOlder) return;
     setLoadingOlder(true);
     try {
-      const index = total - messages.length;
+      const index = offset;
+      const node = scroller.current;
+      const height = node?.scrollHeight ?? 0;
+      const top = node?.scrollTop ?? 0;
+      pinnedToBottom.current = false;
       const older = await api.sessionLog(paneId, { limit: PAGE, before: index });
-      shown.current = [...older.messages, ...shown.current];
+      shown.current = merge(older.messages, shown.current);
+      setOffset(Math.max(0, index - older.messages.length));
+      remembered.set(paneId, shown.current);
       setMessages(shown.current);
-    } catch {
-      // Leave what is already loaded alone.
+      requestAnimationFrame(() => { if (node) node.scrollTop = top + node.scrollHeight - height; });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load earlier messages. Try Load earlier again.");
     } finally {
       setLoadingOlder(false);
     }
@@ -201,11 +217,15 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
     );
   }
 
-  const hasOlder = total > messages.length;
+  const hasOlder = offset > 0;
+  const echoVisible = echo && !messages.some((message) => message.role === "you" && message.at >= echo.at - 5000 && message.blocks.some((block) => block.kind === "text" && block.text.trim() === echo.text.trim()));
 
   return (
     <div
       className="reader"
+      ref={scroller}
+      onTouchStart={() => { pinnedToBottom.current = false; }}
+      onWheel={() => { pinnedToBottom.current = false; }}
       onScroll={(e) => {
         const el = e.currentTarget;
         const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -214,21 +234,24 @@ export function Reader({ paneId, activity, onUnavailable }: Props) {
         if (atBottom) setUnseen(0);
       }}
     >
+      {error && <p role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
       {hasOlder && (
         <button className="reader__more" onClick={() => void loadOlder()} disabled={loadingOlder}>
-          {loadingOlder ? "Loading…" : `Load earlier (${total - messages.length} more)`}
+          {loadingOlder ? "Loading…" : `Load earlier (${offset} more)`}
         </button>
       )}
 
       {messages.map((message) => (
         <article key={message.id} className={`msg msg--${message.role}`}>
-          <div className="msg__who">{message.role === "agent" ? "Agent" : "You"}</div>
+          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "Session" : "You"}</div>
+          <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(message.blocks.map((block) => block.kind === "text" || block.kind === "thinking" ? block.text : block.kind === "tool" ? [block.summary, block.result?.text].filter(Boolean).join("\n") : "").join("\n")).catch(() => setError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
           {message.blocks.map((block, index) => (
             <BlockView key={index} block={block} paneId={paneId} />
           ))}
         </article>
       ))}
 
+      {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
       {activity && <Working activity={activity} />}
 
       <div ref={bottomRef} />
@@ -264,7 +287,7 @@ function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string })
   return (
     <>
       <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
-        <img className="msg__image" src={src} alt="Tool output image" loading="lazy" />
+        <RemoteImage className="msg__image" src={src} alt="Tool output image" loading="lazy" />
       </button>
       {viewing && (
         <FileView name="image.png" url={src} downloadUrl={src} onClose={() => setViewing(false)} />
@@ -344,7 +367,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
             * such ambiguity.
             */}
           <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
-            <img
+            <RemoteImage
               className="msg__image"
               src={src}
               alt={`Image (${block.mediaType})`}
@@ -416,14 +439,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
               {/* The summary line above already carries the path; repeating it
                   here just crowded the row. */}
               <span className="tool__path" aria-hidden="true" />
-              <a
-                className="tool__get"
-                href={api.fileUrl(block.file.path, { download: true })}
-                download={block.file.name}
-                aria-label={`Download ${block.file.name}`}
-              >
-                ↓
-              </a>
+              <Download className="tool__get" path={api.fileUrl(block.file.path, { download: true })} name={block.file.name}>↓</Download>
             </div>
           )}
 

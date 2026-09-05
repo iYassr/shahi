@@ -4,7 +4,9 @@
 
 # Shahi
 
-**See and answer your terminal agents from your phone.**
+**Step away. Stay in control.**
+
+Your coding agents, within reach. Read conversations, answer requests, and keep work moving from your phone.
 
 Claude Code, Codex, and every agent running in [herdr](https://herdr.dev),
 in one calm mobile inbox — the real conversation, not a shrunken terminal.
@@ -39,6 +41,7 @@ Shahi turns that wait into a notification you can answer from your pocket.
 <p align="center">
   <sub><b>Agents</b> — what needs you · <b>Reader</b> — the real conversation ·
   <b>Spaces</b> — the map · <b>Connect</b> — scan once</sub>
+  <br><sub>Device captures from an earlier build; the current visual system is in the <a href="docs/brand/README.md">brand guidelines</a>.</sub>
 </p>
 
 ## Quick start
@@ -62,8 +65,7 @@ herdr plugin, so herdr comes first and there is no separate Shahi installer.
 > [!NOTE]
 > The iOS app is in private testing; there is no public App Store or TestFlight
 > link yet. The sidecar, plugin, relay and full source are ready to evaluate
-> today. **Android and a browser PWA are coming** — iPhone is simply where this
-> started.
+> today. **The browser app supports phones and laptops.** Android remains a future target.
 
 ## How it connects
 
@@ -164,7 +166,7 @@ server/   the sidecar: owns herdr's socket, speaks HTTP + WebSocket
 shared/   the wire contract, relay protocol, end-to-end encryption
 relay/    the blind relay: a Worker, one Durable Object per box
 plugin/   the herdr plugin and its service lifecycle
-web/      the archived PWA — kept working, no longer developed
+web/      the responsive PWA — maintained alongside the native app
 e2e/      Playwright, against a stub of the server
 ```
 
@@ -190,6 +192,7 @@ rules; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change.
 
 | | |
 |---|---|
+| [Brand guidelines](docs/brand/README.md) | Logo, shared colors, typography, and motion |
 | [Plugin and pairing](docs/plugin.md) | Install, actions, key bindings, uninstall |
 | [Connection options](docs/connectivity.md) | Relay, tailnet, SSH — and how to choose |
 | [Relay protocol](docs/relay.md) | The wire format, and running your own |

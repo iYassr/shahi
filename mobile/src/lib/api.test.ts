@@ -492,3 +492,31 @@ describe("pairing", () => {
     expect(init.method).toBe("DELETE");
   });
 });
+
+test("a cold agent startup can exceed the ordinary fifteen-second request timeout", async () => {
+  jest.useFakeTimers();
+  connection.baseUrl = "http://localhost:7272";
+  connection.relay = null;
+  const fetchMock = jest.fn((_url, init) => new Promise((resolve, reject) => {
+    init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ paneId: "slow", tabId: "t1" }) }), 20_000);
+  }));
+  (globalThis as { fetch: unknown }).fetch = fetchMock;
+  try {
+    const response = api.startAgent({ clientRequestId: "stable-start", workspaceId: "w1", cwd: null, label: null, kind: "claude", name: "claude", mode: null });
+    await jest.advanceTimersByTimeAsync(20_000);
+    await expect(response).resolves.toEqual({ paneId: "slow", tabId: "t1" });
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).clientRequestId).toBe("stable-start");
+  } finally { jest.useRealTimers(); }
+});
+
+test("a login response arriving after cancellation cannot restore signed-out credentials", async () => {
+  connection.baseUrl = "http://localhost:7272";
+  connection.relay = null;
+  connection.cookie = null;
+  (globalThis as { fetch: unknown }).fetch = jest.fn().mockResolvedValue({
+    ok: true, status: 200, headers: new Headers({ "set-cookie": "shahi_session=late; HttpOnly" }),
+  });
+  await api.login("fake", () => false);
+  expect(connection.cookie).toBeNull();
+});

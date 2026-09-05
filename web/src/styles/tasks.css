@@ -1,0 +1,630 @@
+/* ------------------------------------------------------------- dashboard -- */
+
+/*
+ * Density encodes urgency. A blocked agent gets a full card carrying its actual
+ * question and answer buttons; everything else collapses to one dense line.
+ * The list is sorted so the thing needing a human is always at the top.
+ */
+
+/*
+ * The group heading carries the boundary. Sticky because with seven spaces on a
+ * phone you otherwise lose track of which one you are scrolling through.
+ */
+.group {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 22px var(--gutter) 8px;
+  background: var(--void);
+}
+
+/* The first heading sits under the group-by control, so it needs less air. */
+.groupbar + section .group {
+  padding-top: 8px;
+}
+
+.group__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+/*
+ * Two different boundaries, two different treatments — and deliberately not two
+ * weights of the same line.
+ *
+ * A rule between rows separates peers; a boundary between groups separates
+ * categories. Giving the second a heavier line is the obvious move and the
+ * wrong one: on a near-black background line weight barely registers, and more
+ * rules make a list read as a table. Space is the stronger signal, so groups
+ * are separated by whitespace alone and rows keep a hairline — inset to where
+ * the text starts, which is what says "still the same run of items".
+ */
+.row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 14px var(--gutter);
+  text-align: left;
+}
+
+.row::after {
+  content: "";
+  position: absolute;
+  /* Starts under the title, past the one glyph before it. */
+  left: 34px;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+/* The last row of a group ends on space, not on a line. */
+.row:last-child::after {
+  display: none;
+}
+
+.row:active {
+  background: var(--surface);
+}
+
+.row__glyph {
+  font-family: var(--mono);
+  font-size: 13px;
+  width: 1em;
+  flex: none;
+  color: var(--muted);
+}
+
+/*
+ * Proportional, like a space's name and like the reader's prose.
+ *
+ * These were monospace at 13px while the Spaces list set its names in the UI
+ * face at 16 — two lists under one tab bar, in two different faces. The rule
+ * everywhere else in the app is that a name is prose and machine text is
+ * monospace, and an agent's title is a name: "Convert PDF to verbatim markdown"
+ * is a sentence. It also fits about a sixth more of one before truncating.
+ *
+ * The secondary column stays monospace: `claude`, `w4:p6` and paths are
+ * machine text and read better aligned.
+ */
+.row__title {
+  font-family: var(--ui);
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.row__tab {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/*
+ * One face for both lists.
+ *
+ * This was monospace at 11px in Spaces while the Agents list set the same
+ * column in the UI face at 12 — two lists under one tab bar, disagreeing, which
+ * is the second time that exact mismatch has been noticed from a phone. A space
+ * name and an agent kind are names, and names are prose here; only real machine
+ * text — pane ids, paths, terminal output — stays monospace.
+ *
+ * Capped so a long space name cannot eat a title that is a whole sentence.
+ */
+.row__meta {
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--muted);
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row--idle .row__title {
+  color: var(--muted);
+}
+
+.row--working .row__glyph {
+  color: var(--working);
+}
+
+.row--done .row__glyph {
+  color: var(--success);
+}
+
+/* The blocked card. Everything above is quiet so this can be loud. */
+.blocked {
+  margin: 12px var(--gutter);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.blocked__head {
+  display: block;
+  width: 100%;
+  padding: 14px 16px 12px;
+  text-align: left;
+}
+
+.blocked__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.blocked__where {
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 600;
+  margin: 8px 0 2px;
+  letter-spacing: -0.01em;
+}
+
+.blocked__task {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blocked__question {
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.4;
+  padding: 0 16px 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin: 0;
+}
+
+/* ----------------------------------------------------------- the choices -- */
+
+/*
+ * The signature element.
+ *
+ * Claude Code renders a blocked prompt as a numbered list with `❯` marking the
+ * selection. Rather than translating that into generic buttons, the same list
+ * is rebuilt natively: same numbering, same cursor, sized for a thumb. Tapping
+ * moves the cursor to that row before the keystroke is sent, so the phone shows
+ * the same thing the terminal is about to.
+ */
+
+.choices {
+  padding: 0 8px 8px;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  /* 44px minimum touch target, per Apple's guidance. */
+  min-height: 44px;
+  padding: 11px 10px;
+  border-radius: 6px;
+  line-height: 1.35;
+  text-align: left;
+  color: var(--text);
+  transition: background 120ms ease;
+  font-family: var(--ui);
+  font-size: 16px;
+}
+
+.choice:active,
+.choice[data-armed="true"] {
+  background: var(--raised);
+}
+
+.choice__cursor {
+  width: 1ch;
+  flex: none;
+  color: var(--accent);
+  /* Reserve the column so rows do not shift as the cursor moves. */
+  visibility: hidden;
+}
+
+.choice[data-armed="true"] .choice__cursor,
+.choice[data-selected="true"] .choice__cursor {
+  visibility: visible;
+}
+
+.choice__index {
+  flex: none;
+  color: var(--muted);
+}
+
+.choice[data-armed="true"] .choice__index {
+  color: var(--accent);
+}
+
+.choice__label {
+  flex: 1;
+}
+
+/* The agent's own explanation of a choice, where it wrote one. */
+.choice__detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.choice:disabled {
+  opacity: 0.4;
+}
+
+.boundary__what {
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--danger);
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.empty__action {
+  margin-top: 6px;
+  min-height: 44px;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  border: 1px solid var(--line-bright);
+  color: var(--text);
+  background: var(--surface);
+}
+
+/* The way back to the newest message, once you have scrolled off it. */
+.reader__jumpwrap {
+  position: sticky;
+  bottom: 10px;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.reader__jump {
+  pointer-events: auto;
+  transform: translateY(-46px);
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-bright);
+  background: var(--raised);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 45%);
+}
+
+.reader__jump:active {
+  background: var(--surface);
+}
+
+/* -------------------------------------------------------------- asked -- */
+
+/*
+ * A question the agent stopped to ask. Rendered like the prompt card rather
+ * than like a tool call, because that is what it is.
+ */
+.asked {
+  margin: 4px 0 10px 21px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-bright);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.asked__q {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.asked__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.asked__option {
+  display: block;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.asked__n {
+  color: var(--muted);
+}
+
+.asked__label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.asked__why {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/*
+ * What the agent wants to do, between the question and the answers.
+ *
+ * Capped and scrollable: a codex approval carries the whole command line, which
+ * is routinely longer than the screen, and letting it wrap pushed the answers
+ * out of view — which is what "the permission prompt does not show" meant.
+ */
+.asked__context {
+  max-height: 132px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 8px;
+  background: var(--void);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.asked__context p {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asked__context p:last-child {
+  margin-bottom: 0;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- modes -- */
+
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mode {
+  display: block;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.mode[data-active="true"] {
+  border-color: var(--line-bright);
+  background: var(--raised);
+}
+
+/* The one that never asks looks like it. */
+.mode[data-unsafe="true"][data-active="true"] {
+  border-color: var(--danger);
+}
+
+.mode[data-unsafe="true"] .mode__label {
+  color: var(--danger);
+}
+
+.mode__label {
+  display: block;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 14px;
+}
+
+.mode[data-active="true"] .mode__label {
+  color: var(--text);
+}
+
+.mode[data-unsafe="true"][data-active="true"] .mode__label {
+  color: var(--danger);
+}
+
+.mode__why {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- files -- */
+
+/* The file a tool call touched: its name, where it lives, and a way to keep it. */
+.tool__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 8px 21px;
+}
+
+.tool__open {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-height: 32px;
+}
+
+.tool__path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool__get {
+  flex: none;
+  width: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tool__get:active {
+  background: var(--raised);
+}
+
+/* Full screen, because a phone has no room for a file and a conversation. */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--void);
+}
+
+.viewer__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 10px) var(--gutter) 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.viewer__close {
+  font-size: 26px;
+  line-height: 26px;
+  color: var(--muted);
+  min-height: 44px;
+  min-width: 32px;
+  text-align: left;
+}
+
+.viewer__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewer__get {
+  flex: none;
+  min-height: 40px;
+  padding: 0 14px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.viewer__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Pinch to zoom works on an image that is allowed to exceed its box. */
+.viewer__image {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.viewer__text {
+  margin: 0;
+  padding: 12px var(--gutter) calc(var(--safe-bottom) + 24px);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+  tab-size: 2;
+}
+
+/*
+ * An image in the conversation opens the same viewer.
+ *
+ * The button is what receives the tap: iOS does not reliably deliver one to a
+ * bare `<img>`, however many handlers it carries.
+ */
+.msg__zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  /* A button is line-box-aligned by default, and the descender space under the
+     image reads as a gap. Zero here, restored on the image itself. */
+  line-height: 0;
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.msg__zoom .msg__image {
+  /* Explicit, because a button will not derive a height from a replaced child
+     the way a block would: on iOS the thumbnail collapsed to nothing while the
+     same image opened correctly in the viewer. */
+  width: auto;
+  height: auto;
+}

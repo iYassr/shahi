@@ -162,7 +162,7 @@ Bun.serve({
 
     // The version gate, in the same place and the same words as the real
     // server's: before auth, before the socket upgrade, on any request that
-    // names a version. The archived web client names none and is let through.
+    // names a version. Both product clients name the shared version.
     const claimed = req.headers.get("x-shahi-api");
     if (claimed !== null) {
       const n = Number(claimed);
@@ -188,6 +188,11 @@ Bun.serve({
       const body = (await req.json().catch(() => ({}))) as { passcode?: string };
       if (body.passcode !== PASSCODE) return json({ error: "wrong passcode" }, { status: 401 });
       return json({ ok: true }, { headers: { "set-cookie": `${COOKIE}; Path=/; HttpOnly` } });
+    }
+
+    if (pathname === "/api/auth/logout" && req.method === "POST") {
+      await record(req, pathname);
+      return json({ ok: true }, { headers: { "set-cookie": "shahi_session=; Path=/; HttpOnly; Max-Age=0" } });
     }
 
     // Pairing, unauthenticated like the real route: the right secret is a
@@ -284,7 +289,7 @@ Bun.serve({
           path: `/home/x/.claude/projects/${paneId}.jsonl`,
           messages: withFiles.slice(start, end),
           total: withFiles.length,
-          offset: start,
+          offset: JSON.stringify(withFiles).length,
         });
       }
 
@@ -349,7 +354,8 @@ Bun.serve({
       return json({ workspaceId: "w9" });
     }
 
-    // Raw RPC stays for the archived web client, which still speaks it.
+    if ((/^\/api\/workspaces\/[^/]+\/tabs$/.test(pathname)) && req.method === "POST") { await record(req, pathname); return json({ workspaceId: "w9", paneId: "w1:p9", tabId: "w1:t9" }); }
+    // Debugging endpoint; both product clients use semantic routes.
     if (pathname === "/api/rpc" && req.method === "POST") {
       await record(req, pathname);
       return json({ result: { type: "ok" } });

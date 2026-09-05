@@ -1,15 +1,15 @@
 import { parsePairingUrl } from "./pairing";
 
 const GOOD =
-  "shahi://pair#v=1&server=0c5e1b9c-6d4d-4a0f-9d5e-9f4a2b1c3d7e&relay=https%3A%2F%2Frelay.example.workers.dev&secret=abc_DEF-123";
+  "shahi://pair#v=1&server=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&relay=https%3A%2F%2Frelay.example.workers.dev&secret=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBI";
 
 describe("parsePairingUrl", () => {
   test("reads every field of a code the server printed", () => {
     expect(parsePairingUrl(GOOD)).toEqual({
       v: 1,
-      server: "0c5e1b9c-6d4d-4a0f-9d5e-9f4a2b1c3d7e",
+      server: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       relay: "https://relay.example.workers.dev",
-      secret: "abc_DEF-123",
+      secret: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBI",
     });
   });
 
@@ -46,8 +46,8 @@ describe("parsePairingUrl", () => {
     expect(parsePairingUrl(GOOD.replace("pair#", "pair?"))).toBeNull(); // query, not fragment
     expect(parsePairingUrl(GOOD.replace("v=1", "v=2"))).toBeNull();
     expect(parsePairingUrl("shahi://pair#v=1&server=a&secret=s")).toBeNull(); // no relay
-    expect(parsePairingUrl(GOOD.replace("secret=abc_DEF-123", "secret="))).toBeNull();
-    expect(parsePairingUrl(GOOD.replace("secret=abc_DEF-123", "secret=%E0%A4%A"))).toBeNull(); // bad escape
+    expect(parsePairingUrl(GOOD.replace("secret=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBI", "secret="))).toBeNull();
+    expect(parsePairingUrl(GOOD.replace("secret=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBI", "secret=%E0%A4%A"))).toBeNull(); // bad escape
     expect(parsePairingUrl("WIFI:S:home;T:WPA;P:hunter2;;")).toBeNull();
     expect(parsePairingUrl("")).toBeNull();
   });

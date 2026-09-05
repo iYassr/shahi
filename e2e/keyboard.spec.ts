@@ -142,7 +142,7 @@ test.describe("with the keyboard open", () => {
     await openPane(page);
 
     const sent: unknown[] = [];
-    await page.route("**/api/rpc", async (route) => {
+    await page.route("**/api/panes/*/keys", async (route) => {
       sent.push(route.request().postDataJSON());
       await route.fulfill({ json: { result: { type: "ok" } } });
     });
@@ -152,7 +152,7 @@ test.describe("with the keyboard open", () => {
     await page.locator(".keys button", { hasText: "esc" }).click();
 
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]).toMatchObject({ method: "pane.send_keys", params: { keys: ["Escape"] } });
+    expect(sent[0]).toMatchObject({ keys: ["Escape"] });
   });
 
   test("rotating with the keyboard open keeps the composer visible", async ({ page }) => {

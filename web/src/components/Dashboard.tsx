@@ -1,3 +1,5 @@
+import { AgentAvatar } from "./AgentAvatar";
+import { preferences } from "../preferences";
 /**
  * The home screen: which agent needs you, and what it is asking.
  *
@@ -14,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
 import { AgentIcon } from "./AgentIcon";
+import { Logo } from "./Logo";
 import { Prompt } from "./Prompt";
 import { useScrollMemory } from "../useScrollMemory";
 
@@ -23,18 +26,6 @@ interface Props {
   onAnswer: (paneId: string, optionIndex: number) => Promise<void>;
 }
 
-/**
- * Status glyphs, borrowed from the vocabulary of the terminal itself rather
- * than invented: a filled ring for work in progress, a check for a finished
- * turn, a hollow ring for idle.
- */
-const GLYPH: Record<AgentStatus, string> = {
-  blocked: "●",
-  working: "◐",
-  done: "✓",
-  idle: "○",
-  unknown: "·",
-};
 
 /** herdr's own two, plus agent type. Its wording, so the two agree. */
 type Grouping = "priority" | "space" | "agent";
@@ -49,6 +40,10 @@ const STORED = "shahi.grouping";
 
 export function Dashboard({ session, prompts, onAnswer }: Props) {
   const navigate = useNavigate();
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [pins, setPins] = useState<string[]>(() => { try { const stored = JSON.parse(preferences.get("shahi.pins") ?? "[]"); return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []; } catch { return []; } });
+  const togglePin = (id: string) => setPins((current) => { const next = current.includes(id) ? current.filter((p) => p !== id) : [...current, id]; preferences.set("shahi.pins", JSON.stringify(next)); return next; });
 
   // Your explicit choice wins; otherwise follow whatever the TUI is set to;
   // otherwise the attention queue, which is what this screen is for.
@@ -56,11 +51,11 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
   useScrollMemory(scroller, Boolean(session));
 
   const [grouping, setGrouping] = useState<Grouping | null>(
-    () => (localStorage.getItem(STORED) as Grouping | null) ?? null,
+    () => (preferences.get(STORED) as Grouping | null) ?? null,
   );
 
   useEffect(() => {
-    if (grouping) localStorage.setItem(STORED, grouping);
+    if (grouping) preferences.set(STORED, grouping);
   }, [grouping]);
 
   const effective: Grouping =
@@ -75,14 +70,18 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
     );
   }
 
-  const agents = session.panes.filter((p) => p.isAgent);
+  const allAgents = session.panes.filter((p) => p.isAgent);
+  const chips = [{ id: "all", label: "All" }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: kind! })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
+  const active = chips.some((c) => c.id === filter) ? filter : "all";
+  const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
   const blocked = agents.filter((p) => p.status === "blocked");
   const rest = agents.filter((p) => p.status !== "blocked");
+  rest.sort((a, b) => Number(pins.includes(b.paneId)) - Number(pins.includes(a.paneId)));
 
-  if (agents.length === 0) {
+  if (session.panes.length === 0) {
     return (
       <div className="empty">
-        <span className="empty__mark">○</span>
+        <span className="empty__mark" aria-hidden="true"><Logo size={56} /></span>
         No agents running.
       </div>
     );
@@ -90,6 +89,10 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
 
   return (
     <div className="scroll" ref={scroller}>
+      <div className="agent-search"><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+      <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>{chip.label}</button>)}</div>
+      {agents.length === 0 && <p className="empty">No matching agents.</p>}
+
       {blocked.map((pane) => (
         <BlockedCard
           key={pane.paneId}
@@ -126,17 +129,14 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
                 </h2>
               </div>
               {group.panes.map((pane) => (
-                <button
-                  key={pane.paneId}
+                <div className={`agent-row${pins.includes(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
                   className={`row row--${pane.status}`}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
-                  <span className="row__glyph" aria-hidden="true">
-                    {GLYPH[pane.status]}
-                  </span>
-                  <span className="row__title">{pane.title ?? pane.paneId}</span>
+                  <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
+                  <span className="row__title">{pane.title ?? pane.paneId}<span className="row__preview">{pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}</span>
-                </button>
+                </button><button className="pin-button" aria-pressed={pins.includes(pane.paneId)} aria-label={`${pins.includes(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane.paneId)}>{pins.includes(pane.paneId) ? "★" : "☆"}</button></div>
               ))}
             </section>
           ))}
@@ -252,7 +252,7 @@ function BlockedCard({
           This one needs a typed reply.{" "}
           <button
             onClick={onOpen}
-            style={{ color: "var(--peach)", textDecoration: "underline" }}
+            style={{ color: "var(--accent)", textDecoration: "underline" }}
           >
             Open the terminal
           </button>

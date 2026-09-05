@@ -35,7 +35,7 @@ export default defineConfig({
     // Resolved from this file rather than the working directory, so the suite
     // runs the same from the repo root or from `e2e/`.
     command: `PORT=${process.env.STUB_PORT ?? 7272} bun run ${import.meta.dirname}/stub/server.ts`,
-    url: `${STUB}/api/auth/status`,
+    url: `${STUB}/__stub/writes`,
     reuseExistingServer: true,
     timeout: 30_000,
   },
@@ -59,7 +59,7 @@ export default defineConfig({
     { name: "signin", testMatch: /auth\.setup\.ts/, use: { defaultBrowserType: "chromium" } },
     {
       name: "phone",
-      testIgnore: /live\//,
+      testIgnore: /(?:live|hosted)\//,
       dependencies: ["signin"],
       use: { defaultBrowserType: "chromium", storageState: "e2e/.auth/state.json" },
     },
@@ -73,7 +73,7 @@ export default defineConfig({
      */
     {
       name: "ios",
-      testIgnore: /live\//,
+      testIgnore: /(?:live|hosted)\//,
       dependencies: ["signin"],
       use: { ...devices["iPhone 14"], storageState: "e2e/.auth/state.json" },
     },

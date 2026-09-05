@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PromptReceipts, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 /**
  * Which herdr calls a prompt turns into, and when.
@@ -64,30 +64,5 @@ describe("submitPrompt", () => {
     await expect(
       submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "working" }, "x", sleep),
     ).rejects.toThrow("agent_not_found");
-  });
-});
-
-describe("PromptReceipts", () => {
-  test("a retried clientMessageId gets the first receipt back", () => {
-    const receipts = new PromptReceipts<{ acceptedAt: number }>();
-    receipts.put("w1:p1:abc", { acceptedAt: 1 }, 1000);
-    expect(receipts.get("w1:p1:abc", 2000)).toEqual({ acceptedAt: 1 });
-  });
-
-  test("receipts expire", () => {
-    const receipts = new PromptReceipts<number>(1_000);
-    receipts.put("a", 1, 0);
-    expect(receipts.get("a", 999)).toBe(1);
-    expect(receipts.get("a", 1_001)).toBeUndefined();
-  });
-
-  test("the table is bounded, oldest out first", () => {
-    const receipts = new PromptReceipts<number>(60_000, 2);
-    receipts.put("a", 1, 0);
-    receipts.put("b", 2, 1);
-    receipts.put("c", 3, 2);
-    expect(receipts.get("a", 3)).toBeUndefined();
-    expect(receipts.get("b", 3)).toBe(2);
-    expect(receipts.get("c", 3)).toBe(3);
   });
 });

@@ -1,3 +1,7 @@
+import { NavigationIcon } from "./components/NavigationIcon";
+import { Logo } from "./components/Logo";
+import { browserConnection, forgetBrowser, hosted, restoreBrowser } from "./connection";
+import { PairBrowser } from "./components/PairBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -14,10 +18,18 @@ import { reloadIfStale } from "./version";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
+import { clearReaderMemory } from "./components/Reader";
+import { Settings } from "./components/Settings";
+import { NewAgent } from "./components/NewAgent";
+import { Sheet } from "./components/Sheet";
 import { PushPrompt } from "./components/PushPrompt";
 import { SpaceDetail, Spaces } from "./components/Spaces";
 
-export function App() {
+export function App({ initialPairingCode = "" }: { initialPairingCode?: string }) {
+  const [pairingCode, setPairingCode] = useState(initialPairingCode);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [newAgent, setNewAgent] = useState(false);
+  const [selectedSpace, setSelectedSpace] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   /**
    * Whether the server answered at all.
@@ -27,6 +39,7 @@ export function App() {
    * to show a passcode prompt, which invites you to type a passcode that cannot
    * possibly work.
    */
+  const [connectionError, setConnectionError] = useState("");
   const [reachable, setReachable] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
@@ -42,13 +55,16 @@ export function App() {
   }, []);
 
   const checkAuth = useCallback(() => {
-    void api
-      .authStatus()
+    void restoreBrowser().then(() => {
+      if (hosted && !browserConnection().identity) return { required: true, authenticated: false };
+      return api.authStatus();
+    })
       .then((s) => {
         setReachable(true);
         setAuthenticated(!s.required || s.authenticated);
       })
-      .catch(() => {
+      .catch((err) => {
+        setConnectionError(err instanceof Error ? err.message : "Could not contact Shahi");
         // A refused or timed-out request is the server being away; a 401 would
         // have resolved, not thrown.
         setReachable(false);
@@ -94,6 +110,9 @@ export function App() {
         setPrompts((current) => ({ ...current, [msg.paneId]: msg.prompt }));
         break;
 
+      case "log_changed":
+        window.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: msg.paneId }));
+        break;
       case "status":
         break;
     }
@@ -101,7 +120,10 @@ export function App() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const socket = new SessionSocket(onMessage, setLink);
+    const socket = new SessionSocket(onMessage, (state) => {
+      setLink(state);
+      if (state === "lost") void api.session().catch(() => {});
+    });
     socketRef.current = socket;
     socket.connect();
     return () => {
@@ -126,7 +148,10 @@ export function App() {
   const answer = useCallback(
     async (paneId: string, optionIndex: number) => {
       try {
-        await api.answerPrompt(paneId, optionIndex);
+        const option = prompts[paneId]?.options.find((o) => o.index === optionIndex);
+        if (!option) throw new Error("That prompt changed. Wait for the latest question.");
+        await api.answerPrompt(paneId, optionIndex, option.label);
+        setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
         // The agent's next frame is what confirms it landed; clearing here keeps
         // the card from re-offering a question that is on its way out.
         setPrompts((current) => {
@@ -139,7 +164,7 @@ export function App() {
         throw err;
       }
     },
-    [showToast],
+    [showToast, prompts],
   );
 
   /**
@@ -159,7 +184,10 @@ export function App() {
       void api.session().then(setSession).catch(() => {});
       // And pick up a new build, rather than running whatever was current when
       // the app was last launched — which on a phone can be days ago.
-      void reloadIfStale();
+      void reloadIfStale(Date.now, {
+        canReload: () => !hosted || !browserConnection().identity || browserConnection().remembered,
+        onAvailable: () => setUpdateAvailable(true),
+      });
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("pageshow", wake);
@@ -177,8 +205,10 @@ export function App() {
         navigate("/");
       }
     };
+    const expired = () => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); };
+    window.addEventListener("shahi:unauthorized", expired);
     window.addEventListener("unhandledrejection", onRejection);
-    return () => window.removeEventListener("unhandledrejection", onRejection);
+    return () => { window.removeEventListener("unhandledrejection", onRejection); window.removeEventListener("shahi:unauthorized", expired); };
   }, [navigate]);
 
   if (authenticated === null) return null;
@@ -187,8 +217,8 @@ export function App() {
       <div className="app">
         <div className="empty">
           <span className="empty__mark">○</span>
-          Cannot reach herdr. Check that you are on the tailnet and that the
-          server is up.
+          Cannot reach Shahi. {connectionError || "Check your connection and that the server or tunnel is running."}
+          {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>Forget this browser and pair again</button>}
           <button className="empty__action" onClick={checkAuth}>
             Try again
           </button>
@@ -197,6 +227,7 @@ export function App() {
     );
   }
   if (!authenticated) {
+    if (hosted) return <PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { setReachable(true); setAuthenticated(true); }} />;
     return <Login onSuccess={() => {
       setReachable(true);
       setAuthenticated(true);
@@ -207,16 +238,23 @@ export function App() {
 
   return (
     <div className="app">
+      {updateAvailable && <div className="banner" role="status">
+        <span>A new version is ready. Reloading ends this session; you will need a fresh pairing code to reconnect.</span>
+        <button onClick={() => location.reload()}>Reload and pair again</button>
+        <button onClick={() => setUpdateAvailable(false)}>Later</button>
+      </div>}
       <Routes>
+        <Route path="/settings" element={<Settings onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
         <Route
           path="/"
           element={
             <>
               <header className="topbar">
-                <h1 className="topbar__title">Agents</h1>
+                <h1 className="topbar__title"><Logo size={28} /> Agents</h1>
+                <button className="topbar__action" onClick={() => setNewAgent(true)}>+ New agent</button>
                 <span className="topbar__spacer" />
                 {blockedCount > 0 && (
-                  <span className="link" style={{ color: "var(--peach)" }}>
+                  <span className="link" style={{ color: "var(--accent)" }}>
                     {blockedCount} waiting
                   </span>
                 )}
@@ -232,7 +270,7 @@ export function App() {
           element={
             <>
               <header className="topbar">
-                <h1 className="topbar__title">Spaces</h1>
+                <h1 className="topbar__title"><Logo size={28} /> Spaces</h1>
                 <span className="topbar__spacer" />
                 <LinkState state={link} />
               </header>
@@ -259,8 +297,14 @@ export function App() {
         />
       </Routes>
 
+      {newAgent && (selectedSpace && session?.workspaces.find((s) => s.workspaceId === selectedSpace)
+        ? <NewAgent space={session.workspaces.find((s) => s.workspaceId === selectedSpace)!} onClose={() => { setNewAgent(false); setSelectedSpace(null); }} onToast={showToast} onStarted={(id) => { setNewAgent(false); setSelectedSpace(null); refresh(); navigate(`/pane/${encodeURIComponent(id)}`); }} />
+        : <Sheet title="Choose a space" onClose={() => setNewAgent(false)}>
+            {session?.workspaces.map((space) => <button className="row" key={space.workspaceId} onClick={() => setSelectedSpace(space.workspaceId)}>{space.label}</button>)}
+            {!session?.workspaces.length && <button className="sheet__go" onClick={() => { setNewAgent(false); navigate("/spaces"); }}>Create a space first</button>}
+          </Sheet>)}
       <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }
@@ -289,18 +333,19 @@ function TabBar({ blockedCount, spaceCount }: { blockedCount: number; spaceCount
     <nav className="tabbar">
       <NavLink to="/" className="tabbar__item" end>
         <span className="tabbar__glyph" aria-hidden="true">
-          ◐
+          <NavigationIcon name="agents" />
         </span>
         Agents
         {blockedCount > 0 && <span className="tabbar__badge">{blockedCount}</span>}
       </NavLink>
       <NavLink to="/spaces" className="tabbar__item">
         <span className="tabbar__glyph" aria-hidden="true">
-          ▤
+          <NavigationIcon name="spaces" />
         </span>
         Spaces
         <span className="tabbar__count">{spaceCount}</span>
       </NavLink>
+      <NavLink to="/settings" className="tabbar__item"><span className="tabbar__glyph" aria-hidden="true"><NavigationIcon name="settings" /></span>Settings</NavLink>
     </nav>
   );
 }

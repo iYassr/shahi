@@ -140,6 +140,17 @@ runs the setup first, in the same popup. On the phone: Connect → **Scan a
 code**. The code works once and for ten minutes; open the popup again for
 another phone.
 
+The popup automatically copies the pairing code to the system clipboard on
+macOS (`pbcopy`) and Linux desktops (`wl-copy`, `xclip`, or `xsel`, when
+available), and reports whether copying succeeded. Paste it into the browser
+app at **https://getshahi.dev/pwa/** or the native app. The code is sent to the
+clipboard utility over stdin, never as a shell command or process argument.
+
+For terminal-only output, run `bun run server/scripts/pair.ts --code-only`
+from the checkout with the same `SHAHI_ENV_FILE` and `RELAY_URL` environment
+as the sidecar. It prints only the one-time code, without a QR or clipboard
+change. `--no-copy` retains the QR display without changing the clipboard.
+
 The code carries the relay's address, the box's id and a one-time secret — and
 nothing else. A box with `RELAY_URL=` empty has no address to put on a code, so
 it mints none and says to use SSH. What the code carries and how the server

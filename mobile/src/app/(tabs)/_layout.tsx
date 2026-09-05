@@ -1,3 +1,4 @@
+import { theme } from "../../lib/theme";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 
 /**
@@ -16,7 +17,7 @@ import { NativeTabs } from "expo-router/unstable-native-tabs";
  */
 export default function TabLayout() {
   return (
-    <NativeTabs>
+    <NativeTabs tintColor={theme.fg}>
       <NativeTabs.Trigger name="agents">
         <NativeTabs.Trigger.Icon sf="cpu" md="memory" />
         <NativeTabs.Trigger.Label>Agents</NativeTabs.Trigger.Label>
