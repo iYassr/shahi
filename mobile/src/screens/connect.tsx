@@ -236,8 +236,6 @@ export function Connect({
           </Pressable>
         </View>
 
-        <Text style={styles.hint}>Or reach the sidecar through a server you already SSH into.</Text>
-
         <SshForm ssh={ssh} patch={patch} setAuthKind={(kind) => setAuth(setSsh, kind)} />
 
         {error && <Text style={styles.error}>{error}</Text>}
@@ -292,10 +290,10 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
         <Wordmark color={theme.fg} />
       </View>
 
-      <Text style={styles.lede}>Step away. Stay in control.</Text>
+      <Text style={styles.lede}>Connect your computer</Text>
       <Text style={styles.introText}>
-        Shahi shows the agents running on a server you control — Claude Code, codex, plain shells — and
-        lets you reply from anywhere. It talks to a small helper you install on that server once.
+        Read agent conversations and answer prompts from your phone. Install Shahi on the computer
+        running your agents, then scan its pairing code.
       </Text>
 
       <Text style={styles.step}>1 — On your server, run:</Text>
@@ -348,7 +346,7 @@ function SshForm({
 }) {
   return (
     <>
-      <Text style={styles.hint}>Reach your server over SSH — the way you already log into it.</Text>
+      <Text style={styles.hint}>Enter your server’s SSH details.</Text>
 
       <View style={styles.row}>
         <View style={styles.grow}>

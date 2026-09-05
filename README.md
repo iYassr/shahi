@@ -4,12 +4,10 @@
 
 # Shahi
 
-**Step away. Stay in control.**
+**Coding agents on your phone.**
 
-Your coding agents, within reach. Read conversations, answer requests, and keep work moving from your phone.
-
-Claude Code, Codex, and every agent running in [herdr](https://herdr.dev),
-in one calm mobile inbox — the real conversation, not a shrunken terminal.
+Read Claude Code and Codex conversations, answer permission prompts, and manage
+agents running in [herdr](https://herdr.dev) from your phone or browser.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
@@ -24,13 +22,10 @@ in one calm mobile inbox — the real conversation, not a shrunken terminal.
 
 ---
 
-## The problem
+## Check on work away from your desk
 
-Agents stop. Claude Code hits a permission prompt, Codex asks which option you
-meant, a long run finishes and waits. Each one blocks until you are back at your
-desk — and you find out by walking over and checking.
-
-Shahi turns that wait into a notification you can answer from your pocket.
+See which agents are running, finished, or waiting for an answer. Open a
+conversation to read what happened and respond from your phone.
 
 <p align="center">
   <img src="docs/screenshots/02-agents.png" width="230" alt="Agents screen: an agent waiting for an answer, its question and choices already visible" />
@@ -39,8 +34,8 @@ Shahi turns that wait into a notification you can answer from your pocket.
   <img src="docs/screenshots/01-onboarding.png" width="230" alt="Two-step connection screen" />
 </p>
 <p align="center">
-  <sub><b>Agents</b> — what needs you · <b>Reader</b> — the real conversation ·
-  <b>Spaces</b> — the map · <b>Connect</b> — scan once</sub>
+  <sub><b>Agents</b> — agent status · <b>Reader</b> — conversations ·
+  <b>Spaces</b> — workspaces · <b>Connect</b> — scan once</sub>
   <br><sub>Device captures from an earlier build; the current visual system is in the <a href="docs/brand/README.md">brand guidelines</a>.</sub>
 </p>
 
@@ -88,50 +83,39 @@ flowchart LR
 
 Every frame above the relay is sealed end to end between phone and sidecar
 (X25519 → HKDF → ChaCha20-Poly1305), keyed from the pairing secret, which never
-travels. The relay multiplexes ciphertext and knows a key hash, not who you are.
+travels. The relay multiplexes ciphertext. It can observe IP addresses, server
+and device identifiers, connection times, and message sizes and timing.
 
 One alternative, if you would rather have no third party in the path at all:
 
 | Mode | Reach | Set-up |
 |---|---|---|
-| **Relay** (default) | Anywhere | None — the first QR just works |
+| **Relay** (default) | Anywhere | Scan a pairing QR code |
 | **SSH tunnel** | Anywhere you can SSH | Host key pinned on first connect |
 
 `RELAY_URL=` (empty) in the plugin's config opts out of the relay entirely; the
 app then reaches the box over SSH. There is no third mode: the sidecar binds
 loopback and is never given an address of its own to expose.
 
-## What makes it different
+## Features
 
-**It reads the transcript, not the screen.** Claude Code and Codex each write a
-structured log of the real conversation. Shahi reads that on your machine and
-renders messages, reasoning, tool calls, patches, files and results as a
-phone-shaped thread. Terminal text arrives hard-wrapped at 146 columns and
-cannot be reflowed — which is why every "mobile tmux" is a pinch-and-scroll
-exercise, and why Shahi does not try to be one.
-
-**Permission prompts become buttons.** When an agent renders a menu, Shahi
-parses it and offers the real choices, with the context above them. A prompt is
-answered by the server against a fresh read of the screen, so a stale tap
-cannot press the wrong row. When the parse is not confident, you get the raw
-terminal and a text box instead of invented buttons.
-
-**Unknown shapes are dropped, never guessed.** An agent output Shahi does not
-recognise renders nothing rather than something plausible and wrong. The failure
-mode is silence, not fiction.
-
-**Full control stays one tap away.** Reply, answer, attach a file, send terminal
-keys, start a new agent in any workspace, or drop to the raw screen.
-
-**It runs on your machine.** Your agents, code, credentials and transcripts stay
-on hardware you own.
+- **Read conversations.** View messages, reasoning, tool calls, patches, files,
+  and results from Claude Code and Codex transcripts. Unsupported entries are
+  omitted from the reader. Screen mode shows terminal output.
+- **Answer permission prompts.** Review a request and choose an answer. The server
+  checks that the prompt is still current before sending the response. If parsing
+  fails, use the terminal view and text input.
+- **Manage agents.** Send messages, attach files, use terminal keys, and start
+  agents in your workspaces.
+- **Connect to your computer.** Agents run on your computer. Connect through the
+  encrypted relay, or use SSH in the mobile app.
 
 ## Private by design
 
-Shahi can type into your terminal, so the boundary is deliberate rather than
-incidental:
+Shahi can send commands to your terminal. Access is protected as follows:
 
 - The sidecar binds to loopback and is gated by a passcode.
+- Logout invalidates the session on the server, including after a restart.
 - Pairing codes are single-use and expire in ten minutes. Each paired device
   gets its own secret and can be revoked — effective on its next request and on
   its open socket.
@@ -140,6 +124,12 @@ incidental:
 - Secrets live in herdr's per-plugin config directory, never in the checkout.
   On the phone they live in the iOS Keychain.
 - Terminal output is never written to logs.
+
+The browser app trusts the code delivered by `getshahi.dev`. A compromised
+website or publishing account could read an active session or remembered
+pairing secret. Encryption protects against the relay; it cannot protect
+against compromised code running on your device. See the
+[privacy policy](https://getshahi.dev/privacy) for metadata and push-provider access.
 
 The threat model, the protocol, and what is fixed versus accepted are written
 down in the [security review](docs/security-review.md) and

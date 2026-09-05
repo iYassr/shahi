@@ -11,13 +11,13 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   return <main className="pair-browser">
-    <div className="pair-browser__intro"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><h1>Your agents, wherever you are.</h1><p>Connect Shahi to the computer running herdr. Your sessions stay on your computer; the relay carries encrypted messages.</p></div>
+    <div className="pair-browser__intro"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><h1>Connect your computer</h1><p>Read agent conversations and answer prompts in your browser. Pair with the computer running herdr.</p></div>
     <form className="pair-browser__form" onSubmit={(event) => {
       event.preventDefault(); setBusy(true); setError("");
       const secret = code; setCode(""); onConsumed();
       void pairBrowser(secret, name, remember).then(onSuccess).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
     }}>
-      <h2>Connect your computer</h2><p>In herdr, open Shahi’s pairing action. Scan its QR code or paste the full pairing code below it.</p>
+      <h2>Pair this browser</h2><p>In herdr, open Shahi’s pairing action. Scan its QR code or paste the full pairing code below it.</p>
       <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
       <button type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}>Scan QR code</button>
       <label htmlFor="browser-name">Device name</label><input id="browser-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoComplete="off" disabled={busy} />

@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shahi — Step away. Stay in control.</title>
-<meta name="description" content="Your coding agents, within reach. Step away. Stay in control. Read conversations and answer requests from your phone or browser.">
+<title>Shahi — Coding agents on your phone</title>
+<meta name="description" content="Read Claude Code and Codex conversations, answer permission prompts, and manage agents from your phone or browser.">
 <meta name="color-scheme" content="dark">
-<meta property="og:title" content="Shahi — Step away. Stay in control.">
-<meta property="og:description" content="Your coding agents, within reach. Read conversations and answer requests from anywhere.">
+<meta property="og:title" content="Shahi — Coding agents on your phone">
+<meta property="og:description" content="Read agent conversations and answer permission prompts from your phone or browser.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getshahi.dev">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -26,11 +26,10 @@
       <img class="wordmark" src="/wordmark.svg" alt="Shahi" width="114" height="48">
     </div>
 
-    <h1>Step away.<br>Stay in control.</h1>
+    <h1>Coding agents.<br>On your phone.</h1>
     <p class="lede">
-      Your coding agents, within reach. Read conversations, answer requests,
-      and keep work moving from your phone. Works with Claude Code, Codex,
-      and agents running in <a href="https://herdr.dev">herdr</a>.
+      Read Claude Code and Codex conversations, answer permission prompts,
+      and manage agents running in <a href="https://herdr.dev">herdr</a>.
     </p>
     <div class="hero-actions">
       <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
@@ -80,13 +79,11 @@
   </section>
   <p class="caption">Try answering Claude above. This preview stays on this page; it doesn’t control a real agent.</p>
 
-  <h2>The problem</h2>
+  <h2>Check on work away from your desk</h2>
   <p>
-    Agents stop. Claude Code hits a permission prompt, Codex asks which option
-    you meant, a long run finishes and waits. Each one blocks until you are
-    back at your desk — and you find out by walking over and checking.
+    See which agents are running, finished, or waiting for an answer.
+    Open a conversation to read what happened and respond from your phone.
   </p>
-  <p>Shahi turns that wait into something you can answer from your pocket.</p>
 
   <h2 id="quick-start">Quick start</h2>
   <p>On the machine where herdr runs:</p>
@@ -95,7 +92,7 @@
   <p>
     That installs the sidecar as a user service, generates its secrets, and
     prints a QR code. Scan it in the app and your agents appear. There is
-    nothing else to configure — no port to forward, no domain, no reverse proxy.
+    no inbound port to open when using the relay.
   </p>
 
   <h2>How it connects</h2>
@@ -133,39 +130,43 @@
     instead.
   </p>
 
-  <h2>What makes it different</h2>
-
-  <h3>It reads the transcript, not the screen</h3>
   <p>
-    Claude Code and Codex each write a structured log of the real conversation.
-    Shahi reads that on your machine and renders messages, reasoning, tool
-    calls, patches and results as a phone-shaped thread. Terminal text arrives
-    hard-wrapped at 146 columns and cannot be reflowed — which is why every
-    "mobile tmux" is a pinch-and-scroll exercise, and why Shahi does not try to
-    be one.
+    The browser app trusts the code delivered by this website. A compromised
+    website or publishing account could access an active session or remembered
+    pairing secret. End-to-end encryption protects against the relay; it cannot
+    protect against compromised app code. The relay can still observe connection
+    metadata. Read the <a href="/privacy">privacy policy</a> for details.
   </p>
 
-  <h3>Permission prompts become buttons</h3>
+  <h2>What you can do</h2>
+
+  <h3>Read conversations</h3>
   <p>
-    When an agent renders a menu, Shahi parses it and offers the real choices
-    with the context above them. The answer is checked against a fresh read of
-    the screen, so a stale tap cannot press the wrong row.
+    Shahi displays messages, reasoning, tool calls, and patches from Claude Code
+    and Codex transcripts. Use Screen mode to view terminal output.
+    Transcript entries that Shahi does not support are omitted from the reader.
   </p>
 
-  <h3>Unknown shapes are dropped, never guessed</h3>
+  <h3>Answer permission prompts</h3>
   <p>
-    Output Shahi does not recognise renders nothing, rather than something
-    plausible and wrong. The failure mode is silence, not fiction.
+    Review the request and choose an answer. Shahi checks that the prompt
+    is still current before sending your response. If a prompt cannot be
+    parsed, use the terminal view and text input.
   </p>
 
-  <h3>It runs on your machine</h3>
+  <h3>Manage agents</h3>
   <p>
-    Your agents, your code, your credentials and your transcripts stay on
-    hardware you own. There is no account and no backend of ours holding your
-    data.
+    Start agents in your workspaces, send messages, attach files, and use
+    terminal keys from the app.
   </p>
 
-  <h2>Status</h2>
+  <h3>Connect to your computer</h3>
+  <p>
+    Agents run on your computer. Shahi connects to it through an encrypted
+    relay, or through SSH in the mobile app. No Shahi account is required.
+  </p>
+
+  <h2>Availability</h2>
   <p class="note">
     The iOS app is in private testing — there is no public App Store or
     TestFlight link yet. <a href="/pwa/">Open Shahi in your browser</a> on a
@@ -174,7 +175,7 @@
   </p>
   <p>
     The sidecar, the herdr plugin and the relay are working today. herdr is the
-    only backend so far; tmux is plausible and not built.
+    supported backend; tmux is not supported.
   </p>
 
   <footer>

@@ -1,7 +1,7 @@
 {
   "name": "Shahi",
   "short_name": "Shahi",
-  "description": "Your coding agents, within reach. Step away. Stay in control.",
+  "description": "Read agent conversations and answer prompts from your phone or browser.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
