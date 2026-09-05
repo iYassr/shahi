@@ -32,7 +32,7 @@ The marketing page and privacy policy load `site.css` and `privacy.css` respecti
 
 ## Behavior retained
 
-The once-per-tab greeting, explicit website replay, working-avatar bob, tactile controls, and neutral routine selections remain. The logo has no hover glow. Reduced Motion suppresses automatic animation, and replay is an explicit one-time opt-in. Status labels accompany the color system. Settings uses grouped panels and clear destructive actions; pairing presents connection controls in a bounded form panel.
+The once-per-tab greeting, working-avatar bob, tactile controls, and neutral routine selections remain. The logo has no hover glow. Reduced Motion suppresses automatic animation. Status labels accompany the color system. Settings uses grouped panels and clear destructive actions; pairing presents connection controls in a bounded form panel.
 
 ## Validation
 

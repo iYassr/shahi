@@ -87,4 +87,4 @@ Controls compress slightly when pressed, selected pins settle once, and transien
 
 On the first visible appearance in a session, the Shahi mark lifts up to 6px and gently rocks, settling within 1.2 seconds. It plays once per browser tab session or native app launch, never blocks interaction, and is skipped with Reduced Motion. Navigating between screens or returning from the background must not repeat it. Provider avatars retain their separate working animation.
 
-The website offers a labeled replay button beside the wordmark. Explicitly replaying opts into that one greeting even with Reduced Motion enabled; automatic playback remains disabled. Decorative motion never triggers a network action. The website's answer interaction is an explicitly labeled local preview, not a real approval.
+The website keeps the lockup free of replay controls. Decorative motion never triggers a network action. The website's answer interaction is an explicitly labeled local preview, not a real approval.
