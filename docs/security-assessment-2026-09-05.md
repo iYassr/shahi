@@ -1,5 +1,11 @@
 # Relay and public service security assessment — 5 September 2026
 
+> Historical assessment. The findings below describe code reviewed before the
+> fixes in [`81297b4`](https://github.com/iYassr/shahi/commit/81297b4).
+> Upgrade the sidecar and clients together. Older snapshots, including
+> `91eda62`, do not contain these fixes. See [remediation](#remediation--5-september-2026)
+> for scope and verification. This is a maintainer review, not an independent audit.
+
 The encryption claim is supported by the reviewed implementation: a relay that
 only controls transport cannot simply read or forge a session. That is a useful,
 real property. It does not establish that the overall product is secure against
@@ -12,8 +18,9 @@ This assessment covers the current working tree, based on commit `1ec39f5` with
 existing uncommitted changes. It combines source review, isolated local
 reproductions, existing security tests, and low-volume public HTTP checks. It is
 not an independent cryptographic audit or an attestation that every deployed
-component exactly matches the working tree. No application code or deployment
-was changed by this assessment.
+component exactly matches the working tree. The findings below describe the
+initial assessment before changes. The subsequent user-authorized remediation
+and deployment are recorded at the end of this document.
 
 ## Confirmed findings
 
@@ -231,3 +238,34 @@ Worker source equivalence, all DNS aliases or external port forwarding,
 production load resistance, independent protocol review, or the integrity of
 the native release/update supply chain. The source findings and public header
 observations should be kept distinct from those unverified properties.
+
+## Remediation — 5 September 2026
+
+Source fixes are published in commit `81297b4`:
+
+- Require a valid encrypted client frame within fifteen seconds before granting
+  a device session or attaching a stream. Recheck revocation at proof time.
+  Updated clients send proof immediately after key derivation.
+- Bound and validate relay controls. Invalid controls reconnect safely; malformed
+  encrypted JSON ends its link without terminating the sidecar.
+- Give sessions independent nonces and persist logout revocations. Legacy HTTP
+  cookies require a new login; paired-device secrets remain valid.
+- Reject missing passcodes, non-loopback listeners, and insecure remote relay
+  URLs at startup. Apply CSP to direct HTML and Secure cookies to HTTPS access.
+- Disable alternate Worker hostnames and preview URLs in deployment configuration.
+
+The earlier remediation run recorded deployment and local service checks.
+Those observations are historical, not a guarantee that any particular
+installation has upgraded. A source push does not deliver a new native binary.
+Per-IP limits reduce bursts but do not prevent distributed denial of service
+or impose a hard spending cap.
+
+Before this publication, the working tree passed 565 unit tests, four dependency
+patch checks, 57 relay tests, and 221 native tests, with all TypeScript checks
+passing. Twenty-six opt-in live unit checks were skipped. The relay regression
+fills all eight slots with unproved hellos, confirms no dashboard is sent,
+waits for expiry, and then authenticates a synthetic device. Native fixtures
+verify the client's first proof frame. No real terminal commands were sent.
+
+Independent cryptographic review, account IAM/MFA, production load resistance,
+and physical-device release delivery remain outside this verification.

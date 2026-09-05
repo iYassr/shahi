@@ -42,3 +42,6 @@ web/dist-hosted/
 
 # Local Cloudflare development state.
 .wrangler/
+
+# Finder metadata
+.DS_Store

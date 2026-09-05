@@ -16,7 +16,7 @@ agents running in [herdr](https://herdr.dev) from your phone or browser.
 
 [getshahi.dev](https://getshahi.dev) · [Quick start](#quick-start) ·
 [How it connects](#how-it-connects) · [Security](#private-by-design) ·
-[Docs](#documentation)
+[Docs](docs/README.md)
 
 </div>
 

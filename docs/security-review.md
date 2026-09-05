@@ -1,5 +1,9 @@
 # Security review — the surface that changed in the week of 2026-09-01
 
+> Historical review. Findings and test counts refer to the revision reviewed,
+> not necessarily the current release. See the [documentation index](README.md)
+> for maintained guides and later assessments.
+
 What was reviewed, what was found, and what was done about each finding.
 Line numbers are as of the commit that adds this file. The threat model is
 the one in `CLAUDE.md` ("Full control, gated by a passcode") and

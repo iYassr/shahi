@@ -1,5 +1,9 @@
 # Audit against the official `expo/skills`
 
+> Historical review. Findings and test counts refer to the revision reviewed,
+> not necessarily the current release. See the [documentation index](README.md)
+> for maintained guides and later assessments.
+
 Shahi's `mobile/` app audited against Expo's official agent-skill collection
 ([github.com/expo/skills](https://github.com/expo/skills)) on 2026-08-13. Four
 skills were run as focused audits: `expo-module`, `eas-app-stores`,
