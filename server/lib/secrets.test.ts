@@ -53,10 +53,11 @@ describe("ensureSecrets", () => {
     expect([...second.env]).toEqual([...snapshot]);
   });
 
-  test("no passcode and none before means a visibly empty gate, not an absent key", async () => {
+  test("no passcode leaves a visible prerequisite that cannot start an open server", async () => {
     const { env, created } = await ensureSecrets(new Map(), {});
     expect(env.get("PASSCODE_HASH_B64")).toBe("");
-    expect(created.join()).toContain("gate disabled");
+    expect(created.join()).toContain("set a passcode before starting");
+    expect(() => loadConfig(Object.fromEntries(env))).toThrow(/PASSCODE_HASH_B64 is required/);
   });
 
   test("keeps keys it does not know about, such as PORT", async () => {

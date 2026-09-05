@@ -18,8 +18,9 @@ export interface Env extends TelemetryEnv {
    * production `wrangler.toml`. It is the cheap first wall against the
    * unauthenticated amplification in pentest C1 — a stranger opening sockets
    * to arbitrary serverIds to burn the account's daily quota and take every
-   * box offline. The real ceiling is a paid plan plus a WAF rule; this bounds
-   * the per-source rate so one host cannot do it alone.
+   * box offline. This is per IP at each edge location and eventually
+   * consistent, not a global usage or billing ceiling. Account limits and
+   * WAF rules are separate operational controls.
    */
   CONNECT_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }

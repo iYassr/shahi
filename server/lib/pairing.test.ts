@@ -172,13 +172,13 @@ describe("a session bound to a device", () => {
     expect(auth.identify(token)).toBeNull();
   });
 
-  test("with the gate off a revoked device is still let in, anonymously", () => {
+  test("a missing passcode never turns a revoked device into an anonymous session", () => {
     const auth = new Auth({
       passcodeHash: "",
       sessionSecret: secret,
       sessionTtlMs: 60_000,
       deviceActive: () => false,
     });
-    expect(auth.identify(auth.issue(0, "dev-1"), 1)).toEqual({ deviceId: null });
+    expect(auth.identify(auth.issue(0, "dev-1"), 1)).toBeNull();
   });
 });

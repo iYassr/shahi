@@ -9,30 +9,16 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readEnvFile } from "./secrets";
+import { isLoopback } from "./endpoint";
 
 export interface Config {
-  /**
-   * Interface to bind. Defaults to loopback.
-   *
-   * Widen this deliberately, not casually: herdr's own socket has no
-   * authentication and this process proxies every one of its methods, so the
-   * bind address plus the passcode are the entire security boundary.
-   *
-   * Prefer a specific Tailscale address (`100.x.y.z`) over `0.0.0.0`. Binding
-   * all interfaces also publishes on the LAN, which is a much larger audience
-   * than the tailnet and almost never what is intended.
-   *
-   * Note that anything other than loopback means the browser no longer treats
-   * the page as a secure context, so service workers will not register and Web
-   * Push stops working. `tailscale serve` avoids that by terminating real TLS
-   * in front of a loopback bind.
-   */
+  /** Loopback only: relay and SSH provide the supported remote access paths. */
   host: string;
   port: number;
   socketPath: string;
   /** SQLite file for transcripts and push subscriptions. */
   dataPath: string;
-  /** Decoded bcrypt hash of the passcode. Empty disables the gate entirely. */
+  /** Decoded bcrypt hash of the required passcode. */
   passcodeHash: string;
   /** HMAC key for session cookies. */
   sessionSecret: string;
@@ -74,7 +60,7 @@ const BCRYPT_RE = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
  * and by docker, so it is not portable.
  */
 function decodePasscodeHash(encoded: string | undefined): string {
-  if (!encoded) return "";
+  if (!encoded) throw new Error("PASSCODE_HASH_B64 is required. Run bun run server/scripts/init-secrets.ts --passcode <passcode>.");
 
   const hash = Buffer.from(encoded, "base64").toString("utf8");
   if (!BCRYPT_RE.test(hash)) {
@@ -101,8 +87,9 @@ function relayUrl(value: string | undefined): string | null {
   } catch {
     throw new Error(`RELAY_URL is not a URL: ${value}`);
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(`RELAY_URL must be http(s), the address the Worker is deployed at: ${value}`);
+  if ((url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) ||
+      url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("RELAY_URL must be an HTTPS origin (http(s) loopback is allowed for local tests), without credentials, a path, query or fragment.");
   }
   return value.replace(/\/+$/, "");
 }
@@ -116,18 +103,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const vapidPublic = env.VAPID_PUBLIC_KEY;
   const vapidPrivate = env.VAPID_PRIVATE_KEY;
+  const sessionSecret = required("SESSION_SECRET", env.SESSION_SECRET, "Run bun run server/scripts/init-secrets.ts --passcode <passcode>.");
+  const host = env.HOST ?? "127.0.0.1";
+  if (!isLoopback(host)) throw new Error("HOST must be loopback. Reach Shahi through the encrypted relay or an SSH tunnel.");
 
   return {
-    host: env.HOST ?? "127.0.0.1",
+    host,
     port: Number(env.PORT ?? DEFAULT_PORT),
     socketPath: env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
     dataPath: env.SHAHI_DATA ?? join(homedir(), ".local", "share", "shahi", "shahi.sqlite"),
     passcodeHash: decodePasscodeHash(env.PASSCODE_HASH_B64),
-    sessionSecret: required(
-      "SESSION_SECRET",
-      env.SESSION_SECRET,
-      "Run `bun run server/scripts/init-secrets.ts` to generate one.",
-    ),
+    sessionSecret,
     sessionTtlMs: Number(env.SESSION_TTL_MS ?? 30 * 24 * 60 * 60 * 1000),
     vapid:
       vapidPublic && vapidPrivate
@@ -141,4 +127,3 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     relayUrl: relayUrl(env.RELAY_URL),
   };
 }
-

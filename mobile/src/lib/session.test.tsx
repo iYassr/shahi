@@ -106,8 +106,10 @@ test("a remembered relay connection comes back as that device, through the relay
 
   // The session read that restore triggers went through the link, sealed —
   // and the answer lands in the mirror.
-  await waitFor(() => expect(ws.sent.length).toBeGreaterThan(1));
-  const req = JSON.parse(new TextDecoder().decode(open(box, ws.sent[1] as Uint8Array))) as RelayRequest;
+  await waitFor(() => expect(ws.sent.length).toBeGreaterThan(2));
+  const proof = JSON.parse(new TextDecoder().decode(open(box, ws.sent[1] as Uint8Array)));
+  expect(proof).toEqual({ t: "ws", data: { type: "unwatch" } });
+  const req = JSON.parse(new TextDecoder().decode(open(box, ws.sent[2] as Uint8Array))) as RelayRequest;
   expect(req).toMatchObject({ t: "req", method: "GET", path: "/api/session" });
   const snapshot = {
     version: "0.8.2",

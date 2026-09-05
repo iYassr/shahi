@@ -30,6 +30,13 @@ app assets for offline launching, but does not cache API responses or transcript
 Conversation content is held in memory while the app is running. Signing out
 does not delete original transcripts on your server.
 
+The browser app trusts the code delivered by `getshahi.dev`, including its
+hosting and publishing accounts. A malicious release or compromised website
+could read an active session or a remembered pairing secret. End-to-end
+encryption protects traffic from the relay, but does not protect against
+compromised application code. The website ships no third-party scripts and
+restricts executable content with a Content Security Policy.
+
 ## What is transmitted
 
 **To your server:** requests to read and control sessions, messages and files

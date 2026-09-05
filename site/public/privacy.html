@@ -37,6 +37,8 @@
 
 <p>The locally served web app uses a session cookie to authenticate. Both web builds store preferences in browser storage. The service worker caches public app assets for offline launching, but does not cache API responses or transcripts. Conversation content is held in memory while the app is running. Signing out does not delete original transcripts on your server.</p>
 
+<p>The browser app trusts the code delivered by <code>getshahi.dev</code>, including its hosting and publishing accounts. A malicious release or compromised website could read an active session or a remembered pairing secret. End-to-end encryption protects traffic from the relay, but does not protect against compromised application code. The website ships no third-party scripts and restricts executable content with a Content Security Policy.</p>
+
 <h2>What is transmitted</h2>
 
 <p><strong>To your server:</strong> requests to read and control sessions, messages and files you choose to send, and credentials needed to authenticate. Relay frames are encrypted end to end between your device and server. SSH connections are carried inside an encrypted SSH tunnel.</p>

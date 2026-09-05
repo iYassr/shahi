@@ -92,3 +92,16 @@ test("invalid encrypted response bodies reject their request without losing its 
   socket.receive(seal(box, new TextEncoder().encode(JSON.stringify({ t: "res", id: request.id, status: 200, headers: {}, body: "!" }))));
   await expect(response).rejects.toThrow("invalid response");
 });
+
+test("a device proves its secret without waiting for a dashboard or an API request", () => {
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  const link = new RelayLink({ relay: "https://relay.example", serverId: server, secret, auth: { kind: "device", deviceId: "test-device" } });
+  links.push(link);
+  link.ensureConnected();
+  const socket = FakeSocket.last;
+  socket.onopen!();
+  const box = hello(socket);
+  const proof = JSON.parse(new TextDecoder().decode(open(box, socket.sent[1]!)));
+  expect(proof).toEqual({ t: "ws", data: { type: "unwatch" } });
+  expect(socket.sent).toHaveLength(2);
+});

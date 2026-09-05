@@ -85,6 +85,7 @@ export interface StreamClient {
  */
 export interface Arrival {
   rateKey: string;
+  secure?: boolean;
   /** Came through the relay: reachable from the internet before any secret is proven. */
   viaRelay: boolean;
   /** Turns the request into a socket carrying `data`; null where that is impossible. */
@@ -371,6 +372,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
       const response = await handle(req, {
         rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
         viaRelay: false,
+        secure: new URL(req.url).protocol === "https:" ||
+          (isLoopback(srv.requestIP(req)?.address ?? "") && req.headers.get("x-forwarded-proto") === "https"),
         upgrade: (data) => srv.upgrade(req, { data }),
         holdOpen: () => srv.timeout(req, 0),
       });
@@ -515,7 +518,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         }
 
         if (pathname === "/api/auth/status") {
-          return json({ required: !auth.disabled, authenticated: authorized(req) });
+          return json({ required: true, authenticated: authorized(req) });
         }
 
         if (pathname === "/api/auth/login" && req.method === "POST") {
@@ -528,7 +531,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           if (!ok) {
             return json({ error: "invalid passcode" }, { status: 401 });
           }
-          return json({ ok: true }, { headers: { "set-cookie": auth.cookie(auth.issue()) } });
+          return json({ ok: true }, { headers: { "set-cookie": auth.cookie(auth.issue(), arrival.secure) } });
         }
 
         if (pathname === "/api/auth/logout" && req.method === "POST") {
@@ -536,12 +539,16 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           // Otherwise the row stayed "active" for thirty days and every re-pair
           // added a ghost to the list in Settings.
           const deviceId = identify(req)?.deviceId;
+          const token = readCookie(req.headers.get("cookie"), SESSION_COOKIE);
           push.unsubscribeOwner(pushOwner(req));
+          if (auth.revoke(token)) {
+            for (const ws of clients) if (ws.data.token === token) ws.close(4001, "signed out");
+          }
           if (deviceId) {
             devices.revoke(deviceId);
             for (const ws of clients) if (ws.data.deviceId === deviceId) ws.close(4001, "signed out");
           }
-          return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie() } });
+          return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie(arrival.secure) } });
         }
 
         // A scanned code being redeemed. Through the same throttle as the
@@ -551,7 +558,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // makes it revocable — a passcode login is not, and never appears in
         // the device list.
         if (pathname === "/api/pair/claim" && req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as { secret?: unknown; deviceName?: unknown };
+          const body = await jsonObject<{ secret: string; deviceName: string }>(req);
           const secret = typeof body.secret === "string" ? body.secret : "";
           const ok = await claimThrottle.attempt(async () => pairing.claim(secret));
           if (!ok) {
@@ -570,7 +577,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             deviceId: device.id,
             deviceSecret: Buffer.from(deviceSecret).toString("base64url"),
           };
-          return json(result, { headers: { "set-cookie": auth.cookie(auth.issue(Date.now(), device.id)) } });
+          return json(result, { headers: { "set-cookie": auth.cookie(auth.issue(Date.now(), device.id), arrival.secure) } });
         }
 
         // --- everything below requires a session ---
@@ -1260,6 +1267,7 @@ const CONTENT_TYPES: Record<string, string> = {
  * nothing legitimate embeds this app or needs to know which file was open.
  */
 function harden(response: Response): Response {
+  response.headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   response.headers.set("x-content-type-options", "nosniff");
   response.headers.set("x-frame-options", "DENY");
   response.headers.set("referrer-policy", "same-origin");

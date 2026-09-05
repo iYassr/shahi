@@ -365,8 +365,10 @@ export class RelayLink {
     }
     this.#session = clientSession(this.#self, pub, this.target.secret);
     this.#self = null;
+    // A device must prove its secret even when it only wants the dashboard.
+    // A hello alone must never start a session or keep a phone slot alive.
+    if (this.target.auth.kind === "device") this.watch(this.#watching);
     this.#setState("live");
-    if (this.#watching) this.watch(this.#watching);
     for (const pending of this.#pending.values()) if (!pending.sent) this.#dispatch(pending);
   }
 

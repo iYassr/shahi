@@ -150,7 +150,9 @@ answer when the screen moved on; nothing is pressed.
 
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
-network reach (tailnet only) plus the passcode. Given that, file reads are scoped
+the loopback listener plus the passcode, or possession of a paired device's
+secret over the encrypted relay. Missing passcode configuration and non-loopback
+binds prevent startup. Given that, file reads are scoped
 to `$HOME` and the OS temp directory (`tmpdir()`, which on macOS is
 `/var/folders/…` and not `/tmp`) for tidiness rather than security.
 
@@ -220,6 +222,12 @@ above the relay every frame is sealed with `shared/src/e2e.ts`, keyed from
 the pairing secret or a per-device secret that never travels — the relay
 sees connection metadata, sizes and timing; content stays encrypted. `cd relay && bunx wrangler deploy`
 runs one; the pairing code carries its address, and the app prefers it.
+The plaintext hello proves nothing: a link must send a valid sealed message
+within fifteen seconds before the sidecar issues its session or attaches its
+stream. Both clients send a sealed watch/unwatch immediately after deriving
+device-session keys. Relay controls are bounded and validated before dispatch;
+a malformed relay response must never crash local HTTP/SSH access.
+
 Measured: 203ms for a request through Cloudflare's edge, 557ms for a first
 hello that wakes a cold Durable Object. Three things learned the day it
 first ran, all now in the protocol: the hello is a *binary* frame, because
@@ -236,6 +244,14 @@ plugin's default way in with plugin 0.2.0, ahead of an outside review of the
 construction, because the relay reads nothing and `RELAY_URL=` opts out; an
 outside review would change the envelope, not that default
 (`docs/connectivity.md`).
+
+**Logout revokes a session on the server.** Signed cookies contain a random
+session nonce; revoked token hashes persist in the sidecar database until expiry.
+The running server must supply that database to `Auth`. Offline owner scripts
+may still sign short-lived tokens. Browser code delivered by `getshahi.dev` is
+trusted with active sessions and remembered secrets; keep the entire origin free
+of third-party scripts. Both public Workers disable `workers.dev` and preview
+hostnames. See `docs/security-assessment-2026-09-05.md` for the remediation.
 
 **The reader is pushed, and polls only to recover.** While a phone watches a
 pane the server watches that pane's transcript file and sends `log_changed`
