@@ -1,5 +1,9 @@
 # Review fixes — 5 September 2026
 
+> Historical review. Findings and test counts refer to the revision reviewed,
+> not necessarily the current release. See the [documentation index](README.md)
+> for maintained guides and later assessments.
+
 The nine findings from the project review have code fixes, with additional
 integration corrections for notification ownership and client retries.
 
