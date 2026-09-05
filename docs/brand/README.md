@@ -6,9 +6,9 @@ This identity applies to the native app, browser app, website, and distributed b
 
 ## Promise and voice
 
-**Step away. Stay in control.**
+**Coding agents on your phone.**
 
-Your coding agents, within reach. Read conversations, answer requests, and keep work moving from your phone.
+Read agent conversations, answer permission prompts, and manage workspaces from your phone or browser.
 
 Shahi feels calm, precise, and approachable. The tea association expresses a moment away from the desk; keep tea language occasional. Use Shahi in prose and the lowercase wordmark in brand lockups. Describe supported agents and capabilities accurately, without implying autonomous work continues when an agent is waiting for input.
 
@@ -88,3 +88,7 @@ Controls compress slightly when pressed, selected pins settle once, and transien
 On the first visible appearance in a session, the Shahi mark lifts up to 6px and gently rocks, settling within 1.2 seconds. It plays once per browser tab session or native app launch, never blocks interaction, and is skipped with Reduced Motion. Navigating between screens or returning from the background must not repeat it. Provider avatars retain their separate working animation.
 
 The website keeps the lockup free of replay controls. Decorative motion never triggers a network action. The website's answer interaction is an explicitly labeled local preview, not a real approval.
+
+## Product copy
+
+Describe the action or result directly. Use “Scan QR code”, “Connect your computer”, and “Read conversations”. Avoid slogans, vague promises, forced contrasts, and repeated claims. Keep connection instructions and errors specific enough to act on.
