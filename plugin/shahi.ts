@@ -341,8 +341,7 @@ async function readLine(): Promise<string> {
 }
 
 /**
- * The popup's command. pair.ts prints and exits; the popup closes with it, so
- * hold it open.
+ * The popup's command. pair.ts owns the fitted screen and waits for Enter.
  *
  * It also does the setup when there is none: `herdr plugin install` cannot
  * run the startup hook (build commands get no plugin context), and the only
@@ -358,7 +357,7 @@ async function pair(layout: Layout, service: Service, args: string[]): Promise<v
     console.log("");
   }
   const env = readEnvFile(layout.envFile);
-  const proc = Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", ...args], {
+  const proc = Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", "--popup", ...args], {
     cwd: layout.root,
     // The relay the service actually dials, default included (pair.ts reads
     // the .env and the environment, and the environment wins).
@@ -369,10 +368,11 @@ async function pair(layout: Layout, service: Service, args: string[]): Promise<v
   });
   if ((await proc.exited) !== 0) {
     console.log("\n  Pairing failed. Is Shahi running?  herdr plugin action invoke shahi.status");
+    if (!args.includes("--code-only")) {
+      console.log("  Press Enter to close.");
+      await readLine();
+    }
   }
-  if (args.includes("--code-only")) return;
-  console.log("  Press Enter to close.");
-  await readLine();
 }
 
 /** This plugin's id as herdr registered it — `shahi`, or whatever a fork was linked as. */
