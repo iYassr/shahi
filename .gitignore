@@ -45,3 +45,6 @@ web/dist-hosted/
 
 # Finder metadata
 .DS_Store
+
+# Per-install runtime verification marker.
+/.shahi-build

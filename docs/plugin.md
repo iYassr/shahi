@@ -60,7 +60,7 @@ with `XDG_*` set they follow it.
 The service is what keeps the sidecar alive across herdr restarts, crashes
 and reboots — herdr's own startup hooks are one-shot by contract, "not
 supervised daemons", so the hook installs the service rather than being it.
-It is re-rendered and restarted on every herdr start, because after
+It is re-rendered and restarted on every herdr start and after reinstalling, because after
 `herdr plugin install` replaces the checkout a sidecar that kept running the
 old code from memory would look updated and not be. **On Linux, a headless
 box needs `loginctl enable-linger $USER`** once, or the user service stops
@@ -195,14 +195,22 @@ first run's output is simply on screen.
 ## Updating
 
 ```sh
-herdr plugin install iYassr/shahi          # replaces the checkout, rebuilds
-herdr plugin action invoke shahi.restart   # or restart herdr
+herdr plugin install iYassr/shahi          # rebuilds, then automatically restarts Shahi
 ```
 
 herdr has no `plugin update`; reinstalling is the update. Your `.env` and
-database are outside the checkout and untouched, and the restart is what
-puts the new code in front of the phone — a sidecar keeps the old code in
-memory until then.
+database are outside the checkout and untouched. The final build step starts a
+bounded helper that waits for herdr to register the completed installation,
+then restarts the existing service and verifies the new build identifier through
+local `/api/meta`. It never restarts from the temporary build directory. A failed
+installation leaves the old service alone.
+
+The install output prints the helper's private log path. Restart and verification
+finish shortly after herdr prints “Installed”; the log reports success or an
+explicit failure. If verification fails, inspect `shahi.logs` and run
+`herdr plugin action invoke shahi.restart`. First installations still start through
+the startup hook or Pair action. This automatic update applies to installations
+made with herdr running; the restart action needs its server.
 
 The current mobile and web clients require relay protocol 2. Update Shahi on
 each paired computer when installing this release; updating herdr alone does

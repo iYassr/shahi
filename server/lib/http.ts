@@ -1,3 +1,4 @@
+import { buildId } from "./build";
 /**
  * HTTP and WebSocket surface.
  *
@@ -260,6 +261,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         ? {}
         : { serverVersion: pkg.version, herdr: { version: store.state.version, protocol: store.state.protocol } }),
       ...(relay ? { relay } : {}),
+      ...(!viaRelay && isLoopback(arrival.rateKey) && buildId ? { buildId } : {}),
     };
   };
 
