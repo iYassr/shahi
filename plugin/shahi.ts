@@ -318,7 +318,7 @@ async function status(layout: Layout, service: Service): Promise<number> {
 
 function logs(layout: Layout, args: string[]): void {
   const lines = Math.min(1000, Math.max(1, Number(args[args.indexOf("--lines") + 1]) || 80));
-  for (const path of [layout.logPath, join(layout.stateDir, "operations.jsonl")]) {
+  for (const path of [layout.logPath, join(layout.stateDir, "operations.jsonl"), join(layout.configDir, "update.log")]) {
     if (!existsSync(path)) continue;
     const fd = openSync(path, "r");
     try {

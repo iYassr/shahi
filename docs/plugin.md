@@ -205,9 +205,11 @@ then restarts the existing service and verifies the new build identifier through
 local `/api/meta`. It never restarts from the temporary build directory. A failed
 installation leaves the old service alone.
 
-The install output prints the helper's private log path. Restart and verification
-finish shortly after herdr prints “Installed”; the log reports success or an
-explicit failure. If verification fails, inspect `shahi.logs` and run
+Restart and verification finish shortly after herdr prints “Installed”. The
+private `update.log` in `herdr plugin config-dir shahi` reports the verified build
+or an explicit failure and is included by the `shahi.logs` action. herdr hides
+successful build output, so installation completion alone is not a readiness
+confirmation. If verification fails, inspect `shahi.logs` and run
 `herdr plugin action invoke shahi.restart`. First installations still start through
 the startup hook or Pair action. This automatic update applies to installations
 made with herdr running; the restart action needs its server.
