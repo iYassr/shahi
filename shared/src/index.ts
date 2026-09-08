@@ -50,6 +50,8 @@ export interface ServerInfo {
    * itself (2026-09-02 review, R5). The phone needs neither.
    */
   serverVersion?: string;
+  /** Installed build, captured when the sidecar starts. */
+  buildId?: string;
   herdr?: { version: string; protocol: number };
   /** The relay this box dials, and whether it is on it right now. Direct connections only. */
   relay?: { url: string; connected: boolean };
