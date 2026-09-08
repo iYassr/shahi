@@ -15,10 +15,11 @@
  * given, so it mints nothing and is reached over SSH with the passcode.
  */
 import QRCode from "qrcode";
+import { showPairingPopup } from "../lib/pairing-display";
 import { SHAHI_API_VERSION, type PairingCode, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../lib/auth";
 import { loadConfig } from "../lib/config";
-import { PAIRING_TTL_MS, pairingUrl } from "../lib/pairing";
+import { pairingUrl } from "../lib/pairing";
 import { envFilePath, readEnvFile } from "../lib/secrets";
 import { copyToClipboard } from "../lib/clipboard";
 
@@ -81,23 +82,11 @@ if (process.argv.includes("--code-only")) {
 }
 
 const copied = !process.argv.includes("--no-copy") && copyToClipboard(url);
-console.log(await QRCode.toString(url, { type: "terminal", small: true }));
-console.log(`  Scan with Shahi or with the browser app at https://getshahi.dev/pwa/.`);
-console.log(`  Or paste this pairing code:  ${url}\n`);
-// A fragment is not sent to the website, referrers, or access logs.
-console.log(`  Open in a browser:  https://getshahi.dev/pwa/#pair=${encodeURIComponent(url)}\n`);
-console.log(`  Relay    ${config.relayUrl} — the phone connects through this, from anywhere`);
-console.log(`  Expires  ${new Date(code.expiresAt).toLocaleTimeString()} (${PAIRING_TTL_MS / 60_000} minutes, one use)\n`);
-
-console.log(copied
-  ? [
-      "",
-      "  ==================================================",
-      "  COPIED TO CLIPBOARD",
-      "  Your pairing code is ready to paste.",
-      `  Open getshahi.dev/pwa/ and press ${process.platform === "darwin" ? "Cmd+V" : "Ctrl+V"}.`,
-      "  No need to select or copy text from this popup.",
-      "  ==================================================",
-      "",
-    ].join("\n")
-  : "\n  Clipboard unavailable. Run the pairing command in a normal terminal with --code-only to copy its output.\n");
+if (process.argv.includes("--popup") && process.stdout.isTTY) {
+  await showPairingPopup(url, code.expiresAt, copied);
+} else {
+  console.log("Scan with Shahi");
+  console.log(await QRCode.toString(url, { type: "terminal", small: true }));
+  console.log(`Expires ${new Date(code.expiresAt).toLocaleTimeString()} · one use`);
+  console.log(copied ? "Pairing code copied to clipboard." : "Use --code-only to copy the pairing code.");
+}

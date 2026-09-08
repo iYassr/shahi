@@ -140,6 +140,11 @@ runs the setup first, in the same popup. On the phone: Connect → **Scan a
 code**. The code works once and for ten minutes; open the popup again for
 another phone.
 
+The QR has a dedicated screen with a short expiry and close hint. Long links and
+setup output do not push it into scrollback. It redraws when the terminal is
+resized; if the window cannot fit a complete code, it asks for more room instead
+of displaying an unscannable partial QR. The popup uses the available height.
+
 The popup automatically copies the pairing code to the system clipboard on
 macOS (`pbcopy`) and Linux desktops (`wl-copy`, `xclip`, or `xsel`, when
 available), and reports whether copying succeeded. Paste it into the browser
