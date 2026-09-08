@@ -4,18 +4,27 @@ import CryptoKit
 /// Two isolated encrypted fixtures on 7572 and 7672; neither reaches herdr.
 final class ComputerSwitchTests: XCTestCase {
     private var computerIDs: [Int: String] = [:]
-    private func fixture(_ port: Int, _ path: String, method: String = "POST") throws -> [String: Any] {
+    private func fixture(_ port: Int, _ path: String, method: String = "POST", body: [String: Any]? = nil) throws -> [String: Any] {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/__hosted/\(path)")!)
         request.httpMethod = method
+        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let done = expectation(description: path)
         var data: Data?
         URLSession.shared.dataTask(with: request) { body, _, _ in data = body; done.fulfill() }.resume()
         wait(for: [done], timeout: 10)
         return try JSONSerialization.jsonObject(with: XCTUnwrap(data)) as! [String: Any]
     }
-    private func pair(_ app: XCUIApplication, _ port: Int) throws {
+    private func pair(_ app: XCUIApplication, _ port: Int, update: Bool = false) throws {
         XCTAssertTrue(app.buttons["intro-continue"].waitForExistence(timeout: 15))
         let code = try fixture(port, "reset")["code"] as! String
+        if update {
+            _ = try fixture(port, "control", body: [
+                "control": 1, "serverId": "fixture", "buildId": "old", "api": ["min": 5, "max": 5],
+                "capabilities": ["sessions", "computer-updates", "device-revocation"],
+                "backend": ["state": "connected", "version": "0.9.0", "protocol": 22],
+                "update": ["managed": true, "channel": "stable", "phase": "available", "current": "0.3.0", "available": "0.3.1"]
+            ])
+        }
         let fields = URLComponents(string: "https://fixture.invalid/?" + code.components(separatedBy: "#")[1])!.queryItems!
         let serverID = fields.first(where: { $0.name == "server" })!.value!
         let identity = try JSONSerialization.data(withJSONObject: ["relay", serverID], options: [.fragmentsAllowed])
@@ -165,6 +174,35 @@ final class ComputerSwitchTests: XCTestCase {
         XCTAssertEqual(remaining["live"] as? Int, 1)
         XCTAssertEqual(remaining["handshakes"] as? Int, 1)
         computers(app)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
+    }
+
+    func testComputerUpdatePreservesPairing() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
+        app.activate()
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.buttons["add-computer"].exists || app.tabBars.buttons["Settings"].exists || app.buttons["intro-continue"].exists || app.buttons["switch-server"].exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 40), .completed)
+        if app.buttons["switch-server"].exists { app.buttons["switch-server"].tap() }
+        if app.buttons["add-computer"].exists { addComputer(app) }
+        else if app.tabBars.buttons["Settings"].exists { computers(app); addComputer(app) }
+        try pair(app, 7572, update: true)
+        let update = app.buttons["Update computer"]
+        XCTAssertTrue(update.waitForExistence(timeout: 15)); update.tap()
+        XCTAssertTrue(app.staticTexts["Restarting Shahi · reconnecting automatically…"].waitForExistence(timeout: 10))
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: update)
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 20), .completed)
+        XCTAssertEqual(try fixture(7572, "device-count", method: "GET")["count"] as? Int, 1)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["intro-continue"].exists)
+        send(app, "after-computer-update")
+        let writes = try fixture(7572, "writes", method: "GET")["writes"] as! [[String: Any]]
+        XCTAssertEqual(writes.filter { $0["path"] as? String == "/api/control/update" }.count, 1)
+        XCTAssertTrue(writes.contains { ($0["body"] as? [String: Any])?["text"] as? String == "after-computer-update" })
+        app.tabBars.buttons["Settings"].tap()
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
     }
 

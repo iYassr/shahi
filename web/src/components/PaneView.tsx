@@ -1,3 +1,5 @@
+import { useComputerControl } from "./ComputerUpdate";
+import { supports } from "@shahi/shared";
 /**
  * A single pane: its prompt, its live screen, its recorded history, and a way
  * to type into it.
@@ -78,6 +80,7 @@ const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = 
 
 export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
   const api = useApi();
+  const control = useComputerControl();
   const { paneId = "" } = useParams();
   const navigate = useNavigate();
 
@@ -425,6 +428,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
         <div className="compose__row">
           <button
+            hidden={!supports(control?.handshake ?? null, "attachments")}
             className="compose__attach"
             onClick={() => setAttaching(true)}
             aria-label="Attach a file"

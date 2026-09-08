@@ -14,18 +14,18 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "beta"
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "stable"
     },
     "e2e": {
       "extends": "preview",
       "ios": {
         "simulator": true
       },
-      "channel": "preview"
+      "channel": "beta"
     }
   },
   "submit": {

@@ -1,0 +1,59 @@
+name: Approve Shahi release
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [beta, stable]
+        default: beta
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: shahi-release
+  cancel-in-progress: false
+jobs:
+  tested:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: tested
+    runs-on: ubuntu-latest
+    environment: releases
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+      - run: bun run build:web && bun plugin/releases/build.ts
+      - name: Publish immutable computer package and signed channel catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHAHI_RELEASE_PRIVATE_KEY: ${{ secrets.SHAHI_RELEASE_PRIVATE_KEY }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -eu
+          umask 077
+          test -n "$SHAHI_RELEASE_PRIVATE_KEY"
+          printf '%s' "$SHAHI_RELEASE_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-release-key.pem"
+          trap 'rm -f "$RUNNER_TEMP/shahi-release-key.pem"' EXIT
+          VERSION=$(bun -e 'console.log(require("./plugin/releases/release.json").version)')
+          TAG="v$VERSION"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            mkdir -p dist/published
+            gh release download "$TAG" --pattern release.json --pattern shahi-service.tar.gz --dir dist/published
+            bun -e 'const a=require("./dist/published/release.json"); const b=require("./dist/release/release.json"); if(a.commit!==b.commit) throw Error("Released versions are immutable; bump release.json");'
+            cp dist/published/release.json dist/release/release.json
+          else
+            gh release create "$TAG" dist/release/shahi-service.tar.gz dist/release/release.json --target "$GITHUB_SHA" --title "Shahi $VERSION" --notes "Approved computer service, service manager, and web app. See the signed channel catalog for compatibility." --prerelease
+          fi
+          mkdir -p dist/previous
+          # A channel must already be bootstrapped. Network errors must never
+          # silently drop its supported release history.
+          gh release download "shahi-$RELEASE_CHANNEL" --pattern catalog.json --dir dist/previous
+          bun plugin/releases/sign.ts "$RELEASE_CHANNEL" dist/release/release.json "$RUNNER_TEMP/shahi-release-key.pem" dist/release/catalog.json dist/previous/catalog.json
+          gh release upload "shahi-$RELEASE_CHANNEL" dist/release/catalog.json --clobber
+          if [ "$RELEASE_CHANNEL" = stable ]; then gh release edit "$TAG" --prerelease=false; fi

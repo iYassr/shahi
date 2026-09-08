@@ -354,3 +354,24 @@ test("a delayed sign-out removes its own computer after switching to another", a
   await expect(page.locator(".blocked__head").first()).toBeVisible();
   expect((await (await request.get("/__hosted/connections")).json()).live).toBe(1);
 });
+
+test("updates a paired computer through encrypted recovery and reconnects without pairing again", async ({ page, request }) => {
+  await request.post("/__hosted/control", { data: {
+    control: 1, serverId: "fixture", buildId: "before", api: { min: 5, max: 5 }, capabilities: ["sessions", "computer-updates", "device-revocation"],
+    backend: { state: "connected", version: "0.9.0", protocol: 22 },
+    update: { managed: true, channel: "stable", phase: "available", current: "0.3.0", available: "0.3.1" },
+  } });
+  await pair(page, true);
+  await expect(page.getByText("Update available", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Update computer", exact: true }).click();
+  await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).writes.filter((w: { path: string }) => w.path === "/api/control/update").length).toBe(1);
+  await expect(page.getByText("Restarting Shahi · reconnecting automatically…")).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText("Restarting Shahi · reconnecting automatically…")).toBeHidden({ timeout: 12000 });
+  expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(1);
+  await page.locator(".blocked__head").first().click();
+  await expect(page.getByRole("button", { name: "Attach a file", exact: true })).toBeHidden();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+});

@@ -20,6 +20,7 @@ export interface ServiceSpec {
   bun: string;
   /** The plugin root: working directory, and where `server/index.ts` is. */
   root: string;
+  entry?: string;
   env: Record<string, string>;
   logPath: string;
 }
@@ -72,7 +73,7 @@ export function renderLaunchd(spec: ServiceSpec, label = LAUNCHD_LABEL): string 
   <array>
     <string>${xml(spec.bun)}</string>
     <string>run</string>
-    <string>server/index.ts</string>
+    <string>${xml(spec.entry ?? "server/index.ts")}</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${xml(spec.root)}</string>
@@ -118,7 +119,7 @@ StartLimitIntervalSec=0
 Type=simple
 WorkingDirectory=${spec.root}
 ${env}
-ExecStart=${spec.bun} run server/index.ts
+ExecStart=${spec.bun} run ${spec.entry ? unitQuote(spec.entry) : "server/index.ts"}
 StandardOutput=append:${spec.logPath}
 StandardError=append:${spec.logPath}
 Restart=always

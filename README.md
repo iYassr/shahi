@@ -221,6 +221,7 @@ and [CLAUDE.md](CLAUDE.md) for development and service restart instructions.
 ## Further reading
 
 - [Install, update, and manage the plugin](docs/plugin.md)
+- [Release channels, compatibility, and recovery](docs/releases.md)
 - [Pairing and device revocation](docs/pairing.md)
 - [Connection security, explained](docs/connection-security.md)
 - [Relay protocol and self-hosting](docs/relay.md)

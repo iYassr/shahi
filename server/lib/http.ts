@@ -10,7 +10,7 @@ import { buildId } from "./build";
  * terminals, including secrets.
  */
 import {
-  SHAHI_API_VERSION,
+  API_SUPPORT,
   type ClaimResult,
   type DashboardPane,
   type DeviceList,
@@ -46,6 +46,7 @@ import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
 import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
+import type { ComputerControl } from "./control";
 
 export interface SocketData {
   /** The paired device behind this socket, so revoking it can close it. */
@@ -114,6 +115,7 @@ export interface ShahiServer {
 }
 
 export interface HttpDeps {
+  control?: ComputerControl;
   observability?: Observability;
   config: Config;
   auth: Auth;
@@ -256,7 +258,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     const relay = !viaRelay && isLoopback(arrival.rateKey) ? deps.relay?.() : null;
     return {
       serverId,
-      api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
+      ...(deps.control ? { control: 1 as const } : {}),
+      api: { min: API_SUPPORT.min, max: API_SUPPORT.max },
       ...(viaRelay
         ? {}
         : { serverVersion: pkg.version, herdr: { version: store.state.version, protocol: store.state.protocol } }),
@@ -529,22 +532,37 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
         if (pathname === "/api/meta") return json(serverInfo(arrival));
 
+        // Recovery v1 is authenticated before app API negotiation. A paired
+        // older/newer app may repair this service without losing its identity.
+        if (pathname.startsWith("/api/control/")) {
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+          if (req.headers.get("x-shahi-control") !== "1") return json({ error: "Update the app to use this recovery protocol." }, { status: 426 });
+          if (!deps.control) return json({ error: "Computer updates are unavailable." }, { status: 404 });
+          if (pathname === "/api/control/handshake" && req.method === "GET") return json(deps.control.handshake(), { headers: { "cache-control": "no-store" } });
+          if (pathname === "/api/control/update" && req.method === "POST") {
+            try { deps.control.request(await jsonObject(req)); return json({ accepted: true }, { status: 202 }); }
+            catch (e) { return json({ error: e instanceof Error ? e.message : "Cannot start update." }, { status: 409 }); }
+          }
+          return json({ error: "Unknown recovery action." }, { status: 404 });
+        }
+
         // The contract version rides on every request, so a phone that kept its
         // cookie across a server upgrade learns of a mismatch on the first call
         // rather than from a screen that half-works. Absent means an older
         // client that predates negotiation, or the archived web client, and is
         // let through.
         const claimed = req.headers.get("x-shahi-api");
-        if (claimed !== null) {
+        const authRoute = pathname.startsWith("/api/auth/") || pathname === "/api/pair/claim";
+        if (claimed !== null && !authRoute) {
           const n = Number(claimed);
-          if (!Number.isInteger(n) || n < SHAHI_API_VERSION || n > SHAHI_API_VERSION) {
+          if (!Number.isInteger(n) || n < API_SUPPORT.min || n > API_SUPPORT.max) {
             return json(
               {
                 error:
-                  n > SHAHI_API_VERSION
+                  n > API_SUPPORT.max
                     ? "This server runs an older Shahi than the app. Update Shahi on this computer — run herdr plugin install iYassr/shahi again."
                     : "This app is older than the Shahi on this server. Update the app.",
-                api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION },
+                api: { min: API_SUPPORT.min, max: API_SUPPORT.max },
               },
               { status: 426 },
             );
@@ -675,12 +693,19 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         }
 
         if (pathname === "/api/session") {
+          const backend = deps.control?.handshake().backend;
+          if (backend && backend.state !== "connected") return json({ error: backend.message, code: "backend_unavailable" }, { status: 503 });
           defaultGrouping = await readAgentPanelSort();
           return json(await dashboard(store, poller, defaultGrouping));
         }
 
         // Choosing where a new space lives. Browsable, because typing a path on a
         // phone keyboard is its own small punishment.
+        if (pathname.startsWith("/api/")) {
+          const backend = deps.control?.handshake().backend;
+          if (backend && backend.state !== "connected") return json({ error: backend.message, code: "backend_unavailable" }, { status: 503 });
+        }
+
         if (pathname === "/api/dirs") {
           try {
             return json(

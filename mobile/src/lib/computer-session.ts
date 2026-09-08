@@ -4,11 +4,13 @@ import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, t
 import { deviceTarget, closeRelay } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
 import type { SavedComputer } from "./computers";
+import { ControlSession } from "@shahi/shared";
 
 /** One independently reconnecting computer. Switching views never disposes it. */
 export class ComputerSession {
   readonly connection: Connection;
   readonly api;
+  readonly control;
   session: Session | null = null;
   serverId?: string;
   prompts: Record<string, ParsedPrompt> = {};
@@ -24,6 +26,11 @@ export class ComputerSession {
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
     this.api = createApi(this.connection);
+    this.control = new ControlSession(this.api, () => {
+      if (this.disposed) return;
+      this.serverId = this.control.handshake?.serverId ?? this.serverId;
+      this.changed();
+    }, () => { void this.start(); });
   }
   async start() {
     if (this.disposed || this.work) return this.work;
@@ -36,9 +43,11 @@ export class ComputerSession {
         this.connection.baseUrl = await openTunnel(this.saved.connection.ssh);
         if (this.disposed) return;
         await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
-        this.serverId = (await this.api.meta()).serverId;
+        // Recovery remains reachable across an ordinary API mismatch.
+        try { this.serverId = (await this.api.meta()).serverId; } catch (e) { if (!(e instanceof IncompatibleServerError)) throw e; }
       }
       if (this.disposed) return;
+      this.control.start();
       if (!this.socket) {
         this.socket = new SessionSocket(msg => this.message(msg), state => {
           if (this.disposed) return;
@@ -101,6 +110,7 @@ export class ComputerSession {
   }
   dispose() {
     this.disposed = true; this.socket?.close(); this.frames.clear();
+    this.control.stop();
     if (this.connection.relay) closeRelay(this.connection.relay);
     if (this.saved.connection.kind === "ssh") void closeTunnel(this.saved.connection.ssh);
   }

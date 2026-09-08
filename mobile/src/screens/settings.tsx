@@ -1,3 +1,4 @@
+import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
@@ -95,6 +96,7 @@ export function Settings() {
         </Pressable>
       </View>
 
+      <ComputerUpdate settings />
       <View style={styles.group}>
         <Row
           icon={push === "on" ? "bell" : "bell-off"}

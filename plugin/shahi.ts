@@ -1,3 +1,5 @@
+import { bootstrap } from "./releases/bootstrap";
+import { requestUpdate } from "./releases/storage";
 /**
  * Everything the herdr plugin does, as one command with a verb:
  *
@@ -239,7 +241,11 @@ async function install(layout: Layout, service: Service): Promise<void> {
   // 0600 now that the session key is in it.
   writeEnvFile(layout.envFile, env);
 
-  service.install(serviceSpec(layout, env));
+  const managerRoot = await bootstrap(layout);
+  const spec = serviceSpec(layout, env);
+  service.install({ ...spec, root: managerRoot, entry: join(managerRoot, "manager.js"), env: { ...spec.env, SHAHI_MANAGER_ROOT: managerRoot } });
+  try { requestUpdate(managerRoot, { action: "install" }); }
+  catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
 
   const { url } = address(env);
   const info = await waitForMeta(url);

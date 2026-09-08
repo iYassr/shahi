@@ -1,3 +1,4 @@
+import { supports } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -253,7 +254,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
-  const { api, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
+  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -892,14 +893,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         </ScrollView>
         )}
         <View style={styles.composeRow}>
-          <Pressable
+          {supports(control?.handshake ?? null, "attachments") && <Pressable
             style={styles.attach}
             onPress={() => setAttaching(true)}
             accessibilityRole="button"
             accessibilityLabel="Attach a file"
           >
             <Text style={styles.attachText}>+</Text>
-          </Pressable>
+          </Pressable>}
           <TextInput
             style={styles.input}
             value={draft}

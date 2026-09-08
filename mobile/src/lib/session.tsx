@@ -40,6 +40,7 @@ const KEY = "shahi.connection";
 type Stored = ComputerConnection;
 
 interface SessionValue {
+  control?: import("@shahi/shared").ControlSession;
   api: Api;
   transport: Connection;
   revokeComputer: (id: string) => Promise<void>;
@@ -287,6 +288,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     clearPrompt: (pane: string) => entry?.clearPrompt(pane),
   }), [entry]);
   const value: SessionValue = {
+    control: entry?.control,
     api: entry?.api ?? api, transport: entry?.connection ?? connection,
     ready, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
     computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),

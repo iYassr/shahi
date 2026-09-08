@@ -1,3 +1,4 @@
+import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
@@ -65,13 +66,13 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // 426, including when the server changed versions while the app was open.
   if (error && shouldTakeOverSession(error, session)) {
     return (
-      <Unreachable
+      <View style={{ flex: 1 }}><ComputerUpdate /><Unreachable
         title={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
         message={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
         server={server}
         onRetry={reconnect}
         onSwitch={() => router.push("/computers")}
-      />
+      /></View>
     );
   }
   if (failure && !session) return <Centered>{failure}</Centered>;
@@ -157,6 +158,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
           <>
+            <ComputerUpdate />
             <ConnectionHealth />
             {/* Inside the list, not above it: content outside the FlatList
                 gets no inset for the transparent large-title header and drew

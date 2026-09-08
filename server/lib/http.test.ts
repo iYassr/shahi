@@ -22,6 +22,7 @@ import { Poller } from "./poller";
 import { PushService } from "./push";
 import { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
+import { ComputerControl } from "./control";
 
 const PANE = "w1:p1";
 const PASSCODE = "2468";
@@ -93,7 +94,7 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
@@ -138,6 +139,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
       pairing,
       devices,
       serverId: "test-server",
+      ...(recovery ? { control: new ComputerControl("test-server", () => ({ state: "offline", message: "herdr is offline" })) } : {}),
       ...(relay ? { relay: () => ({ url: "https://relay.test", connected: true }) } : {}),
     },
     { heartbeatMs },
@@ -515,5 +517,27 @@ describe("writes and notification ownership", () => {
     finish({ token: "ExpoPushToken[slow]" });
     expect((await pending).status).toBe(401);
     expect(s.push.count()).toBe(baseline);
+  });
+});
+
+describe("authenticated recovery across API generations", () => {
+  test("an API mismatch and offline herdr do not hide recovery or revoke pairing", async () => {
+    const box = await boot({ recovery: true });
+    try {
+      const h = { cookie: box.cookie, "x-shahi-api": "99", "x-shahi-control": "1" };
+      expect((await fetch(`${box.base}/api/session`, { headers: h })).status).toBe(426);
+      const reply = await fetch(`${box.base}/api/control/handshake`, { headers: h });
+      expect(reply.status).toBe(200);
+      expect(await reply.json()).toMatchObject({ control: 1, serverId: "test-server", backend: { state: "offline" } });
+      expect((await fetch(`${box.base}/api/control/handshake`, { headers: { "x-shahi-control": "1" } })).status).toBe(401);
+      expect((await fetch(`${box.base}/api/control/handshake`, { headers: { cookie: box.cookie } })).status).toBe(426);
+      expect((await fetch(`${box.base}/api/session`, { headers: { cookie: box.cookie, "x-shahi-api": "5" } })).status).toBe(503);
+      expect((await fetch(`${box.base}/api/devices`, { headers: { cookie: box.cookie, "x-shahi-api": "5" } })).status).toBe(200);
+      expect((await fetch(`${box.base}/api/control/update`, { method: "POST", headers: { ...h, origin: "https://evil.example", "content-type": "application/json" }, body: '{"action":"install"}' })).status).toBe(403);
+      const relay = await box.dispatch(new Request(`${box.base}/api/control/handshake`, { headers: h }), "device-test");
+      expect(relay?.status).toBe(200);
+      const meta = await box.dispatch(new Request(`${box.base}/api/meta`), "device-test");
+      expect(await meta?.json()).toEqual({ serverId: "test-server", control: 1, api: { min: 5, max: 5 } });
+    } finally { box.stop(); }
   });
 });

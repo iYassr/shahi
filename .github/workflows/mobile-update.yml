@@ -1,0 +1,46 @@
+name: Signed Shahi phone update
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: App channel (matching installed binary)
+        type: choice
+        options: [beta, stable]
+        default: beta
+        required: true
+      percentage:
+        description: Initial rollout percentage
+        type: choice
+        options: ["10", "25", "50", "100"]
+        default: "10"
+        required: true
+permissions:
+  contents: read
+jobs:
+  tested:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: tested
+    runs-on: ubuntu-latest
+    environment: releases
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+      - name: Sign and stage the compatible JavaScript update
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SHAHI_OTA_PRIVATE_KEY: ${{ secrets.SHAHI_OTA_PRIVATE_KEY }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          ROLLOUT_PERCENTAGE: ${{ inputs.percentage }}
+        run: |
+          set -eu
+          umask 077
+          test -n "$EXPO_TOKEN"
+          test -n "$SHAHI_OTA_PRIVATE_KEY"
+          printf '%s' "$SHAHI_OTA_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-ota-key.pem"
+          trap 'rm -f "$RUNNER_TEMP/shahi-ota-key.pem"' EXIT
+          bunx eas-cli@23.2.0 update --channel "$RELEASE_CHANNEL" --rollout-percentage "$ROLLOUT_PERCENTAGE" --private-key-path "$RUNNER_TEMP/shahi-ota-key.pem" --message "Shahi $GITHUB_SHA" --non-interactive
