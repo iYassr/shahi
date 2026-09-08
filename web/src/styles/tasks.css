@@ -628,3 +628,9 @@
   width: auto;
   height: auto;
 }
+
+.inbox-heading { padding: 16px var(--gutter) 8px; }
+.inbox-heading h2 { margin: 0 0 6px; font-size: 22px; }
+.inbox-heading p { margin: 0; color: var(--muted); }
+.inbox-kind { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+.inbox-reviewed { min-height: 44px; padding: 0 12px; color: var(--success); flex: none; }

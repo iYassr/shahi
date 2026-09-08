@@ -32,7 +32,7 @@ test("sign out warns before deleting the connection needed to return", async () 
   fireEvent.press(screen.getByText("Sign out"));
   expect(mockSignOut).not.toHaveBeenCalled();
   const [title, message, buttons] = (Alert.alert as jest.Mock).mock.calls[0]!;
-  expect(title).toBe("Sign out of Shahi?");
+  expect(title).toBe("Sign out of this computer?");
   expect(message).toMatch(/new pairing code or your SSH details/);
   await act(async () => { await buttons.find((button: { text: string }) => button.text === "Sign out").onPress(); });
   expect(mockLogout).toHaveBeenCalledTimes(1);

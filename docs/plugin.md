@@ -23,7 +23,7 @@ keeps your passcode and simply restarts the service on whatever code is
 checked out. herdr 0.8.2 has no menu for plugin actions, so the ways to run
 one are the CLI above and a key you bind (below).
 
-It needs **herdr 0.8.2 or newer** on **macOS or Linux**. It also needs
+It needs **herdr 0.9.0 or newer** on **macOS or Linux**. It also needs
 [bun](https://bun.sh), and installs it if there is none: every command in the
 manifest goes through `plugin/bun.sh`, which finds bun in the places herdr's
 PATH may not include and otherwise — during `herdr plugin install` only,
@@ -203,6 +203,12 @@ herdr has no `plugin update`; reinstalling is the update. Your `.env` and
 database are outside the checkout and untouched, and the restart is what
 puts the new code in front of the phone — a sidecar keeps the old code in
 memory until then.
+
+The current mobile and web clients require relay protocol 2. Update Shahi on
+each paired computer when installing this release; updating herdr alone does
+not update its Shahi plugin. A server still using relay protocol 1 can appear
+connected to the relay while dropping a new app's connection. Existing paired
+device credentials survive the plugin update.
 
 ## Uninstalling cleanly
 

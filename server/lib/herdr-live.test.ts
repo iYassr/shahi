@@ -154,7 +154,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     const path = await submitPrompt(rpc, { paneId, isAgent: false, status: null }, `printf 'shahi-ran-%s\\n' ${nonce}`);
     expect(path).toBe("terminal");
     const text = await eventually(() => visible(paneId), (t) => t.includes(`shahi-ran-${nonce}`));
-    expect(text).toContain(`shahi-ran-${nonce}`);
+    expect(text.includes(`shahi-ran-${nonce}`)).toBe(true);
   });
 
   test("agent.prompt refuses a pane that is not an agent, with a code", async () => {
@@ -264,15 +264,19 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     });
     sub.start();
     try {
-      await client.rpc("pane.send_text", { pane_id: paneId, text: `echo shahi-event-${nonce}` });
-      await client.rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
+      // The stream has no replay. Linux can finish the write before the
+      // asynchronous subscriber connects, so wait for its acknowledgement.
+      await eventually(async () => resyncs, (n) => n > 0, 3_000);
+      // Terminal output is polled; it need not emit a structural event.
+      // Rename our own scratch workspace to exercise a subscribed event.
+      await client.rpc("workspace.rename", { workspace_id: workspaceId, label: `shahi-event-${nonce}` });
       await eventually(async () => events.length, (n) => n > 0, 8_000);
     } finally {
       sub.stop();
     }
     expect(resyncs).toBeGreaterThanOrEqual(1);
     expect(events.length).toBeGreaterThan(0);
-  });
+  }, 15_000);
 
   test("concurrent RPCs each get their own connection", async () => {
     const answers = await Promise.all([
@@ -285,14 +289,25 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
 
   /**
    * The sidecar itself, over HTTP, against this herdr: what a phone would see.
-   * Auth is off (no passcode hash) because the thing under test is the
-   * herdr-facing behaviour, and the passcode has its own suite.
+   * Authenticate like a client: the production server always requires a
+   * passcode, including when this fixture runs on loopback.
    */
   describe("the sidecar over HTTP", () => {
     let child: ReturnType<typeof Bun.spawn> | null = null;
     let base = "";
+    let cookie = "";
+    const fetch = (input: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      if (cookie) headers.set("cookie", cookie);
+      return globalThis.fetch(input, { ...init, headers });
+    };
 
     beforeAll(async () => {
+      // HTTP submission gets a fresh shell: the key-bar checks intentionally
+      // exercise escape sequences and completion in the earlier pane.
+      const tab = await client.rpc("tab.create", { workspace_id: workspaceId, cwd: scratchDir, focus: false });
+      paneId = tab.root_pane!.pane_id;
+      await eventually(() => visible(paneId), (text) => text.trim().length > 0, 8_000);
       const port = 17_000 + Math.floor(Math.random() * 1_000);
       base = `http://127.0.0.1:${port}`;
       child = Bun.spawn(["bun", "run", join(import.meta.dir, "..", "index.ts")], {
@@ -302,7 +317,10 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
           HERDR_SOCKET_PATH: SOCKET!,
           SESSION_SECRET: "live-test-secret",
           SHAHI_DATA: join(scratchDir, "shahi.sqlite"),
-          PASSCODE_HASH_B64: "",
+          PASSCODE_HASH_B64: Buffer.from(await Bun.password.hash("release-fixture-passcode", { algorithm: "bcrypt", cost: 4 })).toString("base64"),
+          SHAHI_ENV_FILE: "",
+          RELAY_URL: "",
+          HOST: "127.0.0.1",
         },
         // Inherited, not piped: under `bun test` on macOS a piped child fails
         // at posix_spawn with EBADF (the same runner fault that trips
@@ -318,7 +336,13 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
         15_000,
       );
       if (!up) throw new Error(`sidecar did not come up on ${base}; its output is above`);
-    });
+      const login = await fetch(`${base}/api/auth/login`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode: "release-fixture-passcode" }),
+      });
+      expect(login.status).toBe(200);
+      cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+    }, 20_000);
 
     afterAll(() => child?.kill());
 
@@ -366,7 +390,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       const again = await (await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/prompt`, { method: "POST", headers, body })).json();
       expect(again).toEqual(first);
       const text = await eventually(() => visible(paneId), (t) => t.includes(`shahi-http-${nonce}`));
-      expect(text).toContain(`shahi-http-${nonce}`);
+      expect(text.includes(`shahi-http-${nonce}`)).toBe(true);
     });
 
     test("POST /api/panes/:id/answer refuses a pane that is not asking, with a code", async () => {

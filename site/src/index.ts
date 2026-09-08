@@ -2,6 +2,7 @@ import { EmailMessage } from "cloudflare:email";
 import { signup } from "./signup";
 interface Env {
   ASSETS: Fetcher;
+  SITE_TELEMETRY?: AnalyticsEngineDataset;
   BETA_EMAIL: SendEmail;
   BETA_DELIVERY_TO: string;
   BETA_LIMIT: RateLimit;
@@ -9,7 +10,8 @@ interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (new URL(request.url).pathname !== "/api/ios-beta") return env.ASSETS.fetch(request);
-    return signup(request, {
+    const started = Date.now();
+    const response = await signup(request, {
       limit: async (key) => (await env.BETA_LIMIT.limit({ key })).success,
       send: async (email) => {
         // Deliver to the verified destination of support@'s existing routing rule.
@@ -25,5 +27,11 @@ export default {
         await env.BETA_EMAIL.send(new EmailMessage("beta@getshahi.dev", env.BETA_DELIVERY_TO, raw));
       },
     });
+    const durationMs = Date.now() - started;
+    try {
+      env.SITE_TELEMETRY?.writeDataPoint({ blobs: ["signup_result"], doubles: [response.status, durationMs], indexes: ["signup_result"] });
+      if (response.status >= 500 || Math.random() < 0.01) console.log({ service: "shahi-site", event: "signup_result", status: response.status, durationMs });
+    } catch { /* Never log the applicant, form body or raw delivery error. */ }
+    return response;
   },
 } satisfies ExportedHandler<Env>;

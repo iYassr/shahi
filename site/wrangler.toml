@@ -31,3 +31,17 @@ allowed_sender_addresses = ["beta@getshahi.dev"]
 name = "BETA_LIMIT"
 namespace_id = "26090501"
 simple = { limit = 5, period = 60 }
+
+[[analytics_engine_datasets]]
+binding = "SITE_TELEMETRY"
+dataset = "shahi_site"
+
+[observability]
+enabled = true
+redact_query_string = true
+[observability.logs]
+enabled = true
+invocation_logs = false
+head_sampling_rate = 1
+[observability.traces]
+enabled = false

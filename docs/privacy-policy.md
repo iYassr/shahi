@@ -68,7 +68,8 @@ the app reads it and is not sent to the website in an HTTP request.
 The hosted relay records connection and failure events in **Cloudflare
 Workers Analytics Engine** to diagnose availability and abuse. Each event
 contains a timestamp, public server identifier (a stable key hash), event type,
-connection or refusal details, a count or close code, and, when available, the
+connection or refusal details, a count or close code, aggregated bytes and frame
+counts in each direction, connection and handshake durations, and, when available, the
 Cloudflare data-center region. These events can be correlated for the same
 server. Shahi's telemetry does not record raw IP addresses, request paths,
 message bodies or file contents.
@@ -79,6 +80,27 @@ Cloudflare also processes network and security metadata as the infrastructure
 provider under its own policies. Removing the `TELEMETRY` binding disables
 Shahi's event collection for a self-hosted relay. Setting no stats API token
 only hides the stats endpoint; it does not disable event collection.
+
+The website records signup response status and duration in Analytics Engine,
+without the submitted email address or form content, and logs failed deliveries
+and a sample of other outcomes. The same retention periods below apply.
+
+The relay also writes these structured operational fields to Cloudflare Workers
+Logs, retained for **seven days** on the paid plan. Automatic invocation logs
+and tracing are disabled in Shahi's configuration; they can include raw URLs.
+The operational monitor records public-service probe results, durations and
+incident state, and sends incident/recovery email to the operator's configured
+address. Its latest incident state persists until replaced or deleted. Probe
+identities are synthetic and never refer to a user's computer.
+
+On your computer, the sidecar keeps private operational JSON logs: route
+**templates** (without IDs or query values), method, status, timings, counts,
+resource usage and fixed error categories. These stay on your computer and
+rotate across four files of up to 5 MiB each. Terminal text, prompts, file
+contents, credentials, filenames and raw error messages are excluded. Request
+metrics reset when the sidecar restarts. The diagnostic API requires a valid
+Shahi session. Local alerts stay in these logs; the public service monitor does
+not collect individual computers' local diagnostics.
 
 The native and web clients contain no advertising or third-party tracking
 SDKs. Relay operational telemetry is separate from client analytics.

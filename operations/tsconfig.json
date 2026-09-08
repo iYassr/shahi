@@ -1,0 +1,5 @@
+{
+  "extends": "../relay/tsconfig.json",
+  "compilerOptions": { "paths": { "@shahi/shared/relay": ["../shared/src/relay.ts"] } },
+  "include": ["src"]
+}

@@ -8,6 +8,7 @@
  * opened and sent, with methods a test uses to play the relay and the box.
  */
 import { RELAY_CLOSE, RELAY_LIMITS, SHAHI_API_VERSION, RELAY_PROTOCOL, type BoxToPhone, type PhoneHello, type PhoneToBox, type RelayRequest } from "@shahi/shared";
+import { File } from "expo-file-system";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ephemeral, open, seal, serverSession, type Session } from "../../../shared/src/e2e";
 import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedError, UnreachableError } from "./api";
@@ -167,7 +168,7 @@ describe("hello", () => {
     const { link, socket, box } = await openLink();
     expect(socket.url).toBe("wss://relay.example.dev/v1/phone/Zm9v-bar_baz");
     expect(socket.binaryType).toBe("arraybuffer");
-    expect(box.hello).toMatchObject({ t: "hello", v: 1, auth: { kind: "device", deviceId: "dev-1" } });
+    expect(box.hello).toMatchObject({ t: "hello", v: RELAY_PROTOCOL, auth: { kind: "device", deviceId: "dev-1" } });
     expect(fromBase64Url(box.hello!.pub)).toHaveLength(32);
     expect(link.state).toBe("live");
 
@@ -209,17 +210,19 @@ describe("hello", () => {
     const second = FakeSocket.opened.at(-1)!;
     second.accept();
     second.drop(RELAY_CLOSE.boxOffline, "box offline");
-    await sleep(600); // the backoff is 1s now: nothing yet
+    await sleep(400); // jittered backoff is at least 500ms: nothing yet
     expect(FakeSocket.opened).toHaveLength(2);
     await sleep(600);
     expect(FakeSocket.opened).toHaveLength(3);
-    // A box that answers is what resets it: the next drop retries in 500ms.
+    // A brief successful hello must not reset backoff during a reconnect storm.
     const third = FakeSocket.opened.at(-1)!;
     third.accept();
     new FakeBox(third, secret).handshake();
     await tick();
     third.drop(1006);
     await sleep(600);
+    expect(FakeSocket.opened).toHaveLength(3);
+    await sleep(1500);
     expect(FakeSocket.opened).toHaveLength(4);
   });
 
@@ -248,8 +251,8 @@ describe("hello", () => {
     const reply = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 1000);
     const socket = FakeSocket.opened.at(-1)!;
     socket.accept();
-    socket.binary(new TextEncoder().encode(JSON.stringify({ t: "hello", v: 2, pub: toBase64Url(new Uint8Array(32)) })));
-    await expect(reply).rejects.toThrow(/protocol v2.*speaks v1/);
+    socket.binary(new TextEncoder().encode(JSON.stringify({ t: "hello", v: 99, pub: toBase64Url(new Uint8Array(32)) })));
+    await expect(reply).rejects.toThrow(/protocol v99.*speaks v2/);
     await sleep(600);
     expect(FakeSocket.opened).toHaveLength(1);
   });
@@ -555,24 +558,21 @@ describe("files over the relay", () => {
 
   test("an upload the relay cannot carry is refused before a byte is sent, with the size", async () => {
     const { box } = await openLink();
-    const bytes = new Uint8Array(RELAY_LIMITS.maxBodyBytes + 1);
-    const realFetch = globalThis.fetch;
-    (globalThis as { fetch: unknown }).fetch = jest.fn(async () => ({ arrayBuffer: async () => bytes.buffer }));
+    const readBytes = jest.fn();
+    const close = jest.fn();
+    const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: 100 * 1024 * 1024, readBytes, close } as never);
     try {
-      await expect(api.upload({ uri: "file:///tmp/big.heic", name: "big.heic", type: "image/heic" })).rejects.toThrow(
-        /This file is 765 KB and the relay carries up to 765 KB/,
-      );
+      await expect(api.upload({ uri: "file:///tmp/big.heic", name: "big.heic", type: "image/heic" })).rejects.toThrow(/relay accepts files up to/);
+      expect(readBytes).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledTimes(1);
       expect(box.read()).toEqual([]);
-    } finally {
-      (globalThis as { fetch: unknown }).fetch = realFetch;
-    }
+    } finally { mocked.mockRestore(); }
   });
 
   test("an upload is the multipart body FormData would have built, with the file's bytes", async () => {
     const { box } = await openLink();
     const bytes = new Uint8Array([1, 2, 3, 0, 255, 13, 10]);
-    const realFetch = globalThis.fetch;
-    (globalThis as { fetch: unknown }).fetch = jest.fn(async () => ({ arrayBuffer: async () => bytes.buffer }));
+    const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: bytes.length, readBytes: () => bytes, close: jest.fn() } as never);
     try {
       const call = api.upload({ uri: "file:///tmp/shot.png", name: "shot.png", type: "image/png" });
       await sleep(5);
@@ -589,7 +589,7 @@ describe("files over the relay", () => {
       box.answer(req!, 200, { path: "/home/y/.shahi/uploads/shot.png", name: "shot.png", size: 7 });
       await expect(call).resolves.toMatchObject({ path: "/home/y/.shahi/uploads/shot.png" });
     } finally {
-      (globalThis as { fetch: unknown }).fetch = realFetch;
+      mocked.mockRestore();
     }
   });
 });

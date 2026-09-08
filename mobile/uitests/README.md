@@ -27,6 +27,33 @@ cd mobile/uitests
 `run.sh` regenerates `ShahiUITests.xcodeproj` with `xcodegen` first — **always
 regenerate after adding a `.swift` file**, or the new file is not compiled.
 
+## Isolated release smoke
+
+`ReleaseSmokeTests` uses the encrypted recording fixture, with no real agent
+writes. Run it on a dedicated simulator: it signs out of any existing pairing.
+It covers pairing confirmation, transcript content, scrolling away from the
+tail, preserving reading mode across navigation, sending with the keyboard,
+foreground resume, a forced relay disconnect, exactly two recorded writes,
+and device revocation returning to onboarding.
+
+From the repository root, keep this fixture running in another terminal:
+
+```sh
+HOSTED_PORT=7572 bun e2e/hosted/server.ts
+```
+
+With the current app installed and Metro running for a development build:
+
+```sh
+RESULT_BUNDLE_PATH=build/release-smoke-1.xcresult \
+  mobile/uitests/run.sh -only-testing:ShahiUITests/ReleaseSmokeTests
+```
+
+Use a new result bundle path on subsequent runs; Xcode refuses to overwrite
+one. The test resets and opens its own single-use pairing code. It does not
+need a camera, credentials, or a deployed relay. This is a simulator check,
+not proof of native push, camera scanning, or physical-device performance.
+
 ## `ReaderPlaceTests`
 
 Proves reading mode keeps your place: scroll back up a conversation, then

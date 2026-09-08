@@ -21,6 +21,6 @@ xcodebuild test \
   -project ShahiUITests.xcodeproj \
   -scheme ShahiUITests \
   -destination "platform=iOS Simulator,id=$UDID" \
-  -resultBundlePath build/last.xcresult \
+  -resultBundlePath "${RESULT_BUNDLE_PATH:-build/last.xcresult}" \
   CODE_SIGNING_ALLOWED=NO \
   "$@"

@@ -12,7 +12,7 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * to read; burying it behind a tap is the difference between a readable
  * conversation and a wall of command output.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError, api, type Activity, type LogBlock, type LogMessage } from "../api";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
@@ -74,12 +74,15 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   if (current.length === 0) return page;
   const fresh = new Set(page.map((m) => m.id));
   const older = current.filter((m) => !fresh.has(m.id));
-  return older.length === 0 ? page : [...older, ...page];
-}
-
-/** Cheap identity for a rendered list: ids, shape, and how much text is in it. */
-export function signature(messages: LogMessage[]): string {
-  return JSON.stringify(messages);
+  const previous = new Map(current.map((message) => [message.id, message]));
+  // Compare only the fetched tail. Preserve unchanged objects so live status
+  // updates never parse and render the entire loaded history again.
+  const tail = page.map((message) => {
+    const held = previous.get(message.id);
+    return held && JSON.stringify(held) === JSON.stringify(message) ? held : message;
+  });
+  const next = [...older, ...tail];
+  return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
 export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
@@ -109,7 +112,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
   const knownTotal = useRef(0);
 
   const load = useCallback(async () => {
-    if (busy.current) return;
+    if (busy.current || document.hidden) return;
     busy.current = true;
     try {
       // A full page when there is nothing on screen, the tail when there is.
@@ -136,7 +139,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
       // session polled every 2.5s otherwise rebuilt the entire conversation on
       // a timer, images and all, which is most of what made this feel unsteady
       // on a phone.
-      if (signature(next) !== signature(shown.current)) {
+      if (next !== shown.current) {
         const arrived = next.length - shown.current.length;
         if (arrived > 0 && !pinnedToBottom.current) setUnseen((n) => n + arrived);
         shown.current = next;
@@ -174,15 +177,16 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
     void load();
     const changed = (event: Event) => { if ((event as CustomEvent).detail === paneId) void load(); };
     window.addEventListener("shahi:log_changed", changed);
+    document.addEventListener("visibilitychange", load);
     const timer = setInterval(() => void load(), POLL_MS);
-    return () => { clearInterval(timer); window.removeEventListener("shahi:log_changed", changed); };
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", load); window.removeEventListener("shahi:log_changed", changed); };
   }, [load]);
 
   // Follow the conversation, but only while the reader is already at the
   // bottom — yanking the view away from something being read is worse than
   // missing the newest message.
-  useEffect(() => {
-    if (pinnedToBottom.current) bottomRef.current?.scrollIntoView({ block: "end" });
+  useLayoutEffect(() => {
+    if (pinnedToBottom.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
   }, [messages]);
 
   async function loadOlder() {
@@ -192,10 +196,10 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
     try {
       const index = offset;
       const node = scroller.current;
-      const height = node?.scrollHeight ?? 0;
-      const top = node?.scrollTop ?? 0;
       pinnedToBottom.current = false;
       const older = await api.sessionLog(paneId, { limit: PAGE, before: index });
+      const height = node?.scrollHeight ?? 0;
+      const top = node?.scrollTop ?? 0;
       shown.current = merge(older.messages, shown.current);
       setOffset(Math.max(0, index - older.messages.length));
       remembered.set(paneId, shown.current);
@@ -242,13 +246,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
       )}
 
       {messages.map((message) => (
-        <article key={message.id} className={`msg msg--${message.role}`}>
-          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "Session" : "You"}</div>
-          <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(message.blocks.map((block) => block.kind === "text" || block.kind === "thinking" ? block.text : block.kind === "tool" ? [block.summary, block.result?.text].filter(Boolean).join("\n") : "").join("\n")).catch(() => setError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
-          {message.blocks.map((block, index) => (
-            <BlockView key={index} block={block} paneId={paneId} />
-          ))}
-        </article>
+        <MessageView key={message.id} message={message} paneId={paneId} onCopyError={setError} />
       ))}
 
       {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
@@ -269,7 +267,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
               pinnedToBottom.current = true;
               setUnseen(0);
               setAway(false);
-              bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+              bottomRef.current?.scrollIntoView({ block: "end", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
             }}
           >
             {unseen > 0 ? `${unseen} new` : "Latest"} ↓
@@ -279,6 +277,21 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
     </div>
   );
 }
+
+// Stable messages skip markdown and tool-tree work while the agent is streaming.
+const MessageView = memo(function MessageView({ message, paneId, onCopyError }: {
+  message: LogMessage; paneId: string; onCopyError: (message: string) => void;
+}) {
+  return (
+        <article className={`msg msg--${message.role}`}>
+          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "Session" : "You"}</div>
+          <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(message.blocks.map((block) => block.kind === "text" || block.kind === "thinking" ? block.text : block.kind === "tool" ? [block.summary, block.result?.text].filter(Boolean).join("\n") : "").join("\n")).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
+          {message.blocks.map((block, index) => (
+            <BlockView key={index} block={block} paneId={paneId} />
+          ))}
+        </article>
+  );
+});
 
 /** An image a tool returned — a screenshot, usually, and worth opening. */
 function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {

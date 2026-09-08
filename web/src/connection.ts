@@ -9,6 +9,18 @@ let remembered = false;
 let generation = 0;
 const blobs = new Set<string>();
 const DB = "shahi-browser-device";
+interface Computer { identity: RelayIdentity; name: string; remembered: boolean }
+let computers: Computer[] = [];
+let restoredComputers: Computer[] = [];
+export function browserComputers() {
+  return computers.map(({ identity: item, name, remembered }) => ({ id: item.serverId, name, remembered, address: new URL(item.relay).host }));
+}
+function rememberComputer(next: RelayIdentity, saved: boolean) {
+  const previous = computers.find(c => c.identity.serverId === next.serverId);
+  computers = [...computers.filter(c => c.identity.serverId !== next.serverId),
+    { identity: next, remembered: saved, name: previous?.name ?? `${new URL(next.relay).host} · ${next.serverId.slice(0, 8)}` }];
+}
+
 
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -18,14 +30,18 @@ function database(): Promise<IDBDatabase> {
     request.onerror = () => reject(new Error("This browser could not save the device. Use a private session instead."));
   });
 }
-async function savedIdentity(value?: RelayIdentity | null): Promise<RelayIdentity | null> {
+async function savedIdentity(value?: RelayIdentity | null, savedComputers: Computer[] = []): Promise<RelayIdentity | null> {
   const db = await database();
   try {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction("identity", value === undefined ? "readonly" : "readwrite");
       const store = tx.objectStore("identity");
       const request = value === undefined ? store.get("current") : value === null ? store.delete("current") : store.put(value, "current");
-      tx.oncomplete = () => resolve(value === undefined ? request.result ?? null : value);
+      const saved = value === undefined ? store.get("computers") : store.put(savedComputers, "computers");
+      tx.oncomplete = () => {
+        if (value === undefined) restoredComputers = saved.result ?? [];
+        resolve(value === undefined ? request.result ?? null : value);
+      };
       tx.onerror = () => reject(new Error("Could not update this browser's saved pairing."));
       tx.onabort = tx.onerror;
     });
@@ -36,8 +52,9 @@ async function savedIdentity(value?: RelayIdentity | null): Promise<RelayIdentit
 // credentials after logout, revocation, or a newer pairing attempt.
 let credentialWrites: Promise<unknown> = Promise.resolve();
 function persistIdentity(value: RelayIdentity | null, expectedGeneration: number): Promise<void> {
+  const saved = computers.filter(c => c.remembered);
   const operation = credentialWrites.then(async () => {
-    if (expectedGeneration === generation) await savedIdentity(value);
+    if (expectedGeneration === generation) await savedIdentity(value, saved);
   });
   credentialWrites = operation.catch(() => {});
   return operation;
@@ -63,7 +80,11 @@ export function readPairing(text: string): PairingPayload {
 }
 function activate(next: RelayIdentity): void {
   link?.close(); identity = next; link = new RelayLink(deviceTarget(next));
-  link.subscribe({ onMessage() {}, onLink() {}, onExpired: () => { void forgetBrowser(); window.dispatchEvent(new Event("shahi:unauthorized")); } });
+  const activeLink = link;
+  link.subscribe({ onMessage() {}, onLink() {}, onExpired: () => {
+    if (link !== activeLink) return;
+    void forgetBrowser(); window.dispatchEvent(new Event("shahi:unauthorized"));
+  } });
 }
 let restoration: Promise<void> | undefined;
 export function restoreBrowser(): Promise<void> {
@@ -72,10 +93,12 @@ export function restoreBrowser(): Promise<void> {
     const before = generation;
     try {
       const saved = await savedIdentity();
-      if (saved && before === generation) {
+      if (before !== generation) return;
+      computers = restoredComputers;
+      if (saved) {
         readPairing(`shahi://pair#v=1&server=${encodeURIComponent(saved.serverId)}&relay=${encodeURIComponent(saved.relay)}&secret=${encodeURIComponent(saved.deviceSecret)}`);
         if (typeof saved.deviceId !== "string" || !saved.deviceId) return;
-        activate(saved); remembered = true;
+        rememberComputer(saved, true); activate(saved); remembered = true;
       }
     } catch { /* Storage may be unavailable in private mode; pairing still works in memory. */ }
   })();
@@ -95,25 +118,54 @@ export async function pairBrowser(text: string, name: string, remember: boolean)
     if (!reply.ok || !result.deviceId || !result.deviceSecret) throw new Error(result.error ?? "Pairing failed. Print a fresh code and try again.");
     if (attempt !== generation) return;
     const next = { relay: payload.relay, serverId: payload.server, deviceId: result.deviceId, deviceSecret: result.deviceSecret };
-    activate(next); remembered = false;
+    rememberComputer(next, remember); activate(next); remembered = false;
     try {
       await persistIdentity(remember ? next : null, attempt);
       if (attempt === generation) remembered = remember;
     } catch {
+      rememberComputer(next, false);
       if (remember) throw new Error("Paired for this session, but this browser could not save the device. Continue without remembering it.");
     }
   } finally { pairing.close(); }
 }
 export async function forgetBrowser(): Promise<void> {
+  const id = identity?.serverId;
+  computers = computers.filter(c => c.identity.serverId !== id);
   generation++; const forgottenGeneration = generation; link?.close(); link = null; identity = null; remembered = false;
   for (const url of blobs) URL.revokeObjectURL(url);
   blobs.clear();
-  try { localStorage.removeItem("shahi.pins"); } catch { /* Storage can be disabled. */ }
+  try { localStorage.removeItem(`shahi.pins.${id}`); localStorage.removeItem(`shahi.push.dismissed.${id}`); } catch { /* Storage can be disabled. */ }
   try { await persistIdentity(null, generation); } catch { /* Memory-only sessions have no database. */ }
   if (generation !== forgottenGeneration) return;
+  if (computers.some(c => c.remembered)) return;
   const registration = await navigator.serviceWorker?.getRegistration(import.meta.env.BASE_URL);
   const subscription = await registration?.pushManager?.getSubscription().catch(() => null);
   if (generation === forgottenGeneration) await subscription?.unsubscribe().catch(() => {});
 }
 export function keepBlob(blob: Blob): string { const url = URL.createObjectURL(blob); blobs.add(url); return url; }
 export function releaseBlob(url: string): void { if (blobs.delete(url)) URL.revokeObjectURL(url); }
+
+/** Switching preserves every device grant; only explicit sign-out removes one. */
+export async function selectBrowserComputer(id: string | null): Promise<void> {
+  const target = id === null ? undefined : computers.find(c => c.identity.serverId === id);
+  if (id !== null && !target) throw new Error("That computer is no longer saved. Pair it again.");
+  const before = generation;
+  try { await persistIdentity(target?.remembered ? target.identity : null, before); }
+  catch (error) {
+    // Private sessions must still be switchable when IndexedDB is disabled.
+    if (computers.some(c => c.remembered)) throw error;
+  }
+  if (generation !== before) return;
+  generation++;
+  link?.close(); link = null; identity = null; remembered = false;
+  for (const url of blobs) URL.revokeObjectURL(url);
+  blobs.clear();
+  if (target) { activate(target.identity); remembered = target.remembered; }
+  window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: id === null } }));
+}
+export function nameBrowserComputer(name: string): void {
+  const current = computers.find(c => c.identity === identity);
+  if (!current || !name || current.name === name) return;
+  current.name = name;
+  if (current.remembered) void persistIdentity(identity, generation).catch(() => {});
+}

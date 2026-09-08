@@ -1,3 +1,4 @@
+import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
  *
@@ -136,6 +137,7 @@ export const paneScrollPlace = (paneId: string) => scrollMemory.get(paneId);
  */
 const terminalPlace = new Map<string, { x: number; y: number }>();
 const terminalView = new Map<string, "reader" | "screen">();
+let memoryOwner: unknown;
 
 /** Test seam: these maps live for the process, so a test resets them by hand. */
 export function forgetPaneMemory(paneId: string): void {
@@ -179,7 +181,12 @@ interface Props {
 
 export function Pane({ paneId, initialView = "reader" }: Props) {
   const owner = connection.relay ?? connection.cookie;
+  const stillActive = useCallback(() => owner === (connection.relay ?? connection.cookie), [owner]);
   const [messages, setMessages] = useState<LogMessage[]>(() => {
+    if (memoryOwner !== owner) {
+      scrollMemory.clear(); messageMemory.clear(); terminalPlace.clear(); terminalView.clear();
+      memoryOwner = owner;
+    }
     const cached = messageMemory.get(paneId);
     if (cached && cached.owner !== owner) {
       forgetPaneMemory(paneId);
@@ -394,6 +401,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     setOlderError(null);
     try {
       const page = await api.sessionLog(paneId, 60, before);
+      if (!stillActive()) return;
       const known = new Set(messagesRef.current.map((m) => m.id));
       const prefix = page.messages.filter((m) => !known.has(m.id));
       const combined = [...prefix, ...messagesRef.current];
@@ -408,6 +416,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setHasOlder(olderCursor.current > 0);
       setMessages(combined);
     } catch (e) {
+      if (!stillActive()) return;
       if (e instanceof UnauthorizedError) signOut();
       else setOlderError((e as Error).message);
     } finally {
@@ -417,6 +426,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   const loadOnce = useCallback(async () => {
+    if (!stillActive()) return;
     // Both requests at once: neither depends on the other, and in sequence the
     // pane detail waited a full transcript round trip for nothing. Each is
     // awaited inside its own handler below so their failure modes stay
@@ -427,6 +437,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     detailRequest.catch(() => undefined);
     try {
       const log = await logRequest;
+      if (!stillActive()) return;
       const folded = merge(messagesRef.current, log.messages);
       const tailStart = log.messages.length ? folded.findIndex((m) => m.id === log.messages[0]!.id) : 0;
       olderCursor.current = Math.max(0, log.total - log.messages.length - Math.max(0, tailStart));
@@ -469,6 +480,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       // session leaves the pane polling 401 forever while `link` still says
       // LIVE — a dead pane that never recovers. (Found by the data-fetching
       // audit.)
+      if (!stillActive()) return;
       if (e instanceof UnauthorizedError) return signOut();
       // No transcript *yet*. A just-started agent has not written one, so this
       // keeps polling rather than latching — the reader fills in by itself the
@@ -478,6 +490,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     }
     try {
       const detail = await detailRequest;
+      if (!stillActive()) return;
       setPrompt(detail.frame?.prompt ?? null);
       const act = detail.frame?.activity ?? null;
       setActivity(act);
@@ -493,10 +506,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         endAwaiting();
       }
     } catch (e) {
+      if (!stillActive()) return;
       if (e instanceof UnauthorizedError) return signOut();
       // Transient; the next poll will catch up.
     }
-  }, [paneId, signOut]);
+  }, [paneId, signOut, stillActive]);
   // One load in flight at most. The timer, a pushed frame and a `log_changed`
   // all call this; while a terminal repaints they arrive faster than a fetch
   // returns, and un-coalesced that was several identical requests outstanding
@@ -673,6 +687,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         }}
       />
 
+      <ConnectionHealth />
       {/* Readable and dismissible, instead of one truncated line squeezed
           into the old topbar. */}
       {error && (

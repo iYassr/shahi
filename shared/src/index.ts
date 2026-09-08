@@ -1,3 +1,5 @@
+export { connectionHealth } from "./connection-health";
+export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
 /**
  * The contract between the server and its clients.
  *

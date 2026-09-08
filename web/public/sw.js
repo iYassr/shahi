@@ -2,8 +2,8 @@
  * credentials, query parameters, API data or arbitrary navigation responses. */
 const BASE = new URL(self.registration.scope).pathname;
 const PREFIX = `shahi-shell:${BASE}:`;
-const CACHE = `${PREFIX}v6`;
-const SHELL = [BASE, `${BASE}manifest.webmanifest`, `${BASE}icon-192.png`, `${BASE}icon-180.png`];
+const CACHE = `${PREFIX}v7`;
+const SHELL = [BASE, `${BASE}manifest.webmanifest`, `${BASE}icon-192.png`, `${BASE}icon-180.png`, `${BASE}welcome.js`];
 const assetPath = (path) => path.startsWith(`${BASE}assets/`);
 const appPath = (path) => path === BASE || path === `${BASE}index.html` ||
   path === `${BASE}settings` || path === `${BASE}spaces` ||
@@ -43,8 +43,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin || url.search ||
       request.headers.has("authorization") || request.headers.has("x-shahi-api")) return;
-  if (assetPath(url.pathname)) event.respondWith(cacheFirst(request));
-  else if (request.mode === "navigate" && appPath(url.pathname)) event.respondWith(shellFirst());
+  if (assetPath(url.pathname) || url.pathname === `${BASE}welcome.js`) event.respondWith(cacheFirst(request));
+  else if (request.mode === "navigate" && appPath(url.pathname)) event.respondWith(shellFirst(event));
 });
 
 async function cacheFirst(request) {
@@ -56,18 +56,33 @@ async function cacheFirst(request) {
   return response;
 }
 
-async function shellFirst() {
+async function shellFirst(event) {
+  const request = event.request;
   const cache = await caches.open(CACHE);
+  const hit = await cache.match(BASE);
+  // A normal launch is local. Explicit reloads must reach the network so the
+  // foreground bundle checker can replace an old release without a reload loop.
   // Fetch the canonical public shell, never a URL supplied in session data.
   const fresh = fetch(BASE, { cache: "no-cache", credentials: "omit" }).then(async (response) => {
     if (response.ok && !response.redirected && response.headers.get("content-type")?.includes("text/html")) {
+      const html = await response.clone().text();
+      const assets = [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
+        .map((match) => new URL(match[1], self.registration.scope))
+        .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname));
+      // Save the new shell only after its entry assets are available offline.
+      await Promise.all(assets.map(async (url) => {
+        const asset = await cacheFirst(new Request(url.href, { credentials: "omit" }));
+        if (!asset.ok || asset.redirected) throw new Error("App asset unavailable");
+      }));
       await cache.put(BASE, response.clone());
       return response;
     }
     return undefined;
   }).catch(() => undefined);
+  event.waitUntil(fresh);
+  if (hit && request.cache !== "reload" && request.cache !== "no-cache") return hit;
   const raced = await Promise.race([fresh, new Promise((resolve) => setTimeout(resolve, 1500))]);
-  return raced ?? await cache.match(BASE) ?? await fresh ?? new Response("offline", { status: 503 });
+  return raced ?? hit ?? await fresh ?? new Response("offline", { status: 503 });
 }
 
 self.addEventListener("push", (event) => {

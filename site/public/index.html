@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shahi — Coding agents on your phone</title>
-<meta name="description" content="Read Claude Code and Codex conversations, answer permission prompts, and manage agents from your phone or browser.">
+<title>Shahi — Leave your desk. Keep working.</title>
+<meta name="description" content="Continue the same Claude Code and Codex sessions from your phone. Scan a QR code and connect to the work running on your computer or server.">
 <meta name="color-scheme" content="dark">
-<meta property="og:title" content="Shahi — Coding agents on your phone">
-<meta property="og:description" content="Read agent conversations and answer permission prompts from your phone or browser.">
+<meta property="og:title" content="Shahi — Leave your desk. Keep working.">
+<meta property="og:description" content="Same conversation. Same files. Continue the work running on your computer from your phone.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getshahi.dev">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -29,8 +29,8 @@
   <main>
     <section class="hero" aria-labelledby="headline">
       <p class="eyebrow">For Claude Code &amp; Codex</p>
-      <h1 id="headline">Coding agents.<br><span>On your phone.</span></h1>
-      <p class="lede">Read conversations, review changes, and answer prompts<br class="desktop-break"> from the agents running on your computer.</p>
+      <h1 id="headline">Leave your desk.<br><span>Keep working.</span></h1>
+      <p class="lede">Continue the same agent sessions from your phone.<br class="desktop-break"> Same conversation. Same files. Your computer does the work.</p>
       <div class="hero-actions">
         <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
@@ -76,9 +76,33 @@
     </figure>
 
     <section class="features" aria-label="Features">
-      <article><span class="feature-number">01</span><h2>Read the conversation</h2><p>Messages, tool calls, and code changes in a layout that fits your phone.</p></article>
+      <article><span class="feature-number">01</span><h2>Scan and connect</h2><p>Pair with a QR code. No Shahi account, VPN installation, or port forwarding needed.</p></article>
       <article><span class="feature-number">02</span><h2>Answer with context</h2><p>Review the request before approving. Shahi checks that the prompt is still current.</p></article>
-      <article><span class="feature-number">03</span><h2>Keep your setup</h2><p>Your agents run in herdr on your computer. Connect through the relay or use SSH on mobile.</p></article>
+      <article><span class="feature-number">03</span><h2>Continue the same work</h2><p>Send the next instruction from your phone. Return to your computer and carry on in the same herdr session.</p></article>
+    </section>
+
+    <section class="security" id="connection-security" aria-labelledby="security-title">
+      <p class="eyebrow">Connection security</p>
+      <h2 id="security-title">How your connection is protected.</h2>
+      <p class="security-intro">Your phone and computer connect outbound to a relay, so your local Shahi port stays private. Application data is encrypted between your devices before it reaches the relay.</p>
+      <figure class="connection-map" aria-label="Encrypted connection between your phone and computer through the relay">
+        <ol>
+          <li class="connection-node"><strong>Your phone</strong><span>Read, reply, and approve.<br>Encrypts and decrypts your session data.</span></li>
+          <li class="connection-arrow" aria-hidden="true">↔</li>
+          <li class="connection-node"><strong>Shahi relay</strong><span>Forwards encrypted payloads.<br>Can observe connection metadata.</span></li>
+          <li class="connection-arrow" aria-hidden="true">↔</li>
+          <li class="connection-node"><strong>Your computer</strong><span>Runs herdr, your agents, and your files.<br>Encrypts and decrypts your session data.</span></li>
+        </ol>
+        <figcaption>Both devices initiate outbound WSS connections. Arrows show two-way traffic. Your computer must stay awake and connected.</figcaption>
+      </figure>
+      <details><summary>What happens when I scan the code?</summary><ol>
+        <li>The code introduces your phone to your computer with a temporary secret. It expires after ten minutes and can be claimed once.</li>
+        <li>Both devices establish an encrypted channel. The secret is not exposed to the relay in plaintext.</li>
+        <li>Your computer gives the paired device its own credentials. Future connections prove possession of that secret before access is granted.</li>
+        <li>You can revoke a device in Settings. Its connection closes and further authenticated requests are refused.</li>
+      </ol><p>Treat an unused QR code or pairing link as a credential: pairing grants access to your terminal.</p></details>
+      <details><summary>What can the relay see—and what must I trust?</summary><p>The relay forwards encrypted application content. It and Cloudflare can observe IP addresses, identifiers, and traffic sizes and timing. Operational metadata is collected for reliability and abuse diagnosis.</p><p>Your phone and computer can read the data they decrypt. The browser app also trusts the code published on getshahi.dev. Optional push providers receive notification content through a separate delivery path. Encryption does not protect a compromised endpoint or guarantee availability.</p><p>Shahi uses X25519, HKDF-SHA-256, and ChaCha20-Poly1305. Published project reviews are internal assessments, not an independent security certification.</p></details>
+      <div class="security-links"><a class="quiet-link" href="https://github.com/iYassr/shahi/blob/master/docs/connection-security.md">Illustrated security guide <span aria-hidden="true">↗</span></a><a class="quiet-link" href="/privacy">Data and privacy <span aria-hidden="true">↗</span></a></div>
     </section>
 
     <section class="beta" id="ios-beta" aria-labelledby="beta-title">
@@ -99,7 +123,7 @@
       <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
 herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
     </section>
-    <p class="connection-note">Pairing grants access to your terminal. The relay carries encrypted messages; the browser app also depends on trusted website code. <a href="https://github.com/iYassr/shahi/blob/master/docs/browser-hosting.md">Connection details</a> · <a href="/privacy">Privacy</a></p>
+    <p class="connection-note">Prefer SSH? The native app can connect through an SSH tunnel to a computer you can already reach. <a href="https://github.com/iYassr/shahi#how-it-connects">Connection options</a></p>
   </main>
   <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>

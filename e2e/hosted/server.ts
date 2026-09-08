@@ -13,9 +13,10 @@ const apiBase = `http://127.0.0.1:${apiPort}`;
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 const bytes = (text: string) => new Uint8Array(Buffer.from(text, "base64url"));
 const encoder = new TextEncoder();
-const serverId = b64(sha256(encoder.encode("isolated-hosted-browser-fixture")));
+const serverId = b64(sha256(encoder.encode(process.env.HOSTED_FIXTURE_ID ?? "isolated-hosted-browser-fixture")));
 let pairingSecret = crypto.getRandomValues(new Uint8Array(32));
 let pairingUsed = false;
+let offline = false;
 const devices = new Map<string, { secret: Uint8Array; name: string }>();
 const links = new Set<ServerWebSocket<Link>>();
 const transcript: { path: string; method: string }[] = [];
@@ -31,15 +32,18 @@ const fixture = Bun.serve<Link>({
   async fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname === "/__hosted/ready") return Response.json({ fixture: true });
+    if (url.pathname === "/__hosted/offline" && req.method === "POST") { offline = true; for (const ws of links) ws.close(4404, "box offline"); return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/online" && req.method === "POST") { offline = false; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/reset" && req.method === "POST") {
       for (const ws of links) ws.close(1000);
-      devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
+      offline = false; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
       await fetch(`${apiBase}/__stub/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "busy" }) });
       const fields = new URLSearchParams({ v: "1", server: serverId, relay: `http://127.0.0.1:${port}`, secret: b64(pairingSecret) });
       return Response.json({ code: `shahi://pair#${fields}`, web: `http://127.0.0.1:${port}/pwa/#pair=${encodeURIComponent(`shahi://pair#${fields}`)}` });
     }
     if (url.pathname === "/__hosted/writes") return Response.json({ requests: transcript, ...(await (await fetch(`${apiBase}/__stub/writes`)).json() as object) });
     if (url.pathname === "/__hosted/revoke" && req.method === "POST") { for (const id of devices.keys()) revoke(id); return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/disconnect" && req.method === "POST") { for (const ws of links) ws.close(1012, "synthetic network interruption"); return Response.json({ ok: true }); }
     if (url.pathname === `/v1/phone/${serverId}`) return srv.upgrade(req, { data: { pairing: false } }) ? undefined : new Response(null, { status: 400 });
     // Deliberately no /api: the hosted client must never use the marketing origin as its box.
     if (!url.pathname.startsWith("/pwa/")) return new Response("not found", { status: 404 });
@@ -58,7 +62,7 @@ const fixture = Bun.serve<Link>({
     } });
   },
   websocket: {
-    open(ws) { links.add(ws); },
+    open(ws) { links.add(ws); if (offline) ws.close(4404, "box offline"); },
     async message(ws, raw) {
       try {
         if (!ws.data.session) {
@@ -79,6 +83,7 @@ const fixture = Bun.serve<Link>({
           return;
         }
         const message = JSON.parse(new TextDecoder().decode(open(ws.data.session, new Uint8Array(raw as Buffer)))) as PhoneToBox;
+        if (message.t === "ack") return;
         if (message.t === "ws") {
           if (!ws.data.deviceId || !devices.has(ws.data.deviceId)) throw new Error("not paired");
           // The recording stub provides the live session and pane frames too.

@@ -33,6 +33,8 @@ import {
   type RelayToBox,
 } from "@shahi/shared";
 import { PUBLIC_KEY_LEN, ephemeral, open, seal, serverSession, type Session } from "@shahi/shared/e2e";
+import { retryDelay } from "../../shared/src/retry";
+import { BodyLimitError, boundedBody } from "../../shared/src/bounded-body";
 import { SESSION_COOKIE, type Auth } from "./auth";
 import { CLOSE_SESSION_EXPIRED, type ShahiServer, type SocketData, type StreamClient } from "./http";
 import type { ServerIdentity } from "./identity";
@@ -46,7 +48,7 @@ export interface RelayClientDeps {
   pairing: Pick<Pairing, "secretByHash">;
   auth: Pick<Auth, "issue">;
   server: Pick<ShahiServer, "dispatch" | "attach" | "detach" | "receive">;
-  log?: (line: string) => void;
+  log?: (event: string, fields?: Record<string, number | string | boolean>) => void;
 }
 
 export interface RelayClientOptions {
@@ -106,7 +108,9 @@ const unb64 = (text: string) => new Uint8Array(Buffer.from(text, "base64url"));
 
 export class RelayClient {
   readonly #deps: RelayClientDeps;
-  readonly #log: (line: string) => void;
+  readonly #log: NonNullable<RelayClientDeps["log"]>;
+  #readySince = 0;
+  #activeRequests = 0;
   readonly #minBackoffMs: number;
   readonly #maxBackoffMs: number;
   readonly #authTimeoutMs: number;
@@ -129,7 +133,7 @@ export class RelayClient {
 
   constructor(deps: RelayClientDeps, options: RelayClientOptions = {}) {
     this.#deps = deps;
-    this.#log = deps.log ?? ((line) => console.log(line));
+    this.#log = deps.log ?? (() => {});
     this.#minBackoffMs = options.minBackoffMs ?? 500;
     this.#maxBackoffMs = options.maxBackoffMs ?? 30_000;
     this.#authTimeoutMs = options.authTimeoutMs ?? RELAY_LIMITS.boxAuthTimeoutMs;
@@ -180,7 +184,7 @@ export class RelayClient {
     // healthy one forever.
     const authTimer = setTimeout(() => {
       if (this.#ws === ws && !this.#ready) {
-        this.#log(`relay: no ready within ${this.#authTimeoutMs}ms, redialling`);
+        this.#log("relay.auth_timeout");
         ws.close(4000, "auth timeout");
       }
     }, this.#authTimeoutMs);
@@ -217,10 +221,10 @@ export class RelayClient {
       this.#ready = false;
       this.#releaseAll();
       if (this.#stopped) return;
-      this.#log(
-        `relay: ${wasReady ? "disconnected" : "could not connect"} (${event.code}${event.reason ? ` ${event.reason}` : ""}), retrying in ${this.#backoffMs}ms`,
-      );
-      this.#reconnectTimer = setTimeout(() => this.#connect(), this.#backoffMs);
+      if (wasReady && Date.now() - this.#readySince >= 30_000) this.#backoffMs = this.#minBackoffMs;
+      const delay = retryDelay(this.#backoffMs);
+      this.#log("relay.retry", { code: event.code, retryMs: delay, connected: wasReady });
+      this.#reconnectTimer = setTimeout(() => this.#connect(), delay);
       this.#backoffMs = Math.min(this.#backoffMs * 2, this.#maxBackoffMs);
     };
   }
@@ -245,9 +249,9 @@ export class RelayClient {
       case "ready":
         if (!this.#challenged || this.#ready) { ws.close(1002, "unexpected ready"); return; }
         this.#ready = true;
-        this.#backoffMs = this.#minBackoffMs;
+        this.#readySince = Date.now();
         this.#lastFrameAt = Date.now();
-        this.#log(`relay: connected to ${this.#deps.url} as ${this.#deps.identity.serverId}`);
+        this.#log("relay.connected");
         clearInterval(this.#pingTimer);
         this.#pingTimer = setInterval(() => {
           if (this.#ws === ws && ws.readyState === WebSocket.OPEN) ws.send("ping");
@@ -259,7 +263,7 @@ export class RelayClient {
           // The relay accepted the socket but has stopped answering — not even
           // a pong. Drop it; onclose redials on the usual backoff. A box that
           // sat on a dead socket was unreachable and silently stayed that way.
-          this.#log(`relay: silent for ${this.#silenceMs}ms, redialling`);
+          this.#log("relay.silent");
           ws.close(4000, "relay silent");
         }, this.#watchdogMs);
         return;
@@ -272,18 +276,18 @@ export class RelayClient {
         // without bound and take the sidecar down with it (pentest L4). Refuse
         // the surplus rather than trust the far end's count.
         if (!this.#links.has(msg.link) && this.#links.size >= RELAY_LIMITS.maxPhonesPerBox) {
-          this.#log(`relay: refused link ${msg.link} — already holding ${this.#links.size}`);
+          this.#log("relay.link_refused", { links: this.#links.size });
           const message: BoxToRelay = { t: "close", link: msg.link };
           if (this.#ws && this.#ready) this.#ws.send(JSON.stringify(message));
           return;
         }
         this.#links.set(msg.link, new Link(msg.link, this.#wire, this.#deps, this.#log, this.#phoneAuthMs));
-        this.#log(`relay: link ${msg.link} opened`);
+        this.#log("relay.link_open", { links: this.#links.size });
         return;
       case "close":
         this.#links.get(msg.link)?.release();
         this.#links.delete(msg.link);
-        this.#log(`relay: link ${msg.link} closed by the phone`);
+        this.#log("relay.link_closed", { links: this.#links.size });
         return;
     }
   }
@@ -296,13 +300,24 @@ export class RelayClient {
 
   /** What a link can do to the socket: send a frame on its number, or end itself. */
   readonly #wire: Wire = {
+    acquire: () => {
+      if (this.#activeRequests >= RELAY_LIMITS.maxRequestsPerBox) return false;
+      this.#activeRequests++;
+      return true;
+    },
+    release: () => { this.#activeRequests--; },
     send: (link, payload) => {
       const ws = this.#ws;
       if (!ws || !this.#ready || ws.readyState !== WebSocket.OPEN) return;
+      if (payload.length > RELAY_LIMITS.maxFrameBytes || ws.bufferedAmount + payload.length > RELAY_LIMITS.maxSocketBufferedBytes) {
+        this.#links.get(link)?.end("backpressure");
+        return;
+      }
       const frame = new Uint8Array(LINK_PREFIX_BYTES + payload.length);
       new DataView(frame.buffer).setUint32(0, link, false);
       frame.set(payload, LINK_PREFIX_BYTES);
-      ws.send(frame);
+      try { ws.send(frame); }
+      catch { this.#links.get(link)?.end("send failed"); }
     },
     end: (link) => {
       this.#links.delete(link);
@@ -318,6 +333,8 @@ export class RelayClient {
 }
 
 interface Wire {
+  acquire(): boolean;
+  release(): void;
   send(link: number, payload: Uint8Array): void;
   end(link: number): void;
 }
@@ -334,6 +351,8 @@ class Link implements StreamClient {
   readonly data: SocketData = { deviceId: null, watchedPaneId: null, releaseWatch: null, releaseLog: null, token: undefined };
 
   #session: Session | null = null;
+  #activeRequests = 0;
+  #unacknowledgedBytes = 0;
   #kind: PhoneHello["auth"]["kind"] | null = null;
   #rateKey = "";
   #attached = false;
@@ -346,7 +365,7 @@ class Link implements StreamClient {
     readonly id: number,
     private readonly wire: Wire,
     private readonly deps: RelayClientDeps,
-    private readonly log: (line: string) => void,
+    private readonly log: NonNullable<RelayClientDeps["log"]>,
     authMs: number,
   ) {
     this.#authTimer = setTimeout(() => this.end("authentication timeout"), authMs);
@@ -377,8 +396,16 @@ class Link implements StreamClient {
       this.end("a frame was not JSON");
       return;
     }
-    if (!msg || typeof msg !== "object" || Array.isArray(msg) || (msg.t !== "req" && msg.t !== "ws")) {
+    if (!msg || typeof msg !== "object" || Array.isArray(msg) || (msg.t !== "req" && msg.t !== "ws" && msg.t !== "ack")) {
       this.end("a malformed message");
+      return;
+    }
+    if (msg.t === "ack") {
+      if (!this.#confirmed || !Number.isSafeInteger(msg.bytes) || msg.bytes <= 0 || msg.bytes > this.#unacknowledgedBytes) {
+        this.end("invalid acknowledgement");
+        return;
+      }
+      this.#unacknowledgedBytes -= msg.bytes;
       return;
     }
     if (!this.#confirmed) {
@@ -407,6 +434,10 @@ class Link implements StreamClient {
     if (payload.byteLength > RELAY_LIMITS.maxControlBytes) { this.end("an oversized hello"); return; }
     const hello = parseHello(payload);
     if (!hello) {
+      try {
+        const version = JSON.parse(decoder.decode(payload))?.v;
+        if (Number.isSafeInteger(version) && version !== RELAY_PROTOCOL) this.log("relay.protocol_mismatch", { code: version });
+      } catch {}
       this.end("a malformed hello");
       return;
     }
@@ -475,33 +506,43 @@ class Link implements StreamClient {
       return;
     }
 
+    if (this.#activeRequests >= RELAY_LIMITS.maxRequestsPerLink || !this.wire.acquire()) {
+      this.log("relay.request_rejected");
+      await this.#answer(req.id, jsonResponse(429, { error: "this box is busy; try again shortly" }));
+      return;
+    }
+    this.#activeRequests++;
     let response: Response;
     try {
       response = await this.deps.server.dispatch(request, this.#rateKey);
-    } catch (err) {
-      this.#answer(req.id, jsonResponse(500, { error: err instanceof Error ? err.message : String(err) }));
-      return;
+    } catch {
+      response = jsonResponse(500, { error: "internal error" });
     }
-    this.#answer(req.id, response);
+    try { await this.#answer(req.id, response); }
+    finally { this.#activeRequests--; this.wire.release(); }
   }
 
-  #answer(id: number, response: Response): void {
-    void (async () => {
-      let body = new Uint8Array(await response.arrayBuffer());
+  async #answer(id: number, response: Response): Promise<void> {
+    try {
+      if (this.#released) { await response.body?.cancel(); return; }
+      let body: Uint8Array;
       let { status } = response;
+      try { body = await boundedBody(response, MAX_RESPONSE_BODY_BYTES); }
+      catch (error) {
+        if (!(error instanceof BodyLimitError)) throw error;
+        this.log("relay.response_oversized");
+        status = 413;
+        body = encoder.encode(JSON.stringify({ error: "too large to send through the relay" }));
+      }
       const headers: Record<string, string> = {};
       for (const name of RESPONSE_HEADERS) {
         const value = response.headers.get(name);
         if (value !== null) headers[name] = value;
       }
-      if (body.length > MAX_RESPONSE_BODY_BYTES) {
-        status = 413;
-        headers["content-type"] = "application/json";
-        body = encoder.encode(JSON.stringify({ error: "too large to send through the relay" }));
-      }
+      if (status === 413) headers["content-type"] = "application/json";
       const res: BoxToPhone = { t: "res", id, status, headers, body: body.length > 0 ? b64(body) : null };
       this.#sendSealed(JSON.stringify(res));
-    })().catch(() => this.end("response failed"));
+    } catch { this.end("response failed"); }
   }
 
   /* ------------------------------------------------------- StreamClient */
@@ -530,7 +571,7 @@ class Link implements StreamClient {
   /** Ends the link from this side: tells the relay, releases what it held. */
   end(reason: string): void {
     if (this.#released) return;
-    this.log(`relay: link ${this.id} closed (${reason})`);
+    this.log("relay.link_closed", { reason });
     this.wire.end(this.id);
     this.release();
   }
@@ -549,7 +590,14 @@ class Link implements StreamClient {
 
   #sendSealed(text: string): void {
     if (this.#released || !this.#session) return;
-    this.wire.send(this.id, seal(this.#session, encoder.encode(text)));
+    // Check before sealing: dropping a sealed frame would skip a crypto counter.
+    if (text.length > RELAY_LIMITS.maxFrameBytes) { this.end("frame too large"); return; }
+    const plain = encoder.encode(text);
+    const frameBytes = plain.byteLength + 24;
+    if (frameBytes > RELAY_LIMITS.maxFrameBytes) { this.end("frame too large"); return; }
+    if (this.#unacknowledgedBytes + frameBytes > RELAY_LIMITS.maxUnacknowledgedBytes) { this.end("backpressure"); return; }
+    this.#unacknowledgedBytes += frameBytes;
+    this.wire.send(this.id, seal(this.#session, plain));
   }
 }
 

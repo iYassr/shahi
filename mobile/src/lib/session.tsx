@@ -1,3 +1,4 @@
+import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 /**
  * One live connection for the whole app.
  *
@@ -23,6 +24,7 @@ import { closeRelay, deviceTarget, type RelayIdentity } from "@/lib/relay";
 import { closeTunnel, openTunnel } from "@/lib/tunnel";
 import { configurePushProfile, forgetPushRegistration, restorePushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
+import { COMPUTERS_KEY, computerAddress, computerId, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
 
@@ -36,11 +38,17 @@ const KEY = "shahi.connection";
  * when it paired — that device secret is the credential. Both shapes live at
  * the same key; `kind` tells them apart.
  */
-type Stored =
-  | { kind: "ssh"; ssh: SshProfile }
-  | ({ kind: "relay" } & RelayIdentity);
+type Stored = ComputerConnection;
 
 interface SessionValue {
+  computers: ComputerSummary[];
+  addingComputer: boolean;
+  activeComputerId: string | null;
+  connectionKey: number;
+  switchComputer: (id: string) => Promise<void>;
+  addComputer: () => Promise<void>;
+  reviewed: Reviewed;
+  markReviewed: (pane: DashboardPane) => void;
   /** Null until the keychain has been read, so nothing flashes the wrong screen. */
   ready: boolean;
   connected: boolean;
@@ -201,7 +209,13 @@ export function useLastUpdate(): number | null {
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [addingComputer, setAddingComputer] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [reviewed, setReviewed] = useState<Reviewed>({});
+  useEffect(() => { setReviewed((current) => retainReviews(current, session?.panes ?? [])); }, [session]);
+  const markReviewed = useCallback((pane: DashboardPane) => {
+    if (pane.status === "done") setReviewed((current) => ({ ...current, [pane.paneId]: reviewKey(pane) }));
+  }, []);
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
   const [link, setLink] = useState<LinkState>("connecting");
   const [error, setError] = useState<Error | null>(null);
@@ -219,6 +233,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const generation = useRef(0);
   const recovering = useRef<Promise<void> | null>(null);
   const watched = useRef<string | null>(null);
+  const activeComputer = useRef<Stored | null>(null);
+  const savedRef = useRef<SavedComputer[]>([]);
+  const [savedComputers, setSavedComputers] = useState<SavedComputer[]>([]);
+  const [connectionKey, setConnectionKey] = useState(0);
+  const storageWrites = useRef<Promise<void>>(Promise.resolve());
+  const changingComputer = useRef(false);
+  const writeStorage = useCallback((write: () => Promise<void>) => {
+    const next = storageWrites.current.catch(() => undefined).then(write);
+    storageWrites.current = next;
+    void next.catch(() => setError(new Error("Couldn't save your computers securely. Try again before closing Shahi.")));
+    return next;
+  }, []);
+  const remember = useCallback((stored: Stored, name?: string, savedPins?: string[]) => {
+    const next = rememberComputer(savedRef.current, stored, name, savedPins);
+    savedRef.current = next;
+    setSavedComputers(next);
+    return writeStorage(() => SecureStore.setItemAsync(COMPUTERS_KEY, JSON.stringify(next)));
+  }, [writeStorage]);
 
   // Restore before first paint of anything that depends on being signed in.
   useEffect(() => {
@@ -229,8 +261,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       try {
         const raw = await SecureStore.getItemAsync(KEY);
         if (!active()) return;
+        const saved = await SecureStore.getItemAsync(COMPUTERS_KEY);
+        if (!active()) return;
+        savedRef.current = saved ? JSON.parse(saved) as SavedComputer[] : [];
+        setSavedComputers(savedRef.current);
         if (raw) {
           const stored = JSON.parse(raw) as Stored;
+          activeComputer.current = stored;
+          // The active connection still has its own key; the address book
+          // also retains computers while none is selected (e.g. during pairing).
+          savedRef.current = rememberComputer(savedRef.current, stored);
+          setSavedComputers(savedRef.current);
           if (stored.kind === "ssh") {
             // The tunnel's local port is gone with the last process, so re-open
             // it and sign in again from the remembered passcode. A failure here
@@ -286,15 +327,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const next = new Set(current);
       if (next.has(paneId)) next.delete(paneId);
       else next.add(paneId);
-      void SecureStore.setItemAsync(PINS_KEY, JSON.stringify([...next]));
+      void writeStorage(() => SecureStore.setItemAsync(PINS_KEY, JSON.stringify([...next])));
+      if (activeComputer.current) void remember(activeComputer.current, undefined, [...next]);
       return next;
     });
-  }, []);
+  }, [remember, writeStorage]);
 
   const clearPins = useCallback(() => {
     setPins(new Set());
-    void SecureStore.deleteItemAsync(PINS_KEY);
-  }, []);
+    void writeStorage(() => SecureStore.deleteItemAsync(PINS_KEY));
+    if (activeComputer.current) void remember(activeComputer.current, undefined, []);
+  }, [remember, writeStorage]);
 
   const setTerminalWidth = useCallback((columns: number) => {
     setWidth(columns);
@@ -352,26 +395,119 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signOut = useCallback(() => {
+  const disconnect = useCallback(() => {
     generation.current++;
     socketRef.current?.close();
+    socketRef.current = null;
     watched.current = null;
-    void forgetPushRegistration();
+    recovering.current = null;
+    frameListeners.current.clear();
     configurePushProfile(null);
-    void SecureStore.deleteItemAsync(KEY);
+    connection.baseUrl = "";
     connection.cookie = null;
     // The link goes with the credentials it carried.
     connection.relay = null;
     closeRelay();
     setConnected(false);
+    setServer("");
     setSession(null);
+    setPrompts({});
+    setReviewed({});
+    setError(null);
+    setLink("connecting");
+    setPins(new Set());
+    lastUpdate.at = null;
+    lastUpdate.listeners.forEach((listener) => listener());
     // Drop the SSH session with the app session — a live tunnel to a box you
     // signed out of is exactly what you did not ask to keep.
-    if (sshProfile.current) {
-      sshProfile.current = null;
-      void closeTunnel();
-    }
+    sshProfile.current = null;
+    return closeTunnel();
   }, []);
+
+  const signOut = useCallback(() => {
+    setAddingComputer(false);
+    void forgetPushRegistration();
+    const id = activeComputer.current && computerId(activeComputer.current);
+    activeComputer.current = null;
+    const next = savedRef.current.filter((computer) => computer.id !== id);
+    savedRef.current = next;
+    setSavedComputers(next);
+    void writeStorage(async () => {
+      await SecureStore.setItemAsync(COMPUTERS_KEY, JSON.stringify(next));
+      await SecureStore.deleteItemAsync(KEY);
+      await SecureStore.deleteItemAsync(PINS_KEY);
+    });
+    void disconnect();
+  }, [disconnect, writeStorage]);
+
+  const addComputer = useCallback(async () => {
+    if (activeComputer.current) await remember(activeComputer.current, session?.serverName, [...pins]);
+    await writeStorage(async () => {
+      await SecureStore.deleteItemAsync(KEY);
+      await SecureStore.deleteItemAsync(PINS_KEY);
+    });
+    setAddingComputer(true);
+    activeComputer.current = null;
+    await disconnect();
+  }, [disconnect, remember, session?.serverName, pins, writeStorage]);
+
+  const switchComputer = useCallback(async (id: string) => {
+    if (changingComputer.current) throw new Error("A computer is already connecting. Please wait.");
+    changingComputer.current = true;
+    const started = generation.current;
+    try {
+    const target = savedRef.current.find((computer) => computer.id === id);
+    if (!target) throw new Error("That computer is no longer saved. Pair it again.");
+    if (activeComputer.current && computerId(activeComputer.current) === id && connected) return;
+    if (activeComputer.current) await remember(activeComputer.current, session?.serverName, [...pins]);
+    // Persist the new selection before touching the current transport. A
+    // keychain failure must not discard the connection the user can still use.
+    await writeStorage(async () => {
+      await SecureStore.setItemAsync(KEY, JSON.stringify(target.connection));
+      await SecureStore.setItemAsync(PINS_KEY, JSON.stringify(target.pins));
+    });
+    if (started !== generation.current) return;
+    setAddingComputer(false);
+    const closed = disconnect();
+    const current = generation.current;
+    const active = () => generation.current === current;
+    activeComputer.current = target.connection;
+    setPins(new Set(target.pins));
+    try {
+      await closed;
+      if (!active()) return;
+      if (target.connection.kind === "relay") {
+        connectRelay(target.connection);
+        setServer(relayLabel(target.connection));
+      } else {
+        const profile = target.connection.ssh;
+        sshProfile.current = profile;
+        configurePushProfile(profile);
+        const baseUrl = await openTunnel(profile);
+        if (!active()) return;
+        connection.baseUrl = baseUrl;
+        await api.login(profile.passcode, active);
+        if (!active()) return;
+        await restorePushRegistration(active);
+        if (!active()) return;
+        setServer(`ssh://${profile.username}@${profile.host}`);
+      }
+      setConnectionKey((key) => key + 1);
+      setConnected(true);
+    } catch (e) {
+      if (active()) { setError(e as Error); setLink("lost"); }
+      throw e;
+    }
+    } finally { changingComputer.current = false; }
+  }, [connected, disconnect, pins, remember, session?.serverName, writeStorage]);
+
+  useEffect(() => {
+    const stored = activeComputer.current;
+    if (!stored || !session?.serverName) return;
+    if (savedRef.current.find((computer) => computer.id === computerId(stored))?.name !== session.serverName) {
+      void remember(stored, session.serverName);
+    }
+  }, [session?.serverName, remember]);
 
   const refresh = useCallback(() => {
     const current = generation.current;
@@ -449,8 +585,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // Native. Re-read over HTTP when the link drops so a server restart onto a
     // newer contract becomes an actionable 426 instead of a stale LIVE list.
     const socket = new SessionSocket(
-      onMessage,
+      (message) => { if (socketRef.current === socket) onMessage(message); },
       (state) => {
+        if (socketRef.current !== socket) return;
         setLink(state);
         // A stream reconnect brings a fresh dashboard push, but an earlier
         // failed HTTP read may still be holding the whole UI on the offline
@@ -458,16 +595,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // manual "Try again" tap.
         if (state === "live") void refresh();
       },
-      signOut,
-      () => void refresh(),
+      () => { if (socketRef.current === socket) signOut(); },
+      () => { if (socketRef.current === socket) void refresh(); },
     );
-    socket.connect();
     socketRef.current = socket;
+    socket.connect();
     return () => {
       socket.close();
       socketRef.current = null;
     };
-  }, [connected, onMessage, refresh]);
+  }, [connected, connectionKey, onMessage, refresh]);
 
   // Coming back from the background: the socket may have died while the app was
   // suspended, and iOS will not necessarily say so. Reconnect and re-read
@@ -481,8 +618,36 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [connected, reconnect]);
 
+  const beginSignIn = useCallback((stored: Stored) => {
+    setAddingComputer(false);
+    if (activeComputer.current) void remember(activeComputer.current, session?.serverName, [...pins]);
+    generation.current++;
+    socketRef.current?.close(); socketRef.current = null;
+    watched.current = null; recovering.current = null; frameListeners.current.clear();
+    setSession(null); setPrompts({}); setReviewed({}); setError(null); setLink("connecting");
+    const savedPins = savedRef.current.find((computer) => computer.id === computerId(stored))?.pins ?? [];
+    activeComputer.current = stored;
+    void remember(stored, undefined, savedPins);
+    setPins(new Set(savedPins));
+    void writeStorage(async () => {
+      await SecureStore.setItemAsync(KEY, JSON.stringify(stored));
+      await SecureStore.setItemAsync(PINS_KEY, JSON.stringify(savedPins));
+    });
+  }, [pins, remember, session?.serverName, writeStorage]);
+
+  // An alert or request started on the outgoing computer may finish after
+  // navigation has moved on. Its sign-out must never forget the new selection.
+  const selectedComputer = activeComputer.current;
+  const scopedSignOut = useCallback(() => {
+    if (activeComputer.current === selectedComputer) signOut();
+  }, [selectedComputer, signOut]);
+
   const value = useMemo<SessionValue>(
     () => ({
+      computers: savedComputers.map(({ id, name, connection: stored }) => ({ id, name, kind: stored.kind, address: computerAddress(stored) })),
+      activeComputerId: activeComputer.current ? computerId(activeComputer.current) : null,
+      connectionKey, switchComputer, addComputer, addingComputer,
+      reviewed, markReviewed,
       ready,
       connected,
       session,
@@ -491,30 +656,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       error,
       refresh,
       reconnect,
-      signOut,
+      signOut: scopedSignOut,
       // The SSH tunnel is already open and login has already succeeded by the
       // time Connect calls this: it remembers the
       // profile (not a base URL, which is a throwaway local port) so a cold
       // start can rebuild the tunnel.
       signInSsh: (profile: SshProfile) => {
-        generation.current++;
+        beginSignIn({ kind: "ssh", ssh: profile });
         sshProfile.current = profile;
         configurePushProfile(profile);
         void restorePushRegistration(() => sshProfile.current === profile);
         connection.relay = null;
-        void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "ssh", ssh: profile }));
         setServer(`ssh://${profile.username}@${profile.host}`);
+        setConnectionKey((key) => key + 1);
         setConnected(true);
       },
       // Pointing `connection` at the device target retires the pairing link
       // the next time anything asks for one — the socket effect below does,
       // and comes up on the device link.
       signInRelay: (identity: RelayIdentity) => {
-        generation.current++;
+        beginSignIn({ kind: "relay", ...identity });
         sshProfile.current = null;
-        void SecureStore.setItemAsync(KEY, JSON.stringify({ kind: "relay", ...identity }));
         connectRelay(identity);
         setServer(relayLabel(identity));
+        setConnectionKey((key) => key + 1);
         setConnected(true);
       },
       watch: (paneId) => {
@@ -535,7 +700,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setTerminalWidth,
       server,
     }),
-    [ready, connected, session, prompts, link, error, refresh, reconnect, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
+    [addingComputer, scopedSignOut, beginSignIn, savedComputers, connectionKey, switchComputer, addComputer, remember, writeStorage, reviewed, markReviewed, ready, connected, session, prompts, link, error, refresh, reconnect, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

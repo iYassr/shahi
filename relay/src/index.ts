@@ -12,6 +12,7 @@ export { RelayBox };
 
 export interface Env extends TelemetryEnv {
   RELAY: DurableObjectNamespace<RelayBox>;
+  OPERATIONS?: Fetcher;
   /**
    * A per-IP connection limiter at the edge, before a Durable Object is even
    * addressed. Optional: absent in `wrangler dev` and the test harness, set in
@@ -31,9 +32,17 @@ const SERVER_ID = /^[A-Za-z0-9_-]{43}$/;
 export default {
   async fetch(request, env): Promise<Response> {
     const path = new URL(request.url).pathname;
+    const synthetic = !!env.STATS_TOKEN && request.headers.get("x-shahi-probe") === env.STATS_TOKEN;
+    if (path === "/health" && request.method === "GET") return Response.json({ ok: true, service: "shahi-relay" }, { headers: { "cache-control": "no-store" } });
     // A read of the fleet telemetry, off the hot path. Hidden unless a token
     // is set (see telemetry.ts); never touches a Durable Object.
     if (path === "/stats") return (await handleStats(request, env)) ?? new Response("not found", { status: 404 });
+    if (path === "/ops/status" || path === "/ops/check" || path === "/ops/test-alert") {
+      if (!env.STATS_TOKEN || !env.OPERATIONS) return new Response("not found", { status: 404 });
+      if (request.headers.get("authorization") !== `Bearer ${env.STATS_TOKEN}`) return new Response("unauthorized", { status: 401 });
+      const response = await env.OPERATIONS.fetch(new Request(`https://operations/${path.split("/").pop()}`, { method: request.method }));
+      return new Response(response.body, { status: response.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
     const match = ROUTE.exec(path);
     if (!match) return new Response("not found", { status: 404 });
     const serverId = match[2]!;
@@ -53,16 +62,20 @@ export default {
     if (env.CONNECT_LIMIT && ip && ip !== "127.0.0.1" && ip !== "::1") {
       const { success } = await env.CONNECT_LIMIT.limit({ key: ip });
       if (!success) {
-        record(env, { kind: "rate_limited", serverId, colo: coloOf(request) });
+        record(env, { synthetic, kind: "rate_limited", serverId, colo: coloOf(request) });
         return new Response("too many connections; slow down", { status: 429 });
       }
     }
     // A connection that passed the wall and is being routed: raw volume, by
     // region and role, for the "how busy / who is hammering" view.
-    record(env, { kind: "connect", serverId, detail: match[1]!, colo: coloOf(request) });
+    record(env, { synthetic, kind: "connect", serverId, detail: match[1]!, colo: coloOf(request) });
     // One object per serverId, addressed by the id itself: a box and its
     // phones land on the same instance wherever in the world they connect.
-    return env.RELAY.get(env.RELAY.idFromName(serverId)).fetch(request);
+    try { return await env.RELAY.get(env.RELAY.idFromName(serverId)).fetch(request); }
+    catch {
+      record(env, { synthetic, kind: "internal_error", serverId });
+      return new Response("relay unavailable", { status: 503, headers: { "retry-after": "5" } });
+    }
   },
 } satisfies ExportedHandler<Env>;
 

@@ -3,10 +3,10 @@
  * AUTO-GENERATED from herdr's bundled API schema. Do not edit by hand.
  * Regenerate with: bun run gen:types
  *
- * herdr protocol: 20, schema_version: 1
+ * herdr protocol: 22, schema_version: 1
  */
 
-export const HERDR_PROTOCOL = 20;
+export const HERDR_PROTOCOL = 22;
 export const HERDR_SCHEMA_VERSION = 1;
 
 /**
@@ -362,6 +362,26 @@ export type NotificationShowSound = "none" | "done" | "request";
 export type PaneAgentState = "idle" | "working" | "blocked" | "unknown";
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneCopyMotion".
+ */
+export type PaneCopyMotion =
+  | "line_end"
+  | "first_non_blank"
+  | "next_word_start"
+  | "previous_word_start"
+  | "next_word_end"
+  | "next_big_word_start"
+  | "previous_big_word_start"
+  | "next_big_word_end"
+  | "previous_paragraph"
+  | "next_paragraph";
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneCopySearchDirection".
+ */
+export type PaneCopySearchDirection = "forward" | "backward";
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneDirection".
  */
 export type PaneDirection = "left" | "right" | "up" | "down";
@@ -457,12 +477,28 @@ export type Request1 =
       params: NotificationShowParams;
     }
   | {
+      method: "product_announcement.dismiss";
+      params: ProductAnnouncementDismissParams;
+    }
+  | {
+      method: "release_notes.dismiss";
+      params: ReleaseNotesDismissParams;
+    }
+  | {
+      method: "command.invoke";
+      params: CommandInvokeParams;
+    }
+  | {
       method: "client.window_title.set";
       params: ClientWindowTitleSetParams;
     }
   | {
       method: "client.window_title.clear";
       params: EmptyParams;
+    }
+  | {
+      method: "client_shell.surface.set";
+      params: ClientShellSurfaceSetParams;
     }
   | {
       method: "session.snapshot";
@@ -502,7 +538,7 @@ export type Request1 =
     }
   | {
       method: "workspace.close";
-      params: WorkspaceTarget;
+      params: WorkspaceCloseParams;
     }
   | {
       method: "worktree.list";
@@ -649,6 +685,26 @@ export type Request1 =
       params: PaneResizeParams;
     }
   | {
+      method: "pane.scroll";
+      params: PaneScrollParams;
+    }
+  | {
+      method: "pane.edit_scrollback";
+      params: PaneTarget;
+    }
+  | {
+      method: "pane.selection.read";
+      params: PaneSelectionReadParams;
+    }
+  | {
+      method: "pane.copy_motion";
+      params: PaneCopyMotionParams;
+    }
+  | {
+      method: "pane.copy_search";
+      params: PaneCopySearchParams;
+    }
+  | {
       method: "pane.list";
       params: PaneListParams;
     }
@@ -667,6 +723,10 @@ export type Request1 =
   | {
       method: "pane.input.set";
       params: PaneInputSetParams;
+    }
+  | {
+      method: "pane.link.activate";
+      params: PaneLinkActivateParams;
     }
   | {
       method: "pane.rename";
@@ -739,6 +799,10 @@ export type Request1 =
   | {
       method: "pane.wait_for_output";
       params: PaneWaitForOutputParams;
+    }
+  | {
+      method: "integration.list";
+      params: EmptyParams;
     }
   | {
       method: "integration.install";
@@ -1002,6 +1066,11 @@ export type PluginActionContext = "global" | "workspace" | "tab" | "pane" | "sel
 export type PluginPlatform = "linux" | "macos" | "windows";
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "IntegrationState".
+ */
+export type IntegrationState = "not_installed" | "current" | "outdated";
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "NotificationShowReason".
  */
 export type NotificationShowReason = "shown" | "disabled" | "rate_limited" | "no_foreground_client" | "busy";
@@ -1191,6 +1260,26 @@ export type ResponseResult =
       type: "pane_read";
     }
   | {
+      pane_id: string;
+      text: string;
+      type: "pane_selection";
+    }
+  | {
+      content_revision: number;
+      cursor: PaneTextPoint;
+      pane_id: string;
+      type: "pane_copy_motion";
+    }
+  | {
+      content_revision: number;
+      current?: number | null;
+      current_global?: number | null;
+      matches: PaneTextRange[];
+      pane_id: string;
+      total: number;
+      type: "pane_copy_search";
+    }
+  | {
       revision: number;
       sequence: number;
       type: "pane_graphics_frame_ack";
@@ -1244,6 +1333,10 @@ export type ResponseResult =
       type: "client_window_title";
     }
   | {
+      integrations: IntegrationInfo[];
+      type: "integration_list";
+    }
+  | {
       details: IntegrationInstallResult;
       target: IntegrationTarget;
       type: "integration_install";
@@ -1295,6 +1388,11 @@ export type ResponseResult =
       type: "plugin_action_invoked";
     }
   | {
+      handled: boolean;
+      type: "pane_link_activated";
+      url?: string | null;
+    }
+  | {
       logs: PluginCommandLogInfo[];
       type: "plugin_log_list";
     }
@@ -1314,6 +1412,11 @@ export type ResponseResult =
       diagnostics: string[];
       status: ConfigReloadStatus;
       type: "config_reload";
+    }
+  | {
+      active: boolean;
+      projection_revision: number;
+      type: "client_shell_surface_set";
     }
   | {
       type: "ok";
@@ -1430,11 +1533,55 @@ export interface AgentWaitParams {
   until?: AgentStatus[];
 }
 /**
+ * Updates whether the requesting client shell receives and controls pane presentation.
+ *
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "ClientShellSurfaceSetParams".
+ */
+export interface ClientShellSurfaceSetParams {
+  active: boolean;
+}
+/**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "ClientWindowTitleSetParams".
  */
 export interface ClientWindowTitleSetParams {
   title: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "CommandInvokeParams".
+ */
+export interface CommandInvokeParams {
+  /**
+   * Opaque endpoint-issued command identifier from the client-shell projection.
+   */
+  command_id: string;
+  pane_id?: string | null;
+  /**
+   * Client-owned selection coordinates, validated against the pane's content revision.
+   */
+  selection?: PaneSelectionReadParams | null;
+  tab_id?: string | null;
+  workspace_id?: string | null;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneSelectionReadParams".
+ */
+export interface PaneSelectionReadParams {
+  anchor: PaneTextPoint;
+  content_revision?: number | null;
+  cursor: PaneTextPoint;
+  pane_id: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneTextPoint".
+ */
+export interface PaneTextPoint {
+  col: number;
+  row: number;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
@@ -1520,6 +1667,36 @@ export interface PaneClearAgentAuthorityParams {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneCopyMotionParams".
+ */
+export interface PaneCopyMotionParams {
+  content_revision?: number | null;
+  cursor: PaneTextPoint;
+  motion: PaneCopyMotion;
+  pane_id: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneCopySearchParams".
+ */
+export interface PaneCopySearchParams {
+  content_revision: number;
+  cursor: PaneTextPoint;
+  direction: PaneCopySearchDirection;
+  pane_id: string;
+  previous?: PaneTextRange | null;
+  query: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneTextRange".
+ */
+export interface PaneTextRange {
+  end: PaneTextPoint;
+  start: PaneTextPoint;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneCurrentParams".
  */
 export interface PaneCurrentParams {
@@ -1592,6 +1769,17 @@ export interface PaneInputSetParams {
  */
 export interface PaneLayoutParams {
   pane_id?: string | null;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneLinkActivateParams".
+ */
+export interface PaneLinkActivateParams {
+  col: number;
+  content_revision?: number | null;
+  offset_from_bottom?: number | null;
+  pane_id: string;
+  viewport_row: number;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
@@ -1711,6 +1899,14 @@ export interface PaneResizeParams {
   amount?: number | null;
   direction: PaneDirection;
   pane_id?: string | null;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneScrollParams".
+ */
+export interface PaneScrollParams {
+  offset_from_bottom: number;
+  pane_id: string;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
@@ -1930,6 +2126,21 @@ export interface PluginUnlinkParams {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "ProductAnnouncementDismissParams".
+ */
+export interface ProductAnnouncementDismissParams {
+  id: string;
+  version: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "ReleaseNotesDismissParams".
+ */
+export interface ReleaseNotesDismissParams {
+  version: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "ServerLiveHandoffParams".
  */
 export interface ServerLiveHandoffParams {
@@ -1982,6 +2193,14 @@ export interface TabTarget {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "WorkspaceCloseParams".
+ */
+export interface WorkspaceCloseParams {
+  close_group?: boolean;
+  workspace_id: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "WorkspaceCreateParams".
  */
 export interface WorkspaceCreateParams {
@@ -1991,6 +2210,10 @@ export interface WorkspaceCreateParams {
   };
   focus?: boolean;
   label?: string | null;
+  /**
+   * Workspace whose focused pane supplies the `follow` cwd policy.
+   */
+  source_workspace_id?: string | null;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
@@ -2047,6 +2270,7 @@ export interface WorktreeCreateParams {
   focus?: boolean;
   label?: string | null;
   path?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 /**
@@ -2055,6 +2279,7 @@ export interface WorktreeCreateParams {
  */
 export interface WorktreeListParams {
   cwd?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 /**
@@ -2067,6 +2292,7 @@ export interface WorktreeOpenParams {
   focus?: boolean;
   label?: string | null;
   path?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 /**
@@ -2075,6 +2301,7 @@ export interface WorktreeOpenParams {
  */
 export interface WorktreeRemoveParams {
   force?: boolean;
+  trust_repository?: boolean;
   workspace_id: string;
 }
 export interface Request2 {
@@ -2372,6 +2599,17 @@ export interface PluginManifestStartup {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "IntegrationInfo".
+ */
+export interface IntegrationInfo {
+  available: boolean;
+  command: string;
+  label: string;
+  state: IntegrationState;
+  target: IntegrationTarget;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "IntegrationInstallResult".
  */
 export interface IntegrationInstallResult {
@@ -2567,7 +2805,19 @@ export interface PluginPaneInfo {
  */
 export interface ServerCapabilities {
   detached_server_daemon?: boolean;
+  /**
+   * Stable client-owned endpoint generation supported by this server.
+   */
+  endpoint_protocol_generation?: number | null;
+  /**
+   * Whether this server supports endpoint health probes.
+   */
+  health_check?: boolean;
   live_handoff: boolean;
+  /**
+   * Whether this server supports explicit client-shell surface interest.
+   */
+  surface_interest?: boolean;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema

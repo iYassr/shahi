@@ -438,7 +438,7 @@ async function bootBox(): Promise<Box> {
 
 function dial(relay: FakeRelay, box: Box, identity = box.identity, options: RelayClientOptions = {}): RelayClient {
   const client = new RelayClient(
-    { url: relay.url, identity, devices: box.devices, pairing: box.pairing, auth: box.auth, server: box.server, log: (l) => box.log.push(l) },
+    { url: relay.url, identity, devices: box.devices, pairing: box.pairing, auth: box.auth, server: box.server, log: (event, fields) => box.log.push(JSON.stringify({ event, ...fields })) },
     { minBackoffMs: 20, maxBackoffMs: 200, authTimeoutMs: 150, ...options },
   );
   client.start();
@@ -482,7 +482,7 @@ describe("box authentication", () => {
 
   test("a box that signs the challenge is ready, under the id its key hashes to", () => {
     expect(relay.boxes.has(box.identity.serverId)).toBe(true);
-    expect(box.log.some((l) => l.startsWith("relay: connected"))).toBe(true);
+    expect(box.log.some((l) => l.includes("relay.connected"))).toBe(true);
   });
 
   // The Worker cannot ping a box; it drops one silent for five minutes. So
@@ -525,7 +525,7 @@ describe("box authentication", () => {
     try {
       await waitFor(() => other.boxConnections >= 2, "a redial after the auth timeout", 3_000);
       expect(dialler.connected).toBe(false);
-      expect(quiet.log.some((l) => l.includes("no ready"))).toBe(true);
+      expect(quiet.log.some((l) => l.includes("relay.auth_timeout"))).toBe(true);
     } finally {
       dialler.stop();
       quiet.stop();
@@ -741,7 +741,7 @@ describe("a phone through the relay", () => {
     expect((await before.closed).code).toBe(RELAY_CLOSE.boxOffline);
     await waitFor(() => !client.connected, "the box to notice the drop");
     await waitFor(() => client.connected && relay.boxes.has(box.identity.serverId), "the box to redial");
-    expect(box.log.some((l) => l.includes("disconnected") && l.includes("retrying"))).toBe(true);
+    expect(box.log.some((l) => l.includes("relay.retry"))).toBe(true);
 
     const after = phone(relay, box.identity.serverId, { kind: "pairing", id: hashOf(secretBytes) }, secretBytes);
     await after.hello;

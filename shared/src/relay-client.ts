@@ -33,6 +33,7 @@ import {
 } from "./index";
 import { clientSession, ephemeral, open, seal, type Ephemeral, type Session } from "./e2e";
 import { UnauthorizedError, UnreachableError, hostOf } from "./errors";
+import { retryDelay } from "./retry";
 
 /** What the keychain keeps for a box reached through a relay. */
 export interface RelayIdentity {
@@ -140,6 +141,8 @@ export class RelayLink {
   #session: Session | null = null;
   #state: LinkState = "lost";
   #pending = new Map<number, Pending>();
+  #receivedBytes = 0;
+  #liveSince = 0;
   #nextId = 1;
   #backoffMs = 500;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -150,7 +153,7 @@ export class RelayLink {
   #subscribers = new Set<LinkSubscriber>();
   readonly host: string;
 
-  constructor(readonly target: RelayTarget, private readonly options: { randomBytes?: (length: number) => Uint8Array } = {}) {
+  constructor(readonly target: RelayTarget, private readonly options: { randomBytes?: (length: number) => Uint8Array; retryRandom?: () => number } = {}) {
     this.host = hostOf(target.relay);
   }
 
@@ -176,11 +179,8 @@ export class RelayLink {
       if (this.#ws.readyState === 1) this.#checkAlive();
       return;
     }
-    if (this.#timer) {
-      clearTimeout(this.#timer);
-      this.#timer = undefined;
-    }
-    this.#backoffMs = 500;
+    // Polling must respect an already scheduled retry, including while offline.
+    if (this.#timer) return;
     this.#open();
   }
 
@@ -222,6 +222,10 @@ export class RelayLink {
   request(request: OutgoingRequest, timeoutMs: number): Promise<Reply> {
     if (request.body && request.body.byteLength > RELAY_LIMITS.maxBodyBytes) {
       return Promise.reject(new UnreachableError("relay", this.host, `That was too big to send through the relay: one message carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)}.`));
+    }
+    const heldBytes = [...this.#pending.values()].reduce((n, p) => n + (p.request.body?.byteLength ?? 0), 0);
+    if (this.#pending.size >= RELAY_LIMITS.maxPendingRequests || heldBytes + (request.body?.byteLength ?? 0) > RELAY_LIMITS.maxPendingBodyBytes) {
+      return Promise.reject(new UnreachableError("relay", this.host, "Too many requests are waiting for this box. Try again shortly."));
     }
     return new Promise<Reply>((resolve, reject) => {
       const id = this.#nextId++;
@@ -307,11 +311,19 @@ export class RelayLink {
         return;
       }
       this.#receive(plain);
+      this.#receivedBytes += event.data.byteLength;
+      if (this.#receivedBytes >= RELAY_LIMITS.acknowledgeBytes && this.#session) {
+        const bytes = this.#receivedBytes;
+        this.#receivedBytes = 0;
+        this.#sendSealed({ t: "ack", bytes });
+      }
     };
     socket.onclose = (event: { code?: number; reason?: string }) => {
       if (this.#ws !== socket) return;
       this.#ws = undefined;
       this.#session = null;
+      if (this.#liveSince && Date.now() - this.#liveSince >= 30_000) this.#backoffMs = 500;
+      this.#liveSince = 0;
       const code = event?.code ?? 0;
       const reason = event?.reason ?? "";
       if (
@@ -342,8 +354,7 @@ export class RelayLink {
   }
 
   #onHello(text: string): void {
-    // The box answered: this link is real, so the next drop starts over.
-    this.#backoffMs = 500;
+    // Only a stable connection resets backoff; brief hello/close loops do not.
     let hello: Partial<BoxHello> = {};
     try {
       hello = JSON.parse(text) as BoxHello;
@@ -364,6 +375,8 @@ export class RelayLink {
       return;
     }
     this.#session = clientSession(this.#self, pub, this.target.secret);
+    this.#receivedBytes = 0;
+    this.#liveSince = Date.now();
     this.#self = null;
     // A device must prove its secret even when it only wants the dashboard.
     // A hello alone must never start a session or keep a phone slot alive.
@@ -431,6 +444,11 @@ export class RelayLink {
         socket.close();
         return false;
       }
+      if (socket.bufferedAmount + frame.byteLength > RELAY_LIMITS.maxSocketBufferedBytes) {
+        this.#rejectAll(new UnreachableError("relay", this.host, "This connection is too slow. Reconnecting…"));
+        socket.close();
+        return false;
+      }
       socket.send(new Uint8Array(frame));
       return true;
     } catch {
@@ -473,7 +491,7 @@ export class RelayLink {
 
   #retry(): void {
     if (this.#closed || this.#timer) return;
-    const delay = this.#backoffMs;
+    const delay = retryDelay(this.#backoffMs, this.options.retryRandom);
     // Capped at half a minute, like the box's own dial: a phone that keeps
     // being refused is waiting for its box, and every attempt is a relay
     // request the box's owner pays for.

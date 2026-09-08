@@ -1,3 +1,4 @@
+import { inboxPanes, type Reviewed } from "@shahi/shared";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
 /**
@@ -21,6 +22,8 @@ import { Prompt } from "./Prompt";
 import { useScrollMemory } from "../useScrollMemory";
 
 interface Props {
+  reviewed: Reviewed;
+  onReviewed: (pane: DashboardPane) => void;
   session: Session | null;
   prompts: Record<string, ParsedPrompt>;
   onAnswer: (paneId: string, optionIndex: number) => Promise<void>;
@@ -38,7 +41,7 @@ const GROUPINGS: { key: Grouping; label: string }[] = [
 
 const STORED = "shahi.grouping";
 
-export function Dashboard({ session, prompts, onAnswer }: Props) {
+export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: Props) {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -70,13 +73,15 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
     );
   }
 
+  const inbox = inboxPanes(session.panes, reviewed);
+  const inboxIds = new Set(inbox.map((pane) => pane.paneId));
   const allAgents = session.panes.filter((p) => p.isAgent);
-  const chips = [{ id: "all", label: "All" }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: kind! })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
+  const chips = [{ id: "all", label: "All" }, { id: "inbox", label: `Inbox ${inbox.length}` }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: kind! })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
   const active = chips.some((c) => c.id === filter) ? filter : "all";
-  const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
+  const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "inbox" && inboxIds.has(p.paneId) || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
   const blocked = agents.filter((p) => p.status === "blocked");
   const rest = agents.filter((p) => p.status !== "blocked");
-  rest.sort((a, b) => Number(pins.includes(b.paneId)) - Number(pins.includes(a.paneId)));
+  if (active !== "inbox") rest.sort((a, b) => Number(pins.includes(b.paneId)) - Number(pins.includes(a.paneId)));
 
   if (session.panes.length === 0) {
     return (
@@ -91,7 +96,8 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
     <div className="scroll" ref={scroller}>
       <div className="agent-search"><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
       <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>{chip.label}</button>)}</div>
-      {agents.length === 0 && <p className="empty">No matching agents.</p>}
+      {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p></div>}
+      {agents.length === 0 && <p className="empty">{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>}
 
       {blocked.map((pane) => (
         <BlockedCard
@@ -105,7 +111,7 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
 
       {rest.length > 0 && (
         <>
-          <div className="groupbar" role="group" aria-label="Group agents by">
+          {active !== "inbox" && <div className="groupbar" role="group" aria-label="Group agents by">
             <span className="groupbar__label">Group by</span>
             {GROUPINGS.map((option) => (
               <button
@@ -117,14 +123,14 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
                 {option.label}
               </button>
             ))}
-          </div>
+          </div>}
 
-          {groupPanes(rest, effective).map((group) => (
+          {groupPanes(rest, active === "inbox" ? "priority" : effective).map((group) => (
             <section key={group.key}>
               <div className="group">
                 <h2 className="group__label">
                   {group.icon && <AgentIcon kind={group.icon} />}
-                  {group.title}
+                  {active === "inbox" ? "Updates" : group.title}
                   <span className="group__count">{group.panes.length}</span>
                 </h2>
               </div>
@@ -134,9 +140,9 @@ export function Dashboard({ session, prompts, onAnswer }: Props) {
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-                  <span className="row__title">{pane.title ?? pane.paneId}<span className="row__preview">{pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
+                  <span className="row__title">{pane.title ?? pane.paneId}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}</span>
-                </button><button className="pin-button" aria-pressed={pins.includes(pane.paneId)} aria-label={`${pins.includes(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane.paneId)}>{pins.includes(pane.paneId) ? "★" : "☆"}</button></div>
+                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${pane.title ?? pane.paneId} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.includes(pane.paneId)} aria-label={`${pins.includes(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane.paneId)}>{pins.includes(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
             </section>
           ))}

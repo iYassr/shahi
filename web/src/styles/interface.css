@@ -148,3 +148,14 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } :where(button, .tabbar__glyph):active { scale: 1 !important; } }
+
+.connection-health { display: flex; align-items: center; gap: 12px; padding: 12px var(--gutter); background: var(--surface); border-bottom: 1px solid var(--line); flex: none; }
+.connection-health strong { color: var(--accent); font-size: 14px; }
+.connection-health p { margin: 4px 0; font-size: 13px; }
+.connection-health small { color: var(--muted); }
+.connection-health button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; flex: none; }
+@media (max-width: 480px) { .connection-health { align-items: flex-start; flex-direction: column; gap: 6px; } }
+
+:root[data-keyboard="open"] .connection-health { flex-direction: row; align-items: center; }
+:root[data-keyboard="open"] .connection-health p,
+:root[data-keyboard="open"] .connection-health small { display: none; }

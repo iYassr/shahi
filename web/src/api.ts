@@ -344,7 +344,7 @@ export class SessionSocket {
     const relay = browserConnection().link;
     if (relay) {
       this.#relay = relay;
-      this.#relaySubscription = { onMessage: this.onMessage, onLink: this.onLink, onExpired: () => window.dispatchEvent(new Event("shahi:unauthorized")) };
+      this.#relaySubscription = { onMessage: this.onMessage, onLink: this.onLink, onExpired: () => { if (browserConnection().link === relay) window.dispatchEvent(new Event("shahi:unauthorized")); } };
       relay.subscribe(this.#relaySubscription); relay.ensureConnected();
       window.addEventListener("online", this.#handleOnline);
       return;

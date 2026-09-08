@@ -11,14 +11,16 @@ const originalSocket = globalThis.WebSocket;
 const links: RelayLink[] = [];
 class FakeSocket {
   static last: FakeSocket;
+  static count = 0;
   readyState = 1;
+  bufferedAmount = 0;
   binaryType = "";
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: Uint8Array[] = [];
-  constructor(readonly url: string) { FakeSocket.last = this; }
+  constructor(readonly url: string) { FakeSocket.last = this; FakeSocket.count++; }
   send(data: Uint8Array) { this.sent.push(data); }
   close() { this.readyState = 3; this.onclose?.({ code: 1000 }); }
   receive(data: Uint8Array) { this.onmessage?.({ data: new Uint8Array(data).buffer }); }
@@ -104,4 +106,35 @@ test("a device proves its secret without waiting for a dashboard or an API reque
   const proof = JSON.parse(new TextDecoder().decode(open(box, socket.sent[1]!)));
   expect(proof).toEqual({ t: "ws", data: { type: "unwatch" } });
   expect(socket.sent).toHaveLength(2);
+});
+
+test("polling cannot bypass scheduled reconnect backoff", async () => {
+  const { link, socket, response } = connect();
+  const rejected = response.catch(() => {});
+  socket.close();
+  const before = FakeSocket.count;
+  for (let i = 0; i < 1000; i++) link.ensureConnected();
+  expect(FakeSocket.count).toBe(before);
+  await rejected;
+});
+
+test("pending requests and body bytes have separate hard limits", async () => {
+  const { link, response } = connect();
+  void response.catch(() => {});
+  const request = { method: "POST", path: "/api/uploads", headers: {}, body: new Uint8Array(RELAY_LIMITS.maxBodyBytes) };
+  void link.request(request, 5000).catch(() => {});
+  void link.request(request, 5000).catch(() => {});
+  await expect(link.request(request, 5000)).rejects.toThrow("Too many requests");
+  for (let i = 3; i < RELAY_LIMITS.maxPendingRequests; i++) void link.request({ ...request, body: null }, 5000).catch(() => {});
+  await expect(link.request({ ...request, body: null }, 5000)).rejects.toThrow("Too many requests");
+});
+
+test("delivery acknowledgments are encrypted and count actual received frame bytes", async () => {
+  const { socket, response } = connect();
+  const box = hello(socket);
+  const request = JSON.parse(new TextDecoder().decode(open(box, socket.sent[1]!)));
+  const frame = seal(box, new TextEncoder().encode(JSON.stringify({ t: "res", id: request.id, status: 200, headers: {}, body: toBase64Url(new Uint8Array(65536)) })));
+  socket.receive(frame);
+  expect((await (await response).bytes()).length).toBe(65536);
+  expect(JSON.parse(new TextDecoder().decode(open(box, socket.sent[2]!)))).toEqual({ t: "ack", bytes: frame.length });
 });

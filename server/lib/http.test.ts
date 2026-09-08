@@ -183,7 +183,19 @@ afterAll(() => {
 describe("the gate", () => {
   test("every /api route and the socket refuse a request without the cookie", async () => {
     expect((await fetch(`${s.base}/api/session`)).status).toBe(401);
+    expect((await fetch(`${s.base}/api/diagnostics`)).status).toBe(401);
     expect(await socket(s.base, {})).toMatchObject({ open: false });
+  });
+
+  test("diagnostics require a session and expose aggregate counters without session content", async () => {
+    const response = await fetch(`${s.base}/api/diagnostics`, { headers: { cookie: s.cookie } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = await response.json() as { requests: object; rssBytes: number };
+    expect(body.rssBytes).toBeGreaterThan(0);
+    expect(Object.keys(body.requests).length).toBeGreaterThan(0);
+    expect(JSON.stringify(body)).not.toContain(PANE);
+    expect(JSON.stringify(body)).not.toContain(s.cookie);
   });
 
   test("every response says nosniff, no frames, no referrer", async () => {
