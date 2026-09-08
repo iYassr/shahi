@@ -342,6 +342,13 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       });
       expect(login.status).toBe(200);
       cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+      // Recovery opens first, even with no herdr. App readiness is a separate
+      // authenticated promise and must include a usable session snapshot.
+      const ready = await eventually(
+        () => fetch(`${base}/api/control/handshake`, { headers: { "x-shahi-control": "1" } }).then(r => r.json()).then(h => (h as { backend?: { state: string } }).backend?.state === "connected").catch(() => false),
+        ok => ok, 15_000,
+      );
+      expect(ready).toBe(true);
     }, 20_000);
 
     afterAll(() => child?.kill());
