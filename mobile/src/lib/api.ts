@@ -144,9 +144,10 @@ export interface Connection {
  * threading them through each call site.
  */
 export const connection: Connection = { baseUrl: "", cookie: null, relay: null };
+const pairingConnection = connection;
 
 /** Something to talk to, of either kind. */
-const configured = () => !!connection.relay || !!connection.baseUrl;
+
 
 /**
  * How long any single request may hang before it is aborted. A dead host used
@@ -175,12 +176,16 @@ export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQU
  * session cookie when there is one. One place, so no route can forget the
  * version header and slip past the server's compatibility check.
  */
-function baseHeaders(extra: Record<string, string> = {}): Record<string, string> {
+function headersForConnection(connection: Connection, extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { "x-shahi-api": String(SHAHI_API_VERSION), ...extra };
   if (connection.cookie) headers.cookie = connection.cookie;
   return headers;
 }
 
+/** Each computer owns its credentials, requests and transcript cache. */
+export function createApi(connection: Connection) {
+const configured = () => !!connection.relay || !!connection.baseUrl;
+const baseHeaders = (extra: Record<string, string> = {}) => headersForConnection(connection, extra);
 /**
  * How a request travels: over HTTP to the address, or through the relay link.
  *
@@ -266,7 +271,7 @@ const postJson = <T>(path: string, body: unknown, ms = REQUEST_TIMEOUT_MS) =>
  */
 const transcriptCache = new Map<string, { etag: string; value: SessionLog }>();
 
-export const api = {
+const api = {
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
 
   /**
@@ -384,7 +389,12 @@ export const api = {
     }
     const value = (await res.json()) as SessionLog;
     const etag = res.headers.get("etag");
-    if (etag) transcriptCache.set(path, { etag, value });
+    if (etag) {
+      transcriptCache.delete(path);
+      transcriptCache.set(path, { etag, value });
+      // Retaining several computers must not retain every page ever read.
+      while (transcriptCache.size > 8) transcriptCache.delete(transcriptCache.keys().next().value!);
+    }
     else transcriptCache.delete(path);
     return value;
   },
@@ -574,6 +584,12 @@ async function multipart(file: {
   };
 }
 
+return api;
+}
+export type Api = ReturnType<typeof createApi>;
+/** Pairing uses a temporary connection; session screens receive a scoped API. */
+export const api = createApi(connection);
+
 /* -------------------------------------------------------------------------- */
 
 export type { LinkState };
@@ -620,12 +636,13 @@ export class SessionSocket {
     private readonly onExpired?: () => void,
     /** Re-check HTTP when a link dies; a rejected WS handshake hides its 426. */
     private readonly onDisconnected?: () => void,
+    private readonly connection: Connection = pairingConnection,
   ) {}
 
   connect(): void {
     this.#closed = false;
-    if (connection.relay) {
-      this.#attachRelay(connection.relay);
+    if (this.connection.relay) {
+      this.#attachRelay(this.connection.relay);
       return;
     }
     this.#open();
@@ -655,8 +672,8 @@ export class SessionSocket {
       this.connect();
       return;
     }
-    if (connection.relay) {
-      this.#attachRelay(connection.relay);
+    if (this.connection.relay) {
+      this.#attachRelay(this.connection.relay);
       return;
     }
     if (this.#socket?.readyState === 1) {
@@ -700,10 +717,10 @@ export class SessionSocket {
   }
 
   #open(): void {
-    if (this.#closed || !connection.baseUrl) return;
+    if (this.#closed || !this.connection.baseUrl) return;
     this.onLink("connecting");
 
-    const url = connection.baseUrl.replace(/^http/, "ws");
+    const url = this.connection.baseUrl.replace(/^http/, "ws");
 
     // React Native's WebSocket takes a third options argument carrying headers,
     // which is how the session cookie travels — there is no browser cookie jar
@@ -723,7 +740,7 @@ export class SessionSocket {
     // list from a server the app cannot otherwise talk to. Found writing the
     // update-needed flow, where that state could not be held long enough to
     // assert on.
-    const socket = new RNWebSocket(`${url}/ws`, undefined, { headers: baseHeaders() });
+    const socket = new RNWebSocket(`${url}/ws`, undefined, { headers: headersForConnection(this.connection) });
     this.#socket = socket;
 
     socket.onopen = () => {

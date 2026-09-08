@@ -54,7 +54,7 @@ const mockSession = {
   },
 };
 
-jest.mock("@/lib/session", () => ({ useSession: () => mockSession }));
+jest.mock("@/lib/session", () => ({ useSession: () => ({ ...mockSession, api: require("@/lib/api").api, transport: require("@/lib/api").connection, computers: [] }) }));
 
 // The real error classes are kept: `instanceof UnauthorizedError` is the
 // sign-out decision under test, and a fake class would prove nothing.

@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
 import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PromptReceipt } from "@shahi/shared";
@@ -80,12 +81,27 @@ export type LinkState = "connecting" | "live" | "lost";
 const SILENCE_LIMIT_MS = 50_000;
 const WATCHDOG_INTERVAL_MS = 5_000;
 
+export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
+
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
+export function requestId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function createApi(getConnection = browserConnection) {
 async function dispatch(path: string, init?: RequestInit): Promise<Response> {
   if (!path.startsWith("/api/") || path.includes("#")) throw new Error("Invalid API path");
   const timeout = path === "/api/agents/start" ? START_AGENT_TIMEOUT_MS : 15_000;
   const headers = new Headers(init?.headers);
   headers.set("x-shahi-api", String(SHAHI_API_VERSION));
-  const { link, generation } = browserConnection();
+  const { link, generation } = getConnection();
+  if (browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError");
   let res: Response;
   if (link) {
     // Request encodes multipart boundaries without sending anything to the host.
@@ -109,7 +125,7 @@ async function dispatch(path: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const generation = browserConnection().generation;
+  const generation = getConnection().generation;
   const res = await dispatch(path, init);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -118,15 +134,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const result = (await res.json()) as T;
   if (browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError");
   return result;
-}
-
-export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
-
-export class UnauthorizedError extends Error {
-  constructor() {
-    super("unauthorized");
-    this.name = "UnauthorizedError";
-  }
 }
 
 const postJson = <T = { ok?: boolean; result?: unknown; sent?: number }>(
@@ -153,14 +160,14 @@ function requireAbsolute(path: string): string {
   return path;
 }
 
-export function requestId(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export const api = {
+const api = {
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
   login: (passcode: string) => postJson("/api/auth/login", { passcode }),
-  logout: async () => { try { await postJson("/api/auth/logout", {}); } finally { if (hosted) await forgetBrowser(); } },
+  logout: async () => {
+    const id = getConnection().identity?.serverId;
+    try { await postJson("/api/auth/logout", {}); }
+    finally { if (hosted && id) await forgetBrowser(id); }
+  },
 
   session: () => request<Session>("/api/session"),
 
@@ -323,6 +330,12 @@ export const api = {
  * The watched pane is remembered across reconnects: a phone that locks and
  * wakes should land back on the same live view without the user doing anything.
  */
+return api;
+}
+export const api = createApi();
+export const ApiContext = createContext(api);
+export const useApi = () => useContext(ApiContext);
+
 export class SessionSocket {
   #socket: WebSocket | undefined;
   #relaySubscription: LinkSubscriber | undefined;
@@ -345,7 +358,10 @@ export class SessionSocket {
     if (relay) {
       this.#relay = relay;
       this.#relaySubscription = { onMessage: this.onMessage, onLink: this.onLink, onExpired: () => { if (browserConnection().link === relay) window.dispatchEvent(new Event("shahi:unauthorized")); } };
-      relay.subscribe(this.#relaySubscription); relay.ensureConnected();
+      relay.subscribe(this.#relaySubscription);
+      const cached = browserConnection().session;
+      if (cached) this.onMessage({ type: "session", session: cached });
+      relay.ensureConnected();
       window.addEventListener("online", this.#handleOnline);
       return;
     }
@@ -365,7 +381,7 @@ export class SessionSocket {
 
   close(): void {
     this.#closed = true;
-    if (this.#relaySubscription) this.#relay?.unsubscribe(this.#relaySubscription);
+    if (this.#relaySubscription) { this.#relay?.watch(null); this.#relay?.unsubscribe(this.#relaySubscription); }
     this.#relay = undefined;
     this.#relaySubscription = undefined;
     if (this.#timer) clearTimeout(this.#timer);
@@ -396,7 +412,7 @@ export class SessionSocket {
    */
   ensureConnected(): void {
     if (this.#closed) return;
-    if (browserConnection().link) { browserConnection().link!.ensureConnected(); return; }
+    if (this.#relay) { this.#relay.ensureConnected(); return; }
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     if (this.#socket?.readyState === WebSocket.OPEN) {
       this.#checkAlive();

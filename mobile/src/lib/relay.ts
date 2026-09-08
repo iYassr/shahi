@@ -7,29 +7,14 @@ export class RelayLink extends SharedRelayLink {
   constructor(target: RelayTarget) { super(target, { randomBytes: getRandomBytes }); }
 }
 
-/* ------------------------------------------------------------ the one link */
-
-let current: { target: RelayTarget; link: RelayLink } | null = null;
-
-/**
- * The link for the connection the app is on, opened on first use.
- *
- * One link is both the request channel and the dashboard stream, so requests
- * and the socket must share it — and a request can come before any socket
- * exists (the pairing handshake, a cold-start refresh). Keyed by the target
- * object's identity: a new target, set by pairing or sign-in, retires the old
- * link the next time anything asks.
- */
+/** A link belongs to one credential target, independent of the selected screen. */
+const links = new Map<RelayTarget, RelayLink>();
 export function relayLink(target: RelayTarget): RelayLink {
-  if (current?.target !== target) {
-    current?.link.close();
-    current = { target, link: new RelayLink(target) };
-  }
-  return current.link;
+  let link = links.get(target);
+  if (!link) { link = new RelayLink(target); links.set(target, link); }
+  return link;
 }
-
-/** Sign-out: the link goes with the credentials. */
-export function closeRelay(): void {
-  current?.link.close();
-  current = null;
+export function closeRelay(target?: RelayTarget): void {
+  if (target) { links.get(target)?.close(); links.delete(target); }
+  else { for (const link of links.values()) link.close(); links.clear(); }
 }

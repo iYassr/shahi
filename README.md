@@ -101,6 +101,14 @@ credentials: anyone who claims a valid code can gain access to your session.
   Once invited, open the app and choose **Scan QR code**. Invitations depend on
   beta availability; the signup form does not immediately grant access.
 
+Pair several computers from **Settings → Computers → Add a computer**. Tap the computer
+name on the main screen or in Settings to switch instantly. Every saved computer
+keeps its own live connection while Shahi is open; switching only changes the view.
+The computer list shows which machines are connected and lets you revoke this
+phone or browser’s access to one without disconnecting the others. Mobile operating
+systems can suspend connections while the app is in the background; Shahi reconnects
+all saved computers when you return.
+
 Your existing agents appear after pairing. Outbound internet access is required
 for the default relay connection; you do not need to expose Shahi’s local port.
 

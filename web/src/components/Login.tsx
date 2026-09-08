@@ -1,8 +1,9 @@
 import { Logo, Wordmark } from "./Logo";
 import { useState } from "react";
-import { api } from "../api";
+import { useApi } from "../api";
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
+  const api = useApi();
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

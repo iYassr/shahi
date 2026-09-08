@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { DeviceList, PairedDevice } from "@shahi/shared";
-import { api } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
 export function PairedDevices({
@@ -21,6 +21,7 @@ export function PairedDevices({
   /** Retry after a restored connection moves from connecting/offline to live. */
   refreshKey?: unknown;
 }) {
+  const { api } = useSession();
   const [list, setList] = useState<DeviceList | null>(null);
   const [error, setError] = useState<string | null>(null);
 

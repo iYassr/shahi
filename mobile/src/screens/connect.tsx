@@ -142,8 +142,8 @@ export function Connect({
       // or minted before a restart. The transport's words are about a device
       // that is no longer paired; here there was never a device, so say what
       // is true instead. The half-open pairing link is closed either way.
+      if (connection.relay) closeRelay(connection.relay);
       connection.relay = null;
-      closeRelay();
       setError(
         e instanceof UnauthorizedError
           ? "That pairing code is not valid. A code works once and for ten minutes — print a new one."
@@ -191,7 +191,7 @@ export function Connect({
     } catch (e) {
       // The tunnel may be half-up (opened, then login failed); close it so the
       // next attempt starts from nothing rather than a stale forward.
-      await closeTunnel();
+      await closeTunnel(ssh);
       setError((e as Error).message);
       setBusy(false);
     }

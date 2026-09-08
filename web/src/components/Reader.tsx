@@ -13,7 +13,7 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * conversation and a wall of command output.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ApiError, api, type Activity, type LogBlock, type LogMessage } from "../api";
+import { ApiError, useApi, type Activity, type LogBlock, type LogMessage } from "../api";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
 
@@ -86,6 +86,7 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
 }
 
 export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
+  const api = useApi();
   const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
@@ -295,6 +296,7 @@ const MessageView = memo(function MessageView({ message, paneId, onCopyError }: 
 
 /** An image a tool returned — a screenshot, usually, and worth opening. */
 function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
+  const api = useApi();
   const [viewing, setViewing] = useState(false);
   const src = api.imageUrl(paneId, imageRef);
   return (
@@ -341,6 +343,7 @@ function Working({ activity }: { activity: Activity }) {
 }
 
 function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
+  const api = useApi();
   const [open, setOpen] = useState(false);
   /** The file this block named, once you have asked to see it. */
   const [viewing, setViewing] = useState(false);

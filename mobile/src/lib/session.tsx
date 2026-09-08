@@ -1,9 +1,9 @@
-import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
+import { ComputerSession } from "./computer-session";
+import { type Reviewed, type DashboardPane } from "@shahi/shared";
 /**
- * One live connection for the whole app.
+ * One live connection per saved computer, shared by all of its screens.
  *
- * The web client can afford a socket per screen — a browser tab is one screen.
- * A native app stacks them, and Agents, Spaces and an open pane are all mounted
+ * A native app stacks screens, and Agents, Spaces and an open pane are all mounted
  * at once; three sockets would mean three snapshots and three reconnect loops
  * fighting over the same server. So the mirror lives here, above the router,
  * and every screen reads it.
@@ -17,11 +17,10 @@ import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@sh
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import type { ParsedPrompt, Session, SocketMessage } from "@shahi/shared";
-import { api, connection, IncompatibleServerError, SessionSocket, UnauthorizedError, type LinkState } from "@/lib/api";
+import type { ParsedPrompt, Session } from "@shahi/shared";
+import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
-import { closeRelay, deviceTarget, type RelayIdentity } from "@/lib/relay";
-import { closeTunnel, openTunnel } from "@/lib/tunnel";
+import { closeRelay, type RelayIdentity } from "@/lib/relay";
 import { configurePushProfile, forgetPushRegistration, restorePushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { COMPUTERS_KEY, computerAddress, computerId, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
@@ -41,6 +40,9 @@ const KEY = "shahi.connection";
 type Stored = ComputerConnection;
 
 interface SessionValue {
+  api: Api;
+  transport: Connection;
+  revokeComputer: (id: string) => Promise<void>;
   computers: ComputerSummary[];
   addingComputer: boolean;
   activeComputerId: string | null;
@@ -123,52 +125,7 @@ const WIDTH_KEY = "shahi.terminal-width";
  *  - a snapshot identical to the last returns the *previous* Session, so
  *    `setSession` sees the same reference and does not re-render at all.
  */
-export function reconcileArray<T>(prev: T[], next: T[], key: (t: T) => string): T[] {
-  const prevByKey = new Map(prev.map((t) => [key(t), t] as const));
-  // Reuse the previous object for any entry with byte-identical content,
-  // wherever it now sits. Then keep the previous array only when the result is
-  // element-for-element the same (same refs, same order) — that catches
-  // insertions, removals and reorders without ever indexing prev out of
-  // bounds, which is what crashed when `next` was longer than `prev`.
-  const out = next.map((n) => {
-    const old = prevByKey.get(key(n));
-    return old && JSON.stringify(old) === JSON.stringify(n) ? old : n;
-  });
-  const unchanged = out.length === prev.length && out.every((v, i) => v === prev[i]);
-  return unchanged ? prev : out;
-}
-
-function reconcileSession(prev: Session | null, next: Session): Session {
-  if (!prev) return next;
-  const panes = reconcileArray(prev.panes, next.panes, (p) => p.paneId);
-  const tabs = reconcileArray(prev.tabs, next.tabs, (t) => t.tabId);
-  const workspaces = reconcileArray(prev.workspaces, next.workspaces, (w) => w.workspaceId);
-  // Scalar fields (version, protocol, grouping, focus) rarely move; compare them
-  // together, and if they and all three lists are unchanged, keep the previous
-  // Session so nothing downstream re-renders.
-  const scalarsSame =
-    prev.version === next.version &&
-    prev.protocol === next.protocol &&
-    prev.serverName === next.serverName &&
-    prev.defaultGrouping === next.defaultGrouping &&
-    prev.focusedPaneId === next.focusedPaneId;
-  if (scalarsSame && panes === prev.panes && tabs === prev.tabs && workspaces === prev.workspaces) {
-    return prev;
-  }
-  return { ...next, panes, tabs, workspaces };
-}
-
-/**
- * Points every request and the socket at the box through its relay. The
- * server string is the relay's host with its own scheme, the way SSH shows
- * `ssh://`: Settings shows what the phone is actually talking to.
- */
-function connectRelay(identity: RelayIdentity): void {
-  connection.baseUrl = "";
-  connection.cookie = null;
-  connection.relay = deviceTarget(identity);
-  configurePushProfile(null);
-}
+export { reconcileArray } from "./session-reconcile";
 
 function relayLabel(identity: RelayIdentity): string {
   return `relay://${hostOf(identity.relay)}`;
@@ -192,10 +149,6 @@ export function useSession(): SessionValue {
  * store, only `useLastUpdate` subscribers wake.
  */
 const lastUpdate = { at: null as number | null, listeners: new Set<() => void>() };
-function markUpdated() {
-  lastUpdate.at = Date.now();
-  lastUpdate.listeners.forEach((fn) => fn());
-}
 export function useLastUpdate(): number | null {
   return useSyncExternalStore(
     (cb) => {
@@ -208,500 +161,163 @@ export function useLastUpdate(): number | null {
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [connected, setConnected] = useState(false);
   const [addingComputer, setAddingComputer] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [reviewed, setReviewed] = useState<Reviewed>({});
-  useEffect(() => { setReviewed((current) => retainReviews(current, session?.panes ?? [])); }, [session]);
-  const markReviewed = useCallback((pane: DashboardPane) => {
-    if (pane.status === "done") setReviewed((current) => ({ ...current, [pane.paneId]: reviewKey(pane) }));
-  }, []);
-  const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
-  const [link, setLink] = useState<LinkState>("connecting");
-  const [error, setError] = useState<Error | null>(null);
-  const [pins, setPins] = useState<Set<string>>(new Set());
-  // 100 columns: readable text that still shows most of a real line.
-  const [terminalWidth, setWidth] = useState(100);
-  const [server, setServer] = useState("");
-  const socketRef = useRef<SessionSocket | null>(null);
-  // Per-pane frame subscribers. A ref so `onMessage` (deps []) can reach them
-  // without being recreated, which would tear the socket down every time.
-  const frameListeners = useRef(new Map<string, Set<() => void>>());
-  // The active SSH profile, when the connection is tunnelled — kept so sign-out
-  // can tear the tunnel down and restore knows to re-open it.
-  const sshProfile = useRef<SshProfile | null>(null);
-  const generation = useRef(0);
-  const recovering = useRef<Promise<void> | null>(null);
-  const watched = useRef<string | null>(null);
-  const activeComputer = useRef<Stored | null>(null);
-  const savedRef = useRef<SavedComputer[]>([]);
-  const [savedComputers, setSavedComputers] = useState<SavedComputer[]>([]);
+  const [selection, setSelection] = useState<string | null>(null);
+  const selected = useRef<string | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
-  const storageWrites = useRef<Promise<void>>(Promise.resolve());
-  const changingComputer = useRef(false);
-  const writeStorage = useCallback((write: () => Promise<void>) => {
-    const next = storageWrites.current.catch(() => undefined).then(write);
-    storageWrites.current = next;
-    void next.catch(() => setError(new Error("Couldn't save your computers securely. Try again before closing Shahi.")));
+  const [terminalWidth, setWidth] = useState(100);
+  const [storageError, setStorageError] = useState<Error | null>(null);
+  const [, render] = useState(0);
+  const bank = useRef<SavedComputer[]>([]);
+  const live = useRef(new Map<string, ComputerSession>());
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  const mounted = useRef(true);
+  const write = useCallback((task: () => Promise<void>) => {
+    const next = writes.current.catch(() => undefined).then(task);
+    writes.current = next;
+    void next.catch(() => { if (mounted.current) setStorageError(new Error("Couldn't save your computers securely. Try again.")); });
     return next;
   }, []);
-  const remember = useCallback((stored: Stored, name?: string, savedPins?: string[]) => {
-    const next = rememberComputer(savedRef.current, stored, name, savedPins);
-    savedRef.current = next;
-    setSavedComputers(next);
-    return writeStorage(() => SecureStore.setItemAsync(COMPUTERS_KEY, JSON.stringify(next)));
-  }, [writeStorage]);
-
-  // Restore before first paint of anything that depends on being signed in.
+  const persist = useCallback(() => {
+    const saved = JSON.stringify(bank.current);
+    const current = bank.current.find(c => c.id === selected.current);
+    return write(async () => {
+      await SecureStore.setItemAsync(COMPUTERS_KEY, saved);
+      if (current) await SecureStore.setItemAsync(KEY, JSON.stringify(current.connection));
+      else await SecureStore.deleteItemAsync(KEY);
+    });
+  }, [write]);
+  const paint = useCallback(() => { if (mounted.current) render(n => n + 1); }, []);
+  function choose(id: string | null) {
+    live.current.get(selected.current ?? "")?.watch(null);
+    selected.current = id; setSelection(id); setConnectionKey(n => n + 1);
+    const entry = id ? live.current.get(id) : undefined;
+    // Only pairing and push registration use this temporary/default client.
+    Object.assign(connection, entry?.connection ?? { baseUrl: "", cookie: null, relay: null });
+    configurePushProfile(entry?.saved.connection.kind === "ssh" ? entry.saved.connection.ssh : null);
+    lastUpdate.at = entry?.updatedAt ?? null;
+    lastUpdate.listeners.forEach(fn => fn());
+  }
+  function forget(id: string) {
+    live.current.get(id)?.dispose(); live.current.delete(id);
+    bank.current = bank.current.filter(c => c.id !== id);
+    if (selected.current === id) { choose(null); setAddingComputer(false); }
+    void persist(); paint();
+  }
+  function ensure(saved: SavedComputer, adopted?: Connection): ComputerSession {
+    let entry = live.current.get(saved.id);
+    if (entry) { entry.saved = saved; return entry; }
+    entry = new ComputerSession(saved, (visible = true) => {
+      const current = live.current.get(saved.id);
+      if (!current || !mounted.current) return;
+      const name = current.session?.serverName;
+      if (name && current.saved.name !== name) {
+        current.saved = { ...current.saved, name };
+        bank.current = bank.current.map(c => c.id === saved.id ? current.saved : c);
+        const savedNames = JSON.stringify(bank.current);
+        void write(() => SecureStore.setItemAsync(COMPUTERS_KEY, savedNames));
+      }
+      if (selected.current === saved.id) {
+        lastUpdate.at = current.updatedAt; lastUpdate.listeners.forEach(fn => fn());
+        Object.assign(connection, current.connection);
+      }
+      if (visible) paint();
+    }, () => forget(saved.id), adopted);
+    live.current.set(saved.id, entry);
+    void entry.start();
+    return entry;
+  }
   useEffect(() => {
-    const current = generation.current;
+    mounted.current = true;
     let cancelled = false;
-    const active = () => !cancelled && current === generation.current;
     void (async () => {
       try {
-        const raw = await SecureStore.getItemAsync(KEY);
-        if (!active()) return;
-        const saved = await SecureStore.getItemAsync(COMPUTERS_KEY);
-        if (!active()) return;
-        savedRef.current = saved ? JSON.parse(saved) as SavedComputer[] : [];
-        setSavedComputers(savedRef.current);
-        if (raw) {
-          const stored = JSON.parse(raw) as Stored;
-          activeComputer.current = stored;
-          // The active connection still has its own key; the address book
-          // also retains computers while none is selected (e.g. during pairing).
-          savedRef.current = rememberComputer(savedRef.current, stored);
-          setSavedComputers(savedRef.current);
-          if (stored.kind === "ssh") {
-            // The tunnel's local port is gone with the last process, so re-open
-            // it and sign in again from the remembered passcode. A failure here
-            // (box down, key changed) surfaces on the Connect screen rather
-            // than pretending to be signed in.
-            sshProfile.current = stored.ssh;
-            configurePushProfile(stored.ssh);
-            const baseUrl = await openTunnel(stored.ssh);
-            if (!active()) return;
-            connection.baseUrl = baseUrl;
-            connection.cookie = null;
-            await api.login(stored.ssh.passcode, active);
-            if (!active()) return;
-            await restorePushRegistration(active);
-            if (!active()) return;
-            setServer(`ssh://${stored.ssh.username}@${stored.ssh.host}`);
-            setConnected(true);
-          } else {
-            // Nothing to open here: the link is opened by the first request,
-            // and a box that is offline or has forgotten this device says so
-            // then, on the Agents screen, rather than at the gate.
-            connectRelay(stored);
-            setServer(relayLabel(stored));
-            setConnected(true);
-          }
-        }
-      } catch {
-        if (!active()) return;
-        // A corrupt entry, a dead box or a rejected key all mean the same
-        // thing to a cold start: show Connect. The tunnel, if it half-opened,
-        // is closed so a retry starts clean.
-        void closeTunnel();
-      }
-      try {
-        const pinned = await SecureStore.getItemAsync(PINS_KEY);
-        if (pinned) setPins(new Set(JSON.parse(pinned) as string[]));
-        const width = await SecureStore.getItemAsync(WIDTH_KEY);
+        const [raw, saved, width, oldPins] = await Promise.all([KEY, COMPUTERS_KEY, WIDTH_KEY, PINS_KEY].map(key => SecureStore.getItemAsync(key)));
+        if (cancelled) return;
+        bank.current = saved ? JSON.parse(saved) : [];
+        const current: Stored | null = raw ? JSON.parse(raw) : null;
+        if (current) bank.current = rememberComputer(bank.current, current, undefined, bank.current.find(c => c.id === computerId(current))?.pins ?? (oldPins ? JSON.parse(oldPins) : []));
         if (width) setWidth(Number(width) || 100);
-      } catch {
-        // Lost pins are re-pinnable; nothing to surface.
-      }
-      if (active()) setReady(true);
+        // Each connection starts independently: an offline computer cannot
+        // delay restoring another one or opening the computer chooser.
+        bank.current.forEach(saved => ensure(saved));
+        if (current) choose(computerId(current));
+      } catch { /* An unreadable keychain still permits explicit pairing. */ }
+      if (!cancelled) setReady(true);
     })();
+    const sub = AppState.addEventListener("change", state => {
+      if (state === "active") for (const entry of live.current.values()) void entry.reconnect();
+    });
     return () => {
-      cancelled = true;
-      generation.current++;
-      if (sshProfile.current) void closeTunnel();
+      cancelled = true; mounted.current = false; sub.remove();
+      for (const entry of live.current.values()) entry.dispose();
+      live.current.clear();
     };
   }, []);
-
-  const togglePin = useCallback((paneId: string) => {
-    setPins((current) => {
-      const next = new Set(current);
-      if (next.has(paneId)) next.delete(paneId);
-      else next.add(paneId);
-      void writeStorage(() => SecureStore.setItemAsync(PINS_KEY, JSON.stringify([...next])));
-      if (activeComputer.current) void remember(activeComputer.current, undefined, [...next]);
-      return next;
-    });
-  }, [remember, writeStorage]);
-
-  const clearPins = useCallback(() => {
-    setPins(new Set());
-    void writeStorage(() => SecureStore.deleteItemAsync(PINS_KEY));
-    if (activeComputer.current) void remember(activeComputer.current, undefined, []);
-  }, [remember, writeStorage]);
-
-  const setTerminalWidth = useCallback((columns: number) => {
-    setWidth(columns);
-    void SecureStore.setItemAsync(WIDTH_KEY, String(columns));
-  }, []);
-
-  const onMessage = useCallback((msg: SocketMessage) => {
-    // The freshness clock is an external store, not context state, so ticking
-    // it on every socket message does not recreate the context value and
-    // re-render every screen 2.5s — which RN's VirtualizedList "slow to update"
-    // warning was pointing at. Only `useLastUpdate` consumers (Settings) wake.
-    markUpdated();
-    if (msg.type === "session") {
-      // Reconcile against the last snapshot so unchanged panes/tabs/spaces keep
-      // their object identity — the server sends a fresh JSON every ~2.5s, and
-      // without this every row is a new reference and the memoised rows re-render
-      // regardless. When nothing changed at all, reconcile returns the previous
-      // Session unchanged and setSession bails out entirely (no re-render).
-      setSession((prev) => reconcileSession(prev, msg.session));
-      // A prompt belongs to a blocked agent; once it moves on, drop it so no
-      // screen can offer answers to a question already answered.
-      setPrompts((current) => {
-        const next: Record<string, ParsedPrompt> = {};
-        for (const pane of msg.session.panes) {
-          if (pane.status !== "blocked") continue;
-          const known = current[pane.paneId] ?? pane.prompt;
-          if (known) next[pane.paneId] = known;
-        }
-        return next;
-      });
-    } else if (msg.type === "prompt") {
-      setPrompts((current) => ({ ...current, [msg.paneId]: msg.prompt }));
-    } else if (msg.type === "frame") {
-      // A content change on some pane. Wake whoever is watching that exact pane
-      // — the reader turns this into an immediate refresh, so a reply appears as
-      // fast as the server sees it rather than on the next client tick.
-      frameListeners.current.get(msg.frame.paneId)?.forEach((fn) => fn());
-    } else if (msg.type === "log_changed") {
-      // The transcript itself grew — the signal the reader actually wants,
-      // since it is fed by the transcript and not the screen. Same wake-up.
-      frameListeners.current.get(msg.paneId)?.forEach((fn) => fn());
-    }
-  }, []);
-
-  const onPaneFrame = useCallback((paneId: string, cb: () => void) => {
-    let set = frameListeners.current.get(paneId);
-    if (!set) {
-      set = new Set();
-      frameListeners.current.set(paneId, set);
-    }
-    set.add(cb);
-    return () => {
-      set.delete(cb);
-      if (set.size === 0) frameListeners.current.delete(paneId);
-    };
-  }, []);
-
-  const disconnect = useCallback(() => {
-    generation.current++;
-    socketRef.current?.close();
-    socketRef.current = null;
-    watched.current = null;
-    recovering.current = null;
-    frameListeners.current.clear();
-    configurePushProfile(null);
-    connection.baseUrl = "";
-    connection.cookie = null;
-    // The link goes with the credentials it carried.
-    connection.relay = null;
-    closeRelay();
-    setConnected(false);
-    setServer("");
-    setSession(null);
-    setPrompts({});
-    setReviewed({});
-    setError(null);
-    setLink("connecting");
-    setPins(new Set());
-    lastUpdate.at = null;
-    lastUpdate.listeners.forEach((listener) => listener());
-    // Drop the SSH session with the app session — a live tunnel to a box you
-    // signed out of is exactly what you did not ask to keep.
-    sshProfile.current = null;
-    return closeTunnel();
-  }, []);
-
-  const signOut = useCallback(() => {
-    setAddingComputer(false);
-    void forgetPushRegistration();
-    const id = activeComputer.current && computerId(activeComputer.current);
-    activeComputer.current = null;
-    const next = savedRef.current.filter((computer) => computer.id !== id);
-    savedRef.current = next;
-    setSavedComputers(next);
-    void writeStorage(async () => {
-      await SecureStore.setItemAsync(COMPUTERS_KEY, JSON.stringify(next));
-      await SecureStore.deleteItemAsync(KEY);
-      await SecureStore.deleteItemAsync(PINS_KEY);
-    });
-    void disconnect();
-  }, [disconnect, writeStorage]);
-
-  const addComputer = useCallback(async () => {
-    if (activeComputer.current) await remember(activeComputer.current, session?.serverName, [...pins]);
-    await writeStorage(async () => {
-      await SecureStore.deleteItemAsync(KEY);
-      await SecureStore.deleteItemAsync(PINS_KEY);
-    });
-    setAddingComputer(true);
-    activeComputer.current = null;
-    await disconnect();
-  }, [disconnect, remember, session?.serverName, pins, writeStorage]);
-
-  const switchComputer = useCallback(async (id: string) => {
-    if (changingComputer.current) throw new Error("A computer is already connecting. Please wait.");
-    changingComputer.current = true;
-    const started = generation.current;
-    try {
-    const target = savedRef.current.find((computer) => computer.id === id);
+  const entry = selection ? live.current.get(selection) : undefined;
+  const switchComputer = async (id: string) => {
+    const target = bank.current.find(c => c.id === id);
     if (!target) throw new Error("That computer is no longer saved. Pair it again.");
-    if (activeComputer.current && computerId(activeComputer.current) === id && connected) return;
-    if (activeComputer.current) await remember(activeComputer.current, session?.serverName, [...pins]);
-    // Persist the new selection before touching the current transport. A
-    // keychain failure must not discard the connection the user can still use.
-    await writeStorage(async () => {
-      await SecureStore.setItemAsync(KEY, JSON.stringify(target.connection));
-      await SecureStore.setItemAsync(PINS_KEY, JSON.stringify(target.pins));
-    });
-    if (started !== generation.current) return;
-    setAddingComputer(false);
-    const closed = disconnect();
-    const current = generation.current;
-    const active = () => generation.current === current;
-    activeComputer.current = target.connection;
-    setPins(new Set(target.pins));
-    try {
-      await closed;
-      if (!active()) return;
-      if (target.connection.kind === "relay") {
-        connectRelay(target.connection);
-        setServer(relayLabel(target.connection));
-      } else {
-        const profile = target.connection.ssh;
-        sshProfile.current = profile;
-        configurePushProfile(profile);
-        const baseUrl = await openTunnel(profile);
-        if (!active()) return;
-        connection.baseUrl = baseUrl;
-        await api.login(profile.passcode, active);
-        if (!active()) return;
-        await restorePushRegistration(active);
-        if (!active()) return;
-        setServer(`ssh://${profile.username}@${profile.host}`);
-      }
-      setConnectionKey((key) => key + 1);
-      setConnected(true);
-    } catch (e) {
-      if (active()) { setError(e as Error); setLink("lost"); }
-      throw e;
-    }
-    } finally { changingComputer.current = false; }
-  }, [connected, disconnect, pins, remember, session?.serverName, writeStorage]);
-
-  useEffect(() => {
-    const stored = activeComputer.current;
-    if (!stored || !session?.serverName) return;
-    if (savedRef.current.find((computer) => computer.id === computerId(stored))?.name !== session.serverName) {
-      void remember(stored, session.serverName);
-    }
-  }, [session?.serverName, remember]);
-
-  const refresh = useCallback(() => {
-    const current = generation.current;
-    return api
-      .session()
-      .then((s) => {
-        if (current !== generation.current) return;
-        setSession((prev) => reconcileSession(prev, s));
-        // A poll that succeeds clears a prior transient error, so one blip does
-        // not leave the whole screen showing failure until the next unrelated
-        // event — the "sticky error" this review flagged.
-        setError(null);
-      })
-      .catch((e: Error) => {
-        if (current !== generation.current || recovering.current) return;
-        // An expired cookie is not an error to display; it is a sign-out.
-        if (e instanceof UnauthorizedError) signOut();
-        else {
-          setError(e);
-          // A server that has said it cannot talk to this build must not be
-          // hammered by the socket's reconnect loop: React Native cannot see
-          // the upgrade's 426, only a close, so it would retry forever. "Try
-          // again" goes through reconnect(), which re-opens it.
-          if (e instanceof IncompatibleServerError) socketRef.current?.close();
-        }
-      });
-  }, [signOut]);
-
-  const reconnect = useCallback(() => {
-    if (recovering.current) return recovering.current;
-    const profile = sshProfile.current;
-    if (!profile) {
-      socketRef.current?.ensureConnected();
-      return refresh();
-    }
-    const current = ++generation.current;
-    const active = () => current === generation.current && sshProfile.current === profile;
-    socketRef.current?.close();
-    setLink("connecting");
-    const work = (async () => {
-      try {
-        const baseUrl = await openTunnel(profile);
-        if (!active()) return;
-        connection.baseUrl = baseUrl;
-        connection.cookie = null;
-        await api.login(profile.passcode, active);
-        if (!active()) return;
-        await restorePushRegistration(active);
-        if (!active()) return;
-        const next = await api.session();
-        if (!active()) return;
-        setSession((prev) => reconcileSession(prev, next));
-        setError(null);
-        socketRef.current?.watch(watched.current);
-        socketRef.current?.ensureConnected();
-      } catch (e) {
-        if (active()) {
-          setError(e as Error);
-          setLink("lost");
-        }
-      }
-    })();
-    recovering.current = work;
-    void work.finally(() => { if (recovering.current === work) recovering.current = null; });
-    return work;
-  }, [refresh]);
-
-  useEffect(() => {
-    if (!connected) return;
-    setError(null);
-    void refresh();
-    // A 4001 close is the server saying this session no longer verifies —
-    // expired or revoked — which is a sign-out, not a connection to retry.
-    // A failed WebSocket handshake does not expose its HTTP status in React
-    // Native. Re-read over HTTP when the link drops so a server restart onto a
-    // newer contract becomes an actionable 426 instead of a stale LIVE list.
-    const socket = new SessionSocket(
-      (message) => { if (socketRef.current === socket) onMessage(message); },
-      (state) => {
-        if (socketRef.current !== socket) return;
-        setLink(state);
-        // A stream reconnect brings a fresh dashboard push, but an earlier
-        // failed HTTP read may still be holding the whole UI on the offline
-        // screen. Re-read on live so recovery clears that error without a
-        // manual "Try again" tap.
-        if (state === "live") void refresh();
-      },
-      () => { if (socketRef.current === socket) signOut(); },
-      () => { if (socketRef.current === socket) void refresh(); },
-    );
-    socketRef.current = socket;
-    socket.connect();
-    return () => {
-      socket.close();
-      socketRef.current = null;
-    };
-  }, [connected, connectionKey, onMessage, refresh]);
-
-  // Coming back from the background: the socket may have died while the app was
-  // suspended, and iOS will not necessarily say so. Reconnect and re-read
-  // rather than show hours-old agents as though they were current.
-  useEffect(() => {
-    if (!connected) return;
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active") return;
-      void reconnect();
-    });
-    return () => sub.remove();
-  }, [connected, reconnect]);
-
-  const beginSignIn = useCallback((stored: Stored) => {
-    setAddingComputer(false);
-    if (activeComputer.current) void remember(activeComputer.current, session?.serverName, [...pins]);
-    generation.current++;
-    socketRef.current?.close(); socketRef.current = null;
-    watched.current = null; recovering.current = null; frameListeners.current.clear();
-    setSession(null); setPrompts({}); setReviewed({}); setError(null); setLink("connecting");
-    const savedPins = savedRef.current.find((computer) => computer.id === computerId(stored))?.pins ?? [];
-    activeComputer.current = stored;
-    void remember(stored, undefined, savedPins);
-    setPins(new Set(savedPins));
-    void writeStorage(async () => {
-      await SecureStore.setItemAsync(KEY, JSON.stringify(stored));
-      await SecureStore.setItemAsync(PINS_KEY, JSON.stringify(savedPins));
-    });
-  }, [pins, remember, session?.serverName, writeStorage]);
-
-  // An alert or request started on the outgoing computer may finish after
-  // navigation has moved on. Its sign-out must never forget the new selection.
-  const selectedComputer = activeComputer.current;
-  const scopedSignOut = useCallback(() => {
-    if (activeComputer.current === selectedComputer) signOut();
-  }, [selectedComputer, signOut]);
-
-  const value = useMemo<SessionValue>(
-    () => ({
-      computers: savedComputers.map(({ id, name, connection: stored }) => ({ id, name, kind: stored.kind, address: computerAddress(stored) })),
-      activeComputerId: activeComputer.current ? computerId(activeComputer.current) : null,
-      connectionKey, switchComputer, addComputer, addingComputer,
-      reviewed, markReviewed,
-      ready,
-      connected,
-      session,
-      prompts,
-      link,
-      error,
-      refresh,
-      reconnect,
-      signOut: scopedSignOut,
-      // The SSH tunnel is already open and login has already succeeded by the
-      // time Connect calls this: it remembers the
-      // profile (not a base URL, which is a throwaway local port) so a cold
-      // start can rebuild the tunnel.
-      signInSsh: (profile: SshProfile) => {
-        beginSignIn({ kind: "ssh", ssh: profile });
-        sshProfile.current = profile;
-        configurePushProfile(profile);
-        void restorePushRegistration(() => sshProfile.current === profile);
-        connection.relay = null;
-        setServer(`ssh://${profile.username}@${profile.host}`);
-        setConnectionKey((key) => key + 1);
-        setConnected(true);
-      },
-      // Pointing `connection` at the device target retires the pairing link
-      // the next time anything asks for one — the socket effect below does,
-      // and comes up on the device link.
-      signInRelay: (identity: RelayIdentity) => {
-        beginSignIn({ kind: "relay", ...identity });
-        sshProfile.current = null;
-        connectRelay(identity);
-        setServer(relayLabel(identity));
-        setConnectionKey((key) => key + 1);
-        setConnected(true);
-      },
-      watch: (paneId) => {
-        watched.current = paneId;
-        socketRef.current?.watch(paneId);
-      },
-      onPaneFrame,
-      clearPrompt: (paneId) =>
-        setPrompts((current) => {
-          const next = { ...current };
-          delete next[paneId];
-          return next;
-        }),
-      pins,
-      togglePin,
-      clearPins,
-      terminalWidth,
-      setTerminalWidth,
-      server,
-    }),
-    [addingComputer, scopedSignOut, beginSignIn, savedComputers, connectionKey, switchComputer, addComputer, remember, writeStorage, reviewed, markReviewed, ready, connected, session, prompts, link, error, refresh, reconnect, signOut, onPaneFrame, pins, togglePin, clearPins, terminalWidth, setTerminalWidth, server],
-  );
-
+    // A failed secure-store write leaves the current view and connection intact.
+    await write(() => SecureStore.setItemAsync(KEY, JSON.stringify(target.connection)));
+    ensure(target); setAddingComputer(false); choose(id);
+  };
+  const addComputer = async () => {
+    await write(() => SecureStore.deleteItemAsync(KEY));
+    choose(null); setAddingComputer(true);
+  };
+  const signIn = (stored: Stored, adopted?: Connection) => {
+    const id = computerId(stored);
+    // A replacement grant supersedes only this computer's old connection.
+    live.current.get(id)?.dispose(); live.current.delete(id);
+    bank.current = rememberComputer(bank.current, stored);
+    ensure(bank.current.find(c => c.id === id)!, adopted);
+    setAddingComputer(false); choose(id); void persist();
+  };
+  const updatePins = (pins: string[]) => {
+    if (!entry) return;
+    entry.saved = { ...entry.saved, pins };
+    bank.current = bank.current.map(c => c.id === entry.saved.id ? entry.saved : c);
+    void persist(); paint();
+  };
+  const actions = useMemo(() => ({
+    refresh: () => entry?.refresh() ?? Promise.resolve(), reconnect: () => entry?.reconnect() ?? Promise.resolve(),
+    watch: (pane: string | null) => entry?.watch(pane),
+    onPaneFrame: (pane: string, fn: () => void) => entry?.onPaneFrame(pane, fn) ?? (() => {}),
+    clearPrompt: (pane: string) => entry?.clearPrompt(pane),
+  }), [entry]);
+  const value: SessionValue = {
+    api: entry?.api ?? api, transport: entry?.connection ?? connection,
+    ready, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
+    computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),
+    switchComputer, addComputer,
+    revokeComputer: async id => {
+      const target = live.current.get(id);
+      if (!target) return;
+      if (target.saved.connection.kind !== "relay") throw new Error("SSH access is managed on that computer. Sign out to remove its saved login.");
+      const deviceId = target.saved.connection.deviceId;
+      try { await target.api.revokeDevice(deviceId); }
+      catch (e) { if (live.current.has(id)) throw e; }
+      forget(id);
+    },
+    signOut: () => { if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
+    signInRelay: identity => {
+      if (connection.relay?.auth.kind === "pairing") closeRelay(connection.relay);
+      signIn({ kind: "relay", ...identity });
+    },
+    signInSsh: profile => {
+      signIn({ kind: "ssh", ssh: profile }, { ...connection, relay: null });
+      void restorePushRegistration(() => selected.current === computerId({ kind: "ssh", ssh: profile }));
+    },
+    session: entry?.session ?? null, prompts: entry?.prompts ?? {}, reviewed: entry?.reviewed ?? {},
+    markReviewed: pane => entry?.markReviewed(pane),
+    link: entry?.link ?? "connecting", error: storageError ?? entry?.error ?? null,
+    ...actions,
+    pins: new Set(entry?.saved.pins ?? []),
+    togglePin: pane => updatePins(entry?.saved.pins.includes(pane) ? entry.saved.pins.filter(id => id !== pane) : [...(entry?.saved.pins ?? []), pane]),
+    clearPins: () => updatePins([]), terminalWidth,
+    setTerminalWidth: columns => { setWidth(columns); void SecureStore.setItemAsync(WIDTH_KEY, String(columns)); },
+    server: entry ? (entry.saved.connection.kind === "relay" ? relayLabel(entry.saved.connection) : `ssh://${entry.saved.connection.ssh.username}@${entry.saved.connection.ssh.host}`) : "",
+  };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

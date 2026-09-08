@@ -106,3 +106,8 @@ server-side logout removes the signing-out owner's registrations as well.
 The September 2026 ownership update discards older unowned registrations:
 enable notifications again after upgrading. This does not change pairing keys
 or delete agent transcripts.
+
+Notifications include the originating computer’s identity. Tapping one selects that
+computer before opening its pane, on native and hosted web. If that computer is no
+longer paired, the computer chooser opens; a pane ID is never assumed to belong to
+the currently selected machine.

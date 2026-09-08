@@ -8,10 +8,10 @@ import ExpoModulesCore
 // ObjC imports libssh2.h without the Swift module-map dance. The app then
 // points its ordinary fetch and WebSocket at 127.0.0.1:<localPort> and never
 // knows SSH is underneath. This module just marshals the config across and
-// keeps a single forwarder alive.
+// keeps one forwarder per computer alive.
 
 public class SshTunnelModule: Module {
-  private var tunnel: Tunnel?
+  private var tunnels: [String: Tunnel] = [:]
   private let queue = DispatchQueue(label: "shahi.ssh-tunnel", qos: .userInitiated)
 
   public func definition() -> ModuleDefinition {
@@ -19,11 +19,10 @@ public class SshTunnelModule: Module {
 
     AsyncFunction("open") { (config: OpenConfig, promise: Promise) in
       self.queue.async {
-        // One tunnel at a time: a new open replaces any old one, so a reconnect
-        // never leaks a listener or a session.
-        self.tunnel?.close()
+        // Reconnecting one computer must not interrupt the other forwards.
+        self.tunnels[config.id]?.close()
         let tunnel = Tunnel()
-        self.tunnel = tunnel
+        self.tunnels[config.id] = tunnel
         tunnel.open(config) { result in
           switch result {
           case .success(let opened):
@@ -31,31 +30,32 @@ public class SshTunnelModule: Module {
             // or confirm it matched — see lib/tunnel.ts.
             promise.resolve(["localPort": opened.localPort, "hostKey": opened.hostKey as Any])
           case .failure(let error):
-            self.tunnel = nil
+            self.tunnels.removeValue(forKey: config.id)
             promise.reject("ssh_tunnel", error.message)
           }
         }
       }
     }
 
-    AsyncFunction("close") { (promise: Promise) in
+    AsyncFunction("close") { (id: String?, promise: Promise) in
       self.queue.async {
-        self.tunnel?.close()
-        self.tunnel = nil
+        if let id = id { self.tunnels.removeValue(forKey: id)?.close() }
+        else { self.tunnels.values.forEach { $0.close() }; self.tunnels.removeAll() }
         promise.resolve(nil)
       }
     }
 
     OnDestroy {
       self.queue.async {
-        self.tunnel?.close()
-        self.tunnel = nil
+        self.tunnels.values.forEach { $0.close() }
+        self.tunnels.removeAll()
       }
     }
   }
 }
 
 struct OpenConfig: Record {
+  @Field var id: String
   @Field var host: String
   @Field var port: Int = 22
   @Field var username: String

@@ -11,7 +11,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
   UnauthorizedError,
-  api,
+  useApi,
   requestId,
   type Session,
   type PaneDetail,
@@ -77,6 +77,7 @@ const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = 
  */
 
 export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
+  const api = useApi();
   const { paneId = "" } = useParams();
   const navigate = useNavigate();
 

@@ -12,7 +12,7 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * write. Both go through the same endpoint; only the disposition differs.
  */
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useApi } from "../api";
 
 interface Props {
   /** What to call it. The extension decides how it is shown. */
@@ -30,6 +30,7 @@ const TEXTUAL =
   /\.(txt|md|log|json|ts|tsx|js|jsx|mjs|cjs|py|rs|go|rb|java|c|h|cpp|sh|bash|zsh|toml|ya?ml|css|scss|html?|xml|csv|sql|ini|conf|env|lock|diff|patch|svg)$/i;
 
 export function FileView({ name, url, downloadUrl, onClose }: Props) {
+  const api = useApi();
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isImage = IMAGE.test(name);

@@ -1,3 +1,4 @@
+import { ComputerSwitcher } from "@/components/computer-switcher";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { inboxPanes } from "@shahi/shared";
@@ -16,7 +17,6 @@ import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
-import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
@@ -33,7 +33,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
-  const { reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
+  const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   /** The row a long-press opened actions for. */
@@ -137,9 +137,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           headerLeft: () => <GreetingLogo size={36} />,
           headerRight: () => (
             <View style={styles.status}>
-              <Text style={[styles.link, { color: theme.dim }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {server.replace(/^https?:\/\//, "")}
-              </Text>
+              <ComputerSwitcher />
               <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
                 {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
               </Text>

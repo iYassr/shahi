@@ -103,3 +103,5 @@ describe("NewSpace", () => {
     expect(onCreated).toHaveBeenCalledTimes(1);
   });
 });
+
+jest.mock("@/lib/session", () => ({ useSession: () => ({ api: require("@/lib/api").api }) }));

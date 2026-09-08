@@ -173,3 +173,28 @@ describe("onNotificationTapped", () => {
     expect(notifications!.addNotificationResponseReceivedListener).not.toHaveBeenCalled();
   });
 });
+
+test("notification taps carry the computer identity along with the pane", async () => {
+  const push = load();
+  const notifications = require("expo-notifications");
+  const open = jest.fn();
+  notifications.getLastNotificationResponseAsync.mockResolvedValue({ notification: { request: { content: { data: { paneId: "p1", serverId: "computer-a" } } } } });
+  const cancel = push.onNotificationTapped(open);
+  await flush();
+  expect(open).toHaveBeenCalledWith("p1", "computer-a");
+  cancel();
+});
+
+test("a delayed permission prompt registers only with the computer that opened it", async () => {
+  let release!: (value: { granted: boolean }) => void;
+  const push = load(({ Notifications }) => {
+    Notifications.getPermissionsAsync!.mockReturnValue(new Promise(r => { release = r; }));
+  });
+  const client = { registerPush: jest.fn(async () => {}) };
+  const result = push.enablePush(client as never);
+  await flush();
+  release({ granted: true });
+  await result;
+  expect(client.registerPush).toHaveBeenCalledWith("ExponentPushToken[abc]");
+  expect(require("@/lib/api").api.registerPush).not.toHaveBeenCalled();
+});

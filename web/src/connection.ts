@@ -1,10 +1,12 @@
-import { SHAHI_API_VERSION, type PairingPayload } from "@shahi/shared";
+import { SHAHI_API_VERSION, type Session, type PairingPayload } from "@shahi/shared";
 import { RelayLink, deviceTarget, pairingTarget, type RelayIdentity } from "@shahi/shared/relay-client";
 import { parsePairingUrl } from "@shahi/shared/pairing";
 
 export const hosted = import.meta.env?.BASE_URL === "/pwa/";
 let identity: RelayIdentity | null = null;
 let link: RelayLink | null = null;
+const live = new Map<string, { link: RelayLink; identity: RelayIdentity; session: Session | null }>();
+const notifyComputers = () => window.dispatchEvent(new Event("shahi:computers-updated"));
 let remembered = false;
 let generation = 0;
 const blobs = new Set<string>();
@@ -13,7 +15,7 @@ interface Computer { identity: RelayIdentity; name: string; remembered: boolean 
 let computers: Computer[] = [];
 let restoredComputers: Computer[] = [];
 export function browserComputers() {
-  return computers.map(({ identity: item, name, remembered }) => ({ id: item.serverId, name, remembered, address: new URL(item.relay).host }));
+  return computers.map(({ identity: item, name, remembered }) => ({ id: item.serverId, name, remembered, address: new URL(item.relay).host, state: live.get(item.serverId)?.link.state ?? "lost" }));
 }
 function rememberComputer(next: RelayIdentity, saved: boolean) {
   const previous = computers.find(c => c.identity.serverId === next.serverId);
@@ -60,6 +62,20 @@ function persistIdentity(value: RelayIdentity | null, expectedGeneration: number
   return operation;
 }
 
+function persistComputerNames(): void {
+  const saved = computers.filter(c => c.remembered).map(c => ({ ...c }));
+  credentialWrites = credentialWrites.catch(() => {}).then(async () => {
+    const db = await database();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("identity", "readwrite");
+        tx.objectStore("identity").put(saved, "computers");
+        tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = tx.onerror;
+      });
+    } finally { db.close(); }
+  }).catch(() => {});
+}
+
 /** The secret never belongs in history, referrers, analytics or an API URL. */
 export function takePairingFragment(): string {
   const hash = location.hash;
@@ -78,13 +94,41 @@ export function readPairing(text: string): PairingPayload {
   pairingTarget(payload.relay, payload.server, payload.secret);
   return payload;
 }
+function ensureComputer(next: RelayIdentity) {
+  const known = live.get(next.serverId);
+  if (known && known.identity.deviceId === next.deviceId && known.identity.deviceSecret === next.deviceSecret) return known;
+  known?.link.close();
+  const entry = { identity: next, link: new RelayLink(deviceTarget(next)), session: null as Session | null };
+  live.set(next.serverId, entry);
+  entry.link.subscribe({
+    onMessage(message) {
+      if (live.get(next.serverId) !== entry || message.type !== "session") return;
+      entry.session = message.session;
+      const computer = computers.find(c => c.identity.serverId === next.serverId);
+      if (computer && message.session.serverName && computer.name !== message.session.serverName) {
+        computer.name = message.session.serverName;
+        if (computer.remembered) persistComputerNames();
+        notifyComputers();
+      }
+    },
+    onLink() { notifyComputers(); },
+    onExpired: () => {
+      if (live.get(next.serverId) !== entry) return;
+      const wasSelected = identity?.serverId === next.serverId;
+      void forgetBrowser(next.serverId).then(() => { if (wasSelected && !identity) window.dispatchEvent(new Event("shahi:unauthorized")); });
+    },
+  });
+  entry.link.ensureConnected();
+  return entry;
+}
 function activate(next: RelayIdentity): void {
-  link?.close(); identity = next; link = new RelayLink(deviceTarget(next));
-  const activeLink = link;
-  link.subscribe({ onMessage() {}, onLink() {}, onExpired: () => {
-    if (link !== activeLink) return;
-    void forgetBrowser(); window.dispatchEvent(new Event("shahi:unauthorized"));
-  } });
+  link?.watch(null);
+  identity = next; link = ensureComputer(next).link;
+}
+if (typeof window !== "undefined") {
+  const reconnectAll = () => { for (const entry of live.values()) entry.link.ensureConnected(); };
+  window.addEventListener("online", reconnectAll);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reconnectAll(); });
 }
 let restoration: Promise<void> | undefined;
 export function restoreBrowser(): Promise<void> {
@@ -95,6 +139,7 @@ export function restoreBrowser(): Promise<void> {
       const saved = await savedIdentity();
       if (before !== generation) return;
       computers = restoredComputers;
+      for (const computer of computers) ensureComputer(computer.identity);
       if (saved) {
         readPairing(`shahi://pair#v=1&server=${encodeURIComponent(saved.serverId)}&relay=${encodeURIComponent(saved.relay)}&secret=${encodeURIComponent(saved.deviceSecret)}`);
         if (typeof saved.deviceId !== "string" || !saved.deviceId) return;
@@ -103,7 +148,7 @@ export function restoreBrowser(): Promise<void> {
     } catch { /* Storage may be unavailable in private mode; pairing still works in memory. */ }
   })();
 }
-export function browserConnection() { return { identity, remembered, link, generation }; }
+export function browserConnection() { return { identity, remembered, link, generation, session: identity ? live.get(identity.serverId)?.session ?? null : null }; }
 export async function pairBrowser(text: string, name: string, remember: boolean): Promise<void> {
   if (!window.isSecureContext) throw new Error("Open Shahi over HTTPS to pair this browser.");
   const payload = readPairing(text);
@@ -128,14 +173,16 @@ export async function pairBrowser(text: string, name: string, remember: boolean)
     }
   } finally { pairing.close(); }
 }
-export async function forgetBrowser(): Promise<void> {
-  const id = identity?.serverId;
+export async function forgetBrowser(id = identity?.serverId): Promise<void> {
+  const selected = id === identity?.serverId;
   computers = computers.filter(c => c.identity.serverId !== id);
-  generation++; const forgottenGeneration = generation; link?.close(); link = null; identity = null; remembered = false;
-  for (const url of blobs) URL.revokeObjectURL(url);
-  blobs.clear();
+  live.get(id ?? "")?.link.close(); live.delete(id ?? "");
+  if (selected) { generation++; link = null; identity = null; remembered = false; }
+  const forgottenGeneration = generation;
+  notifyComputers();
+  if (selected) { for (const url of blobs) URL.revokeObjectURL(url); blobs.clear(); }
   try { localStorage.removeItem(`shahi.pins.${id}`); localStorage.removeItem(`shahi.push.dismissed.${id}`); } catch { /* Storage can be disabled. */ }
-  try { await persistIdentity(null, generation); } catch { /* Memory-only sessions have no database. */ }
+  try { await persistIdentity(remembered ? identity : null, generation); } catch { /* Memory-only sessions have no database. */ }
   if (generation !== forgottenGeneration) return;
   if (computers.some(c => c.remembered)) return;
   const registration = await navigator.serviceWorker?.getRegistration(import.meta.env.BASE_URL);
@@ -157,7 +204,7 @@ export async function selectBrowserComputer(id: string | null): Promise<void> {
   }
   if (generation !== before) return;
   generation++;
-  link?.close(); link = null; identity = null; remembered = false;
+  link?.watch(null); link = null; identity = null; remembered = false;
   for (const url of blobs) URL.revokeObjectURL(url);
   blobs.clear();
   if (target) { activate(target.identity); remembered = target.remembered; }
@@ -167,5 +214,18 @@ export function nameBrowserComputer(name: string): void {
   const current = computers.find(c => c.identity === identity);
   if (!current || !name || current.name === name) return;
   current.name = name;
-  if (current.remembered) void persistIdentity(identity, generation).catch(() => {});
+  if (current.remembered) persistComputerNames();
+}
+
+export async function revokeBrowserComputer(id: string): Promise<void> {
+  const computer = computers.find(c => c.identity.serverId === id);
+  if (!computer) return;
+  const entry = ensureComputer(computer.identity);
+  const wasSelected = identity?.serverId === id;
+  try {
+    const res = await entry.link.request({ method: "DELETE", path: `/api/devices/${encodeURIComponent(computer.identity.deviceId)}`, headers: { "x-shahi-api": String(SHAHI_API_VERSION) }, body: null }, 15000);
+    if (!res.ok) throw new Error("Could not revoke access. Try again when the computer is online.");
+  } catch (e) { if (live.has(id)) throw e; }
+  await forgetBrowser(id);
+  if (wasSelected && !identity) window.dispatchEvent(new Event("shahi:unauthorized"));
 }

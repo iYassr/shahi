@@ -25,6 +25,7 @@ interface SshTunnelModule {
    * changed — suitable to show as-is.
    */
   open(config: {
+    id: string;
     host: string;
     port: number;
     username: string;
@@ -36,7 +37,7 @@ interface SshTunnelModule {
     remotePort: number;
   }): Promise<{ localPort: number; hostKey?: string }>;
   /** Tears down the forward and the session. Safe to call when nothing is open. */
-  close(): Promise<void>;
+  close(id: string | null): Promise<void>;
 }
 
 const native = requireOptionalNativeModule<SshTunnelModule>("SshTunnel");
@@ -125,6 +126,7 @@ async function open(profile: SshProfile): Promise<string> {
   let opened;
   try {
     opened = await native.open({
+      id: tunnelId(profile),
       host,
       port: profile.port,
       username: profile.username.trim(),
@@ -155,15 +157,19 @@ async function open(profile: SshProfile): Promise<string> {
   return `http://127.0.0.1:${localPort}`;
 }
 
-export function closeTunnel(): Promise<void> {
-  return serial(close);
+export function closeTunnel(profile?: SshProfile): Promise<void> {
+  return serial(() => close(profile));
 }
 
-async function close(): Promise<void> {
+async function close(profile?: SshProfile): Promise<void> {
   if (!native) return;
   try {
-    await native.close();
+    await native.close(profile ? tunnelId(profile) : null);
   } catch {
     // Closing a tunnel that already died is not worth surfacing.
   }
+}
+
+function tunnelId(profile: SshProfile): string {
+  return JSON.stringify([profile.host.trim().toLowerCase(), profile.port, profile.username.trim(), profile.remotePort]);
 }

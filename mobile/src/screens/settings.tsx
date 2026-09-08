@@ -1,3 +1,4 @@
+import { ComputerSwitcher } from "@/components/computer-switcher";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * Settings, in the settings grammar everyone already knows: an identity card
@@ -14,7 +15,6 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import { api } from "@/lib/api";
 import { preparePushLogout } from "@/lib/push-registration";
 import { enablePush } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
@@ -25,7 +25,7 @@ import { PairedDevices } from "@/components/paired-devices";
 const TERMINAL_WIDTHS = [60, 100, 146];
 
 export function Settings() {
-  const { session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server } =
+  const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server } =
     useSession();
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
@@ -62,6 +62,7 @@ export function Settings() {
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />
+      <View style={{ paddingHorizontal: 20 }}><ComputerSwitcher /></View>
       <View style={styles.group}>
         <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
       </View>
@@ -103,7 +104,7 @@ export function Settings() {
           disabled={push === "asking" || push === "on"}
           onPress={() => {
             setPush("asking");
-            void enablePush().then((r) => setPush(r.ok ? "on" : r.reason));
+            void enablePush(api).then((r) => setPush(r.ok ? "on" : r.reason));
           }}
           hint={
             push !== "off" && push !== "on" && push !== "asking"
@@ -196,7 +197,7 @@ export function Settings() {
                     try {
                       // Revoke server-side push subscriptions while the authenticated
                       // transport is still open, then discard local credentials.
-                      await preparePushLogout();
+                      await preparePushLogout(api);
                       await api.logout();
                     } catch {
                       // An offline box cannot prevent local sign-out.

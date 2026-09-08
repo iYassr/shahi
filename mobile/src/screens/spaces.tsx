@@ -19,7 +19,6 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
-import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openPane } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
@@ -213,6 +212,7 @@ const PaneRow = memo(function PaneRow({
 });
 
 export function NewSpace({ session, onCreated }: { session: Session; onCreated: () => void }) {
+  const { api } = useSession();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -318,6 +318,7 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
 }
 
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
+  const { api } = useSession();
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const starting = useRef(false);
   const [kinds, setKinds] = useState<string[]>([]);

@@ -12,7 +12,7 @@
  * laptop across the room.
  */
 import { useEffect, useRef, useState } from "react";
-import { api, type DirEntry, type DirListing } from "../api";
+import { useApi, type DirEntry, type DirListing } from "../api";
 import { Sheet } from "./Sheet";
 
 export interface Attachment {
@@ -32,6 +32,7 @@ interface Props {
 type Source = "phone" | "server";
 
 export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
+  const api = useApi();
   const [source, setSource] = useState<Source>("phone");
   const [uploading, setUploading] = useState(false);
   const [path, setPath] = useState(startPath);
