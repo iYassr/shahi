@@ -190,7 +190,14 @@ final class ComputerSwitchTests: XCTestCase {
         else if app.tabBars.buttons["Settings"].exists { computers(app); addComputer(app) }
         try pair(app, 7572, update: true)
         let update = app.buttons["Update computer"]
-        XCTAssertTrue(update.waitForExistence(timeout: 15)); update.tap()
+        XCTAssertTrue(update.waitForExistence(timeout: 15))
+        // A restored list offset can put the header under the translucent
+        // navigation bar. XCTest reports it hittable but the bar takes the tap.
+        for _ in 0..<6 {
+            if update.isHittable && update.frame.minY > app.navigationBars.firstMatch.frame.maxY + 8 { break }
+            app.swipeDown()
+        }
+        update.tap()
         XCTAssertTrue(app.staticTexts["Restarting Shahi · reconnecting automatically…"].waitForExistence(timeout: 10))
         let completed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: update)
         XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 20), .completed)
