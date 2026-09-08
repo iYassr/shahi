@@ -1,6 +1,6 @@
 /** herdr 0.9 builds in staging and has no post-install hook. A bounded helper
  * waits for this build's marker in the registered checkout before restarting. */
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, openSync, closeSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, openSync, closeSync, statSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -62,7 +62,7 @@ async function main() {
         } catch { return false; }
       },
     });
-    console.log("Shahi updated: the new build is running.");
+    console.log(`${new Date().toISOString()} Shahi updated: build ${build} is running.`);
     return;
   }
   const build = crypto.randomUUID();
@@ -72,7 +72,8 @@ async function main() {
   if (!previous) return; // First installation is started by the startup/pair flow.
   const config = command(["plugin", "config-dir", "shahi"]).trim();
   const dir = mkdtempSync(join(tmpdir(), "shahi-update-"));
-  const log = join(dir, "update.log");
+  const log = join(config, "update.log");
+  if (existsSync(log) && statSync(log).size > 64 * 1024) renameSync(log, log + ".1");
   const fd = openSync(log, "a", 0o600);
   const child = spawn(process.execPath, [import.meta.path, "finish", previous.plugin_root, build, dir, config, String(previous.source?.installed_unix_ms)], {
     cwd: tmpdir(), detached: true, stdio: ["ignore", fd, fd],
