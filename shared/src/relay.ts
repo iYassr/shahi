@@ -8,7 +8,7 @@
 import type { SocketMessage } from "./index";
 
 /** Bump together with `docs/relay.md` when a frame changes shape. */
-export const RELAY_PROTOCOL = 1;
+export const RELAY_PROTOCOL = 2;
 
 /** What a box signs to prove it owns its `serverId`: this prefix, then the id, then the nonce, as UTF-8. */
 export const BOX_AUTH_PREFIX = "shahi-relay-box-v1";
@@ -57,6 +57,14 @@ export const RELAY_LIMITS = {
    */
   maxBodyBytes: Math.floor(((1024 * 1024 - 4096) * 3) / 4),
   maxPhonesPerBox: 8,
+  maxPendingRequests: 16,
+  maxPendingBodyBytes: 2 * 1024 * 1024,
+  maxRequestsPerLink: 4,
+  maxRequestsPerBox: 16,
+  /** Encrypted delivery acknowledgments bound even the relay's slow-reader queue. */
+  maxUnacknowledgedBytes: 2 * 1024 * 1024,
+  acknowledgeBytes: 64 * 1024,
+  maxSocketBufferedBytes: 2 * 1024 * 1024,
   /** Sustained bytes per second per phone, and the burst it may bank. */
   phoneBytesPerSecond: 64 * 1024,
   phoneBurstBytes: 1024 * 1024,
@@ -133,17 +141,13 @@ export interface RelayStream {
  * relay's close code (the relay flattens a box-driven close to 1000,
  * indistinguishable from a routine drop, and forwards this sealed frame like
  * any other without reading it), so the box says so in a sealed frame before
- * ending the link. Additive and unversioned on purpose: a box that predates
- * it simply never sends it, and a phone that predates it ignores an unknown
- * `t` and reconnects as before — bumping `RELAY_PROTOCOL` would instead sever
- * every existing relay phone from an upgraded box, for a message the relay
- * never sees.
+ * ending the link.
  */
 export interface RelayBye {
   t: "bye";
 }
 
-export type PhoneToBox = RelayRequest | RelayStream;
+export type PhoneToBox = RelayRequest | RelayStream | { t: "ack"; bytes: number };
 export type BoxToPhone = RelayResponse | RelayStream | RelayBye;
 
 /** What `POST /api/pair/claim` answers over a pairing link (and over HTTP, additively). */

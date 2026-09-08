@@ -1,0 +1,32 @@
+name = "shahi-operations"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+send_metrics = false
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["* * * * *"]
+
+[[durable_objects.bindings]]
+name = "MONITOR"
+class_name = "Monitor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Monitor"]
+
+[[send_email]]
+name = "ALERT_EMAIL"
+allowed_sender_addresses = ["alerts@getshahi.dev"]
+
+[observability]
+enabled = true
+redact_query_string = true
+[observability.logs]
+enabled = true
+invocation_logs = false
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = false

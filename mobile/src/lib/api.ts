@@ -546,7 +546,17 @@ async function multipart(file: {
   name: string;
   type: string;
 }): Promise<{ method: string; headers: Record<string, string>; body: Uint8Array }> {
-  const bytes = new Uint8Array(await (await fetch(file.uri)).arrayBuffer());
+  // FileHandle bounds the native allocation too; fetch(...).arrayBuffer() read
+  // a 100 MB attachment in full before the relay limit could reject it.
+  const { File } = require("expo-file-system") as typeof import("expo-file-system");
+  const handle = new File(file.uri).open();
+  let bytes: Uint8Array;
+  try {
+    const limit = RELAY_LIMITS.maxBodyBytes - 4096;
+    if (handle.size === null || handle.size > limit) throw new Error(`The relay accepts files up to ${humanSize(limit)}. Use an SSH connection for larger files (up to 32 MB).`);
+    bytes = handle.readBytes(limit + 1);
+    if (bytes.length > limit) throw new Error("This file grew beyond the relay upload limit.");
+  } finally { handle.close(); }
   const boundary = `shahi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const head = new TextEncoder().encode(
     `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name.replace(/["\r\n]/g, "_")}"\r\n` +

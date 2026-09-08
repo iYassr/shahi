@@ -62,11 +62,10 @@ so an upgrade never touches your secrets or your data.
 `herdr plugin action invoke shahi.status` prints the resolved paths, which beats
 guessing at them.
 
-The database is not precious: transcripts are a convenience, and a phone
-re-pairs. The `.env` is the one thing that cannot be regenerated — it holds the
-session secret, the passcode hash, the relay identity key and the VAPID keypair.
-Lose the relay key and the box gets a new `serverId`, so every phone pairs
-again.
+The SQLite database holds the relay identity seed and paired-device secrets.
+The `.env` holds the session secret, passcode hash and VAPID keys. Back up both
+privately if you want to preserve pairing; losing the identity gives the box a
+new `serverId`. Transcripts in the same database can contain private content.
 
 ## Everyday commands
 
@@ -142,6 +141,124 @@ to you.
 
 ## Backing up
 
-Back up `$HERDR_PLUGIN_CONFIG_DIR/.env`. Everything else regenerates: the
-checkout comes from `herdr plugin install`, and the database costs a re-pair and
-a re-grant of notifications.
+Back up the private `.env` and a consistent SQLite backup, including its relay identity and device credentials. The checkout regenerates from the plugin repository.
+
+## Operational logs and request analytics
+
+`herdr plugin action invoke shahi.logs` tails both startup output and the
+private `operations.jsonl` beside the SQLite database. JSON logs rotate at
+5 MiB into three archives (20 MiB total). Successful requests are sampled one
+in 100 per route; slow requests and failures are logged, subject to a cap of
+240 records/minute. `droppedLogs` exposes suppression. All request aggregates
+remain counted. Logs are deliberately bounded under floods and disk errors.
+
+Authenticated `GET /api/diagnostics` returns process uptime, RSS/heap, in-flight
+handlers, route-template request counts, errors/rejections, latency histograms,
+event counts (including `relay.protocol_mismatch` for outdated clients),
+suppressed log count, relay state and active local alerts. The
+histogram exposes bucket boundaries so a client can derive approximate
+percentiles. It records handler time, not tap-to-render or complete file-transfer
+time. Metrics reset at process restart and never contain terminal or file data.
+
+A local summary is written every minute. Local alert transitions cover relay
+outage after three minutes, at least ten 5xx responses and a 5% error rate in a
+minute, RSS over 768 MiB, and timer lag over one second. They recover in the next
+healthy sample. These local alerts are in the private log/diagnostic endpoint;
+individual computers do not upload them to the fleet monitor.
+
+## Fleet analytics and incident email
+
+Cloudflare Workers Observability for `shahi-relay` contains structured
+connection, refusal, authentication, traffic and duration events. Filter by
+`event`, `detail`, `colo` or the stable pseudonymous `serverId`. Invocation logs
+and automatic tracing are off. Workers Logs retain seven days on the paid plan;
+Analytics Engine retains three months. Workers Logs have usage charges beyond the plan's included allowance. Analytics
+Engine publishes usage-based allowances/prices but currently says billing has
+not begun; consult [its pricing page](https://developers.cloudflare.com/analytics/analytics-engine/pricing/)
+and [Workers Logs pricing](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
+for current terms. Traffic is aggregated before recording.
+
+These are server-side operational metrics. The hosted client has no third-party
+analytics SDK. Static responses send `Cache-Control: public, no-transform` to
+prevent Cloudflare's automatic beacon injection, alongside the PWA's
+`script-src 'self'` policy. Cloudflare documents this behavior in its
+[Web Analytics setup guide](https://developers.cloudflare.com/web-analytics/get-started/).
+Verify public HTML with a browser User-Agent: a plain curl request can receive
+different injection behavior. Worker subrequests do not exercise that injection
+path, so the availability monitor alone cannot establish its absence.
+
+`GET https://relay.getshahi.dev/stats` requires a separate bearer admin token.
+It returns event/close/refusal/region breakdowns, bytes and frame counts,
+handshake mean/max, signup statuses and mean timings from `shahi_site`, a five-minute timeline, recent presence estimates and
+five-minute alert counters. Authenticated synthetic probes are excluded from fleet summaries. Presence is approximate and traffic is delayed
+until the next alarm/close. Missing query credentials return 503; query failure
+returns 502 rather than an empty healthy dashboard. All admin replies are
+`no-store`. Never put the bearer token in a URL, browser storage, or source code.
+
+The independent `shahi-operations` Worker has no public route, `workers.dev`, or
+preview URL. A cron runs every minute. It checks the public website, browser
+app, signup API (without submitting an email), relay HTTP health, and a real
+bidirectional relay path using a fresh synthetic box identity. It also checks
+analytics availability. A private Durable Object retains only the latest check
+and fixed set of incident states. The relay's protected `/ops/status` and
+`POST /ops/check` expose the monitor through a service binding.
+
+| Incident | Unhealthy sample |
+|---|---|
+| Public service / tunnel / analytics | Check fails or times out |
+| Service latency | A successful check takes over 3 seconds |
+| Signup delivery errors | At least 3 signup 5xx responses in 5 minutes |
+| Relay internal errors | At least 5 in the preceding 5 minutes |
+| Connection rejections | At least 100 and at least 20% of connection attempts in 5 minutes |
+| Authentication failures | At least 50 in 5 minutes |
+| Reconnect storm | At least 100 box disconnects in 5 minutes |
+
+Three consecutive unhealthy samples send an incident email, two healthy
+samples send recovery, and an ongoing incident is reminded hourly. Delivery
+failures are logged/counted and retried on the next check. Delivery is at least
+once: a timeout or crash after acceptance can duplicate an email. The recipient
+is the existing verified Cloudflare budget-alert address, stored as a secret.
+Budget alerts remain separate from availability alerts and are not a spending
+cap. Account-wide Cloudflare or email outages can also affect this monitor;
+an independent provider is needed for that failure mode. Check `checkedAt` when
+using `/ops/status` — an old successful check is not evidence of current health.
+
+Operator commands (the file must be mode 0600):
+
+```sh
+export SHAHI_OPERATIONS_SECRETS=/private/path/operations-secrets.json
+bun operations/manage.ts status
+bun operations/manage.ts stats
+bun operations/manage.ts check
+bun operations/manage.ts test-alert  # sends a clearly marked setup email
+```
+
+Provision relay secrets `STATS_TOKEN`, `CF_ACCOUNT_ID`, `CF_ANALYTICS_TOKEN`
+(Account Analytics:Read, restricted to the relay account). Provision monitor
+secrets `STATS_TOKEN` and `ALERT_TO`, deploy `operations/wrangler.toml`, then the
+relay with its `OPERATIONS` service binding. Use Wrangler secret input; never
+commit secrets. Keep the read-only analytics token separate from deploy access.
+
+## Concurrency verification
+
+`bun relay/scripts/load.ts 1000` starts local workerd and creates 1,000 synthetic
+boxes with 1,000 concurrent phones (2,000 sockets), exchanges 20,000 2 KiB round
+trips, and reconnects every box/phone. It never connects to production or herdr.
+The September 5, 2026 run passed in 60 seconds: p50 977 ms, p95 1,662 ms,
+p99 1,989 ms on this development machine. An initial run sharing another local relay suite's harness timed out; the
+reported run used its own harness and sent a hello immediately while opening
+the fleet.
+
+This is a local capacity/regression check, not a production SLA. Cloudflare
+WAF/per-IP connection limits, shared office/VPN addresses, global latency,
+long-lived workloads and regional failures require separate production-like
+capacity tests. There are still eight phone links maximum per box. The paid
+Workers plan does not raise application quotas. Attachments remain limited to
+roughly 761 KiB per relay file (765 KiB including its multipart body) or 32 MiB
+through SSH/direct HTTP. A 100 MB relay attachment is rejected before reading
+its bytes; supporting it requires a separate chunked-transfer feature.
+
+The reliability transport is protocol 2. Refresh the hosted app and rebuild or
+update native clients together with their sidecars; old clients are rejected
+and counted as `relay.protocol_mismatch`. No native store release is implied by
+deploying the hosted app.

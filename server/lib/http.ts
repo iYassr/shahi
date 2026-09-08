@@ -20,6 +20,7 @@ import {
 import pkg from "../package.json" with { type: "json" };
 
 export type { DashboardPane };
+import { Observability } from "./observability";
 import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
@@ -112,6 +113,7 @@ export interface ShahiServer {
 }
 
 export interface HttpDeps {
+  observability?: Observability;
   config: Config;
   auth: Auth;
   client: HerdrClient;
@@ -233,6 +235,8 @@ export interface ServerOptions {
 export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): ShahiServer {
   const { config, auth, client, store, poller, transcript, push, pairing, devices, serverId } = deps;
   const clients = new Set<StreamClient>();
+  const metrics = deps.observability ?? new Observability();
+  let fileRequests = 0;
 
   // The routes that answer before the gate are the only ones anyone can hit.
   const limiter = new RateLimiter();
@@ -369,7 +373,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
     async fetch(req, srv) {
-      const response = await handle(req, {
+      const response = await measuredHandle(req, {
         rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
         viaRelay: false,
         secure: new URL(req.url).protocol === "https:" ||
@@ -389,6 +393,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
       // The session payload is 18KB of JSON and goes out on every change.
       perMessageDeflate: true,
+      backpressureLimit: 2 * 1024 * 1024,
+      closeOnBackpressureLimit: true,
+      maxPayloadLength: 1024 * 1024,
 
       open(ws) {
         attach(ws);
@@ -470,6 +477,31 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
    * Returns undefined for a websocket upgrade, which Bun takes as "already
    * handled".
    */
+  async function measuredHandle(req: Request, arrival: Arrival): Promise<Response | undefined> {
+    const started = performance.now();
+    const path = new URL(req.url).pathname;
+    const fileWork = path === "/api/uploads" || path === "/api/file";
+    let status = 500;
+    if (metrics.inFlight >= 32 || (fileWork && fileRequests >= 2)) {
+      void req.body?.cancel().catch(() => {});
+      metrics.request(req, arrival.viaRelay ? "relay" : "http", 503, performance.now() - started);
+      return json({ error: "this box is busy; try again shortly" }, { status: 503, headers: { "retry-after": "2" } });
+    }
+    metrics.inFlight++;
+    if (fileWork) fileRequests++;
+    try {
+      const response = await handle(req, arrival);
+      status = response?.status ?? 101;
+      return response;
+    } catch {
+      return json({ error: "internal error" }, { status: 500 });
+    } finally {
+      metrics.inFlight--;
+      if (fileWork) fileRequests--;
+      metrics.request(req, arrival.viaRelay ? "relay" : "http", status, performance.now() - started);
+    }
+  }
+
   async function handle(req: Request, arrival: Arrival): Promise<Response | undefined> {
         const url = new URL(req.url);
         const { pathname } = url;
@@ -583,6 +615,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
         // --- everything below requires a session ---
         if (pathname.startsWith("/api/") || pathname === "/ws") {
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+        }
+
+        if (pathname === "/api/diagnostics" && req.method === "GET") {
+          return json({ ...metrics.snapshot(), relayConnected: deps.relay?.()?.connected ?? null }, { headers: { "cache-control": "no-store" } });
         }
 
         if (pathname === "/ws") {
@@ -1158,7 +1194,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     // A relay link cannot become a socket; `/ws` over one is answered 400,
     // which nothing sends — the link *is* the stream.
     dispatch: async (req, rateKey) =>
-      (await handle(req, { rateKey, viaRelay: true, upgrade: null })) ?? new Response(null, { status: 400 }),
+      (await measuredHandle(req, { rateKey, viaRelay: true, upgrade: null })) ?? new Response(null, { status: 400 }),
     attach,
     detach,
     receive,

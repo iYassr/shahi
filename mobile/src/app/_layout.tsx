@@ -1,7 +1,7 @@
 import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SessionProvider } from "@/lib/session";
+import { SessionProvider, useSession } from "@/lib/session";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { theme } from "@/lib/theme";
 
@@ -20,7 +20,18 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
     <ErrorBoundary>
     <SessionProvider>
+      <Navigation />
+    </SessionProvider>
+    </ErrorBoundary>
+    </GestureHandlerRootView>
+  );
+}
+
+function Navigation() {
+  const { connectionKey } = useSession();
+  return <>
       <Stack
+        key={connectionKey}
         screenOptions={{
           contentStyle: { backgroundColor: theme.void },
           headerStyle: { backgroundColor: theme.void },
@@ -37,6 +48,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connect" options={{ headerShown: false }} />
+        <Stack.Screen name="computers" options={{ title: "Computers" }} />
         {/* Titles set from inside the screens, where the pane or space is
             known. The empty defaults stop raw route names flashing first. */}
         <Stack.Screen name="pane/[paneId]" options={{ title: "" }} />
@@ -66,8 +78,5 @@ export default function RootLayout() {
         />
       </Stack>
       <StatusBar style="light" />
-    </SessionProvider>
-    </ErrorBoundary>
-    </GestureHandlerRootView>
-  );
+    </>;
 }

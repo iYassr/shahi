@@ -10,7 +10,8 @@
  */
 import { Database } from "bun:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { Observability, rotatingLog } from "./lib/observability";
 import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrProtocolMismatch, HerdrSubscriber } from "./lib/herdr-client";
@@ -68,8 +69,9 @@ const auth = new Auth({
   deviceActive: (id) => devices.isActive(id),
 }, db);
 
-store.on("error", (err) => console.error("state:", err.message));
-poller.on("error", (err) => console.error("poller:", err.message));
+const observability = new Observability(rotatingLog(join(dataDir, "operations.jsonl")));
+store.on("error", () => observability.event("state.error"));
+poller.on("error", () => observability.event("poller.error"));
 
 // A closed pane should not keep its transcript or poll slot alive. Both
 // `forget`s were meant to run here — the transcript's docstring even says
@@ -93,7 +95,7 @@ const subscriber = new HerdrSubscriber({
   onEvent: (event) => store.apply(event),
   // herdr has no event replay, so a reconnect means resyncing from scratch.
   onResync: () => store.resync(),
-  onError: (err) => console.error("events:", err.message),
+  onError: () => observability.event("subscriber.error"),
 });
 
 await store.resync();
@@ -106,6 +108,7 @@ poller.start();
 const identity = serverIdentity(db);
 const server = createServer({
   config,
+  observability,
   auth,
   client,
   store,
@@ -121,8 +124,15 @@ const server = createServer({
 
 // Dialled out, never listened on: with a relay the box is reachable from
 // anywhere the relay is, with nothing opened here. See docs/relay.md.
-const relay = config.relayUrl ? new RelayClient({ url: config.relayUrl, identity, devices, pairing, auth, server }) : null;
+const relay = config.relayUrl ? new RelayClient({ url: config.relayUrl, identity, devices, pairing, auth, server, log: observability.event }) : null;
 relay?.start();
+observability.event("runtime.started");
+let lastMetricsTick = Date.now();
+const metricsTimer = setInterval(() => {
+  const now = Date.now();
+  observability.tick(relay?.connected ?? null, Math.max(0, now - lastMetricsTick - 60_000));
+  lastMetricsTick = now;
+}, 60_000);
 
 const agents = store.state.agents.length;
 const blocked = store.state.agents.filter((a) => a.agent_status === "blocked").length;
@@ -151,6 +161,8 @@ if (!config.webRoot) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     console.log(`\n${signal} — shutting down`);
+    clearInterval(metricsTimer);
+    observability.event("runtime.stopped");
     subscriber.stop();
     store.stopSync();
     poller.stop();

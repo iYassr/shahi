@@ -102,7 +102,7 @@ jobs:
       matrix:
         # The first is the minimum supported version — pinned by tag, so the
         # job means the same thing next month. The second floats.
-        herdr: [v0.8.2, stable]
+        herdr: [v0.9.0, stable]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

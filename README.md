@@ -1,210 +1,228 @@
 <div align="center">
 
-<img src="docs/logo.svg" alt="" width="76" height="76">
+<img src="docs/logo.svg" alt="Shahi" width="76" height="76">
 
 # Shahi
 
-**Coding agents on your phone.**
+**Leave your desk. Keep working.**
 
-Read Claude Code and Codex conversations, answer permission prompts, and manage
-agents running in [herdr](https://herdr.dev) from your phone or browser.
+Continue the same coding-agent sessions from your phone.<br>
+Same conversation. Same files. Same computer doing the work.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/sidecar-macOS%20%7C%20Linux-lightgrey)
-![herdr](https://img.shields.io/badge/herdr-%E2%89%A5%200.8.2-blue)
 
-[getshahi.dev](https://getshahi.dev) · [Quick start](#quick-start) ·
-[How it connects](#how-it-connects) · [Security](#private-by-design) ·
-[Docs](docs/README.md)
+[Open Shahi](https://getshahi.dev/pwa/) · [Request an iOS beta invite](https://getshahi.dev/#ios-beta) · [Quick start](#quick-start) · [Connection security](#connection-security)
 
 </div>
 
----
+## Your work stays where you started it
 
-## Check on work away from your desk
+You start a task with Claude Code or Codex on your computer or server. Then you
+step away. An agent needs permission, has a question, or finishes something you
+want to review.
 
-See which agents are running, finished, or waiting for an answer. Open a
-conversation to read what happened and respond from your phone.
+Open Shahi on your phone and pick up that same session. Read the conversation,
+answer the question, send the next instruction, or open the terminal screen.
+When you return to your computer, your replies and the agent’s work are already
+there.
 
-<p align="center">
-  <img src="docs/screenshots/02-agents.png" width="230" alt="Agents screen: an agent waiting for an answer, its question and choices already visible" />
-  <img src="docs/screenshots/04-reader.png" width="230" alt="Reader: a Claude Code conversation rendered for a phone" />
-  <img src="docs/screenshots/03-spaces.png" width="230" alt="Spaces: workspaces, tabs and agents" />
-  <img src="docs/screenshots/01-onboarding.png" width="230" alt="Two-step connection screen" />
-</p>
-<p align="center">
-  <sub><b>Agents</b> — agent status · <b>Reader</b> — conversations ·
-  <b>Spaces</b> — workspaces · <b>Connect</b> — scan once</sub>
-  <br><sub>Device captures from an earlier build; the current visual system is in the <a href="docs/brand/README.md">brand guidelines</a>.</sub>
-</p>
-
-## Quick start
-
-On the machine where herdr runs:
-
-```sh
-herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.pair
-```
-
-That installs the sidecar as a user service, generates its secrets, and prints a
-QR code. Scan it in the app and your agents appear.
-
-There is nothing else to configure — no port to forward, no domain, no reverse
-proxy. Reinstalling upgrades in place and keeps your passcode.
-
-No herdr yet? `curl -fsSL https://herdr.dev/install.sh | sh` first — Shahi is a
-herdr plugin, so herdr comes first and there is no separate Shahi installer.
-
-> [!NOTE]
-> The iOS app is in private testing; there is no public App Store or TestFlight
-> link yet. The sidecar, plugin, relay and full source are ready to evaluate
-> today. **The browser app supports phones and laptops.** Android remains a future target.
-
-## How it connects
-
-Your machine dials **out** to a relay and holds the connection open. Your phone
-dials out to the same relay. Neither side needs an inbound port, and the relay
-cannot read what it forwards.
+**Shahi connects you to the work that is already running.** There is no project
+to upload or conversation to recreate. Your agents, files, and commands stay on
+your machine, inside [herdr](https://herdr.dev).
 
 ```mermaid
 flowchart LR
-  subgraph box["Your machine"]
-    herdr["herdr session<br/>Claude Code · Codex · shells"]
-    sidecar["Shahi sidecar"]
-    herdr <--> sidecar
-  end
-  relay["Blind relay<br/>sees sizes and timing,<br/>never content"]
-  phone["Your phone"]
-  sidecar -- "outbound, stays open" --> relay
-  phone -- "sealed frames" --> relay
+  Desktop["At your desk<br/>Start a task in herdr"] --> Session["The same running session<br/>Agent · conversation · files"]
+  Phone["On your phone<br/>Read, reply, and continue"] <--> Session
+  Session --> Return["Back at your desk<br/>Carry on where you left off"]
 ```
 
-Every frame above the relay is sealed end to end between phone and sidecar
-(X25519 → HKDF → ChaCha20-Poly1305), keyed from the pairing secret, which never
-travels. The relay multiplexes ciphertext. It can observe IP addresses, server
-and device identifiers, connection times, and message sizes and timing.
+Your computer or server must stay awake and connected. Closing Shahi on your
+phone does not stop the agents running there.
 
-One alternative, if you would rather have no third party in the path at all:
+## Built for using a phone
 
-| Mode | Reach | Set-up |
-|---|---|---|
-| **Relay** (default) | Anywhere | Scan a pairing QR code |
-| **SSH tunnel** | Anywhere you can SSH | Host key pinned on first connect |
+- **Scan and connect.** The default connection uses a pairing QR code. No Shahi
+  account, public server port, VPN installation, or domain setup is needed.
+- **Read comfortably.** Conversation view formats messages, code, tool calls,
+  and results for a small screen. Screen mode shows the underlying terminal.
+- **Keep work moving.** Answer supported permission prompts inline, send a
+  follow-up, attach a file, or use terminal keys your phone keyboard lacks.
+- **Find what needs you.** The Inbox in Agents gathers unanswered requests,
+  completed work, and agents whose status needs checking. Mark completed items
+  Reviewed for the current app session.
+- **Know when the connection is interrupted.** Connection guidance distinguishes
+  reported network, relay, and computer-disconnection problems and offers a
+  retry while preserving the last loaded view.
+- **Manage your workspaces.** Browse spaces, open existing agents, and start new
+  ones on the same machine.
 
-`RELAY_URL=` (empty) in the plugin's config opts out of the relay entirely; the
-app then reaches the box over SSH. There is no third mode: the sidecar binds
-loopback and is never given an address of its own to expose.
+<p align="center">
+  <img src="docs/screenshots/02-agents.png" width="230" alt="Agent list with a question and answer choices" />
+  <img src="docs/screenshots/04-reader.png" width="230" alt="An agent conversation formatted for reading on a phone" />
+  <img src="docs/screenshots/03-spaces.png" width="230" alt="Workspaces and their running agents" />
+</p>
+<p align="center"><sub>Earlier device captures; some controls and styling have since changed.</sub></p>
 
-## Features
+## Quick start
 
-- **Read conversations.** View messages, reasoning, tool calls, patches, files,
-  and results from Claude Code and Codex transcripts. Unsupported entries are
-  omitted from the reader. Screen mode shows terminal output.
-- **Answer permission prompts.** Review a request and choose an answer. The server
-  checks that the prompt is still current before sending the response. If parsing
-  fails, use the terminal view and text input.
-- **Manage agents.** Send messages, attach files, use terminal keys, and start
-  agents in your workspaces.
-- **Connect to your computer.** Agents run on your computer. Connect through the
-  encrypted relay, or use SSH in the mobile app.
+### 1. Install on the computer doing the work
 
-## Private by design
+You need **herdr 0.9.0 or newer** on macOS or Linux. Linux service installation
+requires systemd; see the [installation requirements](docs/plugin.md).
+Run your agents inside herdr, then install Shahi:
 
-Shahi can send commands to your terminal. Access is protected as follows:
+```sh
+herdr plugin install iYassr/shahi
+```
 
-- The sidecar binds to loopback and is gated by a passcode.
-- Logout invalidates the session on the server, including after a restart.
-- Pairing codes are single-use and expire in ten minutes. Each paired device
-  gets its own secret and can be revoked — effective on its next request and on
-  its open socket.
-- The relay is blind: it forwards sealed frames and can observe sizes and
-  timing, never content, paths, or keys.
-- Secrets live in herdr's per-plugin config directory, never in the checkout.
-  On the phone they live in the iOS Keychain.
-- Terminal output is never written to logs.
+The plugin installs Shahi’s local service and generates its credentials. Need
+herdr first? Start with [herdr’s installation instructions](https://herdr.dev).
 
-The browser app trusts the code delivered by `getshahi.dev`. A compromised
-website or publishing account could read an active session or remembered
-pairing secret. Encryption protects against the relay; it cannot protect
-against compromised code running on your device. See the
-[privacy policy](https://getshahi.dev/privacy) for metadata and push-provider access.
+### 2. Show a pairing code
 
-The threat model, the protocol, and what is fixed versus accepted are written
-down in the [security review](docs/security-review.md) and
-[relay specification](docs/relay.md) — including the parts that are still open.
+On that same computer:
 
-## Requirements
+```sh
+herdr plugin action invoke shahi.pair
+```
 
-- A Mac or Linux machine running **herdr 0.8.2+**
-- Claude Code, Codex, or any shell running inside it
-- An iPhone (Android and a PWA are coming)
-- Outbound internet for the default relay — or a server you can SSH into
+The code can be claimed **once** and expires after **10 minutes**. Generate a
+separate code for each phone or browser. Treat the QR code and pairing link as
+credentials: anyone who claims a valid code can gain access to your session.
 
-herdr is the only backend today. tmux is plausible and not built; it is not
-advertised as working.
+### 3. Open Shahi on your phone
+
+- **Browser:** open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) and scan the QR.
+  You can also paste the pairing code or use the browser link printed with it.
+  Add Shahi to your home screen for a standalone app window.
+- **iPhone app:** [request a TestFlight beta invite](https://getshahi.dev/#ios-beta).
+  Once invited, open the app and choose **Scan QR code**. Invitations depend on
+  beta availability; the signup form does not immediately grant access.
+
+Your existing agents appear after pairing. Outbound internet access is required
+for the default relay connection; you do not need to expose Shahi’s local port.
+
+The browser app is available on phones and computers. The native iOS app is in
+beta; a native Android release is not currently available. SSH tunnelling is
+built into the native app, not the hosted browser app.
+
+## How it connects
+
+Both your phone and your computer make an **outbound connection** to Shahi’s
+relay. That lets them find each other without opening an inbound port on your
+computer or configuring your router.
+
+The relay forwards traffic. **Your phone and your computer encrypt and decrypt
+the application data.** The relay does not receive the keys needed to read your
+conversation, files, or commands.
+
+```mermaid
+flowchart LR
+  subgraph Device["Your phone or browser"]
+    App["Shahi<br/>Encrypts and decrypts"]
+  end
+  Relay["Shahi relay on Cloudflare<br/>Forwards encrypted payloads<br/>Can observe connection metadata"]
+  subgraph Computer["Your computer or server"]
+    Service["Shahi local service<br/>Encrypts and decrypts"]
+    Work["herdr<br/>Your existing agents and files"]
+    Service <--> Work
+  end
+  App <-->|"Outbound WSS connection<br/>Encrypted application data"| Relay
+  Service <-->|"Outbound WSS connection<br/>Encrypted application data"| Relay
+```
+
+The arrows show two-way traffic; **both connections are initiated by your own
+devices**. The default relay is `relay.getshahi.dev`. You can also
+[operate your own relay](docs/relay.md).
+
+Prefer SSH? In the native app, choose **Want to use SSH?** and connect to a
+computer you can already reach over SSH. Shahi opens a tunnel to its loopback
+service and pins the SSH host key on first connection. Setting `RELAY_URL=`
+(empty) in the plugin configuration disables the relay on your computer.
+
+## Connection security
+
+Shahi can operate your terminal, so a paired device has powerful access. Its
+connection is designed around a few concrete protections:
+
+| Protection | What it does |
+|---|---|
+| **End-to-end encryption** | Application payloads are encrypted between your device and your computer, in addition to the WSS transport encryption. The relay forwards ciphertext. |
+| **One-time pairing** | A short-lived QR secret introduces a device. Pairing replaces it with that device’s own secret. |
+| **Proof before access** | Knowing a device identifier is insufficient. The device must prove possession of its secret with a valid encrypted message before the server grants session access. |
+| **Fresh connection keys** | Each connection uses ephemeral X25519 keys. HKDF-SHA-256 mixes the exchange with the pairing or device secret; ChaCha20-Poly1305 protects messages. |
+| **Message integrity and ordering** | Altered messages and unexpected counters are rejected rather than accepted as commands. |
+| **Device revocation** | Revoke a paired device in Settings to close its active connection and refuse further authenticated requests. |
+| **Local service boundary** | The sidecar binds to loopback. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
+
+**Encryption has a boundary.** The relay and its infrastructure provider can
+observe connection metadata, including IP addresses, identifiers, and traffic
+sizes and timing. A compromised phone, computer, or browser application can
+access data at an endpoint. Optional push notifications use separate providers
+that receive notification content. Your coding agent’s own model-provider
+connection is also separate from Shahi.
+
+The native app stores pairing credentials in the iOS Keychain. Browser pairing
+is temporary unless you explicitly choose to remember it; remembered credentials
+are accessible to code running on the website’s origin. Trusting the hosted
+browser app includes trusting its published code.
+
+**[Read the illustrated security guide →](docs/connection-security.md)**
+
+It explains pairing, encryption, credential storage, metadata, revocation, and
+what the published security reviews do—and do not—establish. For data collection
+and retention, read the [privacy policy](docs/privacy-policy.md). Report security
+issues through [SECURITY.md](SECURITY.md).
 
 ## Development
 
-A native Expo app, a Bun sidecar, a shared wire contract, and a Cloudflare
-Worker relay.
+Shahi uses Expo and React Native for mobile, React for the PWA, Bun for the
+sidecar, and a Cloudflare Worker for the relay. Both clients share the wire
+contract and encryption implementation.
 
 ```text
-mobile/   the native app — the product, and where new work goes
-server/   the sidecar: owns herdr's socket, speaks HTTP + WebSocket
-shared/   the wire contract, relay protocol, end-to-end encryption
-relay/    the blind relay: a Worker, one Durable Object per box
-plugin/   the herdr plugin and its service lifecycle
-web/      the responsive PWA — maintained alongside the native app
-e2e/      Playwright, against a stub of the server
+mobile/   Native app
+web/      Responsive browser app and PWA
+server/   Local service connecting to herdr
+shared/   Types, pairing, encryption, and shared client logic
+relay/    Encrypted-traffic relay
+plugin/   Installation and service management
+site/     Public website
+e2e/     Browser tests against isolated fixtures
 ```
 
 ```sh
 bun install
 bun run typecheck
-bun test shared/src server web/src plugin   # unit
-bun run test:mobile                         # the app
-bun run test:e2e                            # both engines, against a stub
-bun run test:relay                          # the relay, under wrangler dev
+bun run test
+bun run test:mobile --runInBand
+bun run test:relay
+bun run build:web
+bun run test:e2e --project=phone --project=ios
+bun run build:site
+bun run test:hosted
 ```
 
-Tests run against a stub that records writes instead of performing them, so the
-suite can never type into a real session. CI additionally runs the sidecar
-against a **real headless herdr** on every push — pinned to 0.8.2 and to
-whatever is current — because contract drift is the one thing a stub cannot
-notice.
+Browser tests use fixtures that record actions without sending them to your
+agents. Real-herdr checks require an explicitly isolated test session; never
+point write tests at your working session. See [CONTRIBUTING.md](CONTRIBUTING.md)
+and [CLAUDE.md](CLAUDE.md) for development and service restart instructions.
 
-[CLAUDE.md](CLAUDE.md) documents herdr's measured behaviour and the engineering
-rules; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change.
+## Further reading
 
-## Documentation
+- [Install, update, and manage the plugin](docs/plugin.md)
+- [Pairing and device revocation](docs/pairing.md)
+- [Connection security, explained](docs/connection-security.md)
+- [Relay protocol and self-hosting](docs/relay.md)
+- [Build and test the iOS app](docs/on-a-mac.md)
+- [All documentation](docs/README.md)
 
-| | |
-|---|---|
-| [Brand guidelines](docs/brand/README.md) | Logo, shared colors, typography, and motion |
-| [Plugin and pairing](docs/plugin.md) | Install, actions, key bindings, uninstall |
-| [Connection options](docs/connectivity.md) | Relay, tailnet, SSH — and how to choose |
-| [Relay protocol](docs/relay.md) | The wire format, and running your own |
-| [Security review](docs/security-review.md) | Threat model, findings, what is deferred |
-| [Operating the sidecar](docs/operations.md) | Service, logs, manual setup |
-| [Notifications](docs/notifications.md) | Push, and what is not proven yet |
-| [Building on a Mac](docs/on-a-mac.md) | iOS builds and device testing |
-| [Privacy policy](docs/privacy-policy.md) | Published at [getshahi.dev/privacy](https://getshahi.dev/privacy) |
+## Support and license
 
-## Support
+For questions, email [support@getshahi.dev](mailto:support@getshahi.dev) or
+[open an issue](https://github.com/iYassr/shahi/issues). Send vulnerabilities
+privately using the [security reporting instructions](SECURITY.md).
 
-Questions, bug reports and anything the docs do not answer:
-**[support@getshahi.dev](mailto:support@getshahi.dev)**, or open an
-[issue](https://github.com/iYassr/shahi/issues). Privacy questions go to
-[privacy@getshahi.dev](mailto:privacy@getshahi.dev).
-
-If you are reporting something security-sensitive, mail it rather than opening
-an issue, and say so in the subject.
-
----
-
-<div align="center">
-<sub>MIT licensed · Shahi was HerdrUI until August 2026 — a phone-shaped window
-onto a terminal multiplexer need not be named after one.</sub>
-</div>
+Shahi is licensed under the [MIT License](LICENSE).

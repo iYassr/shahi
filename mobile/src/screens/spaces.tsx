@@ -1,3 +1,4 @@
+import { ConnectionHealth } from "@/components/connection-health";
 import { randomUUID } from "expo-crypto";
 /**
  * Spaces: where things live, and where new work goes.
@@ -55,11 +56,11 @@ export function Spaces({ session }: { session: Session | null }) {
         data={session.workspaces}
         keyExtractor={(w) => w.workspaceId}
         ListHeaderComponent={
-          session.workspaces.length > 0 ? (
+          <><ConnectionHealth />{session.workspaces.length > 0 ? (
             <Text style={styles.groupLabel}>
               {session.workspaces.length} SPACE{session.workspaces.length === 1 ? "" : "S"}
             </Text>
-          ) : null
+          ) : null}</>
         }
         // The same chat-list grammar as the Agents tab. The avatar is the
         // space's number — herdr's own vocabulary for workspaces, and what a

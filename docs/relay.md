@@ -7,7 +7,7 @@ trusted in between. This is the "outbound-dialing blind relay" that
 the app that speaks to the box *through* it. The relay forwards bytes it cannot
 read; everything that matters happens end to end between phone and box.
 
-This file is the protocol, version 1. The three parts are built separately and
+This file is the protocol, version 2. The three parts are built separately and
 meet here, so every byte on the wire is specified below and the shared shapes
 live in `shared/src/relay.ts`. Change the protocol by changing this file and
 that module together, and by bumping `RELAY_PROTOCOL`.
@@ -270,16 +270,23 @@ The relay is the one place with a fleet view, because it is your
 infrastructure and already sees the metadata (who is connected, how a
 connection ended, from where) while it reads not one byte of a session.
 `relay/src/telemetry.ts` writes one Analytics Engine point per event to the
-`shahi_relay` dataset. Recorded: the event kind, the `serverId` (a key hash,
-not an identity), a close reason or refusal cause, a close code or live phone
+`shahi_relay` dataset. Recorded: the event kind, the `serverId` (a stable pseudonymous key hash), a close reason or refusal cause, a close code or live phone
 count, and the Cloudflare colo. Never recorded: a request path, a frame body,
 or a raw client IP (Cloudflare's own analytics and WAF hold per-IP data
 transiently; the dataset does not).
 
 **The schema** (Analytics Engine columns): `blob1` kind
 (`box_auth`, `box_gone`, `phone_open`, `phone_close`, `refused`, `connect`,
-`rate_limited`), `blob2` serverId, `blob3` detail, `blob4` colo, `double1`
-value (a close code, a phone count, or 1), `index1` kind.
+`rate_limited`), `blob2` serverId, `blob3` detail, `blob4` colo, `blob5` synthetic-probe marker, `double1`
+value (a close code, a phone count, or 1), `double2` uploaded bytes,
+`double3` downloaded bytes, `double4` uploaded frames, `double5` downloaded
+frames, `double6` duration in milliseconds, `index1` kind. The additional kinds
+are `traffic`, `box_presence`, `auth_failed` and `internal_error`. Traffic is
+aggregated on socket attachments and flushed on alarms/close, not per frame.
+Authenticated synthetic probes are tagged and excluded from fleet summaries.
+Presence includes already-connected boxes, rather than counting recent
+handshakes alone. Last-ten-minute presence remains an estimate: disconnected
+boxes age out, and Analytics Engine can sample or drop events.
 
 **Queries.** Run these in the dashboard (Workers → the Worker →
 your dataset → the SQL query box), or via the SQL API. Each sums
@@ -288,25 +295,25 @@ your dataset → the SQL query box), or via the SQL API. Each sums
 ```sql
 -- boxes seen online in the last 10 minutes (a live-ish estimate)
 SELECT COUNT(DISTINCT blob2) FROM shahi_relay
-WHERE blob1 = 'box_auth' AND timestamp > NOW() - INTERVAL '10' MINUTE;
+WHERE blob5 != 'probe' AND blob1 IN ('box_auth', 'box_presence') AND timestamp > NOW() - INTERVAL '10' MINUTE;
 
 -- what is happening, by event, in the last hour
 SELECT blob1 AS kind, SUM(_sample_interval) AS n FROM shahi_relay
-WHERE timestamp > NOW() - INTERVAL '1' HOUR GROUP BY kind ORDER BY n DESC;
+WHERE blob5 != 'probe' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY kind ORDER BY n DESC;
 
 -- why links are closing (watch for a spike in one code)
 SELECT double1 AS close_code, SUM(_sample_interval) AS n FROM shahi_relay
-WHERE blob1 = 'phone_close' AND timestamp > NOW() - INTERVAL '1' HOUR
+WHERE blob5 != 'probe' AND blob1 = 'phone_close' AND timestamp > NOW() - INTERVAL '1' HOUR
 GROUP BY close_code ORDER BY n DESC;
 
 -- refusals, by cause (box offline vs too many phones vs rate)
 SELECT blob3 AS reason, SUM(_sample_interval) AS n FROM shahi_relay
-WHERE blob1 = 'refused' AND timestamp > NOW() - INTERVAL '1' HOUR
+WHERE blob5 != 'probe' AND blob1 = 'refused' AND timestamp > NOW() - INTERVAL '1' HOUR
 GROUP BY reason ORDER BY n DESC;
 
 -- a box that reconnects too often is failing; find it
 SELECT blob2 AS serverId, SUM(_sample_interval) AS reconnects FROM shahi_relay
-WHERE blob1 = 'box_auth' AND timestamp > NOW() - INTERVAL '1' HOUR
+WHERE blob5 != 'probe' AND blob1 = 'box_auth' AND timestamp > NOW() - INTERVAL '1' HOUR
 GROUP BY serverId HAVING reconnects > 20 ORDER BY reconnects DESC;
 ```
 
@@ -366,3 +373,29 @@ server identifier can correlate a box's events. The public policy documents
 the fields and retention in `docs/privacy-policy.md`. Omitting `STATS_TOKEN`
 hides `/stats` but does not stop collection; remove the `TELEMETRY` binding to
 stop Shahi event collection on a self-hosted relay.
+
+## Delivery bounds (protocol 2)
+
+Phones acknowledge every accumulated 64 KiB of received encrypted frames with
+an encrypted `{ t: "ack", bytes }`. Counts include the 24-byte encryption
+overhead and exclude the initial clear hello. A sidecar allows at most 2 MiB
+unacknowledged per link; a slow receiver ends only that link. The relay cannot
+forge acknowledgments. Do not drop a sealed frame and continue the same link:
+strict crypto counters would reject everything that follows it.
+
+Pending client work is capped at 16 requests and 2 MiB of bodies. The sidecar
+runs at most four requests per link and sixteen across the relay, and its HTTP
+surface admits at most 32 handlers and two concurrent upload/file handlers.
+Excess work receives 429/503 and is never silently queued. Responses are read
+with a byte limit, cancelled at the limit, and answered with 413. Single-frame
+limits still apply: this does **not** add 100 MB attachments.
+
+Reconnects use exponential backoff with equal jitter (half to all of the delay,
+capped at 30 seconds). Polling respects scheduled retries. Only 30 seconds of
+stable connection resets the backoff. Protocol 2 requires updated sidecar,
+web and native clients; the `/v1/` routing namespace and box-auth signature
+prefix are unchanged because their relay-side contract is unchanged.
+
+See [operations.md](operations.md) for metrics, alert thresholds and the local
+1,000-phone load test. The public per-IP rate limits still apply to clients
+behind one office/VPN address; a paid Workers plan does not remove them.

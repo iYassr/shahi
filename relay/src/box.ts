@@ -25,7 +25,7 @@ import {
   type RelayToBox,
 } from "@shahi/shared/relay";
 import { ROUTE } from "./route.ts";
-import { record, type TelemetryEnv } from "./telemetry.ts";
+import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
 
 /**
  * How long a box may go without being heard from before the relay decides it
@@ -50,6 +50,7 @@ interface BoxState {
   heard: number;
   /** Never reused within one box connection, so a stale `close` from the box can only name a dead link. */
   nextLink: number;
+  synthetic: boolean;
 }
 
 /** The attachment on a phone socket. */
@@ -69,6 +70,11 @@ interface PhoneState {
   /** Token bucket: bytes banked, and when they were last topped up. */
   tokens: number;
   refilled: number;
+  upBytes: number;
+  downBytes: number;
+  upFrames: number;
+  downFrames: number;
+  measuredAt: number;
 }
 
 type Attachment = BoxState | PhoneState;
@@ -78,10 +84,12 @@ const CLOSE_NORMAL = 1000;
 
 export class RelayBox extends DurableObject<unknown> {
   #env: TelemetryEnv;
+  #synthetic = false;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
     this.#env = env as TelemetryEnv;
+    this.#synthetic = ctx.getWebSockets("box").some((ws) => (ws.deserializeAttachment() as BoxState)?.synthetic === true);
     // `ping` → `pong` is answered inside the runtime, without waking this
     // object, and the answer's timestamp is what the liveness sweep reads.
     // Setting it on every construction is idempotent and keeps it from
@@ -92,6 +100,7 @@ export class RelayBox extends DurableObject<unknown> {
   /* ------------------------------------------------------------- connect */
 
   async fetch(request: Request): Promise<Response> {
+    if (this.#env.STATS_TOKEN && request.headers.get("x-shahi-probe") === this.#env.STATS_TOKEN) this.#synthetic = true;
     const match = ROUTE.exec(new URL(request.url).pathname)!;
     const role = match[1]!;
     const serverId = match[2]!;
@@ -110,7 +119,7 @@ export class RelayBox extends DurableObject<unknown> {
     // so replacement happens on `auth`, not on connect.
     this.ctx.acceptWebSocket(ws, ["box"]);
     const now = Date.now();
-    const state: BoxState = { role: "box", serverId, nonce, ready: false, since: now, heard: now, nextLink: 1 };
+    const state: BoxState = { role: "box", serverId, nonce, ready: false, since: now, heard: now, nextLink: 1, synthetic: this.#synthetic };
     ws.serializeAttachment(state);
     this.tell(ws, { t: "challenge", nonce });
     await this.schedule();
@@ -137,10 +146,11 @@ export class RelayBox extends DurableObject<unknown> {
       seen: now,
       tokens: RELAY_LIMITS.phoneBurstBytes,
       refilled: now,
+      upBytes: 0, downBytes: 0, upFrames: 0, downFrames: 0, measuredAt: now,
     };
     ws.serializeAttachment(state);
     this.tell(box, { t: "open", link });
-    record(this.#env, { kind: "phone_open", serverId, value: this.phones().length });
+    this.record({ kind: "phone_open", serverId, value: this.phones().length });
     await this.schedule();
   }
 
@@ -154,7 +164,7 @@ export class RelayBox extends DurableObject<unknown> {
    */
   private refuse(ws: WebSocket, code: number, reason: string, serverId: string): void {
     this.ctx.acceptWebSocket(ws, ["refused"]);
-    record(this.#env, { kind: "refused", serverId, detail: reason, value: code });
+    this.record({ kind: "refused", serverId, detail: reason, value: code });
     ws.close(code, reason);
   }
 
@@ -168,9 +178,15 @@ export class RelayBox extends DurableObject<unknown> {
       else this.closeBox(ws, state, RELAY_CLOSE.quota, "control too large");
       return;
     }
-    if (state.role === "phone") this.fromPhone(ws, state, message);
-    else if (state.ready) this.fromReadyBox(ws, state, message);
-    else await this.authenticate(ws, state, message);
+    try {
+      if (state.role === "phone") this.fromPhone(ws, state, message);
+      else if (state.ready) this.fromReadyBox(ws, state, message);
+      else await this.authenticate(ws, state, message);
+    } catch {
+      this.record({ kind: "internal_error", serverId: state.serverId, detail: "socket handler" });
+      if (state.role === "phone") this.closePhone(ws, state, 1011, "send failed");
+      else this.closeBox(ws, state, 1011, "send failed");
+    }
   }
 
   private fromPhone(ws: WebSocket, state: PhoneState, message: string | ArrayBuffer): void {
@@ -191,7 +207,7 @@ export class RelayBox extends DurableObject<unknown> {
     if (!box) return this.closePhone(ws, state, RELAY_CLOSE.boxOffline, "box offline");
     // First frame: the phone has spoken, so it holds its slot for the full
     // idle window rather than the short hello deadline.
-    ws.serializeAttachment({ ...state, spoke: true, seen: now, tokens: banked - size, refilled: now });
+    ws.serializeAttachment({ ...state, spoke: true, seen: now, tokens: banked - size, refilled: now, upBytes: state.upBytes + size, upFrames: state.upFrames + 1 });
     const framed = new Uint8Array(LINK_PREFIX_BYTES + size);
     new DataView(framed.buffer).setUint32(0, state.link);
     framed.set(new Uint8Array(message), LINK_PREFIX_BYTES);
@@ -207,23 +223,23 @@ export class RelayBox extends DurableObject<unknown> {
       if (!phone) return;
       // The box asked, so it is not told again.
       const phoneState = phone.deserializeAttachment() as PhoneState;
+      this.traffic(phoneState);
+      this.record({ kind: "phone_close", serverId: state.serverId, detail: "closed by box", value: CLOSE_NORMAL, durationMs: Date.now() - phoneState.since });
       phone.serializeAttachment({ ...phoneState, open: false });
       phone.close(CLOSE_NORMAL, "closed by box");
       return;
     }
     if (message.byteLength < LINK_PREFIX_BYTES) return;
     const size = message.byteLength - LINK_PREFIX_BYTES;
-    // The box has proven its key, so an oversized frame is a bug on its side
-    // rather than an attack; closing the box makes it loud rather than
-    // silently starving one phone.
-    if (size > RELAY_LIMITS.maxFrameBytes) return this.closeBox(ws, state, RELAY_CLOSE.quota, "frame too large");
     const link = new DataView(message).getUint32(0);
     const phone = this.phone(link);
     if (!phone) return;
     const phoneState = phone.deserializeAttachment() as PhoneState;
     if (!phoneState.open) return;
-    phone.serializeAttachment({ ...phoneState, seen: Date.now() });
-    phone.send(message.slice(LINK_PREFIX_BYTES));
+    if (size > RELAY_LIMITS.maxFrameBytes) return this.closePhone(phone, phoneState, RELAY_CLOSE.quota, "frame too large");
+    phone.serializeAttachment({ ...phoneState, seen: Date.now(), downBytes: phoneState.downBytes + size, downFrames: phoneState.downFrames + 1 });
+    try { phone.send(message.slice(LINK_PREFIX_BYTES)); }
+    catch { this.closePhone(phone, phone.deserializeAttachment() as PhoneState, 1011, "send failed"); }
   }
 
   /* ---------------------------------------------------------------- auth */
@@ -231,6 +247,7 @@ export class RelayBox extends DurableObject<unknown> {
   private async authenticate(ws: WebSocket, state: BoxState, message: string | ArrayBuffer): Promise<void> {
     const auth = typeof message === "string" ? parse<BoxToRelay>(message) : null;
     if (auth?.t !== "auth" || !(await proves(auth, state))) {
+      this.record({ kind: "auth_failed", serverId: state.serverId, detail: "unauthorized" });
       ws.close(RELAY_CLOSE.unauthorized, "unauthorized");
       return;
     }
@@ -245,7 +262,7 @@ export class RelayBox extends DurableObject<unknown> {
     const now = Date.now();
     ws.serializeAttachment({ ...state, ready: true, since: now, heard: now });
     this.tell(ws, { t: "ready" });
-    record(this.#env, { kind: "box_auth", serverId: state.serverId });
+    this.record({ kind: "box_auth", serverId: state.serverId, durationMs: now - state.since });
     await this.schedule();
   }
 
@@ -278,7 +295,8 @@ export class RelayBox extends DurableObject<unknown> {
       ws.serializeAttachment({ ...state, open: false });
       const box = this.readyBox();
       if (box) this.tell(box, { t: "close", link: state.link });
-      record(this.#env, { kind: "phone_close", serverId: state.serverId, detail: reason, value: code });
+      this.traffic(state);
+      this.record({ kind: "phone_close", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
     }
     ws.close(code, reason);
   }
@@ -287,12 +305,15 @@ export class RelayBox extends DurableObject<unknown> {
   private closeBox(ws: WebSocket, state: BoxState, code: number, reason: string): void {
     if (state.ready) {
       ws.serializeAttachment({ ...state, ready: false });
-      record(this.#env, { kind: "box_gone", serverId: state.serverId, detail: reason, value: code });
+      this.record({ kind: "box_gone", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
       for (const phone of this.phones()) {
         // `open: false` first: the box being told about these links is the one
         // that is leaving, and a `close` on the ready socket would otherwise
         // reach whichever box replaced it.
-        phone.serializeAttachment({ ...(phone.deserializeAttachment() as PhoneState), open: false });
+        const phoneState = phone.deserializeAttachment() as PhoneState;
+        this.traffic(phoneState);
+        this.record({ kind: "phone_close", serverId: state.serverId, detail: "box offline", value: RELAY_CLOSE.boxOffline, durationMs: Date.now() - phoneState.since });
+        phone.serializeAttachment({ ...phoneState, open: false });
         phone.close(RELAY_CLOSE.boxOffline, "box offline");
       }
     }
@@ -322,6 +343,13 @@ export class RelayBox extends DurableObject<unknown> {
 
   async alarm(): Promise<void> {
     const now = Date.now();
+    const box = this.readyBox();
+    if (box) this.record({ kind: "box_presence", serverId: (box.deserializeAttachment() as BoxState).serverId, value: this.phones().length });
+    for (const phone of this.phones()) {
+      const state = phone.deserializeAttachment() as PhoneState;
+      this.traffic(state);
+      phone.serializeAttachment({ ...state, upBytes: 0, downBytes: 0, upFrames: 0, downFrames: 0, measuredAt: now });
+    }
     for (const ws of this.ctx.getWebSockets()) {
       const deadline = this.deadline(ws);
       if (deadline === null || deadline > now) continue;
@@ -348,6 +376,14 @@ export class RelayBox extends DurableObject<unknown> {
     return Math.max(state.since, state.heard, pong) + BOX_SILENCE_MS;
   }
 
+  private record(event: Event): void { record(this.#env, { ...event, synthetic: this.#synthetic }); }
+
+  private traffic(state: PhoneState): void {
+    if (!state.upFrames && !state.downFrames) return;
+    this.record({ kind: "traffic", serverId: state.serverId, upBytes: state.upBytes, downBytes: state.downBytes,
+      upFrames: state.upFrames, downFrames: state.downFrames, durationMs: Date.now() - state.measuredAt });
+  }
+
   /* ------------------------------------------------------------- lookups */
 
   private readyBox(): WebSocket | null {
@@ -368,7 +404,7 @@ export class RelayBox extends DurableObject<unknown> {
   }
 
   private tell(ws: WebSocket, message: RelayToBox): void {
-    ws.send(JSON.stringify(message));
+    try { ws.send(JSON.stringify(message)); } catch { this.record({ kind: "internal_error", serverId: "", detail: "control send" }); }
   }
 }
 

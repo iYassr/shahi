@@ -16,11 +16,11 @@ function capturing(): { env: TelemetryEnv; points: Point[] } {
 describe("record", () => {
   test("writes one data point with kind, serverId, detail, colo, value and the sampling index", () => {
     const { env, points } = capturing();
-    record(env, { kind: "phone_close", serverId: "abc123", detail: "rate", value: 4429, colo: "SIN" });
+    record(env, { kind: "phone_close", serverId: "a".repeat(43), detail: "rate", value: 4429, colo: "SIN" });
     expect(points).toHaveLength(1);
     expect(points[0]).toEqual({
-      blobs: ["phone_close", "abc123", "rate", "SIN"],
-      doubles: [4429],
+      blobs: ["phone_close", "a".repeat(43), "rate", "SIN", ""],
+      doubles: [4429, 0, 0, 0, 0, 0],
       indexes: ["phone_close"],
     });
   });
@@ -28,7 +28,7 @@ describe("record", () => {
   test("defaults value to 1 and omitted strings to empty", () => {
     const { env, points } = capturing();
     record(env, { kind: "box_auth", serverId: "id" });
-    expect(points[0]).toEqual({ blobs: ["box_auth", "id", "", ""], doubles: [1], indexes: ["box_auth"] });
+    expect(points[0]).toEqual({ blobs: ["box_auth", "", "", "", ""], doubles: [1, 0, 0, 0, 0, 0], indexes: ["box_auth"] });
   });
 
   test("is a no-op when telemetry is unbound", () => {

@@ -1,3 +1,4 @@
+import { ConnectionHealth } from "@/components/connection-health";
 /**
  * Settings, in the settings grammar everyone already knows: an identity card
  * up top, then inset-grouped sections of icon-led rows, the way out in red
@@ -60,6 +61,10 @@ export function Settings() {
     >
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
+      <ConnectionHealth />
+      <View style={styles.group}>
+        <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
+      </View>
       <View style={styles.group}>
         <Pressable
           style={styles.profile}
@@ -146,7 +151,7 @@ export function Settings() {
         <View style={styles.row}>
           <View style={styles.rowLine}>
             <IconBadge name="server" tint={theme.peach} />
-            <Text style={styles.rowLabel}>Paired devices</Text>
+            <Text style={styles.rowLabel}>Devices with access</Text>
           </View>
         </View>
         <Separator />
@@ -179,8 +184,8 @@ export function Settings() {
           labelColor={theme.rose}
           onPress={() =>
             Alert.alert(
-              "Sign out of Shahi?",
-              "You will need a new pairing code or your SSH details to connect again.",
+              "Sign out of this computer?",
+              "You will need a new pairing code or your SSH details to reconnect to this computer. Other saved computers stay available.",
               [
                 { text: "Cancel", style: "cancel" },
                 {

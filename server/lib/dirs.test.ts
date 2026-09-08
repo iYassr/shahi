@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { OutsideHomeError, collapseHome, expandHome, listDirectories, resolveWithinHome } from "./dirs";
 
 const HOME = homedir();
@@ -44,13 +46,19 @@ describe("staying inside home", () => {
 
 describe("listDirectories", () => {
   test("lists sub-directories of home with display paths", async () => {
-    const listing = await listDirectories("~");
-    expect(listing.display).toBe("~");
-    expect(listing.parent).toBeNull();
-    expect(listing.entries.length).toBeGreaterThan(0);
-    for (const entry of listing.entries) {
-      expect(entry.display.startsWith("~/")).toBe(true);
-    }
+    // A fresh VM can have only hidden directories; provide the visible entry
+    // this assertion needs instead of depending on the developer's home.
+    const fixture = mkdtempSync(join(HOME, "shahi-dirs-test-"));
+    try {
+      const listing = await listDirectories("~");
+      expect(listing.display).toBe("~");
+      expect(listing.parent).toBeNull();
+      expect(listing.entries.length).toBeGreaterThan(0);
+      for (const entry of listing.entries) {
+        expect(entry.display.startsWith("~/")).toBe(true);
+      }
+      expect(listing.entries.some((entry) => entry.display === collapseHome(fixture))).toBe(true);
+    } finally { rmSync(fixture, { recursive: true, force: true }); }
   });
 
   test("hides dotfiles", async () => {

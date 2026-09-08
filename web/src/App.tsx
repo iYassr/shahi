@@ -1,6 +1,10 @@
+import { Computers } from "./components/Computers";
+import { connectionHealth } from "@shahi/shared";
+import { ConnectionHealth } from "./components/ConnectionHealth";
+import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
-import { browserConnection, forgetBrowser, hosted, restoreBrowser } from "./connection";
+import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser } from "./connection";
 import { PairBrowser } from "./components/PairBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -25,7 +29,21 @@ import { Sheet } from "./components/Sheet";
 import { PushPrompt } from "./components/PushPrompt";
 import { SpaceDetail, Spaces } from "./components/Spaces";
 
-export function App({ initialPairingCode = "" }: { initialPairingCode?: string }) {
+export function App(props: { initialPairingCode?: string }) {
+  const [epoch, setEpoch] = useState(0);
+  const [openPairing, setOpenPairing] = useState(!!props.initialPairingCode);
+  useEffect(() => {
+    const changed = (event: Event) => { clearReaderMemory(); setOpenPairing(!!(event as CustomEvent).detail?.pairing); setEpoch(value => value + 1); };
+    window.addEventListener("shahi:computer-changed", changed);
+    return () => window.removeEventListener("shahi:computer-changed", changed);
+  }, []);
+  return <AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} />;
+}
+function AppSession({ initialPairingCode = "", openPairing = false }: { initialPairingCode?: string; openPairing?: boolean }) {
+  const [pairingRequested, setPairingRequested] = useState(openPairing);
+  const [showComputers, setShowComputers] = useState(false);
+  const owner = useRef(browserConnection().generation);
+  const active = () => owner.current === browserConnection().generation;
   const [pairingCode, setPairingCode] = useState(initialPairingCode);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newAgent, setNewAgent] = useState(false);
@@ -40,8 +58,16 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
    * possibly work.
    */
   const [connectionError, setConnectionError] = useState("");
+  const [healthError, setHealthError] = useState<Error | null>(null);
   const [reachable, setReachable] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const [reviewed, setReviewed] = useState<Reviewed>({});
+  useEffect(() => { setReviewed((current) => retainReviews(current, session?.panes ?? [])); }, [session]);
+  const markReviewed = useCallback((pane: DashboardPane) => {
+    if (pane.status === "done") setReviewed((current) => ({ ...current, [pane.paneId]: reviewKey(pane) }));
+  }, []);
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
   const [link, setLink] = useState<LinkState>("connecting");
@@ -55,20 +81,27 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
   }, []);
 
   const checkAuth = useCallback(() => {
+    const expected = browserConnection().generation;
+    const current = () => expected === browserConnection().generation;
     void restoreBrowser().then(() => {
-      if (hosted && !browserConnection().identity) return { required: true, authenticated: false };
+      // A saved device is still paired while its computer is offline. Open
+      // its dashboard immediately; requests report availability separately.
+      if (hosted) return { required: true, authenticated: !!browserConnection().identity };
       return api.authStatus();
     })
       .then((s) => {
+        if (!current()) return;
         setReachable(true);
+        setHealthError(null);
         setAuthenticated(!s.required || s.authenticated);
       })
       .catch((err) => {
+        if (!current()) return;
+        setHealthError(err instanceof Error ? err : new Error("Connection failed"));
         setConnectionError(err instanceof Error ? err.message : "Could not contact Shahi");
         // A refused or timed-out request is the server being away; a 401 would
         // have resolved, not thrown.
-        setReachable(false);
-        setAuthenticated(false);
+        if (!sessionRef.current) { setReachable(false); setAuthenticated(false); }
       });
   }, []);
 
@@ -82,6 +115,7 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
   const onMessage = useCallback((msg: SocketMessage) => {
     switch (msg.type) {
       case "session":
+        setHealthError(null);
         setSession(msg.session);
         setPrompts((current) => {
           const next: Record<string, ParsedPrompt> = {};
@@ -120,12 +154,18 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
 
   useEffect(() => {
     if (!authenticated) return;
-    const socket = new SessionSocket(onMessage, (state) => {
+    const socket = new SessionSocket(msg => { if (active()) onMessage(msg); }, (state) => {
+      if (!active()) return;
       setLink(state);
-      if (state === "lost") void api.session().catch(() => {});
+      if (state === "lost") void api.session().then((s) => { setSession(s); setHealthError(null); }).catch((e) => setHealthError(e instanceof Error ? e : new Error("Connection failed")));
     });
     socketRef.current = socket;
     socket.connect();
+    // Authentication may open the relay before the screen subscribes. Fetch
+    // a snapshot explicitly so an early push cannot leave this computer empty.
+    void api.session().then(next => { if (active()) setSession(next); }).catch(error => {
+      if (active()) setHealthError(error instanceof Error ? error : new Error("Connection failed"));
+    });
     return () => {
       socket.close();
       socketRef.current = null;
@@ -134,6 +174,12 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
 
   const watch = useCallback((paneId: string | null) => {
     socketRef.current?.watch(paneId);
+  }, []);
+
+  const retryConnection = useCallback(async () => {
+    socketRef.current?.ensureConnected();
+    try { const next = await api.session(); setSession(next); setHealthError(null); }
+    catch (e) { setHealthError(e instanceof Error ? e : new Error("Connection failed")); }
   }, []);
 
   // After creating something, pull the session straight away rather than
@@ -185,7 +231,7 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
       // And pick up a new build, rather than running whatever was current when
       // the app was last launched — which on a phone can be days ago.
       void reloadIfStale(Date.now, {
-        canReload: () => !hosted || !browserConnection().identity || browserConnection().remembered,
+        canReload: () => !hosted || browserComputers().every(computer => computer.remembered),
         onAvailable: () => setUpdateAvailable(true),
       });
     };
@@ -211,13 +257,20 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
     return () => { window.removeEventListener("unhandledrejection", onRejection); window.removeEventListener("shahi:unauthorized", expired); };
   }, [navigate]);
 
+  useEffect(() => { if (session?.serverName && hosted) nameBrowserComputer(session.serverName); }, [session?.serverName]);
   if (authenticated === null) return null;
+  if (hosted && !authenticated && !pairingRequested && browserComputers().length > 0) {
+    return <div className="app"><Computers /></div>;
+  }
+  if (showComputers) return <div className="app"><Computers onClose={() => setShowComputers(false)} /></div>;
+  const computerButton = hosted && browserComputers().length > 0 ? <button className="empty__action" onClick={() => setShowComputers(true)}>Computers</button> : null;
   if (!reachable) {
     return (
       <div className="app">
         <div className="empty">
           <span className="empty__mark">○</span>
-          Cannot reach Shahi. {connectionError || "Check your connection and that the server or tunnel is running."}
+          Cannot reach Shahi. {connectionHealth({ link: "lost", error: healthError, transport: hosted ? "relay" : "direct", online: navigator.onLine })?.detail || connectionError}
+          {computerButton}
           {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>Forget this browser and pair again</button>}
           <button className="empty__action" onClick={checkAuth}>
             Try again
@@ -227,7 +280,7 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
     );
   }
   if (!authenticated) {
-    if (hosted) return <PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { setReachable(true); setAuthenticated(true); }} />;
+    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { owner.current = browserConnection().generation; setPairingRequested(false); setReachable(true); setAuthenticated(true); }} /></>;
     return <Login onSuccess={() => {
       setReachable(true);
       setAuthenticated(true);
@@ -239,12 +292,14 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
   return (
     <div className="app">
       {updateAvailable && <div className="banner" role="status">
-        <span>A new version is ready. Reloading ends this session; you will need a fresh pairing code to reconnect.</span>
+        <span>A new version is ready. Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code.</span>
         <button onClick={() => location.reload()}>Reload and pair again</button>
         <button onClick={() => setUpdateAvailable(false)}>Later</button>
       </div>}
+      {computerButton}
+      <ConnectionHealth link={link} error={healthError} relay={hosted} onRetry={retryConnection} />
       <Routes>
-        <Route path="/settings" element={<Settings onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
+        <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
         <Route
           path="/"
           element={
@@ -261,7 +316,7 @@ export function App({ initialPairingCode = "" }: { initialPairingCode?: string }
                 <LinkState state={link} />
               </header>
               <PushPrompt onToast={showToast} />
-              <Dashboard session={session} prompts={prompts} onAnswer={answer} />
+              <Dashboard reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} onAnswer={answer} />
             </>
           }
         />

@@ -1,3 +1,6 @@
+import { connectionHealth } from "@shahi/shared";
+import { ConnectionHealth } from "@/components/connection-health";
+import { inboxPanes } from "@shahi/shared";
 /**
  * The Agents screen: which agent needs you, and what it is asking.
  *
@@ -13,7 +16,7 @@ import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
-import { api, IncompatibleServerError, UnreachableError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
@@ -30,7 +33,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
-  const { session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, signOut } = useSession();
+  const { reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   /** The row a long-press opened actions for. */
@@ -63,17 +66,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   if (error && shouldTakeOverSession(error, session)) {
     return (
       <Unreachable
-        title={
-          error instanceof IncompatibleServerError
-            ? "Update needed"
-            : error instanceof UnreachableError
-              ? "Can't reach your server"
-              : "Your server returned an error"
-        }
-        message={error.message}
+        title={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
+        message={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
         server={server}
         onRetry={reconnect}
-        onSwitch={signOut}
+        onSwitch={() => router.push("/computers")}
       />
     );
   }
@@ -87,6 +84,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
     );
   }
 
+  const inbox = inboxPanes(session.panes, reviewed);
   const agents = session.panes.filter((p) => p.isAgent);
   const shells = session.panes.filter((p) => !p.isAgent);
 
@@ -102,6 +100,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   const waiting = agents.filter((p) => p.status === "blocked").length;
   const chips: { id: string; label: string }[] = [
     { id: "all", label: "All" },
+    { id: "inbox", label: `Inbox ${inbox.length}` },
     ...(waiting > 0 ? [{ id: "waiting", label: `Waiting ${waiting}` }] : []),
     ...kinds.map((k) => ({ id: `kind:${k}`, label: k })),
     ...(shells.length > 0 ? [{ id: "shells", label: "Shells" }] : []),
@@ -112,7 +111,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // by a control that is no longer on it.
   const active = chips.some((c) => c.id === filter) ? filter : "all";
   const shown =
-    active === "all"
+    active === "inbox" ? inbox : active === "all"
       ? agents
       : active === "waiting"
         ? agents.filter((p) => p.status === "blocked")
@@ -123,7 +122,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // Pinned first, and stably: within each half the server's order holds.
   // Blocked panes are deliberately not pin-sorted — the card is already the
   // top of the screen, and a pin must not compete with a question.
-  const rest = [
+  const rest = active === "inbox" ? shown.filter((p) => p.status !== "blocked") : [
     ...shown.filter((p) => p.status !== "blocked" && pins.has(p.paneId)),
     ...shown.filter((p) => p.status !== "blocked" && !pins.has(p.paneId)),
   ];
@@ -160,6 +159,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
           <>
+            <ConnectionHealth />
             {/* Inside the list, not above it: content outside the FlatList
                 gets no inset for the transparent large-title header and drew
                 behind the clock — the first safe-area bug, wearing a new hat.
@@ -188,6 +188,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             <Pressable accessibilityRole="button" style={styles.newAgent} onPress={() => router.push("/new-agent")} testID="new-agent">
               <Text style={styles.newAgentText}>+ New agent</Text>
             </Pressable>
+            {active === "inbox" && <View style={styles.inboxHeading}><Text style={styles.inboxTitle}>What needs me?</Text><Text style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</Text></View>}
             {blocked.map((pane) => (
               <BlockedCard
                 key={pane.paneId}
@@ -199,7 +200,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             ))}
             {rest.length > 0 && (
               <Text style={styles.groupLabel}>
-                {blocked.length > 0
+                {active === "inbox" ? "UPDATES" : blocked.length > 0
                   ? "EVERYTHING ELSE"
                   : `${rest.length} ${active === "shells" ? "SHELLS" : "AGENTS"}`}
               </Text>
@@ -207,6 +208,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           </>
         }
         renderItem={({ item }) => (
+          <View>
+          {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
           <Row
             pane={item}
             pinned={pins.has(item.paneId)}
@@ -214,6 +217,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             onPin={togglePin}
             onActions={setActing}
           />
+          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${item.title ?? item.paneId} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Reviewed</Text></Pressable>}
+          </View>
         )}
         // Virtualization tuning: RN warned this list was "slow to update"
         // because every session snapshot re-rendered all rows (each with an
@@ -229,7 +234,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           blocked.length ? null : (
-            <Centered>{active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
+            <Centered>{active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
           )
         }
       />
@@ -479,6 +484,11 @@ const Centered = ({ children }: { children: React.ReactNode }) => (
 );
 
 const styles = StyleSheet.create({
+  inboxHeading: { paddingHorizontal: 20, paddingVertical: 12, gap: 6 },
+  inboxTitle: { color: theme.fg, fontSize: 22, fontWeight: "600" },
+  inboxLabel: { color: theme.dim, fontSize: 12, paddingHorizontal: 20, paddingTop: 12 },
+  reviewed: { alignSelf: "flex-end", paddingHorizontal: 20, minHeight: 44, justifyContent: "center" },
+  reviewedText: { color: theme.mint, fontSize: 14, fontWeight: "600" },
   screen: { flex: 1, backgroundColor: theme.void },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   dim: { color: theme.dim, textAlign: "center" },

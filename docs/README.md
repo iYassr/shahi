@@ -3,6 +3,7 @@
 ## Maintained guides
 
 - [Install and pair](../README.md#quick-start)
+- [Connection security, explained with diagrams](connection-security.md)
 - [Plugin](plugin.md) and [pairing](pairing.md)
 - [Browser hosting and beta signup](browser-hosting.md)
 - [Relay](relay.md), [operations](operations.md), and [privacy](privacy-policy.md)

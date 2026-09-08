@@ -34,6 +34,7 @@ const PANE = "w1:p1";
  */
 const mockFrameListeners = new Map<string, Set<() => void>>();
 const mockSession = {
+  link: "live", error: null, server: "relay://example", reconnect: jest.fn(async () => {}),
   session: {
     panes: [{ paneId: PANE, title: "A task", agent: "claude", isAgent: true }],
   },
@@ -345,6 +346,19 @@ describe("loading", () => {
       await waitFor(() => expect(mockSession.signOut).toHaveBeenCalledTimes(1));
     },
   );
+
+  test.each(["sessionLog", "pane"] as const)("a late %s rejection from the previous computer cannot sign out the next", async (route) => {
+    const previous = connection.cookie;
+    connection.cookie = "computer-a";
+    const pending = deferred<never>();
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hello")]));
+    mocked[route].mockReturnValue(pending.promise);
+    const view = render(<Pane paneId={PANE} />);
+    connection.cookie = "computer-b";
+    await act(async () => { pending.reject(new UnauthorizedError()); });
+    expect(mockSession.signOut).not.toHaveBeenCalled();
+    view.unmount(); connection.cookie = previous;
+  });
 
   test("no transcript yet keeps polling rather than latching", async () => {
     // A just-started agent: the server has no file to read, then it does.

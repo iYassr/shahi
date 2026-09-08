@@ -40,9 +40,9 @@
  * passcode digits stay out of the toast: a toast is also every attached
  * client, a screen share, and on some terminals the OS notification centre.
  */
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
 import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../server/lib/secrets";
@@ -317,14 +317,19 @@ async function status(layout: Layout, service: Service): Promise<number> {
 }
 
 function logs(layout: Layout, args: string[]): void {
-  const lines = Number(args[args.indexOf("--lines") + 1]) || 80;
-  if (!existsSync(layout.logPath)) {
-    console.log(`No log yet at ${layout.logPath}.`);
-    return;
+  const lines = Math.min(1000, Math.max(1, Number(args[args.indexOf("--lines") + 1]) || 80));
+  for (const path of [layout.logPath, join(layout.stateDir, "operations.jsonl")]) {
+    if (!existsSync(path)) continue;
+    const fd = openSync(path, "r");
+    try {
+      const size = fstatSync(fd).size;
+      const bytes = Buffer.alloc(Math.min(size, 256 * 1024));
+      readSync(fd, bytes, 0, bytes.length, size - bytes.length);
+      const rows = bytes.toString("utf8").trimEnd().split("\n");
+      if (size > bytes.length) rows.shift();
+      console.log(`${path}\n${rows.slice(-lines).join("\n")}`);
+    } finally { closeSync(fd); }
   }
-  const all = readFileSync(layout.logPath, "utf8").replace(/\n$/, "").split("\n");
-  console.log(all.slice(-lines).join("\n"));
-  console.log(`\n  (last ${Math.min(lines, all.length)} of ${all.length} lines — tail -f ${layout.logPath} to follow)`);
 }
 
 /** One line from the terminal — a popup is a PTY, so a chunk is a line. */

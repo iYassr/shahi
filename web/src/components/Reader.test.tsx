@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LogMessage } from "../api";
-import { merge, signature } from "./Reader";
+import { merge } from "./Reader";
 
 const message = (id: string, text = "hello"): LogMessage => ({
   id,
@@ -39,44 +39,21 @@ describe("merge", () => {
   });
 });
 
-describe("signature", () => {
-  test("is stable when nothing changed", () => {
-    const before = [message("a"), message("b")];
-    const after = [message("a"), message("b")];
-    expect(signature(after)).toBe(signature(before));
+describe("reader update identity", () => {
+  test("an unchanged tail retains the loaded array and all message objects", () => {
+    const current = [message("old"), message("a"), message("b")];
+    expect(merge(current, [message("a"), message("b")])).toBe(current);
   });
-
-  test("notices text growing as an agent writes", () => {
-    expect(signature([message("a", "half")])).not.toBe(signature([message("a", "half a sentence")]));
+  test("a same-length text edit updates only the edited message", () => {
+    const current = [message("old"), message("a", "hello")];
+    const next = merge(current, [message("a", "world")]);
+    expect(next[0]).toBe(current[0]);
+    expect(next[1]).not.toBe(current[1]);
+    expect(next[1]!.blocks).toEqual([{ kind: "text", text: "world" }]);
   });
-
-  test("notices a new block on an existing message", () => {
-    const withTool: LogMessage = {
-      ...message("a"),
-      blocks: [
-        { kind: "text", text: "hello" },
-        { kind: "tool", name: "Bash", summary: "ls", result: null },
-      ],
-    };
-    expect(signature([withTool])).not.toBe(signature([message("a")]));
-  });
-
-  test("notices tool output arriving", () => {
-    const running: LogMessage = {
-      ...message("a"),
-      blocks: [{ kind: "tool", name: "Bash", summary: "ls", result: null }],
-    };
-    const finished: LogMessage = {
-      ...message("a"),
-      blocks: [
-        {
-          kind: "tool",
-          name: "Bash",
-          summary: "ls",
-          result: { text: "a\nb\nc", isError: false, truncated: false, images: [] },
-        },
-      ],
-    };
-    expect(signature([finished])).not.toBe(signature([running]));
+  test("tool results arriving invalidate the message", () => {
+    const current: LogMessage[] = [{ ...message("a"), blocks: [{ kind: "tool", name: "Bash", summary: "ls", result: null }] }];
+    const finished: LogMessage = { ...message("a"), blocks: [{ kind: "tool", name: "Bash", summary: "ls", result: { text: "file", isError: false, truncated: false, images: [] } }] };
+    expect(merge(current, [finished])[0]).toBe(finished);
   });
 });

@@ -15,7 +15,7 @@ for (const viewport of [{ width: 360, height: 780 }, { width: 1440, height: 900 
     await expect(page.locator(".pinned-agent")).toContainText("Convert PDF");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole("link", { name: "Settings" }).click();
-    await expect(page.getByRole("heading", { name: "Paired devices" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Devices with access" })).toBeVisible();
     await expect(page.getByText("No paired devices.", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });

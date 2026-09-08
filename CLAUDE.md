@@ -432,12 +432,7 @@ Stated plainly, because a vague gaps list is worse than none.
   `SHAHI_HERDR_LIVE_AGENT=1` adds a test that starts a claude in the scratch
   workspace and proves the agent path end to end. The terminal path is proven
   everywhere.
-- **No timing instrumentation.** The send path was restructured on the
-  proposal's measurements (herdr answers in under a millisecond; the delay was
-  two round trips, a 200ms pause and up to 2.5s of polling). Content-free
-  timings from tap to render were proposed and not added; measure with a
-  one-off script first, and add permanent instrumentation only if a number
-  keeps being asked for.
+- **Request timing instrumentation is operational, not tap-to-render.** The sidecar records bounded route-template counts and latency histograms in `/api/diagnostics`; private JSON logs and local alert transitions rotate beside its database. Relay metadata and service incident alerts are documented in `docs/operations.md`. Never add terminal contents, raw paths, credentials or raw error messages to these records.
 - **WebKit is not Safari.** It is the closest thing available on a Linux box and
   it has earned its place, but the phone remains the only place some faults
   appear. `docs/verify-on-device.md` is the five-minute list of those.
@@ -482,7 +477,7 @@ sidecar against a headless herdr: the protocol pin, snapshot shapes, the
 mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back, every key-bar name, the event
 stream, and the HTTP routes including the 426 gate. CI runs it twice per push
-— against `v0.8.2`, the minimum supported release, pinned by tag, and against
+— against `v0.9.0`, the minimum supported release, pinned by tag, and against
 whatever herdr's own installer hands out today — and nightly against the newest
 prerelease (`herdr-preview.yml`), which files an issue rather than failing a
 push. It writes only into a workspace it creates and closes, on a herdr you
