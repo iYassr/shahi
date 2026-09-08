@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Public update certificate; private signing keys stay outside the repository.
+!certs/certificate.pem

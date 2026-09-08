@@ -30,16 +30,20 @@ bun run test:e2e --project=ios            # WebKit only — what the phone runs
 bun run build:web && systemctl --user restart shahi   # deploy
 ```
 
-**Rebuild and restart after touching `web/`.** The server serves
-`web/dist`, so an unbuilt change is invisible and you will chase a ghost.
+**Rebuild after touching `web/`.** Development servers serve `web/dist`.
+Managed production services serve the web assets inside their approved release;
+publish and install a release to change those. See `docs/releases.md`.
 
 ## How to build here
 
 These govern every change, and they outrank anything below that disagrees with
 them.
 
-- Do not preserve backward compatibility. Remove obsolete paths instead of
-  adding compatibility layers, fallbacks, or migrations.
+- Preserve the supported Shahi API contracts: current and previous generation,
+  with at least 90 days after the successor's stable release before retirement.
+  The security floor is API 5 and encrypted transport 2; never restore older
+  unsafe protocols. Additive features negotiate capabilities. herdr differences
+  belong in the server adapter. See `docs/releases.md` for the release policy.
 - Choose the simplest implementation that fully meets the current
   requirements. Avoid speculative abstractions, configuration, and
   indirection.
@@ -185,9 +189,9 @@ changes in a way an older client would misread — not for additions.
 **The plugin's startup hook installs a service; it is not the service.**
 herdr's `[[startup]]` commands are one-shot by contract — "not supervised
 daemons" — so `plugin/shahi.ts setup` renders a LaunchAgent or a systemd user
-unit, (re)starts it, and exits. It runs on every herdr start and always
-restarts, because a reinstall replaces the checkout under a sidecar that keeps
-running the old code from memory. Secrets live in herdr's per-plugin config
+unit, (re)starts it, and exits. The OS supervises the approved manager in the
+plugin's state directory. It runs immutable, verified service builds and requests
+the newest compatible approved build after a plugin reinstall. Secrets live in herdr's per-plugin config
 directory, named by `SHAHI_ENV_FILE`, never in the checkout. The service
 follows the socket of whichever herdr ran the hook last. The service's
 environment carries `RELAY_URL` (Shahi's relay) unless the `.env` has the

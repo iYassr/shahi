@@ -39,6 +39,7 @@ const fixture = Bun.serve<Link>({
     if (url.pathname === "/__hosted/release-logout") { holdLogout = false; releaseLogout?.(); releaseLogout = undefined; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/device-count") return Response.json({ count: devices.size });
     if (url.pathname === "/__hosted/ready") return Response.json({ fixture: true });
+    if (url.pathname === "/__hosted/control" && req.method === "POST") return fetch(`${apiBase}/__stub/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...await req.json() as object, serverId }) });
     if (url.pathname === "/__hosted/offline" && req.method === "POST") { offline = true; for (const ws of links) ws.close(4404, "box offline"); return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/online" && req.method === "POST") { offline = false; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/reset" && req.method === "POST") {
@@ -108,7 +109,7 @@ const fixture = Bun.serve<Link>({
         transcript.push({ path: message.path, method: message.method });
         const body = message.body === null ? undefined : bytes(message.body);
         let response: Response;
-        if (message.path === "/api/meta") response = Response.json({ serverId, api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION } });
+        if (message.path === "/api/meta") response = Response.json({ serverId, control: 1, api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION } });
         else if (message.path === "/api/pair/claim" && ws.data.pairing) {
           const claim = JSON.parse(new TextDecoder().decode(body));
           if (pairingUsed || claim.secret !== b64(pairingSecret)) response = Response.json({ error: "Expired pairing code" }, { status: 401 });

@@ -1,4 +1,5 @@
 import { ComputerSwitcher } from "./components/ComputerSwitcher";
+import { ComputerUpdate, ComputerControlProvider } from "./components/ComputerUpdate";
 import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "./components/ConnectionHealth";
@@ -309,13 +310,14 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   const blockedCount = session?.panes.filter((p) => p.status === "blocked").length ?? 0;
 
   return (
-    <div className="app">
+    <ComputerControlProvider onRecovered={retryConnection}><div className="app">
       {updateAvailable && <div className="banner" role="status">
         <span>A new version is ready. Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code.</span>
         <button onClick={() => location.reload()}>Reload and pair again</button>
         <button onClick={() => setUpdateAvailable(false)}>Later</button>
       </div>}
       {computerButton}
+      <ComputerUpdate />
       <ConnectionHealth link={link} error={healthError} relay={hosted} onRetry={retryConnection} />
       <Routes>
         <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
@@ -379,7 +381,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
           </Sheet>)}
       <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
       {toast && <div className="toast" role="status">{toast}</div>}
-    </div>
+    </div></ComputerControlProvider>
   );
 }
 

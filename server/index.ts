@@ -14,7 +14,9 @@ import { dirname, join } from "node:path";
 import { Observability, rotatingLog } from "./lib/observability";
 import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
-import { HerdrClient, HerdrProtocolMismatch, HerdrSubscriber } from "./lib/herdr-client";
+import { HerdrClient, HerdrSubscriber } from "./lib/herdr-client";
+import { BackendMonitor } from "./lib/backend";
+import { ComputerControl } from "./lib/control";
 import { createServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
 import { Devices, Pairing } from "./lib/pairing";
@@ -27,20 +29,6 @@ import { TranscriptStore } from "./lib/transcript";
 const config = loadConfig();
 
 const client = new HerdrClient({ socketPath: config.socketPath });
-
-try {
-  const { version, protocol } = await client.connect();
-  console.log(`herdr ${version} (protocol ${protocol}) at ${config.socketPath}`);
-} catch (err) {
-  if (err instanceof HerdrProtocolMismatch) {
-    // The socket API's exact behaviour is undocumented in places and pinned by
-    // the generated types, so a protocol bump is a stop-and-look, not a warning.
-    console.error(err.message);
-    process.exit(1);
-  }
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-}
 
 // The database holds the box's identity seed and every device secret — the
 // long-lived half of every relay session's keys. Bun creates it with the
@@ -98,15 +86,23 @@ const subscriber = new HerdrSubscriber({
   onError: () => observability.event("subscriber.error"),
 });
 
-await store.resync();
-subscriber.start();
-// Events keep the mirror responsive but do not keep it correct on their own —
-// see the note in state.ts. This timer is what makes the dashboard trustworthy.
-store.startSync();
-poller.start();
+const backend = new BackendMonitor(
+  async () => {
+    const pong = await client.rpc("ping", {});
+    if (backend.state.state === "connected" && !store.lastSyncOk) throw new Error("herdr snapshot unavailable");
+    return pong;
+  },
+  async () => {
+    await store.resync();
+    if (!store.lastSyncOk) throw new Error("herdr snapshot unavailable");
+    subscriber.start(); store.startSync(); poller.start();
+  },
+  () => { subscriber.stop(); store.stopSync(); poller.stop(); },
+);
 
 const identity = serverIdentity(db);
 const server = createServer({
+  control: new ComputerControl(identity.serverId, () => backend.state),
   config,
   observability,
   auth,
@@ -126,6 +122,7 @@ const server = createServer({
 // anywhere the relay is, with nothing opened here. See docs/relay.md.
 const relay = config.relayUrl ? new RelayClient({ url: config.relayUrl, identity, devices, pairing, auth, server, log: observability.event }) : null;
 relay?.start();
+backend.run();
 observability.event("runtime.started");
 let lastMetricsTick = Date.now();
 const metricsTimer = setInterval(() => {
@@ -158,10 +155,15 @@ if (!config.webRoot) {
   );
 }
 
+// A crashed supervisor must not leave an orphan holding the port while its
+// replacement starts. Bun's IPC channel closes when the manager disappears.
+if (process.connected) process.on("disconnect", () => process.emit("SIGTERM"));
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     console.log(`\n${signal} — shutting down`);
     clearInterval(metricsTimer);
+    backend.close();
     observability.event("runtime.stopped");
     subscriber.stop();
     store.stopSync();

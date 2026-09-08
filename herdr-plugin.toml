@@ -11,7 +11,7 @@
 
 id = "shahi"
 name = "Shahi"
-version = "0.2.1"
+version = "0.3.0"
 min_herdr_version = "0.9.0"
 description = "See and answer your terminal agents from your phone"
 platforms = ["linux", "macos"]
@@ -30,7 +30,7 @@ command = ["sh", "plugin/bun.sh", "run", "build:web"]
 command = ["sh", "plugin/bun.sh", "run", "plugin/update.ts"]
 
 # Every herdr start: generate secrets the first time, (re)install the service
-# so it runs whatever code is checked out now, and exit.
+# so it supervises an approved immutable release, and exit.
 [[startup]]
 command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "setup"]
 

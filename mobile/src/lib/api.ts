@@ -272,6 +272,21 @@ const postJson = <T>(path: string, body: unknown, ms = REQUEST_TIMEOUT_MS) =>
 const transcriptCache = new Map<string, { etag: string; value: SessionLog }>();
 
 const api = {
+  control: async (): Promise<import("@shahi/shared").ControlHandshake | null> => {
+    const meta = await dispatch("/api/meta", { headers: baseHeaders() });
+    if (!meta.ok) throw new Error("Cannot reach this computer.");
+    if ((await meta.json() as import("@shahi/shared").ServerInfo).control !== 1) return null;
+    const res = await dispatch("/api/control/handshake", { headers: baseHeaders({ "x-shahi-control": "1" }) });
+    if (res.status === 404) return null;
+    if (res.status === 401) throw new UnauthorizedError();
+    if (!res.ok) throw new Error("Cannot read this computer's update status.");
+    const h = await res.json() as import("@shahi/shared").ControlHandshake;
+    if (h.control !== 1) throw new Error("Update the app to manage this computer.");
+    return h;
+  },
+  updateComputer: (action: "check" | "install", channel?: import("@shahi/shared").ReleaseChannel) => request("/api/control/update", {
+    method: "POST", headers: { "content-type": "application/json", "x-shahi-control": "1" }, body: JSON.stringify({ action, channel }),
+  }),
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
 
   /**

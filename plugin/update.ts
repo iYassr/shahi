@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { readEnvFile } from "../server/lib/secrets";
+import { Auth } from "../server/lib/auth";
+import { readJson, installation } from "./releases/storage";
+import { updateInProgress, type ControlHandshake } from "@shahi/shared";
 
 export async function finishUpdate(options: {
   installed: () => boolean; restart: () => Promise<void>; verified: () => Promise<boolean>;
@@ -43,7 +46,9 @@ async function main() {
     const host = env.get("HOST") || "127.0.0.1";
     const local = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "[::1]" : host;
     const url = `http://${local}:${env.get("PORT") || "7171"}/api/meta`;
+    const auth = new Auth({ passcodeHash: "", sessionSecret: env.get("SESSION_SECRET")!, sessionTtlMs: 60_000 });
     await finishUpdate({
+      attempts: 360,
       installed: () => {
         if (marker(root) !== build) return false;
         // The directory move precedes registry commit. A failed install can
@@ -57,12 +62,19 @@ async function main() {
       restart: async () => { command(["plugin", "action", "invoke", "shahi.restart"]); },
       verified: async () => {
         try {
+          const managedRoot = readJson<string>(join(config, "managed-root.json"));
+          if (managedRoot) {
+            const res = await fetch(url.replace("/api/meta", "/api/control/handshake"), { headers: { "x-shahi-control": "1", cookie: auth.cookie(auth.issue()).split(";")[0]! }, signal: AbortSignal.timeout(2000) });
+            if (!res.ok) return false;
+            const h = await res.json() as ControlHandshake;
+            return h.buildId === installation(managedRoot)?.active.buildId && !updateInProgress(h.update.phase) && h.update.phase !== "failed" && !h.update.available;
+          }
           const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
           return res.ok && (await res.json() as { buildId?: string }).buildId === build;
         } catch { return false; }
       },
     });
-    console.log(`${new Date().toISOString()} Shahi updated: build ${build} is running.`);
+    console.log(`${new Date().toISOString()} Shahi installation and running release verified.`);
     return;
   }
   const build = crypto.randomUUID();

@@ -161,6 +161,20 @@ function requireAbsolute(path: string): string {
 }
 
 const api = {
+  control: async (): Promise<import("@shahi/shared").ControlHandshake | null> => {
+    const meta = await dispatch("/api/meta");
+    if (!meta.ok) throw new ApiError("Cannot reach this computer.", meta.status);
+    if ((await meta.json() as import("@shahi/shared").ServerInfo).control !== 1) return null;
+    const res = await dispatch("/api/control/handshake", { headers: { "x-shahi-control": "1" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new ApiError("Cannot read this computer's update status.", res.status);
+    const h = await res.json() as import("@shahi/shared").ControlHandshake;
+    if (h.control !== 1) throw new Error("Update the app to manage this computer.");
+    return h;
+  },
+  updateComputer: (action: "check" | "install", channel?: import("@shahi/shared").ReleaseChannel) => request("/api/control/update", {
+    method: "POST", headers: { "content-type": "application/json", "x-shahi-control": "1" }, body: JSON.stringify({ action, channel }),
+  }),
   authStatus: () => request<{ required: boolean; authenticated: boolean }>("/api/auth/status"),
   login: (passcode: string) => postJson("/api/auth/login", { passcode }),
   logout: async () => {

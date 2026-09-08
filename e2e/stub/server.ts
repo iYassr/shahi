@@ -1,3 +1,4 @@
+import type { ControlHandshake } from "@shahi/shared";
 /**
  * The server the tests talk to.
  *
@@ -34,6 +35,7 @@ const COOKIE = "shahi_session=stub";
 // One fixed pairing code, so a flow can pair without a server printing one.
 const PAIR_SECRET = "stub-pair";
 
+let control: ControlHandshake | null = null;
 let scenario: Scenario = SCENARIOS.busy();
 /**
  * The contract range `/api/meta` advertises and requests are held to.
@@ -109,9 +111,26 @@ Bun.serve({
       if (body.name) scenario = SCENARIOS[body.name]();
       if (body.patch) scenario = { ...scenario, ...body.patch };
       apiRange = { ...APP_SPEAKS };
+      control = null;
       writes = [];
       broadcast({ type: "session", session: scenario.session });
       return json({ ok: true });
+    }
+
+    if (pathname === "/__stub/control" && req.method === "POST") { control = await req.json() as ControlHandshake; return json({ ok: true }); }
+    if (pathname.startsWith("/api/control/")) {
+      if (!authorised(req)) return json({ error: "unauthorized" }, { status: 401 });
+      if (!control) return json({ error: "Not installed" }, { status: 404 });
+      if (pathname === "/api/control/handshake") return json(control);
+      if (pathname === "/api/control/update" && req.method === "POST") {
+        await record(req, pathname);
+        control = { ...control, update: { ...control.update, phase: "restarting" } };
+        for (const socket of sockets) socket.close();
+        const saved = control;
+        setTimeout(() => { if (control === saved) { control = { ...saved, buildId: "upgraded-build", update: { ...saved.update, phase: "ready", available: undefined, current: "0.3.1" } }; } }, 3500);
+        return json({ accepted: true }, { status: 202 });
+      }
+      return json({ error: "Unknown recovery action" }, { status: 404 });
     }
 
     if (pathname === "/__stub/writes") return json({ writes });

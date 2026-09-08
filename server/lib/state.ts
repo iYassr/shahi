@@ -80,6 +80,7 @@ export interface SessionStoreEvents {
 const SYNC_INTERVAL_MS = 3_000;
 
 export class SessionStore extends EventEmitter<SessionStoreEvents> {
+  lastSyncOk = false;
   #state: SessionState = emptyState();
   #statuses = new Map<string, AgentStatus>();
   #resyncing: Promise<void> | undefined;
@@ -146,6 +147,7 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     try {
       const { snapshot } = await this.client.rpc("session.snapshot", {});
       this.#state = fromSnapshot(snapshot);
+      this.lastSyncOk = true;
 
       // Status transitions are reported even when nothing else moved, because
       // they are what drive notifications.
@@ -160,6 +162,7 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
         this.emit("changed", this.#state);
       }
     } catch (err) {
+      this.lastSyncOk = false;
       this.emit("error", err instanceof Error ? err : new Error(String(err)));
     }
   }

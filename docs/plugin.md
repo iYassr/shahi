@@ -19,7 +19,7 @@ commands it will run, runs the build steps (`bun install --frozen-lockfile`,
 the keys that go with it, the relay, a user service that supervises the
 sidecar — is done by the plugin's startup hook on every herdr start, and by
 the `pair` popup when it finds no service. It is idempotent: a later run
-keeps your passcode and simply restarts the service on whatever code is
+keeps your passcode and restarts the approved service, independently of the code
 checked out. herdr 0.8.2 has no menu for plugin actions, so the ways to run
 one are the CLI above and a key you bind (below).
 
@@ -60,9 +60,8 @@ with `XDG_*` set they follow it.
 The service is what keeps the sidecar alive across herdr restarts, crashes
 and reboots — herdr's own startup hooks are one-shot by contract, "not
 supervised daemons", so the hook installs the service rather than being it.
-It is re-rendered and restarted on every herdr start and after reinstalling, because after
-`herdr plugin install` replaces the checkout a sidecar that kept running the
-old code from memory would look updated and not be. **On Linux, a headless
+The unit is re-rendered on herdr start and after reinstalling. It supervises a
+manager outside the checkout; that manager verifies and runs approved releases. **On Linux, a headless
 box needs `loginctl enable-linger $USER`** once, or the user service stops
 when your last SSH session ends — precisely when you would want to reach it
 from a phone. The plugin cannot do this for you — it needs sudo on some
@@ -185,7 +184,7 @@ herdr plugin log list --plugin shahi        # their output
 |---|---|
 | `pair` | opens the QR popup |
 | `status` | service state and pid, the address, the relay and whether the box is on it, what `GET /api/meta` says, how many phones are paired, where everything is. Exit 1 when the API is not answering. |
-| `restart` | re-renders the service from the current checkout and `.env`, restarts it, waits up to six seconds for `/api/meta` |
+| `restart` | re-renders the managed service from `.env`, restarts it, and requests a compatible approved update |
 | `stop` | stops the sidecar until the next herdr start or `restart` |
 | `logs` | the last 80 lines of the sidecar's log (`tail -f` the file to follow) |
 | `uninstall` | the whole uninstall: stops the sidecar, removes the service file, then `herdr plugin uninstall shahi`; keeps the config and state directories |
@@ -203,21 +202,22 @@ first run's output is simply on screen.
 herdr plugin install iYassr/shahi          # rebuilds, then automatically restarts Shahi
 ```
 
-herdr has no `plugin update`; reinstalling is the update. Your `.env` and
-database are outside the checkout and untouched. The final build step starts a
-bounded helper that waits for herdr to register the completed installation,
-then restarts the existing service and verifies the new build identifier through
-local `/api/meta`. It never restarts from the temporary build directory. A failed
-installation leaves the old service alone.
+The plugin is the installer and service manager. It selects the latest compatible
+signed Stable release on first install. Reinstalling updates the manager and
+requests an approved computer update; code running in production comes from the
+verified release package, outside the mutable checkout.
 
-Restart and verification finish shortly after herdr prints “Installed”. The
-private `update.log` in `herdr plugin config-dir shahi` reports the verified build
-or an explicit failure and is included by the `shahi.logs` action. herdr hides
-successful build output, so installation completion alone is not a readiness
-confirmation. If verification fails, inspect `shahi.logs` and run
-`herdr plugin action invoke shahi.restart`. First installations still start through
-the startup hook or Pair action. This automatic update applies to installations
-made with herdr running; the restart action needs its server.
+In the phone or web app, choose a computer and use **Update computer** when an
+update is available. Settings also offers **Check for updates** and Stable/Beta
+channels. The app shows progress and reconnects with its existing pairing.
+Downloads are verified, staged and checked after restart. Failed activation
+restores the previous release. herdr itself is never restarted by this updater.
+See [the compatibility and release policy](releases.md).
+
+The old pre-managed service needs one plugin reinstall to gain these controls.
+Your `.env`, server identity, paired devices and database stay in place. The
+private `update.log` in `herdr plugin config-dir shahi` reports actual readiness;
+`shahi.logs` includes it. A failed download leaves the working service alone.
 
 The current mobile and web clients require relay protocol 2. Update Shahi on
 each paired computer when installing this release; updating herdr alone does

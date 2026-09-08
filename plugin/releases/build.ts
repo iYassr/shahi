@@ -1,0 +1,25 @@
+import { mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { sha256, validateRelease } from "./catalog";
+import definition from "./release.json";
+
+const root = resolve(import.meta.dir, "../..");
+const destination = resolve(process.argv[2] ?? join(root, "dist/release"));
+const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root });
+if (revision.exitCode !== 0) throw new Error("A release must identify an immutable source commit.");
+const commit = revision.stdout.toString().trim();
+const buildId = `${definition.version}-${commit.slice(0, 12)}`;
+const service = await Bun.build({ entrypoints: [join(root, "server/index.ts")], target: "bun", minify: true, define: { "process.env.SHAHI_BUILD_ID": JSON.stringify(buildId) } });
+const manager = await Bun.build({ entrypoints: [join(root, "plugin/releases/manager.ts")], target: "bun", minify: true });
+if (!service.success || !manager.success) throw new Error([...service.logs, ...manager.logs].join("\n"));
+const files: Record<string, Uint8Array> = { "service.js": new Uint8Array(await service.outputs[0]!.arrayBuffer()), "manager.js": new Uint8Array(await manager.outputs[0]!.arrayBuffer()) };
+const web = join(root, "web/dist");
+if (!await Bun.file(join(web, "index.html")).exists()) throw new Error("Build the web app before packaging a release.");
+for await (const file of new Bun.Glob("**/*").scan({ cwd: web, onlyFiles: true })) files[`web/${file}`] = await Bun.file(join(web, file)).bytes();
+const bytes = new Uint8Array(await new Bun.Archive(files, { compress: "gzip" }).bytes());
+const release = { ...definition, buildId, commit, artifact: { url: `https://github.com/iYassr/shahi/releases/download/v${definition.version}/shahi-service.tar.gz`, sha256: sha256(bytes), bytes: bytes.length } };
+validateRelease(release);
+mkdirSync(destination, { recursive: true });
+await Bun.write(join(destination, "shahi-service.tar.gz"), bytes);
+await Bun.write(join(destination, "release.json"), JSON.stringify(release, null, 2) + "\n");
+console.log(`Packaged Shahi ${release.version} (${buildId}), ${bytes.length} verified bytes.`);

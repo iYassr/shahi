@@ -20,6 +20,8 @@ export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "
 
 export * from "./modes";
 export * from "./relay";
+export * from "./compatibility";
+export * from "./computer-control";
 
 /* --------------------------------------------------------------- handshake */
 
@@ -39,6 +41,8 @@ export const START_AGENT_TIMEOUT_MS = 325_000;
 
 /** What `GET /api/meta` answers, before any authentication. */
 export interface ServerInfo {
+  /** Stable recovery contract; absent on the pre-managed API 5 baseline. */
+  control?: 1;
   /** Stable per installation, minted once and kept in the database. */
   serverId: string;
   /** The contract versions this server accepts, inclusive. */
