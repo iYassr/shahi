@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Alert, View, Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { router } from "expo-router";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
 export function Computers() {
-  const { computers, activeComputerId, connected, switchComputer, addComputer } = useSession();
+  const { computers, activeComputerId, connected, switchComputer, addComputer, revokeComputer } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   async function choose(id: string) {
@@ -16,17 +16,22 @@ export function Computers() {
     finally { setBusy(null); }
   }
   return <ScrollView contentContainerStyle={styles.content}>
-    <Text style={styles.note}>Switch computers without signing out. Your saved connections stay on this phone.</Text>
+    <Text style={styles.note}>All your computers stay connected while Shahi is open. Choose one to view its agents.</Text>
     {computers.map((computer) => {
       const selected = connected && computer.id === activeComputerId;
-      return <Pressable key={computer.id} testID={`computer-${computer.id}`} accessibilityRole="button"
+      return <View key={computer.id}><Pressable testID={`computer-${computer.id}`} accessibilityRole="button"
         accessibilityLabel={`${selected ? "Current computer" : "Switch to"} ${computer.name}, ${computer.address}`}
         accessibilityState={{ selected, disabled: !!busy }} disabled={!!busy}
         onPress={() => void choose(computer.id)} style={[styles.card, selected && styles.selected]}>
         <Text style={styles.name}>{computer.name}</Text>
         <Text style={styles.note}>{computer.address}</Text>
+        <Text style={styles.note}>{computer.link === "live" ? "Connected" : computer.link === "lost" ? "Offline · retrying" : "Connecting…"}</Text>
         <Text style={styles.action}>{busy === computer.id ? "Connecting…" : selected ? "Current computer" : "Connect"}</Text>
-      </Pressable>;
+      </Pressable>
+      {computer.kind === "relay" && <Pressable accessibilityRole="button" testID={`revoke-computer-${computer.id}`} style={{ padding: 12 }} onPress={() => Alert.alert("Revoke this phone’s access?", `This phone will need a new pairing code for ${computer.name}. Other computers stay connected.`, [
+        { text: "Cancel", style: "cancel" }, { text: "Revoke access", style: "destructive", onPress: () => { void revokeComputer(computer.id).catch(e => setError(e.message)); } },
+      ])}><Text style={styles.error}>Revoke this phone’s access</Text></Pressable>}
+      </View>;
     })}
     {computers.length === 0 && <Text style={styles.note}>No saved computers yet. Pair one to get started.</Text>}
     {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}

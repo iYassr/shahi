@@ -53,3 +53,19 @@ test("logout retries a failed ownership transfer before clearing the saved opt-i
   expect(api.registerPush).toHaveBeenCalledTimes(3);
   expect(values.size).toBe(0);
 });
+
+test("switching during logout cannot erase the next computer's notification opt-in", async () => {
+  configurePushProfile({ ...profile, host: "second.test" });
+  await registerEnabledPush("ExponentPushToken[b]");
+  configurePushProfile(profile);
+  await registerEnabledPush("ExponentPushToken[a]");
+  let release!: () => void;
+  const client = { registerPush: jest.fn(() => new Promise<void>(r => { release = r; })) };
+  const logout = preparePushLogout(client as never);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  configurePushProfile({ ...profile, host: "second.test" });
+  release();
+  await logout;
+  expect([...values.values()]).toContain("ExponentPushToken[b]");
+  expect(client.registerPush).toHaveBeenCalledWith("ExponentPushToken[a]");
+});

@@ -644,7 +644,7 @@ describe("pairing over the relay", () => {
     expect(FakeSocket.opened).toHaveLength(0);
   });
 
-  test("pointing the connection at a new target retires the pairing link", async () => {
+  test("different targets keep independent links until explicitly closed", async () => {
     const code = toBase64Url(random(32));
     const pairing = pairingTarget("https://relay.example.dev", identity.serverId, code);
     const first = relayLink(pairing);
@@ -652,6 +652,8 @@ describe("pairing over the relay", () => {
     const ws = FakeSocket.opened.at(-1)!;
     const device = relayLink(deviceTarget(identity));
     expect(device).not.toBe(first);
+    expect(ws.readyState).not.toBe(3);
+    closeRelay(pairing);
     expect(ws.readyState).toBe(3);
     expect(relayLink(deviceTarget(identity))).not.toBe(device); // a new object is a new target
   });

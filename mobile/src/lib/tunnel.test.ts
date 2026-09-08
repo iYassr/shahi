@@ -160,3 +160,14 @@ test("closing during the keychain lookup runs after the pending open", async () 
   expect(native.close).toHaveBeenCalledTimes(1);
   expect(native.close.mock.invocationCallOrder[0]).toBeGreaterThan(native.open.mock.invocationCallOrder[0]!);
 });
+
+test("closing one computer names only its native forwarder", async () => {
+  const { tunnel, native } = load();
+  await tunnel.openTunnel(profile());
+  await tunnel.openTunnel(profile({ host: "second.example" }));
+  const [first, second] = native.open.mock.calls.map(call => call[0].id);
+  expect(first).not.toBe(second);
+  await tunnel.closeTunnel(profile());
+  expect(native.close).toHaveBeenCalledWith(first);
+  expect(native.close).not.toHaveBeenCalledWith(second);
+});

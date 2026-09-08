@@ -101,9 +101,9 @@ self.addEventListener("push", (event) => {
       badge: `${BASE}icon-192.png`,
       // Re-notifying the same pane replaces its notification rather than
       // stacking a new one on top.
-      tag: payload.paneId || "herdr",
+      tag: `${payload.serverId || ""}:${payload.paneId || "herdr"}`,
       renotify: Boolean(payload.paneId),
-      data: { paneId: payload.paneId },
+      data: { paneId: payload.paneId, serverId: payload.serverId },
     }),
   );
 });
@@ -111,7 +111,8 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const paneId = event.notification.data?.paneId;
-  const target = paneId ? `${BASE}pane/${encodeURIComponent(paneId)}` : BASE;
+  const serverId = event.notification.data?.serverId;
+  const target = paneId ? `${BASE}notification?pane=${encodeURIComponent(paneId)}&computer=${encodeURIComponent(serverId || "")}` : BASE;
 
   event.waitUntil(
     (async () => {

@@ -31,6 +31,14 @@ final class ComputerSwitchTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
         XCTAssertTrue(app.buttons["add-computer"].waitForExistence(timeout: 10))
     }
+    private func addComputer(_ app: XCUIApplication) {
+        let button = app.buttons["add-computer"]
+        for _ in 0..<8 {
+            if button.exists && button.isHittable && button.frame.midY < app.frame.height - 120 { break }
+            app.swipeUp()
+        }
+        button.tap()
+    }
     private func choose(_ app: XCUIApplication, _ port: Int) {
         let row = app.buttons["computer-" + computerIDs[port]!]
         for _ in 0..<6 { if row.exists && row.isHittable { break }; app.swipeUp() }
@@ -52,7 +60,7 @@ final class ComputerSwitchTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
         app.activate()
         try pair(app, 7572)
-        computers(app); app.buttons["add-computer"].tap()
+        computers(app); addComputer(app)
         XCTAssertTrue(app.buttons["saved-computers"].waitForExistence(timeout: 10))
         try pair(app, 7672)
         computers(app); choose(app, 7572)
@@ -83,10 +91,11 @@ final class ComputerSwitchTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 40), .completed)
         // The existing simulator may have a saved connection. Use the product's
         // Add flow so the new pairing is an explicit choice.
-        if app.buttons["add-computer"].exists { app.buttons["add-computer"].tap() }
-        else if app.tabBars.buttons["Settings"].exists { computers(app); app.buttons["add-computer"].tap() }
+        if app.buttons["switch-server"].exists { app.buttons["switch-server"].tap() }
+        if app.buttons["add-computer"].exists { addComputer(app) }
+        else if app.tabBars.buttons["Settings"].exists { computers(app); addComputer(app) }
         try pair(app, 7572)
-        computers(app); app.buttons["add-computer"].tap()
+        computers(app); addComputer(app)
         try pair(app, 7672)
         _ = try fixture(7672, "offline")
         let bannerSwitch = app.buttons["switch-computer"]
@@ -98,7 +107,7 @@ final class ComputerSwitchTests: XCTestCase {
         send(app, "offline-switch-a")
         computers(app); choose(app, 7672)
         let switchServer = app.buttons["switch-server"]
-        XCTAssertTrue(switchServer.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["Computer disconnected"].waitForExistence(timeout: 20))
         app.terminate(); app.launch()
         XCTAssertTrue(switchServer.waitForExistence(timeout: 40)); switchServer.tap()
         // Both records must remain after using the offline Switch server action.
@@ -113,6 +122,50 @@ final class ComputerSwitchTests: XCTestCase {
         send(app, "after-other-computer-revoked")
         let writes = try fixture(7672, "writes", method: "GET")["writes"] as! [[String: Any]]
         XCTAssertEqual(writes.compactMap { ($0["body"] as? [String: Any])?["text"] as? String }, ["after-other-computer-revoked"])
+    }
+
+    func testAllComputersStayLive() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
+        app.activate()
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.buttons["add-computer"].exists || app.tabBars.buttons["Settings"].exists || app.buttons["intro-continue"].exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 40), .completed)
+        if app.buttons["switch-server"].exists { app.buttons["switch-server"].tap() }
+        if app.buttons["add-computer"].exists { addComputer(app) }
+        else if app.tabBars.buttons["Settings"].exists { computers(app); addComputer(app) }
+        try pair(app, 7572)
+        computers(app); addComputer(app)
+        try pair(app, 7672)
+        for port in [7572, 7672, 7572] {
+            let trigger = app.buttons["computer-switcher"]
+            XCTAssertTrue(trigger.waitForExistence(timeout: 15)); trigger.tap()
+            let row = app.buttons["quick-computer-" + computerIDs[port]!]
+            XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+            XCTAssertTrue(app.tabBars.buttons["Agents"].waitForExistence(timeout: 15))
+        }
+        for port in [7572, 7672] {
+            let counts = try fixture(port, "connections", method: "GET")
+            XCTAssertEqual(counts["live"] as? Int, 1)
+            XCTAssertEqual(counts["handshakes"] as? Int, 1, "Switching must reuse the encrypted connection")
+        }
+        computers(app)
+        let revoke = app.buttons["revoke-computer-" + computerIDs[7672]!]
+        for _ in 0..<6 { if revoke.exists && revoke.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(revoke.waitForExistence(timeout: 10)); revoke.tap()
+        app.alerts.buttons["Revoke access"].tap()
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: revoke)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 15), .completed)
+        XCTAssertEqual(try fixture(7672, "connections", method: "GET")["live"] as? Int, 0)
+        XCTAssertEqual(try fixture(7672, "device-count", method: "GET")["count"] as? Int, 0)
+        choose(app, 7572)
+        send(app, "still-live-after-revoke")
+        let remaining = try fixture(7572, "connections", method: "GET")
+        XCTAssertEqual(remaining["live"] as? Int, 1)
+        XCTAssertEqual(remaining["handshakes"] as? Int, 1)
+        computers(app)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
     }
 
 }

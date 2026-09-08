@@ -11,7 +11,7 @@
  * without so much as an error.
  */
 import { useEffect, useState } from "react";
-import { api, type DirListing } from "../api";
+import { useApi, type DirListing } from "../api";
 
 export interface DirChoice {
   /** Absolute — this is what goes to herdr. */
@@ -28,6 +28,7 @@ interface Props {
 }
 
 export function DirPicker({ value, onChange, suggestions = [] }: Props) {
+  const api = useApi();
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);

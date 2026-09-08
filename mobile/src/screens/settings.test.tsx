@@ -13,6 +13,7 @@ jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
 jest.mock("@/lib/session", () => ({
   useLastUpdate: () => Date.now(),
   useSession: () => ({
+    api: require("@/lib/api").api, transport: require("@/lib/api").connection, computers: [],
     session: { serverName: "test-box", version: "0.8.2", protocol: 20 },
     link: "live",
     signOut: mockSignOut,

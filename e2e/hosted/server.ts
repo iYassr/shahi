@@ -17,6 +17,9 @@ const serverId = b64(sha256(encoder.encode(process.env.HOSTED_FIXTURE_ID ?? "iso
 let pairingSecret = crypto.getRandomValues(new Uint8Array(32));
 let pairingUsed = false;
 let offline = false;
+let holdLogout = false;
+let releaseLogout: (() => void) | undefined;
+let deviceHandshakes = 0;
 const devices = new Map<string, { secret: Uint8Array; name: string }>();
 const links = new Set<ServerWebSocket<Link>>();
 const transcript: { path: string; method: string }[] = [];
@@ -31,12 +34,17 @@ const fixture = Bun.serve<Link>({
   hostname: "127.0.0.1", port,
   async fetch(req, srv) {
     const url = new URL(req.url);
+    if (url.pathname === "/__hosted/connections") return Response.json({ live: [...links].filter(ws => ws.data.deviceId && ws.data.session).length, handshakes: deviceHandshakes });
+    if (url.pathname === "/__hosted/hold-logout") { holdLogout = true; return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/release-logout") { holdLogout = false; releaseLogout?.(); releaseLogout = undefined; return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/device-count") return Response.json({ count: devices.size });
     if (url.pathname === "/__hosted/ready") return Response.json({ fixture: true });
     if (url.pathname === "/__hosted/offline" && req.method === "POST") { offline = true; for (const ws of links) ws.close(4404, "box offline"); return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/online" && req.method === "POST") { offline = false; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/reset" && req.method === "POST") {
       for (const ws of links) ws.close(1000);
-      offline = false; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
+      holdLogout = false; releaseLogout?.(); releaseLogout = undefined;
+      offline = false; deviceHandshakes = 0; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
       await fetch(`${apiBase}/__stub/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "busy" }) });
       const fields = new URLSearchParams({ v: "1", server: serverId, relay: `http://127.0.0.1:${port}`, secret: b64(pairingSecret) });
       return Response.json({ code: `shahi://pair#${fields}`, web: `http://127.0.0.1:${port}/pwa/#pair=${encodeURIComponent(`shahi://pair#${fields}`)}` });
@@ -76,6 +84,7 @@ const fixture = Bun.serve<Link>({
           ws.data.session = serverSession(self, bytes(hello.pub), secret);
           ws.send(encoder.encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: b64(self.pub) })));
           if (ws.data.deviceId) {
+            deviceHandshakes++;
             const stream = new WebSocket(`${apiBase.replace("http", "ws")}/ws`, { headers: { cookie: "shahi_session=stub" } } as never);
             ws.data.stream = stream;
             stream.onmessage = event => send(ws, { t: "ws", data: JSON.parse(String(event.data)) });
@@ -111,7 +120,14 @@ const fixture = Bun.serve<Link>({
           }
         } else if (!ws.data.deviceId || !devices.has(ws.data.deviceId)) response = Response.json({ error: "unauthorized" }, { status: 401 });
         else if (message.path === "/api/devices") response = Response.json({ currentDeviceId: ws.data.deviceId, devices: [...devices].map(([id, d]) => ({ id, name: d.name, createdAt: Date.now(), lastSeenAt: Date.now() })) });
-        else if (message.path === "/api/auth/logout") { devices.delete(ws.data.deviceId); response = Response.json({ ok: true }); }
+        else if (message.method === "DELETE" && message.path.startsWith("/api/devices/")) {
+          revoke(decodeURIComponent(message.path.slice("/api/devices/".length)));
+          response = Response.json({ ok: true });
+        }
+        else if (message.path === "/api/auth/logout") {
+          if (holdLogout) await new Promise<void>(resolve => { releaseLogout = resolve; });
+          devices.delete(ws.data.deviceId); response = Response.json({ ok: true });
+        }
         else {
           const headers = new Headers(message.headers); headers.set("cookie", "shahi_session=stub");
           const target = new URL(message.path, apiBase);

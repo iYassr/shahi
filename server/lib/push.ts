@@ -16,6 +16,7 @@
  * both channels. The two are independent: Web Push needs VAPID keys and Expo
  * push needs none, so either can be configured without the other.
  */
+import { serverIdentity } from "./identity";
 import { Database } from "bun:sqlite";
 import webpush, { type PushSubscription } from "web-push";
 import type { Config } from "./config";
@@ -31,10 +32,12 @@ export interface PushPayload {
   body: string;
   paneId: string;
   workspaceLabel: string;
+  serverId?: string;
 }
 
 export class PushService {
   readonly #db: Database;
+  readonly #serverId: string;
   readonly #enabled: boolean;
   readonly #lastNotifiedAt = new Map<string, number>();
 
@@ -43,6 +46,7 @@ export class PushService {
     private readonly config: Config,
   ) {
     this.#db = db;
+    this.#serverId = serverIdentity(db).serverId;
     // Unowned registrations cannot be revoked safely. Require a fresh opt-in.
     db.exec("DROP TABLE IF EXISTS push_subscription; DROP TABLE IF EXISTS expo_push_token");
     this.#db.exec(`
@@ -180,6 +184,7 @@ export class PushService {
 
   /** Delivers over both channels, returning how many deliveries succeeded. */
   async send(payload: PushPayload): Promise<number> {
+    payload = { ...payload, serverId: this.#serverId };
     const [web, native] = await Promise.all([this.#sendWebPush(payload), this.#sendExpo(payload)]);
     return web + native;
   }
@@ -202,7 +207,7 @@ export class PushService {
       to,
       title: payload.title,
       body: payload.body,
-      data: { paneId: payload.paneId, workspaceLabel: payload.workspaceLabel },
+      data: { paneId: payload.paneId, workspaceLabel: payload.workspaceLabel, serverId: payload.serverId },
       sound: "default",
       // Android needs a channel to make any sound at all; the app creates it.
       channelId: "blocked",

@@ -9,6 +9,7 @@ const mockSockets: any[] = [];
 jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}) }));
 jest.mock("./push-registration", () => ({ configurePushProfile: jest.fn(), forgetPushRegistration: jest.fn(), restorePushRegistration: jest.fn(async () => {}) }));
 jest.mock("./api", () => ({ ...jest.requireActual("./api"),
+  createApi: () => require("./api").api,
   api: { session: jest.fn(), login: jest.fn(async () => {}) },
   SessionSocket: class {
     close = jest.fn(); connect = jest.fn(); watch = jest.fn(); ensureConnected = jest.fn();
@@ -74,9 +75,7 @@ test("pins and late socket or HTTP replies cannot cross computers", async () => 
   });
   expect(value.connected).toBe(true);
   expect(value.session?.serverName).not.toBe("wrong computer");
-  expect(value.computers).toHaveLength(2);
-  await act(async () => { await value.switchComputer(computerId(b)); });
-  expect(value.pins.has("same-pane-id")).toBe(true);
+  expect(value.computers.map(c => c.id)).toEqual([computerId(a)]);
   ui.unmount();
 });
 test("sign out forgets only the current computer", async () => {
@@ -90,10 +89,10 @@ test("sign out forgets only the current computer", async () => {
 });
 test("a failed SSH switch retains both computers and permits returning to relay", async () => {
   const ssh: ComputerConnection = { kind: "ssh", ssh: { host: "test", port: 22, username: "test", remotePort: 7272, passcode: "stub", auth: { kind: "password", password: "stub" } } };
+  (openTunnel as jest.Mock).mockRejectedValue(new Error("Box offline"));
   store.set(COMPUTERS_KEY, JSON.stringify([{ id: computerId(ssh), name: "SSH", connection: ssh, pins: [] }]));
   const ui = await mount(); act(() => value.signInRelay(a)); await act(async () => {});
-  (openTunnel as jest.Mock).mockRejectedValueOnce(new Error("Box offline"));
-  await act(async () => { await expect(value.switchComputer(computerId(ssh))).rejects.toThrow("Box offline"); });
+  await act(async () => { await value.switchComputer(computerId(ssh)); });
   expect(value.computers).toHaveLength(2);
   await act(async () => { await value.switchComputer(computerId(a)); });
   expect(value.connected).toBe(true); ui.unmount();
@@ -118,3 +117,18 @@ test("pairing another code directly preserves the old computer without carrying 
   expect(value.pins.has("a-pin")).toBe(true);
   ui.unmount();
 });
+
+ test("switching preserves both sockets and background dashboards", async () => {
+  const ui = await mount(); await pairBoth();
+  const [socketA, socketB] = mockSockets;
+  await act(async () => { await value.switchComputer(computerId(a)); });
+  expect(socketA.close).not.toHaveBeenCalled();
+  expect(socketB.close).not.toHaveBeenCalled();
+  expect(mockSockets).toHaveLength(2);
+  act(() => socketB.message({ type: "session", session: { ...snapshot, serverName: "Background B" } }));
+  expect(value.session?.serverName).not.toBe("Background B");
+  await act(async () => { await value.switchComputer(computerId(b)); });
+  expect(value.session?.serverName).toBe("Background B");
+  expect(mockSockets).toHaveLength(2);
+  ui.unmount();
+ });

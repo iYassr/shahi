@@ -103,3 +103,5 @@ describe("paired devices", () => {
     expect(relative(t - 2 * 86_400_000, t)).toBe("2d ago");
   });
 });
+
+jest.mock("@/lib/session", () => ({ useSession: () => ({ api: require("@/lib/api").api }) }));

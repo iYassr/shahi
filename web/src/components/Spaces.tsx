@@ -9,7 +9,7 @@ import { AgentAvatar } from "./AgentAvatar";
  */
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type Session } from "../api";
+import { useApi, type Session } from "../api";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
@@ -296,6 +296,7 @@ function CreateSpace({
   onToast: (message: string) => void;
   onCreated: (workspaceId: string) => void;
 }) {
+  const api = useApi();
   const [name, setName] = useState("");
   const [cwd, setCwd] = useState<DirChoice>(HOME_CHOICE);
   const [busy, setBusy] = useState(false);
@@ -361,6 +362,7 @@ function CreateTab({
   onToast: (message: string) => void;
   onCreated: () => void;
 }) {
+  const api = useApi();
   const [name, setName] = useState("");
   const [cwd, setCwd] = useState<DirChoice>(
     space.cwdPath && space.cwd ? { path: space.cwdPath, display: space.cwd } : HOME_CHOICE,

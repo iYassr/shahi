@@ -12,7 +12,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { modesFor } from "@shahi/shared";
-import { api, requestId } from "../api";
+import { useApi, requestId } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { Sheet } from "./Sheet";
@@ -28,6 +28,7 @@ interface Props {
 type Phase = "idle" | "creating" | "starting";
 
 export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
+  const api = useApi();
   const pending = useRef<{ fingerprint: string; id: string } | null>(null);
   const [available, setAvailable] = useState<{ kind: string; command: string }[] | null>(null);
   const [kind, setKind] = useState<string | null>(null);

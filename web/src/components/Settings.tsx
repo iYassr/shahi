@@ -4,10 +4,11 @@ import { preferences } from "../preferences";
 import { browserConnection, hosted } from "../connection";
 import { useEffect, useState } from "react";
 import type { DeviceList } from "@shahi/shared";
-import { api } from "../api";
+import { useApi } from "../api";
 import { registerPush } from "./PushPrompt";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
+  const api = useApi();
   const [devices, setDevices] = useState<DeviceList | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

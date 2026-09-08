@@ -1,17 +1,18 @@
+import { ComputerSwitcher } from "./components/ComputerSwitcher";
 import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "./components/ConnectionHealth";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
-import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser } from "./connection";
+import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser, selectBrowserComputer } from "./connection";
 import { PairBrowser } from "./components/PairBrowser";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   SessionSocket,
   UnauthorizedError,
-  api,
+  ApiContext, createApi, useApi,
   type LinkState,
   type PaneFrame,
   type ParsedPrompt,
@@ -31,16 +32,34 @@ import { SpaceDetail, Spaces } from "./components/Spaces";
 
 export function App(props: { initialPairingCode?: string }) {
   const [epoch, setEpoch] = useState(0);
+  const [restored, setRestored] = useState(!hosted);
+  const navigate = useNavigate();
+  useEffect(() => {
+    void restoreBrowser().then(async () => {
+      if (!window.location.pathname.endsWith("/notification")) return;
+      const query = new URLSearchParams(window.location.search);
+      const pane = query.get("pane");
+      const id = query.get("computer");
+      const computers = browserComputers();
+      const target = id ? computers.find(c => c.id === id) : computers.length === 1 ? computers[0] : undefined;
+      if (hosted && !target) { navigate("/computers", { replace: true }); return; }
+      if (hosted && target) await selectBrowserComputer(target.id);
+      navigate(pane ? `/pane/${encodeURIComponent(pane)}` : "/", { replace: true });
+    }).finally(() => setRestored(true));
+  }, []);
+  const scopedApi = useMemo(() => { const owner = browserConnection(); return createApi(() => owner); }, [epoch, restored]);
   const [openPairing, setOpenPairing] = useState(!!props.initialPairingCode);
   useEffect(() => {
     const changed = (event: Event) => { clearReaderMemory(); setOpenPairing(!!(event as CustomEvent).detail?.pairing); setEpoch(value => value + 1); };
     window.addEventListener("shahi:computer-changed", changed);
     return () => window.removeEventListener("shahi:computer-changed", changed);
   }, []);
-  return <AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} />;
+  return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} /></ApiContext.Provider> : <div className="app" role="status">Opening Shahi…</div>;
 }
 function AppSession({ initialPairingCode = "", openPairing = false }: { initialPairingCode?: string; openPairing?: boolean }) {
-  const [pairingRequested, setPairingRequested] = useState(openPairing);
+  const api = useApi();
+  const routeLocation = useLocation();
+  const [pairingRequested] = useState(openPairing);
   const [showComputers, setShowComputers] = useState(false);
   const owner = useRef(browserConnection().generation);
   const active = () => owner.current === browserConnection().generation;
@@ -60,7 +79,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   const [connectionError, setConnectionError] = useState("");
   const [healthError, setHealthError] = useState<Error | null>(null);
   const [reachable, setReachable] = useState(true);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(() => browserConnection().session);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const [reviewed, setReviewed] = useState<Reviewed>({});
@@ -262,8 +281,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   if (hosted && !authenticated && !pairingRequested && browserComputers().length > 0) {
     return <div className="app"><Computers /></div>;
   }
-  if (showComputers) return <div className="app"><Computers onClose={() => setShowComputers(false)} /></div>;
-  const computerButton = hosted && browserComputers().length > 0 ? <button className="empty__action" onClick={() => setShowComputers(true)}>Computers</button> : null;
+  if (showComputers || routeLocation.pathname === "/computers") return <div className="app"><Computers onClose={() => { setShowComputers(false); navigate("/"); }} /></div>;
+  const computerButton = hosted && browserComputers().length > 0 ? <ComputerSwitcher onManage={() => setShowComputers(true)} /> : null;
   if (!reachable) {
     return (
       <div className="app">
@@ -280,7 +299,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
     );
   }
   if (!authenticated) {
-    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { owner.current = browserConnection().generation; setPairingRequested(false); setReachable(true); setAuthenticated(true); }} /></>;
+    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: false } })); }} /></>;
     return <Login onSuccess={() => {
       setReachable(true);
       setAuthenticated(true);

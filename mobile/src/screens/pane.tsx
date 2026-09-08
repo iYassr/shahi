@@ -35,7 +35,7 @@ import { CopyButton, CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption } from "@shahi/shared";
-import { api, connection, UnauthorizedError } from "@/lib/api";
+import { connection, UnauthorizedError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells, type ScrollAnchor } from "@/lib/scroll-cells";
 import { committed, refused } from "@/lib/feel";
@@ -253,7 +253,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
-  const { watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
+  const { api, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -1128,6 +1128,7 @@ function FileView({
   file: { path: string; name: string };
   onClose: () => void;
 }) {
+  const { api, transport: connection } = useSession();
   const [body, setBody] = useState<{ text: string } | { imageUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1186,6 +1187,7 @@ function FileView({
 
 /** Images come from the server rather than the transcript payload. */
 function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
+  const { transport: connection } = useSession();
   const uri = `${connection.baseUrl}/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(imageRef)}`;
   return (
     <Image
@@ -1348,6 +1350,7 @@ function FilePicker({
   onClose: () => void;
   onPick: (path: string) => void;
 }) {
+  const { api } = useSession();
   const [path, setPath] = useState("~");
   const [entries, setEntries] = useState<
     { name: string; path: string; display: string; isDirectory: boolean }[]

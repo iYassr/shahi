@@ -9,7 +9,7 @@ export interface SavedComputer {
   connection: ComputerConnection;
   pins: string[];
 }
-export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; kind: ComputerConnection["kind"] };
+export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"] };
 export const COMPUTERS_KEY = "shahi.computers";
 
 export function computerId(connection: ComputerConnection): string {

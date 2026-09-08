@@ -1,5 +1,5 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
-import { api, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
+import { api, createApi, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
 
 /**
  * The client's own decisions, below the screens.
@@ -519,4 +519,16 @@ test("a login response arriving after cancellation cannot restore signed-out cre
   });
   await api.login("fake", () => false);
   expect(connection.cookie).toBeNull();
+});
+
+test("a retained computer client keeps its own address and credential after switching", async () => {
+  const computer = { baseUrl: "http://computer-a.test", cookie: "shahi_session=a", relay: null };
+  const retained = createApi(computer);
+  connection.baseUrl = "http://computer-b.test";
+  connection.cookie = "shahi_session=b";
+  const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+  (globalThis as { fetch: unknown }).fetch = fetchMock;
+  await retained.revokeDevice("a-phone");
+  expect(fetchMock.mock.calls[0][0]).toBe("http://computer-a.test/api/devices/a-phone");
+  expect(fetchMock.mock.calls[0][1].headers.cookie).toBe("shahi_session=a");
 });

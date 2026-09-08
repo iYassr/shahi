@@ -1,8 +1,9 @@
 import { useEffect, useState, type ImgHTMLAttributes } from "react";
-import { api } from "../api";
+import { useApi } from "../api";
 import { releaseBlob } from "../connection";
 
 export function RemoteImage({ src, ...props }: ImgHTMLAttributes<HTMLImageElement> & { src: string }) {
+  const api = useApi();
   const [blob, setBlob] = useState<string>();
   const [error, setError] = useState("");
   useEffect(() => {
@@ -15,6 +16,7 @@ export function RemoteImage({ src, ...props }: ImgHTMLAttributes<HTMLImageElemen
   return error ? <span role="alert">{error}</span> : blob ? <img {...props} src={blob} /> : <span aria-label="Loading image">Loading image…</span>;
 }
 export function Download({ path, name, className, children }: { path: string; name: string; className?: string; children: React.ReactNode }) {
+  const api = useApi();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return <><button className={className} aria-label={`Download ${name}`} disabled={busy} onClick={() => {
