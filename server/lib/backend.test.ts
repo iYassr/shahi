@@ -13,3 +13,10 @@ test("backend failure and recovery do not restart the connection service", async
   offline = true; await m.check(); expect(stops).toBe(2);
   offline = false; await m.check(); expect(starts).toBe(2); m.close();
 });
+test("does not announce Connected before the first usable snapshot", async () => {
+  let finish!: () => void;
+  const monitor = new BackendMonitor(async () => ({ version: "0.9.0", protocol: 22 }), () => new Promise(resolve => { finish = resolve; }), () => {});
+  const check = monitor.check(); await Promise.resolve();
+  expect(monitor.state.state).toBe("offline"); finish(); await check;
+  expect(monitor.state.state).toBe("connected"); monitor.close();
+});

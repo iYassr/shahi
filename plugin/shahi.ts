@@ -252,7 +252,7 @@ async function install(layout: Layout, service: Service): Promise<void> {
   const relayUrl = relayUrlFor(env);
   const relayDefaulted = !env.has("RELAY_URL");
   if (info) {
-    console.log(`Shahi is running at ${url} — herdr ${info.herdr?.version}, protocol ${info.herdr?.protocol}.`);
+    console.log(`Shahi's connection service is running at ${url}.`);
     console.log(
       relayUrl
         ? `  relay     ${relayUrl}${relayDefaulted ? ` (Shahi's relay, the default; RELAY_URL= in ${layout.envFile} turns it off)` : ""}`

@@ -27,8 +27,9 @@ export class BackendMonitor {
     try {
       const pong = await this.probe();
       if (this.stopped) return;
-      this.state = herdrCompatibility(pong.version, pong.protocol);
-      if (this.state.state === "connected" && previous !== "connected") await this.start();
+      const next = herdrCompatibility(pong.version, pong.protocol);
+      if (next.state === "connected" && previous !== "connected") await this.start();
+      if (!this.stopped) this.state = next;
     } catch {
       this.state = { state: "offline", message: "herdr is offline. Shahi will reconnect automatically." };
     }
