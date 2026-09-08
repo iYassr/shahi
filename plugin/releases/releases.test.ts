@@ -7,6 +7,7 @@ import { selectRelease, sha256, verifyCatalog, type Catalog, type Release } from
 import { stage } from "./stage";
 import { atomicJson, installation } from "./storage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
+import { verifyPublished } from "./published";
 
 const keys = generateKeyPairSync("ed25519");
 const trusted = { test: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
@@ -19,6 +20,15 @@ function scratch() { const root = mkdtempSync(join(tmpdir(), "shahi-upgrade-"));
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("approved releases", () => {
+  test("promotion rejects altered assets and unapproved builds claiming the same commit", () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const published = { ...release, artifact: { ...release.artifact, bytes: bytes.length, sha256: sha256(bytes) } };
+    const stable = signed({ ...catalog, releases: [published] }), beta = signed({ ...catalog, channel: "beta" });
+    expect(verifyPublished(published, release, bytes, stable, beta, trusted)).toEqual(published);
+    expect(() => verifyPublished(published, release, new Uint8Array([3, 2, 1]), stable, beta, trusted)).toThrow("changed");
+    const unapproved = { ...published, buildId: "forged-but-same-commit" };
+    expect(() => verifyPublished(unapproved, release, bytes, stable, beta, trusted)).toThrow("no matching signed approval");
+  });
   test("accepts a trusted, current, compatible catalog", () => {
     const c = verifyCatalog(signed(catalog), "stable", 10, trusted);
     expect(selectRelease(c, machine).release?.buildId).toBe("build-1");

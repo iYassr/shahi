@@ -42,10 +42,13 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/shahi-release-key.pem"' EXIT
           VERSION=$(bun -e 'console.log(require("./plugin/releases/release.json").version)')
           TAG="v$VERSION"
+          mkdir -p dist/channels/stable dist/channels/beta
+          gh release download shahi-stable --pattern catalog.json --dir dist/channels/stable
+          gh release download shahi-beta --pattern catalog.json --dir dist/channels/beta
           if gh release view "$TAG" > /dev/null 2>&1; then
             mkdir -p dist/published
             gh release download "$TAG" --pattern release.json --pattern shahi-service.tar.gz --dir dist/published
-            bun -e 'const a=require("./dist/published/release.json"); const b=require("./dist/release/release.json"); if(a.commit!==b.commit) throw Error("Released versions are immutable; bump release.json");'
+            bun plugin/releases/published.ts dist/published/release.json dist/release/release.json dist/published/shahi-service.tar.gz dist/channels/stable/catalog.json dist/channels/beta/catalog.json
             cp dist/published/release.json dist/release/release.json
           else
             gh release create "$TAG" dist/release/shahi-service.tar.gz dist/release/release.json --target "$GITHUB_SHA" --title "Shahi $VERSION" --notes "Approved computer service, service manager, and web app. See the signed channel catalog for compatibility." --prerelease
@@ -53,7 +56,7 @@ jobs:
           mkdir -p dist/previous
           # A channel must already be bootstrapped. Network errors must never
           # silently drop its supported release history.
-          gh release download "shahi-$RELEASE_CHANNEL" --pattern catalog.json --dir dist/previous
+          cp "dist/channels/$RELEASE_CHANNEL/catalog.json" dist/previous/catalog.json
           bun plugin/releases/sign.ts "$RELEASE_CHANNEL" dist/release/release.json "$RUNNER_TEMP/shahi-release-key.pem" dist/release/catalog.json dist/previous/catalog.json
           gh release upload "shahi-$RELEASE_CHANNEL" dist/release/catalog.json --clobber
           if [ "$RELEASE_CHANNEL" = stable ]; then gh release edit "$TAG" --prerelease=false; fi
