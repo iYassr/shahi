@@ -21,7 +21,7 @@ export function ComputerUpdate() {
   if (!settings && h.backend.state === "connected" && !h.update.available && !busy && !h.update.message && !control.error) return null;
   return <section className="computer-update" aria-live="polite">
     <strong>{h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : "This computer"}</strong>
-    <p>{control.pending ? "Requesting update…" : controlMessage(h)}</p>
+    <p>{control.pending ? "Requesting update…" : control.error ? (updateInProgress(h.update.phase) ? "Reconnecting after the update…" : "Computer unavailable. Your pairing is saved.") : controlMessage(h)}</p>
     {control.error && <p role="alert">{control.error}</p>}
     {h.update.managed && <div className="computer-update__actions">
       {h.update.available && <button disabled={busy} onClick={() => void control.request("install")}>Update computer</button>}

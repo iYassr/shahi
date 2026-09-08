@@ -43,4 +43,5 @@ jobs:
           test -n "$SHAHI_OTA_PRIVATE_KEY"
           printf '%s' "$SHAHI_OTA_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-ota-key.pem"
           trap 'rm -f "$RUNNER_TEMP/shahi-ota-key.pem"' EXIT
-          bunx eas-cli@23.2.0 update --channel "$RELEASE_CHANNEL" --rollout-percentage "$ROLLOUT_PERCENTAGE" --private-key-path "$RUNNER_TEMP/shahi-ota-key.pem" --message "Shahi $GITHUB_SHA" --non-interactive
+          if [ "$RELEASE_CHANNEL" = stable ]; then EAS_ENVIRONMENT=production; else EAS_ENVIRONMENT=preview; fi
+          bunx eas-cli@23.2.0 update --environment "$EAS_ENVIRONMENT" --channel "$RELEASE_CHANNEL" --rollout-percentage "$ROLLOUT_PERCENTAGE" --private-key-path "$RUNNER_TEMP/shahi-ota-key.pem" --message "Shahi $GITHUB_SHA" --non-interactive
