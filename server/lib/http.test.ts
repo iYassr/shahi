@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Auth } from "./auth";
@@ -23,6 +23,7 @@ import { PushService } from "./push";
 import { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
 import { ComputerControl } from "./control";
+import { atomicJson } from "../../plugin/releases/storage";
 
 const PANE = "w1:p1";
 const PASSCODE = "2468";
@@ -94,7 +95,7 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "" } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
@@ -139,7 +140,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
       pairing,
       devices,
       serverId: "test-server",
-      ...(recovery ? { control: new ComputerControl("test-server", () => ({ state: "offline", message: "herdr is offline" })) } : {}),
+      ...(recovery ? { control: new ComputerControl("test-server", () => ({ state: "offline", message: "herdr is offline" }), recoveryRoot || undefined) } : {}),
       ...(relay ? { relay: () => ({ url: "https://relay.test", connected: true }) } : {}),
     },
     { heartbeatMs },
@@ -521,6 +522,32 @@ describe("writes and notification ownership", () => {
 });
 
 describe("authenticated recovery across API generations", () => {
+  test("a revoked device cannot finish a pending update or access recovery", async () => {
+    const root = join(scratch, "recovery-revocation");
+    atomicJson(join(root, "status.json"), { managed: true, phase: "idle", channel: "stable", current: "0.3.1" });
+    const box = await boot({ recovery: true, recoveryRoot: root });
+    try {
+      const post = (path: string, body: unknown, cookie = box.cookie) => fetch(box.base + path, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+      const { secret } = await (await post("/api/pair", {})).json() as { secret: string };
+      const claimed = await post("/api/pair/claim", { secret, deviceName: "Security fixture" });
+      const { deviceId } = await claimed.json() as { deviceId: string };
+      const cookie = claimed.headers.get("set-cookie")!.split(";")[0]!;
+      const headers = { cookie, "x-shahi-control": "1", "x-shahi-api": "99" };
+      let finish!: (body: unknown) => void, reading!: () => void;
+      const started = new Promise<void>(resolve => { reading = resolve; });
+      const req = new Request(`${box.base}/api/control/update`, { method: "POST", headers });
+      Object.defineProperty(req, "json", { value: () => { reading(); return new Promise(resolve => { finish = resolve; }); } });
+      const pending = box.dispatch(req, "slow-update-security-test");
+      await started;
+      expect((await fetch(`${box.base}/api/devices/${deviceId}`, { method: "DELETE", headers: { cookie: box.cookie } })).status).toBe(200);
+      finish({ action: "install" });
+      expect((await pending).status).toBe(401);
+      expect(existsSync(join(root, "request.json"))).toBe(false);
+      expect((await fetch(`${box.base}/api/control/handshake`, { headers })).status).toBe(401);
+      expect((await fetch(`${box.base}/api/control/update`, { method: "POST", headers, body: '{"action":"install"}' })).status).toBe(401);
+    } finally { box.stop(); }
+  });
+
   test("an API mismatch and offline herdr do not hide recovery or revoke pairing", async () => {
     const box = await boot({ recovery: true });
     try {

@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { download, sha256, type Release } from "./catalog";
+import { download, sha256, validateRelease, type Release } from "./catalog";
 import { atomicJson, releaseDirectory } from "./storage";
 
 /** Every archive byte is approved before it is interpreted or written. */
 export async function stage(root: string, release: Release, fetchBytes = download): Promise<string> {
+  validateRelease(release);
   const destination = releaseDirectory(root, release);
   if (existsSync(join(destination, "verified.json"))) {
     if (readFileSync(join(destination, "verified.json"), "utf8") === JSON.stringify(release)) return destination;

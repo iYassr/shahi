@@ -33,7 +33,7 @@ const version = (v: unknown): v is string => typeof v === "string" && /^\d+\.\d+
 const range = (v: unknown): v is { min: number; max: number } => plain(v) && integer(v.min, API_SUPPORT.securityFloor) && integer(v.max, v.min) && v.max - v.min < API_SUPPORT.generations;
 
 export function validateRelease(v: unknown): asserts v is Release {
-  if (!plain(v) || !version(v.version) || typeof v.buildId !== "string" || !/^[a-zA-Z0-9._-]{1,100}$/.test(v.buildId) ||
+  if (!plain(v) || !version(v.version) || typeof v.buildId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(v.buildId) ||
       typeof v.commit !== "string" || !/^[a-f0-9]{40}$/.test(v.commit) || !plain(v.artifact) ||
       typeof v.artifact.url !== "string" || !new RegExp(`^https://github\\.com/iYassr/shahi/releases/download/v${v.version.replaceAll(".", "\\.")}/shahi-service\\.tar\\.gz$`).test(v.artifact.url) ||
       typeof v.artifact.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(v.artifact.sha256) || !integer(v.artifact.bytes, 1) || v.artifact.bytes > 64 * 1024 * 1024 ||
@@ -48,7 +48,7 @@ export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequ
   if (Buffer.byteLength(text) > 256 * 1024) throw new Error("Release catalog is too large.");
   const envelope: unknown = JSON.parse(text);
   if (!plain(envelope) || typeof envelope.keyId !== "string" || typeof envelope.payload !== "string" || typeof envelope.signature !== "string" ||
-      !keys[envelope.keyId] || !verify(null, Buffer.from(envelope.payload, "base64"), keys[envelope.keyId]!, Buffer.from(envelope.signature, "base64"))) {
+      !Object.hasOwn(keys, envelope.keyId) || !verify(null, Buffer.from(envelope.payload, "base64"), keys[envelope.keyId]!, Buffer.from(envelope.signature, "base64"))) {
     throw new Error("Release signature could not be verified.");
   }
   const c: unknown = JSON.parse(Buffer.from(envelope.payload, "base64").toString("utf8"));
@@ -58,6 +58,8 @@ export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequ
       !Array.isArray(c.releases) || c.releases.length > 50 || !c.releases.length) throw new Error("Release catalog is expired, replayed, or invalid.");
   for (const r of c.releases) validateRelease(r);
   if (new Set(c.releases.map(r => (r as Release).version)).size !== c.releases.length) throw new Error("Duplicate release version.");
+  if (new Set(c.releases.map(r => (r as Release).buildId)).size !== c.releases.length) throw new Error("Duplicate release identifier.");
+  if (channel === "stable" && c.releases.some(r => (r as Release).version.includes("-"))) throw new Error("Stable cannot include prereleases.");
   return c as unknown as Catalog;
 }
 

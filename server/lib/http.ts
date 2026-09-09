@@ -540,7 +540,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           if (!deps.control) return json({ error: "Computer updates are unavailable." }, { status: 404 });
           if (pathname === "/api/control/handshake" && req.method === "GET") return json(deps.control.handshake(), { headers: { "cache-control": "no-store" } });
           if (pathname === "/api/control/update" && req.method === "POST") {
-            try { deps.control.request(await jsonObject(req)); return json({ accepted: true }, { status: 202 }); }
+            try {
+              const body = await jsonObject(req);
+              // Reading a body yields; revocation must win before a durable
+              // update request is published to the manager.
+              if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+              deps.control.request(body);
+              return json({ accepted: true }, { status: 202 });
+            }
             catch (e) { return json({ error: e instanceof Error ? e.message : "Cannot start update." }, { status: 409 }); }
           }
           return json({ error: "Unknown recovery action." }, { status: 404 });
