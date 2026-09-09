@@ -558,6 +558,27 @@ describe("box authentication", () => {
 describe("a phone through the relay", () => {
   let paired: ClaimResult;
 
+  test("silent phone connections are released while active phones and pairing survive", async () => {
+    const other = await bootBox();
+    const device = other.devices.create("Reconnect fixture");
+    const dialler = dial(relay, other, other.identity, { phoneSilenceMs: 1000, watchdogMs: 25, pingMs: 25 });
+    let quiet: ReturnType<typeof phone> | undefined;
+    let active: ReturnType<typeof phone> | undefined;
+    let traffic: ReturnType<typeof setInterval> | undefined;
+    try {
+      await waitFor(() => dialler.connected, "the recovery fixture to connect");
+      quiet = phone(relay, other.identity.serverId, { kind: "device", deviceId: device.device.id }, device.secret);
+      active = phone(relay, other.identity.serverId, { kind: "device", deviceId: device.device.id }, device.secret);
+      await Promise.all([quiet.hello, active.hello]);
+      await Promise.all([quiet.request("GET", "/api/session"), active.request("GET", "/api/session")]);
+      traffic = setInterval(() => active!.unwatch(), 25);
+      await waitFor(() => quiet!.isClosed, "the dead phone's relay slot to be released", 5000);
+      expect(active.isClosed).toBe(false);
+      expect(other.devices.secret(device.device.id)).toEqual(device.secret);
+      expect((await active.request("GET", "/api/session")).status).toBe(200);
+    } finally { clearInterval(traffic); quiet?.close(); active?.close(); dialler.stop(); other.stop(); }
+  });
+
   test("pairs over a pairing link — hello by hash, the claim answers the device secret, sealed", async () => {
     const code = box.pairing.mint();
     const secretBytes = unb64(code.secret);

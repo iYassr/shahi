@@ -4,6 +4,9 @@ import { SessionProvider, useSession } from "./session";
 import { api, connection, UnauthorizedError } from "./api";
 import { COMPUTERS_KEY, computerId, type ComputerConnection } from "./computers";
 import { openTunnel } from "./tunnel";
+import { AppState } from "react-native";
+import { addNetworkStateListener } from "expo-network";
+import { RelayLink } from "./relay";
 
 const mockSockets: any[] = [];
 jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}) }));
@@ -132,3 +135,35 @@ test("pairing another code directly preserves the old computer without carrying 
   expect(mockSockets).toHaveLength(2);
   ui.unmount();
  });
+
+test("restored internet reconnects every saved computer once without deleting pairing", async () => {
+  const retry = jest.spyOn(RelayLink.prototype, "reconnect").mockImplementation(() => {});
+  const previousState = AppState.currentState; AppState.currentState = "active";
+  const ui = await mount(); await pairBoth();
+  try {
+    const listener = (addNetworkStateListener as jest.Mock).mock.calls.at(-1)![0];
+    await act(async () => {
+      listener({ type: "NONE", isConnected: false });
+      listener({ type: "WIFI", isConnected: true, isInternetReachable: true });
+      listener({ type: "WIFI", isConnected: true, isInternetReachable: true });
+    });
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(bank()).toHaveLength(2);
+  } finally { ui.unmount(); retry.mockRestore(); AppState.currentState = previousState; }
+});
+
+test("a delayed failure cannot turn a freshly restored dashboard offline", async () => {
+  const ui = await mount(); await pairBoth();
+  const socket = mockSockets.at(-1)!;
+  await act(async () => socket.state("live"));
+  let reject!: (e: Error) => void;
+  (api.session as jest.Mock).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  let pending!: Promise<void>;
+  act(() => { pending = value.refresh(); });
+  await act(async () => {
+    socket.message({ type: "session", session: snapshot });
+    reject(new Error("old connection dropped")); await pending;
+  });
+  expect(value.link).toBe("live"); expect(value.error).toBeNull();
+  ui.unmount();
+});

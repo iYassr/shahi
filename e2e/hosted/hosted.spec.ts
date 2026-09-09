@@ -47,6 +47,33 @@ test("remembered pairing restores and explicit signout erases browser identity",
   await page.reload();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 });
+
+test("network return replaces a silently dead relay and a cold offline launch recovers", async ({ page, request }) => {
+  try {
+  await pair(page, true);
+  const handshakes = async () => (await (await request.get("/__hosted/connections")).json()).handshakes;
+  for (let n = 0; n < 3; n++) {
+    const before = await handshakes();
+    await request.post("/__hosted/blackhole");
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect.poll(handshakes).toBeGreaterThan(before);
+    await expect.poll(async () => (await (await request.get("/__hosted/connections")).json()).live).toBe(1);
+    await expect(page.locator(".connection-health")).toHaveCount(0);
+  }
+  await request.post("/__hosted/offline");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
+  const before = await handshakes();
+  await request.post("/__hosted/online");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(handshakes).toBeGreaterThan(before);
+  await page.locator(".blocked__head").first().click();
+  await page.locator("textarea").fill("recovered connection prompt");
+  await page.locator(".compose__send").click();
+  await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).writes.filter((w: {path:string}) => w.path.endsWith("/prompt")).length).toBe(1);
+  expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(1);
+  } finally { await request.post("/__hosted/reset"); }
+});
 test("revoking this browser clears its remembered connection", async ({ page, request }) => {
   await pair(page, true);
   await request.post("/__hosted/revoke");

@@ -126,7 +126,7 @@ function activate(next: RelayIdentity): void {
   identity = next; link = ensureComputer(next).link;
 }
 if (typeof window !== "undefined") {
-  const reconnectAll = () => { for (const entry of live.values()) entry.link.ensureConnected(); };
+  const reconnectAll = () => { for (const entry of live.values()) entry.link.reconnect(); };
   window.addEventListener("online", reconnectAll);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reconnectAll(); });
 }

@@ -163,6 +163,89 @@ afterEach(() => {
   (globalThis as { WebSocket: unknown }).WebSocket = realWebSocket;
 });
 
+describe("network interruption recovery", () => {
+  beforeEach(() => { jest.useFakeTimers(); });
+  afterEach(() => { closeRelay(); jest.useRealTimers(); });
+
+  test.each([false, true])("a stalled %s socket retries without a native close event", (accepted) => {
+    const link = relayLink(deviceTarget(identity));
+    link.ensureConnected();
+    const socket = FakeSocket.opened[0]!;
+    if (accepted) socket.accept();
+    socket.close = () => { socket.readyState = 2; };
+    jest.advanceTimersByTime(16_000);
+    expect(FakeSocket.opened.length).toBeGreaterThan(1);
+  });
+
+  test("a silent established connection reconnects even if close never completes", () => {
+    const link = relayLink(deviceTarget(identity));
+    link.ensureConnected();
+    const socket = FakeSocket.opened[0]!;
+    socket.accept(); new FakeBox(socket, secret).handshake();
+    socket.close = () => { socket.readyState = 2; };
+    jest.advanceTimersByTime(81_000);
+    expect(FakeSocket.opened.length).toBeGreaterThan(1);
+    expect(link.state).not.toBe("live");
+  });
+
+  test("native CLOSED before onclose cannot leave requests on stale session keys", async () => {
+    const link = relayLink(deviceTarget(identity));
+    link.ensureConnected();
+    const socket = FakeSocket.opened[0]!;
+    socket.accept(); new FakeBox(socket, secret).handshake();
+    socket.readyState = 3;
+    const call = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 5000).catch(e => e);
+    jest.advanceTimersByTime(1000);
+    expect(FakeSocket.opened.length).toBeGreaterThan(1);
+    link.close(); await call;
+  });
+
+  test("network return bypasses backoff once and old socket callbacks cannot undo recovery", () => {
+    const link = relayLink(deviceTarget(identity));
+    link.ensureConnected();
+    const socket = FakeSocket.opened[0]!;
+    socket.accept(); new FakeBox(socket, secret).handshake();
+    const lateClose = socket.onclose!;
+    socket.close = () => { socket.readyState = 2; };
+    link.watch("w1:p1");
+    jest.advanceTimersByTime(1000);
+    link.reconnect();
+    jest.advanceTimersByTime(1);
+    link.reconnect();
+    expect(FakeSocket.opened).toHaveLength(2);
+    const next = FakeSocket.opened[1]!;
+    next.accept(); const box = new FakeBox(next, secret); box.handshake();
+    link.reconnect(); expect(FakeSocket.opened).toHaveLength(2);
+    expect(box.proof).toMatchObject({ t: "ws", data: { type: "watch", paneId: "w1:p1" } });
+    lateClose({ code: 1006 });
+    expect(link.state).toBe("live");
+    jest.advanceTimersByTime(1000);
+    expect(FakeSocket.opened).toHaveLength(2);
+  });
+
+  test("quiet phones acknowledge every heartbeat without waiting for 64 KB", () => {
+    const link = relayLink(deviceTarget(identity));
+    link.ensureConnected(); const socket = FakeSocket.opened[0]!;
+    socket.accept(); const box = new FakeBox(socket, secret); box.handshake();
+    box.push({ t: "ws", data: { type: "ping", at: Date.now() } }); box.read();
+    for (let n = 0; n < 8; n++) {
+      jest.advanceTimersByTime(25_000);
+      box.push({ t: "ws", data: { type: "ping", at: Date.now() } });
+      expect(box.read()).toEqual([{ t: "ack", bytes: expect.any(Number) }]);
+    }
+    expect(link.state).toBe("live"); expect(FakeSocket.opened).toHaveLength(1);
+  });
+
+  test("an unanswered encrypted proof cannot hold a connection forever after hello", () => {
+    const link = relayLink(deviceTarget(identity)); link.ensureConnected();
+    const socket = FakeSocket.opened[0]!;
+    socket.accept(); new FakeBox(socket, secret).handshake();
+    socket.close = () => { socket.readyState = 2; };
+    jest.advanceTimersByTime(16_000);
+    expect(FakeSocket.opened.length).toBeGreaterThan(1);
+  });
+});
+
 describe("hello", () => {
   test("opens one socket at the relay's phone endpoint, greets as the device with a fresh key, and both ends derive the same session", async () => {
     const { link, socket, box } = await openLink();

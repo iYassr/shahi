@@ -79,6 +79,8 @@ export interface RelayClientOptions {
   silenceMs?: number;
   /** How often to check the read-side silence above. */
   watchdogMs?: number;
+  /** A phone must send authenticated traffic even when only reading a dashboard. */
+  phoneSilenceMs?: number;
 }
 
 /** The response headers a `res` carries; everything else stays on the box. */
@@ -122,6 +124,7 @@ export class RelayClient {
   #stopped = true;
   #backoffMs: number;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  #authTimer: ReturnType<typeof setTimeout> | undefined;
   #pingTimer: ReturnType<typeof setInterval> | undefined;
   #watchdogTimer: ReturnType<typeof setInterval> | undefined;
   /** When the last frame of any kind — a pong, a phone frame — arrived. */
@@ -129,6 +132,7 @@ export class RelayClient {
   readonly #pingMs: number;
   readonly #silenceMs: number;
   readonly #watchdogMs: number;
+  readonly #phoneSilenceMs: number;
   readonly #links = new Map<number, Link>();
 
   constructor(deps: RelayClientDeps, options: RelayClientOptions = {}) {
@@ -143,6 +147,7 @@ export class RelayClient {
     // drop, so the box redials before the relay would have given up on it.
     this.#silenceMs = options.silenceMs ?? 150_000;
     this.#watchdogMs = options.watchdogMs ?? 30_000;
+    this.#phoneSilenceMs = options.phoneSilenceMs ?? 150_000;
     this.#backoffMs = this.#minBackoffMs;
   }
 
@@ -165,14 +170,18 @@ export class RelayClient {
     this.#pingTimer = undefined;
     clearInterval(this.#watchdogTimer);
     this.#watchdogTimer = undefined;
+    clearTimeout(this.#authTimer); this.#authTimer = undefined;
     this.#releaseAll();
-    this.#ws?.close(1001, "shutting down");
-    this.#ws = null;
+    if (this.#ws) this.#disconnect(this.#ws, 1001);
     this.#ready = false;
   }
 
   #connect(): void {
-    const ws = new WebSocket(boxUrl(this.#deps.url, this.#deps.identity.serverId));
+    if (this.#stopped) return;
+    this.#reconnectTimer = undefined;
+    let ws: WebSocket;
+    try { ws = new WebSocket(boxUrl(this.#deps.url, this.#deps.identity.serverId)); }
+    catch { this.#scheduleRetry(1006, false); return; }
     ws.binaryType = "arraybuffer";
     this.#ws = ws;
     this.#ready = false;
@@ -182,10 +191,10 @@ export class RelayClient {
     // same limit from our side, for a relay that accepted the socket and then
     // said nothing — a half-open connection would otherwise look like a
     // healthy one forever.
-    const authTimer = setTimeout(() => {
+    this.#authTimer = setTimeout(() => {
       if (this.#ws === ws && !this.#ready) {
         this.#log("relay.auth_timeout");
-        ws.close(4000, "auth timeout");
+        this.#disconnect(ws, 4000);
       }
     }, this.#authTimeoutMs);
 
@@ -199,46 +208,49 @@ export class RelayClient {
         if (typeof event.data === "string") this.#control(ws, event.data);
         else if (this.#ready && event.data instanceof ArrayBuffer && event.data.byteLength <= RELAY_LIMITS.maxFrameBytes + LINK_PREFIX_BYTES) {
           this.#frame(new Uint8Array(event.data));
-        } else ws.close(1002, "invalid relay frame");
+        } else this.#disconnect(ws, 1002);
       } catch {
         // A hostile relay must not turn a malformed control or a send race
         // into a process-wide failure of the local HTTP/SSH access path.
-        ws.close(1002, "invalid relay message");
+        this.#disconnect(ws, 1002);
       }
     };
-    ws.onerror = () => {
-      // A close event follows every error; that is where the retry lives.
-    };
-    ws.onclose = (event) => {
-      clearTimeout(authTimer);
-      if (this.#ws !== ws) return;
-      clearInterval(this.#pingTimer);
-      this.#pingTimer = undefined;
-      clearInterval(this.#watchdogTimer);
-      this.#watchdogTimer = undefined;
-      this.#ws = null;
-      const wasReady = this.#ready;
-      this.#ready = false;
-      this.#releaseAll();
-      if (this.#stopped) return;
-      if (wasReady && Date.now() - this.#readySince >= 30_000) this.#backoffMs = this.#minBackoffMs;
-      const delay = retryDelay(this.#backoffMs);
-      this.#log("relay.retry", { code: event.code, retryMs: delay, connected: wasReady });
-      this.#reconnectTimer = setTimeout(() => this.#connect(), delay);
-      this.#backoffMs = Math.min(this.#backoffMs * 2, this.#maxBackoffMs);
-    };
+    ws.onerror = () => this.#disconnect(ws, 1006);
+    ws.onclose = (event) => this.#disconnect(ws, event.code);
+  }
+
+  #disconnect(ws: WebSocket, code: number): void {
+    if (this.#ws !== ws) return;
+    clearTimeout(this.#authTimer); this.#authTimer = undefined;
+    clearInterval(this.#pingTimer); this.#pingTimer = undefined;
+    clearInterval(this.#watchdogTimer); this.#watchdogTimer = undefined;
+    const wasReady = this.#ready;
+    this.#ws = null; this.#ready = false;
+    ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
+    this.#releaseAll();
+    try { ws.close(); } catch { /* Redial even when the old socket cannot close. */ }
+    this.#scheduleRetry(code, wasReady);
+  }
+
+  #scheduleRetry(code: number, wasReady: boolean): void {
+    if (this.#stopped || this.#reconnectTimer) return;
+    if (wasReady && Date.now() - this.#readySince >= 30_000) this.#backoffMs = this.#minBackoffMs;
+    const delay = retryDelay(this.#backoffMs);
+    this.#log("relay.retry", { code, retryMs: delay, connected: wasReady });
+    this.#reconnectTimer = setTimeout(() => this.#connect(), delay);
+    this.#backoffMs = Math.min(this.#backoffMs * 2, this.#maxBackoffMs);
   }
 
   #control(ws: WebSocket, text: string): void {
     if (text === "pong" && this.#ready) return;
     const msg = parseControl(text);
     if (!msg || (msg.t !== "challenge" && msg.t !== "ready" && !this.#ready)) {
-      ws.close(1002, "invalid relay control");
+      this.#disconnect(ws, 1002);
       return;
     }
     switch (msg.t) {
       case "challenge": {
-        if (this.#challenged || this.#ready) { ws.close(1002, "unexpected challenge"); return; }
+        if (this.#challenged || this.#ready) { this.#disconnect(ws, 1002); return; }
         this.#challenged = true;
         const { identity } = this.#deps;
         const signed = encoder.encode(BOX_AUTH_PREFIX + identity.serverId + msg.nonce);
@@ -247,24 +259,29 @@ export class RelayClient {
         return;
       }
       case "ready":
-        if (!this.#challenged || this.#ready) { ws.close(1002, "unexpected ready"); return; }
+        if (!this.#challenged || this.#ready) { this.#disconnect(ws, 1002); return; }
+        clearTimeout(this.#authTimer); this.#authTimer = undefined;
         this.#ready = true;
         this.#readySince = Date.now();
         this.#lastFrameAt = Date.now();
         this.#log("relay.connected");
         clearInterval(this.#pingTimer);
         this.#pingTimer = setInterval(() => {
-          if (this.#ws === ws && ws.readyState === WebSocket.OPEN) ws.send("ping");
+          if (this.#ws !== ws) return;
+          if (ws.readyState !== WebSocket.OPEN) { this.#disconnect(ws, 1006); return; }
+          try { ws.send("ping"); } catch { this.#disconnect(ws, 1006); }
         }, this.#pingMs);
         clearInterval(this.#watchdogTimer);
         this.#watchdogTimer = setInterval(() => {
-          if (this.#ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+          if (this.#ws !== ws) return;
+          if (ws.readyState !== WebSocket.OPEN) { this.#disconnect(ws, 1006); return; }
+          for (const link of this.#links.values()) link.checkAlive(this.#phoneSilenceMs);
           if (Date.now() - this.#lastFrameAt < this.#silenceMs) return;
           // The relay accepted the socket but has stopped answering — not even
-          // a pong. Drop it; onclose redials on the usual backoff. A box that
+          // a pong. Detach it and redial on the usual backoff. A box that
           // sat on a dead socket was unreachable and silently stayed that way.
           this.#log("relay.silent");
-          ws.close(4000, "relay silent");
+          this.#disconnect(ws, 4000);
         }, this.#watchdogMs);
         return;
       case "open":
@@ -317,12 +334,15 @@ export class RelayClient {
       new DataView(frame.buffer).setUint32(0, link, false);
       frame.set(payload, LINK_PREFIX_BYTES);
       try { ws.send(frame); }
-      catch { this.#links.get(link)?.end("send failed"); }
+      catch { this.#disconnect(ws, 1006); }
     },
     end: (link) => {
       this.#links.delete(link);
       const message: BoxToRelay = { t: "close", link };
-      if (this.#ws?.readyState === WebSocket.OPEN && this.#ready) this.#ws.send(JSON.stringify(message));
+      const ws = this.#ws;
+      if (ws?.readyState === WebSocket.OPEN && this.#ready) {
+        try { ws.send(JSON.stringify(message)); } catch { this.#disconnect(ws, 1006); }
+      }
     },
   };
 
@@ -359,6 +379,7 @@ class Link implements StreamClient {
   #released = false;
   #helloAuth: PhoneHello["auth"] | null = null;
   #confirmed = false;
+  #lastReceivedAt = Date.now();
   readonly #authTimer: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -400,6 +421,7 @@ class Link implements StreamClient {
       this.end("a malformed message");
       return;
     }
+    this.#lastReceivedAt = Date.now();
     if (msg.t === "ack") {
       if (!this.#confirmed || !Number.isSafeInteger(msg.bytes) || msg.bytes <= 0 || msg.bytes > this.#unacknowledgedBytes) {
         this.end("invalid acknowledgement");
@@ -428,6 +450,10 @@ class Link implements StreamClient {
     } else if (msg.t === "ws" && this.#attached) {
       this.deps.server.receive(this, msg.data);
     }
+  }
+
+  checkAlive(silenceMs: number): void {
+    if (this.#confirmed && !this.#released && Date.now() - this.#lastReceivedAt >= silenceMs) this.end("phone silent");
   }
 
   #hello(payload: Uint8Array): void {
