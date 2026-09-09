@@ -208,14 +208,12 @@ describe("network interruption recovery", () => {
     const lateClose = socket.onclose!;
     socket.close = () => { socket.readyState = 2; };
     link.watch("w1:p1");
-    jest.advanceTimersByTime(1000);
+    link.reconnect();
     link.reconnect();
     jest.advanceTimersByTime(1);
-    link.reconnect();
     expect(FakeSocket.opened).toHaveLength(2);
     const next = FakeSocket.opened[1]!;
     next.accept(); const box = new FakeBox(next, secret); box.handshake();
-    link.reconnect(); expect(FakeSocket.opened).toHaveLength(2);
     expect(box.proof).toMatchObject({ t: "ws", data: { type: "watch", paneId: "w1:p1" } });
     lateClose({ code: 1006 });
     expect(link.state).toBe("live");

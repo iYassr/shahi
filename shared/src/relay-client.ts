@@ -150,7 +150,6 @@ export class RelayLink {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #watchdog: ReturnType<typeof setInterval> | undefined;
   #handshakeTimer: ReturnType<typeof setTimeout> | undefined;
-  #attemptAt = 0;
   #lastMessageAt = 0;
   #closed = false;
   #watching: string | null = null;
@@ -196,9 +195,6 @@ export class RelayLink {
   reconnect(): void {
     if (this.#closed) return;
     this.#watchdog ??= setInterval(() => this.#checkAlive(), WATCHDOG_INTERVAL_MS);
-    // Native reachability and foreground events often arrive together. Keep
-    // the fresh attempt instead of cancelling it with the second event.
-    if (this.#ws && Date.now() - this.#attemptAt < 1000) return;
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#backoffMs = 500;
@@ -270,7 +266,6 @@ export class RelayLink {
     // one over as a Blob that has to be read back asynchronously.
     socket.binaryType = "arraybuffer";
     this.#ws = socket;
-    this.#attemptAt = Date.now();
     // Includes CONNECTING and the encrypted hello. Neither state is covered
     // by the established-session heartbeat, and native may never emit close.
     this.#handshakeTimer = setTimeout(() => {
