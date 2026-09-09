@@ -94,6 +94,25 @@ Attack fixtures use synthetic credentials and isolated local servers. No
 production traffic flood, user terminal write or real pairing revocation was
 performed by these tests.
 
+## Verified rollout
+
+[Shahi 0.3.2](https://github.com/iYassr/shahi/releases/tag/v0.3.2) is published
+on Stable from source `f2fbae319aefef293dab2f65bf26b81499e9bab7`.
+The [release approval workflow](https://github.com/iYassr/shahi/actions/runs/34317652039)
+passed every job: four OS upgrade targets, both herdr versions, 254 native
+tests, 184 direct browser checks and 38 hosted browser checks, plus types and
+the unit/security suites. After the approved Beta package passed installation
+on the Mac, its exact verified bytes were promoted to Stable by signing the
+channel catalog; the versioned package was not rebuilt or replaced.
+
+The Mac and separate Ubuntu server both report running build
+`0.3.2-f2fbae319aef` on Stable, connected to herdr and the relay. Their server
+identities and paired-device digests match the pre-update records.
+The relay is deployed as Worker version `f94f9ea3-441b-4117-8386-f023ecf6c2d0`;
+the hosted web deployment is `f3cf097f-8228-4bbb-845d-28b5a91b3bba`, with public
+shell and asset bytes checked against the build. GitHub's repository policy
+also now requires full commit hashes for third-party Actions.
+
 ## Boundaries that remain
 
 The relay can deny or delay service and observe connection metadata. Per-IP
