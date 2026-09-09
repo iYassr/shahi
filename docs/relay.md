@@ -399,3 +399,29 @@ prefix are unchanged because their relay-side contract is unchanged.
 See [operations.md](operations.md) for metrics, alert thresholds and the local
 1,000-phone load test. The public per-IP rate limits still apply to clients
 behind one office/VPN address; a paid Workers plan does not remove them.
+
+## Recovering from network changes
+
+A pairing is durable; its WebSocket is replaceable. Opening a saved computer
+after an offline launch retries automatically. Returning to the foreground or
+regaining/changing the phone's network starts a fresh connection immediately,
+while repeated notifications share the same new attempt. Ordinary polling still
+respects the retry backoff, and each saved computer recovers independently.
+
+Connection establishment has a 15-second deadline, including the first
+authenticated response. A stuck CONNECTING/CLOSING socket, send failure, or
+missing close callback cannot stop recovery: Shahi detaches the old connection
+locally, rejects its pending requests, and retries with fresh encryption keys.
+Late callbacks from the old connection cannot affect the replacement. An
+uncertain write is never automatically replayed by the transport.
+
+Quiet phones acknowledge each encrypted heartbeat, using protocol 2's existing
+ACK frame. The computer releases a phone after 150 seconds without authenticated
+traffic, checked every 30 seconds, so dead connections cannot retain relay slots
+forever just because the computer keeps sending dashboard updates. Older clients
+remain compatible through their ordinary authenticated requests and ACKs.
+
+Tests model missing open/close callbacks, stale session keys, repeated network
+changes, and phone-slot cleanup. Browser and native fixtures also blackhole a
+live connection without closing it, then verify foreground recovery and an
+offline cold launch without re-pairing or duplicate prompts.

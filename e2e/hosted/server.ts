@@ -25,7 +25,8 @@ const links = new Set<ServerWebSocket<Link>>();
 const transcript: { path: string; method: string }[] = [];
 interface Link { session?: CryptoSession; deviceId?: string; pairing: boolean; stream?: WebSocket }
 const root = resolve(import.meta.dir, "../../web/dist-hosted");
-function send(ws: ServerWebSocket<Link>, value: unknown) { if (ws.data.session) ws.send(seal(ws.data.session, encoder.encode(JSON.stringify(value)))); }
+const blackholes = new Set<ServerWebSocket<Link>>();
+function send(ws: ServerWebSocket<Link>, value: unknown) { if (ws.data.session && !blackholes.has(ws)) ws.send(seal(ws.data.session, encoder.encode(JSON.stringify(value)))); }
 function revoke(id: string) {
   devices.delete(id);
   for (const ws of links) if (ws.data.deviceId === id) { send(ws, { t: "bye" }); ws.close(1000); }
@@ -41,9 +42,11 @@ const fixture = Bun.serve<Link>({
     if (url.pathname === "/__hosted/ready") return Response.json({ fixture: true });
     if (url.pathname === "/__hosted/control" && req.method === "POST") return fetch(`${apiBase}/__stub/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...await req.json() as object, serverId }) });
     if (url.pathname === "/__hosted/offline" && req.method === "POST") { offline = true; for (const ws of links) ws.close(4404, "box offline"); return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/blackhole" && req.method === "POST") { for (const ws of links) blackholes.add(ws); return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/online" && req.method === "POST") { offline = false; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/reset" && req.method === "POST") {
       for (const ws of links) ws.close(1000);
+      blackholes.clear();
       holdLogout = false; releaseLogout?.(); releaseLogout = undefined;
       offline = false; deviceHandshakes = 0; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
       await fetch(`${apiBase}/__stub/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "busy" }) });
@@ -73,6 +76,7 @@ const fixture = Bun.serve<Link>({
   websocket: {
     open(ws) { links.add(ws); if (offline) ws.close(4404, "box offline"); },
     async message(ws, raw) {
+      if (blackholes.has(ws)) return;
       try {
         if (!ws.data.session) {
           const hello = JSON.parse(new TextDecoder().decode(new Uint8Array(raw as Buffer))) as PhoneHello;
@@ -138,7 +142,7 @@ const fixture = Bun.serve<Link>({
         send(ws, { t: "res", id: message.id, status: response.status, headers: Object.fromEntries(response.headers), body: b64(new Uint8Array(await response.arrayBuffer())) });
       } catch { ws.close(4400, "invalid fixture frame"); }
     },
-    close(ws) { links.delete(ws); ws.data.stream?.close(); },
+    close(ws) { links.delete(ws); blackholes.delete(ws); ws.data.stream?.close(); },
   },
 });
 console.log(`Hosted browser fixture on ${fixture.port}`);

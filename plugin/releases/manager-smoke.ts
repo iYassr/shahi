@@ -32,10 +32,12 @@ async function packageRelease(version: string, buildId: string, service: Uint8Ar
   artifacts[r.artifact.url] = path; return r;
 }
 const initial = await packageRelease(definition.version, definition.buildId, baseFiles["service.js"]!);
-const broken = await packageRelease("0.3.1", "broken-build", new TextEncoder().encode("process.exit(1);"));
+const [major, minor, patch] = definition.version.split("-")[0]!.split(".").map(Number);
+const nextVersion = (offset: number) => `${major}.${minor}.${patch! + offset}`;
+const broken = await packageRelease(nextVersion(1), "broken-build", new TextEncoder().encode("process.exit(1);"));
 const fixedBuild = await Bun.build({ entrypoints: [join(repo, "server/index.ts")], target: "bun", minify: true, define: { "process.env.SHAHI_BUILD_ID": '"fixed-build"' } });
 assert.ok(fixedBuild.success);
-const fixed = await packageRelease("0.3.2", "fixed-build", new Uint8Array(await fixedBuild.outputs[0]!.arrayBuffer()));
+const fixed = await packageRelease(nextVersion(2), "fixed-build", new Uint8Array(await fixedBuild.outputs[0]!.arrayBuffer()));
 let sequence = 0;
 function feed(releases: Release[]) {
   const payload = Buffer.from(JSON.stringify({ schema: 1, channel: "stable", sequence: ++sequence, publishedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400_000).toISOString(), releases }));

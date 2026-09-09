@@ -17,6 +17,7 @@
     "expo-haptics": "~57.0.2",
     "expo-image-picker": "~57.0.16",
     "expo-linking": "~57.0.9",
+    "expo-network": "~57.0.1",
     "expo-notifications": "~57.0.17",
     "expo-router": "~57.0.19",
     "expo-secure-store": "~57.0.3",
@@ -74,5 +75,5 @@
       ]
     }
   },
-  "_comment_typescript": "TypeScript is excluded from expo's version check on purpose. SDK 57 pins ~6.0.3; this monorepo runs 7.0.2 from the root, which is the compiler `bun run typecheck` actually invokes against all seven projects, mobile included, and it passes clean. Declaring ~6.0.3 here would make bun install a second, nested copy that nothing runs \u2014 the duplication bunfig.toml exists to avoid \u2014 so the pin is declined rather than faked."
+  "_comment_typescript": "TypeScript is excluded from expo's version check on purpose. SDK 57 pins ~6.0.3; this monorepo runs 7.0.2 from the root, which is the compiler `bun run typecheck` actually invokes against all seven projects, mobile included, and it passes clean. Declaring ~6.0.3 here would make bun install a second, nested copy that nothing runs — the duplication bunfig.toml exists to avoid — so the pin is declined rather than faked."
 }

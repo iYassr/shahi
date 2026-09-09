@@ -16,6 +16,7 @@ import { type Reviewed, type DashboardPane } from "@shahi/shared";
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
+import { addNetworkStateListener } from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
@@ -246,11 +247,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } catch { /* An unreadable keychain still permits explicit pairing. */ }
       if (!cancelled) setReady(true);
     })();
+    const reconnectAll = () => { for (const entry of live.current.values()) void entry.reconnect(); };
+    let appState = AppState.currentState;
     const sub = AppState.addEventListener("change", state => {
-      if (state === "active") for (const entry of live.current.values()) void entry.reconnect();
+      if (state === "active" && appState !== "active") reconnectAll();
+      appState = state;
+    });
+    let network: string | undefined;
+    const reachability = addNetworkStateListener(state => {
+      const next = `${state.type}:${state.isConnected}:${state.isInternetReachable}`;
+      if (next === network) return;
+      network = next;
+      if (state.isConnected === true && state.isInternetReachable !== false && AppState.currentState === "active") reconnectAll();
     });
     return () => {
-      cancelled = true; mounted.current = false; sub.remove();
+      cancelled = true; mounted.current = false; sub.remove(); reachability.remove();
       for (const entry of live.current.values()) entry.dispose();
       live.current.clear();
     };

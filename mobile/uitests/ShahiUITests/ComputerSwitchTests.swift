@@ -90,6 +90,41 @@ final class ComputerSwitchTests: XCTestCase {
         computers(app)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
     }
+    func testSilentNetworkLossAndColdOfflineLaunchRecover() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
+        app.activate()
+        if app.tabBars.buttons["Settings"].waitForExistence(timeout: 5) { computers(app); addComputer(app) }
+        else if app.buttons["add-computer"].exists { addComputer(app) }
+        try pair(app, 7572)
+        send(app, "before-network-loss")
+        func waitForConnection(after count: Int) throws {
+            for _ in 0..<150 {
+                if (try fixture(7572, "connections", method: "GET")["handshakes"] as! Int) > count { return }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            XCTFail("The saved computer did not reconnect automatically")
+        }
+        for _ in 0..<2 {
+            let before = try fixture(7572, "connections", method: "GET")["handshakes"] as! Int
+            XCUIDevice.shared.press(.home)
+            _ = try fixture(7572, "blackhole")
+            app.activate()
+            try waitForConnection(after: before)
+        }
+        send(app, "after-network-return")
+        _ = try fixture(7572, "offline")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["switch-server"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["intro-continue"].exists)
+        let before = try fixture(7572, "connections", method: "GET")["handshakes"] as! Int
+        _ = try fixture(7572, "online")
+        try waitForConnection(after: before)
+        send(app, "after-offline-launch")
+        let writes = try fixture(7572, "writes", method: "GET")["writes"] as! [[String: Any]]
+        XCTAssertEqual(writes.compactMap { ($0["body"] as? [String: Any])?["text"] as? String }, ["before-network-loss", "after-network-return", "after-offline-launch"])
+        XCTAssertEqual(try fixture(7572, "device-count", method: "GET")["count"] as? Int, 1)
+    }
     func testOfflineComputerCanBeSwitchedWithoutSigningOut() throws {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")

@@ -1,7 +1,7 @@
 import { reconcileSession } from "./session-reconcile";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane, type ParsedPrompt, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
-import { deviceTarget, closeRelay } from "./relay";
+import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
 import type { SavedComputer } from "./computers";
 import { ControlSession } from "@shahi/shared";
@@ -22,6 +22,8 @@ export class ComputerSession {
   private disposed = false;
   private watched: string | null = null;
   private work: Promise<void> | null = null;
+  private socketLink: LinkState = "connecting";
+  private received = 0;
   private frames = new Map<string, Set<() => void>>();
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
@@ -51,6 +53,7 @@ export class ComputerSession {
       if (!this.socket) {
         this.socket = new SessionSocket(msg => this.message(msg), state => {
           if (this.disposed) return;
+          this.socketLink = state;
           const different = this.link !== state;
           this.link = state; if (different) this.changed();
           if (state === "live") void this.refresh();
@@ -62,10 +65,11 @@ export class ComputerSession {
     } catch (e) { this.failure(e); }
   }
   async refresh() {
+    const received = this.received;
     try {
       const session = await this.api.session();
-      if (!this.disposed) this.message({ type: "session", session });
-    } catch (e) { this.failure(e); }
+      if (!this.disposed && received === this.received) this.message({ type: "session", session });
+    } catch (e) { if (received === this.received) this.failure(e); }
   }
   private failure(e: unknown) {
     if (this.disposed) return;
@@ -79,6 +83,8 @@ export class ComputerSession {
     if (this.disposed) return;
     this.updatedAt = Date.now();
     if (msg.type === "session") {
+      this.received++;
+      this.link = this.socketLink;
       // Background computers receive dashboards without subscribing to a pane.
       const unchanged = this.error === null && JSON.stringify(this.session) === JSON.stringify(msg.session);
       if (unchanged) { this.changed(false); return; }
@@ -103,6 +109,8 @@ export class ComputerSession {
     return () => { set!.delete(fn); if (!set!.size) this.frames.delete(id); };
   }
   async reconnect() {
+    if (this.disposed) return;
+    if (this.connection.relay) relayLink(this.connection.relay).reconnect();
     if (this.saved.connection.kind === "ssh" && this.link !== "live") {
       this.socket?.close(); this.socket = null; this.connection.baseUrl = ""; this.connection.cookie = null;
     }

@@ -116,6 +116,7 @@ const utf8 = { encode: (s: string) => new TextEncoder().encode(s), decode: (b: U
 /** How long the box may be silent before the link counts as dead — same as `/ws`. */
 const SILENCE_LIMIT_MS = 70_000;
 const WATCHDOG_INTERVAL_MS = 10_000;
+const CONNECT_TIMEOUT_MS = 15_000;
 
 interface Pending {
   id: number;
@@ -139,6 +140,7 @@ export class RelayLink {
   #ws: WebSocket | undefined;
   #self: Ephemeral | null = null;
   #session: Session | null = null;
+  #confirmed = false;
   #state: LinkState = "lost";
   #pending = new Map<number, Pending>();
   #receivedBytes = 0;
@@ -147,6 +149,8 @@ export class RelayLink {
   #backoffMs = 500;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #watchdog: ReturnType<typeof setInterval> | undefined;
+  #handshakeTimer: ReturnType<typeof setTimeout> | undefined;
+  #attemptAt = 0;
   #lastMessageAt = 0;
   #closed = false;
   #watching: string | null = null;
@@ -179,9 +183,27 @@ export class RelayLink {
       if (this.#ws.readyState === 1) this.#checkAlive();
       return;
     }
+    if (this.#ws) {
+      this.#drop(this.#ws, this.#lost());
+      return;
+    }
     // Polling must respect an already scheduled retry, including while offline.
     if (this.#timer) return;
     this.#open();
+  }
+
+  /** A real network/foreground transition may bypass the ordinary retry delay. */
+  reconnect(): void {
+    if (this.#closed) return;
+    this.#watchdog ??= setInterval(() => this.#checkAlive(), WATCHDOG_INTERVAL_MS);
+    // Native reachability and foreground events often arrive together. Keep
+    // the fresh attempt instead of cancelling it with the second event.
+    if (this.#ws && Date.now() - this.#attemptAt < 1000) return;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.#backoffMs = 500;
+    if (this.#ws) this.#drop(this.#ws, this.#lost(), true);
+    else { this.#retry(true); this.#setState("lost"); }
   }
 
   /** Ends the link for good: a sign-out, or a target that changed under it. */
@@ -192,17 +214,7 @@ export class RelayLink {
     this.#timer = undefined;
     this.#watchdog = undefined;
     const socket = this.#ws;
-    this.#ws = undefined;
-    this.#session = null;
-    this.#self = null;
-    if (socket) {
-      // Detach first: the close handler would otherwise schedule a retry.
-      socket.onopen = null;
-      socket.onclose = null;
-      socket.onmessage = null;
-      socket.onerror = null;
-      socket.close();
-    }
+    if (socket) this.#discard(socket);
     this.#rejectAll(new UnreachableError("lost", this.host, `The connection through ${this.host} was closed.`));
     this.#setState("lost");
   }
@@ -251,11 +263,19 @@ export class RelayLink {
     this.#setState("connecting");
 
     const url = `${this.target.relay.replace(/^http/, "ws").replace(/\/+$/, "")}/v1/phone/${encodeURIComponent(this.target.serverId)}`;
-    const socket = new WebSocket(url);
+    let socket: WebSocket;
+    try { socket = new WebSocket(url); }
+    catch { this.#rejectAll(this.#lost()); this.#retry(); this.#setState("lost"); return; }
     // Sealed frames are bytes. Left on the default, React Native hands each
     // one over as a Blob that has to be read back asynchronously.
     socket.binaryType = "arraybuffer";
     this.#ws = socket;
+    this.#attemptAt = Date.now();
+    // Includes CONNECTING and the encrypted hello. Neither state is covered
+    // by the established-session heartbeat, and native may never emit close.
+    this.#handshakeTimer = setTimeout(() => {
+      if (this.#ws === socket && !this.#confirmed) this.#drop(socket, this.#lost());
+    }, CONNECT_TIMEOUT_MS);
 
     socket.onopen = () => {
       if (this.#ws !== socket || this.#closed) return;
@@ -267,11 +287,13 @@ export class RelayLink {
       this.#lastMessageAt = Date.now();
       // A fresh key per connection is what makes a leaked secret useless
       // against past sessions; the bytes come from the platform's CSPRNG.
-      this.#self = ephemeral((this.options.randomBytes ?? secureRandomBytes)(32));
-      const hello: PhoneHello = { t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(this.#self.pub), auth: this.target.auth };
-      // Bytes, not text: the relay forwards data frames and drops text from
-      // phones, which is relay control. The box answers the same way.
-      socket.send(utf8.encode(JSON.stringify(hello)));
+      try {
+        this.#self = ephemeral((this.options.randomBytes ?? secureRandomBytes)(32));
+        const hello: PhoneHello = { t: "hello", v: RELAY_PROTOCOL, pub: toBase64Url(this.#self.pub), auth: this.target.auth };
+        // Bytes, not text: the relay forwards data frames and drops text from
+        // phones, which is relay control. The box answers the same way.
+        socket.send(utf8.encode(JSON.stringify(hello)));
+      } catch { this.#drop(socket, this.#lost()); }
     };
     socket.onmessage = (event: { data: unknown }) => {
       if (this.#ws !== socket || this.#closed) return;
@@ -281,8 +303,7 @@ export class RelayLink {
         return;
       }
       if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > RELAY_LIMITS.maxFrameBytes) {
-        this.#rejectAll(new UnreachableError("relay", this.host, "The relay sent an invalid or oversized frame."));
-        socket.close();
+        this.#drop(socket, new UnreachableError("relay", this.host, "The relay sent an invalid or oversized frame."));
         return;
       }
       if (!this.#session) {
@@ -291,8 +312,7 @@ export class RelayLink {
           if (event.data.byteLength > 4096) throw new Error("oversized hello");
           this.#onHello(utf8.decode(new Uint8Array(event.data)));
         } catch {
-          this.#rejectAll(new UnreachableError("relay", this.host, "The secure relay handshake was invalid."));
-          socket.close();
+          this.#drop(socket, new UnreachableError("relay", this.host, "The secure relay handshake was invalid."));
         }
         return;
       }
@@ -304,14 +324,13 @@ export class RelayLink {
         // session. That says this connection is stale, not that the durable
         // device credential was revoked. Only an authenticated sealed `bye`
         // below is authority to erase a saved pairing.
-        this.#rejectAll(new UnreachableError("lost", this.host, `The secure connection through ${this.host} changed. Reconnecting…`));
-        this.#setState("lost");
-        this.#session = null;
-        socket.close();
+        this.#drop(socket, new UnreachableError("lost", this.host, `The secure connection through ${this.host} changed. Reconnecting…`));
         return;
       }
-      this.#receive(plain);
+      this.#confirmed = true;
+      clearTimeout(this.#handshakeTimer); this.#handshakeTimer = undefined;
       this.#receivedBytes += event.data.byteLength;
+      this.#receive(plain);
       if (this.#receivedBytes >= RELAY_LIMITS.acknowledgeBytes && this.#session) {
         const bytes = this.#receivedBytes;
         this.#receivedBytes = 0;
@@ -320,10 +339,6 @@ export class RelayLink {
     };
     socket.onclose = (event: { code?: number; reason?: string }) => {
       if (this.#ws !== socket) return;
-      this.#ws = undefined;
-      this.#session = null;
-      if (this.#liveSince && Date.now() - this.#liveSince >= 30_000) this.#backoffMs = 500;
-      this.#liveSince = 0;
       const code = event?.code ?? 0;
       const reason = event?.reason ?? "";
       if (
@@ -339,18 +354,14 @@ export class RelayLink {
         // A transport close is not authenticated. During a sidecar restart a
         // stale/new link race can produce either code, so retain the saved
         // device and reconnect. Revocation travels as a sealed `bye` instead.
-        this.#rejectAll(
+        this.#drop(socket,
           new UnreachableError("lost", this.host, `The box rejected this connection through ${this.host}. Reconnecting…`),
         );
-        this.#setState("lost");
-        this.#retry();
         return;
       }
-      this.#rejectAll(closeError(code, reason, this.host));
-      this.#setState("lost");
-      this.#retry();
+      this.#drop(socket, closeError(code, reason, this.host));
     };
-    socket.onerror = () => socket.close();
+    socket.onerror = () => this.#drop(socket, this.#lost());
   }
 
   #onHello(text: string): void {
@@ -380,7 +391,7 @@ export class RelayLink {
     this.#self = null;
     // A device must prove its secret even when it only wants the dashboard.
     // A hello alone must never start a session or keep a phone slot alive.
-    if (this.target.auth.kind === "device") this.watch(this.#watching);
+    if (this.target.auth.kind === "device" && !this.#sendSealed({ t: "ws", data: this.#watching ? { type: "watch", paneId: this.#watching } : { type: "unwatch" } })) return;
     this.#setState("live");
     for (const pending of this.#pending.values()) if (!pending.sent) this.#dispatch(pending);
   }
@@ -407,8 +418,14 @@ export class RelayLink {
         pending.reject(new UnreachableError("relay", this.host, "The box sent an invalid response."));
       }
     } else if (msg.t === "ws") {
-      // The heartbeat's only job is the timestamp the watchdog reads.
-      if (!msg.data || typeof msg.data !== "object" || typeof msg.data.type !== "string" || msg.data.type === "ping") return;
+      if (!msg.data || typeof msg.data !== "object" || typeof msg.data.type !== "string") return;
+      if (msg.data.type === "ping") {
+        // A quiet dashboard may never reach the bulk ACK threshold. Answer
+        // heartbeats too, so a dead phone cannot retain a relay slot forever.
+        const bytes = this.#receivedBytes; this.#receivedBytes = 0;
+        if (bytes) this.#sendSealed({ t: "ack", bytes });
+        return;
+      }
       this.#subscribers.forEach((s) => s.onMessage(msg.data as SocketMessage));
     } else if (msg.t === "bye") {
       // The box is ending this link because our session is gone — revoked in
@@ -434,19 +451,18 @@ export class RelayLink {
 
   #sendSealed(msg: PhoneToBox): boolean {
     const socket = this.#ws;
-    if (!this.#session || !socket || socket.readyState !== 1) return false;
+    if (!this.#session || !socket) return false;
+    if (socket.readyState !== 1) { this.#drop(socket, this.#lost()); return false; }
     // `seal` returns a fresh, exact-length array, so a view is the frame:
     // React Native's `send` takes typed arrays as binary.
     try {
       const frame = seal(this.#session, utf8.encode(JSON.stringify(msg)));
       if (frame.byteLength > RELAY_LIMITS.maxFrameBytes) {
-        this.#rejectAll(new UnreachableError("relay", this.host, "That message is too large for the relay."));
-        socket.close();
+        this.#drop(socket, new UnreachableError("relay", this.host, "That message is too large for the relay."));
         return false;
       }
       if (socket.bufferedAmount + frame.byteLength > RELAY_LIMITS.maxSocketBufferedBytes) {
-        this.#rejectAll(new UnreachableError("relay", this.host, "This connection is too slow. Reconnecting…"));
-        socket.close();
+        this.#drop(socket, new UnreachableError("relay", this.host, "This connection is too slow. Reconnecting…"));
         return false;
       }
       socket.send(new Uint8Array(frame));
@@ -456,7 +472,7 @@ export class RelayLink {
       // send while a relay connection is dropping. React Native throws
       // INVALID_STATE_ERR in that race; let the close/retry path recover
       // instead of taking down the React error boundary.
-      if (this.#ws === socket) socket.close();
+      this.#drop(socket, this.#lost());
       return false;
     }
   }
@@ -483,15 +499,36 @@ export class RelayLink {
   }
 
   #checkAlive(): void {
-    if (this.#closed || !this.#session || this.#ws?.readyState !== 1) return;
+    if (this.#closed || !this.#ws) return;
+    if (this.#ws.readyState > 1) { this.#drop(this.#ws, this.#lost()); return; }
+    if (!this.#session) return;
     if (Date.now() - this.#lastMessageAt < SILENCE_LIMIT_MS) return;
-    this.#setState("lost");
-    this.#ws.close();
+    this.#drop(this.#ws, this.#lost());
   }
 
-  #retry(): void {
+  #lost(): Error { return new UnreachableError("lost", this.host, `The connection through ${this.host} dropped. Reconnecting…`); }
+
+  #discard(socket: WebSocket): void {
+    this.#ws = undefined; this.#session = null; this.#self = null; this.#confirmed = false;
+    clearTimeout(this.#handshakeTimer); this.#handshakeTimer = undefined;
+    socket.onopen = null; socket.onmessage = null; socket.onclose = null; socket.onerror = null;
+    try { socket.close(); } catch { /* Local recovery cannot depend on native close completing. */ }
+  }
+
+  #drop(socket: WebSocket, error: Error, immediate = false): void {
+    if (this.#ws !== socket) return;
+    if (this.#liveSince && Date.now() - this.#liveSince >= 30_000) this.#backoffMs = 500;
+    this.#liveSince = 0;
+    this.#discard(socket);
+    this.#rejectAll(error);
+    // Schedule before notifying: subscribers may immediately request a refresh.
+    this.#retry(immediate);
+    this.#setState("lost");
+  }
+
+  #retry(immediate = false): void {
     if (this.#closed || this.#timer) return;
-    const delay = retryDelay(this.#backoffMs, this.options.retryRandom);
+    const delay = immediate ? 0 : retryDelay(this.#backoffMs, this.options.retryRandom);
     // Capped at half a minute, like the box's own dial: a phone that keeps
     // being refused is waiting for its box, and every attempt is a relay
     // request the box's owner pays for.
@@ -519,7 +556,7 @@ function closeError(code: number, reason: string, host: string): UnreachableErro
       return new UnreachableError("relay", host, `That was too big to send through the relay: one message carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)}.`);
     }
     if (reason === "too many phones") {
-      return new UnreachableError("relay", host, `This box already has ${RELAY_LIMITS.maxPhonesPerBox} phones on the relay. Revoke one in Settings on another phone.`);
+      return new UnreachableError("relay", host, "Too many connections are still open to this computer. Shahi will retry automatically.");
     }
     return new UnreachableError("relay", host, "The relay is throttling this phone. Wait a moment, then try again.");
   }
