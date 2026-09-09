@@ -44,6 +44,8 @@ interface BoxState {
   serverId: string;
   nonce: string;
   ready: boolean;
+  /** Terminal, including while the runtime retains a closing socket. */
+  closed?: boolean;
   /** When the socket was accepted (pending) or authenticated (ready): the floor for the liveness check. */
   since: number;
   /** Last real frame from the box. Pings are answered by the runtime and tracked separately. */
@@ -113,6 +115,11 @@ export class RelayBox extends DurableObject<unknown> {
   }
 
   private async acceptBox(ws: WebSocket, serverId: string): Promise<void> {
+    const pending = this.ctx.getWebSockets("box").filter(other => {
+      const state = other.deserializeAttachment() as BoxState;
+      return other.readyState === WebSocket.OPEN && !state.closed && !state.ready;
+    });
+    if (pending.length >= 8) return this.refuse(ws, RELAY_CLOSE.quota, "too many pending boxes", serverId);
     const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)));
     // The socket is accepted before the old box is touched: a connection that
     // cannot prove the key must not be able to knock the real box offline,
@@ -173,6 +180,7 @@ export class RelayBox extends DurableObject<unknown> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const state = ws.deserializeAttachment() as Attachment | null;
     if (!state) { ws.close(1002, "unexpected frame"); return; }
+    if (ws.readyState !== WebSocket.OPEN || (state.role === "box" ? state.closed : !state.open)) return;
     if (typeof message === "string" && message.length > RELAY_LIMITS.maxControlBytes) {
       if (state.role === "phone") this.closePhone(ws, state, RELAY_CLOSE.quota, "control too large");
       else this.closeBox(ws, state, RELAY_CLOSE.quota, "control too large");
@@ -245,10 +253,22 @@ export class RelayBox extends DurableObject<unknown> {
   /* ---------------------------------------------------------------- auth */
 
   private async authenticate(ws: WebSocket, state: BoxState, message: string | ArrayBuffer): Promise<void> {
+    if (Date.now() >= state.since + RELAY_LIMITS.boxAuthTimeoutMs) {
+      this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "auth timeout");
+      return;
+    }
     const auth = typeof message === "string" ? parse<BoxToRelay>(message) : null;
     if (auth?.t !== "auth" || !(await proves(auth, state))) {
       this.record({ kind: "auth_failed", serverId: state.serverId, detail: "unauthorized" });
-      ws.close(RELAY_CLOSE.unauthorized, "unauthorized");
+      this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "unauthorized");
+      return;
+    }
+    // Verification yields. A timeout, replacement or another authentication
+    // may have completed while WebCrypto was running.
+    const current = ws.deserializeAttachment() as BoxState;
+    if (current.closed || current.ready || ws.readyState !== WebSocket.OPEN) return;
+    if (Date.now() >= current.since + RELAY_LIMITS.boxAuthTimeoutMs) {
+      this.closeBox(ws, current, RELAY_CLOSE.unauthorized, "auth timeout");
       return;
     }
     // The newcomer has the key, so whatever was here before is a zombie or a
@@ -303,8 +323,10 @@ export class RelayBox extends DurableObject<unknown> {
 
   /** Ends a box connection; if it was the ready one, every phone learns the box is offline. */
   private closeBox(ws: WebSocket, state: BoxState, code: number, reason: string): void {
+    state = ws.deserializeAttachment() as BoxState;
+    if (state.closed) return;
+    ws.serializeAttachment({ ...state, ready: false, closed: true });
     if (state.ready) {
-      ws.serializeAttachment({ ...state, ready: false });
       this.record({ kind: "box_gone", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
       for (const phone of this.phones()) {
         // `open: false` first: the box being told about these links is the one
@@ -364,13 +386,14 @@ export class RelayBox extends DurableObject<unknown> {
   /** When this socket is due to be closed if nothing happens, or null if it is already closing. */
   private deadline(ws: WebSocket): number | null {
     const state = ws.deserializeAttachment() as Attachment | null;
-    if (!state) return null;
+    if (!state || ws.readyState !== WebSocket.OPEN) return null;
     if (state.role === "phone") {
       if (!state.open) return null;
       // A phone that has not spoken yet is on a short leash; once it has, the
       // idle window (measured from its last frame) takes over.
       return state.spoke ? state.seen + RELAY_LIMITS.phoneIdleMs : state.since + RELAY_LIMITS.phoneHelloMs;
     }
+    if (state.closed) return null;
     if (!state.ready) return state.since + RELAY_LIMITS.boxAuthTimeoutMs;
     const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
     return Math.max(state.since, state.heard, pong) + BOX_SILENCE_MS;
@@ -388,7 +411,8 @@ export class RelayBox extends DurableObject<unknown> {
 
   private readyBox(): WebSocket | null {
     for (const ws of this.ctx.getWebSockets("box")) {
-      if ((ws.deserializeAttachment() as BoxState).ready) return ws;
+      const state = ws.deserializeAttachment() as BoxState;
+      if (ws.readyState === WebSocket.OPEN && state.ready && !state.closed) return ws;
     }
     return null;
   }
@@ -400,7 +424,7 @@ export class RelayBox extends DurableObject<unknown> {
   }
 
   private phone(link: number): WebSocket | null {
-    return this.ctx.getWebSockets(linkTag(link))[0] ?? null;
+    return this.ctx.getWebSockets(linkTag(link)).find(ws => ws.readyState === WebSocket.OPEN && (ws.deserializeAttachment() as PhoneState).open) ?? null;
   }
 
   private tell(ws: WebSocket, message: RelayToBox): void {

@@ -53,7 +53,10 @@ alone and explain why update checking failed. Per-channel sequence numbers
 prevent replay after a newer catalog has been seen.
 
 To release: bump the definition and plugin version, run the release matrix, then
-run **Approve Shahi release** on that exact commit. Publish to Beta first. After
+merge that tested commit to `master`, then run **Approve Shahi release** there.
+The release environment permits only the `master` branch; signing jobs also
+check that ref. Third-party build actions are pinned to full commit hashes and
+the signing jobs do not persist checkout credentials. Publish to Beta first. After
 observing successful upgrades and reconnects, promote the same immutable package
 to Stable. Never replace an existing version with a rebuilt archive. The workflow
 retains older compatible entries when the latest needs a different herdr or Bun.
@@ -64,6 +67,8 @@ The OS supervises a small manager in the plugin's state directory. It owns the
 active release pointer and a durable activation journal. The server can request
 only `check` or `install`, optionally selecting Stable or Beta; it cannot provide
 a download URL or shell command. A signed catalog chooses the target.
+Unknown request fields are rejected, and device authorization is checked again
+after the request body arrives, immediately before publishing the update action.
 
 The manager downloads with a byte limit, verifies the complete archive, checks
 every path, stages it separately, and then restarts the service. Readiness checks

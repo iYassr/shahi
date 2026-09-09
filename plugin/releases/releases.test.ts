@@ -38,6 +38,16 @@ describe("approved releases", () => {
     expect(() => verifyCatalog(JSON.stringify(envelope), "stable", 0, trusted)).toThrow("signature");
     expect(() => verifyCatalog(signed(catalog), "stable")).toThrow("signature");
   });
+  test("rejects signed unsafe directories, reused build identifiers and beta in Stable", () => {
+    for (const buildId of [".", "..", "../escape", "/tmp/escape", "web\\escape", "bad\nname"]) {
+      expect(() => verifyCatalog(signed({ ...catalog, releases: [{ ...release, buildId }] }), "stable", 0, trusted)).toThrow("unsafe");
+    }
+    const newer = { ...release, version: "0.3.1", artifact: { ...release.artifact, url: release.artifact.url.replace("v0.3.0", "v0.3.1") } };
+    expect(() => verifyCatalog(signed({ ...catalog, releases: [release, newer] }), "stable", 0, trusted)).toThrow("identifier");
+    const beta = { ...release, version: "0.3.1-beta.1", artifact: { ...release.artifact, url: release.artifact.url.replace("v0.3.0", "v0.3.1-beta.1") } };
+    expect(() => verifyCatalog(signed({ ...catalog, releases: [beta] }), "stable", 0, trusted)).toThrow("prereleases");
+    expect(verifyCatalog(signed({ ...catalog, channel: "beta", releases: [beta] }), "beta", 0, trusted).releases).toEqual([beta]);
+  });
   test("rejects replay, expired catalog, wrong channel and unsafe protocols", () => {
     expect(() => verifyCatalog(signed(catalog), "stable", 11, trusted)).toThrow();
     expect(() => verifyCatalog(signed({ ...catalog, expiresAt: "2020-01-01" }), "stable", 0, trusted)).toThrow();

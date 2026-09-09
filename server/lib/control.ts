@@ -17,7 +17,7 @@ export class ComputerControl {
   request(value: unknown) {
     if (!this.managerRoot) throw new Error("This computer needs the managed Shahi installer first.");
     const r = value as Partial<UpdateRequest> | null;
-    if (!r || (r.action !== "check" && r.action !== "install") || (r.channel !== undefined && r.channel !== "stable" && r.channel !== "beta")) throw new Error("Invalid update request.");
+    if (!r || typeof r !== "object" || Array.isArray(r) || Object.keys(r).some(k => k !== "action" && k !== "channel") || (r.action !== "check" && r.action !== "install") || (r.channel !== undefined && r.channel !== "stable" && r.channel !== "beta")) throw new Error("Invalid update request.");
     const status = updateStatus(this.managerRoot);
     if (!status?.managed || updateInProgress(status.phase)) throw new Error("An update is already in progress, or the manager is not ready.");
     requestUpdate(this.managerRoot, { action: r.action, ...(r.channel ? { channel: r.channel } : {}) });

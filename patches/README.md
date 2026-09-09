@@ -25,6 +25,12 @@ The lockfile also updates `@xmldom/xmldom`, `brace-expansion`, `js-yaml` and
 selects `uuid 11.1.1`, which fixes its bounds advisory while retaining the
 CommonJS `v4()` API used by `xcode`.
 
+The September 9 review updates and overrides `sharp` to **0.35.4**, including
+Miniflare's pinned transitive copy. Its prebuilt libraries address
+[GHSA-rgj7-g3m4-5g8c](https://github.com/lovell/sharp/security/advisories/GHSA-rgj7-g3m4-5g8c).
+This is build and local development tooling; the production relay does not
+bundle Sharp or process images.
+
 `bun audit` only sees package versions, not these applied patches. It still
 reports the three advisories above for these two patched package names; the
 audit is not clean and no advisories are suppressed.
