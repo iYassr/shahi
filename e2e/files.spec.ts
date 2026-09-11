@@ -79,6 +79,24 @@ test.describe("files in the reader", () => {
     await expect(page.locator(".reader .msg").first()).toBeVisible();
   });
 
+  test("file preview contains keyboard focus and returns it on Escape", async ({ page }) => {
+    await openPane(page);
+    const opener = page.locator(".tool__open").first();
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const viewer = page.getByRole("dialog", { name: "prompt-parser.ts" });
+    await expect(viewer).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(viewer.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(viewer.locator(".viewer__get")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(viewer.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(viewer).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+
   test("an image file opens as an image, not as text", async ({ page }) => {
     await openPane(page);
 

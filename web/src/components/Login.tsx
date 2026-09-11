@@ -28,6 +28,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
   return (
     <form className="login" onSubmit={submit}>
       <h1 className="login__title"><Logo size={40} /><Wordmark /></h1>
+      <h2>Welcome back</h2>
       <p className="login__hint">
         Enter your passcode to reach the agents on this machine.
       </p>
@@ -40,7 +41,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         aria-label="Passcode"
         autoFocus
       />
-      {error && <p className="login__error">{error}</p>}
+      {error && <p className="login__error" role="alert">{error}</p>}
       <button type="submit" disabled={busy || passcode === ""}>
         {busy ? "Checking…" : "Unlock"}
       </button>

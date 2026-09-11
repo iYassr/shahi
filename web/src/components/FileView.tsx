@@ -1,3 +1,5 @@
+import { useDialog } from "../use-dialog";
+import { UiIcon } from "./UiIcon";
 import { Download, RemoteImage } from "./RemoteMedia";
 /**
  * Opening a file the agent touched.
@@ -35,19 +37,11 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const isImage = IMAGE.test(name);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose]);
+  const dialog = useDialog(onClose);
 
   useEffect(() => {
     setError(null);
+    setText(null);
     if (isImage || !TEXTUAL.test(name)) return;
     let live = true;
     void api
@@ -60,12 +54,12 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
   }, [url, name, isImage]);
 
   return (
-    <div className="viewer" role="dialog" aria-modal="true" aria-label={name}>
+    <div className="viewer" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label={name}>
       <header className="viewer__bar">
         <button className="viewer__close" onClick={onClose} aria-label="Close">
-          ‹
+          <UiIcon name="close" />
         </button>
-        <span className="viewer__name">{name}</span>
+        <UiIcon name="file" /><span className="viewer__name">{name}</span>
         {/* A plain link, so the browser does the downloading — a fetch would
             mean holding the whole file in memory to hand it back to the same
             browser. */}
@@ -103,8 +97,7 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
         ) : (
           <div className="empty">
             <span className="empty__mark">↓</span>
-            Nothing here can show a {name.slice(name.lastIndexOf(".") + 1)} file. Download it and
-            open it where it belongs.
+            Preview is not available for this file. Download it to open in another app.
           </div>
         )}
       </div>

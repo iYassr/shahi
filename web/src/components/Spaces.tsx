@@ -1,3 +1,4 @@
+import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 /**
  * The Spaces half of the app, mirroring how herdr splits its own sidebar.
@@ -65,6 +66,8 @@ export function Spaces({ session, onToast, onChanged }: Props) {
   return (
     <>
       <div className="scroll" ref={scroller}>
+        <div className="page-intro"><h2>A place for each project</h2><p>Keep related agents and terminals together in a space.</p></div>
+        {session.workspaces.length === 0 && <div className="empty"><span className="empty__mark"><UiIcon name="folder" size={40} /></span><h2>Create your first space</h2><p>Choose a project folder, then start an agent inside it.</p></div>}
         {session.workspaces.map((space) => {
           const panes = session.panes.filter((p) => p.workspaceId === space.workspaceId);
           const agents = panes.filter((p) => p.isAgent);
@@ -97,6 +100,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
               className={`space${blocked > 0 ? " space--blocked" : ""}`}
               onClick={() => navigate(`/space/${encodeURIComponent(space.workspaceId)}`)}
             >
+              <span className="space__icon"><UiIcon name="folder" size={24} /></span>
               <span className="space__body">
                 <span className="space__top">
                   <span className="space__name">{space.label}</span>

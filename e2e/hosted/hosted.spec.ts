@@ -27,6 +27,23 @@ async function pair(page: import("@playwright/test").Page, remember = false) {
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
 }
+test("computer picker closes on Escape, outside interaction and selection", async ({ page }) => {
+  await pair(page, true);
+  const picker = page.locator(".computer-switcher");
+  const toggle = page.getByLabel("Switch computer", { exact: true });
+  await toggle.click();
+  await expect(picker).toHaveAttribute("open", "");
+  await page.keyboard.press("Escape");
+  await expect(picker).not.toHaveAttribute("open");
+  await expect(toggle).toBeFocused();
+  await toggle.click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(picker).not.toHaveAttribute("open");
+  await toggle.click();
+  await picker.getByRole("button", { name: "Switch to stub-box", exact: true }).click();
+  await expect(picker).not.toHaveAttribute("open");
+  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
+});
 test("pairs over encrypted relay, submits once, reads history and forgets a memory session", async ({ page, request }) => {
   await pair(page);
   await page.locator(".blocked__head").first().click();

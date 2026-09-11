@@ -1,4 +1,5 @@
 import { inboxPanes, type Reviewed } from "@shahi/shared";
+import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
 /**
@@ -87,17 +88,20 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
     return (
       <div className="empty">
         <span className="empty__mark" aria-hidden="true"><Logo size={56} /></span>
-        No agents running.
+        <h2>No agents running.</h2>
+        <p>Start an agent in a space to follow its work and reply from here.</p>
+        <button className="empty__action" onClick={() => navigate("/spaces")}>Go to spaces</button>
       </div>
     );
   }
 
   return (
     <div className="scroll" ref={scroller}>
-      <div className="agent-search"><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+      <div className="page-intro"><h2>Your work, wherever you are</h2><p>{allAgents.filter(p => p.status === "working").length} working · {inbox.length} to review or answer</p></div>
+      <div className="agent-search"><UiIcon name="search" /><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label="Clear search" onClick={() => setQuery("")}><UiIcon name="close" size={18} /></button>}</div>
       <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>{chip.label}</button>)}</div>
       {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p></div>}
-      {agents.length === 0 && <p className="empty">{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>}
+      {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</button>}</div>}
 
       {blocked.map((pane) => (
         <BlockedCard
