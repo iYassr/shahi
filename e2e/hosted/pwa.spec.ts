@@ -32,8 +32,9 @@ test("Cloudflare serves every public app route with production security headers"
 
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {
   await page.goto("/pwa/");
-  await page.getByText("Set up your computer", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Set up Shahi in 3 steps" })).toBeVisible();
   await expect(page.getByText("herdr plugin install iYassr/shahi", { exact: true })).toBeVisible();
+  await expect(page.getByText("herdr plugin action invoke shahi.pair", { exact: true })).toBeVisible();
   await page.getByText("Install Shahi on this device", { exact: true }).click();
   await expect(page.getByText(/open the browser’s Share menu/)).toBeVisible();
   await expect(page.getByLabel("Remember this browser")).not.toBeChecked();
