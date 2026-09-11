@@ -62,7 +62,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-help ul { padding-left: 20px; }
 .app-help code { display: block; padding: 12px; border-radius: 8px; background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
 .app-help__links { display: flex; gap: 24px; font-size: 13px; }
-.app-help a, .app-help__links a { color: var(--accent); text-underline-offset: 3px; }
+.app-help a, .app-help__links a, .pair-browser__jump { color: var(--accent); text-underline-offset: 3px; }
+.pair-browser__setup h2 { margin: 0; font-size: 20px; }
+.pair-browser__setup ol { margin: 16px 0; padding-left: 22px; }
+.pair-browser__setup li { margin-bottom: 16px; padding-left: 4px; }
+.pair-browser__setup li strong, .pair-browser__setup li::marker { color: var(--text); }
+.pair-browser__setup li p { margin: 4px 0 8px; }
+.pair-browser__setup code { -webkit-user-select: all; user-select: all; }
+#pair-browser-form { scroll-margin-top: 20px; }
 @media (min-width: 800px) { .pair-browser { grid-template-columns: 1fr 1fr; gap: 88px; } }
 @media (max-width: 799px) {
   .pair-browser { padding: 24px 20px; gap: 24px; }
