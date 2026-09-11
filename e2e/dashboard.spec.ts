@@ -14,6 +14,22 @@ function watchConsole(page: Page): string[] {
 }
 
 test.describe("dashboard", () => {
+  test("clearing search and resetting filters restore the agent list", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto("/");
+    const search = page.getByRole("textbox", { name: "Search agents" });
+    await search.fill("no such agent");
+    await expect(page.getByText("No matching agents.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Clear search", exact: true }).click();
+    await expect(search).toHaveValue("");
+    await expect(page.locator(".blocked")).toHaveCount(1);
+    await page.getByRole("button", { name: "Waiting", exact: true }).click();
+    await search.fill("missing");
+    await page.getByRole("button", { name: "Show all agents", exact: true }).click();
+    await expect(search).toHaveValue("");
+    await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".agent-row")).toHaveCount(2);
+  });
   test("lists agents and stays quiet", async ({ page }) => {
     await scenario(page, "busy");
     const problems = watchConsole(page);

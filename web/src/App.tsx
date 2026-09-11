@@ -330,7 +330,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
                 <button className="topbar__action" onClick={() => setNewAgent(true)}>+ New agent</button>
                 <span className="topbar__spacer" />
                 {blockedCount > 0 && (
-                  <span className="link" style={{ color: "var(--accent)" }}>
+                  <span className="link topbar__waiting" style={{ color: "var(--accent)" }}>
                     {blockedCount} waiting
                   </span>
                 )}
@@ -406,7 +406,7 @@ function TabBar({ blockedCount, spaceCount }: { blockedCount: number; spaceCount
   if (pathname.startsWith("/pane/") || pathname.startsWith("/space/")) return null;
 
   return (
-    <nav className="tabbar">
+    <nav className="tabbar" aria-label="Main navigation">
       <NavLink to="/" className="tabbar__item" end>
         <span className="tabbar__glyph" aria-hidden="true">
           <NavigationIcon name="agents" />

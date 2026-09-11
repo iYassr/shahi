@@ -1,3 +1,4 @@
+import { UiIcon } from "./UiIcon";
 import { browserConnection, hosted } from "../connection";
 import { checkPushConnection } from "../push-policy";
 import { preferences } from "../preferences";
@@ -88,19 +89,16 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
 
   if (state === "needs-install") {
     return (
-      <div className="banner">
-        <strong>Add Shahi to your Home Screen</strong> to get notified when an
-        agent needs you. iOS only delivers notifications to installed apps — tap
-        Share, then Add to Home Screen.
+      <div className="banner push-offer">
+        <UiIcon name="bell" /><p><strong>Add Shahi to your Home Screen</strong> for notifications. Tap Share, then Add to Home Screen.</p>
         <button onClick={dismiss}>Not now</button>
       </div>
     );
   }
 
   return (
-    <div className="banner">
-      <strong>Get notified when an agent blocks.</strong> Your phone buzzes as
-      soon as one needs an answer, so you do not have to keep checking.
+    <div className="banner push-offer">
+      <UiIcon name="bell" /><p><strong>Know when an agent needs you.</strong> Get a notification when it needs an answer.</p>
       <button onClick={() => void enable()} disabled={state === "asking"}>
         {state === "asking" ? "Asking…" : "Turn on notifications"}
       </button>

@@ -1,3 +1,4 @@
+import { UiIcon } from "./UiIcon";
 import { Logo } from "./Logo";
 import { checkPushConnection } from "../push-policy";
 import { preferences } from "../preferences";
@@ -22,10 +23,11 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
   return <>
     <header className="topbar"><h1 className="topbar__title"><Logo size={28} /> Settings</h1></header>
     <div className="scroll settings">
+      <div className="page-intro"><h2>Make Shahi yours</h2><p>Manage your computers, notifications, and who has access.</p></div>
       <InstallApp />
-      {hosted && <section><h2>Computers</h2><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}
-      <section><h2>Connection</h2>{hosted ? <><p>Encrypted relay · {browserConnection().identity?.relay}</p><p>{browserConnection().remembered ? "This browser is remembered on this device." : "This session is kept in memory. Reloading requires a new pairing code."} Sign out to revoke and remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
-      <section><h2>Notifications</h2><p>Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.</p>
+      {hosted && <section><h2><UiIcon name="computer" /> Computers</h2><p>Move between your paired computers. They stay connected while Shahi is open.</p><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}
+      <section><h2><UiIcon name="shield" /> Connection</h2>{hosted ? <><p>Your connection to this computer is encrypted from end to end.</p><details className="settings__details"><summary>Connection details</summary><p>{browserConnection().identity?.relay}</p></details><p>{browserConnection().remembered ? "This browser is remembered on this device." : "This session is kept in memory. Reloading requires a new pairing code."} Sign out to revoke and remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
+      <section><h2><UiIcon name="bell" /> Notifications</h2><p>Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.</p>
         {hosted && <p>{browserConnection().remembered ? "Enable notifications explicitly for this computer. Browser permission alone does not turn them on." : "Notifications need a remembered pairing. Pair again with Remember this browser selected to enable them."}</p>}
         <button className="empty__action" disabled={busy || (hosted && !browserConnection().remembered)} onClick={() => void run(async () => {
           const generation = browserConnection().generation;
@@ -45,7 +47,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
           preferences.set("shahi.push.dismissed", "1"); onToast("Notifications off");
         })}>Disable notifications</button>
       </section>
-      <section><h2>Devices with access</h2><p>Revoking a device disconnects it and stops its notifications. Passcode logins do not appear in this list.</p>
+      <section><h2><UiIcon name="shield" /> Devices with access</h2><p>These devices can access the current computer. Revoking a device disconnects it and stops its notifications. Passcode logins do not appear in this list.</p>
         {error && <p className="settings__error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></p>}
         {!devices && !error && <p>Loading devices…</p>}
         {devices?.devices.length === 0 && <p>No paired devices.</p>}
@@ -53,7 +55,8 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
           if (window.confirm(`Revoke access for ${device.name}?`)) void run(async () => { await api.revokeDevice(device.id); await refresh(); });
         }}>Revoke</button></div>)}
       </section>
-      <button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>Sign out</button>
+      <section className="settings__access"><h2>Sign out of this computer</h2><p>Remove this browser’s access. You will need to pair or sign in again to reconnect.</p><button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>Sign out</button></section>
+      <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">Privacy</a><a href="mailto:support@getshahi.dev">Get help</a></footer>
     </div>
   </>;
 }

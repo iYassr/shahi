@@ -1,3 +1,4 @@
+import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
 import { supports } from "@shahi/shared";
 /**
@@ -313,7 +314,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
             aria-selected={tab === "read"}
             onClick={() => setTab("read")}
           >
-            Read
+            <UiIcon name="read" size={17} /> Read
           </button>
         )}
         <button
@@ -322,7 +323,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           aria-selected={tab === "screen"}
           onClick={() => setTab("screen")}
         >
-          Screen
+          <UiIcon name="screen" size={17} /> Screen
         </button>
         <button
           className="tab"

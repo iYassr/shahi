@@ -11,7 +11,7 @@
 
 id = "shahi"
 name = "Shahi"
-version = "0.3.3"
+version = "0.3.4"
 min_herdr_version = "0.9.0"
 description = "See and answer your terminal agents from your phone"
 platforms = ["linux", "macos"]
