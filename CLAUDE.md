@@ -27,6 +27,7 @@ behind a paid EAS plan.
 bun test shared/src server web/src plugin # unit
 bun run test:e2e                          # both engines, against the stub
 bun run test:e2e --project=ios            # WebKit only — what the phone runs
+bun run build:site && bun run test:hosted && bun run test:pwa # public PWA, encrypted fixtures and real cache
 bun run build:web && systemctl --user restart shahi   # deploy
 ```
 
