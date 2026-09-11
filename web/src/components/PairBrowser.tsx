@@ -4,6 +4,7 @@ import jsQR from "jsqr";
 import { browserConnection, pairBrowser } from "../connection";
 import { InstallApp } from "./InstallApp";
 import { useDialog } from "../use-dialog";
+import { SetupIcon } from "./SetupIcon";
 
 export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCode: string; onConsumed(): void; onSuccess(): void }) {
   const [code, setCode] = useState(initialCode);
@@ -13,15 +14,17 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   return <main className="pair-browser">
-    <div className="pair-browser__intro"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><h1>Connect your computer</h1><p>Read agent conversations and answer prompts in your browser. Pair with the computer running herdr.</p>
+    <div className="pair-browser__intro">
+      <div className="pair-browser__welcome"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><span>Welcome to Shahi</span></div>
+      <h1>Connect your computer</h1><p>Read your agent conversations and answer prompts wherever you are. Let’s get your computer connected.</p>
       <p><a className="pair-browser__jump" href="#pair-browser-form">Already have a pairing code? Pair this browser ↓</a></p>
       <section className="app-help pair-browser__setup" aria-labelledby="computer-setup">
         <h2 id="computer-setup">Set up Shahi in 3 steps</h2>
         <p>On the Mac or Linux computer you want to connect, <a href="https://herdr.dev" target="_blank" rel="noreferrer">install and open herdr</a> first.</p>
-        <ol>
-          <li><strong>Install the Shahi plugin</strong><p>Open a terminal in herdr and run:</p><code>herdr plugin install iYassr/shahi</code></li>
-          <li><strong>Show your pairing QR code</strong><p>Run this next:</p><code>herdr plugin action invoke shahi.pair</code></li>
-          <li><strong>Connect this browser</strong><p>Choose Scan QR code in the form below, or paste the full pairing code shown on your computer.</p></li>
+        <ol role="list">
+          <li><span className="pair-browser__step-icon"><SetupIcon name="install" /></span><div><strong><span className="pair-browser__step-number">1.</span> Install the Shahi plugin</strong><p>Open a terminal in herdr and run:</p><code>herdr plugin install iYassr/shahi</code></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="qr" /></span><div><strong><span className="pair-browser__step-number">2.</span> Show your pairing QR code</strong><p>Run this next:</p><code>herdr plugin action invoke shahi.pair</code></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="devices" /></span><div><strong><span className="pair-browser__step-number">3.</span> Connect this browser</strong><p>Choose Scan QR code, or paste the full pairing code from your computer into the pairing form.</p></div></li>
         </ol>
         <p>Keep herdr open and your computer connected to the internet.</p>
       </section>
@@ -33,8 +36,9 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
       const secret = code; setCode(""); onConsumed();
       void pairBrowser(secret, name, remember).then(onSuccess).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
     }}>
-      <h2>Pair this browser</h2><p>Use the QR code or pairing code shown on your computer.</p>
-      <button type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}>Scan QR code</button>
+      <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2>Pair this browser</h2></div>
+      <p>Use the QR code or pairing code shown on your computer.</p>
+      <button className="pair-browser__scan" type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}><SetupIcon name="qr" size={26} /><span>Scan QR code</span></button>
       <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
       <label htmlFor="browser-name">Device name</label><input id="browser-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoComplete="off" disabled={busy} />
       <label className="pair-browser__remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />Remember this browser</label>
