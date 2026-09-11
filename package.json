@@ -23,6 +23,7 @@
     "test:dependencies": "node --test patches/dependencies.test.mjs",
     "build:site": "bun run site/build.ts",
     "test:hosted": "playwright test --config e2e/hosted/playwright.config.ts",
+    "test:pwa": "playwright test --config e2e/hosted/pwa.config.ts",
     "brand:assets": "bun scripts/brand-assets.ts"
   },
   "devDependencies": {

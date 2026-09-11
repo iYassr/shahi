@@ -17,6 +17,8 @@ const serverId = b64(sha256(encoder.encode(process.env.HOSTED_FIXTURE_ID ?? "iso
 let pairingSecret = crypto.getRandomValues(new Uint8Array(32));
 let pairingUsed = false;
 let offline = false;
+let siteOffline = false;
+let brokenWorker = false;
 let holdLogout = false;
 let releaseLogout: (() => void) | undefined;
 let deviceHandshakes = 0;
@@ -25,6 +27,11 @@ const links = new Set<ServerWebSocket<Link>>();
 const transcript: { path: string; method: string }[] = [];
 interface Link { session?: CryptoSession; deviceId?: string; pairing: boolean; stream?: WebSocket }
 const root = resolve(import.meta.dir, "../../web/dist-hosted");
+// Use the deployed route allowlist: accepting every extensionless URL hid real
+// 404s in Computers and notification links on Cloudflare.
+const appRoutes = (await Bun.file(new URL("../../site/public/_redirects", import.meta.url)).text())
+  .split("\n").map(line => line.trim().split(/\s+/)).filter(parts => parts[1] === "/pwa/" && parts[2] === "200")
+  .map(parts => parts[0]!);
 const blackholes = new Set<ServerWebSocket<Link>>();
 function send(ws: ServerWebSocket<Link>, value: unknown) { if (ws.data.session && !blackholes.has(ws)) ws.send(seal(ws.data.session, encoder.encode(JSON.stringify(value)))); }
 function revoke(id: string) {
@@ -35,6 +42,9 @@ const fixture = Bun.serve<Link>({
   hostname: "127.0.0.1", port,
   async fetch(req, srv) {
     const url = new URL(req.url);
+    if (url.pathname === "/__hosted/broken-worker" && req.method === "POST") { brokenWorker = true; return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/site-offline" && req.method === "POST") { siteOffline = true; return Response.json({ ok: true }); }
+    if (url.pathname === "/__hosted/site-online" && req.method === "POST") { siteOffline = false; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/connections") return Response.json({ live: [...links].filter(ws => ws.data.deviceId && ws.data.session).length, handshakes: deviceHandshakes });
     if (url.pathname === "/__hosted/hold-logout") { holdLogout = true; return Response.json({ ok: true }); }
     if (url.pathname === "/__hosted/release-logout") { holdLogout = false; releaseLogout?.(); releaseLogout = undefined; return Response.json({ ok: true }); }
@@ -48,7 +58,7 @@ const fixture = Bun.serve<Link>({
       for (const ws of links) ws.close(1000);
       blackholes.clear();
       holdLogout = false; releaseLogout?.(); releaseLogout = undefined;
-      offline = false; deviceHandshakes = 0; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
+      offline = false; siteOffline = false; brokenWorker = false; deviceHandshakes = 0; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
       await fetch(`${apiBase}/__stub/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "busy" }) });
       const fields = new URLSearchParams({ v: "1", server: serverId, relay: `http://127.0.0.1:${port}`, secret: b64(pairingSecret) });
       return Response.json({ code: `shahi://pair#${fields}`, web: `http://127.0.0.1:${port}/pwa/#pair=${encodeURIComponent(`shahi://pair#${fields}`)}` });
@@ -59,13 +69,15 @@ const fixture = Bun.serve<Link>({
     if (url.pathname === `/v1/phone/${serverId}`) return srv.upgrade(req, { data: { pairing: false } }) ? undefined : new Response(null, { status: 400 });
     // Deliberately no /api: the hosted client must never use the marketing origin as its box.
     if (!url.pathname.startsWith("/pwa/")) return new Response("not found", { status: 404 });
+    if (siteOffline) return new Response("synthetic hosting outage", { status: 503 });
+    if (brokenWorker && url.pathname === "/pwa/sw.js") return new Response((await Bun.file(join(root, "sw.js")).text()).replace('"icon-512.png"', '"missing-icon.png"').replace("${PREFIX}v8", "${PREFIX}broken"), { headers: { "content-type": "text/javascript", "cache-control": "no-store" } });
     let relative: string;
     try { relative = decodeURIComponent(url.pathname.slice(5)); } catch { return new Response(null, { status: 400 }); }
     const path = resolve(root, relative || "index.html");
     if (!path.startsWith(`${root}/`)) return new Response(null, { status: 404 });
     let file = Bun.file(path);
     if (!(await file.exists())) {
-      if (relative.split("/").at(-1)?.includes(".")) return new Response(null, { status: 404 });
+      if (!appRoutes.some(route => route.endsWith("*") ? url.pathname.startsWith(route.slice(0, -1)) : url.pathname === route)) return new Response(null, { status: 404 });
       file = Bun.file(join(root, "index.html"));
     }
     return new Response(file, { headers: {

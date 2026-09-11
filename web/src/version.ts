@@ -42,7 +42,7 @@ export async function reloadIfStale(
   if (!running) return false;
 
   try {
-    const res = await fetch(import.meta.env?.BASE_URL ?? "/", { cache: "no-store" });
+    const res = await fetch(import.meta.env?.BASE_URL ?? "/", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return false;
     const deployed = deployedBundle(await res.text());
     if (!deployed || deployed === running) return false;
@@ -58,3 +58,8 @@ export async function reloadIfStale(
 
 /** Exported for testing: the comparison, without the fetch or the reload. */
 export const bundles = { running: runningBundle, deployed: deployedBundle };
+
+/** Forms and the composer keep work in memory. An automatic update must wait. */
+export function hasPendingWork(): boolean {
+  return Boolean(document.querySelector('[data-update-blocked="true"], [role="dialog"]'));
+}

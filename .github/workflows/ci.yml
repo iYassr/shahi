@@ -100,6 +100,7 @@ jobs:
       # A separate static origin talks only through encrypted relay frames.
       - run: bun run build:site
       - run: bun run test:hosted
+      - run: bun run test:pwa
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()

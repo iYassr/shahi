@@ -1,5 +1,7 @@
 /pwa /pwa/ 301
 /pwa/settings /pwa/ 200
+/pwa/computers /pwa/ 200
+/pwa/notification /pwa/ 200
 /pwa/spaces /pwa/ 200
 /pwa/space/* /pwa/ 200
 /pwa/pane/* /pwa/ 200

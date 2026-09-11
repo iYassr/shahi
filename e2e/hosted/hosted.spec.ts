@@ -300,6 +300,41 @@ test("an update cannot silently reload away another temporary computer", async (
   await expect(page.locator(".blocked__head").first()).toBeVisible();
 });
 
+test("an update preserves an unsent message and cancelling reload keeps the draft", async ({ page, request }) => {
+  await pair(page, true);
+  await page.locator(".blocked__head").first().click();
+  const draft = page.locator("textarea");
+  await draft.fill("unfinished fixture message");
+  await page.route("**/pwa/", async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()).replace(/\/pwa\/assets\/[^"']+\.js/, "/pwa/assets/synthetic-new-release.js") });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
+  await expect(page.getByText(/Finish your work before reloading/)).toBeVisible();
+  await expect(draft).toHaveValue("unfinished fixture message");
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload Shahi", exact: true }).click();
+  await expect(draft).toHaveValue("unfinished fixture message");
+  const writes = (await (await request.get("/__hosted/writes")).json()).writes;
+  expect(writes.filter((write: { path: string }) => write.path.endsWith("/prompt"))).toHaveLength(0);
+});
+
+test("keyboard focus stays in a form and returns to its opening button", async ({ page }) => {
+  await pair(page, true);
+  const opener = page.getByRole("button", { name: "+ New agent", exact: true });
+  await opener.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  for (let n = 0; n < 18; n++) {
+    await page.keyboard.press(n % 3 === 0 ? "Shift+Tab" : "Tab");
+    expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
+
 test("both computers remain live through quick switches and revoking one leaves the other usable", async ({ page, request }) => {
   await pair(page, true);
   const second = await (await request.post("http://127.0.0.1:7572/__hosted/reset")).json();

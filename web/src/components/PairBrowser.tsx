@@ -2,6 +2,8 @@ import { Logo } from "./Logo";
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { browserConnection, pairBrowser } from "../connection";
+import { InstallApp } from "./InstallApp";
+import { useDialog } from "../use-dialog";
 
 export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCode: string; onConsumed(): void; onSuccess(): void }) {
   const [code, setCode] = useState(initialCode);
@@ -11,15 +13,25 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   return <main className="pair-browser">
-    <div className="pair-browser__intro"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><h1>Connect your computer</h1><p>Read agent conversations and answer prompts in your browser. Pair with the computer running herdr.</p></div>
+    <div className="pair-browser__intro"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><h1>Connect your computer</h1><p>Read agent conversations and answer prompts in your browser. Pair with the computer running herdr.</p>
+      <details className="app-help"><summary>Set up your computer</summary>
+        <p>On your Mac or Linux computer, install <a href="https://herdr.dev" target="_blank" rel="noreferrer">herdr</a>, then run:</p>
+        <code>herdr plugin install iYassr/shahi</code>
+        <p>Open Shahi’s pairing code:</p>
+        <code>herdr plugin action invoke shahi.pair</code>
+        <p>Keep herdr running and your computer connected. Scan or paste the pairing code on this device.</p>
+      </details>
+      <InstallApp />
+      <p className="app-help__links"><a href="https://getshahi.dev/privacy">Privacy</a><a href="mailto:support@getshahi.dev">Support</a></p>
+    </div>
     <form className="pair-browser__form" onSubmit={(event) => {
       event.preventDefault(); setBusy(true); setError("");
       const secret = code; setCode(""); onConsumed();
       void pairBrowser(secret, name, remember).then(onSuccess).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
     }}>
       <h2>Pair this browser</h2><p>In herdr, open Shahi’s pairing action. Scan its QR code or paste the full pairing code below it.</p>
-      <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
       <button type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}>Scan QR code</button>
+      <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
       <label htmlFor="browser-name">Device name</label><input id="browser-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoComplete="off" disabled={busy} />
       <label className="pair-browser__remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />Remember this browser</label>
       <p className="pair-browser__note">{remember ? "Device access will be stored in this browser. Choose this only on a trusted personal device. Anyone using this browser profile can access your computer." : "Access stays in memory until you close or reload this page. Your pairing code is single-use."}</p>
@@ -32,6 +44,7 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   </main>;
 }
 function QrScanner({ onCode, onClose, onError }: { onCode(value: string): void; onClose(): void; onError(value: string): void }) {
+  const dialog = useDialog(onClose);
   const video = useRef<HTMLVideoElement>(null);
   const callbacks = useRef({ onCode, onError }); callbacks.current = { onCode, onError };
   useEffect(() => {
@@ -65,5 +78,5 @@ function QrScanner({ onCode, onClose, onError }: { onCode(value: string): void; 
     document.addEventListener("visibilitychange", hide);
     return () => { stop(); document.removeEventListener("visibilitychange", hide); };
   }, []);
-  return <div className="viewer" role="dialog" aria-modal="true" aria-label="Scan pairing QR code"><header className="viewer__bar"><h2>Scan pairing QR code</h2><button onClick={onClose}>Cancel</button></header><video className="pair-browser__camera" ref={video} playsInline muted /><p>Point your camera at the QR code shown by Shahi in herdr.</p></div>;
+  return <div ref={dialog} tabIndex={-1} className="viewer" role="dialog" aria-modal="true" aria-label="Scan pairing QR code"><header className="viewer__bar"><h2>Scan pairing QR code</h2><button onClick={onClose}>Cancel</button></header><video className="pair-browser__camera" ref={video} playsInline muted /><p>Point your camera at the QR code shown by Shahi in herdr.</p></div>;
 }

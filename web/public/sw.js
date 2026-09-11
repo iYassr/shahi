@@ -1,12 +1,13 @@
-/* Only public app assets belong in this cache. Never cache requests containing
- * credentials, query parameters, API data or arbitrary navigation responses. */
+/* Only public app assets belong in this cache. Private navigation targets can
+ * receive the canonical shell, but their URLs and responses are never cached. */
 const BASE = new URL(self.registration.scope).pathname;
 const PREFIX = `shahi-shell:${BASE}:`;
-const CACHE = `${PREFIX}v7`;
-const SHELL = [BASE, `${BASE}manifest.webmanifest`, `${BASE}icon-192.png`, `${BASE}icon-180.png`, `${BASE}welcome.js`];
+const CACHE = `${PREFIX}v8`;
+const PUBLIC = ["manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-180.png", "welcome.js"].map(path => `${BASE}${path}`);
 const assetPath = (path) => path.startsWith(`${BASE}assets/`);
 const appPath = (path) => path === BASE || path === `${BASE}index.html` ||
   path === `${BASE}settings` || path === `${BASE}spaces` ||
+  path === `${BASE}computers` || path === `${BASE}notification` ||
   path.startsWith(`${BASE}space/`) || path.startsWith(`${BASE}pane/`);
 
 self.addEventListener("install", (event) => {
@@ -14,17 +15,18 @@ self.addEventListener("install", (event) => {
 });
 
 async function precache() {
-  try {
-    const cache = await caches.open(CACHE);
-    await cache.addAll(SHELL);
-    const response = await fetch(BASE, { cache: "reload", credentials: "omit" });
-    const html = await response.text();
-    const assets = [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
-      .map((match) => new URL(match[1], self.registration.scope))
-      .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname))
-      .map((url) => url.href);
-    await cache.addAll(assets);
-  } catch { /* Offline installation can still use the runtime cache. */ }
+  const cache = await caches.open(CACHE);
+  await cache.addAll(PUBLIC);
+  const response = await fetch(BASE, { cache: "reload", credentials: "omit" });
+  if (!response.ok || response.redirected || !response.headers.get("content-type")?.includes("text/html")) throw new Error("App shell unavailable");
+  const html = await response.clone().text();
+  const assets = [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
+    .map((match) => new URL(match[1], self.registration.scope))
+    .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname))
+    .map((url) => url.href);
+  await cache.addAll(assets);
+  await cache.put(BASE, response);
+  // A failed install leaves the previous worker and its complete cache active.
 }
 
 self.addEventListener("activate", (event) => {
@@ -41,9 +43,14 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.search ||
+  if (request.method !== "GET" || url.origin !== self.location.origin ||
       request.headers.has("authorization") || request.headers.has("x-shahi-api")) return;
-  if (assetPath(url.pathname) || url.pathname === `${BASE}welcome.js`) event.respondWith(cacheFirst(request));
+  // Notification routing carries pane/computer identifiers. Serve only the
+  // canonical shell, never store the queried request or fetch its private URL.
+  const notification = request.mode === "navigate" && url.pathname === `${BASE}notification` &&
+    [...url.searchParams.keys()].every(key => key === "pane" || key === "computer");
+  if (url.search && !notification) return;
+  if (assetPath(url.pathname) || PUBLIC.includes(url.pathname)) event.respondWith(cacheFirst(request));
   else if (request.mode === "navigate" && appPath(url.pathname)) event.respondWith(shellFirst(event));
 });
 
