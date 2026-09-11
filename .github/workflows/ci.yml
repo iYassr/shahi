@@ -16,7 +16,9 @@ on:
   workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Release approval calls this workflow too. A normal push must not cancel or
+  # hold up that release's mandatory checks through a shared concurrency key.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
