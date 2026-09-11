@@ -78,5 +78,39 @@ browser state is cleared or changed.
 
 ## Deployment record
 
-Release publication, live asset verification, and machine upgrade results are
-recorded below after the approved release completes.
+- [Release approval 34597082632](https://github.com/iYassr/shahi/actions/runs/34597082632)
+  passed for source `2fd5cbd684d1d76a1c3e2f90b88a92dd1dc4a1db`.
+  CI passed 184 direct browser tests, 42 encrypted hosted tests, and 11 PWA tests
+  (237 total; the documented WebKit complete-offline test is skipped). It also
+  passed 614 shared/server/web/plugin unit tests, 68 relay tests, 254 native
+  tests, all four platform upgrade matrices, and both live-herdr profiles.
+  The broader local unit command additionally covered site and operations tests:
+  619 passed, 26 skipped; four dependency backport checks passed separately.
+- [Shahi 0.3.3](https://github.com/iYassr/shahi/releases/tag/v0.3.3) is Stable,
+  build `0.3.3-2fd5cbd684d1`. Published archive bytes and source were verified
+  against the signed approval before promotion. Stable and Beta catalogs retain
+  0.3.2, 0.3.1, and 0.3.0. The Mac passed a Beta upgrade before promotion; both
+  Mac and Ubuntu then reported the approved Stable build, herdr 0.9.0, relay
+  connected, and unchanged pairing identity and device grants.
+- Hosted deployment `dfbee8b9-9d8b-4420-8281-1f3a731bcac6` is live at
+  <https://getshahi.dev/pwa/>. Ten public route/asset responses matched the local
+  build byte for byte, including the previously broken routes, manifest, worker,
+  icons, JavaScript, and CSS. Security headers were checked, and unknown routes
+  and missing scripts remained 404.
+- A disposable browser with the previous production cache upgraded to worker
+  cache v8 and the new app bundle on reload. The live Computers page opened with
+  browser networking disabled. A separate cold Chrome visit at 390px width,
+  150ms simulated latency, 384,000 bytes/second download bandwidth, and 4× CPU
+  slowdown showed first content at 2.15 seconds. This is one lab observation,
+  not a phone performance guarantee or public load test.
+- The first final local routing rerun overlapped an agent-triggered preview
+  rebuild and returned transient asset 500s. The fixed-build rerun passed in
+  both engines; CI passed with sequential build and test steps. Production
+  deployment publishes the complete asset set together.
+- Release approval and ordinary pushes previously shared a CI concurrency key,
+  allowing one workflow to cancel or hold the other's checks. The key now includes
+  the caller's workflow name; signing still requires the entire release test
+  matrix and the protected master release environment. See
+  [GitHub's concurrency guidance](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-only-cancel-in-progress-jobs-or-runs-for-the-current-workflow).
+- Disposable preview servers and both private browser test contexts were closed.
+  User browser pairings and real terminal sessions were not used for test writes.
