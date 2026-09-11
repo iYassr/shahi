@@ -46,11 +46,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pair-browser__intro h1 { font-size: clamp(32px, 4vw, 54px); line-height: 1.1; letter-spacing: -.04em; }
 .pair-browser__intro p, .pair-browser__form p { line-height: 1.6; color: var(--muted); }
 .pair-browser__mark { font-size: 48px; color: var(--accent); }
+.pair-browser__welcome { display: flex; align-items: center; gap: 12px; color: var(--accent); font-size: 15px; font-weight: 600; }
+.setup-icon { display: block; flex-shrink: 0; color: var(--accent); }
 .pair-browser__form { display: grid; gap: 12px; min-width: 0; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
 .pair-browser__form h2 { margin: 0; }
+.pair-browser__form-heading { display: flex; align-items: center; gap: 14px; }
+.pair-browser__qr-mark { display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px; background: var(--accent-soft); border: 1px solid var(--line-bright); }
 .pair-browser__form input:not([type=checkbox]), .pair-browser__form textarea { width: 100%; box-sizing: border-box; padding: 12px; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .pair-browser__form textarea { min-height: 92px; resize: vertical; overflow-wrap: anywhere; }
 .pair-browser__form button { padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; min-height: 44px; }
+.pair-browser__form .pair-browser__scan { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.pair-browser__scan:hover:not(:disabled) { background: var(--focus-ring); }
+.pair-browser__scan:disabled { opacity: .5; }
 .pair-browser__form .pair-browser__connect { background: var(--accent); font-weight: 600; color: var(--void); }
 .pair-browser__remember { display: flex; gap: 10px; align-items: center; padding-top: 12px; }
 .pair-browser__remember input { width: 20px; height: 20px; }
@@ -58,15 +65,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pair-browser__camera { width: 100%; min-height: 0; max-height: 65dvh; object-fit: contain; }
 .app-help { padding: 16px 0; border-top: 1px solid var(--line); line-height: 1.6; }
 .app-help summary { cursor: pointer; font-weight: 600; min-height: 28px; }
+.app-help__install-label { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; max-width: 100%; }
 .app-help p, .app-help li { color: var(--muted); }
 .app-help ul { padding-left: 20px; }
 .app-help code { display: block; padding: 12px; border-radius: 8px; background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
 .app-help__links { display: flex; gap: 24px; font-size: 13px; }
 .app-help a, .app-help__links a, .pair-browser__jump { color: var(--accent); text-underline-offset: 3px; }
 .pair-browser__setup h2 { margin: 0; font-size: 20px; }
-.pair-browser__setup ol { margin: 16px 0; padding-left: 22px; }
-.pair-browser__setup li { margin-bottom: 16px; padding-left: 4px; }
-.pair-browser__setup li strong, .pair-browser__setup li::marker { color: var(--text); }
+.pair-browser__setup ol { margin: 20px 0; padding: 0; list-style: none; }
+.pair-browser__setup li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; margin-bottom: 20px; }
+.pair-browser__step-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); }
+.pair-browser__step-number { color: var(--accent); }
+.pair-browser__setup li strong { color: var(--text); }
 .pair-browser__setup li p { margin: 4px 0 8px; }
 .pair-browser__setup code { -webkit-user-select: all; user-select: all; }
 #pair-browser-form { scroll-margin-top: 20px; }

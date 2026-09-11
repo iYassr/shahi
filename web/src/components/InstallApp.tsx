@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SetupIcon } from "./SetupIcon";
 
 interface InstallPrompt extends Event {
   prompt(): Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -17,9 +18,9 @@ export function InstallApp() {
   }, []);
   if (installed) return null;
   return <details className="app-help">
-    <summary>Install Shahi on this device</summary>
+    <summary><span className="app-help__install-label"><SetupIcon name="install" size={20} /><span>Install Shahi on this device</span></span></summary>
     <p>Open Shahi from your Home Screen or Dock. Your computer needs to stay on and connected to use its sessions.</p>
-    {prompt && <button className="empty__action" onClick={() => { const current = prompt; setPrompt(null); void current.prompt().catch(() => {}); }}>Install Shahi</button>}
+    {prompt && <button className="empty__action app-help__install-label" onClick={() => { const current = prompt; setPrompt(null); void current.prompt().catch(() => {}); }}><SetupIcon name="install" size={20} /><span>Install Shahi</span></button>}
     <ul>
       <li><strong>iPhone or iPad:</strong> open the browser’s Share menu, then Add to Home Screen.</li>
       <li><strong>Android or Chrome:</strong> use the browser’s Install app or Add to Home Screen option.</li>
