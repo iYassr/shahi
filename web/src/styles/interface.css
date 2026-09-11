@@ -56,7 +56,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pair-browser__remember input { width: 20px; height: 20px; }
 .pair-browser__form .pair-browser__note { font-size: 12px; margin: 0; }
 .pair-browser__camera { width: 100%; min-height: 0; max-height: 65dvh; object-fit: contain; }
+.app-help { padding: 16px 0; border-top: 1px solid var(--line); line-height: 1.6; }
+.app-help summary { cursor: pointer; font-weight: 600; min-height: 28px; }
+.app-help p, .app-help li { color: var(--muted); }
+.app-help ul { padding-left: 20px; }
+.app-help code { display: block; padding: 12px; border-radius: 8px; background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
+.app-help__links { display: flex; gap: 24px; font-size: 13px; }
+.app-help a, .app-help__links a { color: var(--accent); text-underline-offset: 3px; }
 @media (min-width: 800px) { .pair-browser { grid-template-columns: 1fr 1fr; gap: 88px; } }
+@media (max-width: 799px) {
+  .pair-browser { padding: 24px 20px; gap: 24px; }
+  .pair-browser__intro h1 { margin: 18px 0 12px; }
+  .pair-browser__intro p { font-size: 14px; margin: 12px 0; }
+  .pair-browser__intro .app-help { padding: 10px 0; font-size: 14px; }
+  .pair-browser__intro .pair-browser__mark, .pair-browser__mark svg { width: 40px; height: 40px; }
+}
 
 /* Routine selection stays neutral; requests retain the amber emphasis. */
 .tabbar__item.active .tabbar__glyph { color: var(--text); }

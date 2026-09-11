@@ -57,6 +57,20 @@ describe("hosted browser cache boundary", () => {
     expect(fetched).toEqual(["/pwa/"]);
   });
 
+  test("computers and queried notification navigation fetch only the canonical shell", async () => {
+    for (const path of ["/pwa/computers", "/pwa/notification?pane=private-pane&computer=private-computer"]) {
+      const { listeners, fetched } = worker();
+      let response: Promise<Response> | undefined;
+      listeners.fetch!({ waitUntil: () => {}, request: { url: `https://getshahi.dev${path}`, method: "GET", mode: "navigate", headers: new Headers() }, respondWith: (promise: Promise<Response>) => { response = promise; } });
+      expect(await (await response!).text()).toBe("shell");
+      expect(fetched).toEqual(["/pwa/"]);
+    }
+    const { listeners } = worker();
+    let intercepted = false;
+    listeners.fetch!({ request: { url: "https://getshahi.dev/pwa/notification?secret=private", method: "GET", mode: "navigate", headers: new Headers() }, respondWith: () => { intercepted = true; } });
+    expect(intercepted).toBe(false);
+  });
+
   test("a cached launch needs no network response", async () => {
     const { listeners, fetched } = worker("/pwa/", true);
     let response: Promise<Response> | undefined;

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { DeviceList } from "@shahi/shared";
 import { useApi } from "../api";
 import { registerPush } from "./PushPrompt";
+import { InstallApp } from "./InstallApp";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
   const api = useApi();
@@ -21,6 +22,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
   return <>
     <header className="topbar"><h1 className="topbar__title"><Logo size={28} /> Settings</h1></header>
     <div className="scroll settings">
+      <InstallApp />
       {hosted && <section><h2>Computers</h2><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}
       <section><h2>Connection</h2>{hosted ? <><p>Encrypted relay · {browserConnection().identity?.relay}</p><p>{browserConnection().remembered ? "This browser is remembered on this device." : "This session is kept in memory. Reloading requires a new pairing code."} Sign out to revoke and remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
       <section><h2>Notifications</h2><p>Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.</p>

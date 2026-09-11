@@ -20,7 +20,7 @@ import {
   type Session,
   type SocketMessage,
 } from "./api";
-import { reloadIfStale } from "./version";
+import { hasPendingWork, reloadIfStale } from "./version";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
@@ -251,7 +251,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       // And pick up a new build, rather than running whatever was current when
       // the app was last launched — which on a phone can be days ago.
       void reloadIfStale(Date.now, {
-        canReload: () => !hosted || browserComputers().every(computer => computer.remembered),
+        canReload: () => !hasPendingWork() && (!hosted || browserComputers().every(computer => computer.remembered)),
         onAvailable: () => setUpdateAvailable(true),
       });
     };
@@ -312,8 +312,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   return (
     <ComputerControlProvider onRecovered={retryConnection}><div className="app">
       {updateAvailable && <div className="banner" role="status">
-        <span>A new version is ready. Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code.</span>
-        <button onClick={() => location.reload()}>Reload and pair again</button>
+        <span>A new version is ready. Finish your work before reloading.{hosted && browserComputers().some(computer => !computer.remembered) && " Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code."}</span>
+        <button onClick={() => { if (!hasPendingWork() || window.confirm("Reload Shahi and discard your unfinished work?")) location.reload(); }}>{hosted && browserComputers().some(computer => !computer.remembered) ? "Reload and pair again" : "Reload Shahi"}</button>
         <button onClick={() => setUpdateAvailable(false)}>Later</button>
       </div>}
       {computerButton}

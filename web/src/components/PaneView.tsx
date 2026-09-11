@@ -255,7 +255,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   }
 
   return (
-    <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"}>
+    <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"} data-update-blocked={Boolean(draft || attachments.length || sending || attaching)}>
       {/*
         * One line, and prose set as prose.
         *
