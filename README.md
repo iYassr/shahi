@@ -69,7 +69,7 @@ phone does not stop the agents running there.
 
 ### 1. Install on the computer doing the work
 
-You need **herdr 0.9.0 or newer** on macOS or Linux. Linux service installation
+Shahi supports **herdr 0.9.0 and 0.9.1** on macOS or Linux. New herdr releases are checked before support is added. Linux service installation
 requires systemd; see the [installation requirements](docs/plugin.md).
 Run your agents inside herdr, then install Shahi:
 

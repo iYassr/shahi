@@ -729,6 +729,10 @@ export type Request1 =
       params: PaneLinkActivateParams;
     }
   | {
+      method: "pane.link.resolve";
+      params: PaneLinkActivateParams;
+    }
+  | {
       method: "pane.rename";
       params: PaneRenameParams;
     }
@@ -1386,6 +1390,10 @@ export type ResponseResult =
       context: PluginInvocationContext;
       log: PluginCommandLogInfo;
       type: "plugin_action_invoked";
+    }
+  | {
+      regions: PaneLinkRegion[];
+      type: "pane_link_resolved";
     }
   | {
       handled: boolean;
@@ -2655,6 +2663,17 @@ export interface PaneFocusDirectionResult {
   layout: PaneLayoutSnapshot;
   reason?: PaneFocusDirectionReason | null;
   source_pane_id: string;
+}
+/**
+ * Inclusive display-cell columns on a pane's current viewport.
+ *
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "PaneLinkRegion".
+ */
+export interface PaneLinkRegion {
+  end_col: number;
+  row: number;
+  start_col: number;
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema

@@ -37,3 +37,15 @@ The once-per-tab greeting, working-avatar bob, tactile controls, and neutral rou
 ## Validation
 
 Build both web targets, run web unit tests, and run the existing Chromium and WebKit scenario suite. Check Agents, Spaces, a pane reader, Settings, and pairing at narrow and desktop widths. All writes in tests or previews must target the stub, never live agents. For cross-platform identity changes, also typecheck and test native. Relay behavior, authorization, and connection contracts are outside visual changes.
+
+## Product language
+
+Write the landing page, web app, and mobile app for someone who has never used a terminal. Lead with what they can do and the next step. Use short sentences and familiar words.
+
+- Say “connect your computer,” “continue your work,” and “remove access.” Avoid “establish a session,” “payload,” “credentials,” and “revoke” in everyday instructions.
+- Introduce agents as AI assistants, and describe sessions as conversations or ongoing work where that is accurate.
+- Explain unfamiliar tools at first use. A terminal is the window where you type commands; herdr is the app that keeps the AI assistants running.
+- Show one clear action at a time. Keep protocol names, connection addresses, and encryption algorithms in optional details or technical documentation.
+- Keep security consequences explicit: who can access the computer, what a connection code allows, and what happens when access is removed. Simple wording must not imply stronger protection than the implementation provides.
+- Keep advanced options such as SSH available, with their exact technical names. Do not rewrite commands, code, file paths, or the assistant’s own output.
+- Error messages should explain what happened and what the person can do next, without requiring them to understand the implementation.

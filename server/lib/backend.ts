@@ -1,7 +1,7 @@
 import type { BackendState } from "@shahi/shared";
 
 /** Only profiles exercised by the release matrix may enable the adapter. */
-export const HERDR_SUPPORT = [{ version: "0.9.0", protocol: 22 }] as const;
+export const HERDR_SUPPORT = [{ version: "0.9.0", protocol: 22 }, { version: "0.9.1", protocol: 22 }] as const;
 export function herdrCompatibility(version: string, protocol: number): BackendState {
   if (HERDR_SUPPORT.some(profile => profile.version === version && profile.protocol === protocol)) {
     return { state: "connected", version, protocol };

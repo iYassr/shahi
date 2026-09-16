@@ -146,7 +146,7 @@ export function Connect({
       connection.relay = null;
       setError(
         e instanceof UnauthorizedError
-          ? "That pairing code is not valid. A code works once and for ten minutes — print a new one."
+          ? "That pairing code is not valid. A code works once and for ten minutes — show a new one on your computer."
           : (e as Error).message,
       );
       setBusy(false);
@@ -292,11 +292,10 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
 
       <Text style={styles.lede}>Connect your computer</Text>
       <Text style={styles.introText}>
-        Read agent conversations and answer prompts from your phone. Install Shahi on the computer
-        running your agents, then scan its pairing code.
+        Continue your work with Claude Code or Codex from your phone. Set up Shahi on your computer, then scan the code it shows.
       </Text>
 
-      <Text style={styles.step}>1 — On your server, run:</Text>
+      <Text style={styles.step}>1 — Set up your computer.</Text>
       <Pressable accessibilityRole="button" style={styles.command} onPress={() => void copy()} testID="copy-install">
         <Text style={styles.commandText} selectable>
           {INSTALL_COMMAND}
@@ -304,16 +303,16 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
         <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
       </Pressable>
       <Text style={styles.introText}>
-        It needs a Mac or Linux machine already running{" "}
+        Paste these two lines into the terminal (the window where you type commands) on a Mac or Linux computer running{" "}
         <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
           herdr
         </Text>
-        . The second command opens a one-time pairing code inside herdr.
+        , the app that keeps your AI assistants running. The second line shows a code to connect your phone.
       </Text>
 
-      <Text style={styles.step}>2 — Pair this phone.</Text>
+      <Text style={styles.step}>2 — Connect your phone.</Text>
       <Text style={styles.introText}>
-        Scan the QR code in herdr to pair securely through the relay. No hostname, SSH account, or passcode needed.
+        Scan the code on your computer to connect securely. Keep your computer awake and connected to the internet while you use Shahi.
       </Text>
 
       {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}

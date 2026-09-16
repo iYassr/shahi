@@ -46,7 +46,7 @@ test("computer picker closes on Escape, outside interaction and selection", asyn
 });
 test("pairs over encrypted relay, submits once, reads history and forgets a memory session", async ({ page, request }) => {
   await pair(page);
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   await page.locator("textarea").fill("encrypted browser fixture prompt");
   await page.locator(".compose__send").click();
   await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).writes.filter((w: {path:string}) => w.path.endsWith("/prompt")).length).toBe(1);
@@ -84,7 +84,7 @@ test("network return replaces a silently dead relay and a cold offline launch re
   await request.post("/__hosted/online");
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect.poll(handshakes).toBeGreaterThan(before);
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   await page.locator("textarea").fill("recovered connection prompt");
   await page.locator(".compose__send").click();
   await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).writes.filter((w: {path:string}) => w.path.endsWith("/prompt")).length).toBe(1);
@@ -122,7 +122,7 @@ test("hosted shell has restrictive security headers and phone/laptop layouts fit
 
 test("files, images, downloads and uploads stay inside the encrypted connection", async ({ page, request }) => {
   await pair(page);
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   await expect(page.locator(".reader .msg").first()).toBeVisible();
   const image = page.locator(".msg__image").first();
   await expect(image).toHaveAttribute("src", /^blob:/);
@@ -213,10 +213,10 @@ test("two remembered computers switch both ways, survive reload, and sign out in
     await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
   }
   async function send(text: string) {
-    await page.locator(".blocked__head").first().click();
+    await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
     await page.locator("textarea").fill(text);
     await page.locator(".compose__send").click();
-    await page.getByRole("button", { name: /back/i }).first().click();
+    await page.getByRole("button", { name: "Back", exact: true }).or(page.getByRole("link", { name: /^Agents/ })).first().click();
   }
   await computers();
   await page.getByRole("button", { name: "Add a computer", exact: true }).click();
@@ -256,7 +256,7 @@ test("a temporary second computer does not replace the remembered first computer
   await expect(page.getByRole("heading", { name: "Computers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7572/ })).toHaveCount(0);
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
 });
 
 test("an offline or revoked computer never hides the other saved computers", async ({ page, request }) => {
@@ -268,7 +268,7 @@ test("an offline or revoked computer never hides the other saved computers", asy
   await page.getByLabel("Pairing code", { exact: true }).fill(second.code);
   await page.getByLabel("Remember this browser").check();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/offline");
   await expect(page.getByText("Computer disconnected", { exact: true }).first()).toBeVisible();
   await expect(page.getByLabel("Pairing code", { exact: true })).toHaveCount(0);
@@ -278,17 +278,17 @@ test("an offline or revoked computer never hides the other saved computers", asy
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
   await expect(page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7572/ })).toBeVisible();
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/online");
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7572/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/revoke");
   await expect(page.getByRole("heading", { name: "Computers", exact: true })).toBeVisible();
   await expect(page.getByLabel("Pairing code", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
 });
 
 test("an update cannot silently reload away another temporary computer", async ({ page, request }) => {
@@ -299,11 +299,11 @@ test("an update cannot silently reload away another temporary computer", async (
   await page.getByRole("button", { name: "Add a computer", exact: true }).click();
   await page.getByLabel("Pairing code", { exact: true }).fill(second.code);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await page.route("**/pwa/", async route => {
     const response = await route.fetch();
     const body = (await response.text()).replace(/\/pwa\/assets\/[^"']+\.js/, "/pwa/assets/synthetic-new-release.js");
@@ -314,12 +314,12 @@ test("an update cannot silently reload away another temporary computer", async (
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7572/ }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
 });
 
 test("an update preserves an unsent message and cancelling reload keeps the draft", async ({ page, request }) => {
   await pair(page, true);
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   const draft = page.locator("textarea");
   await draft.fill("unfinished fixture message");
   await page.route("**/pwa/", async route => {
@@ -369,7 +369,7 @@ test("both computers remain live through quick switches and revoking one leaves 
     await page.getByLabel("Switch computer", { exact: true }).click();
     // Both fixtures deliberately share a machine name; order follows pairing.
     await page.locator(".computer-switcher__menu button").nth(port === 7472 ? 0 : 1).click();
-    await expect(page.locator(".blocked__head").first()).toBeVisible();
+    await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   }
   expect(await counts(7472)).toEqual({ live: 1, handshakes: 1 });
   expect(await counts(7572)).toEqual({ live: 1, handshakes: 1 });
@@ -381,7 +381,7 @@ test("both computers remain live through quick switches and revoking one leaves 
   expect(await counts(7472)).toEqual({ live: 1, handshakes: 1 });
   expect((await (await request.get("http://127.0.0.1:7572/__hosted/device-count")).json()).count).toBe(0);
   await page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ }).click();
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   await page.locator("textarea").fill("still-connected-after-revocation");
   await page.locator(".compose__send").click();
   await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).writes.length).toBeGreaterThan(0);
@@ -390,7 +390,7 @@ test("both computers remain live through quick switches and revoking one leaves 
 test("a notification opens its own computer even when another was selected", async ({ page, request }) => {
   await pair(page, true);
   const firstId = new URLSearchParams(code.split("#")[1]).get("server")!;
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   const pane = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1)!);
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
@@ -399,7 +399,7 @@ test("a notification opens its own computer even when another was selected", asy
   await page.getByLabel("Pairing code", { exact: true }).fill(second.code);
   await page.getByLabel("Remember this browser").check();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await page.goto(`/pwa/notification?pane=${encodeURIComponent(pane)}&computer=${encodeURIComponent(firstId)}`);
   await page.locator("textarea").fill("notification-to-first-computer");
   await page.locator(".compose__send").click();
@@ -420,17 +420,17 @@ test("a delayed sign-out removes its own computer after switching to another", a
   await page.getByLabel("Pairing code", { exact: true }).fill(second.code);
   await page.getByLabel("Remember this browser").check();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/hold-logout");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect.poll(async () => (await (await request.get("http://127.0.0.1:7572/__hosted/writes")).json()).requests.some((r: {path:string}) => r.path === "/api/auth/logout")).toBe(true);
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.locator(".computer-switcher__menu button").first().click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/release-logout");
   await expect.poll(async () => (await (await request.get("http://127.0.0.1:7572/__hosted/connections")).json()).live).toBe(0);
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   expect((await (await request.get("/__hosted/connections")).json()).live).toBe(1);
 });
 
@@ -447,10 +447,11 @@ test("updates a paired computer through encrypted recovery and reconnects withou
   await expect(page.getByText("Restarting Shahi · reconnecting automatically…")).toBeVisible({ timeout: 8000 });
   await expect(page.getByText("Restarting Shahi · reconnecting automatically…")).toBeHidden({ timeout: 12000 });
   expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(1);
-  await page.locator(".blocked__head").first().click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
   await expect(page.getByRole("button", { name: "Attach a file", exact: true })).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  const returnToAgents = page.getByRole("button", { name: "Back", exact: true }).or(page.getByRole("link", { name: /^Agents/ })).first();
+  await expect(returnToAgents).toBeVisible();
+  await returnToAgents.click();
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
 });

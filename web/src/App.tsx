@@ -307,6 +307,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
     }} />;
   }
 
+  const conversationLayout = routeLocation.pathname === "/" || routeLocation.pathname.startsWith("/pane/");
+  const conversationOpen = routeLocation.pathname.startsWith("/pane/");
   const blockedCount = session?.panes.filter((p) => p.status === "blocked").length ?? 0;
 
   return (
@@ -319,12 +321,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       {computerButton}
       <ComputerUpdate />
       <ConnectionHealth link={link} error={healthError} relay={hosted} onRetry={retryConnection} />
-      <Routes>
-        <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
-        <Route
-          path="/"
-          element={
-            <>
+      <div className={conversationLayout ? "conversation-layout" : "page-layout"} data-conversation-open={conversationOpen}>
+      {conversationLayout && <aside className="agent-sidebar" aria-label="Agent conversations">
               <header className="topbar">
                 <h1 className="topbar__title"><Logo size={28} /> Agents</h1>
                 <button className="topbar__action" onClick={() => setNewAgent(true)}>+ New agent</button>
@@ -338,9 +336,12 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
               </header>
               <PushPrompt onToast={showToast} />
               <Dashboard reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} onAnswer={answer} />
-            </>
-          }
-        />
+        <TabBar allowPane blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
+      </aside>}
+      <main className="conversation-main">
+      <Routes>
+        <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
+        <Route path="/" element={<div className="conversation-welcome"><Logo size={64} /><h1>Your work, ready to continue</h1><p>Choose an agent on the left to read the conversation or send the next instruction.</p><span>Same session. Same computer.</span></div>} />
         <Route
           path="/spaces"
           element={
@@ -361,7 +362,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
         <Route
           path="/pane/:paneId"
           element={
-            <PaneView
+            <PaneView key={routeLocation.pathname}
               session={session}
               frames={frames}
               prompts={prompts}
@@ -372,6 +373,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
           }
         />
       </Routes>
+      </main>
+      </div>
 
       {newAgent && (selectedSpace && session?.workspaces.find((s) => s.workspaceId === selectedSpace)
         ? <NewAgent space={session.workspaces.find((s) => s.workspaceId === selectedSpace)!} onClose={() => { setNewAgent(false); setSelectedSpace(null); }} onToast={showToast} onStarted={(id) => { setNewAgent(false); setSelectedSpace(null); refresh(); navigate(`/pane/${encodeURIComponent(id)}`); }} />
@@ -379,7 +382,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
             {session?.workspaces.map((space) => <button className="row" key={space.workspaceId} onClick={() => setSelectedSpace(space.workspaceId)}>{space.label}</button>)}
             {!session?.workspaces.length && <button className="sheet__go" onClick={() => { setNewAgent(false); navigate("/spaces"); }}>Create a space first</button>}
           </Sheet>)}
-      <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
+      {!conversationLayout && <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div></ComputerControlProvider>
   );
@@ -401,9 +404,9 @@ function LinkState({ state }: { state: LinkState }) {
  * Hidden on the drill-in screens, which have their own back control and need
  * every row of height they can get for a terminal.
  */
-function TabBar({ blockedCount, spaceCount }: { blockedCount: number; spaceCount: number }) {
+function TabBar({ blockedCount, spaceCount, allowPane = false }: { blockedCount: number; spaceCount: number; allowPane?: boolean }) {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/pane/") || pathname.startsWith("/space/")) return null;
+  if (!allowPane && (pathname.startsWith("/pane/") || pathname.startsWith("/space/"))) return null;
 
   return (
     <nav className="tabbar" aria-label="Main navigation">
