@@ -13,8 +13,9 @@ import { useLocation } from "react-router-dom";
  */
 const positions = new Map<string, number>();
 
-export function useScrollMemory(ref: RefObject<HTMLElement | null>, ready: boolean): void {
-  const { key } = useLocation();
+export function useScrollMemory(ref: RefObject<HTMLElement | null>, ready: boolean, scope?: string): void {
+  const location = useLocation();
+  const key = scope ?? location.key;
 
   useEffect(() => {
     const node = ref.current;

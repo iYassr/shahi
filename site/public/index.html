@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shahi — Leave your desk. Keep working.</title>
-<meta name="description" content="Continue the same Claude Code and Codex sessions from your phone. Scan a QR code and connect to the work running on your computer or server.">
+<meta name="description" content="Continue your work with Claude Code and Codex from your phone. Scan a QR code to connect to your computer.">
 <meta name="color-scheme" content="dark">
 <meta property="og:title" content="Shahi — Leave your desk. Keep working.">
 <meta property="og:description" content="Same conversation. Same files. Continue the work running on your computer from your phone.">
@@ -24,31 +24,31 @@
       <img class="mark" data-brand-welcome src="/favicon.svg" alt="" width="48" height="48">
       <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
     </a>
-    <a class="quiet-link" href="https://github.com/iYassr/shahi">GitHub <span aria-hidden="true">↗</span></a>
+    <a class="quiet-link" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
   </header>
   <main>
     <section class="hero" aria-labelledby="headline">
       <p class="eyebrow">For Claude Code &amp; Codex</p>
       <h1 id="headline">Leave your desk.<br><span>Keep working.</span></h1>
-      <p class="lede">Continue the same agent sessions from your phone.<br class="desktop-break"> Same conversation. Same files. Your computer does the work.</p>
+      <p class="lede">Pick up your work with Claude Code or Codex from your phone.<br class="desktop-break"> Same conversation. Same files. Your computer does the work.</p>
       <div class="hero-actions">
         <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability">Browser app available · <a href="#ios-beta">Join the iOS beta</a></p>
+      <p class="availability">Opens in your browser · <a href="#ios-beta">Join the iOS beta</a></p>
     </section>
 
     <figure class="product">
       <div class="product-frame">
         <section class="inbox" aria-label="Example agent list">
-          <div class="panel-heading"><span>Agents</span><span class="subtle">3 sessions</span></div>
+          <div class="panel-heading"><span>Agents</span><span class="subtle">3 conversations</span></div>
           <div class="agent-row selected">
             <span class="avatar claude"><img src="/agents/claude.svg" alt="Claude Code" width="20" height="20"></span>
-            <div><strong>Add request validation</strong><span class="meta">api-gateway</span><span class="state attention demo-before">Needs you</span><span class="state working demo-after">Working</span></div>
+            <div><strong>Improve the sign-up form</strong><span class="meta">api-gateway</span><span class="state attention demo-before">Needs you</span><span class="state working demo-after">Working</span></div>
           </div>
           <div class="agent-row">
             <span class="avatar codex bob"><img src="/agents/codex.svg" alt="Codex" width="20" height="20"></span>
-            <div><strong>Test the billing migration</strong><span class="meta">billing</span><span class="state working">Working</span></div>
+            <div><strong>Check the payment update</strong><span class="meta">billing</span><span class="state working">Working</span></div>
           </div>
           <div class="agent-row">
             <span class="avatar claude"><img src="/agents/claude.svg" alt="Claude Code" width="20" height="20"></span>
@@ -57,56 +57,53 @@
           <div class="preview-nav" aria-hidden="true"><span>Agents</span><span>Spaces</span><span>Settings</span></div>
         </section>
         <section class="reader" aria-label="Example conversation">
-          <div class="panel-heading"><span>Add request validation</span><span class="meta">~/api-gateway</span></div>
+          <div class="panel-heading"><span>Improve the sign-up form</span><span class="meta">~/api-gateway</span></div>
           <div class="reader-tabs" aria-hidden="true"><span class="active">Read</span><span>Screen</span></div>
           <div class="conversation">
-            <div class="message you"><span class="speaker">You</span><p>Check the request body before creating a user. Return a useful error if the email is missing.</p></div>
-            <div class="message"><span class="speaker">Claude Code</span><p>I’ll add validation to the route and a test for requests without an email.</p></div>
-            <div class="change"><div class="file-label">router.ts <span>+3 lines</span></div><pre><code>app.post('/users', async (req, res) =&gt; {
-<span class="added">+  if (!req.body.email) {
-+    return res.status(400).json({ error: 'Email is required' });
-+  }</span></code></pre></div>
-            <div class="approval"><p class="demo-before">Allow this edit to router.ts?</p><p class="demo-after sent">✓ Response sent</p>
+            <div class="message you"><span class="speaker">You</span><p>Show a helpful message if someone tries to sign up without an email address.</p></div>
+            <div class="message"><span class="speaker">Claude Code</span><p>I’ll update the sign-up form and check that the message appears when the email is missing.</p></div>
+            <div class="change"><div class="file-label">Sign-up form</div><p>When the email is missing, show: “Enter your email address to continue.”</p></div>
+            <div class="approval"><p class="demo-before">Allow this change to the sign-up form?</p><p class="demo-after sent">✓ Response sent</p>
               <details class="answer-demo"><summary><span class="demo-before">Allow once</span><span class="demo-after">Reset example</span></summary><p>Claude is applying the change.</p></details>
             </div>
           </div>
         </section>
       </div>
-      <figcaption>Example session · Try “Allow once” to see the response. No agent is connected.</figcaption>
+      <figcaption>Interactive example · Try “Allow once” to see what happens. This won’t change any real work.</figcaption>
     </figure>
 
     <section class="features" aria-label="Features">
-      <article><span class="feature-number">01</span><h2>Scan and connect</h2><p>Pair with a QR code. No Shahi account, VPN installation, or port forwarding needed.</p></article>
-      <article><span class="feature-number">02</span><h2>Answer with context</h2><p>Review the request before approving. Shahi checks that the prompt is still current.</p></article>
-      <article><span class="feature-number">03</span><h2>Continue the same work</h2><p>Send the next instruction from your phone. Return to your computer and carry on in the same herdr session.</p></article>
+      <article><span class="feature-number">01</span><h2>Scan and connect</h2><p>Scan the code on your computer to connect your phone. No Shahi account needed.</p></article>
+      <article><span class="feature-number">02</span><h2>Answer with context</h2><p>See what your AI assistant wants to do before you allow it. Shahi checks that the request is still waiting for your answer.</p></article>
+      <article><span class="feature-number">03</span><h2>Continue the same work</h2><p>Send the next instruction from your phone. Return to your computer and pick up the same conversation.</p></article>
     </section>
 
     <section class="security" id="connection-security" aria-labelledby="security-title">
       <p class="eyebrow">Connection security</p>
       <h2 id="security-title">How your connection is protected.</h2>
-      <p class="security-intro">Your phone and computer connect outbound to a relay, so your local Shahi port stays private. Application data is encrypted between your devices before it reaches the relay.</p>
-      <figure class="connection-map" aria-label="Encrypted connection between your phone and computer through the relay">
+      <p class="security-intro">Your phone and computer lock the messages they send to each other using encryption. Shahi’s connection service passes those messages along without being able to read them.</p>
+      <figure class="connection-map" aria-label="Protected connection between your phone and computer">
         <ol>
-          <li class="connection-node"><strong>Your phone</strong><span>Read, reply, and approve.<br>Encrypts and decrypts your session data.</span></li>
+          <li class="connection-node"><strong>Your phone</strong><span>Read, reply, and approve.<br>Locks messages before sending them.</span></li>
           <li class="connection-arrow" aria-hidden="true">↔</li>
-          <li class="connection-node"><strong>Shahi relay</strong><span>Forwards encrypted payloads.<br>Can observe connection metadata.</span></li>
+          <li class="connection-node"><strong>Connection service</strong><span>Passes along locked messages.<br>Cannot read their contents.</span></li>
           <li class="connection-arrow" aria-hidden="true">↔</li>
-          <li class="connection-node"><strong>Your computer</strong><span>Runs herdr, your agents, and your files.<br>Encrypts and decrypts your session data.</span></li>
+          <li class="connection-node"><strong>Your computer</strong><span>Keeps your work running.<br>Unlocks messages from your phone.</span></li>
         </ol>
-        <figcaption>Both devices initiate outbound WSS connections. Arrows show two-way traffic. Your computer must stay awake and connected.</figcaption>
+        <figcaption>Messages travel both ways. Your computer must stay awake and connected to the internet.</figcaption>
       </figure>
       <details><summary>What happens when I scan the code?</summary><ol>
-        <li>The code introduces your phone to your computer with a temporary secret. It expires after ten minutes and can be claimed once.</li>
-        <li>Both devices establish an encrypted channel. The secret is not exposed to the relay in plaintext.</li>
-        <li>Your computer gives the paired device its own credentials. Future connections prove possession of that secret before access is granted.</li>
-        <li>You can revoke a device in Settings. Its connection closes and further authenticated requests are refused.</li>
-      </ol><p>Treat an unused QR code or pairing link as a credential: pairing grants access to your terminal.</p></details>
-      <details><summary>What can the relay see—and what must I trust?</summary><p>The relay forwards encrypted application content. It and Cloudflare can observe IP addresses, identifiers, and traffic sizes and timing. Operational metadata is collected for reliability and abuse diagnosis.</p><p>Your phone and computer can read the data they decrypt. The browser app also trusts the code published on getshahi.dev. Optional push providers receive notification content through a separate delivery path. Encryption does not protect a compromised endpoint or guarantee availability.</p><p>Shahi uses X25519, HKDF-SHA-256, and ChaCha20-Poly1305. Published project reviews are internal assessments, not an independent security certification.</p></details>
+        <li>The code lets your phone connect to your computer. It works once and expires after ten minutes.</li>
+        <li>Your devices set up a protected connection. The connection service cannot read the secret in your code.</li>
+        <li>Your computer remembers the connected device so it can recognize it next time.</li>
+        <li>Remove a device’s access in Settings to disconnect it and stop it from connecting again.</li>
+      </ol><p>Keep your connection code private. Anyone who uses it can control the work running on your computer.</p></details>
+      <details><summary>What information can Shahi see?</summary><p>Shahi’s connection service and its hosting provider, Cloudflare, can see connection information, such as your internet address, device identifiers, and when and how much data is sent. This helps diagnose connection problems and misuse. They cannot read the messages sent through this protected connection.</p><p>Your connected devices can read your messages, so keep them secure. The web app relies on software delivered by getshahi.dev. If you turn on notifications, notification providers receive their contents separately. Encryption cannot protect a device that someone has broken into or prevent connection outages.</p><p>Shahi has internal security reviews, but has not been independently certified. The security guide below explains the encryption in detail.</p></details>
       <div class="security-links"><a class="quiet-link" href="https://github.com/iYassr/shahi/blob/master/docs/connection-security.md">Illustrated security guide <span aria-hidden="true">↗</span></a><a class="quiet-link" href="/privacy">Data and privacy <span aria-hidden="true">↗</span></a></div>
     </section>
 
     <section class="beta" id="ios-beta" aria-labelledby="beta-title">
-      <div><p class="eyebrow">iOS · TestFlight</p><h2 id="beta-title">Try Shahi on your iPhone.</h2><p>Leave your email and we’ll contact you when a beta place is available.</p></div>
+      <div><p class="eyebrow">iPhone · Early access</p><h2 id="beta-title">Try Shahi on your iPhone.</h2><p>Leave your email and we’ll contact you when a place is available. You’ll install the preview through Apple’s TestFlight app.</p></div>
       <form id="beta-form">
         <label for="beta-email">Email address</label>
         <div class="beta-fields"><input id="beta-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required><button class="button-primary" type="submit">Request an invite</button></div>
@@ -119,11 +116,11 @@
     </section>
 
     <section class="setup" id="quick-start" aria-labelledby="setup-title">
-      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>Run these commands on your Mac or Linux computer with herdr installed. Then scan the pairing code in Shahi.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Setup documentation <span aria-hidden="true">↗</span></a></div>
+      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>First install herdr, the app that keeps your AI assistants running, on your Mac or Linux computer. Then paste these two lines into its terminal (the window where you type commands). Open Shahi on your phone and scan the code that appears.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a></div>
       <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
 herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
     </section>
-    <p class="connection-note">Prefer SSH? The native app can connect through an SSH tunnel to a computer you can already reach. <a href="https://github.com/iYassr/shahi#how-it-connects">Connection options</a></p>
+    <p class="connection-note">Advanced: already use SSH to access your computer? You can use that connection in the mobile app. <a href="https://github.com/iYassr/shahi#how-it-connects">Connection options</a></p>
   </main>
   <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>

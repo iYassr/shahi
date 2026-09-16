@@ -17,8 +17,8 @@ export function Computers({ onClose }: { onClose?: () => void }) {
   return <>
     <header className="topbar"><h1 className="topbar__title"><UiIcon name="computer" size={26} /> Computers</h1><span className="topbar__spacer" />{onClose && <button className="topbar__action" onClick={onClose}>Back</button>}</header>
     <main className="settings computers scroll">
-    <div className="page-intro"><h2>All your computers, together</h2><p>Switch in one tap. All computers stay connected while Shahi is open. Remember a pairing to reconnect after closing the app.</p></div>
-    {computers.length === 0 && <div className="empty"><span className="empty__mark"><UiIcon name="computer" size={40} /></span><h2>Add your first computer</h2><p>Pair with its QR code to bring your agents here.</p></div>}
+    <div className="page-intro"><h2>All your computers, together</h2><p>Switch in one tap. All computers stay connected while Shahi is open. Select Remember this browser when connecting to keep access after closing the app.</p></div>
+    {computers.length === 0 && <div className="empty"><span className="empty__mark"><UiIcon name="computer" size={40} /></span><h2>Add your first computer</h2><p>Scan the code on your computer to see your work here.</p></div>}
     {computers.map(computer => <section className="computer-card" data-current={browserConnection().identity?.serverId === computer.id} key={computer.id}>
       <div className="computer-card__heading"><span className="space__icon"><UiIcon name="computer" size={24} /></span><div><h2>{computer.name}</h2><span className={`computer-state computer-state--${computer.state}`}>{computer.state === "live" ? "Connected" : computer.state === "lost" ? "Offline · retrying" : "Connecting…"}</span></div></div><p>{computer.address} · {computer.remembered ? "Remembered" : "Until this page closes"}</p>
       <div className="computer-card__actions">
@@ -26,7 +26,7 @@ export function Computers({ onClose }: { onClose?: () => void }) {
         {browserConnection().identity?.serverId === computer.id ? "Current computer" : "Connect"}
       </button>
       <button className="settings__signout" disabled={busy} onClick={() => {
-        if (!window.confirm(`Revoke this browser’s access to ${computer.name}? A new pairing code will be needed. Other computers stay connected.`)) return;
+        if (!window.confirm(`Remove this browser’s access to ${computer.name}? A new pairing code will be needed. Other computers stay connected.`)) return;
         setBusy(true);
         void revokeBrowserComputer(computer.id).catch(e => setError(e.message)).finally(() => setBusy(false));
       }}>Revoke this browser’s access</button>

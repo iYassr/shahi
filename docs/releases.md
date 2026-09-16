@@ -19,7 +19,7 @@ is operated by Shahi and SSH libraries travel inside the phone binary.
   herdr is offline or unsupported. It cannot bypass a revoked device grant.
 - The encrypted transport floor is 2. There is no insecure relay fallback.
   Supporting infrastructure must be deployed before clients need a new transport.
-- herdr 0.9.0 / protocol 22 is the initial tested adapter profile. A new herdr
+- herdr 0.9.0 and 0.9.1 / protocol 22 are tested adapter profiles. A new herdr
   version enters the approved list only after the live adapter suite passes.
   Unsupported herdr leaves recovery and pairing available, but refuses commands.
 
@@ -112,3 +112,17 @@ their saved computers during update/reconnect and can switch to another live
 computer. An absent capability disables its optional control, rather than forcing
 an unrelated component update. In Settings, users choose a channel or check for
 an update; the main screen shows update availability and recovery progress.
+
+### herdr 0.9.1 verification — 2026-09-16
+
+The official macOS arm64 binary was checked against the release asset’s SHA-256
+digest and exercised in an isolated named session. The live adapter suite passed
+21 checks; the optional test that starts a paid AI agent was not run. An initial
+shell-submit timeout passed on rerun with the same binary and configuration.
+Protocol 22 is unchanged. The schema adds only `pane.link.resolve` and its
+response; existing calls retain their shapes. Generated types include the new
+schema. CI pins both 0.9.0 and 0.9.1 and also tests the current stable release.
+
+These source changes need a new approved Shahi service release before managed
+installations accept herdr 0.9.1. Publishing the landing page alone does not
+update the computer service.

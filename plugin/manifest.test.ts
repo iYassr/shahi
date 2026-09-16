@@ -66,11 +66,11 @@ describe("herdr-plugin.toml", () => {
   });
 
   test("asks for the herdr CI proves against, not a newer one", () => {
-    // The minimum supported release is pinned in ci.yml (`herdr: [v0.9.0, stable]`).
+    // The minimum supported release is pinned in ci.yml (`herdr: [v0.9.0, v0.9.1, stable]`).
     // A manifest asking for less claims support nobody tests; one asking for
     // more refuses to install on a box CI says works.
     const ci = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
-    const pinned = ci.match(/herdr: \[v(\d+\.\d+\.\d+), stable\]/)?.[1];
+    const pinned = ci.match(/herdr: \[v(\d+\.\d+\.\d+),/)?.[1];
     expect(pinned).toBeDefined();
     expect(manifest.min_herdr_version).toBe(pinned!);
   });

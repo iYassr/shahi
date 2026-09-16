@@ -67,7 +67,7 @@ test("remembered access survives cached cold launches and repeated relay recover
   await page.getByLabel("Pairing code", { exact: true }).fill(code);
   await page.getByLabel("Remember this browser").check();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.locator(".blocked__head").first()).toBeVisible();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await ready(page);
   for (let n = 0; n < 3; n++) {
     await request.post("/__hosted/offline");
@@ -79,7 +79,7 @@ test("remembered access survives cached cold launches and repeated relay recover
     await request.post("/__hosted/online");
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
     await expect.poll(async () => (await (await request.get("/__hosted/connections")).json()).live).toBe(1);
-    await expect(page.locator(".blocked__head").first()).toBeVisible();
+    await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
     await expect(page.locator(".connection-health")).toHaveCount(0);
   }
   expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(1);

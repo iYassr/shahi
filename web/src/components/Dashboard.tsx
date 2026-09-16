@@ -15,7 +15,7 @@ import { preferences } from "../preferences";
  * inside the fifth space would defeat the entire point of the screen.
  */
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMatch, useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { Logo } from "./Logo";
@@ -44,6 +44,7 @@ const STORED = "shahi.grouping";
 
 export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: Props) {
   const navigate = useNavigate();
+  const selected = useMatch("/pane/:paneId")?.params.paneId;
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [pins, setPins] = useState<string[]>(() => { try { const stored = JSON.parse(preferences.get("shahi.pins") ?? "[]"); return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []; } catch { return []; } });
@@ -52,7 +53,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   // Your explicit choice wins; otherwise follow whatever the TUI is set to;
   // otherwise the attention queue, which is what this screen is for.
   const scroller = useRef<HTMLDivElement>(null);
-  useScrollMemory(scroller, Boolean(session));
+  useScrollMemory(scroller, Boolean(session), "agent-list");
 
   const [grouping, setGrouping] = useState<Grouping | null>(
     () => (preferences.get(STORED) as Grouping | null) ?? null,
@@ -103,7 +104,13 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
       {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p></div>}
       {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</button>}</div>}
 
-      {blocked.map((pane) => (
+      <div className="agent-sidebar__requests">{blocked.map((pane) => (
+        <button key={pane.paneId} className={`agent-sidebar__request${selected === pane.paneId ? " row--selected" : ""}`} aria-current={selected === pane.paneId ? "page" : undefined} onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}>
+          <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
+          <span className="row__title">{pane.title ?? pane.paneId}<span className="row__preview">Waiting for your reply</span><span className="row__meta">{pane.workspaceLabel} · Waiting on you</span></span>
+        </button>
+      ))}</div>
+      {!selected && <div className="agent-full-requests">{blocked.map((pane) => (
         <BlockedCard
           key={pane.paneId}
           pane={pane}
@@ -111,7 +118,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
           onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
           onAnswer={(index) => onAnswer(pane.paneId, index)}
         />
-      ))}
+      ))}</div>}
 
       {rest.length > 0 && (
         <>
@@ -140,7 +147,8 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
               </div>
               {group.panes.map((pane) => (
                 <div className={`agent-row${pins.includes(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
-                  className={`row row--${pane.status}`}
+                  className={`row row--${pane.status}${selected === pane.paneId ? " row--selected" : ""}`}
+                  aria-current={selected === pane.paneId ? "page" : undefined}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
