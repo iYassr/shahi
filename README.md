@@ -4,10 +4,12 @@
 
 # Shahi
 
-**Leave your desk. Keep working.**
+**herdr, at its best on mobile.**
 
-Continue the same coding-agent sessions from your phone.<br>
-Same conversation. Same files. Same computer doing the work.
+A fast, easy-to-use client for the work running on your computer.<br>
+A clean interface. Agent activity made readable. The same conversation, wherever you are.
+
+Leave your desk. Keep working.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
@@ -41,7 +43,19 @@ flowchart LR
 Your computer or server must stay awake and connected. Closing Shahi on your
 phone does not stop the agents running there.
 
-## Built for using a phone
+## A herdr client made for your phone
+
+Shahi brings your running agents into an interface designed for a small screen:
+clear conversations, readable code, colored agent icons, and controls that are
+easy to reach. Live updates keep you close to the work; returning to a conversation
+keeps your reading position and unfinished reply.
+
+Claude Code and Codex activity is formatted automatically. Messages, tool calls,
+command results, file changes and supported approval requests become readable
+conversation items, so you can understand what happened and decide what comes
+next from your phone. There is no per-tool layout to configure. Screen mode is
+always available for the terminal itself; unfamiliar agent output may need that
+view rather than a formatted conversation.
 
 - **Scan and connect.** The default connection uses a pairing QR code. No Shahi
   account, public server port, VPN installation, or domain setup is needed.
