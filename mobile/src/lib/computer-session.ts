@@ -1,3 +1,4 @@
+import { clearNativeDrafts } from "./drafts";
 import { reconcileSession } from "./session-reconcile";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane, type ParsedPrompt, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
@@ -117,6 +118,7 @@ export class ComputerSession {
     await this.start();
   }
   dispose() {
+    clearNativeDrafts(this.api);
     this.disposed = true; this.socket?.close(); this.frames.clear();
     this.control.stop();
     if (this.connection.relay) closeRelay(this.connection.relay);

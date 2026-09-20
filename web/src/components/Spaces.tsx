@@ -58,7 +58,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
     return (
       <div className="empty">
         <span className="empty__mark">⟳</span>
-        Connecting to herdr…
+        Connecting to your computer…
       </div>
     );
   }

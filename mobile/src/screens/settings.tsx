@@ -1,5 +1,4 @@
 import { ComputerUpdate } from "@/components/computer-update";
-import { ComputerSwitcher } from "@/components/computer-switcher";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * Settings, in the settings grammar everyone already knows: an identity card
@@ -13,7 +12,8 @@ import { ConnectionHealth } from "@/components/connection-health";
  * long ago the last update arrived.
  */
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import { preparePushLogout } from "@/lib/push-registration";
@@ -22,6 +22,7 @@ import { useSession, useLastUpdate } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Icon, type IconName } from "@/components/icons";
 import { PairedDevices } from "@/components/paired-devices";
+import { PrivacyLinks } from "@/components/privacy-links";
 
 const TERMINAL_WIDTHS = [60, 100, 146];
 
@@ -51,7 +52,7 @@ export function Settings() {
   const isSsh = server.startsWith("ssh://");
   const kind = isSsh ? "ssh" : "shahi relay";
   const name = session?.serverName ?? host;
-  const status = link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING";
+  const status = link === "live" ? "Connected" : link === "lost" ? "Offline" : "Connecting…";
   const [showReach, setShowReach] = useState(false);
 
   return (
@@ -63,17 +64,15 @@ export function Settings() {
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />
-      <View style={{ paddingHorizontal: 20 }}><ComputerSwitcher /></View>
-      <View style={styles.group}>
-        <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
-      </View>
       <View style={styles.group}>
         <Pressable
           style={styles.profile}
           testID="server-identity"
           onPress={() => setShowReach((v) => !v)}
           accessibilityRole="button"
-          accessibilityHint="Show the address this server is reached at"
+          accessibilityLabel={`${name}, ${status}. Connection details${showReach ? `. ${isSsh ? "SSH connection" : "Encrypted relay connection"}. ${server}${session ? `. herdr ${session.version}` : ""}` : ""}`}
+          accessibilityState={{ expanded: showReach }}
+          accessibilityHint="Show or hide connection details"
         >
           <View style={styles.profileIcon}>
             <Icon name="server" color={theme.peach} size={26} />
@@ -83,17 +82,20 @@ export function Settings() {
               {name}
             </Text>
             <Text style={styles.profileSub} numberOfLines={1}>
-              {kind} · {status}
+              {status}
             </Text>
+            <Text style={{ color: theme.peach, fontSize: 13, marginTop: 6 }}>Connection details</Text>
             {showReach && (
-              <Text style={styles.profileReach} numberOfLines={2}>
-                {server}
+              <Text style={styles.profileReach} selectable>
+                {kind === "ssh" ? "SSH connection" : "Encrypted relay connection"}{"\n"}{server}
                 {session ? ` · herdr ${session.version} · protocol ${session.protocol}` : ""}
               </Text>
             )}
           </View>
           <Icon name={showReach ? "chevron-up" : "chevron-down"} color={theme.dim} size={16} />
         </Pressable>
+        <Separator />
+        <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
       </View>
 
       <ComputerUpdate settings />
@@ -111,7 +113,7 @@ export function Settings() {
           hint={
             push !== "off" && push !== "on" && push !== "asking"
               ? push
-              : "A notification arrives when an agent blocks on a question."
+              : "Get notified when an agent needs your reply."
           }
         />
         <Separator />
@@ -214,6 +216,7 @@ export function Settings() {
           }
         />
       </View>
+      <PrivacyLinks />
     </ScrollView>
   );
 }

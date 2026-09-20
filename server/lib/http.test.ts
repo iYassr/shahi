@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Auth } from "./auth";
@@ -32,7 +32,7 @@ const PASSCODE = "2468";
 let screen = "";
 
 /** Enough of herdr for the routes under test; anything else is refused. */
-function fakeHerdr(calls: { method: string; params: unknown }[]): HerdrClient {
+function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation = false): HerdrClient {
   const pane = {
     pane_id: PANE,
     workspace_id: "w1",
@@ -62,14 +62,26 @@ function fakeHerdr(calls: { method: string; params: unknown }[]): HerdrClient {
       calls.push({ method, params });
       switch (method) {
         case "session.snapshot":
-          return { snapshot };
+          return { snapshot: structuredClone(snapshot) };
         case "pane.send_keys":
         case "pane.send_text":
           return {};
         case "pane.read":
           return { read: { text: screen } };
         case "tab.create":
+          if (freshCreation) {
+            const workspaceId = (params as { workspace_id: string }).workspace_id;
+            const next = { ...pane, pane_id: `${workspaceId}:new${snapshot.panes.length}`, workspace_id: workspaceId, tab_id: `new${snapshot.tabs.length}` };
+            snapshot.panes.push(next);
+            snapshot.tabs.push({ ...snapshot.tabs[0]!, tab_id: next.tab_id, workspace_id: workspaceId });
+            return { root_pane: { pane_id: next.pane_id }, tab: { tab_id: next.tab_id } };
+          }
           return { root_pane: { pane_id: PANE }, tab: { tab_id: "t1" } };
+        case "workspace.create": {
+          const next = { ...snapshot.workspaces[0]!, workspace_id: `w${snapshot.workspaces.length + 1}` };
+          snapshot.workspaces.push(next);
+          return { workspace: next };
+        }
         case "agent.start":
           await Bun.sleep(25);
           return {};
@@ -95,9 +107,9 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "" } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
-  const client = fakeHerdr(calls);
+  const client = fakeHerdr(calls, freshCreation);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
   const config: Config = {
     host: "127.0.0.1",
@@ -143,7 +155,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
       ...(recovery ? { control: new ComputerControl("test-server", () => ({ state: "offline", message: "herdr is offline" }), recoveryRoot || undefined) } : {}),
       ...(relay ? { relay: () => ({ url: "https://relay.test", connected: true }) } : {}),
     },
-    { heartbeatMs },
+    { heartbeatMs, uploadDir: join(scratch, `uploads-${booted}`) },
   );
   const base = `http://127.0.0.1:${server.port}`;
   const login = await fetch(`${base}/api/auth/login`, {
@@ -467,6 +479,23 @@ describe("writes and notification ownership", () => {
     expect((await post("/api/agents/start", { workspaceId: "w1", kind: "claude" })).status).toBe(400);
   });
 
+  test("created workspaces and panes are immediately readable without waiting for mirror events", async () => {
+    const fresh = await boot({ freshCreation: true });
+    const headers = { cookie: fresh.cookie, "content-type": "application/json" };
+    const create = async (path: string, body: unknown) => {
+      const response = await fetch(fresh.base + path, { method: "POST", headers, body: JSON.stringify(body) });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<any>;
+    };
+    try {
+      const space = await create("/api/workspaces", { label: "new", cwd: "/tmp" });
+      const tab = await create(`/api/workspaces/${space.workspaceId}/tabs`, { cwd: "/tmp" });
+      expect((await fetch(`${fresh.base}/api/panes/${encodeURIComponent(tab.paneId)}`, { headers })).status).toBe(200);
+      const started = await create("/api/agents/start", { workspaceId: space.workspaceId, kind: "claude", clientRequestId: "fresh-pane" });
+      expect((await fetch(`${fresh.base}/api/panes/${encodeURIComponent(started.paneId)}`, { headers })).status).toBe(200);
+    } finally { fresh.stop(); }
+  });
+
   test("the semantic tab route validates its workspace and absolute directory", async () => {
     const start = s.calls.length;
     expect((await post("/api/workspaces/missing/tabs", {})).status).toBe(404);
@@ -567,4 +596,43 @@ describe("authenticated recovery across API generations", () => {
       expect(await meta?.json()).toEqual({ serverId: "test-server", control: 1, api: { min: 5, max: 5 } });
     } finally { box.stop(); }
   });
+});
+
+
+test("authenticated file ranges preserve bytes and detect a changing download", async () => {
+  const path = join(scratch, "range-sample.pdf");
+  writeFileSync(path, "0123456789");
+  const url = `${s.base}/api/file?path=${encodeURIComponent(path)}`;
+  const denied = await fetch(url, { headers: { range: "bytes=0-3" } });
+  expect(denied.status).toBe(401);
+  const first = await fetch(url, { headers: { cookie: s.cookie, range: "bytes=0-3" } });
+  expect(first.status).toBe(206);
+  expect(first.headers.get("content-range")).toBe("bytes 0-3/10");
+  expect(await first.text()).toBe("0123");
+  const version = first.headers.get("x-shahi-file-version")!;
+  const tail = await fetch(url, { headers: { cookie: s.cookie, range: "bytes=4-20", "x-shahi-file-version": version } });
+  expect(tail.status).toBe(206); expect(await tail.text()).toBe("456789");
+  const invalid = await fetch(url, { headers: { cookie: s.cookie, range: "bytes=50-60" } });
+  expect(invalid.status).toBe(416);
+  writeFileSync(path, "different-file-content");
+  const changed = await fetch(url, { headers: { cookie: s.cookie, range: "bytes=4-8", "x-shahi-file-version": version } });
+  expect(changed.status).toBe(409);
+});
+
+
+test("chunk upload routes enforce authentication, body bounds and session ownership", async () => {
+  const app = await boot();
+  try {
+    const path = app.base + "/api/uploads/transfers/http-upload-00000001";
+    expect((await fetch(app.base + "/api/uploads/limits")).status).toBe(401);
+    const headers = { cookie: app.cookie, "content-type": "application/json" };
+    expect((await fetch(app.base + "/api/uploads/limits", { headers })).status).toBe(200);
+    expect((await fetch(path, { method: "PUT", headers, body: JSON.stringify({ name: "sample", type: "", size: 1 }) })).status).toBe(200);
+    expect((await fetch(path + "/chunk", { method: "PUT", headers: { ...headers, "x-upload-offset": "0" }, body: new Uint8Array(65537) })).status).toBe(413);
+    expect((await fetch(path + "/chunk", { method: "PUT", headers: { ...headers, "x-upload-offset": "0" }, body: new Uint8Array([42]) })).status).toBe(200);
+    const login = await fetch(app.base + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: PASSCODE }) });
+    const other = login.headers.get("set-cookie")!.split(";")[0]!;
+    expect((await fetch(path, { headers: { cookie: other } })).status).toBe(404);
+    expect((await fetch(path, { method: "DELETE", headers })).status).toBe(200);
+  } finally { app.stop(); }
 });

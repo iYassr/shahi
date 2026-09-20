@@ -143,6 +143,13 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     return this.#resyncing;
   }
 
+  /** A snapshot already in flight may predate the write we just completed. */
+  async resyncAfterMutation(): Promise<void> {
+    await this.#resyncing;
+    await this.resync();
+    if (!this.lastSyncOk) throw new Error("Could not refresh the computer after creating the conversation");
+  }
+
   async #doResync(): Promise<void> {
     try {
       const { snapshot } = await this.client.rpc("session.snapshot", {});

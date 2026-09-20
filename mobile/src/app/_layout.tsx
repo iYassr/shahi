@@ -1,5 +1,6 @@
+import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
-import { router } from "expo-router";
+import { router, ThemeProvider } from "expo-router";
 import { onNotificationTapped } from "@/lib/push";
 import { openPane } from "@/lib/navigate";
 import { Stack } from "expo-router/stack";
@@ -8,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SessionProvider, useSession } from "@/lib/session";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { theme } from "@/lib/theme";
+import { navigationTheme } from "@/lib/navigation-theme";
 
 /**
  * The root stack: a gate, the tabs, and a pane pushed on top.
@@ -23,9 +25,13 @@ export default function RootLayout() {
     // The gesture root is what lets a row's swipe actions receive the drag.
     <GestureHandlerRootView style={{ flex: 1 }}>
     <ErrorBoundary>
-    <SessionProvider>
-      <Navigation />
-    </SessionProvider>
+    <TypographyProvider>
+    <ThemeProvider value={navigationTheme}>
+      <SessionProvider>
+        <Navigation />
+      </SessionProvider>
+    </ThemeProvider>
+    </TypographyProvider>
     </ErrorBoundary>
     </GestureHandlerRootView>
   );
@@ -95,10 +101,8 @@ function Navigation() {
         <Stack.Screen
           name="new-agent"
           options={{
-            presentation: "formSheet",
+            presentation: "card",
             headerShown: false,
-            sheetAllowedDetents: "fitToContents",
-            sheetGrabberVisible: true,
             contentStyle: { backgroundColor: theme.surface },
           }}
         />

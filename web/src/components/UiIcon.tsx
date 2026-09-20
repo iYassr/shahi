@@ -1,6 +1,8 @@
 /** Shared, decorative controls; the adjacent text supplies the accessible name. */
-export function UiIcon({ name, size = 20 }: { name: "computer" | "folder" | "search" | "chevron" | "check" | "bell" | "shield" | "file" | "close" | "read" | "screen"; size?: number }) {
+export function UiIcon({ name, size = 20 }: { name: "copy" | "computer" | "folder" | "search" | "chevron" | "check" | "bell" | "shield" | "file" | "close" | "read" | "screen" | "inbox"; size?: number }) {
   return <svg className="ui-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    {name === "copy" && <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>}
+    {name === "inbox" && <><path d="m4 4-2 10v6h20v-6L20 4ZM2 14h6l2 3h4l2-3h6" /></>}
     {name === "computer" && <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></>}
     {name === "folder" && <path d="M3 7V5a1 1 0 0 1 1-1h5l3 3h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" />}
     {name === "search" && <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></>}

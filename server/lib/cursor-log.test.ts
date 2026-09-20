@@ -1,0 +1,45 @@
+import { test, expect } from "bun:test";
+import { mkdtemp, mkdir, writeFile, appendFile, rm, symlink, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { cursorSessionFromStore, findCursorTranscript, normaliseCursor, readCursorLog } from "./cursor-log";
+const id = "11111111-2222-4333-8444-555555555555";
+const user = (text: string) => ({role:"user",message:{content:[{type:"text",text}]}});
+const agent = (text: string) => ({role:"assistant",message:{content:[{type:"text",text},{type:"tool_use",name:"Read",input:{path:"/tmp/sample.txt"}}]}});
+test("Cursor calls with missing results are explicit, not perpetually running", () => {
+ const log=normaliseCursor([user("hello"),agent("reply"),{type:"turn_ended",status:"completed"}]);
+ expect(log.map(x=>x.role)).toEqual(["you","agent"]);
+ expect(log[1]!.blocks[1]).toMatchObject({kind:"tool",file:{path:"/tmp/sample.txt",name:"sample.txt"},outputUnavailable:true,result:null});
+ expect(log.map(x=>x.at)).toEqual([0,0]);
+});
+test("store lookup requires an exact Cursor database path",()=>{
+ expect(cursorSessionFromStore(`/tmp/cursor/chats/project/${id}/store.db`,"/tmp/cursor")).toBe(id);
+ for(const p of [`/tmp/cursor-other/chats/project/${id}/store.db`,`/tmp/cursor/chats/project/${id}/store.db-wal`,`/tmp/cursor/chats/project/../../other/store.db`]) expect(cursorSessionFromStore(p,"/tmp/cursor")).toBeNull();
+});
+test("pagination keeps stable identities, ignores partial writes, and discovers exact sessions",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"shahi-cursor-test-"));
+ try {
+  const dir=join(root,"projects","sample","agent-transcripts",id); await mkdir(dir,{recursive:true});
+  const path=join(dir,`${id}.jsonl`);
+  await writeFile(path,[user("one"),agent("two"),{type:"turn_ended"},user("three"),agent("four")].map(x=>JSON.stringify(x)+"\n").join(""));
+  expect(await findCursorTranscript(id,root)).toBe(await realpath(path));
+  expect(await findCursorTranscript("../other",root)).toBeNull();
+  const tail=await readCursorLog(path,{limit:2}); const older=await readCursorLog(path,{before:2,limit:2});
+  expect(tail?.total).toBe(4); expect(tail?.messages.map(x=>x.id)).toEqual(["cursor-2","cursor-3"]);
+  expect(older?.messages.map(x=>x.id)).toEqual(["cursor-0","cursor-1"]);
+  await appendFile(path,JSON.stringify(user("last"))); expect((await readCursorLog(path))?.total).toBe(4);
+  await appendFile(path,"\n"); expect((await readCursorLog(path))?.total).toBe(5);
+  const outside=join(root,"outside.jsonl");await writeFile(outside,"{}");await rm(path);await symlink(outside,path);
+  expect(await findCursorTranscript(id,root)).toBeNull();
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test("older flat Cursor transcripts keep their actual session ID", async () => {
+ const root=await mkdtemp(join(tmpdir(),"shahi-cursor-flat-"));
+ try {
+  const dir=join(root,"projects","sample","agent-transcripts"); await mkdir(dir,{recursive:true});
+  const path=join(dir,`${id}.jsonl`); await writeFile(path,JSON.stringify(agent("A reply"))+"\n");
+  expect(await findCursorTranscript(id,root)).toBe(await realpath(path));
+  expect((await readCursorLog(path))?.sessionId).toBe(id);
+ } finally {await rm(root,{recursive:true,force:true});}
+});

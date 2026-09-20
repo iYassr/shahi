@@ -1,19 +1,8 @@
-import { inboxPanes, type Reviewed } from "@shahi/shared";
+import { agentLabel, inboxPanes, latestConversations, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
-/**
- * The home screen: which agent needs you, and what it is asking.
- *
- * Density encodes urgency. A blocked agent gets a full card carrying its real
- * question and tappable answers — answering the common case should never
- * require opening anything. Everything else collapses to one dense line.
- *
- * The rest can be grouped by space or by agent type, mirroring herdr's own
- * `ui.agent_panel_sort`. Blocked agents are deliberately *not* grouped: they
- * stay pinned above everything, because burying the one agent waiting on you
- * inside the fifth space would defeat the entire point of the screen.
- */
+/** Latest-message ordering is shared with mobile; grouping is an explicit choice. */
 import { useEffect, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
@@ -35,7 +24,7 @@ interface Props {
 type Grouping = "priority" | "space" | "agent";
 
 const GROUPINGS: { key: Grouping; label: string }[] = [
-  { key: "priority", label: "Priority" },
+  { key: "priority", label: "Latest" },
   { key: "space", label: "Space" },
   { key: "agent", label: "Agent" },
 ];
@@ -50,8 +39,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   const [pins, setPins] = useState<string[]>(() => { try { const stored = JSON.parse(preferences.get("shahi.pins") ?? "[]"); return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []; } catch { return []; } });
   const togglePin = (id: string) => setPins((current) => { const next = current.includes(id) ? current.filter((p) => p !== id) : [...current, id]; preferences.set("shahi.pins", JSON.stringify(next)); return next; });
 
-  // Your explicit choice wins; otherwise follow whatever the TUI is set to;
-  // otherwise the attention queue, which is what this screen is for.
+  // Keep explicit grouping choices; default to one chronological list.
   const scroller = useRef<HTMLDivElement>(null);
   useScrollMemory(scroller, Boolean(session), "agent-list");
 
@@ -64,13 +52,13 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   }, [grouping]);
 
   const effective: Grouping =
-    grouping ?? ((session?.defaultGrouping as Grouping | null) ?? "priority");
+    grouping ?? "priority";
 
   if (!session) {
     return (
       <div className="empty">
         <span className="empty__mark">⟳</span>
-        Connecting to herdr…
+        Connecting to your computer…
       </div>
     );
   }
@@ -78,12 +66,11 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   const inbox = inboxPanes(session.panes, reviewed);
   const inboxIds = new Set(inbox.map((pane) => pane.paneId));
   const allAgents = session.panes.filter((p) => p.isAgent);
-  const chips = [{ id: "all", label: "All" }, { id: "inbox", label: `Inbox ${inbox.length}` }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: kind! })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
+  const chips = [{ id: "all", label: "All" }, { id: "inbox", label: `Inbox ${inbox.length}` }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: agentLabel(kind!) })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
   const active = chips.some((c) => c.id === filter) ? filter : "all";
   const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "inbox" && inboxIds.has(p.paneId) || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
-  const blocked = agents.filter((p) => p.status === "blocked");
-  const rest = agents.filter((p) => p.status !== "blocked");
-  if (active !== "inbox") rest.sort((a, b) => Number(pins.includes(b.paneId)) - Number(pins.includes(a.paneId)));
+  const blocked = active === "inbox" ? latestConversations(agents.filter(p => p.status === "blocked")) : [];
+  const rest = latestConversations(active === "inbox" ? agents.filter(p => p.status !== "blocked") : agents, new Set(pins));
 
   if (session.panes.length === 0) {
     return (
@@ -100,7 +87,11 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
     <div className="scroll" ref={scroller}>
       <div className="page-intro"><h2>Your work, wherever you are</h2><p>{allAgents.filter(p => p.status === "working").length} working · {inbox.length} to review or answer</p></div>
       <div className="agent-search"><UiIcon name="search" /><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label="Clear search" onClick={() => setQuery("")}><UiIcon name="close" size={18} /></button>}</div>
-      <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>{chip.label}</button>)}</div>
+      <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-label={chip.label} title={chip.label} aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>
+        {chip.id === "inbox" ? <><UiIcon name="inbox" size={19} /><span className="agent-filter-count" aria-hidden="true">{inbox.length}</span></>
+          : chip.id.startsWith("kind:") || chip.id === "shells" ? <><span aria-hidden="true"><AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /></span>{chip.id === active && <span>{chip.label}</span>}</>
+          : chip.label}
+      </button>)}</div>
       {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p></div>}
       {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</button>}</div>}
 
@@ -146,13 +137,13 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
                 </h2>
               </div>
               {group.panes.map((pane) => (
-                <div className={`agent-row${pins.includes(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
+                pane.status === "blocked" && !selected ? <BlockedCard key={pane.paneId} pane={pane} prompt={prompts[pane.paneId]} onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)} onAnswer={(index) => onAnswer(pane.paneId, index)} /> : <div className={`agent-row${pins.includes(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
                   className={`row row--${pane.status}${selected === pane.paneId ? " row--selected" : ""}`}
                   aria-current={selected === pane.paneId ? "page" : undefined}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-                  <span className="row__title">{pane.title ?? pane.paneId}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
+                  <span className="row__title">{pane.title ?? pane.paneId}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}</span>
                 </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${pane.title ?? pane.paneId} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.includes(pane.paneId)} aria-label={`${pins.includes(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane.paneId)}>{pins.includes(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
@@ -194,8 +185,7 @@ const STATUS_ORDER: AgentStatus[] = ["blocked", "working", "done", "idle", "unkn
 
 export function groupPanes(panes: DashboardPane[], grouping: Grouping): PaneGroup[] {
   if (grouping === "priority") {
-    // One group: the server already sorted these by urgency, and re-heading
-    // them by status would just restate the glyph in every row.
+    // One chronological list, with explicitly pinned conversations first.
     return [{ key: "all", title: `${panes.length} agents`, panes }];
   }
 

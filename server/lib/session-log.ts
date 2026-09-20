@@ -180,7 +180,7 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
 }
 
 /** Builds the index, or extends the one already held, up to the file's end. */
-export async function indexTranscript(path: string): Promise<TranscriptIndex> {
+export async function indexTranscript(path: string, normalizer = normalise): Promise<TranscriptIndex> {
   const size = Bun.file(path).size;
   const held = indexes.get(path);
 
@@ -191,7 +191,7 @@ export async function indexTranscript(path: string): Promise<TranscriptIndex> {
 
   if (index.size !== size) {
     index.size = await scanLines(path, index.size, (offset, row) => {
-      if (normalise([row]).length > 0) index.offsets.push(offset);
+      if (normalizer([row]).length > 0) index.offsets.push(offset);
     });
   }
 
@@ -263,8 +263,9 @@ export async function readSessionLog(
 export async function readWindow(
   path: string,
   options: { limit?: number; before?: number } = {},
+  normalizer: (rows: Record<string, unknown>[], start?: number) => LogMessage[] = normalise,
 ): Promise<SessionLog | null> {
-  const index = await indexTranscript(path);
+  const index = await indexTranscript(path, normalizer);
   const total = index.offsets.length;
 
   const limit = options.limit ?? 200;
@@ -279,7 +280,7 @@ export async function readWindow(
   const to = beyond < total ? index.offsets[beyond] : undefined;
 
   const window = await Bun.file(path).slice(from, to).text();
-  const messages = normalise(parseLines(window)).slice(0, end - start);
+  const messages = normalizer(parseLines(window), start).slice(0, end - start);
 
   return { sessionId: path, path, messages, total, offset: index.size };
 }

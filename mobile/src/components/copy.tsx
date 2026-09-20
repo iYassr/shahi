@@ -9,7 +9,8 @@
  * free, and copying *specific* text is the point.
  */
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import { committed } from "@/lib/feel";
 import { Icon } from "@/components/icons";

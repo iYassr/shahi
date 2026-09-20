@@ -8,7 +8,8 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { BOX_AUTH_PREFIX, type BoxToRelay, type RelayToBox } from "@shahi/shared";
 
-export const PORT = 8787;
+// Keep a running local app/relay intact when a regression run needs its own Worker.
+export const PORT = Number(process.env.SHAHI_TEST_RELAY_PORT ?? 8787);
 export const HTTP = `http://127.0.0.1:${PORT}`;
 export const WS = `ws://127.0.0.1:${PORT}`;
 

@@ -7,8 +7,8 @@ export function AgentAvatar({ kind, status, isAgent }: {
   status: AgentStatus;
   isAgent: boolean;
 }) {
-  return <span className="agent-avatar" style={{ borderColor: agentColor(kind) }}
+  return <span className="agent-avatar" style={{ borderColor: agentColor(isAgent ? kind : "shell") }}
     data-status={status} data-working={status === "working"} role="img" aria-label={`${kind ?? (isAgent ? "agent" : "shell")}, ${status}`}>
-    <span aria-hidden="true">{isAgent ? <AgentIcon kind={kind} size={20} /> : "❯"}</span>
+    <span aria-hidden="true"><AgentIcon kind={isAgent ? kind : "shell"} size={20} /></span>
   </span>;
 }

@@ -1,3 +1,7 @@
+import { PDFView, shareFile } from "@/components/pdf-view";
+import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
+import type { SetStateAction } from "react";
+import { plainHeaderRight } from "@/lib/header-controls";
 import { supports } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
@@ -20,11 +24,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
+import { Text } from "@/components/text";
 import { Stack } from "expo-router";
 import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
@@ -41,7 +45,7 @@ import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells, type ScrollAnchor } from "@/lib/scroll-cells";
 import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
-import { theme } from "@/lib/theme";
+import { AGENT_COLORS, theme } from "@/lib/theme";
 import { Markdown } from "@/components/markdown";
 
 /** How often to pull while open. The server caches on file size. */
@@ -181,8 +185,12 @@ interface Props {
 }
 
 export function Pane({ paneId, initialView = "reader" }: Props) {
+  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
+  const savedDraft = useRef(nativeDraft(api, paneId)).current;
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const owner = connection.relay ?? connection.cookie;
-  const stillActive = useCallback(() => owner === (connection.relay ?? connection.cookie), [owner]);
+  const stillActive = useCallback(() => mounted.current && owner === (connection.relay ?? connection.cookie), [owner]);
   const [messages, setMessages] = useState<LogMessage[]>(() => {
     if (memoryOwner !== owner) {
       scrollMemory.clear(); messageMemory.clear(); terminalPlace.clear(); terminalView.clear();
@@ -197,7 +205,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   });
   /** Mirror of `messages`, so merging does not need a functional setState. */
   const messagesRef = useRef<LogMessage[]>(messages);
-  const cells = useScrollCells<LogMessage>((message) => message.id);
+  const anchorLock = useRef(typeof scrollMemory.get(paneId) === "object");
+  const cells = useScrollCells<LogMessage>((message) => message.id, (id) => {
+    const spot = scrollMemory.get(paneId);
+    if (anchorLock.current && typeof spot === "object" && spot.id === id) {
+      pendingRestore.current = true;
+      scheduleRestoreRetry();
+    }
+  });
   /**
    * Optimistic echo: your own reply, shown in the thread the instant you send,
    * before the transcript poll fetches it back. Reconciled away once the real
@@ -206,7 +221,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    */
   const [pending, setPending] = useState<{ message: LogMessage; youBaseline: number; at: number }[]>([]);
   const pendingSeq = useRef(0);
-  const promptAttempt = useRef<{ key: string; id: string } | null>(null);
+  const promptAttempt = useRef(savedDraft.pending);
   const promptInFlight = useRef(false);
   /**
    * Away from the tail, as state rather than the `following` ref, because the
@@ -228,8 +243,18 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [awaiting, setAwaiting] = useState(false);
   const [readable, setReadable] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const [draft, setDraftState] = useState(savedDraft.text);
+  function setDraft(value: SetStateAction<string>) {
+    savedDraft.text = typeof value === "function" ? value(savedDraft.text) : value;
+    setDraftState(savedDraft.text);
+    notifyNativeDraft(savedDraft);
+  }
+  const [sending, setSending] = useState(savedDraft.inFlight);
+  useEffect(() => {
+    const update = () => { setDraftState(savedDraft.inFlight ? "" : savedDraft.text); setSending(savedDraft.inFlight); promptAttempt.current = savedDraft.pending; };
+    savedDraft.listeners.add(update);
+    return () => { savedDraft.listeners.delete(update); };
+  }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
   const [screen, setScreen] = useState<string | null>(null);
   /**
@@ -246,15 +271,21 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   );
   const setView = useCallback(
     (v: "reader" | "screen") => {
+      if (v === view) return;
+      // The Screen key bar changes the reader's viewport even under its overlay.
+      // Freeze the anchor before iOS emits its layout-related scroll events.
+      userScroll.current = false;
+      pendingRestore.current = true;
+      anchorLock.current = typeof scrollMemory.get(paneId) === "object";
       terminalView.set(paneId, v);
       setViewState(v);
     },
-    [paneId],
+    [paneId, view],
   );
   /** A file a tool call named, once you have asked to see it. */
   const [viewing, setViewing] = useState<{ path: string; name: string } | null>(null);
   // Opens at the width Settings chose; the buttons on the screen still win.
-  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
+
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<FlatList<LogMessage>>(null);
@@ -278,7 +309,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * ignored until it clears: they are the restore's own clamped settling, and
    * treating one as the reader's doing is how the position got overwritten.
    */
-  const pendingRestore = useRef(scrollMemory.has(paneId));
+  const pendingRestore = useRef(true);
+  const scrollMetrics = useRef({ y: 0, height: 0, viewport: 0 });
   /** Navigation/layout scroll events must never replace the last finger position. */
   const userScroll = useRef(false);
   /** While `Date.now()` is under this, the poll runs at the fast cadence. */
@@ -291,11 +323,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const awaitingSince = useRef(0);
   /** Topmost visible message, kept fresh by the list's viewability callback. */
   const topItem = useRef<string | null>(null);
-  /** Whether the restore's own deadline has been armed; see restore(). */
-  const restoreArmed = useRef(false);
   /** A virtualized list can clamp the first restore before its cells measure. */
   const restoreRetry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const restoreDeadline = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const trackTop = useRef(({ viewableItems }: { viewableItems: Array<{ item: LogMessage }> }) => {
     if (viewableItems.length > 0) topItem.current = viewableItems[0]!.item.id;
   }).current;
@@ -307,11 +336,42 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * first scrollToIndex usually misses (the anchor is outside the initially
    * rendered window and there is no getItemLayout for variable heights), so
    * onScrollToIndexFailed walks closer by estimate and retries. Nothing
-   * reports "the list stopped moving", so a deadline ends the restore — and
-   * un-wedges one whose anchor can no longer land.
+   * reports "the list stopped moving": keep retrying until native layout confirms
+   * the target. A finger drag cancels the operation immediately.
    */
-  function restore() {
-    const spot = scrollMemory.get(paneId);
+  function scrollToTail() {
+    const last = messagesRef.current.at(-1);
+    const { height, viewport } = scrollMetrics.current;
+    if (last && cells.frames.current.has(last.id) && viewport > 0) {
+      // FlatList.scrollToEnd omits content-container bottom padding. Once the
+      // last cell is measured, use the native content extent, including padding.
+      listRef.current?.scrollToOffset({ offset: Math.max(0, height - viewport), animated: false });
+    } else listRef.current?.scrollToEnd({ animated: false });
+  }
+
+  function restoreLanded() {
+    const spot = scrollMemory.get(paneId) ?? "bottom";
+    const { y, height, viewport } = scrollMetrics.current;
+    if (viewport <= 0 || height <= 0) return false;
+    if (spot === "bottom") {
+      const last = messagesRef.current.at(-1);
+      const frame = last && cells.frames.current.get(last.id);
+      if (height - viewport - y > 2 || (last && (!frame || frame.y + frame.height > y + viewport + 2))) return false;
+      setAway(false);
+      setUnseen(0);
+    } else {
+      const frame = cells.frames.current.get(spot.id);
+      if (!frame || height + 2 < frame.y + frame.height || Math.abs(y - Math.max(0, Math.min(frame.y + spot.offset, height - viewport))) >= 2) return false;
+    }
+    finishRestore();
+    return true;
+  }
+
+  function restore(checkLanding = true) {
+    // Layout can finish without another scroll event (especially at offset 0).
+    // Recheck measured cells so an already-landed restore stops retrying.
+    if (checkLanding && restoreLanded()) return;
+    const spot = scrollMemory.get(paneId) ?? "bottom";
     // Nothing fetched yet means nothing to judge: the anchor cannot have
     // "fallen out" of a window that does not exist. Now that the pane detail is
     // fetched alongside the transcript, the activity footer can render first
@@ -320,8 +380,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // arrival order irrelevant.
     if (typeof spot === "object" && messagesRef.current.length === 0) return;
     if (spot === "bottom") {
-      armRestoreDeadline();
-      listRef.current?.scrollToEnd({ animated: false });
+      scrollToTail();
       scheduleRestoreRetry();
       return;
     }
@@ -330,14 +389,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     if (index < 0) {
       // The anchor fell out of the fetched window: the conversation moved on
       // past your place, and the tail is the closest honest answer.
-      finishRestore();
+      anchorLock.current = false;
       following.current = true;
       scrollMemory.set(paneId, "bottom");
       setAway(false);
-      listRef.current?.scrollToEnd({ animated: false });
+      scrollToTail();
+      scheduleRestoreRetry();
       return;
     }
-    armRestoreDeadline();
     listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0, viewOffset: typeof spot === "object" ? -spot.offset : 0 });
     scheduleRestoreRetry();
   }
@@ -345,7 +404,6 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   function finishRestore() {
     pendingRestore.current = false;
     clearTimeout(restoreRetry.current);
-    clearTimeout(restoreDeadline.current);
   }
 
   function scheduleRestoreRetry() {
@@ -355,19 +413,18 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     }, 100);
   }
 
-  function armRestoreDeadline() {
-    if (restoreArmed.current) return;
-    restoreArmed.current = true;
-    // A backstop only. The restore normally ends when onScroll observes the
-    // requested place. Without a deadline, a deleted anchor could suppress
-    // user-position recording forever.
-    restoreDeadline.current = setTimeout(() => finishRestore(), 4_000);
-  }
-
   useEffect(() => () => {
     clearTimeout(restoreRetry.current);
-    clearTimeout(restoreDeadline.current);
   }, []);
+  const previousView = useRef(view);
+  useEffect(() => {
+    if (previousView.current === view) return;
+    previousView.current = view;
+    // Reapply after committing the new viewport. Its previous offset can look
+    // correct before native delivers the resize, so don't accept it as landed.
+    pendingRestore.current = true;
+    restore(false);
+  }, [view]);
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
@@ -574,11 +631,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   function jumpToLatest() {
+    anchorLock.current = false;
     following.current = true;
     scrollMemory.set(paneId, "bottom");
-    setAway(false);
-    setUnseen(0);
-    listRef.current?.scrollToEnd({ animated: true });
+    // scrollToEnd can stop at an estimated bottom on variable-height lists.
+    // Keep the target until the last measured message actually reaches view.
+    userScroll.current = false;
+    pendingRestore.current = true;
+    restore();
   }
 
   async function answer(option: PromptOption) {
@@ -598,10 +658,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
   async function submit() {
     const text = draft.trim();
-    if (!text || promptInFlight.current) return;
+    if (!text || promptInFlight.current || savedDraft.inFlight) return;
     promptInFlight.current = true;
     const key = JSON.stringify([paneId, text]);
     if (promptAttempt.current?.key !== key) promptAttempt.current = { key, id: randomUUID() };
+    savedDraft.pending = promptAttempt.current;
+    savedDraft.inFlight = true;
     setError(null);
     setSending(true);
     // Echo the message into the thread and show "working", both before the send
@@ -612,7 +674,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     const youNow = messagesRef.current.filter((m) => m.role === "you").length;
     const echo: LogMessage = { id, role: "you", at: Date.now(), blocks: [{ kind: "text", text }] };
     setPending((prev) => [...prev, { message: echo, youBaseline: youNow + prev.length, at: Date.now() }]);
-    setDraft("");
+    setDraftState("");
+    notifyNativeDraft(savedDraft);
     beginAwaiting();
     // Fast polling starts now, before the request even leaves. It used to start
     // after the send returned — which, when the send was two requests with a
@@ -623,9 +686,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     chase();
     try {
       await api.send(paneId, text, promptAttempt.current.id);
+      if (savedDraft.text === draft) savedDraft.text = "";
+      savedDraft.pending = null;
+      if (!stillActive()) return;
       promptAttempt.current = null;
       committed();
     } catch (e) {
+      if (!stillActive()) return;
       // Delivery may have succeeded before the response was lost. Keep the
       // request id so retry asks for that outcome rather than sending twice.
       setPending((prev) => prev.filter((p) => p.message.id !== id));
@@ -635,7 +702,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setError((e as Error).message);
     } finally {
       promptInFlight.current = false;
-      setSending(false);
+      savedDraft.inFlight = false;
+      notifyNativeDraft(savedDraft);
+      if (stillActive()) setSending(false);
     }
   }
 
@@ -663,7 +732,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               <Text style={styles.subtitle}>{pane?.agent ?? "shell"} · {paneId}</Text>
             </View>
           ),
-          headerRight: () => (
+          ...plainHeaderRight(
             <View style={styles.toggle}>
               <Pressable
                 accessibilityRole="button"
@@ -711,8 +780,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             Nothing to read yet.
           </Text>
           <Text style={styles.dim}>
-            Claude and codex sessions appear here once the agent has said
-            something. A plain shell keeps none at all.
+            A readable conversation is not available yet. You can follow this
+            agent in Screen.
           </Text>
           <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>
             <Text style={styles.ghostText}>Show the screen instead</Text>
@@ -721,6 +790,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       ) : (
         <View style={styles.body}>
         <FlatList
+          testID="conversation-list"
           CellRendererComponent={cells.CellRendererComponent}
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
@@ -740,7 +810,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           // pressing a key takes two taps while the composer has focus.
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <Message message={item} paneId={paneId} onOpenFile={setViewing} />
+            <Message message={item} paneId={paneId} agentColor={AGENT_COLORS[pane?.agent ?? ""] ?? theme.fg} onOpenFile={setViewing} />
           )}
           // A long transcript is the other list RN can choke on. Detaching
           // off-screen messages and rendering a bounded window keeps scrolling
@@ -761,20 +831,24 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           // from the first handled scroll event, so a drag back to the bottom
           // still re-enables following.
           onScrollBeginDrag={() => {
+            anchorLock.current = false;
             following.current = false;
             finishRestore();
             userScroll.current = true;
           }}
           onScroll={({ nativeEvent: e }) => {
+            scrollMetrics.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
             if (pendingRestore.current) {
-              // The restore has landed once the anchor is the topmost visible
-              // message; from here the scroll events are the reader's own.
-              const spot = scrollMemory.get(paneId);
-              const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
-              const frame = typeof spot === "object" ? cells.frames.current.get(spot.id) : undefined;
-              if (spot === "bottom" && fromBottom <= 2) finishRestore();
-              else if (typeof spot === "object" && frame && Math.abs(e.contentOffset.y - (frame.y + spot.offset)) < 2)
-                finishRestore();
+              restoreLanded();
+              return;
+            }
+            // Cells preceding the anchor can finish measuring after the first
+            // landing. Keep the paragraph fixed until the next finger drag.
+            if (anchorLock.current) {
+              if (!restoreLanded()) {
+                pendingRestore.current = true;
+                restore();
+              }
               return;
             }
             // A native pop/layout settle can emit one last offset (often zero)
@@ -795,14 +869,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             if (following.current) setUnseen(0);
           }}
           onScrollEndDrag={({ nativeEvent: e }) => {
+            if (pendingRestore.current) return;
             const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
             if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
             else if (anchor) scrollMemory.set(paneId, anchor);
             userScroll.current = false;
           }}
-          onMomentumScrollBegin={() => { userScroll.current = true; }}
+          onMomentumScrollBegin={() => { if (!pendingRestore.current && !anchorLock.current) userScroll.current = true; }}
           onMomentumScrollEnd={({ nativeEvent: e }) => {
+            if (pendingRestore.current || anchorLock.current) return;
             const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
             if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
@@ -819,16 +895,24 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               offset: index * averageItemLength,
               animated: false,
             });
-            setTimeout(() => {
-              if (pendingRestore.current) restore();
-            }, 100);
+            if (pendingRestore.current) scheduleRestoreRetry();
           }}
-          onContentSizeChange={() => {
+          onLayout={({ nativeEvent: e }) => {
+            scrollMetrics.current.viewport = e.layout.height;
+            if (pendingRestore.current) restore();
+          }}
+          onContentSizeChange={(_width, height) => {
+            if (height !== undefined) scrollMetrics.current.height = height;
+            if (anchorLock.current) {
+              pendingRestore.current = true;
+              restore(false);
+              return;
+            }
             if (pendingRestore.current) {
               restore();
               return;
             }
-            if (following.current) listRef.current?.scrollToEnd({ animated: false });
+            if (following.current) scrollToTail();
           }}
           ListFooterComponent={
             activity ? (
@@ -841,7 +925,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
         {view === "reader" && away && (
           <View style={styles.jumpWrap} pointerEvents="box-none">
-            <Pressable accessibilityRole="button" style={styles.jump} onPress={jumpToLatest}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Go to latest" testID="go-to-latest" style={styles.jump} onPress={jumpToLatest}>
               <Text style={styles.jumpText}>{unseen > 0 ? `${unseen} new ↓` : "Latest ↓"}</Text>
             </Pressable>
           </View>
@@ -895,6 +979,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         <View style={styles.composeRow}>
           {supports(control?.handshake ?? null, "attachments") && <Pressable
             style={styles.attach}
+            disabled={sending}
             onPress={() => setAttaching(true)}
             accessibilityRole="button"
             accessibilityLabel="Attach a file"
@@ -904,6 +989,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           <TextInput
             style={styles.input}
             value={draft}
+            editable={!sending}
             onChangeText={setDraft}
             placeholder={view === "screen" ? "Send text to terminal…" : pane && !pane.isAgent ? "Run a command…" : "Reply to this agent…"}
             placeholderTextColor={theme.dim}
@@ -985,17 +1071,19 @@ function Prompt({
 const Message = memo(function Message({
   message,
   paneId,
+  agentColor,
   onOpenFile,
 }: {
   message: LogMessage;
   paneId: string;
+  agentColor: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
   const mine = message.role === "you";
   const system = message.role === "system";
   return (
-    <View style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
-      <Text style={[styles.who, mine && styles.whoYou, system && styles.whoSystem]}>
+    <View testID={`message-${message.id}`} style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
+      <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
         {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
       </Text>
       {message.blocks.map((block, i) => (
@@ -1019,7 +1107,7 @@ export function Block({
 }) {
   const [open, setOpen] = useState(false);
 
-  if (block.kind === "text") return <Markdown text={block.text} />;
+  if (block.kind === "text") return <Markdown text={block.text} onOpenFile={onOpenFile} />;
 
   if (block.kind === "thinking") {
     return (
@@ -1108,7 +1196,7 @@ export function Block({
       )}
       {/* No result yet. The web reader has always said this; the native one
           rendered an empty expansion instead. */}
-      {open && !block.result && <Text style={styles.toolAside}>Still running.</Text>}
+      {open && !block.result && <Text style={styles.toolAside}>{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</Text>}
     </View>
   );
 }
@@ -1119,8 +1207,8 @@ export function Block({
  * Text and images come down one route and are told apart by content-type,
  * because the server is what decides — it serves HTML and SVG as `text/plain`
  * so agent-written markup cannot run anywhere, and reads are scoped to $HOME
- * and /tmp. There is deliberately no download: the cookie belongs to this
- * client, so handing the URL to Safari would only produce a 401.
+ * and /tmp. Downloads use the authenticated transport before handing a local
+ * copy to the system share sheet; server cookies never leave this client.
  */
 function FileView({
   file,
@@ -1130,19 +1218,22 @@ function FileView({
   onClose: () => void;
 }) {
   const { api, transport: connection } = useSession();
-  const [body, setBody] = useState<{ text: string } | { imageUrl: string } | null>(null);
+  const [body, setBody] = useState<{ text: string } | { imageUrl: string } | { pdfBase64: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
+    setBody(null); setError(null); setSaveError(null);
     void api
       .readFile(file.path)
       .then((result) => live && setBody(result))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => live && setError(e.message.startsWith("Preview unavailable") ? e.message : "This file could not be opened. It may have moved, or your computer may be offline."));
     return () => {
       live = false;
     };
-  }, [file.path]);
+  }, [file.path, api]);
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
@@ -1151,6 +1242,12 @@ function FileView({
           <Text style={styles.viewerName} numberOfLines={1}>
             {file.name}
           </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Save or share file" disabled={saving} onPress={async () => {
+            setSaving(true); setSaveError(null);
+            try { await shareFile(body && "pdfBase64" in body ? body.pdfBase64 : await api.downloadFile(file.path), file.name); }
+            catch (e) { setSaveError(e instanceof Error ? e.message : "The file could not be saved."); }
+            finally { setSaving(false); }
+          }} hitSlop={12}><Text style={styles.fileClose}>{saving ? "Saving…" : "Save / Share"}</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
             <Text style={styles.fileClose}>Done</Text>
           </Pressable>
@@ -1159,10 +1256,13 @@ function FileView({
           {file.path}
         </Text>
 
+        {saveError && <Text style={styles.err}>{saveError}</Text>}
         {error ? (
           <Text style={styles.err}>{error}</Text>
         ) : !body ? (
           <ActivityIndicator color={theme.dim} style={styles.fileWait} />
+        ) : "pdfBase64" in body ? (
+          <PDFView base64={body.pdfBase64} onError={() => setError("This PDF cannot be previewed. Save it to open in another app.")} />
         ) : "imageUrl" in body ? (
           <Image
             source={{
@@ -1344,7 +1444,7 @@ function Working({ activity }: { activity: Activity }) {
  * would be absurd. Either way what reaches the agent is a path: a terminal
  * cannot receive a file, but an agent can read one off disk.
  */
-function FilePicker({
+export function FilePicker({
   onClose,
   onPick,
 }: {
@@ -1358,65 +1458,74 @@ function FilePicker({
   >([]);
   const [parent, setParent] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const uploadAbort = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [directoryAttempt, setDirectoryAttempt] = useState(0);
+  const owner = useRef(0);
   useEffect(() => {
-    void api
-      .dirs(path, true)
-      .then((d) => {
-        setEntries(d.entries);
-        setParent(d.parent);
-      })
-      .catch(() => setEntries([]));
-  }, [path]);
+    owner.current++;
+    setUploading(false);
+    setError(null);
+    setPath("~");
+    return () => { owner.current++; uploadAbort.current?.abort(); };
+  }, [api]);
 
-  /** Uploads to the server, then hands back where it landed. */
-  async function upload(file: { uri: string; name: string; type: string }) {
+  useEffect(() => {
+    let cancelled = false;
+    setEntries([]);
+    setParent(null);
+    setDirectoryError(null);
+    void api.dirs(path, true).then((d) => {
+      if (cancelled) return;
+      setEntries(d.entries);
+      setParent(d.parent);
+    }).catch(() => {
+      if (!cancelled) setDirectoryError("Couldn't open this folder. Check your connection and try again.");
+    });
+    return () => { cancelled = true; };
+  }, [api, path, directoryAttempt]);
+
+  async function pickFromPhone(source: "photos" | "files") {
+    if (uploading) return;
+    const generation = owner.current;
+    const active = () => generation === owner.current;
     setUploading(true);
+    setUploadProgress(null);
+    const controller = new AbortController(); uploadAbort.current = controller;
     setError(null);
     try {
-      const stored = await api.upload(file);
-      onPick(stored.path);
+      let file: { uri: string; name: string; type: string };
+      if (source === "photos") {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!active()) return;
+        if (!permission.granted) {
+          setError("Photo access was declined. You can allow it in your phone’s Settings.");
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          quality: 1,
+          // Request JPEG rather than the HEIC that agent image readers cannot open.
+          preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+        });
+        const asset = result.assets?.[0];
+        if (result.canceled || !asset || !active()) return;
+        file = { uri: asset.uri, name: asset.fileName ?? `photo.${asset.uri.split(".").pop() ?? "jpg"}`, type: asset.mimeType ?? "image/jpeg" };
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+        const asset = result.assets?.[0];
+        if (result.canceled || !asset || !active()) return;
+        file = { uri: asset.uri, name: asset.name, type: asset.mimeType ?? "application/octet-stream" };
+      }
+      const stored = await api.upload(file, { signal: controller.signal, onProgress: (sent, total) => { if (active()) setUploadProgress(total ? Math.floor(sent / total * 100) : 100); } });
+      if (active()) onPick(stored.path);
     } catch (e) {
-      setError((e as Error).message);
+      if (active()) setError(e instanceof Error ? e.message : "Couldn't attach this file. Please try again.");
     } finally {
-      setUploading(false);
+      if (active()) setUploading(false);
     }
-  }
-
-  async function fromPhotos() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("Photo access was declined.");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      quality: 1,
-      // An iPhone photo is HEIC, and Claude Code's Read tool cannot open
-      // one — "attach a photo, the agent says it can't read it" was the
-      // report. Compatible asks the picker for the most broadly readable
-      // representation, which transcodes HEIC to JPEG on the way out.
-      preferredAssetRepresentationMode:
-        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-    });
-    const asset = result.assets?.[0];
-    if (result.canceled || !asset) return;
-    await upload({
-      uri: asset.uri,
-      name: asset.fileName ?? `photo.${asset.uri.split(".").pop() ?? "jpg"}`,
-      type: asset.mimeType ?? "image/jpeg",
-    });
-  }
-
-  async function fromFiles() {
-    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
-    const asset = result.assets?.[0];
-    if (result.canceled || !asset) return;
-    await upload({
-      uri: asset.uri,
-      name: asset.name,
-      type: asset.mimeType ?? "application/octet-stream",
-    });
   }
 
   return (
@@ -1429,17 +1538,26 @@ function FilePicker({
       </View>
 
       <View style={styles.fromPhone}>
-        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void fromPhotos()}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void pickFromPhone("photos")}>
           <Text style={styles.phoneButtonText}>Photo</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void fromFiles()}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void pickFromPhone("files")}>
           <Text style={styles.phoneButtonText}>File on phone</Text>
         </Pressable>
       </View>
-      {uploading && <Text style={styles.sheetNote}>Uploading…</Text>}
+      {uploading && <>
+        <Text style={styles.sheetNote}>{uploadProgress === null ? "Uploading…" : `Uploading ${uploadProgress}%`}</Text>
+        <Pressable accessibilityRole="button" onPress={() => uploadAbort.current?.abort()}><Text style={styles.phoneButtonText}>Cancel upload</Text></Pressable>
+      </>}
       {error && <Text style={styles.uploadErr}>{error}</Text>}
 
       <Text style={styles.sheetPath} numberOfLines={1}>{path}</Text>
+      {directoryError && <View>
+        <Text accessibilityRole="alert" style={styles.uploadErr}>{directoryError}</Text>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} onPress={() => setDirectoryAttempt(n => n + 1)}>
+          <Text style={styles.phoneButtonText}>Try again</Text>
+        </Pressable>
+      </View>}
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
         data={parent ? [{ name: parent, path: parent, display: parent, isDirectory: true }, ...entries] : entries}
@@ -1459,7 +1577,7 @@ function FilePicker({
           </Pressable>
         )}
       />
-      <Text style={styles.sheetNote}>Tap a file on the server to attach it. Folders open.</Text>
+      <Text style={styles.sheetNote}>Tap a file on your computer to attach it. Tap a folder to open it.</Text>
     </View>
   );
 }
@@ -1544,14 +1662,16 @@ const styles = StyleSheet.create({
   list: { padding: 16 },
   msg: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.line },
   msgYou: {
-    backgroundColor: theme.surface,
+    backgroundColor: `${theme.working}0D`,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.working,
     borderBottomWidth: 0,
     borderRadius: 8, borderCurve: "continuous",
     paddingHorizontal: 12,
     marginVertical: 8,
   },
-  who: { color: theme.dim, fontSize: 10, marginBottom: 6 },
-  whoYou: { color: theme.dim },
+  who: { fontSize: 10, fontWeight: "600", letterSpacing: 0.8, marginBottom: 6 },
+  whoYou: { color: theme.working },
   // A system note (a model switch, an away-summary): quiet chrome, not the
   // agent speaking — dim, set off by a rule, never the loud "you" fill.
   msgSystem: { borderLeftWidth: 2, borderLeftColor: theme.lineBright, paddingHorizontal: 12, opacity: 0.85 },

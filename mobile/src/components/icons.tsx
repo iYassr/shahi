@@ -8,7 +8,7 @@
  * also fetch icons from a CDN at runtime. Status marks in lists stay
  * terminal glyphs (○ ◐ ✳ ❯) — they are the terminal's own vocabulary.
  */
-import { agentMarks, brandMark, brandWordmark } from "@shahi/shared/brand";
+import { agentIdentity, agentMarks, brandMark, brandWordmark } from "@shahi/shared/brand";
 import Svg, { G, Path, Rect } from "react-native-svg";
 
 /** The tea glass and rising cursor use the same geometry as every exported mark. */
@@ -34,6 +34,8 @@ export function Wordmark({ color, width = 108 }: { color: string; width?: number
 }
 
 const ICONS = {
+  folder: { d: "M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z", filled: false },
+  inbox: { d: "M22 12h-6l-2 3h-4l-2-3H2m3.45-6.89L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z", filled: false },
   copy: { d: "M9 9h11v11H9zM5 15H3V3h12v2", filled: false },
   check: { d: "m5 12 4 4L19 6", filled: false },
   bell: { d: "M10.268 21a2 2 0 0 0 3.464 0m-10.47-5.674A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326", filled: false },
@@ -58,13 +60,6 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-/** The mark an agent kind signs its avatar with; null falls back to a glyph. */
-export const AGENT_ICONS: Record<string, IconName> = {
-  claude: "claudecode",
-  codex: "openai",
-  pi: "math-pi",
-};
-
 export function Icon({ name, color, size = 18 }: { name: IconName; color: string; size?: number }) {
   const icon = ICONS[name];
   return (
@@ -79,4 +74,13 @@ export function Icon({ name, color, size = 18 }: { name: IconName; color: string
       />
     </Svg>
   );
+}
+
+/** The same bundled artwork and color as the web avatar. */
+export function AgentIcon({ kind, size = 20 }: { kind: string | null | undefined; size?: number }) {
+  const { d, filled, color } = agentIdentity(kind);
+  return <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d={d} fill={filled ? color : "none"} stroke={filled ? undefined : color}
+      strokeWidth={filled ? undefined : 2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>;
 }

@@ -1,3 +1,4 @@
+import { clearWebDrafts, draftOwner } from "./drafts";
 import { SHAHI_API_VERSION, type Session, type PairingPayload } from "@shahi/shared";
 import { RelayLink, deviceTarget, pairingTarget, type RelayIdentity } from "@shahi/shared/relay-client";
 import { parsePairingUrl } from "@shahi/shared/pairing";
@@ -175,6 +176,8 @@ export async function pairBrowser(text: string, name: string, remember: boolean)
 }
 export async function forgetBrowser(id = identity?.serverId): Promise<void> {
   const selected = id === identity?.serverId;
+  const forgotten = computers.find(c => c.identity.serverId === id)?.identity ?? (selected ? identity : null);
+  if (forgotten) clearWebDrafts(draftOwner(forgotten));
   computers = computers.filter(c => c.identity.serverId !== id);
   live.get(id ?? "")?.link.close(); live.delete(id ?? "");
   if (selected) { generation++; link = null; identity = null; remembered = false; }

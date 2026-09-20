@@ -93,6 +93,19 @@ describe("SessionStore", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
+  test("a creation refresh cannot reuse a snapshot started before the new pane existed", async () => {
+    let finish!: (value: unknown) => void;
+    const pending = new Promise(resolve => { finish = resolve; });
+    const rpc = mock().mockImplementationOnce(() => pending).mockResolvedValue({ snapshot: snapshot({ panes: [pane("w1:new", "w1")] }) });
+    const store = new SessionStore({ rpc } as unknown as HerdrClient);
+    const stale = store.resync();
+    const refreshed = store.resyncAfterMutation();
+    finish({ snapshot: snapshot() });
+    await Promise.all([stale, refreshed]);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(store.pane("w1:new")).toBeDefined();
+  });
+
   test("surfaces snapshot failures without throwing", async () => {
     const rpc = mock(async () => {
       throw new Error("socket gone");

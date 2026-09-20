@@ -99,7 +99,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pair-browser__mark { display: block; width: 56px; height: 56px; }
 .groupbar__opt, .row__title, .choice__label { font-family: var(--ui); }
 
-.agent-filters .groupbar__opt { min-height: 44px; font-size: 14px; }
+.agent-filters .groupbar__opt { min-width: 44px; min-height: 44px; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.agent-filter-count { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 /* Match the native avatar's 420ms lift and return. Status remains explicit. */
 .agent-avatar { width: 42px; height: 42px; flex: none; border: 1px solid var(--line-bright); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); }
@@ -266,3 +267,10 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .push-offer p { flex: 1 1 250px; margin: 0; }
 .push-offer button { display: inline-flex; align-items: center; width: auto; margin: 0; min-height: 44px; padding: 8px; }
 @media (max-width: 480px) { .push-offer p { flex-basis: calc(100% - 40px); } }
+
+/* Setup commands remain selectable when clipboard access is unavailable. */
+.setup-command__line { display: flex; align-items: center; gap: 8px; }
+.setup-command__line code { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.setup-command__line button { flex: none; display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 1px solid var(--line-bright); border-radius: 8px; color: var(--accent); }
+.setup-command__status { display: block; min-height: 1.5em; color: var(--muted); font-size: 13px; }
+.pair-browser__jump { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; }

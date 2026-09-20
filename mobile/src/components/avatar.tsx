@@ -9,7 +9,7 @@
  * the agent stops.
  */
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -20,11 +20,14 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import type { DashboardPane } from "@shahi/shared";
-import { AGENT_COLORS, theme, statusColor } from "@/lib/theme";
-import { AGENT_ICONS, Icon } from "@/components/icons";
+import { theme, statusColor } from "@/lib/theme";
+import { AgentIcon } from "@/components/icons";
+
+import { agentIdentity } from "@shahi/shared/brand";
 
 export function Avatar({ pane }: { pane: DashboardPane }) {
-  const color = AGENT_COLORS[pane.agent ?? ""] ?? theme.dim;
+  const kind = pane.isAgent ? pane.agent : "shell";
+  const { color } = agentIdentity(kind);
   // Honour Reduce Motion: the bob is decorative reinforcement of "working", and
   // the row's status word carries the same meaning, so it is safe to still it.
   const reduceMotion = useReducedMotion();
@@ -54,11 +57,7 @@ export function Avatar({ pane }: { pane: DashboardPane }) {
       accessibilityRole="image"
       accessibilityLabel={`${pane.agent ?? (pane.isAgent ? "agent" : "shell")}, ${pane.status}`}
     >
-      {pane.agent && AGENT_ICONS[pane.agent] ? (
-        <Icon name={AGENT_ICONS[pane.agent]!} color={color} size={20} />
-      ) : (
-        <Text style={[styles.glyph, { color }]}>{pane.isAgent ? "✳" : "❯"}</Text>
-      )}
+      <AgentIcon kind={kind} size={20} />
       <View style={[styles.statusDot, { backgroundColor: statusColor(pane.status) }]} />
     </Animated.View>
   );
@@ -75,5 +74,4 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   statusDot: { position: "absolute", bottom: -1, right: -1, width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: theme.void },
-  glyph: { fontFamily: theme.mono, fontSize: 16 },
 });

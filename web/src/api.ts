@@ -1,3 +1,6 @@
+import { uploadCapability, uploadFile, type UploadOptions, type UploadRequest } from "@shahi/shared/file-upload";
+import { downloadFileBytes } from "@shahi/shared/file-download";
+import { clearWebDrafts } from "./drafts";
 import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
@@ -97,7 +100,7 @@ export function requestId(): string {
 export function createApi(getConnection = browserConnection) {
 async function dispatch(path: string, init?: RequestInit): Promise<Response> {
   if (!path.startsWith("/api/") || path.includes("#")) throw new Error("Invalid API path");
-  const timeout = path === "/api/agents/start" ? START_AGENT_TIMEOUT_MS : 15_000;
+  const timeout = path === "/api/agents/start" ? START_AGENT_TIMEOUT_MS : (path === "/api/uploads" || path.startsWith("/api/uploads/")) ? 60_000 : 15_000;
   const headers = new Headers(init?.headers);
   headers.set("x-shahi-api", String(SHAHI_API_VERSION));
   const { link, generation } = getConnection();
@@ -119,6 +122,7 @@ async function dispatch(path: string, init?: RequestInit): Promise<Response> {
     res = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(timeout), ...init, headers });
   }
   if (res.status === 401) {
+    if (!hosted) clearWebDrafts("direct");
     if (hosted) { await forgetBrowser(); if (browserConnection().generation !== generation + 1) throw new DOMException("Connection changed", "AbortError"); }
     window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError();
   }
@@ -180,7 +184,7 @@ const api = {
   logout: async () => {
     const id = getConnection().identity?.serverId;
     try { await postJson("/api/auth/logout", {}); }
-    finally { if (hosted && id) await forgetBrowser(id); }
+    finally { if (hosted && id) await forgetBrowser(id); else if (!hosted) clearWebDrafts("direct"); }
   },
 
   session: () => request<Session>("/api/session"),
@@ -260,12 +264,22 @@ const api = {
    * Returns the absolute path it landed on, which is what goes into the
    * message — an agent can read a path, it cannot read a browser File.
    */
-  upload: async (file: File) => {
-    if (browserConnection().link && file.size > RELAY_LIMITS.maxBodyBytes - 4096) throw new Error("This file is too large for the encrypted relay (about 765 KB per request).");
+  upload: async (file: File, options: UploadOptions = {}) => {
+    if (file.size > 32 * 1024 * 1024) throw new Error("Files can be up to 32 MB");
+    if (getConnection().link) {
+      const transferRequest: UploadRequest = (path, init) => dispatch(path, init as RequestInit);
+      const limits = await uploadCapability(transferRequest);
+      if (limits) return uploadFile(transferRequest, requestId(), {
+        name: file.name, type: file.type, size: file.size,
+        read: async (offset, count) => new Uint8Array(await file.slice(offset, offset + count).arrayBuffer()),
+      }, limits, options);
+    }
+    if (browserConnection().link && file.size > RELAY_LIMITS.maxBodyBytes - 4096) throw new Error("Update Shahi on your computer to send files up to 32 MB through the tunnel.");
     const body = new FormData();
     body.append("file", file);
     const res = await dispatch("/api/uploads", { method: "POST", body });
-    if (res.status === 401) { window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError(); }
+    if (res.status === 401) {
+    if (!hosted) clearWebDrafts("direct"); window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError(); }
     const payload = (await res.json().catch(() => ({}))) as {
       error?: string;
       name?: string;
@@ -307,7 +321,8 @@ const api = {
   /** Anything the viewer can show as text, fetched from wherever it lives. */
   textAt: async (url: string) => {
     const res = await dispatch(url);
-    if (res.status === 401) { window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError(); }
+    if (res.status === 401) {
+    if (!hosted) clearWebDrafts("direct"); window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError(); }
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? "Cannot read that file");
@@ -315,19 +330,27 @@ const api = {
     return res.text();
   },
 
+  fileBytesAt: async (path: string): Promise<Uint8Array> => {
+    const generation = browserConnection().generation;
+    const { bytes } = await downloadFileBytes(async headers => {
+      const response = await dispatch(path, { headers });
+      return { ok: response.ok, status: response.status, headers: response.headers, bytes: async () => new Uint8Array(await response.arrayBuffer()) };
+    });
+    if (browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError");
+    return bytes;
+  },
+
   mediaAt: async (path: string, download = false): Promise<string> => {
     const generation = browserConnection().generation;
-    const res = await dispatch(path);
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Could not read that file");
-    }
-    const contentType = res.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream";
-    // Never give agent-authored HTML/SVG a same-origin executable Blob URL.
+    const { bytes, contentType: rawType } = await downloadFileBytes(async headers => {
+      const response = await dispatch(path, { headers });
+      return { ok: response.ok, status: response.status, headers: response.headers, bytes: async () => new Uint8Array(await response.arrayBuffer()) };
+    });
+    const contentType = rawType.split(";")[0] ?? "application/octet-stream";
+    // Agent-authored HTML/SVG must never become executable Blob URLs.
     const safeType = !download && /^image\/(png|jpeg|gif|webp|avif)$/.test(contentType) ? contentType : "application/octet-stream";
-    const bytes = await res.arrayBuffer();
     if (browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError");
-    return keepBlob(new Blob([bytes], { type: safeType }));
+    return keepBlob(new Blob([new Uint8Array(bytes)], { type: safeType }));
   },
 
   pushKey: () => request<{ publicKey: string | null }>("/api/push/key"),

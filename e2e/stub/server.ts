@@ -1,3 +1,6 @@
+import { UploadTransfers, TRANSFER_CHUNK, TransferError } from "../../server/lib/upload-transfers";
+import { readWithinHome } from "../../server/lib/files";
+import { samplePdf } from "./sample-pdf";
 import type { ControlHandshake } from "@shahi/shared";
 /**
  * The server the tests talk to.
@@ -23,7 +26,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
-import { SCENARIOS, type Scenario, type ScenarioName } from "./data";
+import { SCENARIOS, pane as makePane, type Scenario, type ScenarioName } from "./data";
 
 const PORT = Number(process.env.PORT ?? 7272);
 const WEB_ROOT = process.env.STUB_WEB_ROOT ?? join(import.meta.dir, "../../web/dist");
@@ -54,6 +57,8 @@ const sockets = new Set<ServerWebSocket<unknown>>();
 /** Files the file viewer can open, written once into a temp directory. */
 const files = mkdtempSync(join(tmpdir(), "shahi-stub-"));
 writeFileSync(join(files, "prompt-parser.ts"), "const OPTION_RE = /^\\s*(\\d+)\\.\\s+(.+)$/;\n");
+writeFileSync(join(files, "sample.pdf"), samplePdf());
+const transfers = new UploadTransfers(join(files, "uploads"));
 writeFileSync(join(files, "notes.md"), "# Notes\n\nA file the agent wrote.\n");
 // A 240x160 PNG, so "is the thumbnail drawn?" can fail honestly.
 const PNG = Buffer.from(
@@ -254,7 +259,7 @@ Bun.serve({
     if (pathname === "/api/session") return json(scenario.session);
 
     if (pathname === "/api/agents") {
-      return json({ agents: [{ kind: "claude", command: "/usr/bin/claude" }], known: 19 });
+      return json({ agents: (scenario.agents ?? ["claude"]).map(kind => ({ kind, command: `/usr/bin/${kind}` })), known: 19 });
     }
 
     if (pathname === "/api/dirs") {
@@ -275,15 +280,15 @@ Bun.serve({
       const file = Bun.file(path);
       if (!(await file.exists())) return json({ error: "not found" }, { status: 404 });
       const download = url.searchParams.get("download") === "1";
-      const name = path.slice(path.lastIndexOf("/") + 1);
-      return new Response(file, {
+      const match = req.headers.get("range")?.match(/^bytes=(\d+)-(\d+)$/);
+      const result = await readWithinHome({ path, download, range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined });
+      return new Response(result.bytes, {
+        status: result.range ? 206 : 200,
         headers: {
-          "content-type": download
-            ? "application/octet-stream"
-            : name.endsWith(".png")
-              ? "image/png"
-              : "text/plain; charset=utf-8",
-          "content-disposition": `${download ? "attachment" : "inline"}; filename="${name}"`,
+          "content-type": result.contentType,
+          "x-shahi-file-version": result.version,
+          ...(result.range ? { "content-range": `bytes ${result.range.start}-${result.range.end}/${result.total}` } : {}),
+          "content-disposition": `${download ? "attachment" : "inline"}; filename="${result.name}"`,
         },
       });
     }
@@ -382,9 +387,40 @@ Bun.serve({
 
     if (pathname === "/api/agents/start" && req.method === "POST") {
       await record(req, pathname);
+      if (scenario.createAgents) {
+        const body = writes.at(-1)!.body as { workspaceId: string; kind: string };
+        const space = scenario.session.workspaces.find(w => w.workspaceId === body.workspaceId);
+        if (!space) return json({ error: "Unknown space" }, { status: 404 });
+        const number = 100 + scenario.session.panes.length;
+        const paneId = `${space.workspaceId}:p${number}`;
+        const tabId = `${space.workspaceId}:t${number}`;
+        scenario.session.panes.push(makePane({ paneId, tabId, workspaceId: space.workspaceId,
+          workspaceLabel: space.label, agent: body.kind, title: `New ${body.kind} ${number}` }));
+        scenario.session.tabs.push({ tabId, workspaceId: space.workspaceId, number,
+          label: `New ${body.kind}`, status: "idle", paneCount: 1, focused: false });
+        space.paneCount++;
+        space.tabCount++;
+        scenario.transcripts[paneId] = [];
+        broadcast({ type: "session", session: scenario.session });
+        return json({ paneId, tabId });
+      }
       return json({ paneId: "w1:p9", tabId: "w1:t9" });
     }
 
+    if (pathname === "/api/uploads/limits") return json({ version: 1, maxBytes: 32 * 1024 * 1024, chunkBytes: TRANSFER_CHUNK });
+    const transfer = pathname.match(/^\/api\/uploads\/transfers\/([^/]+)(?:\/(chunk|finish))?$/);
+    if (transfer) {
+      try {
+        return await transfers.run(async () => {
+          const [, id, action] = transfer;
+          writes.push({ method: req.method, path: pathname, body: { offset: req.headers.get("x-upload-offset") }, at: Date.now() });
+          if (req.method === "DELETE") return json(await transfers.cancel(id!, "fixture"));
+          if (action === "chunk") return json(await transfers.chunk(id!, "fixture", Number(req.headers.get("x-upload-offset")), new Uint8Array(await req.arrayBuffer())));
+          if (action === "finish") return json(await transfers.finish(id!, "fixture", (await req.json() as { digest: string }).digest));
+          return json(await transfers.begin(id!, "fixture", await req.json()));
+        });
+      } catch (e) { return json({ error: e instanceof Error ? e.message : "Upload failed" }, { status: e instanceof TransferError ? e.status : 500 }); }
+    }
     if (pathname === "/api/uploads" && req.method === "POST") {
       writes.push({ method: "POST", path: pathname, body: "(multipart)", at: Date.now() });
       return json({

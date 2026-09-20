@@ -1,3 +1,5 @@
+import { uploadCapability, uploadFile, type UploadOptions, type UploadRequest } from "@shahi/shared/file-upload";
+import { downloadFileBytes } from "@shahi/shared/file-download";
 /**
  * Client for the Shahi server, for React Native.
  *
@@ -216,11 +218,16 @@ async function dispatch(
   // which leaves an old session on screen and hides the new server's 426.
   // The server also sends no-store, but declaring it here protects the client
   // from proxies and test servers that forget that header.
-  return fetchWithTimeout(
+  const response = await fetchWithTimeout(
     `${connection.baseUrl}${path}`,
     { ...init, credentials: "omit", cache: "no-store" } as RequestInit,
     ms,
   );
+  return {
+    ok: response.ok, status: response.status, headers: response.headers,
+    json: () => response.json(), text: () => response.text(),
+    bytes: async () => new Uint8Array(await response.arrayBuffer()),
+  };
 }
 
 /** A 426 is the server declining this contract version; say so, in its words. */
@@ -454,12 +461,17 @@ const api = {
    * `text/plain` so agent-written markup cannot run anywhere. Reads are scoped
    * to $HOME and /tmp server-side.
    */
-  readFile: async (path: string): Promise<{ text: string } | { imageUrl: string }> => {
+  readFile: async (path: string): Promise<{ text: string } | { imageUrl: string } | { pdfBase64: string }> => {
     if (!configured()) throw new Error("No server address configured");
     const route = `/api/file?path=${encodeURIComponent(path)}`;
     // Through the timeout like every other request: a raw fetch here hung
     // the file viewer forever on a dead host (data-fetching audit).
+    if (connection.relay && /\.pdf$/i.test(path)) {
+      const { bytes } = await downloadFileBytes(headers => dispatch(route, { headers: { ...baseHeaders(), ...headers } }));
+      return { pdfBase64: toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/") };
+    }
     const res = await dispatch(route, { headers: baseHeaders() });
+    if (res.status === 413) throw new Error("Preview unavailable: this file is too large to open over this connection. Open it on your computer.");
     if (res.status === 401) throw new UnauthorizedError();
     if (res.status === 426) throw await incompatible(res);
     if (!res.ok) {
@@ -467,6 +479,9 @@ const api = {
       throw new Error(body.error ?? `could not read that file (${res.status})`);
     }
     const type = res.headers.get("content-type") ?? "";
+    if (type.split(";")[0] === "application/pdf") {
+      return { pdfBase64: toBase64Url(await res.bytes()).replace(/-/g, "+").replace(/_/g, "/") };
+    }
     if (type.startsWith("image/")) {
       // Over HTTP the URL is handed back rather than the bytes: `Image` fetches
       // it itself, and passing megabytes of base64 through JS to get there
@@ -477,7 +492,16 @@ const api = {
       const base64 = toBase64Url(await res.bytes()).replace(/-/g, "+").replace(/_/g, "/");
       return { imageUrl: `data:${type.split(";")[0]};base64,${base64}` };
     }
+    if (type && !type.startsWith("text/") && !/^application\/(json|xml)(?:;|$)/.test(type)) {
+      throw new Error("Preview unavailable for this file type. Open it on your computer. Text files and images can be viewed in Shahi.");
+    }
     return { text: await res.text() };
+  },
+
+  downloadFile: async (path: string): Promise<string> => {
+    if (!configured()) throw new Error("No server address configured");
+    const { bytes } = await downloadFileBytes(headers => dispatch(`/api/file?path=${encodeURIComponent(path)}&download=1`, { headers: { ...baseHeaders(), ...headers } }));
+    return toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/");
   },
 
   /**
@@ -521,7 +545,22 @@ const api = {
   unregisterPush: (token: string) =>
     postJson<{ ok: boolean }>("/api/push/expo/unsubscribe", { token }),
 
-  upload: async (file: { uri: string; name: string; type: string }): Promise<StoredUpload> => {
+  upload: async (file: { uri: string; name: string; type: string }, options: UploadOptions = {}): Promise<StoredUpload> => {
+    if (connection.relay) {
+      const transferRequest: UploadRequest = (path, init) => dispatch(path, { ...init, headers: baseHeaders(init.headers) }, 60_000);
+      const limits = await uploadCapability(transferRequest);
+      if (limits) {
+        const { File } = require("expo-file-system") as typeof import("expo-file-system");
+        const handle = new File(file.uri).open();
+        try {
+          if (handle.size === null) throw new Error("Could not read this file");
+          return await uploadFile(transferRequest, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`, {
+            name: file.name, type: file.type, size: handle.size,
+            read: async (offset, count) => { handle.offset = offset; return handle.readBytes(count); },
+          }, limits, options);
+        } finally { handle.close(); }
+      }
+    }
     // A photo over a slow tailnet needs longer than the default 15s, but still
     // a bound: a raw fetch here hung forever on a dead host (data-fetching audit).
     const res = connection.relay

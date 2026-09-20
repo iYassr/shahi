@@ -152,6 +152,9 @@ export class RelayLink {
   #handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   #lastMessageAt = 0;
   #closed = false;
+  #sendTimer: ReturnType<typeof setTimeout> | undefined;
+  #sendTokens = RELAY_LIMITS.phoneBurstBytes - 4096;
+  #sendRefilled = Date.now();
   #watching: string | null = null;
   #subscribers = new Set<LinkSubscriber>();
   readonly host: string;
@@ -266,6 +269,8 @@ export class RelayLink {
     // one over as a Blob that has to be read back asynchronously.
     socket.binaryType = "arraybuffer";
     this.#ws = socket;
+    this.#sendTokens = RELAY_LIMITS.phoneBurstBytes - 4096;
+    this.#sendRefilled = Date.now();
     // Includes CONNECTING and the encrypted hello. Neither state is covered
     // by the established-session heartbeat, and native may never emit close.
     this.#handshakeTimer = setTimeout(() => {
@@ -337,12 +342,13 @@ export class RelayLink {
       const code = event?.code ?? 0;
       const reason = event?.reason ?? "";
       if (
-        (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) &&
-        this.target.auth.kind === "pairing"
+        this.target.auth.kind === "pairing" &&
+        (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden ||
+          (!this.#confirmed && code === 1000 && reason === "closed by box"))
       ) {
         // A one-time pairing link being refused is terminal: there is no
         // saved identity yet, and retrying a spent/bad code cannot succeed.
-        this.#refuse("This phone is no longer paired with that box.");
+        this.#refuse("This pairing code could not be used. It may have expired or already been used. Show a new code on your computer and try again.");
         return;
       }
       if (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden) {
@@ -402,6 +408,7 @@ export class RelayLink {
     if (msg.t === "res") {
       const pending = this.#pending.get(msg.id);
       if (!pending) return; // Answered after its timeout: nobody is waiting.
+      this.#refillSendTokens();
       this.#pending.delete(msg.id);
       clearTimeout(pending.timer);
       try {
@@ -434,14 +441,42 @@ export class RelayLink {
 
   #dispatch(pending: Pending): void {
     const { request } = pending;
-    pending.sent = this.#sendSealed({
+    const message: PhoneToBox = {
       t: "req",
       id: pending.id,
       method: request.method,
       path: request.path,
       headers: request.headers,
       body: request.body ? toBase64Url(request.body) : null,
-    });
+    };
+    // A pair of valid attachments can exhaust the relay's one-MiB burst.
+    // Wait before sealing (which advances the nonce), never resend a write.
+    const frameBytes = utf8.encode(JSON.stringify(message)).byteLength + 24;
+    this.#refillSendTokens();
+    // Leave room for chat and control traffic while a file chunk waits.
+    const bulk = request.path.endsWith("/chunk") && request.path.startsWith("/api/uploads/transfers/");
+    const missing = frameBytes + (bulk ? 16 * 1024 : 1024) - this.#sendTokens;
+    if (missing > 0 && frameBytes <= RELAY_LIMITS.maxFrameBytes - 1024) {
+      if (!this.#sendTimer) this.#sendTimer = setTimeout(() => {
+        this.#sendTimer = undefined;
+        if (!this.#session) return;
+        for (const held of this.#pending.values()) if (!held.sent) this.#dispatch(held);
+      }, Math.ceil(missing / (RELAY_LIMITS.phoneBytesPerSecond * 0.9) * 1000) + 50);
+      return;
+    }
+    pending.sent = this.#sendSealed(message);
+  }
+
+  #refillSendTokens(): void {
+    const now = Date.now();
+    // A little headroom absorbs clock/network jitter and keeps control traffic responsive.
+    // The relay may receive a slow upload much later than socket.send(). Do
+    // not bank that transit time: the next upload could otherwise arrive in
+    // the same burst even though our local clock says capacity has recovered.
+    const uploading = [...this.#pending.values()].some(p => p.sent && (p.request.path === "/api/uploads" || p.request.path.startsWith("/api/uploads/transfers/") && p.request.path.endsWith("/chunk")));
+    if (!uploading) this.#sendTokens = Math.min(RELAY_LIMITS.phoneBurstBytes,
+      this.#sendTokens + Math.max(0, now - this.#sendRefilled) * RELAY_LIMITS.phoneBytesPerSecond * 0.9 / 1000);
+    this.#sendRefilled = now;
   }
 
   #sendSealed(msg: PhoneToBox): boolean {
@@ -460,6 +495,8 @@ export class RelayLink {
         this.#drop(socket, new UnreachableError("relay", this.host, "This connection is too slow. Reconnecting…"));
         return false;
       }
+      this.#refillSendTokens();
+      this.#sendTokens -= frame.byteLength;
       socket.send(new Uint8Array(frame));
       return true;
     } catch {
@@ -504,6 +541,7 @@ export class RelayLink {
   #lost(): Error { return new UnreachableError("lost", this.host, `The connection through ${this.host} dropped. Reconnecting…`); }
 
   #discard(socket: WebSocket): void {
+    clearTimeout(this.#sendTimer); this.#sendTimer = undefined;
     this.#ws = undefined; this.#session = null; this.#self = null; this.#confirmed = false;
     clearTimeout(this.#handshakeTimer); this.#handshakeTimer = undefined;
     socket.onopen = null; socket.onmessage = null; socket.onclose = null; socket.onerror = null;

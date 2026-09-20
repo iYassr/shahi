@@ -61,20 +61,20 @@ const CODEX: AgentMode[] = [
   {
     id: "default",
     label: "Ask me",
-    description: "Asks before running anything it does not already trust.",
-    args: [],
+    description: "Starts read-only and asks before making changes.",
+    args: ["--sandbox", "read-only", "--ask-for-approval", "on-request"],
   },
   {
     id: "on-request",
     label: "Agent decides",
     description: "Runs what it judges safe and asks when it is unsure.",
-    args: ["--ask-for-approval", "on-request"],
+    args: ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
   },
   {
     id: "full-auto",
     label: "Full auto",
     description: "Runs commands without asking, inside its own sandbox.",
-    args: ["--full-auto"],
+    args: ["--sandbox", "workspace-write", "--ask-for-approval", "never"],
   },
   {
     id: "bypass",

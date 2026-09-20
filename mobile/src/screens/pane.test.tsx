@@ -1,3 +1,4 @@
+import { clearNativeDrafts } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { FlatList, View } from "react-native";
 import { createElement } from "react";
@@ -131,6 +132,7 @@ const detail = (activity: { verb: string } | null = null) => ({
 const receipt: PromptReceipt = { accepted: true, clientMessageId: "c1", acceptedAt: 1 };
 
 beforeEach(() => {
+  clearNativeDrafts(api);
   // Fake timers for the whole file, never switched mid-file: a run that
   // faked them in one test and not the next hung outright, as a list timer
   // scheduled under one clock was awaited under the other. RNTL's `waitFor`
@@ -170,6 +172,7 @@ describe("sending a reply", () => {
     expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it", expect.any(String));
     // The composer is cleared with the tap, not with the receipt.
     expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+    expect(view.getByPlaceholderText("Reply to this agent…").props.editable).toBe(false);
 
     // The real `you` message lands in the transcript, on its own — no agent
     // reply yet — and the server says the log changed.
@@ -197,6 +200,7 @@ describe("sending a reply", () => {
     await view.findByText("herdr said no");
     expect(view.queryByText("YOU")).toBeNull();
     expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("ship it");
+    expect(view.getByPlaceholderText("Reply to this agent…").props.editable).toBe(true);
     expect(view.queryByText("Working")).toBeNull();
   });
 
@@ -446,6 +450,65 @@ describe("keeping your place", () => {
     forgetPaneMemory(paneId);
   });
 
+  test("Read and Screen resizing cannot replace the saved paragraph with a layout offset", async () => {
+    const paneId = "w1:p-toggle-layout";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    const list = visit.UNSAFE_getByType(FlatList);
+    const cell = visit.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m1")!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 16, height: 1500 } } }));
+    act(() => list.props.onScrollBeginDrag());
+    const position = { nativeEvent: { contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 420 } } };
+    fireEvent(list, "scroll", position);
+    fireEvent(list, "scrollEndDrag", position);
+    for (const mode of ["screen", "read"]) {
+      const header = render(visit.UNSAFE_getByType(require("expo-router").Stack.Screen).props.options.headerRight());
+      fireEvent.press(header.getByTestId(`view-${mode}`));
+      header.unmount();
+      expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 0, animated: false, viewPosition: 0, viewOffset: -404 });
+      fireEvent(list, "scroll", { nativeEvent: { ...position.nativeEvent, contentOffset: { y: 0 } } });
+      expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: 404 });
+    }
+    // Landing once is not enough: earlier virtualized cells can measure later.
+    fireEvent(list, "scroll", position);
+    scrollToIndex.mockClear();
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 346, height: 1500 } } }));
+    act(() => jest.advanceTimersByTime(100));
+    expect(scrollToIndex).toHaveBeenCalled();
+    expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: 404 });
+    fireEvent(list, "scroll", { nativeEvent: { ...position.nativeEvent, contentOffset: { y: 750 } } });
+    act(() => list.props.onScrollBeginDrag());
+    scrollToIndex.mockClear();
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 676, height: 1500 } } }));
+    act(() => jest.advanceTimersByTime(100));
+    expect(scrollToIndex).not.toHaveBeenCalled();
+    fireEvent(list, "scrollToIndexFailed", { index: 0, averageItemLength: 200 });
+    visit.unmount();
+    const calls = scrollToIndex.mock.calls.length;
+    act(() => jest.advanceTimersByTime(1000));
+    expect(scrollToIndex).toHaveBeenCalledTimes(calls);
+    scrollToIndex.mockRestore();
+    forgetPaneMemory(paneId);
+  });
+
+  test("earlier messages survive leaving before the next transcript update", async () => {
+    const paneId = "w1:p-earlier-cache";
+    forgetPaneMemory(paneId);
+    mocked.sessionLog.mockResolvedValue({ ...log(thread), total: 63, offset: 60 });
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    mocked.sessionLog.mockResolvedValueOnce({ ...log([said("old", "agent", "Earlier paragraph")]), total: 63, offset: 59 });
+    fireEvent.press(visit.getByText("Load earlier messages"));
+    await visit.findByText("Earlier paragraph");
+    visit.unmount();
+    const again = render(<Pane paneId={paneId} />);
+    await again.findByText("Earlier paragraph");
+    again.unmount();
+    forgetPaneMemory(paneId);
+  });
+
   test("near the tail remains an exact place rather than becoming the tail", async () => {
     const paneId = "w1:p-near-tail";
     mocked.sessionLog.mockResolvedValue(log(thread));
@@ -494,10 +557,18 @@ describe("keeping your place", () => {
     // The first native call can be clamped while FlatList is still measuring.
     act(() => jest.advanceTimersByTime(100));
     expect(scrollToEnd).toHaveBeenCalledTimes(2);
-    // Once native reports the real tail, retries stop.
+    // An estimated bottom without the last message measured is not the tail.
     fireEvent(again.UNSAFE_getByType(FlatList), "scroll", atBottom);
+    act(() => jest.advanceTimersByTime(5_000));
+    expect(scrollToEnd.mock.calls.length).toBeGreaterThan(2);
+    const calls = scrollToEnd.mock.calls.length;
+    const list = again.UNSAFE_getByType(FlatList);
+    const cell = again.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m3")!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 2100, height: 500 } } }));
+    // Once native reports the measured tail, retries stop.
+    fireEvent(list, "scroll", atBottom);
     act(() => jest.advanceTimersByTime(500));
-    expect(scrollToEnd).toHaveBeenCalledTimes(2);
+    expect(scrollToEnd).toHaveBeenCalledTimes(calls);
 
     again.unmount();
     scrollToEnd.mockRestore();
@@ -511,13 +582,65 @@ describe("keeping your place", () => {
     await view.findByText(/Message three/);
     const list = view.UNSAFE_getByType(FlatList);
     fireEvent(list, "viewableItemsChanged", { viewableItems: [{ item: thread[0] }] });
-    fireEvent(list, "scrollBeginDrag");
+    act(() => list.props.onScrollBeginDrag());
     fireEvent(list, "scroll", {
       nativeEvent: { contentSize: { height: 2_000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 0 } },
     });
     expect(view.getByText("Latest ↓")).toBeTruthy();
     view.unmount();
   }
+
+  test("the measured tail includes bottom padding and stops retrying after landing", async () => {
+    const paneId = "w1:p-padding";
+    forgetPaneMemory(paneId);
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    const list = visit.UNSAFE_getByType(FlatList);
+    const cell = visit.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m3")!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 2100, height: 500 } } }));
+    fireEvent(list, "scroll", { nativeEvent: {
+      contentSize: { height: 2616 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 2000 },
+    } });
+    fireEvent(list, "contentSizeChange", 400, 2616);
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 2016, animated: false });
+    fireEvent(list, "scroll", { nativeEvent: {
+      contentSize: { height: 2616 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 2016 },
+    } });
+    const calls = scrollToOffset.mock.calls.length;
+    act(() => jest.advanceTimersByTime(500));
+    expect(scrollToOffset).toHaveBeenCalledTimes(calls);
+    visit.unmount();
+    scrollToOffset.mockRestore();
+    forgetPaneMemory(paneId);
+  });
+
+  test("Go to latest keeps seeking through programmatic momentum instead of saving an intermediate offset", async () => {
+    const paneId = "w1:p-jump-long";
+    forgetPaneMemory(paneId);
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/Message three/);
+    const list = view.UNSAFE_getByType(FlatList);
+    const mid = { nativeEvent: { contentSize: { height: 10000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 2000 } } };
+    act(() => list.props.onScrollBeginDrag());
+    fireEvent(list, "scroll", mid);
+    fireEvent.press(view.getByTestId("go-to-latest"));
+    fireEvent(list, "momentumScrollBegin");
+    fireEvent(list, "scroll", mid);
+    fireEvent(list, "momentumScrollEnd", mid);
+    expect(paneScrollPlace(paneId)).toBe("bottom");
+    const before = scrollToEnd.mock.calls.length;
+    act(() => jest.advanceTimersByTime(5000));
+    expect(scrollToEnd.mock.calls.length).toBeGreaterThan(before);
+    act(() => list.props.onScrollBeginDrag());
+    const cancelled = scrollToEnd.mock.calls.length;
+    act(() => jest.advanceTimersByTime(500));
+    expect(scrollToEnd.mock.calls.length).toBe(cancelled);
+    view.unmount(); scrollToEnd.mockRestore(); forgetPaneMemory(paneId);
+  });
 
   test("restore never judges the scroll anchor before any message has arrived", async () => {
     const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
@@ -675,4 +798,53 @@ test("retrying a lost prompt response reuses its id; a new successful send gets 
   await settle();
   expect(mocked.send.mock.calls[2]![2]).not.toBe(first);
   view.unmount();
+});
+
+test("a send finishing after leaving the conversation does not announce success on another screen", async () => {
+  const haptics = require("expo-haptics");
+  haptics.notificationAsync.mockClear();
+  mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+  const request = deferred<PromptReceipt>();
+  mocked.send.mockReturnValue(request.promise);
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "hello");
+  fireEvent.press(view.getByText("Send"));
+  view.unmount();
+  await act(async () => request.resolve(receipt));
+  expect(haptics.notificationAsync).not.toHaveBeenCalled();
+});
+
+test("draft and uncertain send identity survive leaving and returning to a conversation", async () => {
+  mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
+  mocked.send.mockRejectedValueOnce(new Error("connection interrupted")).mockResolvedValueOnce(receipt);
+  let view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "keep my draft");
+  fireEvent.press(view.getByText("Send"));
+  await view.findByText("connection interrupted");
+  const attempt = mocked.send.mock.calls[0]![2];
+  view.unmount();
+  view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("keep my draft");
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  expect(mocked.send.mock.calls[1]![2]).toBe(attempt);
+  view.unmount();
+  view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+});
+
+test("an early missing-pane response recovers when the new agent’s next frame arrives", async () => {
+  mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
+  mocked.pane.mockRejectedValueOnce(new Error("not mirrored yet")).mockResolvedValue({ ...detail(), frame: { paneId: PANE, text: "New agent is ready", ansi: "", prompt: null, activity: null, at: 1 } });
+  const view = render(<Pane paneId={PANE} initialView="screen" />);
+  await settle();
+  expect(mocked.pane).toHaveBeenCalledTimes(1);
+  logChanged();
+  await settle();
+  expect(mocked.pane).toHaveBeenCalledTimes(2);
+  expect(view.getByText("New agent is ready")).toBeTruthy();
 });

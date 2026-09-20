@@ -11,13 +11,31 @@
  * horizontal rules, tables, and inline bold / italic / code / links. Anything
  * else falls through as plain text, which is the correct failure.
  */
-import { Fragment, type ReactNode } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { createContext, useContext, Fragment, type ReactNode } from "react";
+import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import { CopyOnHold } from "@/components/copy";
 import { theme } from "@/lib/theme";
 
-export function Markdown({ text }: { text: string }) {
-  return <View>{renderBlocks(text)}</View>;
+type OpenFile = (file: { path: string; name: string }) => void;
+const FileAction = createContext<OpenFile | undefined>(undefined);
+export function Markdown({ text, onOpenFile }: { text: string; onOpenFile?: OpenFile }) {
+  return <FileAction.Provider value={onOpenFile}><View>{renderBlocks(text)}</View></FileAction.Provider>;
+}
+
+function ProseLink({ label, target }: { label: string; target: string }) {
+  const openFile = useContext(FileAction);
+  const destination = target.trim().replace(/^<|>$/g, "");
+  if (/^https?:\/\//i.test(destination)) return <Text accessibilityRole="link" style={styles.link} onPress={() => void Linking.openURL(destination)}>{label}</Text>;
+  // These are paths on the paired computer, never file:// URLs on the phone.
+  // The authenticated server still enforces its readable-root boundary.
+  if ((destination.startsWith("/") && !destination.startsWith("//")) || destination.startsWith("~/")) {
+    let path = destination.replace(/#L\d+(?:-L?\d+)?$/, "");
+    try { path = decodeURIComponent(path); } catch { /* Literal percent in a filename. */ }
+    if (openFile) return <Text accessibilityRole="link" accessibilityHint="Open file on your computer" style={styles.link}
+      onPress={() => openFile({ path, name: label })}>{label}</Text>;
+  }
+  return <Text>{label} (link unavailable)</Text>;
 }
 
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
@@ -154,12 +172,8 @@ function renderBlocks(text: string): ReactNode[] {
 const INLINE: { re: RegExp; wrap: (m: RegExpMatchArray, k: number) => ReactNode }[] = [
   { re: /`([^`]+)`/, wrap: (m, k) => <Text style={styles.inlineCode} key={k}>{m[1]}</Text> },
   {
-    re: /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/,
-    wrap: (m, k) => (
-      <Text style={styles.link} key={k} onPress={() => void Linking.openURL(m[2]!)}>
-        {m[1]}
-      </Text>
-    ),
+    re: /\[([^\]]+)\]\(((?:\([^()]*\)|[^()\n])+)\)/,
+    wrap: (m, k) => <ProseLink key={k} label={m[1]!} target={m[2]!} />,
   },
   { re: /\*\*([^*]+)\*\*/, wrap: (m, k) => <Text style={styles.bold} key={k}>{m[1]}</Text> },
   { re: /(?<!\w)_([^_]+)_(?!\w)/, wrap: (m, k) => <Text style={styles.italic} key={k}>{m[1]}</Text> },

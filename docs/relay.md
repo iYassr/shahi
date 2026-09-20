@@ -55,14 +55,29 @@ secrets for phones:
   `{"t":"close","link":n}`; the box can end a link with the same message.
 
 The relay cannot ping a box (a Durable Object cannot originate one), so the
-box sends the text frame `ping` every sixty seconds once ready; the relay
+box sends the text frame `ping` every twenty seconds once ready; the relay
 answers `pong` without waking and closes a box silent for five minutes, whose
 phones then see `4404`. Both words are plain text, not JSON, and are the only
 text frames on a box socket that are not control messages. The pings only
 prove the box can write, so the box also watches its read side, as the phone
-does: if no frame — not even a `pong` — arrives within 150 seconds, it drops
-the socket and redials, rather than sitting on a wedged connection no phone can
-reach.
+does: if no frame — not even a `pong` — arrives within 60 seconds, it drops
+the socket and redials. A five-second watchdog checks this deadline, so a silent
+route is normally detected within 60–65 seconds of the last received frame.
+
+The watchdog also runs during connection setup and retry waits. If its clock
+jumps backward or a tick arrives over 15 seconds late (for example, after sleep),
+the computer discards the old socket and immediately starts a fresh connection.
+This does not depend on a close event or on whether buffered messages arrive
+first. If the network is still unavailable, retries continue indefinitely with
+jittered exponential delays capped at 30 seconds. Stable connections reset the
+backoff. Signing identity and paired-device credentials survive these reconnects;
+in-flight requests are not blindly replayed.
+
+This cannot keep a sleeping computer online or reconnect through an ongoing
+internet outage. It restores the tunnel once the process is running and the
+relay is reachable. Tests suspend an isolated process with real WebSockets,
+resume it with and without a network route, and cycle availability repeatedly.
+Physical sleep/wake and router-specific behavior remain device checks.
 
 Data is binary frames. On the phone side a frame is the payload as is. On the
 box side every data frame is `link(4 bytes, big-endian) ‖ payload`, so one box
@@ -389,6 +404,34 @@ surface admits at most 32 handlers and two concurrent upload/file handlers.
 Excess work receives 429/503 and is never silently queued. Responses are read
 with a byte limit, cancelled at the limit, and answered with 413. Single-frame
 limits still apply: this does **not** add 100 MB attachments.
+
+Updated clients and computers negotiate `/api/uploads/limits` and support
+**32 MiB per uploaded file** using sequential 64 KiB chunks. Each request stays
+inside the existing encrypted frame/body limits. The server journals accepted
+offsets, rejects conflicting retries, checks the final SHA-256 and atomically
+publishes the completed file. Lost chunk/finalization replies can be retried
+without duplicating the file. No upload contents are stored at Cloudflare.
+
+One unfinished upload per device and two per computer reserve at most 64 MiB of
+partial file space. Sessions expire after one hour, with periodic cleanup;
+completed receipts are bounded to 128 per computer within that lifetime. Completed
+attachments retain the existing 14-day cleanup policy. Clients use 60-second
+per-request deadlines, a bounded reconnect retry and a 55-minute overall
+transfer deadline. Closing the picker/cancelling stops subsequent chunks;
+expiry cleans up partials when the computer cannot receive cancellation.
+
+The bandwidth rate remains 64 KiB/s per phone, with existing backpressure limits.
+Chunk scheduling reserves room for chat/control traffic before sealing, and
+counts in-flight chunks as bulk traffic. A 32 MiB upload can take around 12–15
+minutes depending on latency; the higher size limit is not a speed increase.
+Mobile process termination requires selecting the file again; this release
+resumes transient connections while the upload task remains alive.
+
+Older computers retain the 779,264-byte (761 KiB) single-file relay limit, inside
+783,360 bytes of multipart body capacity. SSH/direct uploads remain capped at
+32 MiB. The pre-change [file-transfer verification](upload-verification-2026-09-18.md)
+records those older boundaries. See [the new transfer report](large-relay-transfers-2026-09-20.md)
+for implementation status and validation limits.
 
 Reconnects use exponential backoff with equal jitter (half to all of the delay,
 capped at 30 seconds). Polling respects scheduled retries. Only 30 seconds of

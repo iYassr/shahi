@@ -21,6 +21,8 @@ describe("paired devices", () => {
   const other = { id: "dev-old", name: "Old iPad", createdAt: now - 30 * 86_400_000, lastSeenAt: now - 7_200_000 };
 
   beforeEach(() => {
+    mockComputerId = "first";
+    mockCurrentApi = api;
     api.devices.mockReset();
     api.revokeDevice.mockReset();
     // The spy outlives one test; its call list must not.
@@ -34,7 +36,7 @@ describe("paired devices", () => {
     expect(view.getByText(/Yasser's iPhone/)).toBeTruthy();
     expect(view.getByText(/this phone/)).toBeTruthy();
     expect(view.getByText(/seen 2h ago/)).toBeTruthy();
-    expect(view.getByText(/Passcode sign-ins aren't devices/)).toBeTruthy();
+    expect(view.getByText(/Only devices connected with a pairing code/)).toBeTruthy();
     // The phone in hand is offered a sign-out, the other a revoke.
     expect(view.getByTestId("revoke-dev-me")).toHaveTextContent("Sign out");
     expect(view.getByTestId("revoke-dev-old")).toHaveTextContent("Revoke");
@@ -43,8 +45,8 @@ describe("paired devices", () => {
   test("a passcode login is told it is one, with nothing to revoke", async () => {
     api.devices.mockResolvedValue({ devices: [], thisDeviceId: null });
     const view = render(<PairedDevices onRevokedSelf={jest.fn()} />);
-    await waitFor(() => view.getByText(/This phone signed in with the passcode/));
-    expect(view.getByText(/No phones have paired by code yet/)).toBeTruthy();
+    await waitFor(() => view.getByText(/This phone signed in with a passcode/));
+    expect(view.getByText(/No devices have paired by code yet/)).toBeTruthy();
   });
 
   test("a restore-time routing race can be retried and a live transition retries automatically", async () => {
@@ -95,6 +97,34 @@ describe("paired devices", () => {
     await waitFor(() => expect(onRevokedSelf).toHaveBeenCalled());
   });
 
+  test("switching computers discards the old list and ignores its late response", async () => {
+    let resolveOld!: (value: unknown) => void;
+    api.devices.mockImplementation(() => new Promise(resolve => { resolveOld = resolve; }));
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} />);
+    mockCurrentApi = { devices: jest.fn().mockResolvedValue({ devices: [mine], thisDeviceId: mine.id }), revokeDevice: jest.fn() };
+    mockComputerId = "second";
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} />);
+    await waitFor(() => view.getByTestId("device-dev-me"));
+    await act(async () => resolveOld({ devices: [other], thisDeviceId: null }));
+    expect(view.queryByTestId("device-dev-old")).toBeNull();
+    expect(view.getByTestId("device-dev-me")).toBeTruthy();
+  });
+
+  test("a confirmation left open while switching cannot revoke the previous computer", async () => {
+    api.devices.mockResolvedValue({ devices: [mine], thisDeviceId: mine.id });
+    const onRevokedSelf = jest.fn();
+    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    await waitFor(() => view.getByTestId("revoke-dev-me"));
+    fireEvent.press(view.getByTestId("revoke-dev-me"));
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0]![2];
+    mockCurrentApi = { devices: jest.fn().mockResolvedValue({ devices: [], thisDeviceId: null }), revokeDevice: jest.fn() };
+    mockComputerId = "second";
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    await act(async () => buttons[1].onPress());
+    expect(api.revokeDevice).not.toHaveBeenCalled();
+    expect(onRevokedSelf).not.toHaveBeenCalled();
+  });
+
   test("ages read the way a person would say them", () => {
     const t = 1_000_000_000;
     expect(relative(t - 5_000, t)).toBe("just now");
@@ -104,4 +134,6 @@ describe("paired devices", () => {
   });
 });
 
-jest.mock("@/lib/session", () => ({ useSession: () => ({ api: require("@/lib/api").api }) }));
+let mockComputerId = "first";
+let mockCurrentApi = api;
+jest.mock("@/lib/session", () => ({ useSession: () => ({ api: mockCurrentApi, activeComputerId: mockComputerId }) }));

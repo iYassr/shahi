@@ -3,7 +3,7 @@ import { Logo } from "./Logo";
 import { checkPushConnection } from "../push-policy";
 import { preferences } from "../preferences";
 import { browserConnection, hosted } from "../connection";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeviceList } from "@shahi/shared";
 import { useApi } from "../api";
 import { registerPush } from "./PushPrompt";
@@ -14,8 +14,19 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
   const [devices, setDevices] = useState<DeviceList | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const refresh = () => api.devices().then((list) => { setDevices(list); setError(""); }).catch((e) => setError(e.message));
-  useEffect(() => { void refresh(); }, []);
+  const mounted = useRef(true);
+  const request = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current++; }; }, []);
+  const refresh = useCallback(async () => {
+    const generation = ++request.current;
+    try {
+      const list = await api.devices();
+      if (mounted.current && generation === request.current) { setDevices(list); setError(""); }
+    } catch (e) {
+      if (mounted.current && generation === request.current) setError(e instanceof Error ? e.message : "Couldn't load devices");
+    }
+  }, [api]);
+  useEffect(() => { setDevices(null); setError(""); void refresh(); }, [refresh]);
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
     try { await action(); } catch (e) { onToast(e instanceof Error ? e.message : "Could not save settings"); } finally { setBusy(false); }
@@ -52,8 +63,13 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
         {!devices && !error && <p>Loading devices…</p>}
         {devices?.devices.length === 0 && <p>No paired devices.</p>}
         {devices?.devices.map((device) => <div className="device-row" key={device.id}><div><strong>{device.name}</strong><p>Last seen {new Date(device.lastSeenAt).toLocaleString()}</p></div><button disabled={busy} onClick={() => {
-          if (window.confirm(`Revoke access for ${device.name}?`)) void run(async () => { await api.revokeDevice(device.id); await refresh(); });
-        }}>Revoke</button></div>)}
+          const self = device.id === devices.thisDeviceId;
+          if (window.confirm(self ? "Sign this browser out?" : `Revoke access for ${device.name}?`)) void run(async () => {
+            await api.revokeDevice(device.id);
+            if (!mounted.current) return;
+            if (self) onLogout(); else await refresh();
+          });
+        }}>{device.id === devices.thisDeviceId ? "Sign out" : "Revoke"}</button></div>)}
       </section>
       <section className="settings__access"><h2>Sign out of this computer</h2><p>Remove this browser’s access. You will need to pair or sign in again to reconnect.</p><button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>Sign out</button></section>
       <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">Privacy</a><a href="mailto:support@getshahi.dev">Get help</a></footer>

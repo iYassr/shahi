@@ -49,6 +49,7 @@ describe("safeName", () => {
 
   test("never returns empty", () => {
     expect(safeName("")).toBe("upload");
+    expect(safeName(undefined)).toBe("upload");
     expect(safeName("/")).toBe("upload");
   });
 
@@ -58,6 +59,15 @@ describe("safeName", () => {
 });
 
 describe("storeUpload", () => {
+  test("stores an empty multipart file even when the runtime omits its name", async () => {
+    const file = new File([], "empty.txt");
+    Object.defineProperty(file, "name", { value: undefined });
+    const stored = await storeUpload(file, Date.now, DIR);
+    expect(stored.name).toBe("upload");
+    expect(stored.size).toBe(0);
+    expect(await Bun.file(stored.path).exists()).toBe(true);
+    expect((await Bun.file(stored.path).arrayBuffer()).byteLength).toBe(0);
+  });
   test("writes into the upload directory and returns an absolute path", async () => {
     const stored = await storeUpload(new File(["hello"], "note.txt", { type: "text/plain" }), Date.now, DIR);
     expect(stored.path.startsWith(DIR)).toBe(true);

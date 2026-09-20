@@ -35,35 +35,65 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
   const api = useApi();
   const [source, setSource] = useState<Source>("phone");
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const uploadAbort = useRef<AbortController | null>(null);
   const [path, setPath] = useState(startPath);
   const [listing, setListing] = useState<DirListing | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [remaining, setRemaining] = useState<File[]>([]);
+  const owner = useRef(0);
+  const uploadBusy = useRef(false);
+  useEffect(() => {
+    owner.current++;
+    uploadBusy.current = false;
+    setUploading(false);
+    setRemaining([]);
+    return () => { owner.current++; uploadAbort.current?.abort(); };
+  }, [api]);
 
   useEffect(() => {
     if (source !== "server") return;
     let live = true;
+    setListing(null);
+    setError("");
     void api
       .dirs(path, { files: true })
       .then((d) => live && setListing(d))
-      .catch(() => live && onToast("Cannot open that folder"));
+      .catch(() => live && setError("Couldn’t open this folder. Try again or choose your home folder."));
     return () => {
       live = false;
     };
-  }, [source, path, onToast]);
+  }, [api, source, path, attempt]);
 
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
+  async function upload(files: FileList | File[] | null) {
+    if (!files?.length || uploadBusy.current) return;
+    const generation = owner.current;
+    const active = () => generation === owner.current;
+    const batch = Array.from(files);
+    let completed = 0;
+    uploadBusy.current = true;
+    setRemaining([]);
     setUploading(true);
+    setProgress(null);
+    const controller = new AbortController(); uploadAbort.current = controller;
     try {
-      for (const file of Array.from(files)) {
-        const stored = await api.upload(file);
+      for (const file of batch) {
+        if (!active()) return;
+        const stored = await api.upload(file, { signal: controller.signal, onProgress: (sent, total) => { if (active()) setProgress(total ? Math.floor(sent / total * 100) : 100); } });
+        if (!active()) return;
         onAttach({ name: stored.name, path: stored.path, size: stored.size });
+        completed++;
       }
-      onClose();
+      if (active()) onClose();
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Upload failed");
+      if (active()) {
+        setRemaining(batch.slice(completed));
+        onToast(err instanceof Error ? err.message : "Upload failed");
+      }
     } finally {
-      setUploading(false);
+      if (active()) { uploadBusy.current = false; setUploading(false); }
     }
   }
 
@@ -71,14 +101,14 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
     <Sheet title="Attach a file" onClose={onClose}>
       <div className="kinds" style={{ marginBottom: 16 }}>
         <button className="kind" data-active={source === "phone"} onClick={() => setSource("phone")}>
-          From this phone
+          From this device
         </button>
         <button
           className="kind"
           data-active={source === "server"}
           onClick={() => setSource("server")}
         >
-          On the server
+          On your computer
         </button>
       </div>
 
@@ -94,7 +124,8 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             type="file"
             multiple
             hidden
-            onChange={(e) => void upload(e.target.files)}
+            disabled={uploading}
+            onChange={(e) => { void upload(e.target.files); e.target.value = ""; }}
           />
           <input
             id="shahi-camera"
@@ -102,7 +133,8 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             accept="image/*"
             capture="environment"
             hidden
-            onChange={(e) => void upload(e.target.files)}
+            disabled={uploading}
+            onChange={(e) => { void upload(e.target.files); e.target.value = ""; }}
           />
 
           <button
@@ -110,24 +142,29 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             onClick={() => fileInput.current?.click()}
             disabled={uploading}
           >
-            {uploading ? "Uploading…" : "Choose photo or file"}
+            {uploading ? (progress === null ? "Uploading…" : `Uploading ${progress}%`) : "Choose photo or file"}
           </button>
 
           <label className="bigaction" htmlFor="shahi-camera" style={{ margin: "10px 0 0" }}>
             Take a photo
           </label>
 
+          {uploading && <button className="sheet__go" onClick={() => uploadAbort.current?.abort()}>Cancel upload</button>}
+          {remaining.length > 0 && <button className="sheet__go" disabled={uploading} onClick={() => void upload(remaining)}>Retry remaining {remaining.length === 1 ? "file" : `${remaining.length} files`}</button>}
           <p className="sheet__note">
-            Uploaded to the server, then referenced by path so the agent can read it.
+            Files are copied to your computer so the agent can read them.
           </p>
         </>
       ) : (
         <>
           <div className="picker__current">
             <span className="picker__path">{listing?.display ?? path}</span>
+            <button className="picker__toggle" onClick={() => { setPath("~"); setAttempt(n => n + 1); }}>Home folder</button>
           </div>
 
           <div className="picker__browser" style={{ maxHeight: 320 }}>
+            {error && <p className="picker__error" role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>Try again</button></p>}
+            {!listing && !error && <p className="picker__empty" role="status">Opening folder…</p>}
             {listing?.parent && (
               <button className="picker__row" onClick={() => setPath(listing.parent!)}>
                 <span className="picker__glyph">↰</span> {listing.parent}

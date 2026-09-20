@@ -17,18 +17,30 @@ export function anchorAt(frames: Map<string, CellFrame>, y: number): ScrollAncho
 }
 
 /** Observe the actual cell container, not renderItem's child whose y is always zero. */
-export function useScrollCells<T>(idOf: (item: T) => string) {
+export function useScrollCells<T>(
+  idOf: (item: T) => string,
+  onFrameChange?: (id: string, frame: CellFrame) => void,
+) {
   const frames = useRef(new Map<string, CellFrame>());
   const identify = useRef(idOf);
   identify.current = idOf;
+  const frameChanged = useRef(onFrameChange);
+  frameChanged.current = onFrameChange;
   const CellRendererComponent = useCallback(function ScrollCell({ item, children, onLayout, cellKey: _cellKey, index: _index, ...props }: ViewProps & { item: T; cellKey: string; index: number }) {
     const id = identify.current(item);
     useEffect(() => () => { frames.current.delete(id); }, [id]);
     return (
     <View {...props} onLayout={(event: LayoutChangeEvent) => {
       const { y, height } = event.nativeEvent.layout;
-      frames.current.set(id, { y, height });
+      const previous = frames.current.get(id);
+      const frame = { y, height };
+      frames.current.set(id, frame);
       onLayout?.(event);
+      // FlatList must receive its measurement before an observer corrects a
+      // saved anchor using the new frame. Unchanged layouts need no correction.
+      if (!previous || previous.y !== y || previous.height !== height) {
+        frameChanged.current?.(id, frame);
+      }
     }}>{children}</View>
   ); }, []);
   return { frames, CellRendererComponent };

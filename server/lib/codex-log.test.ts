@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { normaliseCodex, rolloutWithinSessions } from "./codex-log";
+import { normaliseCodex, rolloutWithinSessions, rolloutFromMacProcess } from "./codex-log";
 
 const event = (type: string, message?: string, timestamp = "2026-07-25T04:51:48.000Z") => ({
   timestamp,
@@ -361,6 +362,17 @@ describe("findCodexRollout, by session id", () => {
     expect(await findCodexRollout(noClient, "w1:p1", null, id)).toBe(rollout);
   });
 
+  test("a new pane never borrows an existing conversation in the same folder", async () => {
+    const db = new Database(join(home, "state_5.sqlite"));
+    db.exec("CREATE TABLE IF NOT EXISTS threads (id TEXT, cwd TEXT, rollout_path TEXT, updated_at INTEGER)");
+    db.query("INSERT INTO threads VALUES (?, ?, ?, ?)").run(id, "/same/project", rollout, Date.now());
+    db.close();
+    const { findCodexRollout } = await load();
+    expect(await findCodexRollout(noClient, "w1:new", "/same/project", null)).toBeNull();
+    expect(await findCodexRollout(noClient, "w1:old", "/same/project", id)).toBe(rollout);
+    expect(await findCodexRollout(noClient, "w1:new", "/same/project", "019f9bd1-1b6b-7f33-a046-a60cce4e6456")).toBeNull();
+  });
+
   // Ids arrive from another process via herdr. A path fragment in one must not
   // become a path.
   test("refuses anything that is not a plain uuid", async () => {
@@ -408,3 +420,21 @@ test("rolloutWithinSessions follows a symlinked sessions directory", () => {
   expect(rolloutWithinSessions(resolved, join(root, "link", "sessions"))).toBe(resolved);
   expect(rolloutWithinSessions(join(root, "real", "sessions", "..", "..", "etc.jsonl"), real)).toBeNull();
 });
+
+if (process.platform === "darwin") {
+  test("macOS resolves the exact process open rollout, never another file in its folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shahi-open-rollout-"));
+    const own = join(dir, "rollout-own.jsonl");
+    const other = join(dir, "rollout-other.jsonl");
+    writeFileSync(own, "");
+    writeFileSync(other, "");
+    const fd = openSync(own, "r");
+    try {
+      expect(await rolloutFromMacProcess(process.pid, dir)).toBe(realpathSync(own));
+      expect(await rolloutFromMacProcess(-1, dir)).toBeNull();
+      const second = openSync(other, "r");
+      try { expect(await rolloutFromMacProcess(process.pid, dir)).toBeNull(); }
+      finally { closeSync(second); }
+    } finally { closeSync(fd); }
+  });
+}

@@ -28,7 +28,7 @@ describe("modesFor", () => {
 
   test("the default mode explicitly asks instead of inheriting persisted TUI state", () => {
     expect(modesFor("claude")[0]!.args).toEqual(["--permission-mode", "manual"]);
-    expect(modesFor("codex")[0]!.args).toEqual([]);
+    expect(modesFor("codex")[0]!.args).toEqual(["--sandbox", "read-only", "--ask-for-approval", "on-request"]);
   });
 
   test("marks the modes that never ask", () => {
@@ -40,7 +40,7 @@ describe("modesFor", () => {
 describe("argsForMode", () => {
   test("resolves a choice to its flags", () => {
     expect(argsForMode("claude", "acceptEdits")).toEqual(["--permission-mode", "acceptEdits"]);
-    expect(argsForMode("codex", "full-auto")).toEqual(["--full-auto"]);
+    expect(argsForMode("codex", "full-auto")).toEqual(["--sandbox", "workspace-write", "--ask-for-approval", "never"]);
   });
 
   test("adds nothing for anything it does not recognise", () => {

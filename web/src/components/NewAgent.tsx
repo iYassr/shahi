@@ -11,7 +11,7 @@
  * full readiness timeout for a process that was never coming.
  */
 import { useEffect, useRef, useState } from "react";
-import { modesFor } from "@shahi/shared";
+import { agentLabel, modesFor } from "@shahi/shared";
 import { useApi, requestId } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
@@ -29,6 +29,9 @@ type Phase = "idle" | "creating" | "starting";
 
 export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const api = useApi();
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const pending = useRef<{ fingerprint: string; id: string } | null>(null);
   const [available, setAvailable] = useState<{ kind: string; command: string }[] | null>(null);
   const [kind, setKind] = useState<string | null>(null);
@@ -48,17 +51,21 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
 
   useEffect(() => {
+    let live = true;
     void api
       .agents()
       .then((d) => {
+        if (!live) return;
         setAvailable(d.agents);
         setKind((current) => current ?? d.agents[0]?.kind ?? null);
       })
-      .catch(() => onToast("Could not list agents"));
-  }, [onToast]);
+      .catch(() => { if (live) onToast("Could not list agents"); });
+    return () => { live = false; };
+  }, [api, onToast]);
 
   async function start() {
-    if (!kind || phase !== "idle") return;
+    if (!kind || inFlight.current || !cwd.path.startsWith("/")) return;
+    inFlight.current = true;
     const fingerprint = JSON.stringify([space.workspaceId, cwd.path, name, kind, mode]);
     if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, id: requestId() };
     setPhase("creating");
@@ -73,21 +80,24 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         cwd.path,
         name.trim() || null,
         kind,
-        name.trim() || kind,
+        `${kind.slice(0, 15)}-${pending.current.id.replace(/-/g, "").slice(0, 16)}`,
         mode,
         pending.current.id,
       );
-      onStarted(paneId);
+      if (mounted.current) onStarted(paneId);
     } catch (err) {
+      if (!mounted.current) return;
       onToast(err instanceof Error ? err.message : "Could not start the agent");
       setPhase("idle");
+    } finally {
+      inFlight.current = false;
     }
   }
 
   const busy = phase !== "idle";
 
   return (
-    <Sheet title={`New agent in ${space.label}`} onClose={onClose}>
+    <Sheet title={`New agent in ${space.label}`} onClose={() => { if (!inFlight.current) onClose(); }}>
       <div className="field">
         <span className="field__label">Agent</span>
         {available === null ? (
@@ -106,8 +116,8 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
                 onClick={() => setKind(agent.kind)}
                 disabled={busy}
               >
-                <AgentIcon kind={agent.kind} size={15} />
-                {agent.kind}
+                <span aria-hidden="true"><AgentIcon kind={agent.kind} size={15} /></span>
+                {agentLabel(agent.kind)}
               </button>
             ))}
           </div>
@@ -138,6 +148,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
                 disabled={busy}
               >
                 <span className="mode__label">{option.label}</span>
+                {option.unsafe && <span className="mode__caution">No approval before changes</span>}
                 <span className="mode__why">{option.description}</span>
               </button>
             ))}
@@ -170,13 +181,13 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       <button
         className="sheet__go"
         onClick={() => void start()}
-        disabled={busy || !kind || available?.length === 0}
+        disabled={busy || !kind || !cwd.path.startsWith("/") || available?.length === 0}
       >
         {phase === "creating"
           ? "Making a tab…"
           : phase === "starting"
-            ? `Waiting for ${kind} to be ready…`
-            : `Start ${kind ?? "agent"}`}
+            ? `Waiting for ${agentLabel(kind ?? "agent")} to be ready…`
+            : `Start ${kind ? agentLabel(kind) : "agent"}`}
       </button>
       <p className="sheet__note">
         {busy

@@ -7,9 +7,11 @@
  * phone's next request, so there is no undo. Revoking the phone you are
  * holding is a sign-out, and is labelled as one.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import type { DeviceList, PairedDevice } from "@shahi/shared";
+import type { Api } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
@@ -21,22 +23,32 @@ export function PairedDevices({
   /** Retry after a restored connection moves from connecting/offline to live. */
   refreshKey?: unknown;
 }) {
-  const { api } = useSession();
+  const { api, activeComputerId } = useSession();
+  // Switching computers must discard the old list and any pending confirmations.
+  return <DeviceListForComputer key={activeComputerId} api={api} onRevokedSelf={onRevokedSelf} refreshKey={refreshKey} />;
+}
+
+function DeviceListForComputer({ api, onRevokedSelf, refreshKey }: {
+  api: Api; onRevokedSelf: () => void; refreshKey?: unknown;
+}) {
+  const mounted = useRef(true);
+  const request = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current++; }; }, []);
   const [list, setList] = useState<DeviceList | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(
-    () =>
-      api
-        .devices()
-        .then((next) => {
-          setList(next);
-          setError(null);
-        })
-        .catch((e: Error) => setError(e.message)),
-    [],
-  );
-  useEffect(() => void load(), [load, refreshKey]);
+  const load = useCallback(async () => {
+    const generation = ++request.current;
+    try {
+      const next = await api.devices();
+      if (!mounted.current || generation !== request.current) return;
+      setList(next);
+      setError(null);
+    } catch (e) {
+      if (mounted.current && generation === request.current) setError((e as Error).message);
+    }
+  }, [api]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   const revoke = (device: PairedDevice) => {
     const self = device.id === list?.thisDeviceId;
@@ -50,11 +62,13 @@ export function PairedDevices({
         {
           text: self ? "Sign out" : "Revoke",
           style: "destructive",
-          onPress: () =>
+          onPress: () => {
+            if (!mounted.current) return;
             void api
               .revokeDevice(device.id)
-              .then(() => (self ? onRevokedSelf() : load()))
-              .catch((e: Error) => setError(e.message)),
+              .then(() => { if (mounted.current) return self ? onRevokedSelf() : load(); })
+              .catch((e: Error) => { if (mounted.current) setError(e.message); });
+          },
         },
       ],
     );
@@ -75,7 +89,7 @@ export function PairedDevices({
   return (
     <View>
       {list.devices.length === 0 ? (
-        <Text style={styles.note}>No phones have paired by code yet.</Text>
+        <Text style={styles.note}>No devices have paired by code yet.</Text>
       ) : (
         list.devices.map((device, i) => (
           <View key={device.id}>
@@ -105,9 +119,9 @@ export function PairedDevices({
       )}
       <Text style={styles.note}>
         {list.thisDeviceId === null
-          ? "This phone signed in with the passcode — not a device, so nothing to revoke here. "
-          : "Passcode sign-ins aren't devices. "}
-        To end every passcode session at once, rotate SESSION_SECRET on the server and restart.
+          ? "This phone signed in with a passcode. Use Sign out below to disconnect it. "
+          : "Only devices connected with a pairing code appear here. "}
+        Removing a device ends its access to this computer.
       </Text>
     </View>
   );

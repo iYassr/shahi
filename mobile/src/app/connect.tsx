@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Pressable, Text } from "react-native";
+import { Pressable} from "react-native";
+import { Text } from "@/components/text";
 import { Connect } from "@/screens/connect";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";

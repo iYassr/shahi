@@ -121,8 +121,9 @@ Code writes JSONL to `~/.claude/projects/`; codex keeps a rollout file indexed i
 SQLite. herdr hands over the id to join on — but for codex only once its
 integration is installed (`herdr integration install codex`), which adds the
 SessionStart hook that reports one. Without it the reader falls back to asking
-`/proc` what file the codex process has open, and then to the working
-directory, which cannot tell two sessions in one folder apart.
+`/proc` what file the codex process has open, and never guesses from the working directory: a new session must not show
+another session’s transcript. On macOS, `lsof` supplies the same exact process-file lookup; installing the
+Codex integration also keeps transcripts available after the process exits.
 
 Reading those files is what makes a phone-shaped conversation possible at all —
 terminal text arrives pre-wrapped at 146 columns and cannot be reflowed. The
@@ -320,7 +321,8 @@ without the second part, the first visit cached a page whose JavaScript was not
 there, and going offline produced a blank screen.
 
 **The app compares its own bundle against the served one** whenever it comes to
-the foreground, and reloads if they differ. A home-screen app is resumed far more
+the foreground, and reloads if they differ when it is safe to do so. Drafts,
+attachments, pending sends/uploads and open dialogs defer the reload. A home-screen app is resumed far more
 often than launched — iOS keeps one alive for days — so without this a fix can go
 unseen indefinitely, and every conversation turns into "are you sure you
 reloaded?".
@@ -488,11 +490,21 @@ prerelease (`herdr-preview.yml`), which files an issue rather than failing a
 push. It writes only into a workspace it creates and closes, on a herdr you
 point it at explicitly — and that herdr must be a **named session**:
 
+A named session isolates panes, **not installed startup hooks**. Always use a
+fresh `XDG_CONFIG_HOME` as well, so no plugins are installed in the test
+configuration. On 2026-09-18, starting a named session under the normal config
+ran Shahi’s startup hook and repointed the production service at the test
+socket. Keep the normal `HOME` so installed agents remain available; do not
+copy plugins into the test configuration. Use the same configuration root when
+stopping the named session.
+
 ```sh
-herdr --session shahi-ci server &                       # a named session: its own directory, starts empty
-export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+test_config_root=$(mktemp -d)
+XDG_CONFIG_HOME="$test_config_root" herdr --session shahi-ci server &
+export HERDR_SOCKET_PATH="$test_config_root/herdr/sessions/shahi-ci/herdr.sock"
 SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
-herdr session stop shahi-ci
+XDG_CONFIG_HOME="$test_config_root" herdr session stop shahi-ci
+unset HERDR_SOCKET_PATH
 ```
 
 `HERDR_SOCKET_PATH=/tmp/x.sock herdr server` is not isolation, and this was
@@ -574,6 +586,65 @@ forbid. If a pre-rename backup ever turns up, move
 `~/.local/share/herdrui` to `~/.local/share/shahi` and rename the database
 inside it by hand.
 
+## Customer-flow invariants
+
+**Large text must keep the conversation identifiable.** Native agent titles
+get a separate line at accessibility font sizes; metadata must not consume
+their entire width. Test both a cold launch at the selected size and changing
+size while running. Web sheets need a visible, labeled close control inside
+the focus boundary; symbolic terminal keys need spoken names. See the dated
+`docs/ui-ux-audit-2026-09-18.md` for fixes and verification limits. Native
+UI text uses `@/components/text` beneath `TypographyProvider`: font-scale
+changes replace only text hosts to invalidate stale iOS measurements. Never
+key the navigator or screen by font scale; doing so loses drafts and position.
+
+**Finding and opening work should agree across clients.** Agent search matches
+conversation, space, folder and provider while preserving the selected filter.
+Native local Markdown links use the authenticated file viewer for absolute or
+home-relative computer paths, never phone `file://` URLs. Text and image previews
+are supported; unsupported formats and unavailable files need readable feedback.
+Keep advanced connection details collapsed and highest-permission cautions
+visible even before selection.
+
+**Creating must also make the result readable.** Workspace, tab and agent
+creation await `SessionStore.resyncAfterMutation()` before returning success.
+A snapshot already in flight can predate the write, so wait for it and then
+request a fresh one. Otherwise the client opens a real new pane and receives
+a false 404. Web retries when a later authoritative session first reports that
+pane; do not turn genuine missing panes into an endless polling loop. Keep
+readable agent labels separate from herdr’s restricted internal names.
+
+**Drafts are private, bounded, and memory-only.** Web scopes drafts by server
+and device grant; native scopes them by the stable computer API object. Pane
+IDs alone are not unique across computers. Each scope retains at most 20 panes;
+web retains at most eight scopes. Navigation and background/resume can preserve
+a draft, but reload/process termination cannot. Clear the scope on logout or
+revocation. A pending send retains its operation ID, and a late receipt must
+not clear a newer draft or change a dismissed screen. Native disables editing
+during the pending send; web preserves subsequent edits.
+
+**Uploads negotiate bounded, resumable transfer.** Updated relay clients ask
+`/api/uploads/limits` and send up to 32 MiB as sequential 64 KiB requests. Keep
+1 MiB encrypted frames, bounded queues and the 64 KiB/s byte rate. Chunk routes
+share the HTTP file-work admission limit and bulk-pacing rules. Transfers are
+owned by a device/session, journal offsets before acknowledgment, reject
+conflicting retries and finalize once after SHA-256 verification. Never replay
+uncertain chat writes. One active transfer per device/two per computer, one-hour
+expiry and periodic partial cleanup bound storage; completed receipts also have
+a count cap. Keep partials outside projects. The shared helper reads bounded
+ranges on both clients and supports progress/cancellation. Process termination
+requires file reselection. Old computers retain 761 KiB relay uploads; SSH
+remains 32 MiB. Do not raise rates based on a small-message load test.
+
+**Reader state belongs to its connection.** Late history responses from a
+previous computer must not repopulate cleared caches. Preserve the anchor,
+offset and loaded history window on return; Latest must reach the actual end.
+Restoration must yield to deliberate keyboard/focus scrolling as well as touch.
+
+For dated evidence and remaining physical-device gaps, see
+`docs/customer-journeys-2026-09-18.md` and the reports linked there. Keep test
+counts in dated reports, not permanent development instructions.
+
 ## Review fixes, September 2026
 
 Prompts and agent starts carry client-generated operation IDs. The sidecar
@@ -598,3 +669,59 @@ site configuration. Keep /pwa routing and service-worker scope isolated from
 marketing assets; every same-origin page remains in the browser trust boundary.
 Never add third-party scripts or cache decrypted session data. Browser pairing
 is session-only unless remembering is explicitly selected.
+
+**Relay recovery must survive suspended timers.** The computer's relay watchdog
+runs through connected, handshaking and retry states. A delayed tick after sleep
+replaces the socket even if a buffered pong arrived first. Keep retries bounded
+in rate but unlimited in count, preserve pairing identity, and never replay
+uncertain writes. `relay-recovery.test.ts` covers stuck sockets and lifecycle
+races; `relay-resume.test.ts` suspends only a disposable child process, never the
+user's computer or live service.
+
+For the five-VM regression results and deployed-relay fault checks, see
+`docs/relay-recovery-vms-2026-09-18.md`. Live probes require explicit opt-in and
+must use disposable identities and uniquely named test services.
+
+## Private documents and credentials
+
+Keep signed forms, France/ANSSI declarations, signatures, email exports, personal
+contact/address details, reviewer passwords, pairing identities and signing keys
+outside the repository, including ignored project folders. Use a private folder
+elsewhere on the owner's computer. Never copy these into documentation, fixtures,
+screenshots, build contexts, commits or public artifacts. Public documentation
+may describe procedures and current release limitations, but not private
+correspondence or completed forms. Check staged paths and content before pushing;
+ignore rules do not protect files already tracked by Git. The public Expo update
+verification certificate is not a private signing key and may remain tracked.
+
+## TestFlight feedback fixes, September 2026
+
+New-agent clients derive an internal control name from the retained operation ID,
+so old servers also avoid globally colliding default names. Keep the operation
+ID and internal name stable on uncertain retries; display labels remain separate.
+Cursor CLI Read mode uses its exact reported session or the pane process's open
+`store.db` to find JSONL under `.cursor/projects/*/agent-transcripts/`. Never
+select a transcript by folder recency. Missing recorded tool outputs are explicit.
+
+PDFs use local PDFKit on iOS and a lazily loaded PDF.js canvas renderer on the
+web. Never upload documents to a third-party viewer. iOS shares a protected
+temporary local copy and deletes it when the share sheet finishes. This native
+module requires a new binary, not only an over-the-air JavaScript update. File
+downloads use authenticated sequential ranges of 512 KiB, retain the 25 MiB
+ceiling and reject changed file versions. Older small-file responses still work.
+
+**Conversation order follows messages.** Both clients default to newest message
+first, with explicitly pinned conversations above the regular list. Waiting
+cards stay in chronological position outside Inbox. The server supplies optional
+`lastMessageAt` from each pane's exact transcript; Cursor lacks message timestamps
+and uses that transcript's modification time. Missing dates sort last, stably.
+Never use terminal repaint, focus or status-change times as chat activity.
+Connected clients receive changed transcript summaries even when herdr metadata
+is unchanged. This additive field requires an updated sidecar for dated ordering;
+older servers remain readable without invented timestamps.
+
+**Launch acceptance is not composer readiness.** Live herdr 0.9.1 can return
+`agent_started` with `launch_pending` before accepting input. The start adapter
+waits on `agent.get` for that same pane, within the existing startup deadline;
+never launch again to wait for readiness. The web Read tab remains available
+when a fresh conversation has no transcript yet, so later output can be opened.

@@ -13,6 +13,9 @@ export function routeLabel(path: string): string {
   if (!path.startsWith("/api/")) return "static";
   const route = path.slice(5);
   if (ROUTES.has(route)) return route;
+  if (route === "uploads/limits") return route;
+  const transfer = /^uploads\/transfers\/[^/]+(?:\/(chunk|finish))?$/.exec(route);
+  if (transfer) return `uploads/transfers/:id${transfer[1] ? "/" + transfer[1] : ""}`;
   if (/^devices\/[^/]+$/.test(route)) return "devices/:id";
   if (/^workspaces\/[^/]+\/tabs$/.test(route)) return "workspaces/:id/tabs";
   const pane = /^panes\/[^/]+(?:\/([a-z]+))?$/.exec(route);

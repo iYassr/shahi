@@ -1,3 +1,4 @@
+import { UiIcon } from "./UiIcon";
 import { Logo } from "./Logo";
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
@@ -17,13 +18,13 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
     <div className="pair-browser__intro">
       <div className="pair-browser__welcome"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><span>Welcome to Shahi</span></div>
       <h1>Connect your computer</h1><p>Continue your work with Claude Code or Codex wherever you are. Start by connecting your computer.</p>
-      <p><a className="pair-browser__jump" href="#pair-browser-form">Already have a code? Connect now ↓</a></p>
+      <p><a className="pair-browser__jump" href="#pair-browser-form" onClick={(event) => { event.preventDefault(); document.getElementById("pair-browser-form")?.scrollIntoView({ block: "start" }); document.getElementById("pairing-code")?.focus({ preventScroll: true }); }}>Already have a code? Connect now ↓</a></p>
       <section className="app-help pair-browser__setup" aria-labelledby="computer-setup">
         <h2 id="computer-setup">Set up Shahi in 3 steps</h2>
         <p>On the Mac or Linux computer you want to connect, <a href="https://herdr.dev" target="_blank" rel="noreferrer">install and open herdr</a> first.</p>
         <ol role="list">
-          <li><span className="pair-browser__step-icon"><SetupIcon name="install" /></span><div><strong><span className="pair-browser__step-number">1.</span> Add Shahi to your computer</strong><p>In herdr’s terminal (the window where you type commands), paste this line:</p><code>herdr plugin install iYassr/shahi</code></div></li>
-          <li><span className="pair-browser__step-icon"><SetupIcon name="qr" /></span><div><strong><span className="pair-browser__step-number">2.</span> Show your connection code</strong><p>Then paste this line:</p><code>herdr plugin action invoke shahi.pair</code></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="install" /></span><div><strong><span className="pair-browser__step-number">1.</span> Add Shahi to your computer</strong><p>In herdr’s terminal (the window where you type commands), paste this line:</p><SetupCommand command="herdr plugin install iYassr/shahi" label="Copy install command" /></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="qr" /></span><div><strong><span className="pair-browser__step-number">2.</span> Show your connection code</strong><p>Then paste this line:</p><SetupCommand command="herdr plugin action invoke shahi.pair" label="Copy pairing command" /></div></li>
           <li><span className="pair-browser__step-icon"><SetupIcon name="devices" /></span><div><strong><span className="pair-browser__step-number">3.</span> Connect this browser</strong><p>Scan the QR code on your computer, or copy its full code into the form below.</p></div></li>
         </ol>
         <p>Keep herdr open and your computer connected to the internet.</p>
@@ -87,4 +88,20 @@ function QrScanner({ onCode, onClose, onError }: { onCode(value: string): void; 
     return () => { stop(); document.removeEventListener("visibilitychange", hide); };
   }, []);
   return <div ref={dialog} tabIndex={-1} className="viewer" role="dialog" aria-modal="true" aria-label="Scan pairing QR code"><header className="viewer__bar"><h2>Scan pairing QR code</h2><button onClick={onClose}>Cancel</button></header><video className="pair-browser__camera" ref={video} playsInline muted /><p>Point your camera at the QR code shown by Shahi in herdr.</p></div>;
+}
+
+function SetupCommand({ command, label }: { command: string; label: string }) {
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(""), 4000);
+    return () => clearTimeout(timer);
+  }, [status]);
+  return <div className="setup-command">
+    <div className="setup-command__line"><code>{command}</code><button type="button" aria-label={label} title={label} onClick={async () => {
+      try { await navigator.clipboard.writeText(command); setStatus("Copied"); }
+      catch { setStatus("Select the command to copy it."); }
+    }}><UiIcon name={status === "Copied" ? "check" : "copy"} /></button></div>
+    <span role="status" className="setup-command__status">{status}</span>
+  </div>;
 }

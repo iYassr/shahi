@@ -32,6 +32,7 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   // Resolve a shorthand value to its absolute form straight away, even if the
   // user never opens the browser. Without this the default `~` would reach
@@ -46,12 +47,13 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
     return () => {
       live = false;
     };
-  }, [value.path, onChange]);
+  }, [api, value.path, onChange]);
 
   useEffect(() => {
     if (!browsing) return;
     let live = true;
     setError(null);
+    setListing(null);
     void api
       .dirs(value.path)
       .then((d) => live && setListing(d))
@@ -59,7 +61,7 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
     return () => {
       live = false;
     };
-  }, [value.path, browsing]);
+  }, [api, value.path, browsing, attempt]);
 
   return (
     <div className="picker">
@@ -87,7 +89,8 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
 
       {browsing && (
         <div className="picker__browser">
-          {error && <p className="picker__error">{error}</p>}
+          {error && <p className="picker__error" role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>Try again</button></p>}
+          {!listing && !error && <p className="picker__empty" role="status">Opening folder…</p>}
 
           {listing && listing.parent !== null && (
             <button

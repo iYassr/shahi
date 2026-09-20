@@ -12,7 +12,8 @@
  * say barcode scanning needs a device. Verify on the phone.
  */
 import { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import { theme } from "@/lib/theme";
 

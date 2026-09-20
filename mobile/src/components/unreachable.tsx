@@ -9,7 +9,8 @@
  * is not something to show anyone.
  */
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet } from "react-native";
+import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
 
 export function Unreachable({
@@ -42,7 +43,7 @@ export function Unreachable({
   }
 
   return (
-    <View style={styles.screen} testID="unreachable">
+    <ScrollView style={{ flex: 1, backgroundColor: theme.void }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screen} testID="unreachable">
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.server} numberOfLines={1}>
         {server.replace(/^https?:\/\//, "")}
@@ -60,12 +61,12 @@ export function Unreachable({
       <Pressable accessibilityRole="button" onPress={onSwitch} hitSlop={12} testID="switch-server">
         <Text style={styles.link}>Switch server</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.void, justifyContent: "center", padding: 32, gap: 12 },
+  screen: { flexGrow: 1, justifyContent: "center", padding: 32, paddingBottom: 120, gap: 12 },
   title: { color: theme.fg, fontSize: 22, fontWeight: "600", letterSpacing: -0.3 },
   server: { color: theme.dim, fontFamily: theme.mono, fontSize: 13 },
   message: { color: theme.dim, fontSize: 16, lineHeight: 23 },
