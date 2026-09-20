@@ -135,7 +135,7 @@ test("files, images, downloads and uploads stay inside the encrypted connection"
   expect((await download).suggestedFilename()).toBe("prompt-parser.ts");
   await page.getByRole("button", { name: "Attach a file", exact: true }).click();
   await page.locator('input[type="file"]').first().setInputFiles({ name: "fixture.txt", mimeType: "text/plain", buffer: Buffer.from("encrypted upload fixture") });
-  await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).requests.some((r: {path:string}) => r.path === "/api/uploads")).toBe(true);
+  await expect.poll(async () => (await (await request.get("/__hosted/writes")).json()).requests.some((r: {path:string}) => r.path.startsWith("/api/uploads/transfers/") && r.path.endsWith("/finish"))).toBe(true);
 });
 
 test("camera starts only on request and a cancelled pending permission stops its tracks", async ({ page }) => {
@@ -454,4 +454,47 @@ test("updates a paired computer through encrypted recovery and reconnects withou
   await expect(returnToAgents).toBeVisible();
   await returnToAgents.click();
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+});
+
+test("setup commands copy independently and the returning-user shortcut focuses pairing", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__copied = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (text: string) => { (window as any).__copied.push(text); },
+    } });
+  });
+  await page.goto("/pwa/");
+  await page.getByRole("button", { name: "Copy install command" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Copied" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Copy pairing command" }).click();
+  expect(await page.evaluate(() => (window as any).__copied)).toEqual([
+    "herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair",
+  ]);
+  await page.getByRole("link", { name: /Already have a code/ }).click();
+  await expect(page.getByLabel("Pairing code", { exact: true })).toBeFocused();
+});
+
+test("clipboard refusal offers a usable manual-copy fallback", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+    writeText: async () => { throw new Error("denied"); },
+  } }));
+  await page.goto("/pwa/");
+  await page.getByRole("button", { name: "Copy install command" }).click();
+  await expect(page.getByText("Select the command to copy it.")).toBeVisible();
+  await expect(page.locator("code").filter({ hasText: "herdr plugin install iYassr/shahi" })).toBeVisible();
+});
+
+
+test("larger attachments use bounded chunks through the encrypted relay", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await pair(page);
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  await page.getByRole("button", { name: "Attach a file", exact: true }).click();
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "larger.bin", mimeType: "application/octet-stream", buffer: Buffer.alloc(1024 * 1024, 37) });
+  await expect(page.getByRole("button", { name: "Cancel upload" })).toBeVisible();
+  await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 90_000 });
+  const writes = (await (await request.get("/__hosted/writes")).json()).writes as { path: string; body: { offset?: string } }[];
+  expect(writes.filter(r => r.path.endsWith("/chunk")).map(r => Number(r.body.offset))).toEqual(Array.from({ length: 16 }, (_, i) => i * 65536));
+  expect(writes.filter(r => r.path.endsWith("/finish"))).toHaveLength(1);
+  await expect(page.getByText("larger.bin", { exact: true })).toBeVisible();
 });

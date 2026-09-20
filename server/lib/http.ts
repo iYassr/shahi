@@ -1,3 +1,5 @@
+import { conversationSummary } from "./conversation-summary";
+import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { buildId } from "./build";
 /**
  * HTTP and WebSocket surface.
@@ -11,6 +13,7 @@ import { buildId } from "./build";
  */
 import {
   API_SUPPORT,
+  latestConversations,
   type ClaimResult,
   type DashboardPane,
   type DeviceList,
@@ -29,7 +32,7 @@ import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agent
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
-import { findTranscript, previewFor, readSessionImage, readSessionLog } from "./session-log";
+import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { submitPrompt } from "./prompt";
@@ -38,13 +41,14 @@ import { createHash } from "node:crypto";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { watchTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
+import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
-import { STATUS_PRIORITY, type SessionState, type SessionStore } from "./state";
+import { type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 import type { ComputerControl } from "./control";
 
@@ -231,11 +235,12 @@ function originAllowed(req: Request): boolean {
 }
 
 export interface ServerOptions {
+  uploadDir?: string;
   /** How often to ping and to re-check every socket's session. */
   heartbeatMs?: number;
 }
 
-export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: ServerOptions = {}): ShahiServer {
+export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploadDir }: ServerOptions = {}): ShahiServer {
   const { config, auth, client, store, poller, transcript, push, pairing, devices, serverId } = deps;
   const clients = new Set<StreamClient>();
   const metrics = deps.observability ?? new Observability();
@@ -294,6 +299,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   });
 
   const identify = (req: Request) => auth.identify(readCookie(req.headers.get("cookie"), SESSION_COOKIE));
+  const transfers = new UploadTransfers(uploadDir);
+  let transfersUsed = false;
+  const transferSweep = setInterval(() => { if (transfersUsed) void transfers.run(() => transfers.sweep()).catch(() => {}); }, 300_000);
   const pushOwner = (req: Request) => identify(req)?.deviceId ?? `session:${createHash("sha256").update(readCookie(req.headers.get("cookie"), SESSION_COOKIE) ?? "local").digest("hex")}`;
 
   // A revoked device fails here, on its next request — `Auth` asks `devices`
@@ -332,12 +340,30 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     sessionBroadcastTimer = setTimeout(() => {
       sessionBroadcastTimer = undefined;
       if (clients.size > 0) {
-        void dashboard(store, poller, defaultGrouping).then((session) =>
+        void dashboard(store, poller, defaultGrouping, client).then((session) =>
           broadcast({ type: "session", session }),
         );
       }
     }, SESSION_BROADCAST_INTERVAL_MS);
   });
+
+  // Transcript writes need not change herdr metadata. Refresh summaries while
+  // clients are connected, but send nothing when message metadata is unchanged.
+  let readingSummaries = false;
+  let summarySignature = "";
+  const conversationRefresh = setInterval(async () => {
+    if (!clients.size || readingSummaries) return;
+    readingSummaries = true;
+    try {
+      const session = await dashboard(store, poller, defaultGrouping, client);
+      const signature = JSON.stringify(session.panes.map(p => [p.paneId, p.lastMessageAt, p.preview]));
+      if (signature !== summarySignature) {
+        summarySignature = signature;
+        broadcast({ type: "session", session });
+      }
+    } catch { /* The next tick retries without exposing transcript content. */ }
+    finally { readingSummaries = false; }
+  }, 3000);
 
   // Frames go only to clients watching that pane. A screen is ~3.5KB and there
   // are 27 of them; broadcasting all of it would swamp a phone on cellular.
@@ -425,7 +451,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   function attach(ws: StreamClient): void {
     clients.add(ws);
     poller.setClientCount(clients.size);
-    void dashboard(store, poller, defaultGrouping).then((session) =>
+    void dashboard(store, poller, defaultGrouping, client).then((session) =>
       ws.send(JSON.stringify({ type: "session", session })),
     );
   }
@@ -485,7 +511,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   async function measuredHandle(req: Request, arrival: Arrival): Promise<Response | undefined> {
     const started = performance.now();
     const path = new URL(req.url).pathname;
-    const fileWork = path === "/api/uploads" || path === "/api/file";
+    const fileWork = path === "/api/uploads" || path.startsWith("/api/uploads/") || path === "/api/file";
     let status = 500;
     if (metrics.inFlight >= 32 || (fileWork && fileRequests >= 2)) {
       void req.body?.cancel().catch(() => {});
@@ -703,7 +729,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
           const backend = deps.control?.handshake().backend;
           if (backend && backend.state !== "connected") return json({ error: backend.message, code: "backend_unavailable" }, { status: 503 });
           defaultGrouping = await readAgentPanelSort();
-          return json(await dashboard(store, poller, defaultGrouping));
+          return json(await dashboard(store, poller, defaultGrouping, client));
         }
 
         // Choosing where a new space lives. Browsable, because typing a path on a
@@ -781,6 +807,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
                 mode: body.mode ?? null,
               },
             ));
+            // The client opens this pane immediately. Event delivery and the
+            // periodic mirror can lag behind a successful herdr creation.
+            await store.resyncAfterMutation();
             return json(started);
           } catch (err) {
             return failure(err);
@@ -803,6 +832,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             const result = await client.rpc("tab.create", {
               workspace_id: workspaceId, label: body.label ?? null, cwd: body.cwd ?? null, focus: false,
             });
+            await store.resyncAfterMutation();
             return json({ tabId: result.tab.tab_id, paneId: result.root_pane?.pane_id ?? null });
           } catch (err) { return failure(err); }
         }
@@ -823,6 +853,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
               cwd: body.cwd ?? null,
               focus: false,
             });
+            await store.resyncAfterMutation();
             return json({ workspaceId: created.workspace.workspace_id });
           } catch (err) {
             return failure(err);
@@ -844,15 +875,23 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 
         const download = url.searchParams.get("download") === "1";
         try {
-          const file = await readWithinHome({ path, download });
+          const rangeHeader = req.headers.get("range");
+          const match = rangeHeader?.match(/^bytes=(\d+)-(\d+)$/);
+          if (rangeHeader && !match) return json({ error: "Unsupported file range" }, { status: 416 });
+          const file = await readWithinHome({ path, download, range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined });
+          if (req.headers.get("x-shahi-file-version") && req.headers.get("x-shahi-file-version") !== file.version) return json({ error: "The file changed while downloading. Try again." }, { status: 409 });
           // Quotes and backslashes would end the quoted-string; control
           // characters (a newline is a legal filename on Linux) would end the
           // header, and `Headers` throws on them — a 500 for a file that
           // merely has an odd name.
           const safeName = file.name.replace(/[\x00-\x1f\x7f"\\]/g, "_");
           return new Response(file.bytes, {
+            status: file.range ? 206 : 200,
             headers: {
               "content-type": file.contentType,
+              "accept-ranges": "bytes",
+              "x-shahi-file-version": file.version,
+              ...(file.range ? { "content-range": `bytes ${file.range.start}-${file.range.end}/${file.total}` } : {}),
               "content-length": String(file.bytes.byteLength),
               "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
               // The agent may rewrite it a second later.
@@ -860,6 +899,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             },
           });
         } catch (err: unknown) {
+          if (err instanceof RangeError) return json({ error: "Invalid file range" }, { status: 416 });
           if (err instanceof FileTooLarge) return json({ error: err.message }, { status: 413 });
           if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
           return json({ error: "cannot read that file" }, { status: 404 });
@@ -869,6 +909,54 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
       // A file sent from the phone. It lands in an owned directory and comes
         // back as an absolute path, which is all the agent needs — the same shape
         // as picking something already on the server.
+        if (pathname === "/api/uploads/limits" && req.method === "GET") {
+          return json({ version: 1, maxBytes: 32 * 1024 * 1024, chunkBytes: TRANSFER_CHUNK });
+        }
+        const transferMatch = pathname.match(/^\/api\/uploads\/transfers\/([a-zA-Z0-9_-]{16,64})(?:\/(chunk|finish))?$/);
+        if (transferMatch) {
+          const [, id, action] = transferMatch;
+          const owner = pushOwner(req);
+          try {
+            const limit = action === "chunk" ? TRANSFER_CHUNK : 2048;
+            const reader = req.body?.getReader();
+            const parts: Uint8Array[] = []; let length = 0;
+            if (reader) {
+              try {
+                while (true) {
+                  const { done, value } = await reader.read(); if (done) break;
+                  length += value.length;
+                  if (length > limit) { await reader.cancel(); throw new TransferError(413, "Upload request too large"); }
+                  parts.push(value);
+                }
+              } finally { reader.releaseLock(); }
+            }
+            const bytes = Buffer.concat(parts, length);
+            return await transfers.run(async () => {
+              if (!authorized(req) || pushOwner(req) !== owner) return json({ error: "unauthorized" }, { status: 401 });
+              transfersUsed = true;
+              if (!action && req.method === "GET") return json(await transfers.status(id!, owner));
+              if (!action && req.method === "DELETE") return json(await transfers.cancel(id!, owner));
+              if (!action && req.method === "PUT") {
+                let body; try { body = JSON.parse(bytes.toString()); } catch { throw new TransferError(400, "Invalid file details"); }
+                if (!body || typeof body !== "object") throw new TransferError(400, "Invalid file details");
+                return json(await transfers.begin(id!, owner, body));
+              }
+              if (action === "chunk" && req.method === "PUT") {
+                const offset = req.headers.get("x-upload-offset");
+                if (!offset || !/^\d+$/.test(offset)) throw new TransferError(400, "Invalid offset");
+                return json(await transfers.chunk(id!, owner, Number(offset), bytes));
+              }
+              if (action === "finish" && req.method === "POST") {
+                let body; try { body = JSON.parse(bytes.toString()); } catch { throw new TransferError(400, "Invalid file digest"); }
+                if (typeof body?.digest !== "string") throw new TransferError(400, "Invalid file digest");
+                return json(await transfers.finish(id!, owner, body.digest));
+              }
+              return json({ error: "Method not allowed" }, { status: 405 });
+            });
+          } catch (err) {
+            return json({ error: err instanceof TransferError ? err.message : "Could not save the file. Check the computer's free space and try again." }, { status: err instanceof TransferError ? err.status : 500 });
+          }
+        }
         if (pathname === "/api/uploads" && req.method === "POST") {
           const form = await req.formData().catch(() => null);
           const file = form?.get("file");
@@ -1044,7 +1132,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
             // Each agent keeps its transcript its own way, so the reader dispatches
             // on kind rather than assuming one format.
             const log =
-              pane?.agent === "codex"
+              pane?.agent === "cursor"
+                ? await (async () => { const path = await cursorTranscriptFor(client, paneId, pane.agent_session?.value); return path ? readCursorLog(path, { limit, before }) : null; })()
+                : pane?.agent === "codex"
                 ? await readCodexLog(client, paneId, pane.cwd ?? null, {
                     limit,
                     before,
@@ -1210,6 +1300,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
   async function transcriptPathFor(paneId: string): Promise<string | null> {
     const pane = store.pane(paneId);
     if (!pane) return null;
+    if (pane.agent === "cursor") return cursorTranscriptFor(client, paneId, pane.agent_session?.value);
     if (pane.agent === "codex") {
       return findCodexRollout(client, paneId, pane.cwd ?? null, pane.agent_session?.value ?? null);
     }
@@ -1221,6 +1312,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
     port: server.port ?? config.port,
     stop: (force) => {
       clearInterval(heartbeat);
+      clearInterval(transferSweep);
+      clearInterval(conversationRefresh);
       if (sessionBroadcastTimer) clearTimeout(sessionBroadcastTimer);
       for (const ws of [...clients]) { ws.close(1001, "server stopping"); detach(ws); }
       server.stop(force);
@@ -1236,7 +1329,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS }: Ser
 }
 
 
-export async function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null) {
+export async function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null, client?: HerdrClient) {
   const { state } = store;
 
   const panes: DashboardPane[] = await Promise.all(state.panes.map(async (pane) => ({
@@ -1257,19 +1350,11 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     isAgent: store.agent(pane.pane_id) !== undefined,
     // The last thing said, for chat-style rows. The transcript index caches by
     // file size, so a quiet pane costs one stat here.
-    preview: pane.agent_session?.value
-      ? await previewFor(pane.agent_session.value).catch(() => null)
-      : null,
+    ...await conversationSummary(pane, client),
     activity: poller.frame(pane.pane_id)?.activity ?? null,
   })));
 
-  panes.sort(
-    (a, b) =>
-      (STATUS_PRIORITY[a.status as keyof typeof STATUS_PRIORITY] ?? 9) -
-        (STATUS_PRIORITY[b.status as keyof typeof STATUS_PRIORITY] ?? 9) ||
-      a.workspaceLabel.localeCompare(b.workspaceLabel) ||
-      a.paneId.localeCompare(b.paneId),
-  );
+
 
   return {
     version: state.version,
@@ -1305,7 +1390,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
       paneCount: t.pane_count,
       focused: t.focused,
     })),
-    panes,
+    panes: latestConversations(panes),
     focusedPaneId: state.focusedPaneId,
   };
 }

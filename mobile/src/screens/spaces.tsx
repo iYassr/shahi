@@ -1,3 +1,6 @@
+import { plainHeaderRight } from "@/lib/header-controls";
+import { ComputerSwitcher } from "@/components/computer-switcher";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectionHealth } from "@/components/connection-health";
 import { randomUUID } from "expo-crypto";
 /**
@@ -8,14 +11,13 @@ import { randomUUID } from "expo-crypto";
  * Agents view filters them out and they are roughly half the panes in a real
  * session.
  *
- * Navigation is routes, not state: a space is pushed, and the new-space /
- * new-agent forms are formSheet routes. The router owns back — the hardware
- * button, the edge swipe and drag-to-dismiss all work without this file
- * re-teaching any of them, which is exactly what the old BackHandler wiring
- * existed to do.
+ * Navigation is routes, not state. Agent creation is a scrollable screen so
+ * installed-agent choices and permission modes fit at every text size; the
+ * smaller new-space form remains a sheet.
  */
 import { memo, useEffect, useMemo, useState, useRef } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { BackHandler, FlatList, ScrollView, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
@@ -23,12 +25,14 @@ import { landed, refused } from "@/lib/feel";
 import { openPane } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme, statusColor } from "@/lib/theme";
+import { agentLabel } from "@shahi/shared";
 import { Avatar } from "@/components/avatar";
+import { Icon } from "@/components/icons";
 
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
-  const { server, link } = useSession();
+  const { link } = useSession();
   // Above the `!session` return below: hooks cannot be called conditionally.
   const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId);
   if (!session) return <Centered>Connecting…</Centered>;
@@ -37,11 +41,9 @@ export function Spaces({ session }: { session: Session | null }) {
     <View style={styles.screen}>
       <Stack.Screen
         options={{
-          headerRight: () => (
+          ...plainHeaderRight(
             <View style={styles.status}>
-              <Text style={[styles.statusText, { color: theme.dim }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {server.replace(/^https?:\/\//, "")}
-              </Text>
+              <ComputerSwitcher />
               <Text style={[styles.statusText, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
                 {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
               </Text>
@@ -72,6 +74,7 @@ export function Spaces({ session }: { session: Session | null }) {
             <Pressable
               accessibilityRole="button"
               style={styles.space}
+              testID={`space-${item.workspaceId}`}
               onPress={() =>
                 router.push({
                   pathname: "/space/[workspaceId]",
@@ -79,8 +82,14 @@ export function Spaces({ session }: { session: Session | null }) {
                 })
               }
             >
-              <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
-                <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>
+              <View style={styles.avatar}>
+                <Icon name="folder" size={42} color={statusColor(item.status)} />
+                <Text
+                  style={[styles.avatarNumber, { color: statusColor(item.status) }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  maxFontSizeMultiplier={1.2}
+                >
                   {index + 1}
                 </Text>
               </View>
@@ -151,6 +160,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
         ListFooterComponent={
           <Pressable
             accessibilityRole="button"
+            testID="space-new-agent"
             style={[styles.action, styles.actionPrimary]}
             onPress={() =>
               router.push({
@@ -191,7 +201,7 @@ const PaneRow = memo(function PaneRow({
               {pane.status}
             </Text>
           )}
-          <Text style={styles.rowMeta}>{pane.agent ?? pane.paneId}</Text>
+          <Text style={styles.rowMeta}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
         </View>
         {(pane.activity || pane.preview || pane.cwd) && (
           <View style={styles.rowLine}>
@@ -286,32 +296,25 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
  */
 export function PickSpace({ session, onPick }: { session: Session; onPick: (space: Space) => void }) {
   return (
-    <SheetBody title="Choose a space">
+    <SheetBody title="Choose a space" fullScreen>
       {session.workspaces.length === 0 ? (
         <Pressable accessibilityRole="button" style={styles.action} onPress={() => router.replace("/new-space")}>
           <Text style={styles.actionText}>No spaces yet — make one first</Text>
         </Pressable>
       ) : (
-        <FlatList
-          style={styles.pick}
-          contentContainerStyle={styles.pickContent}
-          data={session.workspaces}
-          keyExtractor={(w) => w.workspaceId}
-          renderItem={({ item, index }) => (
-            <Pressable accessibilityRole="button" style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
+        <View>
+          {session.workspaces.map((item, index) => (
+            <Pressable accessibilityRole="button" key={item.workspaceId} style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
               <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
                 <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>{index + 1}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.spaceName}>{item.label}</Text>
-                <Text style={styles.spaceMeta} numberOfLines={1}>
-                  {item.cwd ?? item.workspaceId}
-                </Text>
+                <Text style={styles.spaceMeta} numberOfLines={1}>{item.cwd ?? item.workspaceId}</Text>
               </View>
             </Pressable>
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
+          ))}
+        </View>
       )}
     </SheetBody>
   );
@@ -321,6 +324,11 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
   const { api } = useSession();
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const starting = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "starting">("idle");
@@ -341,17 +349,32 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
   const [mode, setMode] = useState<string | null>(null);
   // Reset whenever the agent changes: modes do not carry across kinds, and a
   // stale id would silently resolve to no flags at all.
-  useEffect(() => setMode(modes[0]?.id ?? null), [kind]);
+  function chooseKind(value: string) {
+    setKind(value);
+    setMode(modesFor(value)[0]?.id ?? null);
+  }
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useMemo(() => {
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
     void api.agents().then((d) => {
-      setKinds(d.agents.map((a) => a.kind));
-      setKind((k) => k ?? d.agents[0]?.kind ?? null);
-    });
-  }, []);
+      if (!active) return;
+      const available = [...new Set(d.agents.map((a) => a.kind))];
+      setKinds(available);
+      if (available[0]) chooseKind(available[0]);
+      else { setKind(null); setMode(null); }
+    }).catch((e) => {
+      if (active) setLoadError(e instanceof Error ? e.message : "Could not load agents.");
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [api, loadAttempt]);
 
   async function start() {
-    if (!kind || starting.current) return;
+    if (!kind || loading || loadError || starting.current) return;
     starting.current = true;
     const key = JSON.stringify([space.workspaceId, space.cwdPath, kind, mode]);
     if (attempt.current?.key !== key) attempt.current = { key, id: randomUUID() };
@@ -367,12 +390,14 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         cwd: space.cwdPath,
         label: null,
         kind,
-        name: kind,
+        name: `${kind.slice(0, 15)}-${attempt.current.id.replace(/-/g, "").slice(0, 16)}`,
         mode,
       });
+      if (!mounted.current) return;
       landed();
       onStarted(paneId);
     } catch (e) {
+      if (!mounted.current) return;
       refused();
       setError((e as Error).message);
       setPhase("idle");
@@ -382,13 +407,24 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
   }
 
   const busy = phase !== "idle";
+  useEffect(() => {
+    if (!busy) return;
+    // Leaving during startup loses the operation ID and permits a second
+    // start while the first is still creating its agent on the computer.
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [busy]);
   return (
-    <SheetBody title={`New agent in ${space.label}`}>
+    <SheetBody title={`New agent in ${space.label}`} fullScreen busy={busy}>
+      <Stack.Screen options={{ gestureEnabled: !busy }} />
+      {loading && <Text style={styles.note}>Finding your agents…</Text>}
+      {loadError && <><Text style={styles.err}>{loadError}</Text><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><Text style={styles.actionText}>Try again</Text></Pressable></>}
+      {!loading && !loadError && kinds.length === 0 && <Text style={styles.note}>No agents are installed on this computer yet.</Text>}
       <Text style={styles.label}>AGENT</Text>
       <View style={styles.kinds}>
         {kinds.map((k) => (
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: k === kind }} key={k} style={[styles.chip, k === kind && styles.chipOn]} onPress={() => setKind(k)} disabled={busy}>
-            <Text style={[styles.chipText, k === kind && styles.chipTextOn]}>{k}</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: k === kind }} key={k} style={[styles.chip, k === kind && styles.chipOn]} onPress={() => chooseKind(k)} testID={`agent-kind-${k}`} disabled={busy || loading}>
+            <Text style={[styles.chipText, k === kind && styles.chipTextOn]}>{agentLabel(k)}</Text>
           </Pressable>
         ))}
       </View>
@@ -401,10 +437,11 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
                 accessibilityRole="button"
                 accessibilityState={{ selected: option.id === mode }}
                 key={option.id}
+                testID={`agent-mode-${option.id}`}
                 style={[
                   styles.mode,
                   option.id === mode && styles.modeOn,
-                  option.id === mode && option.unsafe && styles.modeUnsafe,
+                  option.unsafe && styles.modeUnsafe,
                 ]}
                 onPress={() => setMode(option.id)}
                 disabled={busy}
@@ -412,6 +449,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
                 <Text style={[styles.modeLabel, option.id === mode && styles.modeLabelOn]}>
                   {option.label}
                 </Text>
+                {option.unsafe && <Text style={{ color: theme.rose, fontSize: 13, fontWeight: "600" }}>No approval before changes</Text>}
                 <Text style={styles.modeWhy}>{option.description}</Text>
               </Pressable>
             ))}
@@ -419,9 +457,9 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         </>
       )}
       {error && <Text style={styles.err}>{error}</Text>}
-      <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind} onPress={() => void start()}>
+      <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind || loading || !!loadError} testID="start-agent" onPress={() => void start()}>
         <Text style={styles.goText}>
-          {phase === "starting" ? `Waiting for ${kind}…` : `Start ${kind ?? "agent"}`}
+          {phase === "starting" ? `Waiting for ${kind ? agentLabel(kind) : "agent"}…` : `Start ${kind ? agentLabel(kind) : "agent"}`}
         </Text>
       </Pressable>
       <Text style={styles.note}>A cold start can take half a minute.</Text>
@@ -430,15 +468,14 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
 }
 
 /**
- * The inside of a formSheet route: a title row, then the form.
+ * Shared form body: a title row, then the form.
  *
- * The sheet itself — the rounded card, the dimming, drag-to-dismiss, and
- * moving out of the keyboard's way — is the presentation's job now, which is
- * why this replaced an absolutely positioned View with a hand-measured
- * keyboard lift.
+ * Agent selection changes height between steps and can contain many choices.
+ * A full screen with one scroll container avoids native fit-to-content sheet
+ * measurement races and keeps the Start button reachable at large text sizes.
  */
-function SheetBody({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
+function SheetBody({ title, children, fullScreen = false, busy = false }: { title: string; children: React.ReactNode; fullScreen?: boolean; busy?: boolean }) {
+  const content = (
     <View style={styles.sheet}>
       {/* react-native-screens requires a non-collapsible header beside a
           ScrollView/FlatList in a formSheet. When React flattened this View,
@@ -446,13 +483,14 @@ function SheetBody({ title, children }: { title: string; children: React.ReactNo
           the first workspace underneath them. */}
       <View style={styles.sheetHead} collapsable={false}>
         <Text style={styles.sheetTitle}>{title}</Text>
-        <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
+        <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={() => router.back()} hitSlop={12}>
           <Text style={styles.sheetClose}>Close</Text>
         </Pressable>
       </View>
       {children}
     </View>
   );
+  return fullScreen ? <SafeAreaView style={styles.screen}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>{content}</ScrollView></SafeAreaView> : content;
 }
 
 const Centered = ({ children }: { children: React.ReactNode }) => (
@@ -472,13 +510,10 @@ const styles = StyleSheet.create({
   avatar: {
     width: 42,
     height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.surface,
   },
-  avatarNumber: { fontFamily: theme.mono, fontSize: 16, fontWeight: "600" },
+  avatarNumber: { position: "absolute", top: 15, left: 8, right: 8, textAlign: "center", fontFamily: theme.mono, fontSize: 14, lineHeight: 17, fontWeight: "600" },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 70 },
   spaceName: { color: theme.fg, fontSize: 16, fontWeight: "600" },
   spaceMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, marginTop: 2 },
@@ -500,10 +535,7 @@ const styles = StyleSheet.create({
   actionPrimaryText: { color: theme.void, fontWeight: "600" },
 
   sheet: { padding: 16, gap: 10 },
-  // A fit-to-contents sheet with a crowded session would grow past the
-  // screen; the list scrolls inside a bound instead.
-  pick: { maxHeight: 420 },
-  pickContent: { paddingTop: 4 },
+
   sheetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   // Leave the close action its own lane. A long title previously measured
   // through it and into the first workspace row on an iPhone form sheet.

@@ -1,18 +1,13 @@
+import { plainHeaderRight } from "@/lib/header-controls";
 import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
-import { inboxPanes } from "@shahi/shared";
-/**
- * The Agents screen: which agent needs you, and what it is asking.
- *
- * Deliberately the same information architecture as the web client — blocked
- * agents pinned above everything, everything else collapsed to one line —
- * because that decision was the point of the product, not an artefact of the
- * platform. What differs is only how it is drawn.
- */
+import { agentLabel, inboxPanes, latestConversations } from "@shahi/shared";
+/** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
+import { Text } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -23,7 +18,7 @@ import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { GreetingLogo } from "@/components/greeting-logo";
 import { theme, statusColor } from "@/lib/theme";
-import { Icon } from "@/components/icons";
+import { AgentIcon, Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
@@ -37,6 +32,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
 
@@ -80,7 +76,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={theme.peach} />
-        <Text style={styles.dim}>Connecting to herdr…</Text>
+        <Text style={styles.dim}>Connecting to your computer…</Text>
       </View>
     );
   }
@@ -99,11 +95,12 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
    */
   const kinds = [...new Set(agents.map((p) => p.agent).filter((a): a is string => !!a))].sort();
   const waiting = agents.filter((p) => p.status === "blocked").length;
-  const chips: { id: string; label: string }[] = [
+  const chips: { id: string; label: string; icon?: IconName; count?: number }[] = [
     { id: "all", label: "All" },
-    { id: "inbox", label: `Inbox ${inbox.length}` },
+    { id: "inbox", label: `Inbox ${inbox.length}`, icon: "inbox", count: inbox.length },
     ...(waiting > 0 ? [{ id: "waiting", label: `Waiting ${waiting}` }] : []),
-    ...kinds.map((k) => ({ id: `kind:${k}`, label: k })),
+    ...kinds.map((k) => ({ id: `kind:${k}`, label: agentLabel(k),
+      icon: (k === "claude" ? "claudecode" : k === "codex" ? "openai" : undefined) as IconName | undefined })),
     ...(shells.length > 0 ? [{ id: "shells", label: "Shells" }] : []),
   ];
 
@@ -111,7 +108,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // agent gets its answer. Falling back to All beats an empty screen filtered
   // by a control that is no longer on it.
   const active = chips.some((c) => c.id === filter) ? filter : "all";
-  const shown =
+  const filtered =
     active === "inbox" ? inbox : active === "all"
       ? agents
       : active === "waiting"
@@ -119,14 +116,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         : active === "shells"
           ? shells
           : agents.filter((p) => `kind:${p.agent}` === active);
-  const blocked = shown.filter((p) => p.status === "blocked");
-  // Pinned first, and stably: within each half the server's order holds.
-  // Blocked panes are deliberately not pin-sorted — the card is already the
-  // top of the screen, and a pin must not compete with a question.
-  const rest = active === "inbox" ? shown.filter((p) => p.status !== "blocked") : [
-    ...shown.filter((p) => p.status !== "blocked" && pins.has(p.paneId)),
-    ...shown.filter((p) => p.status !== "blocked" && !pins.has(p.paneId)),
-  ];
+  const search = query.trim().toLocaleLowerCase();
+  const shown = search ? filtered.filter(p =>
+    [p.title, p.workspaceLabel, p.cwd, agentLabel(p.agent ?? "shell")].some(value => value?.toLocaleLowerCase().includes(search))) : filtered;
+  const blocked = active === "inbox" ? latestConversations(shown.filter(p => p.status === "blocked")) : [];
+  const rest = latestConversations(active === "inbox" ? shown.filter(p => p.status !== "blocked") : shown, pins);
   rows.current = rest;
 
   return (
@@ -136,7 +130,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       <Stack.Screen
         options={{
           headerLeft: () => <GreetingLogo size={36} />,
-          headerRight: () => (
+          ...plainHeaderRight(
             <View style={styles.status}>
               <ComputerSwitcher />
               <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
@@ -149,6 +143,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       <FlatList
         {...agentScroll}
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         // The native tab bar floats over the list; without room past it the
         // last agent sits under the bar and a tap on it lands on the tab
         // instead — the more so since the "+ New agent" header pushed the list
@@ -160,6 +156,13 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <>
             <ComputerUpdate />
             <ConnectionHealth />
+            <View style={styles.search}>
+              <TextInput accessibilityLabel="Search agents" placeholder="Search agents, spaces or folders"
+                placeholderTextColor={theme.dim} value={query} onChangeText={setQuery}
+                autoCorrect={false} autoCapitalize="none" returnKeyType="search"
+                style={styles.searchInput} testID="search-agents" />
+              {!!query && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" style={styles.searchClear} onPress={() => setQuery("")}><Text style={{ color: theme.peach }}>Clear</Text></Pressable>}
+            </View>
             {/* Inside the list, not above it: content outside the FlatList
                 gets no inset for the transparent large-title header and drew
                 behind the clock — the first safe-area bug, wearing a new hat.
@@ -172,14 +175,19 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
               {chips.map((chip) => (
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel={chip.label}
+                  accessibilityHint={chip.id.startsWith("kind:") || chip.id === "shells" ? `Show ${chip.label} conversations` : undefined}
                   accessibilityState={{ selected: chip.id === active }}
                   key={chip.id}
                   style={[styles.filter, chip.id === active && styles.filterOn]}
                   onPress={() => setFilter(chip.id)}
                 >
-                  <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
-                    {chip.label}
-                  </Text>
+                  {chip.id.startsWith("kind:") || chip.id === "shells" ? <AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /> : chip.icon ? <Icon name={chip.icon} size={20} color={chip.id === active ? theme.fg : theme.dim} /> : null}
+                  {(!chip.id.startsWith("kind:") && chip.id !== "shells") || chip.id === active ? (
+                    <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
+                      {chip.id === "inbox" ? chip.count : chip.label}
+                    </Text>
+                  ) : null}
                 </Pressable>
               ))}
             </ScrollView>
@@ -210,13 +218,14 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         renderItem={({ item }) => (
           <View>
           {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
-          <Row
+          {item.status === "blocked" ? <BlockedCard pane={item} prompt={prompts[item.paneId]}
+            onAnswer={(option) => void answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
             pane={item}
             pinned={pins.has(item.paneId)}
             onPress={onOpenPane}
             onPin={togglePin}
             onActions={setActing}
-          />
+          />}
           {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${item.title ?? item.paneId} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Reviewed</Text></Pressable>}
           </View>
         )}
@@ -234,7 +243,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           blocked.length ? null : (
-            <Centered>{active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
+            <Centered>{search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
           )
         }
       />
@@ -312,6 +321,7 @@ const Row = memo(function Row({
   onPin: (paneId: string) => void;
   onActions: (pane: DashboardPane) => void;
 }) {
+  const largeText = useWindowDimensions().fontScale > 1.4;
   const row = (
       <Pressable
         accessibilityRole="button"
@@ -327,20 +337,22 @@ const Row = memo(function Row({
       >
         <Avatar pane={pane} />
         <View style={styles.rowBody}>
-          <View style={styles.rowLine}>
-            <Text style={styles.rowTitle} numberOfLines={1}>
+          <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
+            <Text style={[styles.rowTitle, largeText && { flex: 0 }]} numberOfLines={largeText ? 2 : 1}>
               {pane.title ?? pane.paneId}
             </Text>
             {pinned && <Icon name="pin" color={theme.dim} size={12} />}
             {/* "idle" is the resting state of most of a real herd; saying it
                 twenty-six times is what made the list feel crowded. Only a
                 state that asks something of you gets a word. */}
+            <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
                 {pane.status}
               </Text>
             )}
-            <Text style={styles.rowMeta}>{pane.workspaceLabel}</Text>
+            <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.workspaceLabel}</Text>
+            </View>
           </View>
           {/* A quiet agent's second line is where it is working, not a
               "No conversation yet." filler — the path answers "which one is
@@ -516,6 +528,9 @@ const styles = StyleSheet.create({
   filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   // Clears the floating native tab bar so the last agent is tappable, not under it.
   listContent: { paddingBottom: 96 },
+  search: { marginHorizontal: 16, marginBottom: 12, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.lineBright, borderRadius: 10, backgroundColor: theme.surface },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 44, padding: 12, color: theme.fg, fontSize: 15 },
+  searchClear: { minWidth: 44, minHeight: 44, justifyContent: "center", paddingHorizontal: 12 },
   newAgent: {
     marginHorizontal: 16,
     marginVertical: 8,
@@ -530,6 +545,10 @@ const styles = StyleSheet.create({
   },
   newAgentText: { color: theme.fg, fontSize: 14, fontWeight: "500" },
   filter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 44,
     borderWidth: 1,
     borderColor: theme.line,
     borderRadius: 999,

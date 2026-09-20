@@ -13,7 +13,8 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * spreadsheet is more use in Files than in a viewer this app would have to
  * write. Both go through the same endpoint; only the disposition differs.
  */
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+const PdfPreview = lazy(() => import("./PdfPreview"));
 import { useApi } from "../api";
 
 interface Props {
@@ -67,7 +68,9 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
       </header>
 
       <div className="viewer__body">
-        {isImage && !error ? (
+        {/\.pdf$/i.test(name) ? (
+          <Suspense fallback={<p role="status">Opening PDF…</p>}><PdfPreview url={url} /></Suspense>
+        ) : isImage && !error ? (
           <RemoteImage
             className="viewer__image"
             src={url}

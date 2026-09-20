@@ -20,6 +20,9 @@ import type {
 } from "@shahi/shared";
 
 export interface Scenario {
+  /** Override discovery and simulate unique created panes for native creation tests. */
+  agents?: string[];
+  createAgents?: boolean;
   session: Session;
   /** Transcripts by pane. A pane absent from here has none, like a shell. */
   transcripts: Record<string, LogMessage[]>;

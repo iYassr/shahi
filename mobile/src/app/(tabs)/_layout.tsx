@@ -23,7 +23,7 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>Agents</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="spaces">
-        <NativeTabs.Trigger.Icon sf="square.grid.2x2" md="grid_view" />
+        <NativeTabs.Trigger.Icon sf={{ default: "folder", selected: "folder.fill" }} md="folder" />
         <NativeTabs.Trigger.Label>Spaces</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">

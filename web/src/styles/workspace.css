@@ -219,8 +219,13 @@
   margin: 4px auto 14px;
 }
 
+.sheet__heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.sheet__close { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+.sheet__close:hover { background: var(--raised); color: var(--text); }
 .sheet__title {
-  margin: 0 0 16px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   font-family: var(--ui);
   font-size: 20px;
   font-weight: 600;

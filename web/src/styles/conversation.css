@@ -475,8 +475,8 @@ label.bigaction {
  * text is the thing you opened the reader for.
  */
 .msg--you {
-  background: var(--surface);
-  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--working) 6%, var(--void));
+  border-left: 2px solid var(--working);
   border-radius: 0 8px 8px 0;
   padding: 12px 12px 4px 12px;
   margin: 8px 0;
@@ -484,8 +484,11 @@ label.bigaction {
 }
 
 .msg--you .msg__who {
-  color: var(--accent);
+  color: var(--working);
 }
+
+.msg--agent .msg__who { color: var(--speaker-agent, var(--text)); }
+.msg--system .msg__who { color: var(--muted); }
 
 /*
  * Tables. Agents produce them constantly, and a phone cannot show a wide one at
@@ -549,3 +552,9 @@ label.bigaction {
   margin: 6px 0 10px;
   background: var(--surface);
 }
+
+.pdf-preview { width: 100%; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.pdf-preview nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
+.pdf-preview nav button { padding: 8px 12px; min-height: 44px; }
+.pdf-preview__page { overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+.pdf-preview canvas { display: block; margin: 0 auto; }

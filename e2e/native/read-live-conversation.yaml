@@ -1,0 +1,39 @@
+# Read-only live-server check. Start inside a real conversation at its tail.
+# OLDER_MESSAGE_ID must be outside the initial 60-message page.
+# No prompts, keys, approvals, or agent creation are sent.
+appId: app.shahi.mobile
+---
+- scrollUntilVisible:
+    element: {id: "message-${OLDER_MESSAGE_ID}"}
+    direction: UP
+    centerElement: true
+    speed: 40
+    visibilityPercentage: 10
+    timeout: 180000
+- assertVisible: {id: go-to-latest}
+- waitForAnimationToEnd: {timeout: 10000}
+- takeScreenshot: before-leaving
+- tapOn: {id: view-screen}
+- tapOn: {id: view-read}
+- assertVisible: {id: "message-${OLDER_MESSAGE_ID}"}
+- waitForAnimationToEnd: {timeout: 10000}
+- takeScreenshot: after-toggle
+- tapOn: Back
+- scrollUntilVisible:
+    element: {id: "row-${PANE_ID}"}
+    direction: DOWN
+    centerElement: true
+    timeout: 90000
+- tapOn: {id: "row-${PANE_ID}"}
+- extendedWaitUntil:
+    visible: {id: "message-${OLDER_MESSAGE_ID}"}
+    timeout: 30000
+- waitForAnimationToEnd: {timeout: 10000}
+- takeScreenshot: after-reopening
+- tapOn: {id: go-to-latest}
+- extendedWaitUntil:
+    visible: {id: "message-${LAST_MESSAGE_ID}"}
+    timeout: 30000
+- assertNotVisible: {id: go-to-latest}
+- waitForAnimationToEnd: {timeout: 10000}
+- takeScreenshot: latest-after-history

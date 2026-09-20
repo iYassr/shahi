@@ -1,3 +1,5 @@
+import { agentColor } from "./AgentIcon";
+import type { CSSProperties } from "react";
 import { Download, RemoteImage } from "./RemoteMedia";
 /**
  * Reader view: the agent's conversation, reflowed for a phone.
@@ -12,8 +14,9 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * to read; burying it behind a tap is the difference between a readable
  * conversation and a wall of command output.
  */
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, useApi, type Activity, type LogBlock, type LogMessage } from "../api";
+import { forgetReaderPlace, readerWasAway, useReaderScroll } from "../reader-scroll";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
 
@@ -43,10 +46,13 @@ const TAIL = 12;
  */
 const remembered = new Map<string, LogMessage[]>();
 const REMEMBER_PANES = 4;
-export function clearReaderMemory() { remembered.clear(); }
+let memoryGeneration = 0;
+const rememberedOffsets = new Map<string, number>();
+export function clearReaderMemory() { memoryGeneration++; remembered.clear(); rememberedOffsets.clear(); forgetReaderPlace(); }
 
 interface Props {
   paneId: string;
+  agent?: string | null;
   echo?: { text: string; at: number } | null;
   /** Live status from the pane's screen; null when the agent is not mid-turn. */
   activity: Activity | null;
@@ -85,18 +91,21 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
-export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
+export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) {
   const api = useApi();
+  const mounted = useRef(true);
+  const generation = useRef(memoryGeneration);
+  const active = () => mounted.current && generation.current === memoryGeneration;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
   const [error, setError] = useState("");
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(() => rememberedOffsets.get(paneId) ?? 0);
   const busy = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(() => !remembered.has(paneId));
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const pinnedToBottom = useRef(true);
+  const pinnedToBottom = useRef(!readerWasAway(paneId));
   /**
    * Scrolled away from the end, and how much has arrived since.
    *
@@ -105,12 +114,14 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
    * while you were up there. The count is the difference between "there might
    * be something new" and "there are three new messages".
    */
-  const [away, setAway] = useState(false);
+  const [away, setAway] = useState(() => readerWasAway(paneId));
   const [unseen, setUnseen] = useState(0);
   /** What is on screen, so a poll can diff against it without re-rendering. */
   const shown = useRef<LogMessage[]>(remembered.get(paneId) ?? []);
   /** Mirrors `total` for the poll, which must not close over a stale value. */
   const knownTotal = useRef(0);
+  const reading = useReaderScroll({ paneId, scroller, ready: !loading, revision: messages, following: pinnedToBottom,
+    onPosition: bottom => { setAway(!bottom); if (bottom) setUnseen(0); } });
 
   const load = useCallback(async () => {
     if (busy.current || document.hidden) return;
@@ -122,6 +133,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
       const held = shown.current.length;
       const limit = held === 0 ? PAGE : TAIL;
       const log = await api.sessionLog(paneId, { limit });
+      if (!active()) return;
       // Merged, not replaced. Replacing threw away everything "Load earlier"
       // had fetched — scroll up through a long conversation and 2.5 seconds
       // later you were back at the last page, with the view yanked along with
@@ -132,8 +144,11 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
       const overlap = shown.current.some((message) => log.messages.some((fresh) => fresh.id === message.id));
       const reset = shown.current.length === 0 || !overlap;
       const next = reset ? log.messages : merge(shown.current, log.messages);
-      if (reset) setOffset(Math.max(0, log.total - log.messages.length));
-      else if (knownTotal.current === 0) setOffset(Math.max(0, log.total - next.length));
+      if (reset || knownTotal.current === 0) {
+        const nextOffset = Math.max(0, log.total - next.length);
+        setOffset(nextOffset);
+        rememberedOffsets.set(paneId, nextOffset);
+      }
       setError("");
 
       // And nothing re-renders unless something actually changed. A quiet
@@ -147,13 +162,15 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
         setMessages(next);
       }
       if (remembered.size >= REMEMBER_PANES && !remembered.has(paneId)) {
-        remembered.delete(remembered.keys().next().value!);
+        const evicted = remembered.keys().next().value!;
+        remembered.delete(evicted); rememberedOffsets.delete(evicted); forgetReaderPlace(evicted);
       }
       remembered.set(paneId, shown.current);
       knownTotal.current = log.total;
 
       setLoading(false);
     } catch (err) {
+      if (!active()) return;
       if (err instanceof ApiError && err.status === 404) onUnavailable();
       else { setError(err instanceof Error ? err.message : "Could not read conversation"); setLoading(false); }
     } finally { busy.current = false; }
@@ -166,11 +183,11 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
     const seed = remembered.get(paneId) ?? [];
     shown.current = seed;
     knownTotal.current = 0;
-    setOffset(0);
+    setOffset(rememberedOffsets.get(paneId) ?? 0);
     setMessages(seed);
     setLoading(seed.length === 0);
-    pinnedToBottom.current = true;
-    setAway(false);
+    pinnedToBottom.current = !readerWasAway(paneId);
+    setAway(readerWasAway(paneId));
     setUnseen(0);
   }, [paneId]);
 
@@ -183,33 +200,27 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", load); window.removeEventListener("shahi:log_changed", changed); };
   }, [load]);
 
-  // Follow the conversation, but only while the reader is already at the
-  // bottom — yanking the view away from something being read is worse than
-  // missing the newest message.
-  useLayoutEffect(() => {
-    if (pinnedToBottom.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [messages]);
-
   async function loadOlder() {
     const oldest = messages[0];
     if (!oldest || loadingOlder) return;
     setLoadingOlder(true);
     try {
       const index = offset;
-      const node = scroller.current;
       pinnedToBottom.current = false;
       const older = await api.sessionLog(paneId, { limit: PAGE, before: index });
-      const height = node?.scrollHeight ?? 0;
-      const top = node?.scrollTop ?? 0;
+      if (!active()) return;
+      reading.captureBeforePrepend();
       shown.current = merge(older.messages, shown.current);
-      setOffset(Math.max(0, index - older.messages.length));
+      const nextOffset = Math.max(0, index - older.messages.length);
+      setOffset(nextOffset);
+      rememberedOffsets.set(paneId, nextOffset);
       remembered.set(paneId, shown.current);
       setMessages(shown.current);
-      requestAnimationFrame(() => { if (node) node.scrollTop = top + node.scrollHeight - height; });
     } catch (err) {
+      if (!active()) return;
       setError(err instanceof Error ? err.message : "Could not load earlier messages. Try Load earlier again.");
     } finally {
-      setLoadingOlder(false);
+      if (active()) setLoadingOlder(false);
     }
   }
 
@@ -228,16 +239,13 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
   return (
     <div
       className="reader"
+      style={{ "--speaker-agent": agent ? agentColor(agent) : "var(--text)" } as CSSProperties}
       ref={scroller}
-      onTouchStart={() => { pinnedToBottom.current = false; }}
-      onWheel={() => { pinnedToBottom.current = false; }}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        pinnedToBottom.current = atBottom;
-        setAway(!atBottom);
-        if (atBottom) setUnseen(0);
-      }}
+      onTouchStart={reading.stopFollowing}
+      onWheel={reading.stopFollowing}
+      onPointerDown={reading.stopFollowing}
+      onKeyDown={reading.stopFollowing}
+      onScroll={reading.onScroll}
     >
       {error && <p role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
       {hasOlder && (
@@ -253,7 +261,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
       {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
       {activity && <Working activity={activity} />}
 
-      <div ref={bottomRef} />
+      <div />
 
       {/*
         * Sticky rather than fixed, so it rides just above the composer without
@@ -268,7 +276,7 @@ export function Reader({ paneId, activity, echo, onUnavailable }: Props) {
               pinnedToBottom.current = true;
               setUnseen(0);
               setAway(false);
-              bottomRef.current?.scrollIntoView({ block: "end", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+              reading.goLatest();
             }}
           >
             {unseen > 0 ? `${unseen} new` : "Latest"} ↓
@@ -284,8 +292,8 @@ const MessageView = memo(function MessageView({ message, paneId, onCopyError }: 
   message: LogMessage; paneId: string; onCopyError: (message: string) => void;
 }) {
   return (
-        <article className={`msg msg--${message.role}`}>
-          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "Session" : "You"}</div>
+        <article className={`msg msg--${message.role}`} data-message-id={message.id}>
+          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}</div>
           <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(message.blocks.map((block) => block.kind === "text" || block.kind === "thinking" ? block.text : block.kind === "tool" ? [block.summary, block.result?.text].filter(Boolean).join("\n") : "").join("\n")).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
           {message.blocks.map((block, index) => (
             <BlockView key={index} block={block} paneId={paneId} />
@@ -486,7 +494,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
               )}
             </>
           )}
-          {open && !block.result && <p className="msg__aside">Still running.</p>}
+          {open && !block.result && <p className="msg__aside">{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</p>}
         </div>
       );
   }

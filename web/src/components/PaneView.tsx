@@ -1,3 +1,6 @@
+import { browserConnection } from "../connection";
+import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
+import type { SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
 import { supports } from "@shahi/shared";
@@ -13,6 +16,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
+  ApiError,
   UnauthorizedError,
   useApi,
   requestId,
@@ -95,10 +99,13 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
    * key bar and a composer aimed at nothing.
    */
   const [gone, setGone] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const retryPane = useRef<() => void>(() => {});
   // Reader is the default where it exists: on a phone the conversation is what
   // you came for, and the terminal is for when you need to see the real screen.
   // `readable` flips to false the moment the server says there is no transcript
-  // — shells and non-Claude agents — and the view falls back for good.
+  // — for example a newly started agent — and the view falls back to Screen.
+  // Keep Read available so a transcript created later can be opened.
   const [tab, setTab] = useState<Tab>("read");
   const [readable, setReadable] = useState(true);
   const [history, setHistory] = useState<TranscriptLine[]>([]);
@@ -114,11 +121,30 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     window.addEventListener("keydown", exit);
     return () => window.removeEventListener("keydown", exit);
   }, [focused]);
-  const pending = useRef<{ body: string; id: string } | null>(null);
+  const mounted = useRef(true);
+  const actionInFlight = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const savedDraft = useRef(webDraft(draftOwner(browserConnection().identity), paneId)).current;
+  const pending = useRef(savedDraft.pending);
   const [echo, setEcho] = useState<{ text: string; at: number } | null>(null);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [draft, setDraftState] = useState(savedDraft.text);
+  function setDraft(value: SetStateAction<string>) {
+    savedDraft.text = typeof value === "function" ? value(savedDraft.text) : value;
+    setDraftState(savedDraft.text);
+    notifyWebDraft(savedDraft);
+  }
+  const [sending, setSending] = useState(savedDraft.inFlight);
+  const [attachments, setAttachmentsState] = useState<Attachment[]>(savedDraft.attachments);
+  function setAttachments(value: SetStateAction<Attachment[]>) {
+    savedDraft.attachments = typeof value === "function" ? value(savedDraft.attachments) : value;
+    setAttachmentsState(savedDraft.attachments);
+    notifyWebDraft(savedDraft);
+  }
+  useEffect(() => {
+    const update = () => { setDraftState(savedDraft.text); setAttachmentsState(savedDraft.attachments); setSending(savedDraft.inFlight); pending.current = savedDraft.pending; };
+    savedDraft.listeners.add(update);
+    return () => { savedDraft.listeners.delete(update); };
+  }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -126,6 +152,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   // come back before drawing a header meant every pane opened on a blank bar,
   // however fast the request was.
   const known = session?.panes.find((pane) => pane.paneId === paneId) ?? null;
+  const reportedPresent = known !== null;
   const frame = frames[paneId] ?? detail?.frame ?? null;
   const prompt = prompts[paneId] ?? frame?.prompt ?? null;
 
@@ -136,22 +163,42 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
   useEffect(() => {
     let live = true;
+    let loading = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     setGone(false);
-    void api
-      .pane(paneId)
-      .then((d) => live && setDetail(d))
-      .catch((err: unknown) => {
-        // An expired session is not a missing pane. Rethrowing puts it in front
-        // of the global handler, which returns to the passcode screen; treating
-        // it as "gone" would have told you the pane had been closed when in
-        // fact the app had simply been open for a fortnight.
-        if (err instanceof UnauthorizedError) throw err;
-        if (live) setGone(true);
-      });
+    setDetail(null);
+    setLoadError(null);
+    const load = async () => {
+      if (!live || loading) return;
+      clearTimeout(retry);
+      loading = true;
+      try {
+        const next = await api.pane(paneId);
+        if (live) { setDetail(next); setLoadError(null); setGone(false); }
+      } catch (err) {
+        if (!live) return;
+        if (err instanceof ApiError && err.status === 404) { setGone(true); return; }
+        // The API already signals expired sessions to App. Do not turn that
+        // into an unhandled promise rejection or a claim the pane was closed.
+        if (err instanceof UnauthorizedError) { setLoadError("Please reconnect to your computer."); return; }
+        setLoadError("Could not load this conversation. Reconnecting…");
+        // Browser online can precede the relay reconnect. Keep recovering even
+        // if that first online request still fails, without discarding the pane.
+        retry = setTimeout(() => void load(), 2_000);
+      } finally { loading = false; }
+    };
+    const reconnect = () => void load();
+    retryPane.current = reconnect;
+    window.addEventListener("online", reconnect);
+    void load();
     return () => {
       live = false;
+      clearTimeout(retry);
+      window.removeEventListener("online", reconnect);
     };
-  }, [paneId]);
+  // Newly created panes may reach the live dashboard after an initial 404.
+  // Retry on that membership transition, not on every dashboard refresh.
+  }, [paneId, api, reportedPresent]);
 
   useEffect(() => {
     if (tab !== "history") return;
@@ -202,13 +249,16 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
   const send = useCallback(
     async (action: () => Promise<unknown>, failure: string) => {
+      if (actionInFlight.current || !mounted.current) return;
+      actionInFlight.current = true;
       setSending(true);
       try {
         await action();
       } catch (err) {
-        onToast(err instanceof Error ? err.message : failure);
+        if (mounted.current) onToast(err instanceof Error ? err.message : failure);
       } finally {
-        setSending(false);
+        actionInFlight.current = false;
+        if (mounted.current) setSending(false);
       }
     },
     [onToast],
@@ -223,14 +273,22 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     // path is the least ambiguous way to point at it.
     const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
 
-    if (sending) return;
+    if (actionInFlight.current || savedDraft.inFlight || !mounted.current) return;
     if (pending.current?.body !== body) pending.current = { body, id: requestId() };
+    savedDraft.pending = pending.current;
+    savedDraft.inFlight = true;
+    notifyWebDraft(savedDraft);
     await send(async () => {
-      await api.send(paneId, body, pending.current!.id);
-      setEcho({ text: body, at: Date.now() });
-      pending.current = null;
-      setDraft("");
-      setAttachments([]);
+      try {
+        await api.send(paneId, body, savedDraft.pending!.id);
+        savedDraft.pending = null;
+        if (savedDraft.text === draft) savedDraft.text = "";
+        savedDraft.attachments = savedDraft.attachments.filter(file => !attachments.some(sent => sent.path === file.path));
+        if (mounted.current) setEcho({ text: body, at: Date.now() });
+      } finally {
+        savedDraft.inFlight = false;
+        notifyWebDraft(savedDraft);
+      }
     }, "Message not sent");
   }
 
@@ -284,6 +342,10 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         </span>
       </header>
 
+      {loadError && <div className="empty" role="status">
+        {loadError}
+        <button className="empty__action" onClick={() => retryPane.current()}>Try again</button>
+      </div>}
       {prompt && (
         <section className="blocked" style={{ marginBottom: 0 }}>
           <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
@@ -307,16 +369,14 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       )}
 
       <div className="tabs" role="tablist">
-        {readable && (
-          <button
+        <button
             className="tab"
             role="tab"
             aria-selected={tab === "read"}
-            onClick={() => setTab("read")}
+            onClick={() => { setReadable(true); setTab("read"); }}
           >
             <UiIcon name="read" size={17} /> Read
           </button>
-        )}
         <button
           className="tab"
           role="tab"
@@ -336,7 +396,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       </div>
 
       {tab === "read" && readable ? (
-        <Reader key={paneId} paneId={paneId} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
+        <Reader key={paneId} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>
@@ -399,6 +459,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           {KEY_BAR.filter((key) => tab === "screen" || key.everywhere).map(({ label, keys }) => (
             <button
               key={label}
+              aria-label={({ esc: "Escape", "^C": "Interrupt (Control C)", "⇥": "Tab", "⇧⇥": "Shift Tab", "↑": "Up arrow", "↓": "Down arrow", "⏎": "Enter" }[label] ?? label)}
               className={tab === "screen" && label === "^C" ? "keys__interrupt" : undefined}
               title={label === "^C" ? "Interrupt the running process" : undefined}
               onClick={() => void send(() => api.sendKeys(paneId, keys), `${label} not sent`)}

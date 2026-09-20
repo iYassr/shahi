@@ -11,7 +11,9 @@
     "./relay-client": "./src/relay-client.ts",
     "./errors": "./src/errors.ts",
     "./pairing": "./src/pairing.ts",
-    "./brand": "./src/brand.ts"
+    "./brand": "./src/brand.ts",
+    "./file-download": "./src/file-download.ts",
+    "./file-upload": "./src/file-upload.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

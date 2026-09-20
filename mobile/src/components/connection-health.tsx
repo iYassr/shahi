@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import { connectionHealth } from "@shahi/shared";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";

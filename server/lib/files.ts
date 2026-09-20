@@ -69,6 +69,7 @@ export interface FileRequest {
   path: string;
   /** Force a download rather than letting the browser display it. */
   download?: boolean;
+  range?: { start: number; end: number };
 }
 
 export class FileTooLarge extends Error {
@@ -126,17 +127,24 @@ async function resolveReadable(input: string): Promise<string> {
  */
 export async function readWithinHome(
   request: FileRequest,
-): Promise<{ path: string; bytes: Uint8Array; contentType: string; name: string }> {
+): Promise<{ path: string; bytes: Uint8Array; contentType: string; name: string; total: number; version: string; range?: { start: number; end: number } }> {
   const path = await resolveReadable(request.path);
 
   const info = await stat(path);
   if (info.isDirectory()) throw new OutsideHomeError(request.path);
   if (info.size > MAX_BYTES) throw new FileTooLarge(info.size);
 
-  const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+  const range = request.range;
+  if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end < range.start || (info.size > 0 && range.start >= info.size))) throw new RangeError("Invalid file range");
+  const selected = range && info.size > 0 ? { start: range.start, end: Math.min(range.end, info.size - 1) } : undefined;
+  const source = Bun.file(path);
+  const bytes = new Uint8Array(await (selected ? source.slice(selected.start, selected.end + 1) : source).arrayBuffer());
   return {
     path,
     bytes,
+    total: info.size,
+    version: `${info.size}-${info.mtimeMs}`,
+    range: selected,
     contentType: contentTypeFor(path, { download: request.download }),
     name: path.slice(path.lastIndexOf("/") + 1),
   };

@@ -617,6 +617,41 @@ describe("the dashboard stream", () => {
 });
 
 describe("files over the relay", () => {
+  test("large uploads read bounded native file ranges and finalize after chunk receipts", async () => {
+    const { box } = await openLink();
+    const size = 65536 + 3;
+    const handle = { size, offset: 0, readBytes: jest.fn((count: number) => new Uint8Array(count).fill(37)), close: jest.fn() };
+    const mocked = jest.spyOn(File.prototype, "open").mockReturnValue(handle as never);
+    const progress = jest.fn();
+    try {
+      const call = api.upload({ uri: "file:///tmp/sample.bin", name: "sample.bin", type: "application/octet-stream" }, { onProgress: progress });
+      await tick(); box.answer(box.read()[0] as RelayRequest, 200, { version: 1, maxBytes: 33554432, chunkBytes: 65536 });
+      await tick();
+      const begin = box.read()[0] as RelayRequest;
+      expect(begin.path).toMatch(/^\/api\/uploads\/transfers\//);
+      box.answer(begin, 200, { offset: 0 });
+      await tick();
+      const first = box.read()[0] as RelayRequest;
+      expect(first.headers["x-upload-offset"]).toBe("0");
+      expect(fromBase64Url(first.body!).length).toBe(65536);
+      box.answer(first, 200, { offset: 65536 });
+      await tick();
+      const second = box.read()[0] as RelayRequest;
+      expect(second.headers["x-upload-offset"]).toBe("65536");
+      expect(fromBase64Url(second.body!).length).toBe(3);
+      box.answer(second, 200, { offset: size });
+      await tick();
+      const finish = box.read()[0] as RelayRequest;
+      expect(finish.path).toBe(begin.path + "/finish");
+      expect(JSON.parse(str(fromBase64Url(finish.body!))).digest).toMatch(/^[a-f0-9]{64}$/);
+      box.answer(finish, 200, { offset: size, result: { path: "/tmp/sample.bin", name: "sample.bin", type: "application/octet-stream", size } });
+      await expect(call).resolves.toMatchObject({ size });
+      expect(handle.readBytes.mock.calls).toEqual([[65536], [3]]);
+      expect(handle.close).toHaveBeenCalledTimes(1);
+      expect(progress).toHaveBeenLastCalledWith(size, size);
+    } finally { mocked.mockRestore(); }
+  });
+
   test("an image comes back as a data URL, since there is no URL an Image could fetch", async () => {
     const { box } = await openLink();
     const call = api.readFile("/home/y/shot.png");
@@ -643,7 +678,10 @@ describe("files over the relay", () => {
     const close = jest.fn();
     const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: 100 * 1024 * 1024, readBytes, close } as never);
     try {
-      await expect(api.upload({ uri: "file:///tmp/big.heic", name: "big.heic", type: "image/heic" })).rejects.toThrow(/relay accepts files up to/);
+      const call = api.upload({ uri: "file:///tmp/big.heic", name: "big.heic", type: "image/heic" });
+      await tick();
+      box.answer(box.read()[0] as RelayRequest, 200, { version: 1, maxBytes: 32 * 1024 * 1024, chunkBytes: 65536 });
+      await expect(call).rejects.toThrow(/32 MB/);
       expect(readBytes).not.toHaveBeenCalled();
       expect(close).toHaveBeenCalledTimes(1);
       expect(box.read()).toEqual([]);
@@ -656,6 +694,8 @@ describe("files over the relay", () => {
     const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: bytes.length, readBytes: () => bytes, close: jest.fn() } as never);
     try {
       const call = api.upload({ uri: "file:///tmp/shot.png", name: "shot.png", type: "image/png" });
+      await tick();
+      box.answer(box.read()[0] as RelayRequest, 404, { error: "not found" });
       await sleep(5);
       const [req] = box.read() as RelayRequest[];
       expect(req).toMatchObject({ method: "POST", path: "/api/uploads" });

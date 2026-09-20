@@ -63,7 +63,7 @@ export interface RelayClientOptions {
    * How often to send the relay a text `ping` once ready. The Workers runtime
    * cannot originate a ping from a Durable Object, so liveness is the box's
    * job: the relay answers `pong` without waking, and drops a box silent for
-   * five minutes. Sixty seconds leaves four misses before that.
+   * five minutes. Twenty seconds detects interrupted routes sooner.
    */
   pingMs?: number;
   /**
@@ -79,6 +79,8 @@ export interface RelayClientOptions {
   silenceMs?: number;
   /** How often to check the read-side silence above. */
   watchdogMs?: number;
+  /** A delayed event-loop tick after sleep forces a fresh connection. */
+  resumeGapMs?: number;
   /** A phone must send authenticated traffic even when only reading a dashboard. */
   phoneSilenceMs?: number;
 }
@@ -129,6 +131,8 @@ export class RelayClient {
   #watchdogTimer: ReturnType<typeof setInterval> | undefined;
   /** When the last frame of any kind — a pong, a phone frame — arrived. */
   #lastFrameAt = 0;
+  #lastTickAt = 0;
+  readonly #resumeGapMs: number;
   readonly #pingMs: number;
   readonly #silenceMs: number;
   readonly #watchdogMs: number;
@@ -142,11 +146,12 @@ export class RelayClient {
     this.#maxBackoffMs = options.maxBackoffMs ?? 30_000;
     this.#authTimeoutMs = options.authTimeoutMs ?? RELAY_LIMITS.boxAuthTimeoutMs;
     this.#phoneAuthMs = options.phoneAuthMs ?? RELAY_LIMITS.phoneAuthMs;
-    this.#pingMs = options.pingMs ?? 60_000;
-    // Two and a half missed pings, and well inside the relay's own five-minute
-    // drop, so the box redials before the relay would have given up on it.
-    this.#silenceMs = options.silenceMs ?? 150_000;
-    this.#watchdogMs = options.watchdogMs ?? 30_000;
+    this.#pingMs = options.pingMs ?? 20_000;
+    // Three missed pings detect a silently broken route before the relay's
+    // own five-minute deadline.
+    this.#silenceMs = options.silenceMs ?? 60_000;
+    this.#watchdogMs = options.watchdogMs ?? 5_000;
+    this.#resumeGapMs = options.resumeGapMs ?? Math.max(15_000, this.#watchdogMs * 3);
     this.#phoneSilenceMs = options.phoneSilenceMs ?? 150_000;
     this.#backoffMs = this.#minBackoffMs;
   }
@@ -159,6 +164,8 @@ export class RelayClient {
   start(): void {
     if (!this.#stopped) return;
     this.#stopped = false;
+    this.#lastTickAt = Date.now();
+    this.#watchdogTimer = setInterval(() => this.#checkConnection(), this.#watchdogMs);
     this.#connect();
   }
 
@@ -219,26 +226,50 @@ export class RelayClient {
     ws.onclose = (event) => this.#disconnect(ws, event.code);
   }
 
-  #disconnect(ws: WebSocket, code: number): void {
+  #disconnect(ws: WebSocket, code: number, immediate = false): void {
     if (this.#ws !== ws) return;
     clearTimeout(this.#authTimer); this.#authTimer = undefined;
     clearInterval(this.#pingTimer); this.#pingTimer = undefined;
-    clearInterval(this.#watchdogTimer); this.#watchdogTimer = undefined;
     const wasReady = this.#ready;
     this.#ws = null; this.#ready = false;
     ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
     this.#releaseAll();
     try { ws.close(); } catch { /* Redial even when the old socket cannot close. */ }
-    this.#scheduleRetry(code, wasReady);
+    this.#scheduleRetry(code, wasReady, immediate);
   }
 
-  #scheduleRetry(code: number, wasReady: boolean): void {
+  #scheduleRetry(code: number, wasReady: boolean, immediate = false): void {
     if (this.#stopped || this.#reconnectTimer) return;
     if (wasReady && Date.now() - this.#readySince >= 30_000) this.#backoffMs = this.#minBackoffMs;
-    const delay = retryDelay(this.#backoffMs);
+    const delay = immediate ? 0 : retryDelay(this.#backoffMs);
     this.#log("relay.retry", { code, retryMs: delay, connected: wasReady });
     this.#reconnectTimer = setTimeout(() => this.#connect(), delay);
     this.#backoffMs = Math.min(this.#backoffMs * 2, this.#maxBackoffMs);
+  }
+
+  #checkConnection(): void {
+    if (this.#stopped) return;
+    const now = Date.now();
+    const gap = now - this.#lastTickAt;
+    this.#lastTickAt = now;
+    // Timers pause during sleep. Incoming buffered frames may run before this
+    // tick, so lastFrameAt alone cannot establish that the old route is alive.
+    // Keep this timer running during handshakes and retry waits as well.
+    if (gap > this.#resumeGapMs || gap < 0) {
+      this.#log("relay.resumed");
+      clearTimeout(this.#reconnectTimer); this.#reconnectTimer = undefined;
+      this.#backoffMs = this.#minBackoffMs;
+      if (this.#ws) this.#disconnect(this.#ws, 4000, true);
+      else this.#connect();
+      return;
+    }
+    const ws = this.#ws;
+    if (!ws || !this.#ready) return;
+    if (ws.readyState !== WebSocket.OPEN) { this.#disconnect(ws, 1006); return; }
+    for (const link of this.#links.values()) link.checkAlive(this.#phoneSilenceMs);
+    if (now - this.#lastFrameAt < this.#silenceMs) return;
+    this.#log("relay.silent");
+    this.#disconnect(ws, 4000);
   }
 
   #control(ws: WebSocket, text: string): void {
@@ -271,18 +302,6 @@ export class RelayClient {
           if (ws.readyState !== WebSocket.OPEN) { this.#disconnect(ws, 1006); return; }
           try { ws.send("ping"); } catch { this.#disconnect(ws, 1006); }
         }, this.#pingMs);
-        clearInterval(this.#watchdogTimer);
-        this.#watchdogTimer = setInterval(() => {
-          if (this.#ws !== ws) return;
-          if (ws.readyState !== WebSocket.OPEN) { this.#disconnect(ws, 1006); return; }
-          for (const link of this.#links.values()) link.checkAlive(this.#phoneSilenceMs);
-          if (Date.now() - this.#lastFrameAt < this.#silenceMs) return;
-          // The relay accepted the socket but has stopped answering — not even
-          // a pong. Detach it and redial on the usual backoff. A box that
-          // sat on a dead socket was unreachable and silently stayed that way.
-          this.#log("relay.silent");
-          this.#disconnect(ws, 4000);
-        }, this.#watchdogMs);
         return;
       case "open":
         // A relay reusing a number still held here is a relay that lost track;

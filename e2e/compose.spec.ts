@@ -110,7 +110,7 @@ test.describe("attachments", () => {
 
     await tap(page, page.locator(".compose__attach"));
     await expect(page.locator(".sheet")).toBeVisible();
-    await page.getByRole("button", { name: /on the server/i }).click();
+    await page.getByRole("button", { name: /on your computer/i }).click();
 
     // Browse into whatever the first file in this directory is.
     const file = page.locator(".picker__row[data-kind='file'], .picker__row").last();
@@ -134,7 +134,7 @@ test.describe("attachments", () => {
     await openPane(page);
 
     await tap(page, page.locator(".compose__attach"));
-    await page.getByRole("button", { name: /on the server/i }).click();
+    await page.getByRole("button", { name: /on your computer/i }).click();
     await page.locator(".picker__row").last().click();
     await expect(page.locator(".attached__chip")).toHaveCount(1);
 

@@ -24,11 +24,36 @@ describe("readFile", () => {
       status: 200,
       headers: new Headers({ "content-type": contentType }),
       text: async () => body,
+      arrayBuffer: async () => new TextEncoder().encode(body).buffer,
     });
 
   test("text comes back as text", async () => {
     reply("text/plain; charset=utf-8", "const x = 1;");
     await expect(api.readFile("/home/y/x.ts")).resolves.toEqual({ text: "const x = 1;" });
+  });
+
+  test("unsupported file previews explain what to do instead of rendering binary bytes", async () => {
+    reply("application/zip", "binary");
+    await expect(api.readFile("/home/y/report.zip")).rejects.toThrow("Preview unavailable for this file type. Open it on your computer.");
+  });
+
+  test("PDF bytes are authenticated and returned for the native viewer", async () => {
+    reply("application/pdf", "%PDF-1.7");
+    const result = await api.readFile("/home/y/report.pdf");
+    expect(result).toEqual({ pdfBase64: "JVBERi0xLjc" });
+    expect(fetchMock.mock.calls[0][1].headers.cookie).toBe("shahi_session=x");
+  });
+
+  test("downloads use authenticated bytes rather than opening a server URL", async () => {
+    reply("application/octet-stream", "sample");
+    await expect(api.downloadFile("/home/y/report.pdf")).resolves.toBe("c2FtcGxl");
+    expect(fetchMock.mock.calls[0][0]).toContain("download=1");
+    expect(fetchMock.mock.calls[0][1].headers.cookie).toBe("shahi_session=x");
+  });
+
+  test("oversized previews explain the connection limit", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 413, headers: new Headers() });
+    await expect(api.readFile("/home/y/report.pdf")).rejects.toThrow("Preview unavailable: this file is too large to open over this connection.");
   });
 
   // The URL is handed back rather than the bytes: `Image` fetches it itself,

@@ -137,16 +137,42 @@ export async function startAgentInTab(
   const paneId = created.root_pane?.pane_id;
   if (!paneId) throw new Error("herdr created the tab without telling us the pane");
 
+  // Display names are human text; herdr's control name is a lowercase identifier.
+  // Keep the tab label intact, including spaces and non-Latin characters.
+  const cleaned = options.name.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  const candidate = cleaned || options.kind;
+  const baseName = (/^[a-z]/.test(candidate) ? candidate : `agent-${candidate}`).slice(0, 32);
+  let name = baseName;
+  const readyDeadline = Date.now() + 300_000;
   for (let attempt = 0; ; attempt++) {
     try {
       const args = argsForMode(options.kind, options.mode ?? null);
-      await rpc(
+      const started = await rpc<{ agent?: { interactive_ready?: boolean; launch_pending?: boolean; agent_status?: string } }>(
         "agent.start",
-        { pane_id: paneId, kind: options.kind, name: options.name, ...(args.length ? { args } : {}) },
+        { pane_id: paneId, kind: options.kind, name, ...(args.length ? { args } : {}) },
         { timeoutMs: 310_000 },
       );
+      // herdr 0.9.1 can acknowledge the launch before the composer is ready.
+      // Keep this same pane while it starts, so the first message is not refused
+      // with agent_not_ready and retrying never creates a duplicate session.
+      // A permission/setup question must open immediately for the user to answer.
+      let agent = started.agent;
+      for (let checks = 0; agent?.agent_status !== "blocked" && (agent?.interactive_ready === false || agent?.launch_pending === true); checks++) {
+        if (checks >= 600 || Date.now() >= readyDeadline) throw new Error("The agent is still starting. Open its conversation again in a moment.");
+        await wait(500);
+        agent = (await rpc<{ agent?: { interactive_ready?: boolean; launch_pending?: boolean; agent_status?: string } }>("agent.get", { target: paneId })).agent;
+      }
       return { paneId, tabId: created.tab?.tab_id ?? null };
     } catch (err) {
+      // Both clients default to the kind ("claude"). herdr names are global
+      // across workspaces, so a second agent needs its own control identifier.
+      // Retry in this same fresh pane: checking names before starting races
+      // another phone, and creating another tab would leave an empty shell.
+      if (err instanceof Error && err.message.includes("agent_name_taken") && attempt < START_ATTEMPTS - 1) {
+        name = `${baseName.slice(0, 23)}-${crypto.randomUUID().slice(0, 8)}`;
+        continue;
+      }
       const busy = err instanceof Error && err.message.includes("agent_pane_busy");
       if (!busy || attempt >= START_ATTEMPTS - 1) throw err;
       await wait(START_RETRY_MS);

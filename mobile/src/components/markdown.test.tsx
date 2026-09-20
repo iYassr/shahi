@@ -104,3 +104,24 @@ describe("inline spans", () => {
     expect(view.getByText("the pane_id field")).toBeTruthy();
   });
 });
+
+test("computer file links use the authenticated viewer action, not a phone URL", () => {
+  const open = jest.fn();
+  const external = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+  const view = render(<Markdown text="[Report](</home/user/My Report.pdf>) and [Notes](~/notes.md#L12)" onOpenFile={open} />);
+  fireEvent.press(view.getByText("Report"));
+  expect(open).toHaveBeenLastCalledWith({ path: "/home/user/My Report.pdf", name: "Report" });
+  fireEvent.press(view.getByText("Notes"));
+  expect(open).toHaveBeenLastCalledWith({ path: "~/notes.md", name: "Notes" });
+  expect(external).not.toHaveBeenCalled();
+  expect(view.queryByText(/\[Report\]/)).toBeNull();
+  external.mockRestore();
+});
+
+test("unsupported link schemes cannot launch phone applications", () => {
+  const open = jest.fn();
+  const view = render(<Markdown text="[Unsafe](javascript:alert) [Phone file](file:///etc/passwd)" onOpenFile={open} />);
+  expect(view.getByText("Unsafe (link unavailable)")).toBeTruthy();
+  expect(view.getByText("Phone file (link unavailable)")).toBeTruthy();
+  expect(open).not.toHaveBeenCalled();
+});

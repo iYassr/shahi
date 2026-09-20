@@ -1,6 +1,11 @@
 {
-  "platforms": ["apple"],
+  "platforms": [
+    "apple"
+  ],
   "apple": {
-    "modules": ["SshTunnelModule"]
+    "modules": [
+      "SshTunnelModule",
+      "ShahiDocumentsModule"
+    ]
   }
 }

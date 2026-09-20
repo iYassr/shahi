@@ -12,7 +12,8 @@
  * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState, useEffect } from "react";
-import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import type { PairingPayload } from "@shahi/shared";
@@ -21,6 +22,7 @@ import { closeRelay, pairingTarget, type RelayIdentity } from "@/lib/relay";
 import { Wordmark } from "@/components/icons";
 import { GreetingLogo } from "@/components/greeting-logo";
 import { Scanner } from "@/components/scanner";
+import { PrivacyLinks } from "@/components/privacy-links";
 import { parsePairingUrl } from "@/lib/pairing";
 import { useURL } from "expo-linking";
 import { openTunnel, closeTunnel, sshTunnelAvailable } from "@/lib/tunnel";
@@ -259,6 +261,7 @@ export function Connect({
         <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
           <Text style={styles.link}>Haven't set up your server yet?</Text>
         </Pressable>
+        <PrivacyLinks />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -322,6 +325,7 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
       <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
         <Text style={styles.link}>Want to use SSH?</Text>
       </Pressable>
+      <PrivacyLinks />
     </ScrollView>
   );
 }

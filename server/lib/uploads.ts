@@ -45,8 +45,9 @@ export class UploadTooLarge extends Error {
  * outside a conservative set is replaced rather than stripped, so two different
  * names cannot collapse into one.
  */
-export function safeName(raw: string): string {
-  const base = raw.split(/[/\\]/).pop() ?? "";
+export function safeName(raw: string | undefined): string {
+  // Bun 1.3 may omit the name on a zero-byte multipart File.
+  const base = (raw ?? "").split(/[/\\]/).pop() ?? "";
   const cleaned = base
     .replace(/[^A-Za-z0-9._-]/g, "_")
     .replace(/^\.+/, "")
@@ -97,7 +98,7 @@ export async function storeUpload(
 }
 
 /** Deletes uploads past their keep window, so the directory does not grow forever. */
-async function sweepOldUploads(now = Date.now, dir = UPLOAD_DIR): Promise<number> {
+export async function sweepOldUploads(now = Date.now, dir = UPLOAD_DIR): Promise<number> {
   let removed = 0;
   let entries: string[];
   try {

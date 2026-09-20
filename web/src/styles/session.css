@@ -214,7 +214,8 @@
 
 .keys button {
   flex: none;
-  min-height: 40px;
+  min-height: 44px;
+  min-width: 44px;
   padding: 0 12px;
   border: 1px solid var(--line-bright);
   border-radius: 7px;

@@ -10,9 +10,9 @@
  * answer available and it outlives the process. Where it is not, the pane's
  * foreground process is asked what file it has open: herdr's
  * `pane.process_info` gives the codex pid, and `/proc/<pid>/fd` holds a symlink
- * to the rollout it is writing. Matching on working directory is the last
- * fallback, because two codex sessions in one directory are indistinguishable
- * there and the newer one would win whichever pane asked.
+ * to the rollout it is writing (macOS uses lsof for the same exact lookup).
+ * Working directory is never evidence of ownership: two Codex sessions
+ * in one folder must not display each other’s conversation.
  *
  * **The transcript has two views of the same conversation, and one is mostly a
  * trap.** `response_item` records are the raw API turns. Their `message` and
@@ -33,8 +33,8 @@
  * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
 import { Database } from "bun:sqlite";
-import { open, readdir, readlink } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdtemp, readFile, rm, open, readdir, readlink } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
@@ -94,21 +94,20 @@ export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR)
 /**
  * Finds the rollout file a pane's codex process is writing.
  *
- * Three routes, best first. The session id is exact and survives the process
- * exiting; `/proc` is exact while it is alive; the working directory is a guess
- * and only ever a fallback.
+ * Only exact ownership: the session id survives the process exiting;
+ * `/proc` identifies the open file while it is alive.
  */
 export async function findCodexRollout(
   client: HerdrClient,
   paneId: string,
-  cwd: string | null,
+  _cwd: string | null,
   sessionId?: string | null,
 ): Promise<string | null> {
   const viaSession = sessionId ? rolloutFromSessionId(sessionId) : null;
   if (viaSession) return viaSession;
   const viaProcess = await rolloutFromProcess(client, paneId);
   if (viaProcess) return viaProcess;
-  return cwd ? rolloutFromIndex(cwd) : null;
+  return null;
 }
 
 /**
@@ -165,6 +164,12 @@ async function rolloutFromProcess(client: HerdrClient, paneId: string): Promise<
   }
 
   for (const pid of pids) {
+    if (!Number.isSafeInteger(pid) || pid <= 0) continue;
+    if (process.platform === "darwin") {
+      const target = await rolloutFromMacProcess(pid);
+      if (target) return target;
+      continue;
+    }
     let fds: string[];
     try {
       fds = await readdir(`/proc/${pid}/fd`);
@@ -183,25 +188,32 @@ async function rolloutFromProcess(client: HerdrClient, paneId: string): Promise<
   return null;
 }
 
-/**
- * Falls back to the thread index.
- *
- * Deliberately last: two codex sessions in the same directory are
- * indistinguishable here, and the newer one would win regardless of which pane
- * asked.
- */
-function rolloutFromIndex(cwd: string): string | null {
+/** lsof is macOS's equivalent of /proc: inspect only the pane's exact Codex PID. */
+export async function rolloutFromMacProcess(pid: number, sessionsDir = SESSIONS_DIR): Promise<string | null> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  let scratch: string | undefined;
   try {
-    const db = new Database(STATE_DB, { readonly: true });
-    const row = db
-      .query<{ rollout_path: string }, [string]>(
-        "SELECT rollout_path FROM threads WHERE cwd = ? ORDER BY updated_at DESC LIMIT 1",
-      )
-      .get(cwd);
-    db.close();
-    return rolloutWithinSessions(row?.rollout_path);
+    scratch = await mkdtemp(join(tmpdir(), "shahi-rollout-"));
+    const output = join(scratch, "files");
+    // Detached Bun services can inherit invalid pipe descriptors on macOS.
+    // A private file also keeps open-file paths out of service logs.
+    const child = Bun.spawn(["/bin/sh", "-c", 'exec /usr/sbin/lsof -a -p "$1" -Fn > "$2"', "shahi-lsof", String(pid), output], {
+      stdin: "ignore", stdout: "ignore", stderr: "ignore",
+    });
+    const timer = setTimeout(() => child.kill(), 2_000);
+    try { if (await child.exited !== 0) return null; }
+    finally { clearTimeout(timer); }
+    const stdout = await readFile(output, "utf8");
+    const candidates = [...new Set(stdout.split("\n")
+      .filter((line) => line.startsWith("n"))
+      .map((line) => rolloutWithinSessions(line.slice(1), sessionsDir))
+      .filter((path): path is string => path !== null))];
+    // More than one open rollout is ambiguous; wait for a reported session ID.
+    return candidates.length === 1 ? candidates[0]! : null;
   } catch {
     return null;
+  } finally {
+    if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => {});
   }
 }
 

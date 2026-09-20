@@ -1,4 +1,4 @@
-import { brandColors } from "@shahi/shared/brand";
+import { agentColors, brandColors } from "@shahi/shared/brand";
 
 /** Shahi: warm neutrals with amber reserved for actions and attention. See docs/brand/README.md. */
 export const theme = {
@@ -23,13 +23,7 @@ export const theme = {
   mono: "Menlo",
 } as const;
 
-export const AGENT_COLORS: Record<string, string> = {
-  claude: "#d97757",
-  codex: "#10a37f",
-  gemini: "#8bb8e8",
-  pi: "#c4a7ff",
-  opencode: "#5FB88A",
-};
+export const AGENT_COLORS = agentColors;
 
 /** Status meaning is shared by every native agent and space surface. */
 export const statusColor = (status: string) =>

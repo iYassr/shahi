@@ -27,7 +27,7 @@ test("new agent can be started from Agents using the shared contract", async ({ 
   await page.getByRole("button", { name: "+ New agent" }).click();
   await page.locator(".sheet .row").first().click();
   await expect(page.locator(".sheet__title")).toContainText("New agent in");
-  await page.getByRole("button", { name: "Start claude", exact: true }).click();
+  await page.getByRole("button", { name: "Start Claude", exact: true }).click();
   await expect.poll(async () => (await writes(page)).filter((w) => w.path === "/api/agents/start").length).toBe(1);
   const request = (await writes(page)).find((w) => w.path === "/api/agents/start");
   expect(request?.body).toMatchObject({ clientRequestId: expect.any(String), kind: "claude" });
@@ -86,4 +86,17 @@ test("Settings revokes the chosen paired device and signs out on the server", as
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await logout;
   await expect(page.locator(".login")).toBeVisible();
+});
+
+test("a new agent can open Read after its transcript becomes available", async ({ page }) => {
+  await scenario(page, "busy");
+  let available = false;
+  await page.route("**/api/panes/*/session?*", route => available ? route.continue() : route.fulfill({ status: 404, json: { error: "no transcript for this pane", messages: [] } }));
+  await page.goto("/pane/w1%3Ap1");
+  await expect(page.getByRole("tab", { name: "Screen", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Read", exact: true })).toBeVisible();
+  available = true;
+  await page.getByRole("tab", { name: "Read", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".reader")).toBeVisible();
 });

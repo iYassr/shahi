@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/text";
 import { controlMessage, updateInProgress } from "@shahi/shared";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";

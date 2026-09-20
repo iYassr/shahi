@@ -253,10 +253,10 @@ This is a local capacity/regression check, not a production SLA. Cloudflare
 WAF/per-IP connection limits, shared office/VPN addresses, global latency,
 long-lived workloads and regional failures require separate production-like
 capacity tests. There are still eight phone links maximum per box. The paid
-Workers plan does not raise application quotas. Attachments remain limited to
-roughly 761 KiB per relay file (765 KiB including its multipart body) or 32 MiB
-through SSH/direct HTTP. A 100 MB relay attachment is rejected before reading
-its bytes; supporting it requires a separate chunked-transfer feature.
+Workers plan does not raise application quotas. Updated clients/computers support 32 MiB relay uploads in bounded chunks; older
+computers retain the 761 KiB file limit. SSH remains 32 MiB. The higher file cap
+does not increase per-phone bandwidth. See the dated
+[large-transfer review](large-relay-transfers-2026-09-20.md) for measured coverage.
 
 The reliability transport is protocol 2. Refresh the hosted app and rebuild or
 update native clients together with their sidecars; old clients are rejected

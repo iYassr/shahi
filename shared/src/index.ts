@@ -1,3 +1,4 @@
+export { latestConversations } from "./conversation-order";
 export { connectionHealth } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
 /**
@@ -232,6 +233,8 @@ export interface DashboardPane {
    * rows. Null for shells and agents that have not written a transcript.
    */
   preview: string | null;
+  /** Latest transcript message time in milliseconds; absent on older servers. */
+  lastMessageAt?: number | null;
   /** What the agent is doing right now, when its status line says. */
   activity: Activity | null;
 }
@@ -291,6 +294,8 @@ export type LogBlock =
     }
   | {
       kind: "tool";
+      /** The source records the call but does not retain its output. */
+      outputUnavailable?: boolean;
       name: string;
       summary: string;
       /**
@@ -406,3 +411,5 @@ export type SocketMessage =
 
 /** What a client sends back. */
 export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch" };
+
+export { agentLabel } from "./agent-label";

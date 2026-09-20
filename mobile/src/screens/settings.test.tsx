@@ -47,3 +47,15 @@ test("keeps the last row above the floating tab bar", () => {
   const scroll = UNSAFE_getByType(require("react-native").ScrollView);
   expect(scroll.props.contentContainerStyle.paddingBottom).toBeGreaterThanOrEqual(96);
 });
+
+test("connection details stay hidden until requested without hiding device management", () => {
+  const view = render(<Settings />);
+  expect(view.getByText("test-box")).toBeTruthy();
+  expect(view.getByText("Devices with access")).toBeTruthy();
+  expect(view.queryByText(/relay:\/\//)).toBeNull();
+  fireEvent.press(view.getByTestId("server-identity"));
+  expect(view.getByText(/Encrypted relay connection/)).toBeTruthy();
+  expect(view.getByText(/relay:\/\/relay.getshahi.dev/)).toBeTruthy();
+  fireEvent.press(view.getByTestId("server-identity"));
+  expect(view.queryByText(/relay:\/\//)).toBeNull();
+});

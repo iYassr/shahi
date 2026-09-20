@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Alert, View, Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Alert, View, Pressable, ScrollView, StyleSheet} from "react-native";
+import { Text } from "@/components/text";
 import { router } from "expo-router";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";

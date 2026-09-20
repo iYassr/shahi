@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { NewAgent, PickSpace } from "@/screens/spaces";
-import { openPane } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 
 /**
@@ -20,9 +19,8 @@ export default function NewAgentRoute() {
       space={space}
       onStarted={(paneId) => {
         refresh();
-        // Dismiss the sheet, then land on the agent it started.
-        router.back();
-        openPane(paneId);
+        // Replace the creation sheet in one transition; Back returns to the list.
+        router.replace({ pathname: "/pane/[paneId]", params: { paneId } });
       }}
     />
   );
