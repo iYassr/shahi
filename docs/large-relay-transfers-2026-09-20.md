@@ -2,10 +2,12 @@
 
 ## Implementation update
 
-The working tree now implements a 32 MiB upload capability, 64 KiB chunks,
+Release 0.3.6 implements a 32 MiB upload capability, 64 KiB chunks,
 durable offset receipts, SHA-256 finalization, bounded retry, progress and
 cancellation. The rate remains unchanged. The design below records the original
-review; its proposed faster rates are not enabled. Release preparation is in progress; production rollout is not yet confirmed.
+review; its proposed faster rates are not enabled. The hosted browser app and internal TestFlight build 13 are deployed. The signed
+computer release passed its Beta checks and was promoted to Stable after
+workflow `35486991678` passed. It runs on the verified Ubuntu computer.
 
 ## Original recommendation
 
@@ -170,3 +172,24 @@ the existing in-memory assembly limit.
 The original proposed multi-region and long-duration load gates remain future
 capacity work. The current release keeps existing throughput/admission bounds
 rather than claiming a validated faster global bandwidth allowance.
+
+## Signed release verification
+
+Beta release workflow `35486202973` passed for commit `fa24618fde1f`:
+712 source checks, 328 mobile checks, 68 relay checks, 316 browser cases
+(four skipped), 50 hosted-browser cases and 11 PWA cases (one skipped).
+Real-herdr checks passed against 0.9.0, 0.9.1 and stable. Upgrade/recovery
+checks passed on Linux and macOS, on Intel and ARM.
+
+The signed `0.3.6-fa24618fde1f` package was installed through the managed
+updater on Ubuntu. Authenticated capability discovery returned 33,554,432 bytes
+and 65,536-byte chunks; recovery handshake reported the same build, herdr was
+connected, and relay diagnostics reported connected. A two-chunk synthetic
+upload finalized with the correct stored-file digest and was then removed.
+The existing computer service was not redirected to a development checkout.
+
+Stable promotion initially stopped when local Wrangler returned a 500 for one
+JavaScript asset during the WebKit PWA check. The full PWA suite and ten repeated
+WebKit startup checks passed locally. Rerunning the failed CI job passed all
+browser, hosted and PWA checks, and the same immutable package was promoted.
+No test was skipped or assertion weakened to publish the release.

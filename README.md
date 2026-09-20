@@ -65,12 +65,15 @@ view rather than a formatted conversation.
   follow-up, attach a file, or use terminal keys your phone keyboard lacks.
 - **Find what needs you.** The Inbox in Agents gathers unanswered requests,
   completed work, and agents whose status needs checking. Mark completed items
-  Reviewed for the current app session.
+  Reviewed for the current app session. Search by conversation name, space or
+  folder to find earlier work quickly.
 - **Know when the connection is interrupted.** Connection guidance distinguishes
   reported network, relay, and computer-disconnection problems and offers a
   retry while preserving the last loaded view.
 - **Manage your workspaces.** Browse spaces, open existing agents, and start new
-  ones on the same machine.
+  ones on the same machine. A new agent opens directly into its conversation.
+- **Switch without losing your place.** Move between conversations or computers
+  and return to your unfinished message while Shahi stays open.
 
 <p align="center">
   <img src="docs/screenshots/02-agents.png" width="230" alt="Agent list with a question and answer choices" />
@@ -116,7 +119,7 @@ credentials: anyone who claims a valid code can gain access to your session.
   beta availability; the signup form does not immediately grant access.
 
 Pair several computers from **Settings → Computers → Add a computer**. Tap the computer
-name on the main screen or in Settings to switch instantly. Every saved computer
+name on the main screen, or open Computers in Settings, to switch. Every saved computer
 keeps its own live connection while Shahi is open; switching only changes the view.
 The computer list shows which machines are connected and lets you revoke this
 phone or browser’s access to one without disconnecting the others. Mobile operating
@@ -129,6 +132,33 @@ for the default relay connection; you do not need to expose Shahi’s local port
 The browser app is available on phones and computers. The native iOS app is in
 beta; a native Android release is not currently available. SSH tunnelling is
 built into the native app, not the hosted browser app.
+
+## Messages and files
+
+In the iPhone app, links to files on your computer open a labeled preview through
+your existing connection. Text, images and PDFs can be viewed in Shahi. Use
+Save / Share on iPhone to keep a copy in Files or open it in another app; the web
+viewer has a Download button. PDFs have native scrolling and zoom on iPhone, and
+page and zoom controls on the web. Downloads are limited to 25 MiB; larger files
+travel through the encrypted relay in smaller parts with an updated computer
+plugin. Older plugins may require an update for files beyond one relay message.
+
+Read mode supports Claude Code, Codex and Cursor CLI transcripts. Cursor tool
+calls appear when present in its transcript; outputs that Cursor does not store
+are labeled unavailable. Screen remains available for other agents.
+
+Unsent messages are kept separately for each conversation and computer while
+Shahi remains open. They are not saved permanently: reloading the browser or
+closing the app process clears them. Signing out or revoking access also clears
+that connection’s drafts.
+
+Files can be up to **32 MiB each** through the relay or SSH. Update both Shahi
+and the computer service to use the larger relay limit. Relay uploads show
+progress, travel in small encrypted pieces, and recover from brief connection
+losses while the upload remains open. Larger files take several minutes;
+closing the app may require selecting the file again. Older computer services
+keep the previous 761 KiB relay limit. Browser batches can retry remaining files
+without adding completed attachments again.
 
 ## How it connects
 
@@ -225,11 +255,13 @@ bun run build:web
 bun run test:e2e --project=phone --project=ios
 bun run build:site
 bun run test:hosted
+bun run test:pwa
 ```
 
 Browser tests use fixtures that record actions without sending them to your
-agents. Real-herdr checks require an explicitly isolated test session; never
-point write tests at your working session. See [CONTRIBUTING.md](CONTRIBUTING.md)
+agents. Real-herdr checks require a named test session and a fresh configuration
+directory without installed startup hooks; never point write tests at your
+working session. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CLAUDE.md](CLAUDE.md) for development and service restart instructions.
 
 ## Further reading
@@ -240,6 +272,7 @@ and [CLAUDE.md](CLAUDE.md) for development and service restart instructions.
 - [Connection security, explained](docs/connection-security.md)
 - [Relay protocol and self-hosting](docs/relay.md)
 - [Build and test the iOS app](docs/on-a-mac.md)
+- [Customer journey verification and known limits](docs/customer-journeys-2026-09-18.md)
 - [All documentation](docs/README.md)
 
 ## Support and license
