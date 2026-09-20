@@ -38,7 +38,7 @@ test("resizing keeps the conversation and draft while mobile shows one screen", 
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator(".agent-sidebar")).toBeVisible();
   await expect(page.locator("textarea")).toHaveValue("Keep this while resizing");
-  await page.locator(".agent-sidebar__request").first().click();
+  await page.locator(".agent-sidebar .row").filter({ hasText: "Refactor the parser" }).click();
   await expect(page).toHaveURL(/w1%3Ap1/);
   await expect(page.locator("textarea")).toHaveValue("");
   await page.setViewportSize({ width: 390, height: 844 });
