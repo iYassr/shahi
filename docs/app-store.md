@@ -51,3 +51,20 @@ screenshots; never publish pairing codes or real private conversations.
 Build with the production profile and submit through the documented EAS or
 Xcode workflow. Complete TestFlight review requirements before inviting external
 testers. The website signup form records requests; it does not issue invitations.
+
+### Resumable uploads — build 13, 20 September 2026
+
+Version `1.0.0 (13)` was built locally with the iOS 27 SDK. It adds progress,
+cancellation and bounded, resumable 32 MiB relay uploads with an updated computer
+service, plus the numbered Spaces folder badge. The signed IPA includes the
+privacy manifest and omits both encryption declaration keys, as build 12 did.
+
+EAS submission `dd505443-0afe-4838-977a-392062c702ba` delivered the binary.
+Apple reports `VALID` and `IN_BETA_TESTING`; Chrome confirms access through
+Team (Expo). External status remains `READY_FOR_BETA_SUBMISSION`, so this is
+an internal TestFlight release. France remains excluded.
+
+The Apple upload API key was rotated and the replacement assigned to EAS.
+TestFlight access was verified after revoking the previous key. Private keys
+remain outside the repository; never serialize Apple SDK models or credential
+contexts in diagnostic output.

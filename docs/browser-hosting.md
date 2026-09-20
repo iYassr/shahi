@@ -64,6 +64,26 @@ notifications against an isolated test sidecar before announcing it.
 
 Hosting configuration follows Cloudflare’s [static asset redirects](https://developers.cloudflare.com/workers/static-assets/redirects/) and [response header rules](https://developers.cloudflare.com/workers/static-assets/headers/).
 
+## Drafts, uploads and recovery
+
+Drafts and pending-send identifiers remain in page memory, scoped to the
+computer and pairing grant. Switching conversations or computers preserves
+them within the bounded draft cache; reloading the page clears them. Logout and
+revocation clear that connection’s drafts. The service worker does not persist
+conversation data or drafts.
+
+Updated clients and computers support 32 MiB relay uploads, split into bounded
+64 KiB chunks with progress, cancellation and recovery from transient disconnects.
+Per-chunk requests have a 60-second deadline; bandwidth limits stay unchanged,
+so larger uploads can take several minutes. Older computers keep the 761 KiB
+limit. A partially completed browser batch keeps completed attachments and offers
+to retry remaining files. The hosted app has no built-in SSH tunnel.
+
+Run `bun run test:pwa` after `bun run build:site` to check shell caching, offline
+launch and interrupted updates. The [September customer-journey report](customer-journeys-2026-09-18.md)
+separates real-server checks from fixture coverage and physical-device gaps.
+Its local verification does not establish a production deployment.
+
 ## Security verification
 
 `bun run build:site && bun run test:hosted` exercises the actual hosted bundle
