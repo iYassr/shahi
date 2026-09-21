@@ -37,7 +37,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release=$(gh api --paginate --slurp "repos/herdrdev/herdr/releases?per_page=100" --jq 'add | map(select(.prerelease and (.draft | not))) | sort_by(.published_at) | last')
+          set -euo pipefail
+          release=$(gh api --paginate --slurp "repos/herdrdev/herdr/releases?per_page=100" | jq -e 'add | map(select(.prerelease and (.draft | not))) | sort_by(.published_at) | last')
           tag=$(jq -er '.tag_name' <<< "$release")
           url=$(jq -er '.assets[] | select(.name == "herdr-linux-x86_64") | .browser_download_url' <<< "$release")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
