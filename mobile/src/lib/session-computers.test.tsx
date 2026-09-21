@@ -5,7 +5,7 @@ import { api, connection, UnauthorizedError } from "./api";
 import { COMPUTERS_KEY, computerId, type ComputerConnection } from "./computers";
 import { openTunnel } from "./tunnel";
 import { AppState } from "react-native";
-import { addNetworkStateListener } from "expo-network";
+import { addNetworkStateListener, getNetworkStateAsync } from "expo-network";
 import { RelayLink } from "./relay";
 
 const mockSockets: any[] = [];
@@ -165,5 +165,26 @@ test("a delayed failure cannot turn a freshly restored dashboard offline", async
     reject(new Error("old connection dropped")); await pending;
   });
   expect(value.link).toBe("live"); expect(value.error).toBeNull();
+  ui.unmount();
+});
+
+test("an offline notification wins over a late initial network snapshot and preserves drafts", async () => {
+  const { nativeDraft } = require("./drafts");
+  let finish!: (value: unknown) => void;
+  (getNetworkStateAsync as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const ui = await mount(); await pairBoth();
+  const owner = value.api;
+  const draft = nativeDraft(owner, "p1"); draft.text = "Continue this later";
+  const listener = (addNetworkStateListener as jest.Mock).mock.calls.at(-1)![0];
+  act(() => listener({ type: "NONE", isConnected: false, isInternetReachable: false }));
+  expect(value.online).toBe(false);
+  await act(async () => finish({ type: "WIFI", isConnected: true, isInternetReachable: true }));
+  expect(value.online).toBe(false);
+  expect(nativeDraft(value.api, "p1").text).toBe("Continue this later");
+  await act(async () => listener({ type: "WIFI", isConnected: true, isInternetReachable: true }));
+  expect(value.online).toBe(true);
+  expect(value.api).toBe(owner);
+  expect(nativeDraft(value.api, "p1").text).toBe("Continue this later");
+  expect(value.computers).toHaveLength(2);
   ui.unmount();
 });

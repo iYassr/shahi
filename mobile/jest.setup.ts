@@ -12,7 +12,7 @@ jest.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: "success", Error: "error" },
 }));
 
-jest.mock("expo-network", () => ({ addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })) }));
+jest.mock("expo-network", () => ({ addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })), getNetworkStateAsync: jest.fn(async () => ({})) }));
 
 // The relay's ephemeral keys want the platform's CSPRNG; here that is Node's.
 jest.mock("expo-crypto", () => ({

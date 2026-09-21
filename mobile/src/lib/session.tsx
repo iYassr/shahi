@@ -16,7 +16,7 @@ import { type Reviewed, type DashboardPane } from "@shahi/shared";
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
-import { addNetworkStateListener } from "expo-network";
+import { addNetworkStateListener, getNetworkStateAsync, type NetworkState } from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import type { ParsedPrompt, Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
@@ -55,6 +55,7 @@ interface SessionValue {
   markReviewed: (pane: DashboardPane) => void;
   /** Null until the keychain has been read, so nothing flashes the wrong screen. */
   ready: boolean;
+  online: boolean;
   connected: boolean;
   session: Session | null;
   prompts: Record<string, ParsedPrompt>;
@@ -163,6 +164,7 @@ export function useLastUpdate(): number | null {
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [online, setOnline] = useState(true);
   const [addingComputer, setAddingComputer] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const selected = useRef<string | null>(null);
@@ -254,12 +256,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       appState = state;
     });
     let network: string | undefined;
-    const reachability = addNetworkStateListener(state => {
+    let observedNetwork = false;
+    const networkChanged = (state: NetworkState) => {
+      if (cancelled) return;
+      setOnline(state.isConnected !== false && state.isInternetReachable !== false);
       const next = `${state.type}:${state.isConnected}:${state.isInternetReachable}`;
       if (next === network) return;
       network = next;
       if (state.isConnected === true && state.isInternetReachable !== false && AppState.currentState === "active") reconnectAll();
-    });
+    };
+    const reachability = addNetworkStateListener(state => { observedNetwork = true; networkChanged(state); });
+    void getNetworkStateAsync().then(state => { if (!observedNetwork) networkChanged(state); }).catch(() => {});
     return () => {
       cancelled = true; mounted.current = false; sub.remove(); reachability.remove();
       for (const entry of live.current.values()) entry.dispose();
@@ -301,7 +308,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const value: SessionValue = {
     control: entry?.control,
     api: entry?.api ?? api, transport: entry?.connection ?? connection,
-    ready, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
+    ready, online, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
     computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),
     switchComputer, addComputer,
     revokeComputer: async id => {

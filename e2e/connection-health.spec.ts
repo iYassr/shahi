@@ -23,7 +23,7 @@ test("a failed wake-up auth check preserves the open conversation and draft", as
   await page.route("**/api/auth/status", async (route) => { checked = true; await route.abort(); });
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect.poll(() => checked).toBe(true);
-  await expect(page.locator(".connection-health")).toContainText("Connection interrupted");
+  await expect(page.locator(".connection-health")).toContainText("Reconnecting to your computer…");
   await expect(page.locator("textarea")).toHaveValue("Keep this draft");
   await expect(page.locator(".reader .msg").first()).toBeVisible();
 });

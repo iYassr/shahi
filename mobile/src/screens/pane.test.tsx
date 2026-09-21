@@ -871,3 +871,24 @@ test("an early missing-pane response recovers when the new agent’s next frame 
   expect(mocked.pane).toHaveBeenCalledTimes(2);
   expect(view.getByText("New agent is ready")).toBeTruthy();
 });
+
+test("a dropped connection preserves the loaded conversation and unsent draft without replaying it", async () => {
+  const id = "offline-draft";
+  mocked.sessionLog.mockResolvedValue(log([said("offline-message", "agent", "Keep reading this reply.")]));
+  let view = render(<Pane paneId={id} />);
+  await settle();
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "Keep this unsent");
+  mocked.sessionLog.mockRejectedValue(new Error("connection interrupted"));
+  mocked.pane.mockRejectedValue(new Error("connection interrupted"));
+  logChanged(id); await settle();
+  expect(view.getByText("Keep reading this reply.")).toBeTruthy();
+  expect(view.queryByText("Nothing to read yet.")).toBeNull();
+  view.unmount();
+  view = render(<Pane paneId={id} />); await settle();
+  expect(view.getByText("Keep reading this reply.")).toBeTruthy();
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("Keep this unsent");
+  mocked.sessionLog.mockResolvedValue(log([said("offline-message", "agent", "Keep reading this reply.")]));
+  logChanged(id); await settle();
+  expect(mocked.send).not.toHaveBeenCalled();
+  view.unmount();
+});

@@ -539,7 +539,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         // No transcript *yet*. A just-started agent has not written one, so this
         // keeps polling rather than latching — the reader fills in by itself the
         // moment the agent says something.
-        setReadable(false);
+        // A failed refresh must not replace a known conversation with an empty
+        // state. Keep cached messages (and the mounted list's reading position).
+        setReadable(messagesRef.current.length > 0);
         setLoading(false);
       }
     };
