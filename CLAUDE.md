@@ -640,6 +640,12 @@ remains 32 MiB. Do not raise rates based on a small-message load test.
 previous computer must not repopulate cleared caches. Preserve the anchor,
 offset and loaded history window on return; Latest must reach the actual end.
 Restoration must yield to deliberate keyboard/focus scrolling as well as touch.
+Native Read/Screen controls stay in the content layout so long navigation titles
+cannot cover their touch targets. Apply terminal and transcript responses
+independently, and never gate Screen rendering on transcript loading.
+A failed refresh must keep cached conversation messages visible. Connectivity
+changes preserve the computer API identity and its drafts; recovery never sends
+a draft automatically. See `docs/mobile-recovery-2026-09-22.md`.
 
 For dated evidence and remaining physical-device gaps, see
 `docs/customer-journeys-2026-09-18.md` and the reports linked there. Keep test

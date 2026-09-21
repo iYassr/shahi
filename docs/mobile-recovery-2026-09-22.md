@@ -36,3 +36,21 @@ Native fixture tests require an installed Release simulator build and
 `HOSTED_PORT=7894 bun e2e/hosted/server.ts`, then `SIMULATOR_UDID=<test-device>
 HOSTED_PORT=7894 bun e2e/native/reconnect.ts`. They never disconnect or write into
 a customer's computer. These checks do not replace physical-device testing.
+
+## TestFlight delivery
+
+Build `1.0.0 (14)` contains the Screen/loading fixes from `f53ac38`.
+Build `1.0.0 (15)` adds the connection-recovery changes from `d739f3e` and is the
+build to install for both improvements. Both were built from clean checkouts
+with Xcode/iOS SDK 27; their embedded privacy manifests were checked.
+
+The queued EAS submission for build 14 was canceled before direct upload to
+avoid duplicate submissions. Apple's local uploader accepted both binaries.
+After applying the unchanged build-13 encryption classification and existing
+no-France scope, App Store Connect reported `VALID` and `IN_BETA_TESTING` for
+both builds on September 22. This is an internal TestFlight release; external
+beta review remains `READY_FOR_BETA_SUBMISSION`.
+
+The release source passed all 334 mobile tests, 85 shared tests, the native
+regressions above, both browser-engine recovery checks, and GitHub CI run
+`35657696906`. Signed archives and upload credentials remain outside the repo.
