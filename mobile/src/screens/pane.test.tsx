@@ -464,9 +464,7 @@ describe("keeping your place", () => {
     fireEvent(list, "scroll", position);
     fireEvent(list, "scrollEndDrag", position);
     for (const mode of ["screen", "read"]) {
-      const header = render(visit.UNSAFE_getByType(require("expo-router").Stack.Screen).props.options.headerRight());
-      fireEvent.press(header.getByTestId(`view-${mode}`));
-      header.unmount();
+      fireEvent.press(visit.getByTestId(`view-${mode}`));
       expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 0, animated: false, viewPosition: 0, viewOffset: -404 });
       fireEvent(list, "scroll", { nativeEvent: { ...position.nativeEvent, contentOffset: { y: 0 } } });
       expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: 404 });
@@ -713,6 +711,31 @@ describe("keeping your terminal place", () => {
     forgetPaneMemory(P);
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hi")]));
     mocked.pane.mockResolvedValue(withScreen("top\nmiddle\nbottom\n"));
+  });
+
+  test("Screen displays the terminal while its transcript request is still pending", async () => {
+    const transcript = deferred<SessionLog>();
+    mocked.sessionLog.mockReturnValue(transcript.promise);
+    const visit = render(<Pane paneId={P} initialView="screen" />);
+    await settle();
+    expect(visit.getByTestId("terminal-body").props.children).toBe("top\nmiddle\nbottom\n");
+    transcript.resolve(log([]));
+    await settle();
+  });
+
+  test("Read can switch to Screen before loading finishes and return without losing output", async () => {
+    const transcript = deferred<SessionLog>();
+    mocked.sessionLog.mockReturnValue(transcript.promise);
+    const visit = render(<Pane paneId={P} />);
+    await settle();
+    fireEvent.press(visit.getByRole("button", { name: "Screen" }));
+    expect(visit.getByTestId("terminal-body").props.children).toBe("top\nmiddle\nbottom\n");
+    fireEvent.press(visit.getByRole("button", { name: "Read" }));
+    expect(visit.getByText("Reading the conversation…")).toBeTruthy();
+    transcript.reject(new Error("no transcript"));
+    await settle();
+    fireEvent.press(visit.getByText("Show the screen instead"));
+    expect(visit.getByTestId("terminal-body").props.children).toBe("top\nmiddle\nbottom\n");
   });
 
   test("leaving the terminal scrolled down and coming back restores both axes", async () => {

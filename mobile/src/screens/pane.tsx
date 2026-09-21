@@ -1,7 +1,6 @@
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { plainHeaderRight } from "@/lib/header-controls";
 import { supports } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
@@ -485,89 +484,90 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
   const loadOnce = useCallback(async () => {
     if (!stillActive()) return;
-    // Both requests at once: neither depends on the other, and in sequence the
-    // pane detail waited a full transcript round trip for nothing. Each is
-    // awaited inside its own handler below so their failure modes stay
-    // separate — a missing transcript is "not yet", a 401 is a sign-out.
+    // Start and apply both responses independently: a slow transcript must
+    // never hold terminal output or permission prompts behind Read loading.
     const logRequest = api.sessionLog(paneId, 60);
     const detailRequest = api.pane(paneId);
-    logRequest.catch(() => undefined);
-    detailRequest.catch(() => undefined);
-    try {
-      const log = await logRequest;
-      if (!stillActive()) return;
-      const folded = merge(messagesRef.current, log.messages);
-      const tailStart = log.messages.length ? folded.findIndex((m) => m.id === log.messages[0]!.id) : 0;
-      olderCursor.current = Math.max(0, log.total - log.messages.length - Math.max(0, tailStart));
-      setHasOlder(olderCursor.current > 0);
-      if (folded !== messagesRef.current) {
-        const prevLen = messagesRef.current.length;
-        // Not on the first fill: a remount fetching the same conversation is
-        // not "60 new" — unseen counts only what arrived while looking away.
-        if (!following.current && prevLen > 0)
-          setUnseen((u) => u + Math.max(0, folded.length - prevLen));
-        messagesRef.current = folded;
-        messageMemory.set(paneId, { owner, messages: folded });
-        setMessages(folded);
+    const readLog = async () => {
+      try {
+        const log = await logRequest;
+        if (!stillActive()) return;
+        const folded = merge(messagesRef.current, log.messages);
+        const tailStart = log.messages.length ? folded.findIndex((m) => m.id === log.messages[0]!.id) : 0;
+        olderCursor.current = Math.max(0, log.total - log.messages.length - Math.max(0, tailStart));
+        setHasOlder(olderCursor.current > 0);
+        if (folded !== messagesRef.current) {
+          const prevLen = messagesRef.current.length;
+          // Not on the first fill: a remount fetching the same conversation is
+          // not "60 new" — unseen counts only what arrived while looking away.
+          if (!following.current && prevLen > 0)
+            setUnseen((u) => u + Math.max(0, folded.length - prevLen));
+          messagesRef.current = folded;
+          messageMemory.set(paneId, { owner, messages: folded });
+          setMessages(folded);
+        }
+        // The reply has landed once a new agent message exists since we sent — or,
+        // as a backstop against a stuck spinner, after ten minutes (an agent can
+        // legitimately think for many minutes, so this is generous).
+        if (
+          awaitingRef.current &&
+          (messagesRef.current.filter((m) => m.role === "agent").length > awaitingBaselineAgents.current ||
+            Date.now() - awaitingSince.current > 10 * 60_000)
+        )
+          endAwaiting();
+        // Retire an optimistic echo once its real message has landed — the
+        // transcript's `you` count has passed the baseline it was stamped with —
+        // or after 30s as a backstop, so a send that never persisted can't leave a
+        // permanent ghost. Same load that added the real message removes the echo,
+        // so they swap without a flicker or a double.
+        setPending((prev) => {
+          if (prev.length === 0) return prev;
+          const you = messagesRef.current.filter((m) => m.role === "you").length;
+          const kept = prev.filter((p) => p.youBaseline >= you && Date.now() - p.at < 30_000);
+          return kept.length === prev.length ? prev : kept;
+        });
+        setReadable(true);
+        setLoading(false);
+      } catch (e) {
+        // An expired cookie has to sign out, not be swallowed as "no transcript".
+        // The WebSocket only authenticates at handshake, so without this a stale
+        // session leaves the pane polling 401 forever while `link` still says
+        // LIVE — a dead pane that never recovers. (Found by the data-fetching
+        // audit.)
+        if (!stillActive()) return;
+        if (e instanceof UnauthorizedError) return signOut();
+        // No transcript *yet*. A just-started agent has not written one, so this
+        // keeps polling rather than latching — the reader fills in by itself the
+        // moment the agent says something.
+        setReadable(false);
+        setLoading(false);
       }
-      // The reply has landed once a new agent message exists since we sent — or,
-      // as a backstop against a stuck spinner, after ten minutes (an agent can
-      // legitimately think for many minutes, so this is generous).
-      if (
-        awaitingRef.current &&
-        (messagesRef.current.filter((m) => m.role === "agent").length > awaitingBaselineAgents.current ||
-          Date.now() - awaitingSince.current > 10 * 60_000)
-      )
-        endAwaiting();
-      // Retire an optimistic echo once its real message has landed — the
-      // transcript's `you` count has passed the baseline it was stamped with —
-      // or after 30s as a backstop, so a send that never persisted can't leave a
-      // permanent ghost. Same load that added the real message removes the echo,
-      // so they swap without a flicker or a double.
-      setPending((prev) => {
-        if (prev.length === 0) return prev;
-        const you = messagesRef.current.filter((m) => m.role === "you").length;
-        const kept = prev.filter((p) => p.youBaseline >= you && Date.now() - p.at < 30_000);
-        return kept.length === prev.length ? prev : kept;
-      });
-      setReadable(true);
-      setLoading(false);
-    } catch (e) {
-      // An expired cookie has to sign out, not be swallowed as "no transcript".
-      // The WebSocket only authenticates at handshake, so without this a stale
-      // session leaves the pane polling 401 forever while `link` still says
-      // LIVE — a dead pane that never recovers. (Found by the data-fetching
-      // audit.)
-      if (!stillActive()) return;
-      if (e instanceof UnauthorizedError) return signOut();
-      // No transcript *yet*. A just-started agent has not written one, so this
-      // keeps polling rather than latching — the reader fills in by itself the
-      // moment the agent says something.
-      setReadable(false);
-      setLoading(false);
-    }
-    try {
-      const detail = await detailRequest;
-      if (!stillActive()) return;
-      setPrompt(detail.frame?.prompt ?? null);
-      const act = detail.frame?.activity ?? null;
-      setActivity(act);
-      setScreen(detail.frame?.text ?? null);
-      if (act) {
-        // A working agent means a reply is imminent: keep polling fast so it
-        // surfaces the instant it is written, not on the next idle tick.
-        sawActivity.current = true;
-        activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
-      } else if (awaitingRef.current && sawActivity.current) {
-        // We saw it working and now it is idle — done, even if we did not catch
-        // the reply's message on this exact tick.
-        endAwaiting();
+    };
+    const readScreen = async () => {
+      try {
+        const detail = await detailRequest;
+        if (!stillActive()) return;
+        setPrompt(detail.frame?.prompt ?? null);
+        const act = detail.frame?.activity ?? null;
+        setActivity(act);
+        setScreen(detail.frame?.text ?? null);
+        if (act) {
+          // A working agent means a reply is imminent: keep polling fast so it
+          // surfaces the instant it is written, not on the next idle tick.
+          sawActivity.current = true;
+          activeUntil.current = Math.max(activeUntil.current, Date.now() + 5_000);
+        } else if (awaitingRef.current && sawActivity.current) {
+          // We saw it working and now it is idle — done, even if we did not catch
+          // the reply's message on this exact tick.
+          endAwaiting();
+        }
+      } catch (e) {
+        if (!stillActive()) return;
+        if (e instanceof UnauthorizedError) return signOut();
+        // Transient; the next poll will catch up.
       }
-    } catch (e) {
-      if (!stillActive()) return;
-      if (e instanceof UnauthorizedError) return signOut();
-      // Transient; the next poll will catch up.
-    }
+    };
+    await Promise.all([readLog(), readScreen()]);
   }, [paneId, signOut, stillActive]);
   // One load in flight at most. The timer, a pushed frame and a `log_changed`
   // all call this; while a terminal repaints they arrive faster than a fetch
@@ -732,30 +732,31 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               <Text style={styles.subtitle}>{pane?.agent ?? "shell"} · {paneId}</Text>
             </View>
           ),
-          ...plainHeaderRight(
-            <View style={styles.toggle}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: view === "reader" }}
-                testID="view-read"
-                style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
-                onPress={() => setView("reader")}
-              >
-                <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>read</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: view === "screen" }}
-                testID="view-screen"
-                style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
-                onPress={() => setView("screen")}
-              >
-                <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]}>screen</Text>
-              </Pressable>
-            </View>
-          ),
         }}
       />
+
+      <View style={styles.toggle} accessibilityLabel="Conversation view">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Read"
+          accessibilityState={{ selected: view === "reader" }}
+          testID="view-read"
+          style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
+          onPress={() => setView("reader")}
+        >
+          <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>Read</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Screen"
+          accessibilityState={{ selected: view === "screen" }}
+          testID="view-screen"
+          style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
+          onPress={() => setView("screen")}
+        >
+          <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]}>Screen</Text>
+        </Pressable>
+      </View>
 
       <ConnectionHealth />
       {/* Readable and dismissible, instead of one truncated line squeezed
@@ -769,7 +770,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
       {prompt && <Prompt prompt={prompt} onAnswer={answer} />}
 
-      {loading ? (
+      {loading && view === "reader" ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.peach} />
           <Text style={styles.dim}>Reading the conversation…</Text>
@@ -1601,7 +1602,7 @@ const styles = StyleSheet.create({
   bannerText: { color: theme.rose, fontSize: 13, flex: 1 },
   bannerClose: { color: theme.dim, fontSize: 13 },
 
-  headTitle: { alignItems: "center" },
+  headTitle: { alignItems: "center", maxWidth: "100%" },
   title: { color: theme.fg, fontSize: 14 },
   subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, marginTop: 1 },
 
@@ -1618,11 +1619,10 @@ const styles = StyleSheet.create({
   jumpText: { color: theme.peach, fontSize: 12 },
 
   screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void },
-  // No boxes at all: two labels, the active one lit. Every boxed version —
-  // square-in-rounded, then pill-in-pill — read as shapes fighting shapes.
-  toggle: { flexDirection: "row", gap: 16 },
-  toggleItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
-  toggleOn: {},
+  // Keep touch targets in the content layout, independent of native title sizing.
+  toggle: { flexDirection: "row", paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.line },
+  toggleItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  toggleOn: { borderBottomColor: theme.peach },
   toggleText: { color: theme.dim, fontSize: 12 },
   toggleTextOn: { color: theme.fg, fontWeight: "700" },
 
