@@ -48,7 +48,9 @@ test("a slow phone without delivery acknowledgments is removed while a healthy p
     for (let n = 0; f.clients.size < 2 && n < 100; n++) await Bun.sleep(10);
     expect(f.clients.size).toBe(2);
     const stalled = [...f.clients][1]!;
-    for (let n = 0; n < 40 && f.clients.has(stalled); n++) {
+    // Past the 2 MiB window the box holds up to five more frames for a phone
+    // that is only slow; one that never acknowledges fills those as well.
+    for (let n = 0; n < 160 && f.clients.has(stalled); n++) {
       stalled.send(JSON.stringify({ type: "test", data: "x".repeat(65536) }));
       await Bun.sleep(2);
     }

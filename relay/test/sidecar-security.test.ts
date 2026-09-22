@@ -95,8 +95,11 @@ test("revocation between hello and proof cannot establish a session", async () =
   const { device, secret } = devices.create("Revoked during handshake");
   const pending = await hello(device.id);
   devices.revoke(device.id);
-  pending.peer.send(seal(clientSession(pending.key, pending.pub, secret), encoder.encode(JSON.stringify({ t: "ws", data: { type: "unwatch" } }))));
+  const session = clientSession(pending.key, pending.pub, secret);
+  pending.peer.send(seal(session, encoder.encode(JSON.stringify({ t: "ws", data: { type: "unwatch" } }))));
   expect((await pending.peer.closed).code).toBe(1000);
+  // The sealed sign-out the phone acts on, and nothing a session would send.
+  expect(JSON.parse(new TextDecoder().decode(open(session, (await pending.peer.next(50)) as Uint8Array)))).toEqual({ t: "bye" });
   expect(await pending.peer.hears(50)).toBe(false);
 });
 
