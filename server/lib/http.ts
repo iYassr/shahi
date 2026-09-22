@@ -39,7 +39,7 @@ import { submitPrompt } from "./prompt";
 import { OperationError, Operations } from "./operations";
 import { createHash } from "node:crypto";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
-import { watchTranscript } from "./transcript-watch";
+import { followTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
 import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
@@ -1256,43 +1256,25 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
    * The reader is fed by the transcript, not the terminal, so this is the
    * signal it actually wants: a reply lands in the file and the phone hears
    * within the debounce window, instead of on its next 2.5s poll. The file may
-   * not exist yet for a just-started agent, so resolution is retried on each
-   * pushed frame — frames arrive while an agent works, and the first one after
-   * it has said something is when the file appears.
+   * not exist yet for a just-started agent, so each pushed frame wakes the
+   * lookup — frames arrive while an agent works, and the first one after it has
+   * said something is when the file appears. The pane can also move to another
+   * transcript while watched, which `followTranscript` notices.
    */
   function watchLog(ws: StreamClient, paneId: string): () => void {
-    let stopFile: (() => void) | null = null;
-    let resolving = false;
-    let stopped = false;
-
-    const resolveAndWatch = async () => {
-      if (stopped || stopFile || resolving) return;
-      resolving = true;
-      try {
-        const path = await transcriptPathFor(paneId);
-        if (stopped || !path) return;
-        stopFile = watchTranscript(path, (offset) => {
-          if (ws.data.watchedPaneId !== paneId) return;
-          ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));
-        });
-      } catch {
-        // Resolution is best-effort; the reader's own poll still covers it.
-      } finally {
-        resolving = false;
-      }
-    };
+    const follow = followTranscript(() => transcriptPathFor(paneId), (offset) => {
+      if (ws.data.watchedPaneId !== paneId) return;
+      ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));
+    });
 
     const onFrame = (frame: PaneFrame) => {
-      if (frame.paneId === paneId && !stopFile) void resolveAndWatch();
+      if (frame.paneId === paneId) follow.wake();
     };
     poller.on("frame", onFrame);
-    void resolveAndWatch();
 
     return () => {
-      stopped = true;
       poller.off("frame", onFrame);
-      stopFile?.();
-      stopFile = null;
+      follow.stop();
     };
   }
 
