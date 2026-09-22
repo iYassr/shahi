@@ -1,0 +1,149 @@
+# Keeps the signed release catalogs from expiring.
+#
+# A catalog is valid for 120 days after signing (plugin/releases/sign.ts), and
+# a computer refuses an expired one: once Stable lapses, every fresh
+# `herdr plugin install` stops in bootstrap and every installed manager stops
+# finding updates. Nothing renewed or watched that date before the
+# pre-public-release review, and the first catalogs lapse on 2027-01-18.
+#
+# Weekly, this checks both channels and re-signs any with fewer than 30 days
+# left: the same approved releases, a later expiry, a higher sequence. It never
+# builds, uploads or approves a package, so it needs no version bump and no
+# test run. A failure files an issue. Run it by hand to renew early, or to
+# withdraw an unsafe release (`retire`), which re-signs at once. Renewal also
+# drops releases a newer one supersedes (sign.ts), which changes no computer's
+# choice. GitHub pauses schedules in a public repository after 60 days without
+# activity; a paused schedule here is a lapse waiting to happen.
+name: Release catalog expiry
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channels to renew now (by hand, a channel is renewed whether or not it is due)
+        type: choice
+        options: [both, stable, beta]
+        default: both
+      retire:
+        description: Versions to withdraw, comma-separated, each present in every chosen channel (optional)
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# The release workflow's group: a renewal that read a catalog before a
+# release uploaded its new one would otherwise drop that release.
+concurrency:
+  group: shahi-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: days left on each signed catalog
+    if: github.repository == 'iYassr/shahi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      stable: ${{ steps.due.outputs.stable }}
+      beta: ${{ steps.due.outputs.beta }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile --filter @shahi/shared --production
+      - name: Verify both catalogs and decide which are due
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || '' }}
+        run: |
+          set -eu
+          for channel in stable beta; do
+            mkdir -p "dist/channels/$channel"
+            gh release download "shahi-$channel" --pattern catalog.json --dir "dist/channels/$channel"
+            # Fails the job on a bad signature or an unreadable catalog.
+            due=$(bun plugin/releases/sign.ts due "$channel" "dist/channels/$channel/catalog.json" 30)
+            if [ "$MANUAL" = both ] || [ "$MANUAL" = "$channel" ]; then due=true; fi
+            echo "$channel=$due" >> "$GITHUB_OUTPUT"
+          done
+
+  renew:
+    name: re-sign the approved releases
+    needs: check
+    if: github.ref == 'refs/heads/master' && (needs.check.outputs.stable == 'true' || needs.check.outputs.beta == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: releases
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile --filter @shahi/shared --production
+      - name: Re-sign and publish each due channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHAHI_RELEASE_PRIVATE_KEY: ${{ secrets.SHAHI_RELEASE_PRIVATE_KEY }}
+          DUE_STABLE: ${{ needs.check.outputs.stable }}
+          DUE_BETA: ${{ needs.check.outputs.beta }}
+          RETIRE: ${{ github.event_name == 'workflow_dispatch' && inputs.retire || '' }}
+        run: |
+          set -eu
+          umask 077
+          test -n "$SHAHI_RELEASE_PRIVATE_KEY"
+          printf '%s' "$SHAHI_RELEASE_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-release-key.pem"
+          trap 'rm -f "$RUNNER_TEMP/shahi-release-key.pem"' EXIT
+          channels=""
+          if [ "$DUE_STABLE" = true ]; then channels="stable"; fi
+          if [ "$DUE_BETA" = true ]; then channels="$channels beta"; fi
+          # Sign every due channel before uploading any, so a refusal (a
+          # version to retire that one channel lacks) changes nothing.
+          for channel in $channels; do
+            mkdir -p "dist/channels/$channel" "dist/renewed/$channel"
+            # Read again under the release lock, so nothing published since the
+            # check is lost. sign.ts verifies it and keeps its sequence rising.
+            gh release download "shahi-$channel" --pattern catalog.json --dir "dist/channels/$channel"
+            if [ -n "$RETIRE" ]; then
+              bun plugin/releases/sign.ts renew "$channel" "$RUNNER_TEMP/shahi-release-key.pem" "dist/renewed/$channel/catalog.json" "dist/channels/$channel/catalog.json" --retire "$RETIRE"
+            else
+              bun plugin/releases/sign.ts renew "$channel" "$RUNNER_TEMP/shahi-release-key.pem" "dist/renewed/$channel/catalog.json" "dist/channels/$channel/catalog.json"
+            fi
+          done
+          for channel in $channels; do
+            gh release upload "shahi-$channel" "dist/renewed/$channel/catalog.json" --clobber
+          done
+
+  alert:
+    name: file an issue when a catalog could not be renewed
+    needs: [check, renew]
+    if: always() && github.repository == 'iYassr/shahi' && (needs.check.result == 'failure' || needs.renew.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: File or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release catalog renewal failed"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          body="Signed release catalogs expire 120 days after signing, and an expired Stable catalog stops every fresh install. This run could not check or renew them: $RUN"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

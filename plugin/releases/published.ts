@@ -7,7 +7,10 @@ export function verifyPublished(release: unknown, rebuilt: Release, bytes: Uint8
   if (release.commit !== rebuilt.commit || release.version !== rebuilt.version) throw new Error("Released versions are immutable; bump the release version.");
   if (bytes.length !== release.artifact.bytes || sha256(bytes) !== release.artifact.sha256) throw new Error("Published package bytes were changed.");
   if (JSON.stringify(release) === JSON.stringify(rebuilt)) return release;
-  const approved = [...verifyCatalog(stable, "stable", 0, keys).releases, ...verifyCatalog(beta, "beta", 0, keys).releases];
+  // "Was this package ever approved" does not expire with the catalog that
+  // says so; refusing an expired one here blocked promotion after a lapse.
+  const now = Date.now(), lapsed = { allowExpired: true };
+  const approved = [...verifyCatalog(stable, "stable", 0, keys, now, lapsed).releases, ...verifyCatalog(beta, "beta", 0, keys, now, lapsed).releases];
   if (!approved.some(r => JSON.stringify(r) === JSON.stringify(release))) throw new Error("The existing package has no matching signed approval. It cannot be promoted.");
   return release;
 }

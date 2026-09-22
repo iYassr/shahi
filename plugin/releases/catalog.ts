@@ -46,7 +46,16 @@ export function validateRelease(v: unknown): asserts v is Release {
   }
 }
 
-export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequence = 0, keys = RELEASE_KEYS, now = Date.now()): Catalog {
+/** Every verifier refuses more, so the signer prunes (sign.ts) rather than ever producing a catalog that fails here. */
+export const MAX_RELEASES = 50;
+
+/**
+ * `allowExpired` is for the signer alone. It carries an expired catalog's
+ * history forward (signature, channel and sequence still verified): refusing
+ * it meant a channel that lapsed could never be signed again without a code
+ * change (pre-public-release review). A computer never passes it.
+ */
+export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequence = 0, keys = RELEASE_KEYS, now = Date.now(), { allowExpired = false } = {}): Catalog {
   if (Buffer.byteLength(text) > 256 * 1024) throw new Error("Release catalog is too large.");
   const envelope: unknown = JSON.parse(text);
   if (!plain(envelope) || typeof envelope.keyId !== "string" || typeof envelope.payload !== "string" || typeof envelope.signature !== "string" ||
@@ -54,10 +63,20 @@ export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequ
     throw new Error("Release signature could not be verified.");
   }
   const c: unknown = JSON.parse(Buffer.from(envelope.payload, "base64").toString("utf8"));
-  if (!plain(c) || c.schema !== 1 || c.channel !== channel || !integer(c.sequence, minimumSequence) ||
+  if (!plain(c) || c.schema !== 1 || c.channel !== channel || !integer(c.sequence) ||
       typeof c.publishedAt !== "string" || typeof c.expiresAt !== "string" || !Number.isFinite(Date.parse(c.publishedAt)) ||
-      Date.parse(c.publishedAt) > now + 5 * 60_000 || !(Date.parse(c.expiresAt) > now) || Date.parse(c.expiresAt) <= Date.parse(c.publishedAt) ||
-      !Array.isArray(c.releases) || c.releases.length > 50 || !c.releases.length) throw new Error("Release catalog is expired, replayed, or invalid.");
+      !Number.isFinite(Date.parse(c.expiresAt)) || Date.parse(c.expiresAt) <= Date.parse(c.publishedAt) ||
+      !Array.isArray(c.releases) || !c.releases.length) throw new Error("Release catalog is invalid.");
+  // One message per cause, because each has a different owner: a replay is a
+  // stale mirror or an attack, a future date is this computer's clock, expiry
+  // is Shahi's renewal, and the cap is the signer's pruning. One shared
+  // message ("expired, replayed, or invalid") hid all four.
+  if ((c.sequence as number) < minimumSequence) throw new Error("Release catalog is older than one this computer already accepted.");
+  if (Date.parse(c.publishedAt) > now + 5 * 60_000) throw new Error("Release catalog is dated in the future. Check this computer's clock.");
+  if (!allowExpired && !(Date.parse(c.expiresAt) > now)) {
+    throw new Error(`Shahi's signed release catalog expired on ${new Date(Date.parse(c.expiresAt)).toISOString().slice(0, 10)} and has to be renewed by Shahi. An installed release keeps running.`);
+  }
+  if (c.releases.length > MAX_RELEASES) throw new Error(`Release catalog lists ${c.releases.length} releases, more than the ${MAX_RELEASES} a computer accepts.`);
   for (const r of c.releases) validateRelease(r);
   if (new Set(c.releases.map(r => (r as Release).version)).size !== c.releases.length) throw new Error("Duplicate release version.");
   if (new Set(c.releases.map(r => (r as Release).buildId)).size !== c.releases.length) throw new Error("Duplicate release identifier.");
