@@ -402,6 +402,50 @@ describe("a page that rebound its own name to this machine", () => {
   });
 });
 
+// Review finding F37: sign-in attempts waiting in the throttle held the slots
+// every phone shares, so thirty-two bad logins made the box answer 503.
+describe("sign-in attempts cannot crowd out the phones", () => {
+  test("logins that never finish leave the box answering a paired phone", async () => {
+    const box = await boot();
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+    try {
+      // Admission is decided before the first await, so these are all in
+      // flight, and holding whatever they were given, when the phone asks.
+      const flood = Array.from({ length: 40 }, () => box.dispatch(new Request(`${box.base}/api/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new ReadableStream<Uint8Array>({ start: (c) => { streams.push(c); c.enqueue(new TextEncoder().encode('{"passcode":')); } }),
+        duplex: "half",
+      } as RequestInit), "flood"));
+      const phone = await box.dispatch(new Request(`${box.base}/api/session`, { headers: { cookie: box.cookie } }), "phone");
+      expect(phone.status).toBe(200);
+      expect(await (await fetch(`${box.base}/api/session`, { headers: { cookie: box.cookie } })).status).toBe(200);
+      // Most of the flood is turned away at once rather than queued.
+      const settled = await Promise.all(flood.slice(8).map((r) => r.then((res) => res.status)));
+      expect(new Set(settled)).toEqual(new Set([429]));
+      // Pairing a phone has its own budget, untouched by the login flood.
+      const { secret } = await (await fetch(`${box.base}/api/pair`, { method: "POST", headers: { cookie: box.cookie } })).json() as { secret: string };
+      const claim = await fetch(`${box.base}/api/pair/claim`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ secret, deviceName: "During a flood" }) });
+      expect(claim.status).toBe(200);
+    } finally {
+      for (const stream of streams) stream.error(new Error("gone"));
+      box.stop();
+    }
+  });
+
+  test("a login body is refused once it is larger than any passcode", async () => {
+    const box = await boot();
+    try {
+      const res = await fetch(`${box.base}/api/auth/login`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode: PASSCODE, padding: "x".repeat(64 * 1024) }),
+      });
+      expect(res.status).toBe(413);
+      expect(res.headers.get("set-cookie")).toBeNull();
+    } finally { box.stop(); }
+  });
+});
+
 describe("a socket does not outlive its session", () => {
   test("it is closed with 4001 once the cookie that opened it has expired", async () => {
     const short = await boot({ sessionTtlMs: 500, heartbeatMs: 100 });

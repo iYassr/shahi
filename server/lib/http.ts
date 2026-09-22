@@ -255,6 +255,64 @@ function originAllowed(req: Request): boolean {
  */
 const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
 
+/**
+ * Requests that present a credential before any session exists, each with its
+ * own small admission budget instead of a share of the 32 slots every phone
+ * uses.
+ *
+ * Both wait in a serialised throttle that backs off to 30s, and both used to
+ * buffer a body of up to 40MB first. Thirty-two wrong passcodes from any local
+ * process held every slot for thirteen minutes, and every phone, the relay
+ * included, was told "this box is busy" (review finding F37). Four waiting is
+ * more than a person ever has, and a flood of them now costs only the flood.
+ */
+const CREDENTIAL_ROUTES = new Set(["/api/auth/login", "/api/pair/claim"]);
+const MAX_WAITING_CREDENTIALS = 4;
+/** A passcode, or a pairing secret and a device name, is well under this. */
+const MAX_CREDENTIAL_BODY_BYTES = 4096;
+/** The budget every other request shares. */
+const MAX_IN_FLIGHT = 32;
+
+/**
+ * A request body, or null once it passes `limit` bytes. Read as a stream, so
+ * nothing past the limit is ever held.
+ */
+async function boundedBody(req: Request, limit: number): Promise<Buffer | null> {
+  const reader = req.body?.getReader();
+  const parts: Uint8Array[] = [];
+  let length = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.length;
+        if (length > limit) {
+          await reader.cancel();
+          return null;
+        }
+        parts.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  return Buffer.concat(parts, length);
+}
+
+/** `jsonObject` for a body that must be small; null when it is not. */
+async function smallJsonObject<T extends object>(req: Request, limit: number): Promise<Partial<T> | null> {
+  const bytes = await boundedBody(req, limit);
+  if (!bytes) return null;
+  let body: unknown = null;
+  try {
+    body = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    // Treated as an empty object, as `jsonObject` does.
+  }
+  return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Partial<T>) : {};
+}
+
 export interface ServerOptions {
   uploadDir?: string;
   /** How often to ping and to re-check every socket's session. */
@@ -266,6 +324,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   const clients = new Set<StreamClient>();
   const metrics = deps.observability ?? new Observability();
   let fileRequests = 0;
+  let sharedInFlight = 0;
+  // Per route, so a flood of bad passcodes cannot also block pairing a phone.
+  const waitingCredentials = new Map<string, number>();
 
   // The routes that answer before the gate are the only ones anyone can hit.
   const limiter = new RateLimiter();
@@ -541,13 +602,22 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     const started = performance.now();
     const path = new URL(req.url).pathname;
     const fileWork = path === "/api/uploads" || path.startsWith("/api/uploads/") || path === "/api/file";
+    const credential = req.method === "POST" && CREDENTIAL_ROUTES.has(path) ? path : null;
     let status = 500;
-    if (metrics.inFlight >= 32 || (fileWork && fileRequests >= 2)) {
+    if (credential && (waitingCredentials.get(credential) ?? 0) >= MAX_WAITING_CREDENTIALS) {
+      void req.body?.cancel().catch(() => {});
+      metrics.request(req, arrival.viaRelay ? "relay" : "http", 429, performance.now() - started);
+      return json({ error: "Too many sign-in attempts are waiting. Try again shortly." }, { status: 429, headers: { "retry-after": "30" } });
+    }
+    if (!credential && (sharedInFlight >= MAX_IN_FLIGHT || (fileWork && fileRequests >= 2))) {
       void req.body?.cancel().catch(() => {});
       metrics.request(req, arrival.viaRelay ? "relay" : "http", 503, performance.now() - started);
       return json({ error: "this box is busy; try again shortly" }, { status: 503, headers: { "retry-after": "2" } });
     }
+    // The gauge counts everything in flight; only the budgets are separate.
     metrics.inFlight++;
+    if (credential) waitingCredentials.set(credential, (waitingCredentials.get(credential) ?? 0) + 1);
+    else sharedInFlight++;
     if (fileWork) fileRequests++;
     try {
       const response = await handle(req, arrival);
@@ -557,6 +627,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
       return json({ error: "internal error" }, { status: 500 });
     } finally {
       metrics.inFlight--;
+      if (credential) waitingCredentials.set(credential, waitingCredentials.get(credential)! - 1);
+      else sharedInFlight--;
       if (fileWork) fileRequests--;
       metrics.request(req, arrival.viaRelay ? "relay" : "http", status, performance.now() - started);
     }
@@ -636,7 +708,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         }
 
         if (pathname === "/api/auth/login" && req.method === "POST") {
-          const body = await jsonObject<{ passcode: string }>(req);
+          const body = await smallJsonObject<{ passcode: string }>(req, MAX_CREDENTIAL_BODY_BYTES);
+          if (!body) return json({ error: "request too large" }, { status: 413 });
           // Serialised + backing off: concurrency buys an attacker nothing, and
           // each failure slows the next. See LoginThrottle.
           const ok = await loginThrottle.attempt(() =>
@@ -672,7 +745,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         // makes it revocable — a passcode login is not, and never appears in
         // the device list.
         if (pathname === "/api/pair/claim" && req.method === "POST") {
-          const body = await jsonObject<{ secret: string; deviceName: string }>(req);
+          const body = await smallJsonObject<{ secret: string; deviceName: string }>(req, MAX_CREDENTIAL_BODY_BYTES);
+          if (!body) return json({ error: "request too large" }, { status: 413 });
           const secret = typeof body.secret === "string" ? body.secret : "";
           const ok = await claimThrottle.attempt(async () => pairing.claim(secret));
           if (!ok) {
@@ -946,20 +1020,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           const [, id, action] = transferMatch;
           const owner = pushOwner(req);
           try {
-            const limit = action === "chunk" ? TRANSFER_CHUNK : 2048;
-            const reader = req.body?.getReader();
-            const parts: Uint8Array[] = []; let length = 0;
-            if (reader) {
-              try {
-                while (true) {
-                  const { done, value } = await reader.read(); if (done) break;
-                  length += value.length;
-                  if (length > limit) { await reader.cancel(); throw new TransferError(413, "Upload request too large"); }
-                  parts.push(value);
-                }
-              } finally { reader.releaseLock(); }
-            }
-            const bytes = Buffer.concat(parts, length);
+            const bytes = await boundedBody(req, action === "chunk" ? TRANSFER_CHUNK : 2048);
+            if (!bytes) throw new TransferError(413, "Upload request too large");
             return await transfers.run(async () => {
               if (!authorized(req) || pushOwner(req) !== owner) return json({ error: "unauthorized" }, { status: 401 });
               transfersUsed = true;
