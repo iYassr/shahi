@@ -102,6 +102,15 @@ const REQUEST_HEADERS_DROPPED = new Set(["cookie", "origin", "host", "x-forwarde
  */
 const MAX_RESPONSE_BODY_BYTES = RELAY_LIMITS.maxBodyBytes;
 
+/**
+ * How much a link may hold back, unsent, while the phone catches up on
+ * acknowledgments: every answer its request slots allow, each as large as a
+ * frame can be, plus one frame of dashboard pushes. A phone that acknowledges
+ * reaches it only if pushes outrun its connection; one that stops
+ * acknowledging fills it and loses the link, as it did at the window before.
+ */
+const MAX_HELD_BYTES = (RELAY_LIMITS.maxRequestsPerLink + 1) * RELAY_LIMITS.maxFrameBytes;
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -390,6 +399,13 @@ class Link implements StreamClient {
   #session: Session | null = null;
   #activeRequests = 0;
   #unacknowledgedBytes = 0;
+  /**
+   * Frames waiting for acknowledgments to free the window, in order. They are
+   * held unsealed and sealed only as they leave, so counters stay in sequence
+   * and dropping them on release skips none.
+   */
+  readonly #held: { plain: Uint8Array; bytes: number; sent: () => void }[] = [];
+  #heldBytes = 0;
   #kind: PhoneHello["auth"]["kind"] | null = null;
   #rateKey = "";
   #attached = false;
@@ -445,6 +461,7 @@ class Link implements StreamClient {
         return;
       }
       this.#unacknowledgedBytes -= msg.bytes;
+      this.#flush();
       return;
     }
     if (!this.#confirmed) {
@@ -603,7 +620,9 @@ class Link implements StreamClient {
       }
       if (status === 413) headers["content-type"] = "application/json";
       const res: BoxToPhone = { t: "res", id, status, headers, body: body.length > 0 ? b64(body) : null };
-      this.#sendSealed(JSON.stringify(res));
+      // The request keeps its slot until its answer has left: excess work is
+      // still refused with 429, never piled up behind a slow phone.
+      await this.#sendSealed(JSON.stringify(res));
     } catch { this.end("response failed"); }
   }
 
@@ -612,7 +631,7 @@ class Link implements StreamClient {
   send(payload: string): void {
     // `payload` is one JSON object, already serialised by the broadcaster;
     // wrapping it as text avoids parsing it only to stringify it again.
-    this.#sendSealed(`{"t":"ws","data":${payload}}`);
+    void this.#sendSealed(`{"t":"ws","data":${payload}}`);
   }
 
   close(code: number, reason: string): void {
@@ -635,9 +654,17 @@ class Link implements StreamClient {
     else this.end(reason);
   }
 
-  /** Tells the phone, in a sealed frame it can trust, that it is no longer paired; then ends the link. */
+  /**
+   * Tells the phone, in a sealed frame it can trust, that it is no longer
+   * paired; then ends the link. Anything still held for it is dropped rather
+   * than delivered after the fact, and the bye goes out ahead of the window:
+   * it is a few bytes and the last frame this link will carry.
+   */
   #dismiss(reason: string): void {
-    this.#sendSealed(`{"t":"bye"}`);
+    if (!this.#released && this.#session) {
+      this.#dropHeld();
+      this.wire.send(this.id, seal(this.#session, encoder.encode(`{"t":"bye"}`)));
+    }
     this.end(reason);
   }
 
@@ -657,22 +684,58 @@ class Link implements StreamClient {
     this.#released = true;
     clearTimeout(this.#authTimer);
     this.#session = null;
+    this.#dropHeld();
     if (this.#attached) {
       this.#attached = false;
       this.deps.server.detach(this);
     }
   }
 
-  #sendSealed(text: string): void {
-    if (this.#released || !this.#session) return;
-    // Check before sealing: dropping a sealed frame would skip a crypto counter.
-    if (text.length > RELAY_LIMITS.maxFrameBytes) { this.end("frame too large"); return; }
-    const plain = encoder.encode(text);
-    const frameBytes = plain.byteLength + 24;
-    if (frameBytes > RELAY_LIMITS.maxFrameBytes) { this.end("frame too large"); return; }
-    if (this.#unacknowledgedBytes + frameBytes > RELAY_LIMITS.maxUnacknowledgedBytes) { this.end("backpressure"); return; }
-    this.#unacknowledgedBytes += frameBytes;
-    this.wire.send(this.id, seal(this.#session, plain));
+  /**
+   * Sends a sealed frame, or holds it until the phone has acknowledged enough
+   * of what it was already sent. Resolves once the frame has left, or the
+   * link has gone.
+   *
+   * A frame that would overrun the 2 MiB window used to end the link on the
+   * spot. But a link may run four requests and each answer may be close to a
+   * full 1 MiB frame, while acknowledgments need a round trip through the
+   * relay. So three large screenshots answered together cost the phone its
+   * link and every request on it, including an uncertain prompt send (found by
+   * the September 2026 pre-release review). The window still bounds what the
+   * relay has to buffer for this phone. Only a phone that stops acknowledging
+   * altogether loses the link, once MAX_HELD_BYTES is full.
+   */
+  #sendSealed(text: string): Promise<void> {
+    return new Promise((sent) => {
+      if (this.#released || !this.#session) { sent(); return; }
+      // Check before sealing: dropping a sealed frame would skip a crypto counter.
+      if (text.length > RELAY_LIMITS.maxFrameBytes) { sent(); this.end("frame too large"); return; }
+      const plain = encoder.encode(text);
+      const bytes = plain.byteLength + 24;
+      if (bytes > RELAY_LIMITS.maxFrameBytes) { sent(); this.end("frame too large"); return; }
+      if (this.#heldBytes + bytes > MAX_HELD_BYTES) { sent(); this.end("backpressure"); return; }
+      this.#held.push({ plain, bytes, sent });
+      this.#heldBytes += bytes;
+      this.#flush();
+    });
+  }
+
+  /** Sends held frames, in order, while the window has room for the next. */
+  #flush(): void {
+    while (this.#held.length > 0 && !this.#released && this.#session) {
+      const next = this.#held[0]!;
+      if (this.#unacknowledgedBytes + next.bytes > RELAY_LIMITS.maxUnacknowledgedBytes) return;
+      this.#held.shift();
+      this.#heldBytes -= next.bytes;
+      this.#unacknowledgedBytes += next.bytes;
+      this.wire.send(this.id, seal(this.#session, next.plain));
+      next.sent();
+    }
+  }
+
+  #dropHeld(): void {
+    for (const frame of this.#held.splice(0)) frame.sent();
+    this.#heldBytes = 0;
   }
 }
 

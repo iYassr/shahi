@@ -19,6 +19,7 @@ import {
   BOX_AUTH_PREFIX,
   LINK_PREFIX_BYTES,
   RELAY_CLOSE,
+  RELAY_LIMITS,
   RELAY_PROTOCOL,
   RELAY_RESPONSE_HEADERS,
   SHAHI_API_VERSION,
@@ -40,7 +41,7 @@ import { Auth } from "./auth";
 import type { Config } from "./config";
 import type { HerdrClient } from "./herdr-client";
 import { createServer, type ShahiServer } from "./http";
-import { serverIdFor, serverIdentity, type ServerIdentity } from "./identity";
+import { fromSeed, serverIdFor, serverIdentity, type ServerIdentity } from "./identity";
 import { Devices, Pairing } from "./pairing";
 import { Poller } from "./poller";
 import { PushService } from "./push";
@@ -684,6 +685,86 @@ describe("a phone through the relay", () => {
       expect(Buffer.from(file.bytes).equals(Buffer.from(bytes))).toBe(true);
     } finally {
       link.close();
+    }
+  });
+
+  // Found in the September 2026 pre-release review: a link may run four
+  // requests and each answer may be nearly a full frame, but the box ended the
+  // link as soon as it had sent 2 MiB without an acknowledgment, which cannot
+  // come back for a relay round trip. Three large screenshots in view cost the
+  // reader its link and every request on it.
+  test("four of the largest answers at once all arrive instead of ending the link for backpressure", async () => {
+    const secret = new Uint8Array(32).fill(5);
+    const identity = fromSeed(new Uint8Array(32).fill(6));
+    const image = new Uint8Array(RELAY_LIMITS.maxBodyBytes).map((_, i) => i & 0xff);
+    const log: string[] = [];
+    const sender = new RelayClient({
+      url: relay.url,
+      identity,
+      devices: { secret: () => secret, revokedSecret: () => null },
+      pairing: { secretByHash: () => null },
+      auth: { issue: () => "screenshots" },
+      server: {
+        dispatch: async () => new Response(image, { headers: { "content-type": "image/png" } }),
+        attach() {},
+        detach() {},
+        receive() {},
+      },
+      log: (event, fields) => log.push(JSON.stringify({ event, ...fields })),
+    });
+    sender.start();
+    const link = new RelayLink(deviceTarget({ relay: relay.url, serverId: identity.serverId, deviceId: "screenshots", deviceSecret: b64(secret) }));
+    try {
+      await waitFor(() => sender.connected, "the screenshot box to authenticate");
+      const replies = await Promise.all([1, 2, 3, 4].map((n) =>
+        link.request({ method: "GET", path: `/api/panes/w1%3Ap1/image?ref=${n}`, headers: {}, body: null }, 10_000)));
+      for (const reply of replies) {
+        expect(reply.status).toBe(200);
+        expect((await reply.bytes()).length).toBe(image.length);
+      }
+      expect(log.some((l) => l.includes("backpressure"))).toBe(false);
+      expect(link.state).toBe("live");
+    } finally {
+      link.close();
+      sender.stop();
+    }
+  });
+
+  // Holding frames for a slow reader must not become holding them forever
+  // for a dead one: the relay's buffer and the box's memory both stay bounded.
+  test("a phone that never acknowledges still loses its link once the held frames are full", async () => {
+    const secret = new Uint8Array(32).fill(7);
+    const identity = fromSeed(new Uint8Array(32).fill(8));
+    const log: string[] = [];
+    let stream: { send(payload: string): void } | undefined;
+    const sender = new RelayClient({
+      url: relay.url,
+      identity,
+      devices: { secret: () => secret, revokedSecret: () => null },
+      pairing: { secretByHash: () => null },
+      auth: { issue: () => "silent" },
+      server: {
+        dispatch: async () => new Response(null, { status: 204 }),
+        attach: (client) => { stream = client; },
+        detach() {},
+        receive() {},
+      },
+      log: (event, fields) => log.push(JSON.stringify({ event, ...fields })),
+    });
+    sender.start();
+    try {
+      await waitFor(() => sender.connected, "the box to authenticate");
+      // The test phone never sends an ack.
+      const p = phone(relay, identity.serverId, { kind: "device", deviceId: "silent" }, secret);
+      await p.hello;
+      p.unwatch();
+      await waitFor(() => stream !== undefined, "the link to join the stream");
+      const push = JSON.stringify({ type: "log_changed", paneId: PANE, size: 1, pad: "x".repeat(900_000) });
+      for (let n = 0; n < 10 && !p.isClosed; n++) stream!.send(push);
+      expect((await p.closed).code).toBe(1000);
+      expect(log.some((l) => l.includes("backpressure"))).toBe(true);
+    } finally {
+      sender.stop();
     }
   });
 
