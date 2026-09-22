@@ -8,6 +8,8 @@ Real terminal screens captured from a live herdr session with
 | `blocked__w4-p2__*` | a Claude Code plan-approval prompt — 4 numbered options, #1 selected |
 | `blocked__trust-folder__*` | Claude Code's folder-trust question — an *unnumbered* cursor menu, 2 options, the second selected, `Enter to confirm` under it |
 | `blocked__wK-p2__*`, `blocked__wE-p6__*` | further blocked shapes |
+| `blocked__claude-bash__*`, `blocked__claude-bash-rm__*` | Claude Code's Bash permission dialog: the command sits *above* a generic "Do you want to proceed?"; two commands, identical answers |
+| `blocked__claude-webfetch__*`, `blocked__claude-mcp__*` | the same dialog for WebFetch (the URL above the question) and an MCP tool call |
 | `working__wE-p1__*` | an agent mid-turn, no prompt |
 | `idle__w4-p1__*` | an idle agent at the composer |
 | `done__wB-p1__*` | a finished turn |
@@ -46,3 +48,13 @@ To recapture against your own session:
 ```sh
 bun run server/scripts/capture-fixtures.ts
 ```
+
+The `blocked__claude-*` captures (Claude Code 2.1.280, herdr 0.9.1,
+2026-09-23) were made differently, because a permission dialog has to be
+provoked rather than waited for: an isolated named herdr session with a fresh
+`XDG_CONFIG_HOME` (see CLAUDE.md, Testing), `claude --permission-mode default`
+in a scratch folder under that root, a one-line request for a harmless tool
+call, `pane.read` of the visible screen, then Escape. The MCP dialog came from a
+one-tool stdio server passed with `--strict-mcp-config --mcp-config`. The
+account's plan name in the welcome banner was replaced with `[redacted]`, the
+same length.

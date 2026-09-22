@@ -184,6 +184,11 @@ export interface ParsedPrompt {
    * pushed the answers off the screen — which is what "the codex permission
    * prompt does not show" turned out to mean. It is context: shown, in a
    * monospace block, under the question and above the answers.
+   *
+   * Claude Code does the reverse — the tool and its command above a generic
+   * "Do you want to proceed?" — so there the context is the dialog's block
+   * above the question, in screen order, each entry keeping its line breaks
+   * so a command and its description stay apart.
    */
   context?: string[];
 }

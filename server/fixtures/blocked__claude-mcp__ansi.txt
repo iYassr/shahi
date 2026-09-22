@@ -1,0 +1,40 @@
+[0m[38;2;215;119;87m▝▜[0m[38;2;215;119;87m[48;2;0;0;0m█████[0m[38;2;215;119;87m█▀  [0m[38;2;153;153;153mOpus 5.5 (1M context) · [redacted][0m
+[0m[38;2;215;119;87m  ▝▝ ▝▝    [0m[38;2;153;153;153m/private/tmp/shahi-p15.GlMGfu/proj[0m
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with [0m[38;2;177;185;249m/model[0m.
+
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the Bash tool to run exactly this command and do nothing else: touch probe.txt[0m[48;2;55;55;55m                                   [0m
+
+  [0m[38;2;153;153;153mRan [0m[1m[38;2;153;153;153m1[0m[38;2;153;153;153m shell command [0m
+
+[0m[38;2;255;255;255m⏺ [0mI ran [0m[38;2;177;185;249mtouch probe.txt [0mand it finished without errors, so [0m[38;2;177;185;249mprobe.txt [0mnow exists in the working directory.
+
+[0m[38;2;153;153;153m✻ Brewed for 6s · done 1:15 AM[0m
+
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the WebFetch tool to fetch https://example.org and tell me its title. Do nothing else.[0m[48;2;55;55;55m                           [0m
+
+[0m[38;2;255;107;128m⏺[0m [0m[1mFetch[0m(https://example.org)
+[0m[38;2;153;153;153m  ⎿  Interrupted · What should Claude do instead?[0m
+
+[0m[38;2;153;153;153m✻[0m [0m[38;2;153;153;153mCooked for 4s · done 1:15 AM[0m
+
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mCall the echo tool from the probe MCP server with the text hello. Do nothing else.[0m[48;2;55;55;55m                                   [0m
+
+[0m[38;2;153;153;153m⏺[0m Calling probe…
+
+[0m[38;2;177;185;249m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+ [0m[1m[38;2;177;185;249mTool use[0m
+
+   [0m[1mprobe — Echo Tool:[0m[38;2;153;153;153m (MCP)[0m
+
+   [0m[38;2;153;153;153mtext: [0m"hello"
+
+   [0m[3mAbout the [0m[1m[3mprobe — Echo[0m[3m Tool:[0m
+   [0m[2m│ [0m[3m[38;2;153;153;153mEchoes the given text back.[0m
+
+ Do you want to proceed?
+ [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mYes[0m
+   [0m[38;2;153;153;153m2. [0mYes, and don't ask again for probe — Echo commands in /private/tmp/shahi-p15.GlMGfu/proj
+   [0m[38;2;153;153;153m3. [0mNo
+
+ [0m[38;2;153;153;153mEsc to cancel · Tab to amend[0m

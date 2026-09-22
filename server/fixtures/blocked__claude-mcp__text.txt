@@ -1,0 +1,40 @@
+▝▜██████▀  Opus 5.5 (1M context) · [redacted]
+  ▝▝ ▝▝    /private/tmp/shahi-p15.GlMGfu/proj
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+
+❯ Use the Bash tool to run exactly this command and do nothing else: touch probe.txt
+
+  Ran 1 shell command
+
+⏺ I ran touch probe.txt and it finished without errors, so probe.txt now exists in the working directory.
+
+✻ Brewed for 6s · done 1:15 AM
+
+❯ Use the WebFetch tool to fetch https://example.org and tell me its title. Do nothing else.
+
+⏺ Fetch(https://example.org)
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cooked for 4s · done 1:15 AM
+
+❯ Call the echo tool from the probe MCP server with the text hello. Do nothing else.
+
+⏺ Calling probe…
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool use
+
+   probe — Echo Tool: (MCP)
+
+   text: "hello"
+
+   About the probe — Echo Tool:
+   │ Echoes the given text back.
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for probe — Echo commands in /private/tmp/shahi-p15.GlMGfu/proj
+   3. No
+
+ Esc to cancel · Tab to amend

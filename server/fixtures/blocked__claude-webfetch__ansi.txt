@@ -1,0 +1,30 @@
+
+[0m[38;2;215;119;87m ▐[0m[38;2;215;119;87m[48;2;0;0;0m▛███▛█   [0m[1mClaude Code [0m[38;2;153;153;153mv2.1.280[0m
+[0m[38;2;215;119;87m▝▜[0m[38;2;215;119;87m[48;2;0;0;0m█████[0m[38;2;215;119;87m█▀  [0m[38;2;153;153;153mOpus 5.5 (1M context) · [redacted][0m
+[0m[38;2;215;119;87m  ▝▝ ▝▝    [0m[38;2;153;153;153m/private/tmp/shahi-p15.GlMGfu/proj[0m
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with [0m[38;2;177;185;249m/model[0m.
+
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the Bash tool to run exactly this command and do nothing else: touch probe.txt[0m[48;2;55;55;55m                                   [0m
+
+  [0m[38;2;153;153;153mRan [0m[1m[38;2;153;153;153m1[0m[38;2;153;153;153m shell command [0m 
+
+[0m[38;2;255;255;255m⏺ [0mI ran [0m[38;2;177;185;249mtouch probe.txt [0mand it finished without errors, so [0m[38;2;177;185;249mprobe.txt [0mnow exists in the working directory.
+
+[0m[38;2;153;153;153m✻ Brewed for 6s · done 1:15 AM[0m
+
+[0m[38;2;80;80;80m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse the WebFetch tool to fetch https://example.org and tell me its title. Do nothing else.[0m[48;2;55;55;55m                           [0m
+
+[0m[38;2;153;153;153m⏺ [0m[1mFetch[0m(https://example.org)
+
+[0m[38;2;177;185;249m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+ [0m[1m[38;2;177;185;249mFetch[0m
+
+   url: https://example.org/
+   prompt: What is the page title?
+   [0m[38;2;153;153;153mClaude wants to fetch content from example.org[0m
+
+ Do you want to allow Claude to fetch this content?
+ [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mYes[0m
+   [0m[38;2;153;153;153m2. [0mYes, and don't ask again for [0m[1mexample.org[0m
+   [0m[38;2;153;153;153m3. [0mNo, and tell Claude what to do differently [0m[1m(esc)[0m

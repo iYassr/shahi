@@ -63,6 +63,10 @@ describe("real captured screens", () => {
     ]);
   });
 
+  test("the question tool's header row comes with it, as the block above the question", () => {
+    expect(parsePrompt(readFixture("blocked__wK-p2__text.txt"))!.context).toEqual(["☐ Colour"]);
+  });
+
   test("the question tool's list parses the same from raw ANSI", () => {
     expect(parsePrompt(readFixture("blocked__wK-p2__ansi.txt"))).toEqual(
       parsePrompt(readFixture("blocked__wK-p2__text.txt")),
@@ -86,6 +90,84 @@ describe("real captured screens", () => {
 
     expect(parsed!.options.map((o) => o.index)).toEqual([1, 2, 3]);
     expect(parsed!.options[0]).toMatchObject({ label: "Yes, proceed (y)", selected: true });
+  });
+
+  // Claude Code puts the command above a generic "Do you want to proceed?",
+  // the reverse of codex, and the card used to show only that question: a
+  // Bash approval tappable from the agents list without ever seeing the
+  // command. Captured from Claude Code 2.1.280 under herdr 0.9.1.
+  describe("a Claude Code permission card shows what it is asking to do", () => {
+    test("a Bash card carries the command and its description", () => {
+      const parsed = parsePrompt(readFixture("blocked__claude-bash__text.txt"))!;
+      expect(parsed.question).toBe("Do you want to proceed?");
+      expect(parsed.context).toEqual([
+        'Bash command\nTip: auto mode handles these prompts for you — choose "switch to auto mode" below',
+        // Separate lines, as on screen: joined with a space the description
+        // read as more of the command.
+        "touch probe.txt\nCreate empty probe file",
+      ]);
+      expect(parsed.options.map((o) => o.label)).toEqual([
+        "Yes",
+        "Yes, and always allow access to /private/tmp/shahi-p15.GlMGfu/proj from this project",
+        "Yes, and switch to auto mode · auto mode handles these prompts for you",
+        "No",
+      ]);
+    });
+
+    test("a Bash card parses the same from raw ANSI", () => {
+      expect(parsePrompt(readFixture("blocked__claude-bash__ansi.txt"))).toEqual(
+        parsePrompt(readFixture("blocked__claude-bash__text.txt")),
+      );
+    });
+
+    test("a WebFetch card carries the address", () => {
+      const parsed = parsePrompt(readFixture("blocked__claude-webfetch__text.txt"))!;
+      expect(parsed.question).toBe("Do you want to allow Claude to fetch this content?");
+      expect(parsed.context).toEqual([
+        "Fetch",
+        "url: https://example.org/\nprompt: What is the page title?\nClaude wants to fetch content from example.org",
+      ]);
+      expect(parsePrompt(readFixture("blocked__claude-webfetch__ansi.txt"))).toEqual(parsed);
+    });
+
+    test("an MCP card carries the tool and its arguments", () => {
+      const parsed = parsePrompt(readFixture("blocked__claude-mcp__text.txt"))!;
+      expect(parsed.question).toBe("Do you want to proceed?");
+      expect(parsed.context).toEqual([
+        "Tool use",
+        "probe — Echo Tool: (MCP)",
+        'text: "hello"',
+        "About the probe — Echo Tool:\n│ Echoes the given text back.",
+      ]);
+      expect(parsePrompt(readFixture("blocked__claude-mcp__ansi.txt"))).toEqual(parsed);
+    });
+
+    test("two Bash cards with the same answers differ by their command", () => {
+      const touch = parsePrompt(readFixture("blocked__claude-bash__text.txt"))!;
+      const rm = parsePrompt(readFixture("blocked__claude-bash-rm__text.txt"))!;
+      expect(rm.options).toEqual(touch.options);
+      expect(rm.context?.at(-1)).toBe("rm -rf build dist\nDelete build and dist directories");
+    });
+
+    // Variations on the captured layout, for the two ways the block could be
+    // cut wrong.
+    const bash = (command: string[]) =>
+      readFixture("blocked__claude-bash__text.txt").replace("   touch probe.txt\n", command.map((l) => `   ${l}\n`).join(""));
+
+    test("a command's own dashes do not end the block halfway through it", () => {
+      const parsed = parsePrompt(bash(["cat > deploy.yml <<'EOF'", "---", "name: deploy", "EOF"]))!;
+      expect(parsed.context?.at(-1)).toBe("cat > deploy.yml <<'EOF'\n---\nname: deploy\nEOF\nCreate empty probe file");
+    });
+
+    test("a multi-line command keeps its indentation", () => {
+      const parsed = parsePrompt(bash(["python3 - <<'EOF'", "for n in range(3):", "    print(n)", "EOF"]))!;
+      expect(parsed.context?.at(-1)).toBe("python3 - <<'EOF'\nfor n in range(3):\n    print(n)\nEOF\nCreate empty probe file");
+    });
+
+    test("with no rule above the question on screen, nothing is guessed", () => {
+      const unbounded = ["  touch probe.txt", "  Create empty probe file", "", " Do you want to proceed?", " ❯ 1. Yes", "   2. No"].join("\n");
+      expect(parsePrompt(unbounded)?.context).toBeUndefined();
+    });
   });
 
   test("marks codex's numbered folder-trust menu as requiring Enter after the digit", () => {

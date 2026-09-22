@@ -324,7 +324,8 @@ function findQuestion(
    * question and the options is kept as context, which is where a command and
    * its reason belong.
    */
-  const paragraphs: string[][] = [];
+  /** Each paragraph's lines, and the index in `lines` of its top one. */
+  const paragraphs: { text: string[]; top: number }[] = [];
   let current: string[] = [];
 
   while (i >= 0 && paragraphs.length < MAX_PARAGRAPHS) {
@@ -332,7 +333,7 @@ function findQuestion(
 
     if (line.trim() === "" || CHROME_ONLY_RE.test(line) || MARKER_LINE_RE.test(line)) {
       if (current.length > 0) {
-        paragraphs.push(current);
+        paragraphs.push({ text: current, top: i + 1 });
         current = [];
       }
       // A marker line is structure, and nothing above it belongs to this
@@ -346,14 +347,14 @@ function findQuestion(
     current.unshift(line.trim());
     i--;
     if (current.length >= MAX_PARAGRAPH_LINES) {
-      paragraphs.push(current);
+      paragraphs.push({ text: current, top: i + 1 });
       current = [];
     }
   }
-  if (current.length > 0) paragraphs.push(current);
+  if (current.length > 0) paragraphs.push({ text: current, top: i + 1 });
   if (paragraphs.length === 0) return null;
 
-  const joined = paragraphs.map((p) => p.join(" ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined = paragraphs.map((p) => p.text.join(" ").replace(/\s+/g, " ").trim());
 
   /*
    * A labelled line is context however it is punctuated.
@@ -372,12 +373,88 @@ function findQuestion(
   const asked = ended >= 0 ? ended : joined.findIndex((p) => p.includes("?"));
   if (asked < 0) return { text: joined[0] ?? "", context: [] };
 
+  /*
+   * Claude Code lays a permission out the other way round from codex: the
+   * tool, then what it wants to do, then a generic "Do you want to proceed?"
+   * directly above the options. Captured from Claude Code 2.1.280:
+   *
+   *     ─────────────────────────────────────
+   *      Bash command
+   *
+   *        rm -rf build dist
+   *        Delete build and dist directories
+   *
+   *      Do you want to proceed?
+   *      ❯ 1. Yes
+   *
+   * Taking only what sits between question and options left every Bash,
+   * WebFetch and MCP card as that bare question — approvable from the agents
+   * list without ever seeing the command (pre-release review). So when nothing
+   * sits between them, the dialog's own block above the question is the
+   * context: from the question up to the rule Claude draws as the dialog's top
+   * border, and nothing past it.
+   */
+  const context = joined.slice(0, asked).reverse();
+  if (ended === 0) context.push(...dialogAbove(lines, paragraphs[0]!.top));
+
   return {
     // Nearest-first while walking up, so everything before the question in that
     // list sits between it and the options on screen.
     text: joined[asked]!,
-    context: joined.slice(0, asked).reverse(),
+    context,
   };
+}
+
+/**
+ * The paragraphs between a dialog's top rule and the question at `top`, in
+ * screen order.
+ *
+ * Only a block with a rule above it on screen counts: without one there is no
+ * telling where the dialog ends and the conversation above it begins, and a
+ * command shown without its start is worse than none — so an unbounded block,
+ * or one that reaches a prompt marker first, gives nothing.
+ *
+ * Lines keep their breaks, unlike the rest of the context. The command and
+ * its description are separate lines of one paragraph, and joining them with
+ * a space made the description read as more of the command. Relative
+ * indentation survives too, because a multi-line command's indentation can
+ * be part of what it does.
+ */
+function dialogAbove(lines: string[], top: number): string[] {
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  const close = () => {
+    if (current.length > 0) blocks.unshift(current);
+    current = [];
+  };
+  for (let n = top - 1; n >= 0; n--) {
+    const line = lines[n]!;
+    if (line.trim() === "") {
+      close();
+      continue;
+    }
+    if (DIALOG_RULE_RE.test(line)) {
+      close();
+      return blocks.map(dedent);
+    }
+    if (MARKER_LINE_RE.test(line)) return [];
+    current.unshift(line);
+  }
+  return [];
+}
+
+/**
+ * The rule across the top of a Claude Code dialog: the full pane width of
+ * `─`. Deliberately not any chrome-only line — a command's own `---` (a heredoc
+ * writing YAML, say) would otherwise end the block halfway through the
+ * command and show its tail as if it were all of it.
+ */
+const DIALOG_RULE_RE = /^\s*[─━═]{20,}\s*$/u;
+
+/** Joins a paragraph's lines, less the indentation they all share. */
+function dedent(block: string[]): string {
+  const indent = Math.min(...block.map((line) => line.length - line.trimStart().length));
+  return block.map((line) => line.slice(indent)).join("\n");
 }
 
 /** `Reason:`, `Environment:` — codex's own labels for the context it supplies. */
