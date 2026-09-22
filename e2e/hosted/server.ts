@@ -2,7 +2,7 @@
 import { join, resolve } from "node:path";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ephemeral, open, seal, serverSession, type Session as CryptoSession } from "../../shared/src/e2e";
-import { RELAY_PROTOCOL, SHAHI_API_VERSION, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
+import { RELAY_PROTOCOL, RELAY_RESPONSE_HEADERS, SHAHI_API_VERSION, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
 import type { ServerWebSocket } from "bun";
 
 const port = Number(process.env.HOSTED_PORT ?? 7472);
@@ -151,7 +151,14 @@ const fixture = Bun.serve<Link>({
           if (target.origin !== apiBase) throw new Error("escaped fixture");
           response = await fetch(target, { method: message.method, headers, body });
         }
-        send(ws, { t: "res", id: message.id, status: response.status, headers: Object.fromEntries(response.headers), body: b64(new Uint8Array(await response.arrayBuffer())) });
+        // Only the headers the sidecar's relay client forwards. Passing every
+        // header through hid a box that withheld the two ranged downloads
+        // need, so this suite passed while every relay download failed.
+        const headers = Object.fromEntries(RELAY_RESPONSE_HEADERS.flatMap(name => {
+          const value = response.headers.get(name);
+          return value === null ? [] : [[name, value]];
+        }));
+        send(ws, { t: "res", id: message.id, status: response.status, headers, body: b64(new Uint8Array(await response.arrayBuffer())) });
       } catch { ws.close(4400, "invalid fixture frame"); }
     },
     close(ws) { links.delete(ws); blackholes.delete(ws); ws.data.stream?.close(); },
