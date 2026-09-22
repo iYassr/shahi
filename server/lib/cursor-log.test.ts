@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, appendFile, rm, symlink, realpath } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cursorSessionFromStore, findCursorTranscript, normaliseCursor, readCursorLog } from "./cursor-log";
+import { previewOf } from "./session-log";
 const id = "11111111-2222-4333-8444-555555555555";
 const user = (text: string) => ({role:"user",message:{content:[{type:"text",text}]}});
 const agent = (text: string) => ({role:"assistant",message:{content:[{type:"text",text},{type:"tool_use",name:"Read",input:{path:"/tmp/sample.txt"}}]}});
@@ -11,6 +12,22 @@ test("Cursor calls with missing results are explicit, not perpetually running", 
  expect(log.map(x=>x.role)).toEqual(["you","agent"]);
  expect(log[1]!.blocks[1]).toMatchObject({kind:"tool",file:{path:"/tmp/sample.txt",name:"sample.txt"},outputUnavailable:true,result:null});
  expect(log.map(x=>x.at)).toEqual([0,0]);
+});
+// The real shape, reconstructed from a tag-name census of local transcripts:
+// Cursor records the context it sends the model, so every user bubble showed
+// its <timestamp>/<user_query> wrappers and a tool catalogue showed as a
+// message the person sent (review finding, September 2026).
+test("Cursor user turns show what was typed, not the timestamp and tool-catalogue wrappers", () => {
+ const typed = user("<timestamp>Monday, Sep 21, 2026, 10:14 AM (UTC+3)</timestamp>\n<user_query>\nfix the login bug\n</user_query>\n");
+ const stamp = user("<timestamp>Monday, Sep 21, 2026, 10:15 AM (UTC+3)</timestamp>\n");
+ const tools = user(`<dynamic_tools>\n${"<tool><name>t</name><description>d</description></tool>\n".repeat(50)}</dynamic_tools>`);
+ const log = normaliseCursor([tools, typed, agent("On it."), stamp]);
+ expect(log.map(m => [m.role, m.blocks[0]])).toEqual([
+  ["you", { kind: "text", text: "fix the login bug" }],
+  ["agent", { kind: "text", text: "On it." }],
+ ]);
+ expect(previewOf(log.slice(0, 1))).toBe("You: fix the login bug");
+ expect(normaliseCursor([user("<timestamp>now</timestamp>\nplain words")])[0]!.blocks[0]).toEqual({ kind: "text", text: "plain words" });
 });
 test("store lookup requires an exact Cursor database path",()=>{
  expect(cursorSessionFromStore(`/tmp/cursor/chats/project/${id}/store.db`,"/tmp/cursor")).toBe(id);

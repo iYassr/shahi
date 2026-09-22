@@ -57,6 +57,31 @@ export async function cursorTranscriptFor(client: HerdrClient, paneId: string, s
     return ids.size === 1 ? findCursorTranscript([...ids][0]!) : null;
   } catch { return null; }
 }
+/**
+ * What the person typed, out of the wrappers Cursor puts around a user turn.
+ *
+ * Cursor sends the model its context in tags and records that verbatim, so
+ * every user bubble showed `<timestamp>…</timestamp><user_query>…` and one
+ * showed a 2,901-character `<dynamic_tools>` catalogue as something the person
+ * sent (review finding, September 2026). A census of the local transcripts
+ * (tag names only): 21 of 22 user blocks open with `<timestamp>`, 14 carry the
+ * typed text in `<user_query>`, and none has text outside a tag. So the query
+ * is the message, and any other wrapped element is context for the model:
+ * dropped, never guessed at. Plain text, the shape older transcripts and the
+ * tests use, still comes through once leading wrappers are removed.
+ */
+export function cursorUserText(text: string): string {
+  const queries = [...text.matchAll(/<user_query>([\s\S]*?)<\/user_query>/g)]
+    .map((match) => match[1]!.trim())
+    .filter(Boolean);
+  if (queries.length > 0) return queries.join("\n\n");
+  let rest = text;
+  for (let wrapped; (wrapped = /^\s*<([A-Za-z_][\w-]*)(?:\s[^>]*)?>[\s\S]*?<\/\1>/.exec(rest)); ) {
+    rest = rest.slice(wrapped[0].length);
+  }
+  return rest.trim();
+}
+
 /** Cursor currently records calls without results or timestamps. Don't invent
  * either, and don't describe a historical call as still running forever. */
 export function normaliseCursor(rows: Record<string, unknown>[], start = 0): LogMessage[] {
@@ -65,7 +90,9 @@ export function normaliseCursor(rows: Record<string, unknown>[], start = 0): Log
     if (row.role !== "user" && row.role !== "assistant") return [];
     const content = (row.message as { content?: unknown } | undefined)?.content;
     if (!Array.isArray(content)) return [];
-    const safe = content.filter(b => b && ["text", "thinking", "tool_use"].includes(b.type));
+    const safe = content
+      .filter(b => b && ["text", "thinking", "tool_use"].includes(b.type))
+      .map(b => row.role === "user" && b.type === "text" ? { ...b, text: cursorUserText(String(b.text ?? "")) } : b);
     const messages = normalise([{ type: row.role, uuid: `cursor-${position}`, message: { content: safe } }]);
     position += messages.length;
     return messages.map(m => ({ ...m, blocks: m.blocks.map(b => b.kind === "tool" ? { ...b, outputUnavailable: true } : b) }));
