@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { bundles } from "./version";
+import { clearWebDrafts, draftOwner, webDraft } from "./drafts";
 
 /**
  * The comparison behind "am I running the current build?".
@@ -58,5 +59,35 @@ test("a deployed update preserves memory-only access and offers explicit reload"
       if (previous[index]) Object.defineProperty(globalThis, key, previous[index]!);
       else Reflect.deleteProperty(globalThis, key);
     });
+  }
+});
+
+test("an update waits for a draft or uncertain send in a conversation that is no longer open", async () => {
+  const { hasPendingWork } = await import("./version");
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  // Nothing on screen marks pending work: the pane holding it was navigated away from.
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { querySelector: () => null } });
+  const owner = draftOwner({ serverId: "computer", deviceId: "browser" });
+  try {
+    expect(hasPendingWork()).toBe(false);
+    const draft = webDraft(owner, "w1:p1");
+    draft.text = "half-written reply";
+    expect(hasPendingWork()).toBe(true);
+    draft.text = "";
+    draft.attachments = [{ name: "notes.md", path: "/home/me/notes.md" }];
+    expect(hasPendingWork()).toBe(true);
+    draft.attachments = [];
+    // A send whose receipt never arrived: its operation ID must survive for the retry.
+    draft.pending = { body: "run the migration", id: "operation-1" };
+    expect(hasPendingWork()).toBe(true);
+    draft.pending = null;
+    draft.inFlight = true;
+    expect(hasPendingWork()).toBe(true);
+    draft.inFlight = false;
+    expect(hasPendingWork()).toBe(false);
+  } finally {
+    clearWebDrafts(owner);
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
   }
 });

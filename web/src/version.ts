@@ -11,6 +11,7 @@
  * whenever the app comes back to the foreground — the shell is around 600 bytes
  * over the wire.
  */
+import { hasUnsentDrafts } from "./drafts";
 
 /** At most this often, however many times the app is foregrounded. */
 const MIN_GAP_MS = 60_000;
@@ -59,7 +60,12 @@ export async function reloadIfStale(
 /** Exported for testing: the comparison, without the fetch or the reload. */
 export const bundles = { running: runningBundle, deployed: deployedBundle };
 
-/** Forms and the composer keep work in memory. An automatic update must wait. */
+/**
+ * Forms and the composer keep work in memory. An automatic update must wait.
+ *
+ * Drafts are asked directly as well as the page: a conversation you navigated
+ * away from keeps its draft and pending send, but is no longer in the DOM.
+ */
 export function hasPendingWork(): boolean {
-  return Boolean(document.querySelector('[data-update-blocked="true"], [role="dialog"]'));
+  return hasUnsentDrafts() || Boolean(document.querySelector('[data-update-blocked="true"], [role="dialog"]'));
 }

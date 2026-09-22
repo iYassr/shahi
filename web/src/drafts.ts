@@ -25,4 +25,22 @@ export function webDraft(owner: string, pane: string): WebDraft {
 }
 export function clearWebDrafts(owner: string) { scopes.delete(owner); }
 
+/**
+ * Whether any conversation, open or not, holds work a page reload would lose.
+ *
+ * The composer's own `data-update-blocked` marker only exists while its pane is
+ * on screen, but drafts outlive navigation on purpose. A pre-release review
+ * found the update check reloading away a draft — and an uncertain send's
+ * operation ID, whose loss turns a retry into a second command — as soon as
+ * the person had moved to another pane or the list.
+ */
+export function hasUnsentDrafts(): boolean {
+  for (const drafts of scopes.values()) {
+    for (const draft of drafts.values()) {
+      if (draft.text || draft.attachments.length || draft.pending || draft.inFlight) return true;
+    }
+  }
+  return false;
+}
+
 export function notifyWebDraft(draft: WebDraft) { draft.listeners.forEach(notify => notify()); }
