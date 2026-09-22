@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { HerdrError, type HerdrClient } from "./herdr-client";
 import { Poller } from "./poller";
 import type { SessionStore } from "./state";
@@ -138,6 +140,50 @@ describe("answering sooner than the mirror knows", () => {
     const frame = await new Poller(client, store, new TranscriptStore(":memory:")).refresh("w1:p1");
 
     expect(frame?.prompt).toBe(null);
+  });
+
+  // herdr reports a new agent `unknown` for seconds after `agent.start` while
+  // its folder-trust menu is already on screen. The menu is static, so the
+  // screen's hash never changes again, and the frame cached in that window
+  // used to keep `prompt: null` for as long as the agent waited.
+  describe("a menu read before herdr says the agent is waiting", () => {
+    const TRUST = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    function herdrWhoseStatusMoves() {
+      const herdr = { mirror: "unknown", live: "unknown" };
+      const client = {
+        rpc: async (method: string) => {
+          if (method === "pane.get") return { pane: { agent_status: herdr.live } };
+          return { read: { text: TRUST } };
+        },
+      } as unknown as HerdrClient;
+      const mirror = { pane: () => ({ agent_status: herdr.mirror }) } as unknown as SessionStore;
+      return { herdr, poller: new Poller(client, mirror, new TranscriptStore(":memory:")) };
+    }
+
+    test("gains its answer buttons once the mirror says blocked, though the screen never changed", async () => {
+      const { herdr, poller } = herdrWhoseStatusMoves();
+      const frames: (object | null)[] = [];
+      poller.on("frame", (frame) => frames.push(frame.prompt));
+
+      expect((await poller.refresh("w1:p1"))?.prompt).toBe(null);
+
+      herdr.mirror = herdr.live = "blocked";
+      const frame = await poller.refresh("w1:p1");
+
+      expect(frame?.prompt?.options.map((option) => option.label)).toEqual(["No, exit", "Yes, I trust this folder"]);
+      // Emitted, so watchers get the frame and every client the `prompt` broadcast.
+      expect(frames.at(-1)).toEqual(frame!.prompt);
+      expect(poller.frame("w1:p1")?.prompt).toEqual(frame!.prompt);
+    });
+
+    test("gains them when herdr confirms before the mirror catches up", async () => {
+      const { herdr, poller } = herdrWhoseStatusMoves();
+      expect((await poller.refresh("w1:p1"))?.prompt).toBe(null);
+
+      herdr.live = "blocked";
+      await new Promise((resolve) => setTimeout(resolve, 1_050)); // past the confirmation limiter
+      expect((await poller.refresh("w1:p1"))?.prompt?.question).toContain("Quick safety check");
+    });
   });
 
   test("does not ask at all for a screen with no menu on it", async () => {

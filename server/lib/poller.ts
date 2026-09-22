@@ -26,7 +26,7 @@ import type { PaneFrame } from "@shahi/shared";
 import { parseActivity } from "./activity";
 
 export type { PaneFrame };
-import { parsePrompt, stripAnsi } from "./prompt-parser";
+import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
@@ -52,6 +52,8 @@ interface PaneRecord {
   hash: string;
   lastPolledAt: number;
   frame: PaneFrame;
+  /** The menu this screen shows, whether or not herdr agreed the agent was waiting when it was read. */
+  parsed: ParsedPrompt | null;
 }
 
 export class Poller extends EventEmitter<PollerEvents> {
@@ -236,6 +238,20 @@ export class Poller extends EventEmitter<PollerEvents> {
 
     if (existing?.hash === hash) {
       existing.lastPolledAt = now;
+      // The screen has not changed, but herdr's opinion of it may have. A new
+      // agent's folder-trust menu is on screen while herdr still reports it
+      // `unknown` (measured: several seconds after `agent.start`), and a
+      // static menu never changes the hash again — so the frame cached in that
+      // window kept `prompt: null`, and the card for a waiting agent had no
+      // answer buttons for as long as it waited (pre-release review). Ask
+      // again, through the same rate-limited confirmation a new screen gets.
+      if (existing.parsed && !existing.frame.prompt && (await this.#status(paneId, true)) === "blocked") {
+        // A read that finished meanwhile holds a newer screen; keep that.
+        const latest = this.#records.get(paneId);
+        if (latest !== existing) return latest?.frame;
+        existing.frame = { ...existing.frame, prompt: existing.parsed, at: now };
+        this.emit("frame", existing.frame);
+      }
       return existing.frame;
     }
 
@@ -268,7 +284,7 @@ export class Poller extends EventEmitter<PollerEvents> {
     // and before the first screen is recorded on top of it.
     if (!existing) await this.#seedHistory(paneId, text);
 
-    this.#records.set(paneId, { hash, lastPolledAt: now, frame });
+    this.#records.set(paneId, { hash, lastPolledAt: now, frame, parsed });
     this.transcript.record(paneId, text);
     this.emit("frame", frame);
     return frame;
