@@ -6,7 +6,8 @@ import { ConnectionHealth } from "./components/ConnectionHealth";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
-import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser, selectBrowserComputer } from "./connection";
+import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser } from "./connection";
+import { listenForNotifications, openNotification } from "./notification-route";
 import { PairBrowser } from "./components/PairBrowser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -40,14 +41,13 @@ export function App(props: { initialPairingCode?: string }) {
     void restoreBrowser().then(async () => {
       if (!window.location.pathname.endsWith("/notification")) return;
       const query = new URLSearchParams(window.location.search);
-      const pane = query.get("pane");
-      const id = query.get("computer");
-      const computers = browserComputers();
-      const target = id ? computers.find(c => c.id === id) : computers.length === 1 ? computers[0] : undefined;
-      if (hosted && !target) { navigate("/computers", { replace: true }); return; }
-      if (hosted && target) await selectBrowserComputer(target.id);
-      navigate(pane ? `/pane/${encodeURIComponent(pane)}` : "/", { replace: true });
+      await openNotification(query.get("pane"), query.get("computer"), (path) => navigate(path, { replace: true }));
     }).finally(() => setRestored(true));
+    return listenForNotifications((pane, computer) => {
+      void restoreBrowser()
+        .then(() => openNotification(pane, computer, (path) => navigate(path)))
+        .catch(() => navigate("/computers"));
+    });
   }, []);
   const scopedApi = useMemo(() => { const owner = browserConnection(); return createApi(() => owner); }, [epoch, restored]);
   const [openPairing, setOpenPairing] = useState(!!props.initialPairingCode);

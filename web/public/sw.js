@@ -160,6 +160,25 @@ self.addEventListener("push", (event) => {
   );
 });
 
+/**
+ * Asks an open page to route itself, and says whether it answered.
+ *
+ * `WindowClient.navigate` loads a new document: the page reloads, and with it
+ * go unsent drafts and computers paired for this session only. The pre-release
+ * review found a notification tap discarding exactly those. A page that knows
+ * this message routes in place and answers on the port; a page from an older
+ * release does not, and is navigated as before.
+ */
+function routeInPlace(client, message) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const settle = (answered) => { clearTimeout(timer); channel.port1.close(); resolve(answered); };
+    const timer = setTimeout(() => settle(false), 3000);
+    channel.port1.onmessage = () => settle(true);
+    client.postMessage(message, [channel.port2]);
+  });
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const paneId = event.notification.data?.paneId;
@@ -174,6 +193,7 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of windows) {
         if (client.url.startsWith(self.registration.scope)) {
           await client.focus();
+          if (await routeInPlace(client, { type: "shahi:open-notification", pane: paneId || "", computer: serverId || "" })) return;
           if ("navigate" in client) await client.navigate(target);
           return;
         }

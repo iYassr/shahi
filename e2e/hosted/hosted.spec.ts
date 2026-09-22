@@ -451,6 +451,33 @@ test("a notification opens its own computer even when another was selected", asy
   await expect(page.locator("textarea")).toHaveCount(0);
 });
 
+test("tapping a notification while the app is open keeps a session-only computer and its drafts", async ({ page }) => {
+  // Not remembered: a page load would forget this computer. The service worker
+  // used to navigate the open window, which is a page load.
+  await pair(page);
+  const computer = new URLSearchParams(code.split("#")[1]).get("server")!;
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  const open = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1)!);
+  const target = open === "w1:p1" ? "w1:p2" : "w1:p1";
+  await page.locator("textarea").fill("half-written reply");
+  await page.evaluate(() => { (window as { unreloaded?: boolean }).unreloaded = true; });
+  // What public/sw.js posts to an open window when its notification is tapped.
+  // The worker waits three seconds for an answer before navigating the window.
+  const answer = await page.evaluate((message) => new Promise((resolve) => {
+    const channel = new MessageChannel();
+    setTimeout(() => resolve("no answer"), 3_000);
+    channel.port1.onmessage = (event) => resolve(event.data);
+    navigator.serviceWorker.dispatchEvent(new MessageEvent("message", { data: { type: "shahi:open-notification", ...message }, ports: [channel.port2] }));
+  }), { pane: target, computer });
+  expect(answer).toBe("opened");
+  await expect(page).toHaveURL(new RegExp(`/pwa/pane/${encodeURIComponent(target)}$`));
+  await expect(page.locator("textarea")).toHaveValue("");
+  await expect(page.getByLabel("Pairing code", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as { unreloaded?: boolean }).unreloaded)).toBe(true);
+  await page.goBack();
+  await expect(page.locator("textarea")).toHaveValue("half-written reply");
+});
+
 test("a delayed sign-out removes its own computer after switching to another", async ({ page, request }) => {
   await pair(page, true);
   const second = await (await request.post("http://127.0.0.1:7572/__hosted/reset")).json();

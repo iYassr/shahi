@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { serviceWorkerRelease, stampServiceWorker, type ReleaseFile } from "../sw-build";
+import { listenForNotifications, OPEN_NOTIFICATION } from "./notification-route";
 
 /**
  * The service worker, run as a browser would run it: the stamped source in a
@@ -181,5 +182,64 @@ describe("the worker keeps a release openable", () => {
     for (const [name, entries] of sw.storage) stalled.storage.set(name, entries);
     const response = await stalled.request("/pwa/", { mode: "navigate" });
     expect(await response!.text()).toBe(SHELL("index-a.js"));
+  });
+});
+
+describe("tapping a notification", () => {
+  const source = stampServiceWorker(template, []);
+  const click = { notification: { close: () => {}, data: { paneId: "w1:p2", serverId: "computer-b" } } };
+  function openApp(answers: boolean) {
+    const calls: string[] = [];
+    const messages: unknown[] = [];
+    return {
+      calls, messages,
+      url: "https://getshahi.dev/pwa/pane/w1%3Ap1",
+      focus: async () => { calls.push("focus"); },
+      navigate: async (url: string) => { calls.push(`navigate ${url}`); },
+      postMessage: (message: unknown, ports: MessagePort[]) => { messages.push(message); if (answers) ports[0]!.postMessage("opened"); },
+    };
+  }
+
+  test("routes the open app in place instead of reloading it", async () => {
+    const app = openApp(true);
+    const sw = worker(source, () => undefined, { timers: "real", windows: [app] });
+    await sw.extend("notificationclick", click);
+    // A navigation reloads the page, and with it every unsent draft and any
+    // computer paired for this session only.
+    expect(app.calls).toEqual(["focus"]);
+    expect(app.messages).toEqual([{ type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b" }]);
+  });
+
+  test("navigates an open page from an older release that does not answer", async () => {
+    const app = openApp(false);
+    const sw = worker(source, () => undefined, { windows: [app] });
+    await sw.extend("notificationclick", click);
+    expect(app.calls).toEqual(["focus", "navigate /pwa/notification?pane=w1%3Ap2&computer=computer-b"]);
+  });
+
+  test("opens the app when none is open", async () => {
+    const sw = worker(source, () => undefined, { windows: [] });
+    await sw.extend("notificationclick", click);
+    expect(sw.opened).toEqual(["/pwa/notification?pane=w1%3Ap2&computer=computer-b"]);
+  });
+
+  test("the open app answers the worker and routes to the pane", async () => {
+    const container = new EventTarget();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { serviceWorker: container } });
+    const routed: Array<[string | null, string | null]> = [];
+    const stop = listenForNotifications((pane, computer) => routed.push([pane, computer]));
+    try {
+      const channel = new MessageChannel();
+      const answered = new Promise((resolve) => { channel.port1.onmessage = (event) => resolve(event.data); });
+      container.dispatchEvent(new MessageEvent("message", { data: { type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b" }, ports: [channel.port2] }));
+      expect(await answered).toBe("opened");
+      expect(routed).toEqual([["w1:p2", "computer-b"]]);
+      channel.port1.close();
+    } finally {
+      stop();
+      if (previous) Object.defineProperty(globalThis, "navigator", previous);
+      else Reflect.deleteProperty(globalThis, "navigator");
+    }
   });
 });
