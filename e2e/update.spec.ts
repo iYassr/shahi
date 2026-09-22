@@ -20,6 +20,24 @@ async function deploy(page: Page) {
 }
 
 /**
+ * A lazily loaded chunk the server no longer has. A rejected `React.lazy`
+ * stays rejected, so the error screen replaced the whole app, and both of its
+ * ways out were page loads.
+ */
+test("a terminal removed by a deploy offers the update instead of breaking the app", async ({ page }) => {
+  await scenario(page, "busy");
+  await page.goto("/pane/w1%3Ap2");
+  await page.locator("textarea").fill("Keep this draft");
+  await page.route("**/assets/Terminal-*", (route) => route.fulfill({ status: 404, body: "not found" }));
+  await deploy(page);
+  await page.getByRole("tab", { name: "Screen", exact: true }).click();
+  await expect(page.getByText(/could not be loaded/)).toBeVisible();
+  await expect(page.getByText(/A new version is ready/)).toBeVisible();
+  await expect(page.getByText(/Something in the app broke/)).toHaveCount(0);
+  await expect(page.locator("textarea")).toHaveValue("Keep this draft");
+});
+
+/**
  * Drafts outlive the conversation they were typed in, on purpose, but only the
  * conversation on screen used to mark itself as unfinished work, so the
  * foreground update check reloaded away a draft — and an uncertain send's

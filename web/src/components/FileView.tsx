@@ -13,8 +13,9 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * spreadsheet is more use in Files than in a viewer this app would have to
  * write. Both go through the same endpoint; only the disposition differs.
  */
-import { lazy, Suspense, useEffect, useState } from "react";
-const PdfPreview = lazy(() => import("./PdfPreview"));
+import { Suspense, useEffect, useState } from "react";
+import { lazyChunk } from "../lazy-chunk";
+const PdfPreview = lazyChunk(() => import("./PdfPreview"));
 import { useApi } from "../api";
 
 interface Props {

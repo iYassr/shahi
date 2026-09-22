@@ -31,6 +31,22 @@ function deployedBundle(html: string): string | null {
   return /<script\b[^>]*\bsrc=["']((?:\/pwa)?\/assets\/[^"']+\.js)["']/i.exec(html)?.[1] ?? null;
 }
 
+/** Whether the server now names a different bundle from the one running. */
+export async function newerBundleDeployed(): Promise<boolean> {
+  const running = runningBundle();
+  if (!running) return false;
+
+  try {
+    const res = await fetch(import.meta.env?.BASE_URL ?? "/", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return false;
+    const deployed = deployedBundle(await res.text());
+    return Boolean(deployed && deployed !== running);
+  } catch {
+    // Offline, or the server is away. Not the moment to reload.
+    return false;
+  }
+}
+
 /** Hosted memory-only credentials must survive discovering an update. */
 export async function reloadIfStale(
   now: () => number = Date.now,
@@ -39,23 +55,15 @@ export async function reloadIfStale(
   if (now() - lastCheck < MIN_GAP_MS) return false;
   lastCheck = now();
 
-  const running = runningBundle();
-  if (!running) return false;
-
-  try {
-    const res = await fetch(import.meta.env?.BASE_URL ?? "/", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return false;
-    const deployed = deployedBundle(await res.text());
-    if (!deployed || deployed === running) return false;
-  } catch {
-    // Offline, or the server is away. Not the moment to reload.
-    return false;
-  }
+  if (!(await newerBundleDeployed())) return false;
 
   if (options.canReload?.() === false) { options.onAvailable?.(); return false; }
   location.reload();
   return true;
 }
+
+/** Dispatched on `window` when something finds a newer release; App shows its banner. */
+export const UPDATE_AVAILABLE = "shahi:update-available";
 
 /** Exported for testing: the comparison, without the fetch or the reload. */
 export const bundles = { running: runningBundle, deployed: deployedBundle };

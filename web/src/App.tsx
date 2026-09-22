@@ -21,7 +21,7 @@ import {
   type Session,
   type SocketMessage,
 } from "./api";
-import { hasPendingWork, reloadIfStale } from "./version";
+import { hasPendingWork, reloadIfStale, UPDATE_AVAILABLE } from "./version";
 import { Dashboard } from "./components/Dashboard";
 import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
@@ -271,6 +271,14 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       window.removeEventListener("pageshow", wake);
     };
   }, [authenticated]);
+
+  // A chunk that failed to load because a newer release replaced it: offer the
+  // update rather than reloading under someone's feet.
+  useEffect(() => {
+    const available = () => setUpdateAvailable(true);
+    window.addEventListener(UPDATE_AVAILABLE, available);
+    return () => window.removeEventListener(UPDATE_AVAILABLE, available);
+  }, []);
 
   // A session can expire while the app sits open on a home screen.
   useEffect(() => {

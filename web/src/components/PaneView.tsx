@@ -12,7 +12,8 @@ import { supports } from "@shahi/shared";
  * or shift+Tab, and agents ask for all four. Those go through herdr's
  * `pane.send_keys`, which names keys rather than sending bytes.
  */
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazyChunk } from "../lazy-chunk";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
@@ -37,7 +38,7 @@ import { fitScale } from "../termfit";
  * On demand, with the rest of xterm.js behind it: 170KB of the app's 240KB,
  * for a tab most visits never open.
  */
-const Terminal = lazy(() => import("./Terminal"));
+const Terminal = lazyChunk(() => import("./Terminal"));
 
 type Tab = "read" | "screen" | "history";
 
