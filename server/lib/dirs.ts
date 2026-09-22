@@ -12,6 +12,7 @@
  * that leaks directory structure is still worth not having.
  */
 import type { DirEntry, DirListing } from "@shahi/shared";
+import { realpathSync } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 
 export type { DirEntry, DirListing };
@@ -22,6 +23,21 @@ import { isAbsolute, join, resolve } from "node:path";
 
 const HOME = homedir();
 
+/**
+ * Home as `realpath` reports it, which is what a resolved path is compared
+ * with. `$HOME` can be a symlink (`/home` -> `/var/home`, `/usr/home`), and
+ * against the unresolved name every folder, `~` included, was "outside the
+ * home directory": the folder picker refused everything (review finding F90).
+ * `files.ts` resolves its roots for the same reason.
+ */
+const REAL_HOME = (() => {
+  try {
+    return realpathSync(HOME);
+  } catch {
+    return HOME;
+  }
+})();
+
 /** `~/projects` -> `/home/you/projects`, and plain `~` -> home. */
 export function expandHome(input: string): string {
   if (input === "~") return HOME;
@@ -29,10 +45,17 @@ export function expandHome(input: string): string {
   return input;
 }
 
-/** `/home/you/projects` -> `~/projects`. */
+/**
+ * `/home/you/projects` -> `~/projects`. Either spelling of home collapses:
+ * herdr reports a pane's directory as the shell has it, and a listing reports
+ * resolved paths.
+ */
 export function collapseHome(path: string): string {
-  if (path === HOME) return "~";
-  return path.startsWith(`${HOME}/`) ? `~${path.slice(HOME.length)}` : path;
+  for (const home of [HOME, REAL_HOME]) {
+    if (path === home) return "~";
+    if (path.startsWith(`${home}/`)) return `~${path.slice(home.length)}`;
+  }
+  return path;
 }
 
 export class OutsideHomeError extends Error {
@@ -54,7 +77,7 @@ export async function resolveWithinHome(input: string): Promise<string> {
 
   // realpath throws on a missing path, which is the right answer for a picker.
   const real = await realpath(absolute);
-  if (real !== HOME && !real.startsWith(`${HOME}/`)) throw new OutsideHomeError(input);
+  if (real !== REAL_HOME && !real.startsWith(`${REAL_HOME}/`)) throw new OutsideHomeError(input);
   return real;
 }
 
@@ -102,7 +125,7 @@ export async function listDirectories(
     display: collapseHome(path),
     // No climbing above home, so the picker cannot strand you somewhere
     // you are not allowed to list.
-    parent: path === HOME ? null : collapseHome(resolve(path, "..")),
+    parent: path === REAL_HOME ? null : collapseHome(resolve(path, "..")),
     entries: directories,
   };
 }

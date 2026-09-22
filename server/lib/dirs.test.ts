@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
-import { mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { OutsideHomeError, collapseHome, expandHome, listDirectories, resolveWithinHome } from "./dirs";
 
@@ -78,4 +78,35 @@ describe("listDirectories", () => {
     if (!first) return;
     expect((await listDirectories(first.display)).parent).toBe("~");
   });
+});
+
+// Review finding F90: with $HOME a symlink (`/home` -> `/var/home`), every
+// resolved path was compared with the unresolved name, so the folder picker
+// refused even `~`. Home is read once at import, so this runs in a process
+// whose HOME is the symlink.
+test("a home directory reached through a symlink can still be browsed", () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-symlinked-home-"));
+  try {
+    const real = join(root, "real-home");
+    mkdirSync(join(real, "projects", "app"), { recursive: true });
+    const link = join(root, "home");
+    symlinkSync(real, link);
+    const script = `
+      const { listDirectories } = await import(${JSON.stringify(join(import.meta.dir, "dirs.ts"))});
+      const home = await listDirectories("~");
+      const projects = await listDirectories("~/projects");
+      console.log(JSON.stringify({ home, projects }));
+    `;
+    const run = Bun.spawnSync([process.execPath, "-e", script], { env: { ...process.env, HOME: link } });
+    expect(run.stderr.toString()).toBe("");
+    const { home, projects } = JSON.parse(run.stdout.toString());
+    expect(home.display).toBe("~");
+    expect(home.parent).toBeNull();
+    // Bun may create its own folders under a fresh home, so only ours is named.
+    expect(home.entries.map((e: { display: string }) => e.display)).toContain("~/projects");
+    expect(projects.parent).toBe("~");
+    expect(projects.entries.map((e: { display: string }) => e.display)).toEqual(["~/projects/app"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
