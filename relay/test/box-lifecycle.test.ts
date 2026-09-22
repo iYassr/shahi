@@ -3,6 +3,7 @@
 import { expect, mock, test } from "bun:test";
 import { RELAY_LIMITS } from "@shahi/shared";
 import { newBox, signAuth } from "./harness";
+import { STRICT_TRANSPORT_SECURITY } from "../src/hsts";
 import { EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "../src/limits";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(readonly ctx: unknown) {} } }));
@@ -188,6 +189,21 @@ test("a silent phone inside its grace is not evicted", async () => {
   const newcomer = await f.phone();
   expect(newcomer.tags).toEqual(["refused"]);
   expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("an upgrade over HTTPS tells browsers to stay on HTTPS, and one over HTTP does not", async () => {
+  // The relay sent no HSTS header at all (pre-release review 2026-09-22, P02-X1).
+  const f = fixture();
+  const global = globalThis as any, original = global.WebSocketPair;
+  global.WebSocketPair = class { 0 = new Socket(null, []); 1 = new Socket(null, []); };
+  try {
+    const secure = await f.relay.fetch(new Request(`https://relay.example/v1/phone/${f.identity.serverId}`));
+    expect(secure.status).toBe(101);
+    expect(secure.headers.get("strict-transport-security")).toBe(STRICT_TRANSPORT_SECURITY);
+    const plain = await f.relay.fetch(new Request(`http://127.0.0.1:8787/v1/box/${f.identity.serverId}`));
+    expect(plain.status).toBe(101);
+    expect(plain.headers.get("strict-transport-security")).toBeNull();
+  } finally { global.WebSocketPair = original; }
 });
 
 test("a phone's text frames are charged against its rate, not free", async () => {

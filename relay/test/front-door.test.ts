@@ -1,8 +1,9 @@
 /**
  * The Worker's front door, off the wire: what `wrangler dev` cannot show,
- * because it sets no connect limiter and presents every request as loopback.
+ * because it sets no connect limiter and serves plain HTTP to loopback.
  */
 import { describe, expect, mock, test } from "bun:test";
+import { STRICT_TRANSPORT_SECURITY } from "../src/hsts";
 import { connectLimitKey } from "../src/limits";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(readonly ctx: unknown) {} } }));
@@ -29,6 +30,44 @@ function environment() {
   };
   return { env, counts };
 }
+
+describe("strict transport security", () => {
+  test("every HTTPS response from the front door tells browsers to stay on HTTPS", async () => {
+    // The relay sent no HSTS header at all (pre-release review 2026-09-22, P02-X1).
+    const { env } = environment();
+    const failing = { ...env, RELAY: { idFromName: (name: string) => name, get: () => ({ fetch: async () => { throw new Error("down"); } }) } };
+    const cases: [string, RequestInit, unknown, number][] = [
+      ["/health", {}, env, 200],
+      ["/", {}, env, 404],
+      ["/stats", {}, env, 404],
+      ["/v1/box/short", {}, env, 400],
+      [`/v1/box/${SERVER_ID}`, {}, env, 426],
+      [`/v1/box/${SERVER_ID}`, { headers: { upgrade: "websocket" } }, failing, 503],
+    ];
+    for (const [path, init, bindings, status] of cases) {
+      const response = await worker.fetch(new Request(`https://relay.example${path}`, init), bindings);
+      expect(response.status, path).toBe(status);
+      expect(response.headers.get("strict-transport-security"), path).toBe(STRICT_TRANSPORT_SECURITY);
+    }
+    for (let i = 0; i < 30; i++) await worker.fetch(connect("192.0.2.9"), env);
+    const limited = await worker.fetch(connect("192.0.2.9"), env);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("strict-transport-security")).toBe(STRICT_TRANSPORT_SECURITY);
+  });
+
+  test("a response over plain HTTP carries none", async () => {
+    const response = await worker.fetch(new Request("http://127.0.0.1:8787/health"), environment().env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("strict-transport-security")).toBeNull();
+  });
+
+  test("the object's upgrade is passed through untouched", async () => {
+    // Re-wrapping it would put its WebSocket at risk; the object sets the header itself.
+    const upgrade = new Response(null, { status: 101 });
+    const env = { RELAY: { idFromName: (name: string) => name, get: () => ({ fetch: async () => upgrade }) } };
+    expect(await worker.fetch(new Request(`https://relay.example/v1/phone/${SERVER_ID}`, { headers: { upgrade: "websocket" } }), env)).toBe(upgrade);
+  });
+});
 
 function connect(ip: string): Request {
   return new Request(`https://relay.example/v1/box/${SERVER_ID}`, {

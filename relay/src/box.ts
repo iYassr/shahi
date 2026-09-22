@@ -24,6 +24,7 @@ import {
   type BoxToRelay,
   type RelayToBox,
 } from "@shahi/shared/relay";
+import { hstsHeaders } from "./hsts.ts";
 import { EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
@@ -114,7 +115,9 @@ export class RelayBox extends DurableObject<unknown> {
     const server = pair[1];
     if (role === "box") await this.acceptBox(server, serverId);
     else await this.acceptPhone(server, serverId);
-    return new Response(null, { status: 101, webSocket: client });
+    // Set here rather than by the Worker, which passes the upgrade through
+    // untouched so its WebSocket is never re-wrapped (see hsts.ts).
+    return new Response(null, { status: 101, webSocket: client, headers: hstsHeaders(request) });
   }
 
   private async acceptBox(ws: WebSocket, serverId: string): Promise<void> {
