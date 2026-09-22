@@ -1,5 +1,8 @@
 import { modesFor } from "@shahi/shared";
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 
 describe("installedAgents", () => {
@@ -54,6 +57,66 @@ describe("installedAgents", () => {
     forgetInstalledAgents();
     const agents = await installedAgents(["bash", "ls", "env"]);
     expect(agents.map((a) => a.kind)).toEqual([...agents.map((a) => a.kind)].sort());
+  });
+});
+
+/**
+ * Discovery runs the user's interactive shell, rc files and all. It used to
+ * run it with `spawnSync` and no timeout, and the sidecar is one process: every
+ * request, heartbeat and relay frame waited while it started, and an rc file
+ * that stalled hung the service (pre-release review).
+ */
+describe("installedAgents and a slow shell", () => {
+  let dir: string;
+  const realShell = process.env.SHELL;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "shahi-shell-"));
+    forgetInstalledAgents();
+  });
+  afterEach(() => {
+    if (realShell === undefined) delete process.env.SHELL;
+    else process.env.SHELL = realShell;
+    rmSync(dir, { recursive: true, force: true });
+    forgetInstalledAgents();
+  });
+  /** Stands in for the user's shell: runs `prelude`, then a real bash with the same arguments. */
+  function shell(prelude: string): string {
+    const path = join(dir, "shell");
+    writeFileSync(path, `#!/bin/sh\n${prelude}\nexec /bin/bash "$@"\n`, { mode: 0o755 });
+    return path;
+  }
+
+  test("the sidecar keeps serving while the user's shell starts", async () => {
+    process.env.SHELL = shell("sleep 0.6");
+    let ticks = 0;
+    const timer = setInterval(() => void ticks++, 20);
+    try {
+      const agents = await installedAgents(["bash"]);
+      expect(agents.map((a) => a.kind)).toEqual(["bash"]);
+    } finally {
+      clearInterval(timer);
+    }
+    // Blocked, the loop runs no timers at all for those 600ms.
+    expect(ticks).toBeGreaterThan(10);
+  });
+
+  test("a shell that never finishes starting is abandoned, and asked again next time", async () => {
+    process.env.SHELL = shell("exec sleep 30");
+    const started = Date.now();
+    expect(await installedAgents(["bash"], Date.now, 300)).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(3_000);
+
+    // Not cached: a stall is not an answer.
+    process.env.SHELL = shell("");
+    expect((await installedAgents(["bash"])).map((a) => a.kind)).toEqual(["bash"]);
+  });
+
+  test("callers that arrive together share one shell", async () => {
+    const count = join(dir, "starts");
+    process.env.SHELL = shell(`echo started >> "${count}"; sleep 0.3`);
+    const [a, b] = await Promise.all([installedAgents(["bash"]), installedAgents(["bash"])]);
+    expect(a).toEqual(b);
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
   });
 });
 

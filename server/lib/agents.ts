@@ -1,5 +1,5 @@
 import { argsForMode, type InstalledAgent } from "@shahi/shared";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -32,21 +32,40 @@ export type { InstalledAgent };
 /** Resolution is a shell spawn, so it is cached briefly rather than per request. */
 const CACHE_TTL_MS = 60_000;
 
+/**
+ * How long a user's shell may take to start before discovery gives up.
+ *
+ * Measured: `zsh -ic` with two `command -v` checks took 0.2-0.4s on a plain
+ * setup, and nvm or oh-my-zsh profiles commonly take 1-3s. An rc file that
+ * waits on the network can take forever, and the New Agent sheet is waiting.
+ */
+export const DISCOVERY_TIMEOUT_MS = 10_000;
+
 let cache: { at: number; agents: InstalledAgent[] } | undefined;
+/** Callers that arrive while a shell is already starting share its answer. */
+let inflight: Promise<InstalledAgent[]> | undefined;
 
 /**
  * Resolves each kind through an interactive shell.
  *
  * Kind names come from herdr's own manifest list and are matched against a
  * conservative pattern before being interpolated, so nothing shell-special can
- * reach the command line.
+ * reach the command line. That list is the same for every caller, which is
+ * what lets concurrent callers share one discovery.
  */
 export async function installedAgents(
   kinds: string[],
   now: () => number = Date.now,
+  timeoutMs = DISCOVERY_TIMEOUT_MS,
 ): Promise<InstalledAgent[]> {
   if (cache && now() - cache.at < CACHE_TTL_MS) return cache.agents;
+  inflight ??= discover(kinds, now, timeoutMs).finally(() => {
+    inflight = undefined;
+  });
+  return inflight;
+}
 
+async function discover(kinds: string[], now: () => number, timeoutMs: number): Promise<InstalledAgent[]> {
   const safe = kinds.filter((kind) => /^[a-z][a-z0-9_-]{0,31}$/i.test(kind));
   if (safe.length === 0) return [];
 
@@ -62,20 +81,31 @@ export async function installedAgents(
   // macOS (EBADF before posix_spawn starts). Redirect inside the shell to a
   // private temporary file instead; a supervised service has the same
   // detached-stdio shape, so this also makes discovery robust there.
-  const scratch = mkdtempSync(join(tmpdir(), "shahi-agents-"));
-  const output = join(scratch, "resolved");
+  let scratch: string | undefined;
   let stdout = "";
+  let finished = false;
   try {
-    Bun.spawnSync([shell, "-ic", `exec > \"$1\"; ${script}`, "shahi-agent-discovery", output], {
+    scratch = await mkdtemp(join(tmpdir(), "shahi-agents-"));
+    const output = join(scratch, "resolved");
+    // Asynchronous, and bounded. This was `spawnSync` with no timeout, and the
+    // sidecar is one process: while the user's rc file ran, every HTTP
+    // request, WebSocket heartbeat, relay frame and poll waited behind it, and
+    // an rc that stalled hung the service outright (pre-release review).
+    // SIGKILL because an interactive shell ignores SIGTERM.
+    const child = Bun.spawn([shell, "-ic", `exec > \"$1\"; ${script}`, "shahi-agent-discovery", output], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
     });
-    stdout = readFileSync(output, "utf8");
+    await child.exited;
+    finished = child.signalCode === null;
+    stdout = await readFile(output, "utf8");
   } catch {
     // A missing or broken shell means no detected agents, not a failed API.
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => {});
   }
 
   const agents = stdout
@@ -85,7 +115,9 @@ export async function installedAgents(
     .map(([kind, command]) => ({ kind, command: command.trim() }))
     .sort((a, b) => a.kind.localeCompare(b.kind));
 
-  cache = { at: now(), agents };
+  // A shell that had to be killed answered nothing reliable: report what it
+  // managed, but ask again next time rather than hide agents for a minute.
+  if (finished) cache = { at: now(), agents };
   return agents;
 }
 
