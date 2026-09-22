@@ -10,12 +10,17 @@
 
 /pwa/*
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' wss:; worker-src 'self'; manifest-src 'self'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
-
-/pwa/
+  # Rules match the requested path, not the _redirects rewrite behind it, so a
+  # rule for /pwa/ alone served /pwa/pane/* and every other app route the same
+  # HTML with nothing telling a cache to revalidate it (found in the 2026-09-22
+  # pre-release review). Everything unhashed here revalidates.
   Cache-Control: no-cache
 
 /pwa/assets/*
-  Cache-Control: max-age=31536000, immutable
+  # Hashed names are the only files whose content never changes. The rule
+  # above would otherwise be joined into this header, and no-cache would win.
+  ! Cache-Control
+  Cache-Control: public, no-transform, max-age=31536000, immutable
 
 /pwa/sw.js
   Cache-Control: no-store

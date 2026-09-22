@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 async function ready(page: Page) {
   await page.evaluate(async () => {
@@ -28,6 +29,34 @@ test("Cloudflare serves every public app route with production security headers"
   await page.goto("http://127.0.0.1:7672/pwa/");
   await expect(page.getByRole("heading", { name: "Connect your computer" })).toBeVisible();
   await ready(page);
+});
+
+// The tests below came from the 2026-09-22 pre-release review. They ask
+// wrangler dev rather than the fixture, because the fault in each lived in how
+// Cloudflare applies site/public/_headers and serves site/dist, not in the app.
+const site = "http://127.0.0.1:7672";
+
+test("a deploy reaches nested app routes because every one revalidates, while hashed assets stay cached for a year", async ({ request }) => {
+  // Every route _redirects rewrites to the shell, so a new route is covered here
+  // the day it is added. `_headers` matches the requested path, which is how
+  // /pwa/pane/* once came back without the no-cache that /pwa/ had.
+  const routes = readFileSync(new URL("../../site/public/_redirects", import.meta.url), "utf8").split("\n")
+    .map(line => line.trim().split(/\s+/)).filter(parts => parts[1] === "/pwa/" && parts[2] === "200")
+    .map(parts => parts[0]!.replace(/\*$/, "example"));
+  expect(routes.length).toBeGreaterThan(3);
+  for (const path of ["/pwa/", ...routes, "/pwa/manifest.webmanifest"]) {
+    const cache = (await request.get(`${site}${path}`)).headers()["cache-control"];
+    expect(cache, path).toContain("no-cache");
+    expect(cache, path).toContain("no-transform");
+  }
+  const shell = await (await request.get(`${site}/pwa/`)).text();
+  const assets = [...shell.matchAll(/\/pwa\/assets\/[^"']+/g)].map(match => match[0]);
+  expect(assets.length).toBeGreaterThan(0);
+  for (const asset of assets) {
+    const response = await request.get(`${site}${asset}`);
+    expect(response.status(), asset).toBe(200);
+    expect(response.headers()["cache-control"], asset).toBe("public, no-transform, max-age=31536000, immutable");
+  }
 });
 
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {
