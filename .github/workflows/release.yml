@@ -69,4 +69,7 @@ jobs:
           cp "dist/channels/$RELEASE_CHANNEL/catalog.json" dist/previous/catalog.json
           bun plugin/releases/sign.ts "$RELEASE_CHANNEL" dist/release/release.json "$RUNNER_TEMP/shahi-release-key.pem" dist/release/catalog.json dist/previous/catalog.json
           gh release upload "shahi-$RELEASE_CHANNEL" dist/release/catalog.json --clobber
-          if [ "$RELEASE_CHANNEL" = stable ]; then gh release edit "$TAG" --prerelease=false; fi
+          # Found in the pre-release review (September 2026): promoting a
+          # prerelease does not move GitHub's "Latest", so the repository page
+          # still pointed visitors at v0.3.1 while v0.3.6 was the stable release.
+          if [ "$RELEASE_CHANNEL" = stable ]; then gh release edit "$TAG" --prerelease=false --latest; fi

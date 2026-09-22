@@ -129,3 +129,17 @@ describe("herdr on the runners", () => {
     expect(install.run).toContain('install-herdr.sh "$HERDR_RELEASE" "$HERDR_SHA256"');
   });
 });
+
+describe("releases", () => {
+  test("a stable promotion is marked Latest on GitHub, not left behind an older release", () => {
+    // Promoting a prerelease does not move Latest: v0.3.1 kept it through v0.3.6.
+    const publish = jobs.find((j) => j.where === "release.yml publish")!;
+    const script = publish.steps.map((s) => s.run ?? "").join("\n");
+    const promotions = script.split("\n").filter((line) => /gh release edit .*--prerelease=false/.test(line));
+    expect(promotions.length).toBeGreaterThan(0);
+    for (const promotion of promotions) {
+      expect(promotion).toMatch(/if \[ "\$RELEASE_CHANNEL" = stable \]; then gh release edit "\$TAG" /);
+      expect(promotion).toContain("--latest");
+    }
+  });
+});
