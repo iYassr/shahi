@@ -24,6 +24,7 @@ import {
   LINK_PREFIX_BYTES,
   RELAY_LIMITS,
   RELAY_PROTOCOL,
+  RELAY_RESPONSE_HEADERS,
   type BoxHello,
   type BoxToPhone,
   type BoxToRelay,
@@ -84,9 +85,6 @@ export interface RelayClientOptions {
   /** A phone must send authenticated traffic even when only reading a dashboard. */
   phoneSilenceMs?: number;
 }
-
-/** The response headers a `res` carries; everything else stays on the box. */
-const RESPONSE_HEADERS = ["content-type", "etag", "cache-control"] as const;
 
 /**
  * Request headers a phone cannot set through a link. The session is the
@@ -580,7 +578,7 @@ class Link implements StreamClient {
         body = encoder.encode(JSON.stringify({ error: "too large to send through the relay" }));
       }
       const headers: Record<string, string> = {};
-      for (const name of RESPONSE_HEADERS) {
+      for (const name of RELAY_RESPONSE_HEADERS) {
         const value = response.headers.get(name);
         if (value !== null) headers[name] = value;
       }

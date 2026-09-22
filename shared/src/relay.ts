@@ -119,7 +119,19 @@ export interface RelayRequest {
   body: string | null;
 }
 
-/** Its answer. `headers` is limited to content-type, etag and cache-control. */
+/**
+ * The response headers a sealed `res` carries; every other header stays on the
+ * box. These are the ones a client reads. The list stopped at content-type,
+ * etag and cache-control until the September 2026 pre-release review: ranged
+ * file downloads came later and read `content-range` and
+ * `x-shahi-file-version`, so every PDF, Save/Share and web download through
+ * the relay failed with "The computer returned an incomplete file." while SSH
+ * worked. The hosted browser fixture filters by this same list, so a header a
+ * client needs and the box withholds fails a test instead of a phone.
+ */
+export const RELAY_RESPONSE_HEADERS = ["content-type", "etag", "cache-control", "content-range", "x-shahi-file-version"] as const;
+
+/** Its answer. `headers` is limited to `RELAY_RESPONSE_HEADERS`. */
 export interface RelayResponse {
   t: "res";
   id: number;

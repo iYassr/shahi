@@ -10,7 +10,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -20,6 +20,7 @@ import {
   LINK_PREFIX_BYTES,
   RELAY_CLOSE,
   RELAY_PROTOCOL,
+  RELAY_RESPONSE_HEADERS,
   SHAHI_API_VERSION,
   type BoxHello,
   type BoxToPhone,
@@ -32,6 +33,8 @@ import {
   type SocketMessage,
 } from "@shahi/shared";
 import { clientSession, ephemeral, open, seal, type Session } from "@shahi/shared/e2e";
+import { downloadFileBytes } from "@shahi/shared/file-download";
+import { RelayLink, deviceTarget } from "@shahi/shared/relay-client";
 import { Auth } from "./auth";
 import type { Config } from "./config";
 import type { HerdrClient } from "./herdr-client";
@@ -306,6 +309,11 @@ function phone(relay: FakeRelay, serverId: string, auth: PhoneHello["auth"], sec
     resolveClosed({ code: event.code, reason: event.reason });
   };
   return result;
+}
+
+/** The phone both apps run — the shared link, with its acks, bye handling and retries. */
+function deviceLink(relay: FakeRelay, box: Box, deviceId: string, secret: Uint8Array): RelayLink {
+  return new RelayLink(deviceTarget({ relay: relay.url, serverId: box.identity.serverId, deviceId, deviceSecret: b64(secret) }));
 }
 
 /* ---------------------------------------------------------- the box side */
@@ -593,7 +601,7 @@ describe("a phone through the relay", () => {
 
     const res = await p.request("POST", "/api/pair/claim", { secret: code.secret, deviceName: "Test iPhone" });
     expect(res.status).toBe(200);
-    expect(Object.keys(res.headers).every((h) => ["content-type", "etag", "cache-control"].includes(h))).toBe(true);
+    expect(Object.keys(res.headers).every((h) => (RELAY_RESPONSE_HEADERS as readonly string[]).includes(h))).toBe(true);
     paired = JSON.parse(decoder.decode(unb64(res.body!))) as ClaimResult;
     expect(paired.ok).toBe(true);
     expect(box.devices.list().map((d) => d.id)).toContain(paired.deviceId);
@@ -648,6 +656,34 @@ describe("a phone through the relay", () => {
     expect(JSON.parse(decoder.decode(unb64(res.body!)))).toMatchObject({ thisDeviceId: paired.deviceId });
     p.close();
     await p.closed;
+  });
+
+  // Found in the September 2026 pre-release review: the box answered each
+  // range 206 but dropped `content-range` and `x-shahi-file-version` from the
+  // sealed answer, so every native PDF, Save/Share and web download over the
+  // relay — the default way in — failed with "The computer returned an
+  // incomplete file." The phone here is the clients' own link and download
+  // helper, so a header they need and the box withholds fails this test.
+  test("a PDF larger than one download range arrives whole through a relay link", async () => {
+    const { device, secret } = box.devices.create("Download fixture");
+    const path = join(scratch, "two-ranges.pdf");
+    const bytes = new Uint8Array(600 * 1024).map((_, i) => (i * 31 + 7) & 0xff);
+    writeFileSync(path, bytes);
+    const link = deviceLink(relay, box, device.id, secret);
+    try {
+      const file = await downloadFileBytes(async (range) => link.request({
+        method: "GET",
+        // The native PDF preview's route; Save/Share adds `download=1`.
+        path: `/api/file?path=${encodeURIComponent(path)}`,
+        headers: { "x-shahi-api": String(SHAHI_API_VERSION), ...range },
+        body: null,
+      }, 5_000));
+      expect(file.contentType).toBe("application/pdf");
+      expect(file.bytes.length).toBe(bytes.length);
+      expect(Buffer.from(file.bytes).equals(Buffer.from(bytes))).toBe(true);
+    } finally {
+      link.close();
+    }
   });
 
   test("an unknown device and an unknown pairing code are closed at the hello", async () => {
