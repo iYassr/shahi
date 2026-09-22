@@ -2,13 +2,21 @@ export class OperationError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-/** Retain both successes and uncertain failures so a retry never repeats a write. */
+/**
+ * Retain successes and uncertain failures so a retry never repeats a write.
+ *
+ * A failure whose caller knows it reached nothing (`reachedNothing` answers
+ * true once the action has rejected) is forgotten instead, so the retry runs
+ * again. Replaying it kept a retry failing long after the cause had cleared:
+ * review finding F93, where a message sent while herdr restarted answered
+ * "no herdr socket" for ten minutes. See `herdr-delivery.ts`.
+ */
 export class Operations {
   private readonly entries = new Map<string, { input: string; promise: Promise<unknown>; settled: boolean; at: number }>();
 
   constructor(private readonly ttlMs = 10 * 60_000, private readonly limit = 500, private readonly now = Date.now) {}
 
-  run<T>(key: string, input: unknown, action: () => Promise<T>): Promise<T> {
+  run<T>(key: string, input: unknown, action: () => Promise<T>, reachedNothing?: () => boolean): Promise<T> {
     const now = this.now();
     for (const [id, entry] of this.entries) {
       if (entry.settled && now - entry.at > this.ttlMs) this.entries.delete(id);
@@ -26,7 +34,12 @@ export class Operations {
     const entry = { input: signature, promise: Promise.resolve().then(action), settled: false, at: now };
     this.entries.set(key, entry);
     const finish = () => { entry.settled = true; entry.at = this.now(); };
-    void entry.promise.then(finish, finish);
+    void entry.promise.then(finish, () => {
+      finish();
+      // Requests that joined while it ran still share this failure; only a
+      // later retry runs the action again.
+      if (reachedNothing?.() && this.entries.get(key) === entry) this.entries.delete(key);
+    });
     return entry.promise;
   }
 }

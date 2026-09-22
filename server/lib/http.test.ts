@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { Auth } from "./auth";
 import { Devices, Pairing } from "./pairing";
 import type { Config } from "./config";
-import type { HerdrClient } from "./herdr-client";
+import { HerdrClient } from "./herdr-client";
 import { createServer } from "./http";
 import { Poller } from "./poller";
 import { PushService } from "./push";
@@ -31,6 +31,16 @@ const PASSCODE = "2468";
 
 /** What the fake pane shows; tests that answer a prompt set it. */
 let screen = "";
+
+/** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
+let herdrDown: unknown = null;
+const WRITES = new Set(["pane.send_text", "pane.send_keys", "agent.prompt", "tab.create", "agent.start"]);
+
+/** The error a real client gives when herdr's socket is not there. */
+function noHerdrSocket(): Promise<unknown> {
+  const client = new HerdrClient({ socketPath: join(tmpdir(), `shahi-http-no-herdr-${process.pid}.sock`) });
+  return client.rpc("ping", {}).then(() => { throw new Error("a socket answered"); }, (err) => err);
+}
 
 /** Enough of herdr for the routes under test; anything else is refused. */
 function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation = false): HerdrClient {
@@ -60,6 +70,7 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
   };
   return {
     rpc: async (method: string, params: unknown) => {
+      if (herdrDown && WRITES.has(method)) throw herdrDown;
       calls.push({ method, params });
       switch (method) {
         case "session.snapshot":
@@ -674,6 +685,34 @@ describe("writes and notification ownership", () => {
     expect((await pending).status).toBe(401);
     const stored = existsSync(s.uploadDir) ? readdirSync(s.uploadDir) : [];
     expect(stored.filter(name => name.includes("revoked-upload"))).toEqual([]);
+  });
+
+  // Review finding F93: a failure that never reached herdr was replayed to the
+  // phone's retry, which reuses the message id, for ten minutes.
+  test("a message sent while herdr was down goes through when retried after herdr is back", async () => {
+    const body = { text: "sent during a restart", clientMessageId: "restart-review" };
+    herdrDown = await noHerdrSocket();
+    try {
+      expect((await post(`/api/panes/${PANE}/prompt`, body)).status).toBe(500);
+    } finally { herdrDown = null; }
+    const start = s.calls.length;
+    const retried = await post(`/api/panes/${PANE}/prompt`, body);
+    expect(retried.status).toBe(200);
+    expect(s.calls.slice(start).filter(c => c.method === "pane.send_text")).toHaveLength(1);
+    // Delivered now, so a further retry gets this receipt rather than a second message.
+    expect(await (await post(`/api/panes/${PANE}/prompt`, body)).json()).toEqual(await retried.json());
+    expect(s.calls.slice(start).filter(c => c.method === "pane.send_text")).toHaveLength(1);
+  });
+
+  test("a new agent that could not be started while herdr was down starts on the retry", async () => {
+    const body = { workspaceId: "w1", kind: "claude", clientRequestId: "start-during-restart" };
+    herdrDown = await noHerdrSocket();
+    try {
+      expect((await post("/api/agents/start", body)).status).toBe(500);
+    } finally { herdrDown = null; }
+    const start = s.calls.length;
+    expect((await post("/api/agents/start", body)).status).toBe(200);
+    expect(s.calls.slice(start).filter(c => c.method === "tab.create")).toHaveLength(1);
   });
 });
 

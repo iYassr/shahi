@@ -37,6 +37,7 @@ import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { submitPrompt } from "./prompt";
 import { OperationError, Operations } from "./operations";
+import { trackDelivery } from "./herdr-delivery";
 import { createHash } from "node:crypto";
 import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { followTranscript } from "./transcript-watch";
@@ -916,9 +917,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           }
           try {
             arrival.holdOpen?.();
+            const delivery = trackDelivery((method: string, params: unknown, options?: { timeoutMs?: number }) =>
+              client.rpc(method as Method, params as ParamsFor<Method>, options));
             const started = await operations.run(`start:${body.clientRequestId}`, body, () => startAgentInTab(
-              (method, params, options) =>
-                client.rpc(method as Method, params as ParamsFor<Method>, options) as never,
+              delivery.rpc as never,
               {
                 workspaceId: body.workspaceId!,
                 cwd: body.cwd ?? null,
@@ -931,7 +933,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
                 // was chosen. The picker was decorative without this line.
                 mode: body.mode ?? null,
               },
-            ));
+            ), delivery.reachedNothing);
             // The client opens this pane immediately. Event delivery and the
             // periodic mirror can lag behind a successful herdr creation.
             await store.resyncAfterMutation();
@@ -1166,13 +1168,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             // (pane, message) pairs the same key.
             const key = JSON.stringify([paneId, body.clientMessageId]);
             try {
+              const delivery = trackDelivery(herdrRpc);
               const receipt = await operations.run(key, body.text, async (): Promise<PromptReceipt> => {
                 const agent = store.agent(paneId);
-                await submitPrompt(herdrRpc, {
+                await submitPrompt(delivery.rpc, {
                   paneId, isAgent: agent !== undefined, status: agent?.agent_status ?? null,
                 }, body.text!);
                 return { accepted: true, clientMessageId: body.clientMessageId!, acceptedAt: Date.now() };
-              });
+              }, delivery.reachedNothing);
               return json(receipt);
             } catch (err) {
               return failure(err);

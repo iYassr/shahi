@@ -25,6 +25,29 @@ test("an uncertain failed write is not replayed", async () => {
   expect(writes).toBe(1);
 });
 
+// Review finding F93: a failure that never reached herdr was replayed to every
+// retry for ten minutes, though the retry could now succeed.
+test("a failure that reached nothing is not replayed to the retry", async () => {
+  const ops = new Operations();
+  let writes = 0;
+  const down = async () => { writes++; throw new Error("no herdr socket"); };
+  await expect(ops.run("key", "hello", down, () => true)).rejects.toThrow("no herdr socket");
+  expect(await ops.run("key", "hello", async () => { writes++; return "sent"; }, () => true)).toBe("sent");
+  expect(writes).toBe(2);
+  // And the success that followed is kept, as any success is.
+  expect(await ops.run("key", "hello", async () => { writes++; return "again"; })).toBe("sent");
+  expect(writes).toBe(2);
+});
+
+test("a failure that may have reached herdr is still replayed", async () => {
+  const ops = new Operations();
+  let writes = 0;
+  const uncertain = async () => { writes++; throw new Error("herdr closed the socket before answering"); };
+  await expect(ops.run("key", {}, uncertain, () => false)).rejects.toThrow("closed");
+  await expect(ops.run("key", {}, uncertain, () => false)).rejects.toThrow("closed");
+  expect(writes).toBe(1);
+});
+
 test("pending writes cannot expire or be evicted to make room", async () => {
   let now = 0;
   const ops = new Operations(100, 1, () => now);

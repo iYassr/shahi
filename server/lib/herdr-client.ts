@@ -273,13 +273,15 @@ export class HerdrClient {
 
 function wrapConnectError(err: unknown, socketPath: string): Error {
   const code = (err as { code?: string })?.code;
+  // The code survives the friendlier message: it is how `herdr-delivery.ts`
+  // knows the request was never written (review finding F93).
   if (code === "ENOENT") {
-    return new Error(
+    return Object.assign(new Error(
       `no herdr socket at ${socketPath} — is the server running? (\`herdr status server\`)`,
-    );
+    ), { code });
   }
   if (code === "EACCES") {
-    return new Error(`permission denied on ${socketPath} — it is owner-only by design (0600)`);
+    return Object.assign(new Error(`permission denied on ${socketPath} — it is owner-only by design (0600)`), { code });
   }
   return err instanceof Error ? err : new Error(String(err));
 }
