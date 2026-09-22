@@ -234,6 +234,27 @@ function originAllowed(req: Request): boolean {
   );
 }
 
+/**
+ * The names a request to the port may give in `Host`: this machine's loopback
+ * listener, on any port, since an SSH forward is `127.0.0.1:<its own port>`.
+ *
+ * `originAllowed` asks only that Origin match Host, and after a DNS rebind a
+ * page served from `http://attacker.example:7171` is same-origin with itself:
+ * both headers say attacker.example, so it passed, and the page could read
+ * `/api/meta` and guess the passcode through the unauthenticated login until
+ * it held a session — terminal control (review findings F26/F36). A browser
+ * always sends the name it loaded the page from, and a rebinding page is
+ * loaded from a name its author controls, never a loopback literal or
+ * `localhost`. So the name is checked, not the address it resolved to. Every
+ * way in that is meant to reach this port — this machine's own browser, the
+ * app's SSH forward, `ssh -L` — names loopback already. A reverse proxy
+ * that keeps its public name in `Host` (`tailscale serve` does) is refused
+ * with it: the ways in are the relay and an SSH tunnel, as `config.ts` says
+ * when it refuses a non-loopback bind. The relay's `dispatch` does not pass
+ * through here; nothing a browser chose reaches it.
+ */
+const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
+
 export interface ServerOptions {
   uploadDir?: string;
   /** How often to ping and to re-check every socket's session. */
@@ -404,6 +425,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 
     async fetch(req, srv) {
+      // Before anything else, including the in-flight budget: see LOOPBACK_HOST.
+      if (!LOOPBACK_HOST.test(req.headers.get("host") ?? "")) {
+        void req.body?.cancel().catch(() => {});
+        return harden(json(
+          { error: "Shahi answers only at 127.0.0.1 or localhost. Connect through the relay or an SSH tunnel." },
+          { status: 403 },
+        ));
+      }
       const response = await measuredHandle(req, {
         rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
         viaRelay: false,

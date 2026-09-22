@@ -11,6 +11,7 @@ import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Auth } from "./auth";
@@ -166,6 +167,28 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
   return { base, cookie, calls, push, dispatch: server.dispatch, stop: () => server.stop(true) };
+}
+
+/**
+ * A request as raw bytes, for a Host that `fetch` would not send; resolves
+ * with the status and the rest of the response.
+ */
+function raw(base: string, request: string): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const sock = connect(Number(new URL(base).port), "127.0.0.1", () => sock.write(request));
+    const done = () => {
+      clearTimeout(timer);
+      sock.destroy();
+      const text = Buffer.concat(chunks).toString("utf8");
+      resolve({ status: Number(text.split(" ")[1]), text });
+    };
+    // An upgrade request cannot also ask for the connection to close.
+    const timer = setTimeout(done, 1_000);
+    sock.on("data", (c: Buffer) => chunks.push(c));
+    sock.on("end", done);
+    sock.on("error", reject);
+  });
 }
 
 /** Opens a socket and resolves with how it ended, or "open" once it is up. */
@@ -338,6 +361,44 @@ describe("a browser on another origin", () => {
       body: JSON.stringify({ keys: ["Enter"] }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// Review findings F26/F36: a page whose name was rebound to 127.0.0.1 is
+// same-origin with itself, so the Origin check passed it, and it could guess
+// the four-digit passcode through the login until it held a session.
+describe("a page that rebound its own name to this machine", () => {
+  const port = () => new URL(s.base).port;
+  const request = (method: string, path: string, host: string, body = "") =>
+    `${method} ${path} HTTP/1.1\r\nHost: ${host}\r\nOrigin: http://${host}\r\n` +
+    `Content-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`;
+
+  test("gets no session even with the right passcode, and learns nothing from meta", async () => {
+    const host = `attacker.example:${port()}`;
+    const login = await raw(s.base, request("POST", "/api/auth/login", host, JSON.stringify({ passcode: PASSCODE })));
+    expect(login.status).toBe(403);
+    expect(login.text.toLowerCase()).not.toContain("set-cookie");
+    const meta = await raw(s.base, request("GET", "/api/meta", host));
+    expect(meta.status).toBe(403);
+    expect(meta.text).not.toContain("test-server");
+    // Nor does the socket open for it.
+    const upgrade = await raw(s.base, `GET /ws HTTP/1.1\r\nHost: ${host}\r\nOrigin: http://${host}\r\nCookie: ${s.cookie}\r\n` +
+      "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+    expect(upgrade.status).toBe(403);
+  });
+
+  test("while every loopback spelling still answers, on any port an SSH forward chose", async () => {
+    for (const host of [`127.0.0.1:${port()}`, `localhost:${port()}`, `[::1]:${port()}`, "127.0.0.1:52022", "LOCALHOST", "127.0.0.1"]) {
+      expect({ host, status: (await raw(s.base, request("GET", "/api/meta", host))).status }).toEqual({ host, status: 200 });
+    }
+    for (const host of ["localhost.attacker.example", "127.0.0.1.nip.io", "127.0.0.1@attacker.example", "[::1]x"]) {
+      expect({ host, status: (await raw(s.base, request("GET", "/api/meta", host))).status }).toEqual({ host, status: 403 });
+    }
+  });
+
+  test("and the relay, which carries no browser's Host, is not affected", async () => {
+    const meta = await s.dispatch(new Request("http://relay.invalid/api/meta"), "relay-host-test");
+    expect(meta.status).toBe(200);
   });
 });
 
