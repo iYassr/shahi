@@ -44,6 +44,32 @@ test("indexed pagination preserves parser IDs, reasoning coalescing and all supp
   }
 });
 
+// Codex 0.151+ records reasoning, MCP, edits and searches as items; a run of
+// Reasoning items must coalesce across windows the way the legacy events do.
+test("indexed pagination matches a full parse for codex 0.151+ items", async () => {
+  const item = (fields: object) => event("item_completed", { item: fields });
+  const rows = [
+    item({ type: "UserMessage", id: "u", content: [{ type: "text", text: "go" }] }),
+    item({ type: "Reasoning", id: "r1", summary_text: ["first"], raw_content: [] }),
+    item({ type: "Reasoning", id: "r1", summary_text: ["second"], raw_content: [] }),
+    item({ type: "Reasoning", id: "r2", summary_text: [], raw_content: [] }),
+    response("custom_tool_call", { name: "exec", call_id: "e", input: "tools.apply_patch(`x`)" }),
+    item({ type: "FileChange", id: "f", changes: { "/r/a.ts": { type: "update" } }, stdout: "Success", stderr: "", status: "completed" }),
+    response("custom_tool_call_output", { call_id: "e", output: [{ text: "Script completed" }] }),
+    item({ type: "McpToolCall", id: "m", server: "s", tool: "t", arguments: { title: "x" }, status: "completed", result: { content: [{ text: "ok" }], isError: false } }),
+    item({ type: "WebSearch", id: "w", query: "q", action: { type: "search" }, results: [] }),
+    item({ type: "AgentMessage", id: "a", content: [{ type: "text", text: "done" }] }),
+  ];
+  const path = rollout(rows);
+  const expected = normaliseCodex(rows);
+  expect(expected.map((m) => m.blocks[0]!.kind)).toEqual(["text", "thinking", "tool", "tool", "tool", "tool", "text"]);
+  for (let before = 1; before <= expected.length; before++) {
+    const actual = await readCodexWindow(path, { before, limit: 2 });
+    expect(actual.messages).toEqual(expected.slice(Math.max(0, before - 2), before));
+    expect(actual.total).toBe(expected.length);
+  }
+});
+
 test("unchanged tail reads only the requested records, and appends index only new bytes", async () => {
   const rows = Array.from({ length: 1800 }, (_, n) => event("agent_message", { message: `${n}: ${"x".repeat(1000)}` }));
   const path = rollout(rows);

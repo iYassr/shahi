@@ -38,7 +38,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
-import { inTranscript, type Block, type LogMessage, type SessionLog } from "./session-log";
+import { inTranscript, renderUserText, type Block, type LogMessage, type SessionLog } from "./session-log";
 
 /** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
 const MAX_RESULT_CHARS = 2_000;
@@ -221,32 +221,39 @@ export async function rolloutFromMacProcess(pid: number, sessionsDir = SESSIONS_
 type ToolResult = NonNullable<(Block & { kind: "tool" })["result"]>;
 
 /**
- * An MCP tool call, from an `mcp_tool_call_end` event. Its `invocation` names
- * the server and tool and carries the arguments; its `result` is the MCP
- * `{ Ok }` / `{ Err }` union, whose text (or error) becomes the tool result.
+ * An MCP tool call: `call` names the server and tool and carries the
+ * arguments. A legacy `mcp_tool_call_end` event nests those in `invocation`
+ * and wraps the result in the `{ Ok }` / `{ Err }` union; a codex 0.151+
+ * `McpToolCall` item has them at the top level, the MCP result bare with its
+ * own `isError`, and a `status` of "failed" for an error.
  */
-function mcpToolBlock(payload: Record<string, unknown>): Block & { kind: "tool" } {
-  const inv = (payload.invocation as Record<string, unknown> | undefined) ?? {};
-  const server = typeof inv.server === "string" ? inv.server : "";
-  const tool = typeof inv.tool === "string" ? inv.tool : "tool";
-  const args = inv.arguments as Record<string, unknown> | undefined;
+function mcpToolBlock(call: Record<string, unknown>, result: unknown, failed = false): Block & { kind: "tool" } {
+  const server = typeof call.server === "string" ? call.server : "";
+  const tool = typeof call.tool === "string" ? call.tool : "tool";
+  const args = call.arguments as Record<string, unknown> | undefined;
   const title = args && typeof args.title === "string" ? args.title : undefined;
   return {
     kind: "tool",
     name: server ? `${server}.${tool}` : tool,
     summary: title ?? firstArg(args) ?? tool,
-    result: mcpResult(payload.result),
+    result: mcpResult(result, failed),
   };
+}
+
+/** A web search: the query is the summary, and there is no result to show. */
+function webSearchBlock(query: unknown): Block & { kind: "tool" } {
+  const q = typeof query === "string" ? query.trim() : "";
+  return { kind: "tool", name: "web_search", summary: q || "web search", result: null };
 }
 
 /**
  * A file edit from codex's native `apply_patch`. Unlike a shell `apply_patch`
  * heredoc — which arrives as a `custom_tool_call` and is rendered like any exec
- * — the native tool is recorded *only* as a `patch_apply_end` event with no
- * matching `response_item`, so without this branch a codex session that edits
- * with the built-in patcher reads as if it never touched a file. The `changes`
- * map names each path and how it changed; the summary is that list, the result
- * is the tool's own stdout.
+ * — the native tool is recorded *only* as a `patch_apply_end` event (a
+ * `FileChange` item since codex 0.151) with no matching `response_item`, so
+ * without this a codex session that edits with the built-in patcher reads as
+ * if it never touched a file. The `changes` map names each path and how it
+ * changed; the summary is that list, the result is the tool's own stdout.
  */
 function patchApplyBlock(payload: Record<string, unknown>): Block & { kind: "tool" } {
   const changes = (payload.changes as Record<string, { type?: string }> | undefined) ?? {};
@@ -262,15 +269,16 @@ function patchApplyBlock(payload: Record<string, unknown>): Block & { kind: "too
   };
 }
 
-/** The text (or error) inside an MCP `{ Ok: { content } }` / `{ Err }` result. */
-function mcpResult(result: unknown): ToolResult | null {
+/** The text (or error) inside an MCP result, bare or in the `{ Ok }` / `{ Err }` union. */
+function mcpResult(result: unknown, failed = false): ToolResult | null {
   if (!result || typeof result !== "object") return null;
-  const r = result as { Ok?: { content?: unknown }; Err?: unknown };
+  const r = result as { Ok?: { content?: unknown; isError?: unknown }; Err?: unknown; content?: unknown; isError?: unknown };
   if (r.Err !== undefined) {
     const text = typeof r.Err === "string" ? r.Err : JSON.stringify(r.Err);
     return { text: cap(text), isError: true, truncated: text.length > MAX_RESULT_CHARS, images: [] };
   }
-  const content = r.Ok?.content;
+  const body = r.Ok ?? r;
+  const content = body.content;
   const text = Array.isArray(content)
     ? content
         .map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : ""))
@@ -278,7 +286,58 @@ function mcpResult(result: unknown): ToolResult | null {
     : typeof content === "string"
       ? content
       : "";
-  return { text: cap(text), isError: false, truncated: text.length > MAX_RESULT_CHARS, images: [] };
+  return { text: cap(text), isError: failed || body.isError === true, truncated: text.length > MAX_RESULT_CHARS, images: [] };
+}
+
+/** Plain-text parts of a reasoning item, the summary first: it is what codex's own TUI shows. */
+function reasoningText(item: Record<string, unknown>): string {
+  const parts = (list: unknown) =>
+    Array.isArray(list) ? list.filter((p): p is string => typeof p === "string" && p.trim() !== "") : [];
+  const summary = parts(item.summary_text);
+  return (summary.length > 0 ? summary : parts(item.raw_content)).join("\n\n").trim();
+}
+
+/**
+ * Adds reasoning to the conversation, joining a run of it into one thinking
+ * block the way Claude writes a single block per turn, so the reader is not a
+ * stack of one-line headers.
+ */
+function pushThinking(messages: LogMessage[], text: string, id: string, at: number): void {
+  if (!text) return;
+  const last = messages.at(-1);
+  const lastBlock = last?.blocks[0];
+  if (last && last.role === "agent" && last.blocks.length === 1 && lastBlock?.kind === "thinking") {
+    last.blocks[0] = { kind: "thinking", text: `${lastBlock.text}\n\n${text}` };
+  } else {
+    messages.push({ id, role: "agent", at, blocks: [{ kind: "thinking", text }] });
+  }
+}
+
+/**
+ * A codex user message, unwrapped.
+ *
+ * Codex records machine-generated turns as user messages too. Of 517 in the
+ * September 2026 census, 43 were `<task-notification>` reports, 17 were
+ * `<send_user_message_question_reply>`, and some carried the command and `!cmd`
+ * tags Claude Code writes. All rendered as XML the person had typed. The
+ * shared tags go through the Claude reader's unwrapping. A question reply is a
+ * JSON list of `{ question, answer }`, and the answers are what the person
+ * said. Anything else in that wrapper is dropped rather than guessed at.
+ */
+function codexUserText(text: string): Block | null {
+  const reply = /^\s*<send_user_message_question_reply>([\s\S]*)<\/send_user_message_question_reply>\s*$/.exec(text);
+  if (!reply) return renderUserText(text);
+  try {
+    const answered = (JSON.parse(reply[1]!) as { question?: unknown; answer?: unknown }[])
+      .filter((entry) => entry && typeof entry.answer === "string" && entry.answer.trim() !== "")
+      .map((entry) => ({ question: typeof entry.question === "string" ? entry.question.trim() : "", answer: (entry.answer as string).trim() }));
+    // One answer stands alone under the question above it. Several need their
+    // questions, or the reader cannot tell which answer is which.
+    const lines = answered.map(({ question, answer }) => (answered.length > 1 && question ? `${question}: ${answer}` : answer));
+    return lines.length > 0 ? { kind: "text", text: lines.join("\n") } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A short label from an MCP call's arguments when it named no title. */
@@ -393,27 +452,57 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // conversation object. Keep reading the UI-level representation rather
       // than raw response_item messages: those still contain developer prompts
       // and synthetic environment context alongside the real conversation.
+      //
+      // Since 0.151 reasoning, MCP calls, native file edits and web searches
+      // are items too. The legacy events below stopped occurring: a September
+      // 2026 census of 65 local rollouts (0.151 to 0.155) found none of them,
+      // so all four were silently dropped until this review mapped the items
+      // onto the same builders. Other item types stay dropped, including
+      // CommandExecution, which the `exec` rows already show.
+      //
+      // Native edits and MCP calls are made from inside an `exec` call, and
+      // that exec row stays as well as the item. That is deliberate. An item
+      // carries no call id to join on, and a failed patch emits no FileChange
+      // (17 apply_patch-only calls in the census produced none, each with an
+      // error in its output), so the exec row and its output are the only
+      // record of that failure.
       if (kind === "item_completed") {
         const item = payload?.item as Record<string, unknown> | undefined;
-        if (!item) continue;
-        const itemType = item?.type;
-        const role = itemType === "UserMessage" ? "you" : itemType === "AgentMessage" ? "agent" : null;
-        if (!role) continue;
-        const content = Array.isArray(item?.content) ? item.content : [];
-        const text = content
-          .map((part) => {
-            if (!part || typeof part !== "object") return "";
-            const value = part as Record<string, unknown>;
-            return typeof value.text === "string" ? value.text : "";
-          })
-          .filter(Boolean)
-          .join("\n")
-          .trim();
-        if (!text) continue;
         // The row, not `item.id`: item ids are not unique within a rollout
         // (315 repeated Reasoning ids in the September 2026 census), and a
         // repeated id collapses two messages in both clients' merges.
-        messages.push({ id: `codex-${index}`, role, at, blocks: [{ kind: "text", text }] });
+        const id = `codex-${index}`;
+        switch (item?.type) {
+          case "UserMessage":
+          case "AgentMessage": {
+            const content = Array.isArray(item.content) ? item.content : [];
+            const text = content
+              .map((part) => {
+                if (!part || typeof part !== "object") return "";
+                const value = part as Record<string, unknown>;
+                return typeof value.text === "string" ? value.text : "";
+              })
+              .filter(Boolean)
+              .join("\n")
+              .trim();
+            if (!text) break;
+            const block = item.type === "UserMessage" ? codexUserText(text) : { kind: "text" as const, text };
+            if (block) messages.push({ id, role: item.type === "UserMessage" ? "you" : "agent", at, blocks: [block] });
+            break;
+          }
+          case "Reasoning":
+            pushThinking(messages, reasoningText(item), id, at);
+            break;
+          case "McpToolCall":
+            messages.push({ id, role: "agent", at, blocks: [mcpToolBlock(item, item.result, item.status === "failed")] });
+            break;
+          case "FileChange":
+            messages.push({ id, role: "agent", at, blocks: [patchApplyBlock({ ...item, success: item.status !== "failed" })] });
+            break;
+          case "WebSearch":
+            messages.push({ id, role: "agent", at, blocks: [webSearchBlock(item.query)] });
+            break;
+        }
         continue;
       }
 
@@ -421,21 +510,8 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // plaintext — the matching `response_item` of type `reasoning` is
       // encrypted, so this is the only place its text exists (measured: 335
       // agent_reasoning events across the real rollouts, all dropped before).
-      // A run of them is coalesced into one thinking block, the way Claude
-      // writes a single block per turn, so the reader is not a stack of
-      // one-line headers.
       if (kind === "agent_reasoning" || kind === "agent_reasoning_raw_content") {
-        const text = (payload?.text as string | undefined)?.trim();
-        if (!text) continue;
-        const last = messages[messages.length - 1];
-        const lastBlock = last?.blocks[0];
-        if (last && last.role === "agent" && last.blocks.length === 1 && lastBlock?.kind === "thinking") {
-          last.blocks[0] = { kind: "thinking", text: `${lastBlock.text}
-
-${text}` };
-        } else {
-          messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [{ kind: "thinking", text }] });
-        }
+        pushThinking(messages, (payload?.text as string | undefined)?.trim() ?? "", `codex-${index}`, at);
         continue;
       }
 
@@ -444,7 +520,8 @@ ${text}` };
       // events dropped before). The `_end` event carries the full invocation
       // and result; the `_begin` is redundant and skipped.
       if (kind === "mcp_tool_call_end") {
-        messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [mcpToolBlock(payload!)] });
+        const invocation = (payload!.invocation as Record<string, unknown> | undefined) ?? {};
+        messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [mcpToolBlock(invocation, payload!.result)] });
         continue;
       }
       // A native apply_patch edit — recorded only here, never as a
@@ -456,13 +533,7 @@ ${text}` };
         continue;
       }
       if (kind === "web_search_end") {
-        const q = (payload?.query as string | undefined)?.trim();
-        messages.push({
-          id: `codex-${index}`,
-          role: "agent",
-          at,
-          blocks: [{ kind: "tool", name: "web_search", summary: q ?? "web search", result: null }],
-        });
+        messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [webSearchBlock(payload?.query)] });
         continue;
       }
 

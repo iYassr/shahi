@@ -335,6 +335,122 @@ describe("normaliseCodex", () => {
 });
 
 /**
+ * Codex 0.151+ records reasoning, MCP calls, native edits and web searches only
+ * as `item_completed` items. A September 2026 census of 65 local rollouts
+ * (0.151 to 0.155) found none of the legacy events these used to arrive as, so
+ * all four were silently dropped (review finding). The rollouts are private,
+ * so these fixtures copy the census's key names and value kinds exactly, with
+ * synthetic values.
+ */
+describe("normaliseCodex, codex 0.151+ items", () => {
+  const item = (fields: Record<string, unknown>, timestamp = "2026-09-20T10:00:00.000Z") => ({
+    timestamp,
+    ordinal: 1,
+    type: "event_msg",
+    payload: { type: "item_completed", thread_id: "t", turn_id: "u", started_at_ms: 1, completed_at_ms: 2, item: fields },
+  });
+  const userMessage = (text: string) =>
+    item({ type: "UserMessage", id: "7f3a9c21", content: [{ type: "text", text, text_elements: [] }] });
+
+  test("codex 0.151+ reasoning shows as thinking instead of being dropped", () => {
+    const messages = normaliseCodex([
+      item({ type: "Reasoning", id: "rs_1", summary_text: ["**Reading the config**\n\nThe port comes from the env file."], raw_content: [] }),
+      item({ type: "Reasoning", id: "rs_2", summary_text: ["**Checking tests**"], raw_content: [] }),
+      // 5,590 of 7,397 captured Reasoning items carry no text at all.
+      item({ type: "Reasoning", id: "rs_3", summary_text: [], raw_content: [] }),
+    ]);
+    expect(messages).toEqual([
+      {
+        id: "codex-0",
+        role: "agent",
+        at: Date.parse("2026-09-20T10:00:00.000Z"),
+        blocks: [{ kind: "thinking", text: "**Reading the config**\n\nThe port comes from the env file.\n\n**Checking tests**" }],
+      },
+    ]);
+    expect(normaliseCodex([item({ type: "Reasoning", id: "rs_4", summary_text: [], raw_content: ["raw thought"] })])[0]!.blocks)
+      .toEqual([{ kind: "thinking", text: "raw thought" }]);
+  });
+
+  test("codex 0.151+ MCP calls show their server, tool and result", () => {
+    const [ok, failed] = normaliseCodex([
+      item({
+        type: "McpToolCall", id: "exec-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b", server: "node_repl", tool: "js",
+        arguments: { code: "await page.title()", title: "Read the page title" }, status: "completed",
+        duration: { secs: 0, nanos: 120 }, readOnlyHint: true,
+        result: { _meta: { "codex/nodeReplExecutionDurationMs": 12 }, content: [{ type: "text", text: "Example Domain" }], isError: false },
+      }),
+      item({
+        type: "McpToolCall", id: "exec-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c", server: "codex_app", tool: "wait_threads",
+        arguments: { targets: [{ threadId: "t2", hostId: "h", afterCursor: "c" }], timeoutMs: 1000 }, status: "failed",
+        duration: { secs: 1, nanos: 0 }, result: { content: [{ type: "text", text: "timed out" }], isError: true },
+      }),
+    ]);
+    expect(ok).toMatchObject({ role: "agent", blocks: [{ kind: "tool", name: "node_repl.js", summary: "Read the page title", result: { text: "Example Domain", isError: false } }] });
+    expect(failed!.blocks[0]).toMatchObject({ kind: "tool", name: "codex_app.wait_threads", summary: "wait_threads", result: { text: "timed out", isError: true } });
+  });
+
+  test("codex 0.151+ native file edits list the files they changed", () => {
+    const [edit] = normaliseCodex([
+      item({
+        type: "FileChange", id: "exec-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5d", status: "completed",
+        changes: {
+          "/repo/src/app.ts": { type: "update", unified_diff: "@@ -1 +1 @@\n-a\n+b\n", move_path: null },
+          "/repo/src/new.ts": { type: "add", unified_diff: "@@ -0,0 +1 @@\n+c\n", move_path: null },
+        },
+        stdout: "Success. Updated the following files:\nM /repo/src/app.ts\nA /repo/src/new.ts\n", stderr: "",
+      }),
+    ]);
+    expect(edit).toMatchObject({ role: "agent", blocks: [{ kind: "tool", name: "apply_patch", summary: "update app.ts, add new.ts", result: { isError: false } }] });
+    expect((edit!.blocks[0] as { result: { text: string } }).result.text).toStartWith("Success. Updated the following files:");
+  });
+
+  // The edit is made from inside an `exec` call. Its item carries no call id to
+  // join on, and a patch that fails emits no FileChange at all, so the exec row
+  // stays: its output is the only record of a failed edit.
+  test("a native edit keeps its exec row, which is all a failed patch leaves", () => {
+    const exec = { type: "response_item", payload: { type: "custom_tool_call", call_id: "call_p", name: "exec", input: "const r = await tools.apply_patch(`*** Begin Patch`);\ntext(r);\n" } };
+    const output = { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "call_p", output: [{ type: "input_text", text: "error: patch does not apply" }] } };
+    expect(normaliseCodex([exec, output]).map((m) => m.blocks[0])).toMatchObject([
+      { kind: "tool", name: "exec", result: { text: "error: patch does not apply" } },
+    ]);
+  });
+
+  test("codex 0.151+ web searches show their query", () => {
+    const [search] = normaliseCodex([
+      item({ type: "WebSearch", id: "ws-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5e", query: "bun test module isolation", action: { type: "search", queries: ["bun test module isolation"] }, results: [] }),
+    ]);
+    expect(search).toMatchObject({ role: "agent", blocks: [{ kind: "tool", name: "web_search", summary: "bun test module isolation", result: null }] });
+  });
+
+  // 43 of 517 captured UserMessages were subagent reports and 17 were replies to
+  // an agent's question, all shown as XML the person had typed.
+  test("codex subagent reports and question replies are unwrapped, not shown as XML the person typed", () => {
+    const texts = normaliseCodex([
+      userMessage("<task-notification>\n<task-id>a1</task-id>\n<event>completed</event>\n<summary>Subagent finished the audit</summary>\n</task-notification>"),
+      userMessage('<send_user_message_question_reply>[{"question":"Which database?","answer":"SQLite","questionItemId":"q1"}]</send_user_message_question_reply>'),
+      userMessage('<send_user_message_question_reply>[{"question":"Which database?","answer":"SQLite","questionItemId":"q1"},{"question":"Deploy now?","answer":"Later","questionItemId":"q2"}]</send_user_message_question_reply>'),
+      userMessage("<bash-input>ls</bash-input>"),
+      userMessage("<send_user_message_question_reply>not json</send_user_message_question_reply>"),
+    ]).map((m) => [m.role, m.blocks[0]]);
+    expect(texts).toEqual([
+      ["you", { kind: "text", text: "Subagent finished the audit" }],
+      ["you", { kind: "text", text: "SQLite" }],
+      ["you", { kind: "text", text: "Which database?: SQLite\nDeploy now?: Later" }],
+      ["you", { kind: "text", text: "! ls" }],
+    ]);
+  });
+
+  test("item types it does not render are dropped, not guessed at", () => {
+    expect(normaliseCodex([
+      item({ type: "CommandExecution", id: "x", command: ["ls"], status: "completed" }),
+      item({ type: "ImageView", id: "y", path: "/tmp/a.png" }),
+      item({ type: "ContextCompaction", id: "z" }),
+      item({ type: "SomethingNew", id: "w", text: "surprising" }),
+    ])).toEqual([]);
+  });
+});
+
+/**
  * The session-id route, which only exists once herdr's codex integration is
  * installed. `CODEX_HOME` is read when the module loads, so this imports a
  * fresh copy pointed at a temp directory rather than at the real one.
