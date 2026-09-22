@@ -98,6 +98,19 @@ test("revoking this browser clears its remembered connection", async ({ page, re
   await page.reload();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 });
+// A browser that was closed when it was revoked used to reconnect forever:
+// its next hello was refused like a stranger's instead of answered with a bye.
+test("a browser revoked while it was closed signs out when it next opens", async ({ page, context, request }) => {
+  await pair(page, true);
+  await page.close();
+  await expect.poll(async () => (await (await request.get("/__hosted/connections")).json()).live).toBe(0);
+  await request.post("/__hosted/revoke");
+  const reopened = await context.newPage();
+  await reopened.goto("/pwa/");
+  await expect(reopened.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await reopened.reload();
+  await expect(reopened.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+});
 test("fragment pairing is removed before connecting and no secret is stored in web storage", async ({ page }) => {
   await page.goto(web);
   await expect(page.getByLabel("Pairing code", { exact: true })).toHaveValue(code);

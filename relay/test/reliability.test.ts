@@ -19,7 +19,7 @@ async function fixture() {
   const clients = new Set<StreamClient>();
   const events: string[] = [];
   let dispatch = async () => new Response("ok");
-  const sidecar = new RelayClient({ url: HTTP, identity, devices: { secret: () => secret }, pairing: { secretByHash: () => null }, auth: { issue: () => "synthetic" },
+  const sidecar = new RelayClient({ url: HTTP, identity, devices: { secret: () => secret, revokedSecret: () => null }, pairing: { secretByHash: () => null }, auth: { issue: () => "synthetic" },
     server: { attach: (c) => { clients.add(c); }, detach: (c) => { clients.delete(c); }, receive() {}, dispatch: () => dispatch() }, log: (event) => { events.push(event); } });
   sidecar.start();
   for (let n = 0; !sidecar.connected && n < 500; n++) await Bun.sleep(10);

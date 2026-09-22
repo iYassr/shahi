@@ -25,7 +25,7 @@ let client: RelayClient;
 function makeClient(options: RelayClientOptions = {}) {
   return new RelayClient({
     url: "https://relay.invalid", identity: fromSeed(new Uint8Array(32)),
-    devices: { secret: () => null }, pairing: { secretByHash: () => null }, auth: { issue: () => "fixture" },
+    devices: { secret: () => null, revokedSecret: () => null }, pairing: { secretByHash: () => null }, auth: { issue: () => "fixture" },
     server: { dispatch: async () => new Response(), attach: () => {}, detach: () => {}, receive: () => {} },
   }, { minBackoffMs: 1, maxBackoffMs: 5, authTimeoutMs: 40, silenceMs: 40, watchdogMs: 5, pingMs: 10, ...options });
 }

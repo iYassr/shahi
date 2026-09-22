@@ -33,6 +33,7 @@ import {
   type SocketMessage,
 } from "@shahi/shared";
 import { clientSession, ephemeral, open, seal, type Session } from "@shahi/shared/e2e";
+import { UnauthorizedError } from "@shahi/shared/errors";
 import { downloadFileBytes } from "@shahi/shared/file-download";
 import { RelayLink, deviceTarget } from "@shahi/shared/relay-client";
 import { Auth } from "./auth";
@@ -375,7 +376,7 @@ const scratch = mkdtempSync(join(tmpdir(), "shahi-relay-"));
 let passcodeHash = "";
 let booted = 0;
 
-async function bootBox(): Promise<Box> {
+async function bootBox({ sessionTtlMs = 60_000, heartbeatMs }: { sessionTtlMs?: number; heartbeatMs?: number } = {}): Promise<Box> {
   const n = booted++;
   const dataPath = join(scratch, `box-${n}.sqlite`);
   const config: Config = {
@@ -385,7 +386,7 @@ async function bootBox(): Promise<Box> {
     dataPath,
     passcodeHash,
     sessionSecret: "test-secret",
-    sessionTtlMs: 60_000,
+    sessionTtlMs,
     vapid: null,
     webRoot: null,
     relayUrl: null,
@@ -422,7 +423,7 @@ async function bootBox(): Promise<Box> {
     // Present, so the assertion that /api/meta over the relay names no relay
     // is about the route and not about a server that had none.
     relay: () => ({ url: "https://relay.test", connected: true }),
-  });
+  }, { heartbeatMs });
   const login = await fetch(`http://127.0.0.1:${server.port}/api/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -764,7 +765,7 @@ describe("a phone through the relay", () => {
     await p.closed;
   });
 
-  test("revoking the device sends the phone a sealed bye, closes its link, and refuses its next hello", async () => {
+  test("revoking the device sends the phone a sealed bye, closes its link, and says bye again to its next hello", async () => {
     const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
     await p.hello;
     expect((await p.request("GET", "/api/session")).status).toBe(200);
@@ -782,8 +783,69 @@ describe("a phone through the relay", () => {
     expect(p.sawBye()).toBe(true);
     expect(box.log.some((l) => l.includes("device revoked"))).toBe(true);
 
+    // Coming back is not a session: a hello, the same sealed bye, and the end.
     const again = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
-    await expect(again.hello).rejects.toThrow(/closed before hello/);
+    await again.hello;
+    expect((await again.closed).code).toBe(1000);
+    expect(again.sawBye()).toBe(true);
+  });
+
+  // Found in the September 2026 pre-release review. Only a phone whose link
+  // was up at the moment of revocation got its bye; one in the background came
+  // back to "unknown device", which the relay turns into a routine close, and
+  // retried every half minute forever without ever saying it was unpaired.
+  test("a phone revoked while its link was down signs out when it reconnects, instead of retrying forever", async () => {
+    const { device, secret } = box.devices.create("Backgrounded phone");
+    const link = deviceLink(relay, box, device.id, secret);
+    let expired = 0;
+    link.subscribe({ onMessage() {}, onLink() {}, onExpired: () => { expired += 1; } });
+    const session = { method: "GET", path: "/api/session", headers: { "x-shahi-api": String(SHAHI_API_VERSION) }, body: null };
+    try {
+      expect((await link.request(session, 5_000)).status).toBe(200);
+      link.close();
+      const revoke = await fetch(`http://127.0.0.1:${box.server.port}/api/devices/${encodeURIComponent(device.id)}`, {
+        method: "DELETE",
+        headers: { cookie: box.cookie },
+      });
+      expect(revoke.status).toBe(200);
+
+      await expect(link.request(session, 5_000)).rejects.toThrow(UnauthorizedError);
+      expect(expired).toBe(1);
+      const opens = box.log.filter((l) => l.includes("relay.link_open")).length;
+      await Bun.sleep(1_200);
+      expect(box.log.filter((l) => l.includes("relay.link_open")).length).toBe(opens);
+      expect(link.state).toBe("lost");
+    } finally {
+      link.close();
+    }
+  });
+
+  // Also from that review: the heartbeat closes a link whose own token has
+  // expired with the same code as a revocation, and the box answered both with
+  // a bye, erasing a pairing that was still valid. A new link mints a new token.
+  test("a link whose session token expires ends quietly and the still-paired phone reconnects", async () => {
+    const short = await bootBox({ sessionTtlMs: 1_500, heartbeatMs: 50 });
+    const dialler = dial(relay, short);
+    const { device, secret } = short.devices.create("Long-lived link");
+    const link = deviceLink(relay, short, device.id, secret);
+    let expired = 0;
+    link.subscribe({ onMessage() {}, onLink() {}, onExpired: () => { expired += 1; } });
+    const session = { method: "GET", path: "/api/session", headers: { "x-shahi-api": String(SHAHI_API_VERSION) }, body: null };
+    try {
+      await waitFor(() => dialler.connected, "the short-session box to authenticate");
+      expect((await link.request(session, 5_000)).status).toBe(200);
+      const opens = () => short.log.filter((l) => l.includes("relay.link_open")).length;
+      const before = opens();
+      await waitFor(() => short.log.some((l) => l.includes("session expired")), "the heartbeat to end the expired link", 5_000);
+      await waitFor(() => opens() > before && link.state === "live", "the phone to reconnect", 5_000);
+      expect(expired).toBe(0);
+      expect(short.devices.secret(device.id)).toEqual(secret);
+      expect((await link.request(session, 5_000)).status).toBe(200);
+    } finally {
+      link.close();
+      dialler.stop();
+      short.stop();
+    }
   });
 
   test("when the relay drops the box it reconnects, and a phone can come back", async () => {

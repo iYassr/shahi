@@ -26,7 +26,7 @@ test("a suspended computer process opens a fresh tunnel and survives network fla
     import { RelayClient } from ${JSON.stringify(new URL("./relay-client.ts", import.meta.url).pathname)};
     import { fromSeed } from ${JSON.stringify(new URL("./identity.ts", import.meta.url).pathname)};
     const client = new RelayClient({url:"http://127.0.0.1:${relay.port}",
-      identity:fromSeed(new Uint8Array(32)),devices:{secret:()=>null},pairing:{secretByHash:()=>null},auth:{issue:()=>"test"},
+      identity:fromSeed(new Uint8Array(32)),devices:{secret:()=>null,revokedSecret:()=>null},pairing:{secretByHash:()=>null},auth:{issue:()=>"test"},
       server:{dispatch:async()=>new Response(),attach:()=>{},detach:()=>{},receive:()=>{}}},
       {watchdogMs:20,resumeGapMs:150,pingMs:30,silenceMs:5000,minBackoffMs:20,maxBackoffMs:80,authTimeoutMs:200});
     client.start();

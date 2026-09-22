@@ -12,7 +12,7 @@ if (process.env.SHAHI_RECOVERY_CHILD) {
   const secret = new Uint8Array(config.secret);
   new RelayClient({
     url: config.url, identity: fromSeed(new Uint8Array(config.seed)),
-    devices: { secret: id => id === "recovery-probe" ? secret : null },
+    devices: { secret: id => id === "recovery-probe" ? secret : null, revokedSecret: () => null },
     pairing: { secretByHash: () => null }, auth: { issue: () => "probe" },
     server: { dispatch: async () => Response.json({ probe: "recovery-ok" }), attach: () => {}, detach: () => {}, receive: () => {} },
     log: event => { if (event === "relay.connected" || event === "relay.resumed") appendFileSync(config.events, `${event}\n`); },

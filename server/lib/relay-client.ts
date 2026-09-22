@@ -45,7 +45,7 @@ export interface RelayClientDeps {
   /** `RELAY_URL`: http(s), the Worker's address. */
   url: string;
   identity: ServerIdentity;
-  devices: Pick<Devices, "secret">;
+  devices: Pick<Devices, "secret" | "revokedSecret">;
   pairing: Pick<Pairing, "secretByHash">;
   auth: Pick<Auth, "issue">;
   server: Pick<ShahiServer, "dispatch" | "attach" | "detach" | "receive">;
@@ -452,7 +452,9 @@ class Link implements StreamClient {
       // frame earns a session. Recheck revocation after the hello/claim race.
       const auth = this.#helloAuth!;
       if (auth.kind === "device") {
-        if (!this.deps.devices.secret(auth.deviceId)) { this.end("unknown device"); return; }
+        // Revoked between the hello and this frame. Rows are never deleted,
+        // so a device that is no longer active was revoked: say so.
+        if (!this.deps.devices.secret(auth.deviceId)) { this.#dismiss("device revoked"); return; }
         this.data.deviceId = auth.deviceId;
         this.data.token = this.deps.auth.issue(Date.now(), auth.deviceId);
         this.deps.server.attach(this);
@@ -487,10 +489,23 @@ class Link implements StreamClient {
 
     // The secret never travels: the hello names it, and only a box that has
     // it can derive the keys the phone is about to use.
-    const secret =
-      hello.auth.kind === "device"
-        ? this.deps.devices.secret(hello.auth.deviceId)
-        : this.deps.pairing.secretByHash(hello.auth.id);
+    let secret: Uint8Array | null;
+    let revoked = false;
+    if (hello.auth.kind === "device") {
+      secret = this.deps.devices.secret(hello.auth.deviceId);
+      // A phone revoked while its link was down (an app in the background)
+      // used to be ended here like a stranger. The relay turns that into a
+      // routine 1000, which a paired phone must retry, so it reconnected
+      // forever and never learned it was unpaired (September 2026
+      // pre-release review). The revoked row's secret keys one sealed `bye`,
+      // which the relay cannot forge, and is used for nothing else.
+      if (!secret) {
+        secret = this.deps.devices.revokedSecret(hello.auth.deviceId);
+        revoked = secret !== null;
+      }
+    } else {
+      secret = this.deps.pairing.secretByHash(hello.auth.id);
+    }
     if (!secret) {
       this.end(hello.auth.kind === "device" ? "unknown device" : "unknown pairing code");
       return;
@@ -512,6 +527,10 @@ class Link implements StreamClient {
     this.#helloAuth = hello.auth;
     const answer: BoxHello = { t: "hello", v: RELAY_PROTOCOL, pub: b64(self.pub) };
     this.wire.send(this.id, encoder.encode(JSON.stringify(answer)));
+    if (revoked) {
+      this.#dismiss("device revoked");
+      return;
+    }
 
     if (hello.auth.kind === "device") {
       this.#rateKey = `relay:${hello.auth.deviceId}`;
@@ -605,7 +624,20 @@ class Link implements StreamClient {
     // reconnected on a backoff loop forever — cut off, but never told to sign
     // out. So the terminal reason travels as a sealed `bye` the phone acts on,
     // sent before the link ends.
-    if (code === CLOSE_SESSION_EXPIRED) this.#sendSealed(`{"t":"bye"}`);
+    //
+    // The same code also means only that this link's own token stopped
+    // verifying (the heartbeat's expiry check) while the device is still
+    // paired. A `bye` there erased a valid pairing; the phone needs nothing
+    // but a new link, which mints a new token. So the `bye` goes only to a
+    // device this box no longer has as paired (September 2026 review).
+    const paired = this.data.deviceId !== null && this.deps.devices.secret(this.data.deviceId) !== null;
+    if (code === CLOSE_SESSION_EXPIRED && !paired) this.#dismiss(reason);
+    else this.end(reason);
+  }
+
+  /** Tells the phone, in a sealed frame it can trust, that it is no longer paired; then ends the link. */
+  #dismiss(reason: string): void {
+    this.#sendSealed(`{"t":"bye"}`);
     this.end(reason);
   }
 

@@ -23,6 +23,8 @@ let holdLogout = false;
 let releaseLogout: (() => void) | undefined;
 let deviceHandshakes = 0;
 const devices = new Map<string, { secret: Uint8Array; name: string }>();
+// Like the sidecar's revoked rows: kept only to seal a bye for a device that reconnects.
+const revoked = new Map<string, Uint8Array>();
 const links = new Set<ServerWebSocket<Link>>();
 const transcript: { path: string; method: string }[] = [];
 interface Link { session?: CryptoSession; deviceId?: string; pairing: boolean; stream?: WebSocket }
@@ -34,8 +36,13 @@ const appRoutes = (await Bun.file(new URL("../../site/public/_redirects", import
   .map(parts => parts[0]!);
 const blackholes = new Set<ServerWebSocket<Link>>();
 function send(ws: ServerWebSocket<Link>, value: unknown) { if (ws.data.session && !blackholes.has(ws)) ws.send(seal(ws.data.session, encoder.encode(JSON.stringify(value)))); }
-function revoke(id: string) {
+function forget(id: string) {
+  const device = devices.get(id);
+  if (device) revoked.set(id, device.secret);
   devices.delete(id);
+}
+function revoke(id: string) {
+  forget(id);
   for (const ws of links) if (ws.data.deviceId === id) { send(ws, { t: "bye" }); ws.close(1000); }
 }
 const fixture = Bun.serve<Link>({
@@ -58,7 +65,7 @@ const fixture = Bun.serve<Link>({
       for (const ws of links) ws.close(1000);
       blackholes.clear();
       holdLogout = false; releaseLogout?.(); releaseLogout = undefined;
-      offline = false; siteOffline = false; brokenWorker = false; deviceHandshakes = 0; devices.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
+      offline = false; siteOffline = false; brokenWorker = false; deviceHandshakes = 0; devices.clear(); revoked.clear(); pairingSecret = crypto.getRandomValues(new Uint8Array(32)); pairingUsed = false; transcript.length = 0;
       await fetch(`${apiBase}/__stub/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "busy" }) });
       const fields = new URLSearchParams({ v: "1", server: serverId, relay: `http://127.0.0.1:${port}`, secret: b64(pairingSecret) });
       return Response.json({ code: `shahi://pair#${fields}`, web: `http://127.0.0.1:${port}/pwa/#pair=${encodeURIComponent(`shahi://pair#${fields}`)}` });
@@ -95,11 +102,15 @@ const fixture = Bun.serve<Link>({
           if (hello.t !== "hello" || hello.v !== RELAY_PROTOCOL) throw new Error("invalid hello");
           let secret: Uint8Array | undefined;
           if (hello.auth.kind === "pairing" && !pairingUsed && hello.auth.id === b64(sha256(pairingSecret))) { secret = pairingSecret; ws.data.pairing = true; }
-          if (hello.auth.kind === "device") { secret = devices.get(hello.auth.deviceId)?.secret; ws.data.deviceId = hello.auth.deviceId; }
-          if (!secret) { ws.close(4401); return; }
+          if (hello.auth.kind === "device") { secret = devices.get(hello.auth.deviceId)?.secret ?? revoked.get(hello.auth.deviceId); ws.data.deviceId = hello.auth.deviceId; }
+          // The real relay turns a box ending a link into 1000 "closed by box";
+          // it cannot carry the box's reason as a close code.
+          if (!secret) { ws.close(1000, "closed by box"); return; }
           const self = ephemeral(crypto.getRandomValues(new Uint8Array(32)));
           ws.data.session = serverSession(self, bytes(hello.pub), secret);
           ws.send(encoder.encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: b64(self.pub) })));
+          // A device revoked while it was away hears so when it comes back, as from the sidecar.
+          if (ws.data.deviceId && !devices.has(ws.data.deviceId)) { send(ws, { t: "bye" }); ws.close(1000, "closed by box"); return; }
           if (ws.data.deviceId) {
             deviceHandshakes++;
             const stream = new WebSocket(`${apiBase.replace("http", "ws")}/ws`, { headers: { cookie: "shahi_session=stub" } } as never);
@@ -143,7 +154,7 @@ const fixture = Bun.serve<Link>({
         }
         else if (message.path === "/api/auth/logout") {
           if (holdLogout) await new Promise<void>(resolve => { releaseLogout = resolve; });
-          devices.delete(ws.data.deviceId); response = Response.json({ ok: true });
+          forget(ws.data.deviceId); response = Response.json({ ok: true });
         }
         else {
           const headers = new Headers(message.headers); headers.set("cookie", "shahi_session=stub");

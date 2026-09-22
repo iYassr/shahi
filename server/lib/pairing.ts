@@ -162,6 +162,19 @@ export class Devices {
     return row ? new Uint8Array(row.secret) : null;
   }
 
+  /**
+   * The relay key share of a revoked device, for one purpose only: telling
+   * that phone it is no longer paired when it next connects, in a frame
+   * sealed with this key so the phone can trust it. It must not authorize
+   * anything. Revoked rows keep their secret, so this is always available.
+   */
+  revokedSecret(id: string): Uint8Array | null {
+    const row = this.db
+      .query<{ secret: Uint8Array }, [string]>("SELECT secret FROM devices WHERE id = ? AND revoked_at IS NOT NULL")
+      .get(id);
+    return row ? new Uint8Array(row.secret) : null;
+  }
+
   /** Devices that can still act, oldest first. */
   list(): PairedDevice[] {
     return this.db
