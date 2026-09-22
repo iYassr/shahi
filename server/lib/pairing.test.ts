@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { Auth } from "./auth";
-import { Devices, PAIRING_TTL_MS, Pairing, pairingUrl } from "./pairing";
+import { Devices, PAIRING_TTL_MS, Pairing, pairCommand, pairingUrl } from "./pairing";
 
 describe("pairing codes", () => {
   test("a minted code claims exactly once", () => {
@@ -181,4 +181,15 @@ describe("a session bound to a device", () => {
     });
     expect(auth.identify(auth.issue(0, "dev-1"), 1)).toBeNull();
   });
+});
+
+/**
+ * The sidecar's startup log said "pair a phone: bun run server/scripts/pair.ts"
+ * everywhere. Under the plugin it runs from an approved release — service.js,
+ * manager.js and the web assets, no server/scripts — so a person reading the
+ * plugin's log was sent to a file that is not there (pre-release review).
+ */
+test("the startup log names a way to pair that exists where the sidecar runs", () => {
+  expect(pairCommand({ SHAHI_MANAGER_ROOT: "/home/me/.local/state/herdr/plugins/shahi/managed" })).toBe("herdr plugin action invoke shahi.pair");
+  expect(pairCommand({})).toBe("bun run server/scripts/pair.ts");
 });

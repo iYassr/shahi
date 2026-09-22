@@ -109,6 +109,16 @@ export function pairingUrl(payload: PairingPayload): string {
   return `shahi://pair#${params.toString()}`;
 }
 
+/**
+ * How the sidecar's startup log says to pair. Under the plugin's manager it
+ * runs from an approved release directory, which holds the bundled service and
+ * no `server/scripts`, so the checkout's command pointed at a file that is not
+ * there (pre-release review). The plugin's action is the way in for that box.
+ */
+export function pairCommand(env: NodeJS.ProcessEnv = process.env): string {
+  return env.SHAHI_MANAGER_ROOT ? "herdr plugin action invoke shahi.pair" : "bun run server/scripts/pair.ts";
+}
+
 /** What a claim hands the phone: the device, and its share of the relay key. */
 export interface CreatedDevice {
   device: PairedDevice;

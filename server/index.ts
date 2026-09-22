@@ -19,7 +19,7 @@ import { BackendMonitor } from "./lib/backend";
 import { ComputerControl } from "./lib/control";
 import { createServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
-import { Devices, Pairing } from "./lib/pairing";
+import { Devices, Pairing, pairCommand } from "./lib/pairing";
 import { Poller } from "./lib/poller";
 import { PushService } from "./lib/push";
 import { RelayClient } from "./lib/relay-client";
@@ -141,7 +141,7 @@ console.log(
 );
 console.log("  passcode required");
 console.log(`  push ${push.enabled ? `enabled, ${push.count()} subscription(s)` : "disabled (no VAPID keys)"}`);
-console.log(`  devices ${devices.list().length} paired — pair a phone: bun run server/scripts/pair.ts`);
+console.log(`  devices ${devices.list().length} paired — pair a phone: ${pairCommand()}`);
 console.log(`  relay ${config.relayUrl ? `dialling ${config.relayUrl} as ${identity.serverId}` : "none (RELAY_URL not set); reachable directly only"}`);
 console.log(`  data ${config.dataPath}`);
 
