@@ -13,6 +13,13 @@
  * A code is a relay code: the phone reaches the box through the relay, from
  * anywhere. A box with `RELAY_URL=` empty has no address a phone could be
  * given, so it mints nothing and is reached over SSH with the passcode.
+ *
+ * Which relay is the running server's answer, not this script's reading of
+ * the .env. The plugin keeps its default relay out of the file, in the
+ * service's environment only, so reading the file said "This box has no
+ * relay" of a box that `shahi.status` showed connected, and sent the person
+ * to write the default into the file the design keeps it out of (pre-release
+ * review). Over loopback, /api/meta names the relay the box actually dials.
  */
 import QRCode from "qrcode";
 import { showPairingPopup } from "../lib/pairing-display";
@@ -30,13 +37,6 @@ const ENV_PATH = envFilePath();
 const config = loadConfig({ ...Object.fromEntries(readEnvFile(ENV_PATH)), ...process.env });
 const local = `http://${config.host}:${config.port}`;
 
-if (!config.relayUrl) {
-  console.error(
-    "This box has no relay, so there is no address to put on a code.\n" +
-      "Set RELAY_URL in .env to pair a phone, or reach this box over SSH and sign in with the passcode.",
-  );
-  process.exit(1);
-}
 const auth = new Auth({
   passcodeHash: config.passcodeHash,
   sessionSecret: config.sessionSecret,
@@ -57,7 +57,15 @@ async function serverInfo(base: string): Promise<ServerInfo | null> {
 
 const here = await serverInfo(local);
 if (!here) {
-  console.error(`Shahi is not answering at ${local}. Is it running? (systemctl --user status shahi)`);
+  console.error(`Shahi is not answering at ${local}. Is it running?  herdr plugin action invoke shahi.status`);
+  process.exit(1);
+}
+const relay = here.relay?.url;
+if (!relay) {
+  console.error(
+    "This box dials no relay (its RELAY_URL is empty), so there is no address to put on a code.\n" +
+      "Reach it over SSH and sign in with the passcode, or give it a relay and restart it.",
+  );
   process.exit(1);
 }
 
@@ -71,7 +79,7 @@ const code = (await mintRes.json()) as PairingCode;
 const url = pairingUrl({
   v: 1,
   server: here.serverId,
-  relay: config.relayUrl,
+  relay,
   secret: code.secret,
 });
 
