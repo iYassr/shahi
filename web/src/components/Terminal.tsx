@@ -53,6 +53,9 @@ const THEME = {
 export function Terminal({ ansi, cols, rows, scale }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
+  // The first size only: later sizes resize this instance (below) rather than
+  // rebuilding it, so nothing depends on a frame arriving to repaint it.
+  const initial = useRef({ cols, rows });
 
   useEffect(() => {
     const host = hostRef.current;
@@ -60,8 +63,8 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
 
     const identity = getComputedStyle(document.documentElement);
     const term = new Xterm({
-      cols,
-      rows,
+      cols: initial.current.cols,
+      rows: initial.current.rows,
       theme: {
         ...THEME,
         background: identity.getPropertyValue("--void").trim(),
@@ -86,16 +89,28 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
       term.dispose();
       termRef.current = null;
     };
-  }, [cols, rows]);
+  }, []);
 
+  /*
+   * Size and screen are painted together, once per change of either.
+   *
+   * The size used to rebuild the terminal and only a new frame painted it, so
+   * a pane whose real layout arrived after its first frame (drawn at the
+   * 146×42 default) went blank, and an idle shell or a blocked agent sends no
+   * new frame to fix that (found in the pre-release review, 2026-09). One
+   * effect also keeps a frame from being written twice when both change:
+   * xterm queues writes but resets at once, so a second reset-and-write in the
+   * same tick would print the screen twice.
+   */
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
+    if (term.cols !== cols || term.rows !== rows) term.resize(cols, rows);
     // A frame is a whole screen, so reset before writing or the previous one
     // shows through wherever the new one is shorter.
     term.reset();
     term.write(ansi);
-  }, [ansi]);
+  }, [ansi, cols, rows]);
 
   // Reserve the scaled footprint once; scaling that same box would square the
   // zoom factor and clip small views or add blank panning space above 100%.
