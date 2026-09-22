@@ -38,13 +38,29 @@ if [ -n "${HERDR_PLUGIN_ID:-}" ]; then
   exit 1
 fi
 
+# Name the package-manager line for what is missing. `unzip` on a fresh Debian
+# or Ubuntu is the usual one, and "install bun by hand" sent people to a second
+# installer that needs the very same tool (pre-release review). Arch gets `-S`
+# without `-y`: `pacman -Sy` is a partial upgrade, and on the Arch VM it broke
+# curl, which broke pacman.
+missing=""
 for tool in curl unzip bash; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Shahi needs bun, none was found, and installing it needs $tool, which is missing too." >&2
-    echo "Install bun by hand (https://bun.sh), then run:  herdr plugin install iYassr/shahi" >&2
-    exit 1
-  fi
+  command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
 done
+if [ -n "$missing" ]; then
+  if command -v apt-get >/dev/null 2>&1; then how="sudo apt-get install -y$missing"
+  elif command -v dnf >/dev/null 2>&1; then how="sudo dnf install -y$missing"
+  elif command -v pacman >/dev/null 2>&1; then how="sudo pacman -S --needed$missing"
+  elif command -v zypper >/dev/null 2>&1; then how="sudo zypper install -y$missing"
+  elif command -v apk >/dev/null 2>&1; then how="apk add$missing   (as root)"
+  elif command -v brew >/dev/null 2>&1; then how="brew install$missing"
+  else how="install$missing with this system's package manager"
+  fi
+  echo "Shahi needs bun, none was found, and bun's installer needs$missing, which this system lacks." >&2
+  echo "Install it:  $how" >&2
+  echo "Then run again:  herdr plugin install iYassr/shahi" >&2
+  exit 1
+fi
 echo "Shahi needs bun and none was found; installing it into $HOME/.bun with bun's own installer (https://bun.sh/install)." >&2
 curl -fsSL https://bun.sh/install | BUN_INSTALL="$HOME/.bun" bash >&2
 if [ -x "$HOME/.bun/bin/bun" ]; then
