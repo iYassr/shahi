@@ -2,18 +2,34 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, readdir, unlink, open, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { MAX_UPLOAD_BYTES, UPLOAD_DIR, safeName, sweepOldUploads } from "./uploads";
+import { MAX_UPLOAD_BYTES, UPLOAD_DIR, privateDirectory, safeName, sweepOldUploads } from "./uploads";
 import type { StoredUpload } from "@shahi/shared";
 
 export const TRANSFER_CHUNK = 64 * 1024;
 const LIFETIME = 60 * 60_000;
+/**
+ * How long an unfinished transfer may go without a chunk before it is
+ * discarded. Well past what a live uploader allows itself: each request has a
+ * one-minute deadline and is retried for two minutes before the upload is
+ * given up, and a given-up upload is never resumed (clients mint a new id).
+ * The hour-long LIFETIME stays as the cap for one that keeps moving.
+ */
+const IDLE = 10 * 60_000;
 interface Transfer {
   owner: string; name: string; type: string; size: number; offset: number;
   expires: number; digest?: string; result?: StoredUpload;
+  /** The last begin or chunk. Absent from journals written before it existed. */
+  updated?: number;
 }
 export class TransferError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
+/**
+ * Still receiving chunks, so discarding it loses only partial bytes. One with a
+ * digest is finalizing, and its file may already be in place; it is left to
+ * complete or expire.
+ */
+const unfinished = (t: Transfer) => !t.result && !t.digest;
 
 /** Serialize disk mutations so a lost-response retry cannot append twice. The
  * journal is durable before acknowledging; a restart truncates uncommitted bytes. */
@@ -46,16 +62,15 @@ export class UploadTransfers {
     return t;
   }
   async sweep() {
+    await privateDirectory(this.dir);
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     const entries = await readdir(this.root);
-    const active: Transfer[] = [];
+    const active: { id: string; t: Transfer }[] = [];
     for (const entry of entries.filter(x => x.endsWith(".json"))) {
       const id = entry.slice(0, -5);
       const t = JSON.parse(await readFile(this.path(id), "utf8")) as Transfer;
-      if (t.expires < this.now()) {
-        await unlink(this.path(id, ".part")).catch(() => {});
-        await unlink(this.path(id));
-      } else active.push(t);
+      if (t.expires < this.now() || (unfinished(t) && this.now() - (t.updated ?? t.expires - LIFETIME) > IDLE)) await this.discard(id);
+      else active.push({ id, t });
     }
     // A crash between creating a partial/journal temp and publishing its
     // manifest must not leave unaccounted disk usage forever.
@@ -83,9 +98,19 @@ export class UploadTransfers {
       return this.status(id, owner);
     }
     if (await stat(join(this.dir, `${id}_${safeName(body.name)}`)).then(() => true, () => false)) throw new TransferError(410, "Upload receipt expired. Select the file again.");
-    const partial = active.filter(t => !t.result);
-    if (active.length >= 128 || partial.length >= 2 || partial.some(t => t.owner === owner)) throw new TransferError(429, "Another file is uploading. Try again shortly.");
-    const t: Transfer = { owner, name: safeName(body.name), type: body.type, size: body.size as number, offset: 0, expires: this.now() + LIFETIME };
+    // Clients mint a fresh id for every upload and never keep it, so a
+    // transfer stranded by an app kill or a lost cancel was reclaimed only by
+    // the hour-long expiry, and the same phone was told "Try again shortly"
+    // for the rest of that hour (review finding F39). Each client runs one
+    // upload at a time, so an owner beginning another has abandoned any it
+    // left unfinished, and those are discarded here. Other owners' stranded
+    // transfers go once idle (see IDLE, in `sweep`).
+    const stranded = active.filter(({ t }) => t.owner === owner && unfinished(t));
+    for (const { id: abandoned } of stranded) await this.discard(abandoned);
+    const live = active.filter(a => !stranded.includes(a)).map(({ t }) => t);
+    const partial = live.filter(t => !t.result);
+    if (live.length >= 128 || partial.length >= 2 || partial.some(t => t.owner === owner)) throw new TransferError(429, "Another file is uploading. Try again shortly.");
+    const t: Transfer = { owner, name: safeName(body.name), type: body.type, size: body.size as number, offset: 0, expires: this.now() + LIFETIME, updated: this.now() };
     const f = await open(this.path(id, ".part"), "w", 0o600); await f.close();
     await this.save(id, t);
     return { offset: 0 };
@@ -116,6 +141,7 @@ export class UploadTransfers {
         }
         await f.sync();
         t.offset += bytes.length;
+        t.updated = this.now();
         await this.save(id, t);
       }
     } finally { await f.close(); }
@@ -142,10 +168,12 @@ export class UploadTransfers {
   async cancel(id: string, owner: string) {
     const t = await this.load(id, owner);
     // Completed attachments can already be in a conversation. Never delete them.
-    if (!t.result && !t.digest) {
-      await unlink(this.path(id, ".part")).catch(() => {});
-      await unlink(this.path(id));
-    }
+    if (unfinished(t)) await this.discard(id);
     return { ok: true };
+  }
+  /** Removes a transfer's partial bytes and its journal; a finished file is not touched. */
+  private async discard(id: string) {
+    await unlink(this.path(id, ".part")).catch(() => {});
+    await unlink(this.path(id));
   }
 }

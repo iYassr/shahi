@@ -47,7 +47,9 @@ test("ownership, offset, chunk size, quota and complete-file hash are enforced",
   await store.begin(id, owner, { name: "sample", type: "", size: 4 });
   await expect(store.status(id, "other")).rejects.toMatchObject({ status: 404 });
   await expect(store.cancel(id, "other")).rejects.toMatchObject({ status: 404 });
-  await expect(store.begin("other-transfer-00001", owner, { name: "sample", type: "", size: 0 })).rejects.toMatchObject({ status: 429 });
+  // Two phones uploading fill the computer; a third waits.
+  await store.begin("second-transfer-0001", "second-device", { name: "sample", type: "", size: 4 });
+  await expect(store.begin("third-transfer-00001", "third-device", { name: "sample", type: "", size: 0 })).rejects.toMatchObject({ status: 429 });
   await expect(store.chunk(id, owner, 2, new Uint8Array([1]))).rejects.toMatchObject({ status: 409 });
   await expect(store.chunk(id, owner, 0, new Uint8Array(TRANSFER_CHUNK + 1))).rejects.toMatchObject({ status: 400 });
   await store.chunk(id, owner, 0, new Uint8Array([1, 2, 3, 4]));
@@ -106,4 +108,53 @@ test("cancelling stops subsequent reads and removes the partial upload", async (
   await store.run(async () => {});
   expect(reads).toBe(1);
   await expect(store.status(id, owner)).rejects.toMatchObject({ status: 404 });
+});
+
+/** The shared uploader against this store, as one phone; `lost` drops every cancel on the way. */
+function phone(store: UploadTransfers, who: string, lost = false): UploadRequest {
+  return async (path, init) => {
+    const transfer = path.match(/transfers\/([^/]+)/)![1]!;
+    if (init.method === "DELETE" && lost) throw new Error("connection lost");
+    const result = await store.run(async () => {
+      if (init.method === "DELETE") return store.cancel(transfer, who);
+      if (path.endsWith("/chunk")) return store.chunk(transfer, who, Number(init.headers?.["x-upload-offset"]), init.body as Uint8Array);
+      if (path.endsWith("/finish")) return store.finish(transfer, who, JSON.parse(init.body as string).digest);
+      return store.begin(transfer, who, JSON.parse(init.body as string));
+    }).catch((e: { status?: number; message: string }) => ({ failed: e.status ?? 500, error: e.message }));
+    const status = "failed" in result ? result.failed : 200;
+    return { ok: status === 200, status, json: async () => result };
+  };
+}
+
+// Review finding F39: the app killed mid-upload, or its cancel lost with the
+// connection, left a partial that refused this phone for the rest of the hour.
+test("an upload interrupted before its cancel arrived does not block the phone's next upload", async () => {
+  const { store } = await setup();
+  const limits = { maxBytes: 32 * 1024 * 1024, chunkBytes: TRANSFER_CHUNK };
+  const bytes = new Uint8Array(TRANSFER_CHUNK * 2).fill(7);
+  const source = { name: "photo.jpg", type: "image/jpeg", size: bytes.length, read: async (offset: number, count: number) => bytes.slice(offset, offset + count) };
+  const killed = new AbortController();
+  await expect(uploadFile(phone(store, owner, true), "stranded-transfer-01", source, limits, { signal: killed.signal, onProgress: sent => { if (sent) killed.abort(); } })).rejects.toThrow("cancelled");
+  expect((await store.status("stranded-transfer-01", owner)).offset).toBe(TRANSFER_CHUNK);
+
+  const retried = await uploadFile(phone(store, owner), "reselected-transfer1", source, limits);
+  expect(new Uint8Array(await readFile(retried.path))).toEqual(bytes);
+  // Its predecessor is gone, partial bytes and all.
+  await expect(store.status("stranded-transfer-01", owner)).rejects.toMatchObject({ status: 404 });
+});
+
+test("another phone's stranded upload gives up its place on a full computer once it stops moving", async () => {
+  let now = 1_000;
+  const { store } = await setup(() => now);
+  await store.begin("first-phone-transfer", "first", { name: "a", type: "", size: 2 });
+  await store.begin("second-phone-transfer", "second", { name: "b", type: "", size: 2 });
+  now += 9 * 60_000;
+  // Still moving: a chunk nine minutes in keeps the first phone's place.
+  await store.chunk("first-phone-transfer", "first", 0, new Uint8Array([1]));
+  await expect(store.begin("third-phone-transfer", "third", { name: "c", type: "", size: 1 })).rejects.toMatchObject({ status: 429 });
+  now += 2 * 60_000;
+  expect(await store.begin("third-phone-transfer", "third", { name: "c", type: "", size: 1 })).toEqual({ offset: 0 });
+  // The idle one went; the one that moved stayed.
+  await expect(store.status("second-phone-transfer", "second")).rejects.toMatchObject({ status: 404 });
+  expect((await store.status("first-phone-transfer", "first")).offset).toBe(1);
 });
