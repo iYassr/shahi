@@ -42,12 +42,33 @@ test("pagination keeps stable identities, ignores partial writes, and discovers 
   expect(await findCursorTranscript(id,root)).toBe(await realpath(path));
   expect(await findCursorTranscript("../other",root)).toBeNull();
   const tail=await readCursorLog(path,{limit:2}); const older=await readCursorLog(path,{before:2,limit:2});
-  expect(tail?.total).toBe(4); expect(tail?.messages.map(x=>x.id)).toEqual(["cursor-2","cursor-3"]);
-  expect(older?.messages.map(x=>x.id)).toEqual(["cursor-0","cursor-1"]);
+  expect(tail?.total).toBe(4); expect(tail?.messages.map(x=>x.id)).toEqual([`${id}:cursor-2`,`${id}:cursor-3`]);
+  expect(older?.messages.map(x=>x.id)).toEqual([`${id}:cursor-0`,`${id}:cursor-1`]);
   await appendFile(path,JSON.stringify(user("last"))); expect((await readCursorLog(path))?.total).toBe(4);
   await appendFile(path,"\n"); expect((await readCursorLog(path))?.total).toBe(5);
   const outside=join(root,"outside.jsonl");await writeFile(outside,"{}");await rm(path);await symlink(outside,path);
   expect(await findCursorTranscript(id,root)).toBeNull();
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
+// A herdr pane outlives the chat in it, and both clients merge a fresh page into
+// the pane's cached messages by id. Every Cursor transcript numbered its
+// messages from cursor-0, so a new chat in the same pane matched the old one's
+// ids: the phone kept the old chat's messages and the web reader showed both
+// chats as one thread (review finding, September 2026).
+test("a new Cursor chat in the same pane shares no message ids with the previous one", async () => {
+ const root=await mkdtemp(join(tmpdir(),"shahi-cursor-switch-"));
+ const next="99999999-8888-4777-8666-555555555555";
+ try {
+  const dir=join(root,"projects","sample","agent-transcripts"); await mkdir(dir,{recursive:true});
+  const chat=(name:string,words:string[])=>writeFile(join(dir,`${name}.jsonl`),words.map((w,i)=>JSON.stringify(i%2?agent(w):user(w))+"\n").join(""));
+  await chat(id,["old question","old answer"]); await chat(next,["new question","new answer","new follow-up"]);
+  const before=(await readCursorLog(join(dir,`${id}.jsonl`)))!; const after=(await readCursorLog(join(dir,`${next}.jsonl`)))!;
+  expect(after.sessionId).not.toBe(before.sessionId);
+  const old=new Set(before.messages.map(m=>m.id));
+  expect(after.messages.filter(m=>old.has(m.id))).toEqual([]);
+  // Still stable within one chat, which is what the clients' merge relies on.
+  expect((await readCursorLog(join(dir,`${next}.jsonl`)))!.messages.map(m=>m.id)).toEqual(after.messages.map(m=>m.id));
  } finally {await rm(root,{recursive:true,force:true});}
 });
 

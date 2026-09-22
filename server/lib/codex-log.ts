@@ -38,7 +38,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
-import type { Block, LogMessage, SessionLog } from "./session-log";
+import { inTranscript, type Block, type LogMessage, type SessionLog } from "./session-log";
 
 /** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
 const MAX_RESULT_CHARS = 2_000;
@@ -410,12 +410,10 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
           .join("\n")
           .trim();
         if (!text) continue;
-        messages.push({
-          id: typeof item.id === "string" ? item.id : `codex-${index}`,
-          role,
-          at,
-          blocks: [{ kind: "text", text }],
-        });
+        // The row, not `item.id`: item ids are not unique within a rollout
+        // (315 repeated Reasoning ids in the September 2026 census), and a
+        // repeated id collapses two messages in both clients' merges.
+        messages.push({ id: `codex-${index}`, role, at, blocks: [{ kind: "text", text }] });
         continue;
       }
 
@@ -514,7 +512,7 @@ export async function readCodexLog(
 
   try {
     const log = await readCodexWindow(path, options);
-    return { ...log, sessionId: basename(path).replace(/\.jsonl$/, "") || paneId };
+    return inTranscript(log, basename(path).replace(/\.jsonl$/, "") || paneId);
   } catch {
     return null;
   }

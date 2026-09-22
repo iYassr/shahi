@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -68,9 +68,11 @@ describe("normaliseCodex", () => {
       },
     ]);
 
+    // Ids are the row's place in the file, not the item's own id: codex repeats
+    // item ids within one rollout.
     expect(messages.map((message) => [message.id, message.role, message.blocks[0]])).toEqual([
-      ["user-1", "you", { kind: "text", text: "render every kind" }],
-      ["agent-1", "agent", { kind: "text", text: "# Result\n\n| A | B |\n|---|---|\n| مرحبا | 日本語 |" }],
+      ["codex-0", "you", { kind: "text", text: "render every kind" }],
+      ["codex-2", "agent", { kind: "text", text: "# Result\n\n| A | B |\n|---|---|\n| مرحبا | 日本語 |" }],
     ]);
   });
 
@@ -381,6 +383,46 @@ describe("findCodexRollout, by session id", () => {
       expect(await findCodexRollout(noClient, "w1:p1", null, bad)).toBe(null);
     }
   });
+});
+
+// A herdr pane outlives the codex session in it, and both clients merge a fresh
+// page into the pane's cached messages by id. Codex ids were row numbers, so two
+// short sessions with a tool call in the same place shared ids and the web
+// reader showed the old conversation above the new one (review finding,
+// September 2026).
+test("a new codex session in the same pane shares no message ids with the previous one", async () => {
+  const home = mkdtempSync(join(tmpdir(), "shahi-codex-switch-"));
+  const saved = process.env.CODEX_HOME;
+  const ids = ["019f9bd1-1b6b-7f33-a046-a60cce4e6401", "019f9bd1-1b6b-7f33-a046-a60cce4e6402"];
+  const session = (question: string, answer: string) => [
+    event("user_message", question),
+    { type: "response_item", payload: { type: "function_call", call_id: "c1", name: "shell", arguments: '{"command":"ls"}' } },
+    { type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: "a.txt" } },
+    event("agent_message", answer),
+  ];
+  for (const [n, id] of ids.entries()) {
+    const path = join(home, "sessions/2026/09/22", `rollout-2026-09-22T10-0${n}-00-${id}.jsonl`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, session(`question ${n}`, `answer ${n}`).map((row) => JSON.stringify(row) + "\n").join(""));
+  }
+  const noClient = { rpc: () => { throw new Error("the session id should have answered"); } } as never;
+  try {
+    process.env.CODEX_HOME = home;
+    const { readCodexLog } = (await import(`./codex-log?codex-switch=${encodeURIComponent(home)}`)) as typeof import("./codex-log");
+    const before = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[0] }))!;
+    const after = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[1] }))!;
+    expect(before.messages).toHaveLength(3);
+    expect(after.sessionId).not.toBe(before.sessionId);
+    const old = new Set(before.messages.map((m) => m.id));
+    expect(after.messages.filter((m) => old.has(m.id))).toEqual([]);
+    // Stable within a session, which is what the clients' merge relies on.
+    const again = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[1] }))!;
+    expect(again.messages.map((m) => m.id)).toEqual(after.messages.map((m) => m.id));
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = saved;
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 describe("rolloutWithinSessions", () => {

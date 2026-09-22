@@ -285,6 +285,23 @@ export async function readWindow(
   return { sessionId: path, path, messages, total, offset: index.size };
 }
 
+/**
+ * Names the transcript a log came from and makes its message ids unique to it.
+ *
+ * Codex and Cursor number messages by their position in the file, so every
+ * transcript has a message 0. Both clients merge a fresh page into the pane's
+ * cached messages by id, and a herdr pane outlives the conversation in it: a
+ * new Cursor chat in the same pane kept the old chat's messages on the phone,
+ * and the web reader showed both sessions as one thread (review finding,
+ * September 2026). Ids scoped by `sessionId` never match across transcripts,
+ * so a switch takes each client's existing no-overlap reset. `sessionId`
+ * itself changes whenever the transcript does, for clients that compare it.
+ * Claude needs none of this: its ids are the records' own UUIDs.
+ */
+export function inTranscript(log: SessionLog, sessionId: string): SessionLog {
+  return { ...log, sessionId, messages: log.messages.map((message) => ({ ...message, id: `${sessionId}:${message.id}` })) };
+}
+
 export function parseLines(text: string): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   for (const line of text.split("\n")) {

@@ -4,7 +4,7 @@ import { readdir, readlink, realpath, mkdtemp, readFile, rm } from "node:fs/prom
 import { homedir, tmpdir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
-import { normalise, readWindow, type LogMessage, type SessionLog } from "./session-log";
+import { inTranscript, normalise, readWindow, type LogMessage, type SessionLog } from "./session-log";
 const ROOT = join(homedir(), ".cursor");
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -100,5 +100,5 @@ export function normaliseCursor(rows: Record<string, unknown>[], start = 0): Log
 }
 export async function readCursorLog(path: string, options: { limit?: number; before?: number } = {}): Promise<SessionLog | null> {
   const log = await readWindow(path, options, normaliseCursor);
-  return log && { ...log, sessionId: basename(path, ".jsonl") };
+  return log && inTranscript(log, basename(path, ".jsonl"));
 }
