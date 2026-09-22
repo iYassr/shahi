@@ -59,6 +59,20 @@ test("a deploy reaches nested app routes because every one revalidates, while ha
   }
 });
 
+test("an unknown address shows a Shahi page not found instead of an empty response", async ({ page }) => {
+  const refused: string[] = [];
+  page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
+  // Outside the app no header rule applies; inside it the app's policy does.
+  for (const path of ["/no-such-page", "/pwa/not-a-route"]) {
+    const response = await page.goto(`${site}${path}`);
+    expect(response!.status(), path).toBe(404);
+    await expect(page.getByRole("heading", { name: "Page not found." })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), path).toBe("rgb(14, 13, 11)");
+  }
+  expect(refused).toEqual([]);
+});
+
 test("the website serves its own fonts and asks no third party for anything", async ({ page }) => {
   const foreign: string[] = [];
   const refused: string[] = [];
@@ -68,7 +82,7 @@ test("the website serves its own fonts and asks no third party for anything", as
     await document.fonts.ready;
     return [...document.fonts].filter(face => face.status === "loaded").map(face => `${face.family.replace(/["']/g, "")} ${face.weight}`);
   });
-  for (const [path, face] of [["/", "IBM Plex Sans 500"], ["/privacy", "IBM Plex Mono 400"]] as const) {
+  for (const [path, face] of [["/", "IBM Plex Sans 500"], ["/privacy", "IBM Plex Mono 400"], ["/no-such-page", "IBM Plex Sans 400"]] as const) {
     await page.goto(`${site}${path}`);
     await expect.poll(faces, { message: path }).toEqual(expect.arrayContaining(["IBM Plex Sans 400", face]));
   }

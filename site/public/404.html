@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Served for every unknown address, /pwa/ included, so no _headers rule can
+     name its path: the page carries its own policy. It needs nothing but this
+     origin's stylesheets, fonts and images, and runs no script. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Page not found — Shahi</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/fonts/plex.css">
+<link rel="stylesheet" href="/identity.css">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Shahi home">
+      <img class="mark" src="/favicon.svg" alt="" width="48" height="48">
+      <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
+    </a>
+    <a class="quiet-link" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="headline">
+      <p class="eyebrow">Error 404</p>
+      <h1 id="headline">Page not found.</h1>
+      <p class="lede">The address may be mistyped, or the page may have moved. Start again from the home page, or open Shahi to reach your computer.</p>
+      <div class="hero-actions">
+        <a class="button-primary" href="/">Go to the home page</a>
+        <a class="quiet-link" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
+</div>
+</body>
+</html>
