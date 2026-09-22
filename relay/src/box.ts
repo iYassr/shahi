@@ -24,6 +24,7 @@ import {
   type BoxToRelay,
   type RelayToBox,
 } from "@shahi/shared/relay";
+import { EVICTION_GRACE_MS, MAX_PENDING_BOXES } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
 
@@ -119,7 +120,17 @@ export class RelayBox extends DurableObject<unknown> {
       const state = other.deserializeAttachment() as BoxState;
       return other.readyState === WebSocket.OPEN && !state.closed && !state.ready;
     });
-    if (pending.length >= 8) return this.refuse(ws, RELAY_CLOSE.quota, "too many pending boxes", serverId);
+    if (pending.length >= MAX_PENDING_BOXES) {
+      // The newcomer may be the real box reconnecting, and before `auth` the
+      // relay cannot tell it from a squatter. So the longest-waiting pending
+      // socket makes room, and the real box has its grace to prove itself
+      // (see EVICTION_GRACE_MS). A socket that has already proven itself is
+      // never pending, so the live box is not touched.
+      const stale = longestWaiting(pending);
+      if (!stale) return this.refuse(ws, RELAY_CLOSE.quota, "too many pending boxes", serverId);
+      this.record({ kind: "refused", serverId, detail: "too many pending boxes", value: RELAY_CLOSE.quota });
+      this.closeBox(stale, stale.deserializeAttachment() as BoxState, RELAY_CLOSE.quota, "too many pending boxes");
+    }
     const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)));
     // The socket is accepted before the old box is touched: a connection that
     // cannot prove the key must not be able to knock the real box offline,
@@ -436,6 +447,21 @@ export class RelayBox extends DurableObject<unknown> {
 
 function linkTag(link: number): string {
   return `link:${link}`;
+}
+
+/** The socket that has waited longest, if it has had its grace: the one a newcomer may displace. */
+function longestWaiting(sockets: WebSocket[]): WebSocket | null {
+  const cutoff = Date.now() - EVICTION_GRACE_MS;
+  let oldest: WebSocket | null = null;
+  let oldestSince = cutoff;
+  for (const ws of sockets) {
+    const { since } = ws.deserializeAttachment() as Attachment;
+    if (since <= oldestSince) {
+      oldest = ws;
+      oldestSince = since;
+    }
+  }
+  return oldest;
 }
 
 function parse<T>(text: string): T | null {

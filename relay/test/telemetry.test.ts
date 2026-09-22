@@ -31,6 +31,14 @@ describe("record", () => {
     expect(points[0]).toEqual({ blobs: ["box_auth", "", "", "", ""], doubles: [1, 0, 0, 0, 0, 0], indexes: ["box_auth"] });
   });
 
+  test("a pending-box refusal is recorded with its reason, not an empty one", () => {
+    // It was missing from the allowlist, so the lockout it signals was
+    // invisible in /stats (pre-release review 2026-09-22, F28).
+    const { env, points } = capturing();
+    record(env, { kind: "refused", serverId: "a".repeat(43), detail: "too many pending boxes", value: 4429 });
+    expect(points[0]!.blobs![2]).toBe("too many pending boxes");
+  });
+
   test("is a no-op when telemetry is unbound", () => {
     expect(() => record({}, { kind: "connect", serverId: "id" })).not.toThrow();
   });

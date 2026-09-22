@@ -69,7 +69,7 @@ export interface Event {
 export function record(env: TelemetryEnv, e: Event): void {
   const allowed = new Set(["box_auth", "box_gone", "box_presence", "phone_open", "phone_close", "refused", "connect", "rate_limited", "traffic", "auth_failed", "internal_error"]);
   if (!allowed.has(e.kind)) return;
-  const detail = new Set(["box", "phone", "rate", "frame too large", "control too large", "too many phones", "box offline", "closed by box", "gone", "replaced", "idle", "no hello", "silent", "auth timeout", "unauthorized", "send failed", "socket handler", "control send"]).has(e.detail ?? "") ? e.detail! : "";
+  const detail = new Set(["box", "phone", "rate", "frame too large", "control too large", "too many phones", "too many pending boxes", "box offline", "closed by box", "gone", "replaced", "idle", "no hello", "silent", "auth timeout", "unauthorized", "send failed", "socket handler", "control send"]).has(e.detail ?? "") ? e.detail! : "";
   const numbers = [e.value ?? 1, e.upBytes ?? 0, e.downBytes ?? 0, e.upFrames ?? 0, e.downFrames ?? 0, e.durationMs ?? 0].map((n) => Number.isFinite(n) ? Math.max(0, n) : 0);
   const serverId = /^[A-Za-z0-9_-]{43}$/.test(e.serverId) ? e.serverId : "";
   const colo = /^[A-Z]{3}$/.test(e.colo ?? "") ? e.colo! : "";
