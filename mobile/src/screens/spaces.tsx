@@ -17,7 +17,7 @@ import { randomUUID } from "expo-crypto";
  */
 import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { BackHandler, FlatList, ScrollView, Pressable, StyleSheet, TextInput, View } from "react-native";
-import { Text } from "@/components/text";
+import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
@@ -27,6 +27,7 @@ import { useSession } from "@/lib/session";
 import { theme, statusColor } from "@/lib/theme";
 import { agentLabel } from "@shahi/shared";
 import { Avatar } from "@/components/avatar";
+import { conversationLabel } from "@/components/conversation-label";
 import { Icon } from "@/components/icons";
 
 export function Spaces({ session }: { session: Session | null }) {
@@ -186,22 +187,29 @@ const PaneRow = memo(function PaneRow({
   // Stable callback taking the id, so memo holds across list re-renders.
   onPress: (paneId: string) => void;
 }) {
+  // The Agents row's large-text treatment. Without it the status and agent
+  // label, which cannot shrink, took the whole width at accessibility sizes
+  // and the title — the only thing that names the conversation — got none
+  // (September 2026 review).
+  const largeText = useLargeText();
   return (
-    <Pressable accessibilityRole="button" style={styles.row} onPress={() => onPress(pane.paneId)}>
+    <Pressable accessibilityRole="button" accessibilityLabel={conversationLabel(pane)} style={styles.row} onPress={() => onPress(pane.paneId)}>
       <Avatar pane={pane} />
       <View style={styles.rowBody}>
-        <View style={styles.rowLine}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+        <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
+          <Text style={[styles.rowTitle, largeText && { flex: 0 }]} numberOfLines={largeText ? 2 : 1}>
             {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
           </Text>
           {/* Same quieting as the Agents rows: idle says nothing, and the
               second line only exists when there is something to preview. */}
-          {pane.status !== "idle" && (
-            <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-              {pane.status}
-            </Text>
-          )}
-          <Text style={styles.rowMeta}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
+          <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
+            {pane.status !== "idle" && (
+              <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
+                {pane.status}
+              </Text>
+            )}
+            <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
+          </View>
         </View>
         {(pane.activity || pane.preview || pane.cwd) && (
           <View style={styles.rowLine}>
@@ -483,7 +491,10 @@ function SheetBody({ title, children, fullScreen = false, busy = false }: { titl
           the first workspace underneath them. */}
       <View style={styles.sheetHead} collapsable={false}>
         <Text style={styles.sheetTitle}>{title}</Text>
-        <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={() => router.back()} hitSlop={12}>
+        {/* A 44pt frame of its own rather than hitSlop: hitSlop widens where a
+            finger lands but not the element VoiceOver and Switch Control
+            focus, which measured 39×18pt on the simulator. */}
+        <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={() => router.back()} style={styles.sheetCloseTarget} testID="sheet-close">
           <Text style={styles.sheetClose}>Close</Text>
         </Pressable>
       </View>
@@ -541,6 +552,7 @@ const styles = StyleSheet.create({
   // through it and into the first workspace row on an iPhone form sheet.
   sheetTitle: { color: theme.fg, fontSize: 17, fontWeight: "600", flex: 1, marginRight: 12 },
   sheetClose: { color: theme.peach, fontSize: 15 },
+  sheetCloseTarget: { minWidth: 44, minHeight: 44, paddingLeft: 12, alignItems: "flex-end", justifyContent: "center" },
   label: { color: theme.dim, fontSize: 11, letterSpacing: 1.2 },
   input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

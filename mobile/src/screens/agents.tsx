@@ -6,8 +6,8 @@ import { ConnectionHealth } from "@/components/connection-health";
 import { agentLabel, inboxPanes, latestConversations } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
-import { Text } from "@/components/text";
+import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -20,6 +20,7 @@ import { GreetingLogo } from "@/components/greeting-logo";
 import { theme, statusColor } from "@/lib/theme";
 import { AgentIcon, Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
+import { conversationLabel } from "@/components/conversation-label";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
 
@@ -30,21 +31,23 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
   const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
-  const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
 
+  // Rejects on failure so the card that asked can say why and offer its
+  // options again: a 409 (the question moved on) or a relay timeout is an
+  // ordinary outcome, not an exception to swallow.
   async function answer(paneId: string, option: PromptOption) {
     try {
       await api.answerPrompt(paneId, option, prompts[paneId]);
-      landed();
-      clearPrompt(paneId);
     } catch (e) {
       refused();
-      setFailure((e as Error).message);
+      throw e;
     }
+    landed();
+    clearPrompt(paneId);
   }
 
   // Only take over the whole screen when there is nothing to show yet. Once a
@@ -71,7 +74,6 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       /></View>
     );
   }
-  if (failure && !session) return <Centered>{failure}</Centered>;
   if (!session) {
     return (
       <View style={styles.centered}>
@@ -199,10 +201,10 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             {active === "inbox" && <View style={styles.inboxHeading}><Text style={styles.inboxTitle}>What needs me?</Text><Text style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</Text></View>}
             {blocked.map((pane) => (
               <BlockedCard
-                key={pane.paneId}
+                key={`${pane.paneId}\u0000${promptIdentity(prompts[pane.paneId])}`}
                 pane={pane}
                 prompt={prompts[pane.paneId]}
-                onAnswer={(option) => void answer(pane.paneId, option)}
+                onAnswer={(option) => answer(pane.paneId, option)}
                 onOpen={() => onOpenPane(pane.paneId)}
               />
             ))}
@@ -218,8 +220,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
         renderItem={({ item }) => (
           <View>
           {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
-          {item.status === "blocked" ? <BlockedCard pane={item} prompt={prompts[item.paneId]}
-            onAnswer={(option) => void answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
+          {item.status === "blocked" ? <BlockedCard key={promptIdentity(prompts[item.paneId])} pane={item} prompt={prompts[item.paneId]}
+            onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
             pane={item}
             pinned={pins.has(item.paneId)}
             onPress={onOpenPane}
@@ -321,10 +323,11 @@ const Row = memo(function Row({
   onPin: (paneId: string) => void;
   onActions: (pane: DashboardPane) => void;
 }) {
-  const largeText = useWindowDimensions().fontScale > 1.4;
+  const largeText = useLargeText();
   const row = (
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={conversationLabel(pane, pane.workspaceLabel, pinned)}
         style={styles.row}
         // The pinned state rides in the row's own id: children of a pressable
         // flatten into one accessibility element, so a marker inside it is
@@ -413,6 +416,15 @@ const Row = memo(function Row({
 });
 
 /**
+ * Which question a card is showing. The card is keyed by it, so a new
+ * question on a still-blocked pane starts with every option live again
+ * instead of inheriting the tapped state of the one before.
+ */
+function promptIdentity(prompt: ParsedPrompt | undefined): string {
+  return prompt ? JSON.stringify([prompt.question, prompt.context, prompt.options.map((o) => [o.index, o.label])]) : "";
+}
+
+/**
  * The answer list, rebuilt from the terminal's own — same numbering, same
  * cursor, sized for a thumb.
  */
@@ -424,18 +436,45 @@ function BlockedCard({
 }: {
   pane: DashboardPane;
   prompt: ParsedPrompt | undefined;
-  onAnswer: (option: PromptOption) => void;
+  /** Rejects when the answer did not land; the card then offers its options again. */
+  onAnswer: (option: PromptOption) => Promise<void>;
   onOpen: () => void;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
+  // Said inside the card that failed. It used to go to a screen-level message
+  // that rendered only when there was no session — never, with this list on
+  // screen — so a 409 or a relay timeout left one option lit and every option
+  // dead, with a haptic and no words (found by the September 2026 review).
+  const [failure, setFailure] = useState<string | null>(null);
+  const largeText = useLargeText();
 
+  function choose(option: PromptOption) {
+    setArmed(option.index);
+    setFailure(null);
+    onAnswer(option).catch((e: unknown) => {
+      const message = `Couldn’t answer: ${e instanceof Error ? e.message : String(e)}`;
+      setArmed(null);
+      setFailure(message);
+      AccessibilityInfo.announceForAccessibility(message);
+    });
+  }
+
+  const title = pane.title ?? "untitled";
+  const kind = agentLabel(pane.agent ?? "agent");
   return (
     <View style={styles.blocked}>
-      <Pressable accessibilityRole="button" onPress={onOpen}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Waiting on you, ${title}, ${pane.workspaceLabel}, ${kind}`} onPress={onOpen}>
         <Text style={styles.badge}>● WAITING ON YOU</Text>
-        <Text style={styles.where}>{pane.workspaceLabel}</Text>
-        <Text style={styles.task} numberOfLines={1}>
-          {pane.agent ?? "agent"} · {pane.paneId} · {pane.title ?? "untitled"}
+        {/* The title gets a line of its own, first: it is what tells two
+            waiting agents in one space apart. It used to come last on one
+            truncated line after the agent and pane id, which at accessibility
+            sizes showed "claude · w3:p…" and no title at all (September 2026
+            review). */}
+        <Text style={styles.where} numberOfLines={largeText ? 3 : 2}>
+          {title}
+        </Text>
+        <Text style={styles.task} numberOfLines={largeText ? 2 : 1}>
+          {pane.workspaceLabel} · {kind} · {pane.paneId}
         </Text>
       </Pressable>
 
@@ -456,20 +495,22 @@ function BlockedCard({
           )}
           {prompt.options.map((option) => {
             const isArmed = armed === option.index;
+            const lit = isArmed || (armed === null && !!option.selected);
             return (
               <Pressable
                 accessibilityRole="button"
+                // The option's words, not its glyphs: VoiceOver used to read
+                // the cursor mark and the blank beside it ("❯, 1., Red").
+                // Where the terminal's cursor sits is a state, said as one.
+                accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail]
+                  .filter(Boolean).join(", ")}
+                accessibilityState={{ selected: lit, disabled: armed !== null }}
                 key={option.index}
                 style={[styles.choice, isArmed && styles.choiceArmed]}
                 disabled={armed !== null}
-                onPress={() => {
-                  setArmed(option.index);
-                  onAnswer(option);
-                }}
+                onPress={() => choose(option)}
               >
-                <Text style={styles.cursor}>
-                  {isArmed || (armed === null && option.selected) ? "❯" : " "}
-                </Text>
+                <Text style={styles.cursor}>{lit ? "❯" : " "}</Text>
                 {/* The digit is what the terminal takes; a cursor menu has none. */}
                 {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
                 <View style={styles.choiceBody}>
@@ -479,6 +520,7 @@ function BlockedCard({
               </Pressable>
             );
           })}
+          {failure && <Text style={styles.failure} accessibilityRole="alert">{failure}</Text>}
         </>
       ) : (
         <Pressable accessibilityRole="button" onPress={onOpen}>
@@ -615,6 +657,7 @@ const styles = StyleSheet.create({
   badge: { color: theme.peach, fontSize: 11, fontWeight: "600" },
   where: { color: theme.fg, fontSize: 17, fontWeight: "600", marginTop: 8 },
   task: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginTop: 2 },
+  failure: { color: theme.rose, fontSize: 13, lineHeight: 18, marginTop: 8 },
   context: { borderLeftWidth: 1, borderLeftColor: theme.line, paddingLeft: 10, marginBottom: 12, gap: 4 },
   contextLine: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, lineHeight: 17 },
   question: {
