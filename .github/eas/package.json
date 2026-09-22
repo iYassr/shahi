@@ -1,0 +1,8 @@
+{
+  "name": "shahi-eas-cli",
+  "private": true,
+  "//": "The EAS CLI that mobile-update.yml runs while it holds the phone-update signing key, locked with its whole dependency tree. It is not a workspace: in the app's tree its older @expo/config would be hoisted over SDK 57's and change what the phone is built from. The workflow installs it from this lockfile in $RUNNER_TEMP, outside the checkout that Metro crawls.",
+  "dependencies": {
+    "eas-cli": "23.2.0"
+  }
+}

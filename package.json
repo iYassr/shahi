@@ -14,7 +14,7 @@
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
-    "test": "bun test shared/src server web/src plugin site/signup.test.ts operations/test && bun run test:dependencies",
+    "test": "bun test shared/src server web/src plugin site/signup.test.ts operations/test ./.github && bun run test:dependencies",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p plugin && tsc --noEmit -p web && tsc --noEmit -p mobile && tsc --noEmit -p relay && tsc --noEmit -p relay/test && tsc --noEmit -p site && tsc --noEmit -p operations",
     "build:web": "bun run --cwd web build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
@@ -26,6 +26,7 @@
     "test:pwa": "playwright test --config e2e/hosted/pwa.config.ts",
     "brand:assets": "bun scripts/brand-assets.ts"
   },
+  "//test": "./.github keeps its ./ because bun test skips dot-directories unless a path names one. Written as .github, the workflow and herdr-installer tests would silently stop running.",
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "typescript": "7.0.2",

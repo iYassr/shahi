@@ -17,6 +17,14 @@ updates:
         patterns: ["expo", "expo-*", "@expo/*", "react-native", "@react-native/*"]
       dev-tooling:
         dependency-type: development
+  # The EAS CLI that the phone-update workflow runs with the signing key has
+  # its own frozen lockfile. This keeps it, and its advisories, in the weekly
+  # PRs instead of frozen at the day it was locked.
+  - package-ecosystem: bun
+    directory: "/.github/eas"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
