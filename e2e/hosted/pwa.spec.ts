@@ -59,6 +59,23 @@ test("a deploy reaches nested app routes because every one revalidates, while ha
   }
 });
 
+test("the website serves its own fonts and asks no third party for anything", async ({ page }) => {
+  const foreign: string[] = [];
+  const refused: string[] = [];
+  page.on("request", request => { if (!request.url().startsWith(`${site}/`)) foreign.push(request.url()); });
+  page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
+  const faces = () => page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter(face => face.status === "loaded").map(face => `${face.family.replace(/["']/g, "")} ${face.weight}`);
+  });
+  for (const [path, face] of [["/", "IBM Plex Sans 500"], ["/privacy", "IBM Plex Mono 400"]] as const) {
+    await page.goto(`${site}${path}`);
+    await expect.poll(faces, { message: path }).toEqual(expect.arrayContaining(["IBM Plex Sans 400", face]));
+  }
+  expect(foreign).toEqual([]);
+  expect(refused).toEqual([]);
+});
+
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {
   await page.goto("/pwa/");
   await expect(page.getByRole("heading", { name: "Set up Shahi in 3 steps" })).toBeVisible();
