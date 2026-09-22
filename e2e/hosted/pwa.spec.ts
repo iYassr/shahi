@@ -169,6 +169,23 @@ test("an interrupted worker update retains the previous complete offline app", a
   await expect(page.getByRole("heading", { name: "Connect your computer" })).toBeVisible();
 });
 
+test("a page whose release has left the server still opens the terminal", async ({ page, request }) => {
+  // A deploy removes the previous release's files. Lazily loaded chunks were
+  // cached only once something had opened them, so a page left open across a
+  // deploy could not open the terminal at all, and the error screen's ways out
+  // forgot this session-only computer.
+  const { code } = await (await request.post("/__hosted/reset")).json();
+  await page.goto("/pwa/");
+  await page.getByLabel("Pairing code", { exact: true }).fill(code);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
+  await ready(page);
+  await request.post("/__hosted/site-offline");
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  await page.getByRole("tab", { name: "Screen", exact: true }).click();
+  await expect(page.locator(".xterm")).toBeVisible();
+});
+
 test("the app opens with the browser network completely offline", async ({ page, context, browserName }) => {
   test.skip(browserName === "webkit", "Playwright WebKit offline navigation fails before invoking its service worker; hosting outages are covered in both engines above.");
   await page.goto("/pwa/");

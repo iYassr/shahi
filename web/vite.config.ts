@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { serviceWorkerRelease } from "./sw-build";
 
 export default defineConfig(({ mode }) => ({
   base: mode === "hosted" ? "/pwa/" : "/",
-  plugins: [react()],
+  plugins: [react(), serviceWorkerRelease()],
   resolve: {
     alias: [
       { find: /^@shahi\/shared$/, replacement: fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)) },

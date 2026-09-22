@@ -16,7 +16,7 @@ function worker(base = "/pwa/", stalled = false) {
       clients: { claim: async () => {} },
     },
     caches: {
-      keys: async () => ["another-app", "shahi-shell:/pwa/:old", "shahi-shell:/:old", "shahi-shell-v4"],
+      keys: async () => ["another-app", "shahi-shell:/pwa/:older", "shahi-shell:/pwa/:old", "shahi-shell:/:old", "shahi-shell-v4"],
       delete: async (key: string) => { deleted.push(key); },
       open: async () => ({ match: async () => new Response("shell"), put: async () => {} }),
     },
@@ -84,7 +84,9 @@ describe("hosted browser cache boundary", () => {
     let done: Promise<void> | undefined;
     listeners.activate!({ waitUntil: (promise: Promise<void>) => { done = promise; } });
     await done;
-    expect(deleted).toEqual(["shahi-shell:/pwa/:old"]);
+    // The newest earlier release stays for pages still running it; only this
+    // app's older caches go, never another app's or another scope's.
+    expect(deleted).toEqual(["shahi-shell:/pwa/:older"]);
   });
 
   test("manifest scope is relative, so hosted and sidecar builds stay contained", () => {

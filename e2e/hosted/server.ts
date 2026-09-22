@@ -77,7 +77,7 @@ const fixture = Bun.serve<Link>({
     // Deliberately no /api: the hosted client must never use the marketing origin as its box.
     if (!url.pathname.startsWith("/pwa/")) return new Response("not found", { status: 404 });
     if (siteOffline) return new Response("synthetic hosting outage", { status: 503 });
-    if (brokenWorker && url.pathname === "/pwa/sw.js") return new Response((await Bun.file(join(root, "sw.js")).text()).replace('"icon-512.png"', '"missing-icon.png"').replace("${PREFIX}v8", "${PREFIX}broken"), { headers: { "content-type": "text/javascript", "cache-control": "no-store" } });
+    if (brokenWorker && url.pathname === "/pwa/sw.js") return new Response((await Bun.file(join(root, "sw.js")).text()).replace('"icon-512.png"', '"missing-icon.png"').replace(/^const RELEASE = "[^"]*";$/m, 'const RELEASE = "broken";'), { headers: { "content-type": "text/javascript", "cache-control": "no-store" } });
     let relative: string;
     try { relative = decodeURIComponent(url.pathname.slice(5)); } catch { return new Response(null, { status: 400 }); }
     const path = resolve(root, relative || "index.html");

@@ -1,41 +1,79 @@
 /* Only public app assets belong in this cache. Private navigation targets can
  * receive the canonical shell, but their URLs and responses are never cached. */
+
+// Stamped by web/sw-build.ts when the app is built: a hash of every file this
+// release ships, and their paths. Unbuilt (the dev server) it names nothing.
+const RELEASE = "development";
+const FILES = [];
+
 const BASE = new URL(self.registration.scope).pathname;
 const PREFIX = `shahi-shell:${BASE}:`;
-const CACHE = `${PREFIX}v8`;
-const PUBLIC = ["manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-180.png", "welcome.js"].map(path => `${BASE}${path}`);
+const CACHE = `${PREFIX}${RELEASE}`;
+const RELEASED = FILES.map((path) => `${BASE}${path}`);
 const assetPath = (path) => path.startsWith(`${BASE}assets/`);
 const appPath = (path) => path === BASE || path === `${BASE}index.html` ||
   path === `${BASE}settings` || path === `${BASE}spaces` ||
   path === `${BASE}computers` || path === `${BASE}notification` ||
   path.startsWith(`${BASE}space/`) || path.startsWith(`${BASE}pane/`);
+const ours = (name) => name.startsWith(PREFIX) || (BASE === "/" && /^shahi-shell-v\d+$/.test(name));
+
+const isShell = (response) => response.ok && !response.redirected &&
+  Boolean(response.headers.get("content-type")?.includes("text/html"));
+// A computer's sidecar answers a path it does not have with the app's HTML and
+// a 200. Stored under a chunk's name, that would break the chunk for as long
+// as the cache lived, so only a real file is ever kept.
+const isFile = (response) => response.ok && !response.redirected &&
+  !response.headers.get("content-type")?.includes("text/html");
+
+function entryAssets(html) {
+  return [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
+    .map((match) => new URL(match[1], self.registration.scope))
+    .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname))
+    .map((url) => url.href);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(precache().then(() => self.skipWaiting()));
 });
 
+/**
+ * Every file of the release, lazily loaded chunks included.
+ *
+ * Only the chunks a page had already opened used to be cached, and a deploy
+ * removes the old ones from the server — so a page left open across a deploy
+ * could not open the terminal or a PDF at all. A failed install leaves the
+ * previous worker and its complete cache active.
+ */
 async function precache() {
+  const shell = await fetch(BASE, { cache: "reload", credentials: "omit" });
+  if (!isShell(shell)) throw new Error("App shell unavailable");
+  const urls = [...new Set([...RELEASED.map((path) => new URL(path, self.registration.scope).href), ...entryAssets(await shell.clone().text())])];
+  const files = await Promise.all(urls.map(async (url) => {
+    const response = await fetch(url, { cache: "no-cache", credentials: "omit" });
+    if (!isFile(response)) throw new Error("App file unavailable");
+    return [url, response];
+  }));
+  // Opened only once every file has arrived, so a failed install leaves no
+  // empty cache behind.
   const cache = await caches.open(CACHE);
-  await cache.addAll(PUBLIC);
-  const response = await fetch(BASE, { cache: "reload", credentials: "omit" });
-  if (!response.ok || response.redirected || !response.headers.get("content-type")?.includes("text/html")) throw new Error("App shell unavailable");
-  const html = await response.clone().text();
-  const assets = [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
-    .map((match) => new URL(match[1], self.registration.scope))
-    .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname))
-    .map((url) => url.href);
-  await cache.addAll(assets);
-  await cache.put(BASE, response);
-  // A failed install leaves the previous worker and its complete cache active.
+  await Promise.all(files.map(([url, response]) => cache.put(url, response)));
+  // Last, because a cache holding the shell is a complete release.
+  await cache.put(BASE, shell);
 }
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    const names = await caches.keys();
     // Never delete another app's caches on the marketing website's origin.
-    await Promise.all(names.filter((name) => (name.startsWith(PREFIX) ||
-      (BASE === "/" && /^shahi-shell-v\d+$/.test(name))) && name !== CACHE)
-      .map((name) => caches.delete(name)));
+    const older = (await caches.keys()).filter((name) => ours(name) && name !== CACHE);
+    // Keep the newest complete release before this one. A page opened on it is
+    // still running it, and asks for chunks by names this release does not
+    // have and the server no longer serves. Anything older goes: the cache
+    // holds two releases at most. Cache names list in creation order.
+    let previous;
+    for (const name of [...older].reverse()) {
+      if (name.startsWith(PREFIX) && await (await caches.open(name)).match(BASE)) { previous = name; break; }
+    }
+    await Promise.all(older.filter((name) => name !== previous).map((name) => caches.delete(name)));
     await self.clients.claim();
   })());
 });
@@ -50,46 +88,53 @@ self.addEventListener("fetch", (event) => {
   const notification = request.mode === "navigate" && url.pathname === `${BASE}notification` &&
     [...url.searchParams.keys()].every(key => key === "pane" || key === "computer");
   if (url.search && !notification) return;
-  if (assetPath(url.pathname) || PUBLIC.includes(url.pathname)) event.respondWith(cacheFirst(request));
+  if (assetPath(url.pathname) || RELEASED.includes(url.pathname)) event.respondWith(cacheFirst(request));
   else if (request.mode === "navigate" && appPath(url.pathname)) event.respondWith(shellFirst(event));
 });
 
+/** This release's copy first, then the previous release's. */
+async function cached(request) {
+  const names = (await caches.keys()).filter((name) => name.startsWith(PREFIX) && name !== CACHE).reverse();
+  for (const name of [CACHE, ...names]) {
+    const hit = await (await caches.open(name)).match(request);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 async function cacheFirst(request) {
-  const cache = await caches.open(CACHE);
-  const hit = await cache.match(request);
+  const hit = await cached(request);
   if (hit) return hit;
   const response = await fetch(request);
-  if (response.ok && !response.redirected) await cache.put(request, response.clone());
+  if (isFile(response)) await (await caches.open(CACHE)).put(request, response.clone());
   return response;
 }
 
+/**
+ * Navigations try the network briefly, then fall back to the cached shell.
+ *
+ * Not cache first: that means every deploy takes two launches to appear — the
+ * first shows the old HTML, which names the old bundle — and a page running an
+ * old bundle is the one that cannot find its chunks. A second and a half is a
+ * long time on a phone's connection and no time at all to a person; offline,
+ * the fetch fails at once and the cache answers.
+ */
 async function shellFirst(event) {
-  const request = event.request;
   const cache = await caches.open(CACHE);
-  const hit = await cache.match(BASE);
-  // A normal launch is local. Explicit reloads must reach the network so the
-  // foreground bundle checker can replace an old release without a reload loop.
   // Fetch the canonical public shell, never a URL supplied in session data.
   const fresh = fetch(BASE, { cache: "no-cache", credentials: "omit" }).then(async (response) => {
-    if (response.ok && !response.redirected && response.headers.get("content-type")?.includes("text/html")) {
-      const html = await response.clone().text();
-      const assets = [...html.matchAll(/(?:src|href)="([^" ]+)"/g)]
-        .map((match) => new URL(match[1], self.registration.scope))
-        .filter((url) => url.origin === self.location.origin && !url.search && assetPath(url.pathname));
-      // Save the new shell only after its entry assets are available offline.
-      await Promise.all(assets.map(async (url) => {
-        const asset = await cacheFirst(new Request(url.href, { credentials: "omit" }));
-        if (!asset.ok || asset.redirected) throw new Error("App asset unavailable");
-      }));
-      await cache.put(BASE, response.clone());
-      return response;
-    }
-    return undefined;
+    if (!isShell(response)) return undefined;
+    // Save the new shell only after its entry assets are available offline.
+    await Promise.all(entryAssets(await response.clone().text()).map(async (url) => {
+      const asset = await cacheFirst(new Request(url, { credentials: "omit" }));
+      if (!isFile(asset)) throw new Error("App asset unavailable");
+    }));
+    await cache.put(BASE, response.clone());
+    return response;
   }).catch(() => undefined);
   event.waitUntil(fresh);
-  if (hit && request.cache !== "reload" && request.cache !== "no-cache") return hit;
   const raced = await Promise.race([fresh, new Promise((resolve) => setTimeout(resolve, 1500))]);
-  return raced ?? hit ?? await fresh ?? new Response("offline", { status: 503 });
+  return raced ?? await cached(BASE) ?? await fresh ?? new Response("offline", { status: 503 });
 }
 
 self.addEventListener("push", (event) => {
