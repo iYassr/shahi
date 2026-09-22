@@ -85,7 +85,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Shahi attaches a photo from your library to send to the agent you are talking to."
+          "photosPermission": "Shahi attaches a photo from your library to send to the agent you are talking to.",
+          "_comment": "Library only (launchImageLibraryAsync). Without microphonePermission false this plugin writes Expo's placeholder NSMicrophoneUsageDescription and RECORD_AUDIO back after expo-camera removed them (pre-release review). cameraPermission stays unset on purpose: false would delete the camera string and permission the pairing scanner needs.",
+          "microphonePermission": false
         }
       ],
       [
@@ -96,7 +98,13 @@
           "imageWidth": 96
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "_comment": "Nothing is kept behind biometrics (no requireAuthentication), so no placeholder Face ID purpose string (pre-release review).",
+          "faceIDPermission": false
+        }
+      ],
       "expo-notifications",
       [
         "expo-camera",
