@@ -168,6 +168,13 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
       // The .env is loaded by the sidecar itself; the relay default is not in
       // it, so it rides in the service's environment (see the header).
       ...(relay ? { RELAY_URL: relay } : {}),
+      // What the manager needs to ask this same herdr whether the plugin is
+      // still installed and enabled, and to remove the service when it is not
+      // (releases/registration.ts): the id herdr registered, its binary, and
+      // the configuration root it was started with.
+      SHAHI_PLUGIN_ID: pluginId(),
+      ...(process.env.HERDR_BIN_PATH ? { HERDR_BIN_PATH: process.env.HERDR_BIN_PATH } : {}),
+      ...(process.env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME } : {}),
       HOME: homedir(),
       PATH: [...new Set([dirname(bun), ...inherited])].join(":"),
     },
@@ -527,11 +534,14 @@ export function openPair(): number {
 
 /**
  * The whole uninstall from one action: the service (which herdr knows nothing
- * about) and then, through herdr, the plugin itself. Order matters — the
- * other way round, the service would keep running from a directory that no
- * longer exists. The checkout vanishes under this very script, which is fine:
- * bun has read it. The config and state directories stay, because they hold
- * the passcode, the paired phones and the transcripts.
+ * about) and then, through herdr, the plugin itself. The service runs from the
+ * state directory, not the checkout, so a plain `herdr plugin uninstall`
+ * leaves it running until its manager next asks herdr and removes itself
+ * (releases/registration.ts, within about a minute); this action removes it
+ * first, so it is never reachable after the person asked for it to be gone.
+ * The checkout vanishes under this very script, which is fine: bun has read
+ * it. The config and state directories stay, because they hold the passcode,
+ * the paired phones and the transcripts.
  */
 function uninstall(layout: Layout, service: Service): number {
   service.remove();

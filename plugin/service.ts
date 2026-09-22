@@ -146,6 +146,8 @@ WantedBy=default.target
 `;
 }
 
+type Run = (argv: string[]) => { ok: boolean; out: string };
+
 function run(argv: string[]): { ok: boolean; out: string } {
   try {
     // `env: process.env` explicitly: without it Bun 1.4 looks the bare name up
@@ -159,8 +161,8 @@ function run(argv: string[]): { ok: boolean; out: string } {
   }
 }
 
-function must(argv: string[]): void {
-  const { ok, out } = run(argv);
+function must(argv: string[], exec: Run = run): void {
+  const { ok, out } = exec(argv);
   if (!ok) throw new Error(`${argv.join(" ")} failed:\n${out.trim()}`);
 }
 
@@ -169,15 +171,24 @@ function write(path: string, body: string): void {
   writeFileSync(path, body);
 }
 
-export function launchd(home: string, uid: number): Service {
+/*
+ * `remove()` takes the file away before it stops anything, on both systems.
+ * The manager removes its own service when herdr no longer has the plugin
+ * (releases/registration.ts), and stopping the service ends that very
+ * process, so nothing after the stop is guaranteed to run. A file left behind
+ * would start Shahi again at the next login (pre-public-release review).
+ * `exec` is injectable so that order is tested without touching a real
+ * service.
+ */
+export function launchd(home: string, uid: number, exec: Run = run): Service {
   const path = join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
   const target = `gui/${uid}/${LAUNCHD_LABEL}`;
   const bootout = () => {
-    run(["launchctl", "bootout", target]);
+    exec(["launchctl", "bootout", target]);
     // bootout returns before the job is gone; a bootstrap that races it fails
     // with "service already loaded". Wait for launchd to actually forget it.
     const until = Date.now() + 5_000;
-    while (run(["launchctl", "print", target]).ok && Date.now() < until) Bun.sleepSync(100);
+    while (exec(["launchctl", "print", target]).ok && Date.now() < until) Bun.sleepSync(100);
   };
   return {
     kind: "launchd",
@@ -187,18 +198,19 @@ export function launchd(home: string, uid: number): Service {
     install(spec) {
       write(path, renderLaunchd(spec));
       bootout();
-      must(["launchctl", "bootstrap", `gui/${uid}`, path]);
+      must(["launchctl", "bootstrap", `gui/${uid}`, path], exec);
     },
     stop: bootout,
     status() {
       const installed = existsSync(path);
-      const { ok, out } = run(["launchctl", "print", target]);
+      const { ok, out } = exec(["launchctl", "print", target]);
       const pid = out.match(/^\s*pid = (\d+)/m)?.[1];
       return { installed, running: ok && /^\s*state = running/m.test(out), pid: pid ? Number(pid) : null };
     },
     remove() {
-      bootout();
+      // bootout names the job by label, so it needs no file.
       if (existsSync(path)) unlinkSync(path);
+      bootout();
     },
   };
 }
@@ -223,10 +235,13 @@ export function userBusHelp(out: string, user: string, uid: number): string | nu
   ].join("\n");
 }
 
-export function systemd(home: string, uid = process.getuid?.() ?? 0, user = userInfo().username): Service {
+export function systemd(
+  home: string,
+  { uid = process.getuid?.() ?? 0, user = userInfo().username, exec = run }: { uid?: number; user?: string; exec?: Run } = {},
+): Service {
   const path = join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
   const systemctl = (argv: string[]) => {
-    const { ok, out } = run(["systemctl", "--user", ...argv]);
+    const { ok, out } = exec(["systemctl", "--user", ...argv]);
     if (!ok) throw new Error(userBusHelp(out, user, uid) ?? `systemctl --user ${argv.join(" ")} failed:\n${out.trim()}`);
   };
   return {
@@ -237,22 +252,25 @@ export function systemd(home: string, uid = process.getuid?.() ?? 0, user = user
     install(spec) {
       write(path, renderSystemd(spec));
       systemctl(["daemon-reload"]);
-      run(["systemctl", "--user", "enable", SYSTEMD_UNIT]);
+      exec(["systemctl", "--user", "enable", SYSTEMD_UNIT]);
       systemctl(["restart", SYSTEMD_UNIT]);
     },
     stop() {
-      run(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
+      exec(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
     },
     status() {
       const installed = existsSync(path);
-      const active = run(["systemctl", "--user", "is-active", SYSTEMD_UNIT]).out.trim() === "active";
-      const pid = Number(run(["systemctl", "--user", "show", "-p", "MainPID", "--value", SYSTEMD_UNIT]).out.trim());
+      const active = exec(["systemctl", "--user", "is-active", SYSTEMD_UNIT]).out.trim() === "active";
+      const pid = Number(exec(["systemctl", "--user", "show", "-p", "MainPID", "--value", SYSTEMD_UNIT]).out.trim());
       return { installed, running: active, pid: pid > 0 ? pid : null };
     },
     remove() {
-      run(["systemctl", "--user", "disable", "--now", SYSTEMD_UNIT]);
+      // `disable` reads the unit file to find its links, so it runs while the
+      // file exists; a loaded, running unit can still be stopped without it.
+      exec(["systemctl", "--user", "disable", SYSTEMD_UNIT]);
       if (existsSync(path)) unlinkSync(path);
-      run(["systemctl", "--user", "daemon-reload"]);
+      exec(["systemctl", "--user", "daemon-reload"]);
+      exec(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
     },
   };
 }
@@ -311,7 +329,7 @@ export function serviceFor(
     // Linux does not imply systemd. Assuming it wrote a unit file nothing
     // could load and then failed with `Executable not found in $PATH:
     // "systemctl"`, which tells the reader neither what went wrong nor what to do.
-    return hasSystemctl() ? systemd(home, uid) : unsupervised();
+    return hasSystemctl() ? systemd(home, { uid }) : unsupervised();
   }
   throw new Error(`Shahi's herdr plugin supervises the sidecar with launchd or systemd; ${platform} has neither.`);
 }

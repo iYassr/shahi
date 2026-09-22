@@ -1,13 +1,19 @@
 import { existsSync, rmSync, readFileSync, renameSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { Auth } from "../../server/lib/auth";
 import { loadConfig } from "../../server/lib/config";
 import { HerdrClient } from "../../server/lib/herdr-client";
 import { type ComputerUpdate, type ControlHandshake } from "@shahi/shared";
+import { serviceFor } from "../service";
 import { CATALOG_URL, download, selectRelease, verifyCatalog, sha256, type Catalog, type Release } from "./catalog";
+import { confirmedRemoved, herdrBinary, registration } from "./registration";
 import { atomicJson, installation, readJson, releaseDirectory, type UpdateRequest } from "./storage";
 import { stage } from "./stage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
+
+/** Often enough that a removed plugin stops being reachable within a minute; a check is two short herdr CLI calls. */
+const REGISTRATION_CHECK_MS = 30_000;
 
 export async function manage(root: string) {
   const managerHash = sha256(readFileSync(import.meta.path));
@@ -69,6 +75,30 @@ export async function manage(root: string) {
     closing = true; void stop().finally(() => process.exit(0));
   });
 
+  // Fail closed when herdr no longer has the plugin (registration.ts says
+  // why): the service stops, and its unit or plist goes, so nothing starts it
+  // again. The passcode, paired devices and data stay on disk, as they do
+  // after the shahi.uninstall action. A service installed outside the plugin
+  // (no SHAHI_ENV_FILE, as in the smoke tests) is never "removed".
+  const registered = () => registration({
+    herdr: herdrBinary(),
+    pluginId: process.env.SHAHI_PLUGIN_ID || "shahi",
+    configDir: process.env.SHAHI_ENV_FILE ? dirname(process.env.SHAHI_ENV_FILE) : "",
+  });
+  async function retireIfRemoved() {
+    if (!await confirmedRemoved(registered)) return;
+    closing = true;
+    console.log(`${new Date().toISOString()} herdr no longer has the Shahi plugin installed and enabled; stopping and removing Shahi's service. The passcode, paired devices and data stay on disk.`);
+    await stop();
+    try { serviceFor(process.platform, homedir(), process.getuid?.() ?? 0).remove(); }
+    catch (e) { console.error(`Could not remove Shahi's service: ${e instanceof Error ? e.message : e}`); }
+    // Removal stops this process; if it could not, the OS restarts it and
+    // this check runs again before the service does.
+    process.exit(0);
+  }
+  await retireIfRemoved();
+  let nextRegistrationCheck = Date.now() + REGISTRATION_CHECK_MS;
+
   if (readJson(join(root, "transaction.json"))) await finishTransaction(root, runner);
   else {
     const release = installation(root)!.active;
@@ -91,6 +121,10 @@ export async function manage(root: string) {
   let nextCheck = 0;
   while (!closing) {
     try {
+      if (Date.now() >= nextRegistrationCheck) {
+        nextRegistrationCheck = Date.now() + REGISTRATION_CHECK_MS;
+        await retireIfRemoved();
+      }
       if (child?.exitCode !== null) { await Bun.sleep(3_000); await runner.activate(installation(root)!.active); }
       const requestPath = join(root, "request.json");
       const request = readJson<UpdateRequest>(requestPath);

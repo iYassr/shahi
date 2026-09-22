@@ -186,9 +186,9 @@ describe("a systemd with no user bus", () => {
     const before = process.env.PATH;
     process.env.PATH = `${bin}:/usr/bin:/bin`;
     try {
-      expect(() => systemd(dir, 1000, "op").install(spec)).toThrow(/sudo loginctl enable-linger op/);
-      expect(() => systemd(dir, 1000, "op").install(spec)).toThrow(/XDG_RUNTIME_DIR=\/run\/user\/1000/);
-      expect(() => systemd(dir, 1000, "op").install(spec)).toThrow(/herdr plugin action invoke shahi\.restart/);
+      expect(() => systemd(dir, { uid: 1000, user: "op" }).install(spec)).toThrow(/sudo loginctl enable-linger op/);
+      expect(() => systemd(dir, { uid: 1000, user: "op" }).install(spec)).toThrow(/XDG_RUNTIME_DIR=\/run\/user\/1000/);
+      expect(() => systemd(dir, { uid: 1000, user: "op" }).install(spec)).toThrow(/herdr plugin action invoke shahi\.restart/);
     } finally {
       process.env.PATH = before;
     }
