@@ -3,7 +3,7 @@ import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, syml
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { normaliseCodex, rolloutWithinSessions, rolloutFromMacProcess } from "./codex-log";
+import { normaliseCodex, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
 
 const event = (type: string, message?: string, timestamp = "2026-07-25T04:51:48.000Z") => ({
   timestamp,
@@ -577,6 +577,39 @@ test("rolloutWithinSessions follows a symlinked sessions directory", () => {
   expect(rolloutWithinSessions(viaLink, join(root, "link", "sessions"))).toBe(viaLink);
   expect(rolloutWithinSessions(resolved, join(root, "link", "sessions"))).toBe(resolved);
   expect(rolloutWithinSessions(join(root, "real", "sessions", "..", "..", "etc.jsonl"), real)).toBeNull();
+});
+
+// On Linux the lookup returned the first rollout descriptor it listed, while
+// macOS already refused more than one. A codex process can hold several
+// rollouts open (subagent threads, a thread still loaded after /new), so the
+// pane could show a subagent's or the previous session's conversation (review
+// finding, September 2026). Runs on every platform against a fake /proc.
+test("on Linux a codex process with two rollouts open is ambiguous, not whichever is listed first", async () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-proc-"));
+  try {
+    const sessions = join(root, "sessions");
+    mkdirSync(sessions);
+    const own = join(sessions, "rollout-own.jsonl");
+    const subagent = join(sessions, "rollout-subagent.jsonl");
+    writeFileSync(own, "");
+    writeFileSync(subagent, "");
+    const proc = join(root, "proc");
+    const fd = join(proc, "4242", "fd");
+    mkdirSync(fd, { recursive: true });
+    symlinkSync("/dev/null", join(fd, "0"));
+    symlinkSync(join(root, "notes.jsonl"), join(fd, "3"));
+    symlinkSync(own, join(fd, "4"));
+    expect(await rolloutFromLinuxProcess(4242, sessions, proc)).toBe(own);
+    // The same rollout open twice is still one rollout.
+    symlinkSync(own, join(fd, "5"));
+    expect(await rolloutFromLinuxProcess(4242, sessions, proc)).toBe(own);
+    symlinkSync(subagent, join(fd, "6"));
+    expect(await rolloutFromLinuxProcess(4242, sessions, proc)).toBeNull();
+    expect(await rolloutFromLinuxProcess(4343, sessions, proc)).toBeNull();
+    expect(await rolloutFromLinuxProcess(-1, sessions, proc)).toBeNull();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 if (process.platform === "darwin") {

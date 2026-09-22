@@ -164,28 +164,40 @@ async function rolloutFromProcess(client: HerdrClient, paneId: string): Promise<
   }
 
   for (const pid of pids) {
-    if (!Number.isSafeInteger(pid) || pid <= 0) continue;
-    if (process.platform === "darwin") {
-      const target = await rolloutFromMacProcess(pid);
-      if (target) return target;
-      continue;
-    }
-    let fds: string[];
-    try {
-      fds = await readdir(`/proc/${pid}/fd`);
-    } catch {
-      continue;
-    }
-    for (const fd of fds) {
-      try {
-        const target = rolloutWithinSessions(await readlink(`/proc/${pid}/fd/${fd}`));
-        if (target) return target;
-      } catch {
-        // Descriptor closed between listing and reading; normal on a live process.
-      }
-    }
+    const target = process.platform === "darwin" ? await rolloutFromMacProcess(pid) : await rolloutFromLinuxProcess(pid);
+    if (target) return target;
   }
   return null;
+}
+
+/**
+ * The rollout a codex process has open on Linux, read from `/proc/<pid>/fd`.
+ *
+ * Only when exactly one is open, the same rule as macOS and Cursor. A codex
+ * process can hold several rollouts at once, for subagent threads or a thread
+ * still loaded after /new; four were seen open in one process on a Mac. This
+ * used to return whichever descriptor was listed first, which could be a
+ * subagent's or the previous session's conversation (review finding,
+ * September 2026). Ambiguity waits for a reported session ID instead.
+ */
+export async function rolloutFromLinuxProcess(pid: number, sessionsDir = SESSIONS_DIR, procRoot = "/proc"): Promise<string | null> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  let fds: string[];
+  try {
+    fds = await readdir(join(procRoot, String(pid), "fd"));
+  } catch {
+    return null;
+  }
+  const candidates = new Set<string>();
+  for (const fd of fds) {
+    try {
+      const target = rolloutWithinSessions(await readlink(join(procRoot, String(pid), "fd", fd)), sessionsDir);
+      if (target) candidates.add(target);
+    } catch {
+      // Descriptor closed between listing and reading; normal on a live process.
+    }
+  }
+  return candidates.size === 1 ? [...candidates][0]! : null;
 }
 
 /** lsof is macOS's equivalent of /proc: inspect only the pane's exact Codex PID. */
