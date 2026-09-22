@@ -130,3 +130,15 @@ test("release requirements match the implemented and tested adapter contracts", 
   expect(definition.api).toEqual({ min: API_SUPPORT.min, max: API_SUPPORT.max });
   expect(definition.transport).toBe(RELAY_PROTOCOL);
 });
+
+test("the version /api/meta and shahi.status report is the release being run", async () => {
+  // /api/meta's serverVersion is server/package.json's version, which stopped
+  // being bumped at 0.3.4 while releases went on to 0.3.6, so a computer
+  // running 0.3.6 said 0.3.4 (pre-public-release review). release.json is the
+  // release's version; the other two follow it.
+  const { default: definition } = await import("./release.json");
+  const { default: server } = await import("../../server/package.json");
+  const plugin = Bun.TOML.parse(readFileSync(join(import.meta.dir, "../../herdr-plugin.toml"), "utf8")) as { version: string };
+  expect(server.version).toBe(definition.version);
+  expect(plugin.version).toBe(definition.version);
+});
