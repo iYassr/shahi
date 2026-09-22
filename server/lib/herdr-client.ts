@@ -318,6 +318,14 @@ export class HerdrSubscriber {
   #stopped = false;
   #backoffMs = 250;
   #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Bumped by every stop(). A connection belongs to the generation that
+   * opened it, and one from an earlier generation is ended on arrival rather
+   * than adopted: BackendMonitor stops and restarts this on every offline
+   * flap, and a connect still in flight across that used to become a second,
+   * permanent subscription beside the new one (pre-release review).
+   */
+  #generation = 0;
 
   static readonly DEFAULT_TOPICS: Subscription[] = [
     { type: "pane.created" },
@@ -360,7 +368,14 @@ export class HerdrSubscriber {
 
   stop(): void {
     this.#stopped = true;
+    this.#generation += 1;
     if (this.#retryTimer) clearTimeout(this.#retryTimer);
+    // Cleared, not just cancelled. `#scheduleReconnect` treats a set timer as
+    // "a retry is already pending", and a cancelled timer never runs the
+    // callback that would unset it — so a stop() that landed while herdr was
+    // down (exactly when BackendMonitor calls it) disabled reconnecting for
+    // the life of the process. Found in the pre-release review.
+    this.#retryTimer = undefined;
     try {
       this.#socket?.end();
     } catch {
@@ -372,11 +387,17 @@ export class HerdrSubscriber {
   #open(): void {
     if (this.#stopped) return;
     const lines = new LineBuffer();
+    const generation = this.#generation;
+    const current = () => !this.#stopped && generation === this.#generation;
 
     bunConnect({
       unix: this.socketPath,
       socket: {
         open: (s) => {
+          if (!current()) {
+            s.end();
+            return;
+          }
           this.#socket = s;
           s.write(
             `${JSON.stringify({
@@ -387,6 +408,7 @@ export class HerdrSubscriber {
           );
         },
         data: (_s, chunk) => {
+          if (!current()) return;
           for (const line of lines.push(chunk)) {
             let msg: unknown;
             try {
@@ -411,13 +433,18 @@ export class HerdrSubscriber {
             if (isEventEnvelope(msg)) this.handlers.onEvent(msg);
           }
         },
-        close: () => this.#scheduleReconnect(),
+        // A superseded connection closing is not this subscription dropping.
+        close: () => {
+          if (current()) this.#scheduleReconnect();
+        },
         error: (_s, err) => {
+          if (!current()) return;
           this.handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
           this.#scheduleReconnect();
         },
       },
     }).catch((err) => {
+      if (!current()) return;
       this.handlers.onError?.(wrapConnectError(err, this.socketPath));
       this.#scheduleReconnect();
     });
