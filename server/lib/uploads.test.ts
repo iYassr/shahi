@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_UPLOAD_BYTES, UPLOAD_DIR, UploadTooLarge, safeName, storeUpload } from "./uploads";
@@ -99,5 +99,22 @@ describe("storeUpload", () => {
   test("rejects a file over the limit", async () => {
     const huge = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "big.bin");
     expect(storeUpload(huge, Date.now, DIR)).rejects.toThrow(UploadTooLarge);
+  });
+
+  // Review finding F91: the multipart route took the umask, 0755 directories
+  // and 0644 files, so another account on the machine could read them.
+  test("what the phone sent is not readable by other accounts on the computer", async () => {
+    const fresh = join(DIR, "fresh", "uploads");
+    const stored = await storeUpload(new File(["private"], "scan.pdf"), Date.now, fresh);
+    expect((await stat(fresh)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(DIR, "fresh"))).mode & 0o777).toBe(0o700);
+    expect((await stat(stored.path)).mode & 0o777).toBe(0o600);
+
+    // A directory an older version left open is closed on the next upload.
+    const old = join(DIR, "older");
+    await mkdir(old, { mode: 0o755 });
+    await chmod(old, 0o755);
+    await storeUpload(new File(["x"], "x.txt"), Date.now, old);
+    expect((await stat(old)).mode & 0o777).toBe(0o700);
   });
 });

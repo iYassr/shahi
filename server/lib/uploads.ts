@@ -14,7 +14,7 @@
  */
 import type { StoredUpload } from "@shahi/shared";
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 
 export type { StoredUpload };
 import { homedir } from "node:os";
@@ -56,6 +56,20 @@ export function safeName(raw: string | undefined): string {
 }
 
 /**
+ * Creates the upload directory, readable by this user only.
+ *
+ * The multipart route made it with the process umask and wrote 0644 files, so
+ * on a shared machine with a 0755 home another account could list and read
+ * whatever was sent from the phone (review finding F91). `chmod` as well as
+ * `mkdir`'s mode, because a directory an older version made already exists
+ * and `mkdir` leaves it alone.
+ */
+export async function privateDirectory(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700);
+}
+
+/**
  * Writes a file and returns where it landed.
  *
  * `dir` exists so tests never touch the real upload directory. They previously
@@ -71,7 +85,7 @@ export async function storeUpload(
 ): Promise<StoredUpload> {
   if (file.size > MAX_UPLOAD_BYTES) throw new UploadTooLarge(file.size);
 
-  await mkdir(dir, { recursive: true });
+  await privateDirectory(dir);
   void sweepOldUploads(now, dir).catch(() => {});
 
   const clean = safeName(file.name);
@@ -87,7 +101,9 @@ export async function storeUpload(
   const salt = randomBytes(4).toString("hex");
   const path = join(dir, `${stamp}_${salt}_${stem}${extension}`);
 
-  await Bun.write(path, file);
+  // `Bun.write` ignores its `mode` for a Blob source (measured on Bun 1.4:
+  // the file came out 0644), so the file is created 0600 here instead.
+  await writeFile(path, new Uint8Array(await file.arrayBuffer()), { mode: 0o600 });
 
   return {
     name: clean,

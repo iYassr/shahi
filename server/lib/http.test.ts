@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -101,6 +101,7 @@ interface Booted {
   calls: { method: string; params: unknown }[];
   push: PushService;
   dispatch: ReturnType<typeof createServer>["dispatch"];
+  uploadDir: string;
   stop: () => void;
 }
 
@@ -141,6 +142,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   const poller = new Poller(client, store, transcript);
   poller.on("error", () => undefined);
   const push = new PushService(db, config);
+  const uploadDir = join(scratch, `uploads-${booted}`);
   const server = createServer(
     {
       config,
@@ -156,7 +158,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
       ...(recovery ? { control: new ComputerControl("test-server", () => ({ state: "offline", message: "herdr is offline" }), recoveryRoot || undefined) } : {}),
       ...(relay ? { relay: () => ({ url: "https://relay.test", connected: true }) } : {}),
     },
-    { heartbeatMs, uploadDir: join(scratch, `uploads-${booted}`) },
+    { heartbeatMs, uploadDir },
   );
   const base = `http://127.0.0.1:${server.port}`;
   const login = await fetch(`${base}/api/auth/login`, {
@@ -166,7 +168,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
-  return { base, cookie, calls, push, dispatch: server.dispatch, stop: () => server.stop(true) };
+  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, stop: () => server.stop(true) };
 }
 
 /**
@@ -652,6 +654,26 @@ describe("writes and notification ownership", () => {
     finish({ token: "ExpoPushToken[slow]" });
     expect((await pending).status).toBe(401);
     expect(s.push.count()).toBe(baseline);
+  });
+
+  // Review finding F92: the multipart route checked the session only before
+  // its body, which over SSH can take a long time to arrive.
+  test("a phone revoked while its upload is arriving stores nothing", async () => {
+    const device = await pair("Slow upload");
+    let finish!: (form: FormData) => void;
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    const req = new Request(`${s.base}/api/uploads`, { method: "POST", headers: { cookie: device.cookie } });
+    Object.defineProperty(req, "formData", { value: () => { reading(); return new Promise(resolve => { finish = resolve; }); } });
+    const pending = s.dispatch(req, "slow-upload-test");
+    await started;
+    await fetch(`${s.base}/api/devices/${device.deviceId}`, { method: "DELETE", headers: { cookie: s.cookie } });
+    const form = new FormData();
+    form.set("file", new File(["after revocation"], "revoked-upload.txt"));
+    finish(form);
+    expect((await pending).status).toBe(401);
+    const stored = existsSync(s.uploadDir) ? readdirSync(s.uploadDir) : [];
+    expect(stored.filter(name => name.includes("revoked-upload"))).toEqual([]);
   });
 });
 

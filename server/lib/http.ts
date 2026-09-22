@@ -1067,10 +1067,15 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         }
         if (pathname === "/api/uploads" && req.method === "POST") {
           const form = await req.formData().catch(() => null);
+          // Revocation can happen while a slow request body is still arriving;
+          // up to 40MB over SSH is a long time (review finding F92).
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           const file = form?.get("file");
           if (!(file instanceof File)) return json({ error: "no file supplied" }, { status: 400 });
           try {
-            return json(await storeUpload(file));
+            // The same directory the chunked route uses, so a test's server
+            // never writes into the owner's real uploads.
+            return json(await storeUpload(file, undefined, uploadDir));
           } catch (err) {
             if (err instanceof UploadTooLarge) return json({ error: err.message }, { status: 413 });
             return json({ error: "could not save the file" }, { status: 500 });
