@@ -14,18 +14,19 @@ server/   Bun sidecar: owns herdr's unix socket, speaks HTTP + WebSocket
 mobile/   the Expo app — the product, and where new work goes
 plugin/   the herdr plugin: startup hook, actions, the service it installs
 relay/    the blind relay: a Cloudflare Worker, one Durable Object per box
-web/      the React PWA, archived: kept working, no longer developed
+web/      the actively maintained responsive React PWA
 e2e/      Playwright, against a stub of the server
 ```
 
-The **native app (`mobile/`) is the product**; `web/` is archived and should not
-gain features.
+The native app and web app are actively maintained together. Keep shared user
+flows aligned; native-only capabilities such as the built-in SSH tunnel remain
+native. See [CLAUDE.md](CLAUDE.md) for the supported API contract.
 
 ## Running it
 
 ```sh
 bun install
-bun test shared/src server web/src plugin  # unit tests
+bun run test                              # unit and dependency checks
 bun run typecheck                          # every workspace, incl. the app
 ```
 
@@ -36,8 +37,9 @@ module, `docs/ssh.md`.
 
 A few principles from `CLAUDE.md`, because PRs are reviewed against them:
 
-- **No backward-compatibility layers.** Remove obsolete paths; don't add
-  fallbacks or migrations.
+- **Preserve supported contracts.** Support the current and previous API
+  generation for the release-policy window, without restoring protocols below
+  API 5 / encrypted transport 2. See [releases](docs/releases.md).
 - **Simplest thing that fully meets the requirement.** No speculative
   abstraction or configuration.
 - **Grow in layers** — the smallest version that works end to end, then build on
@@ -49,9 +51,20 @@ A few principles from `CLAUDE.md`, because PRs are reviewed against them:
 
 ## Tests
 
-- Unit: `bun test …`
-- Browser (archived web client): `bun run test:e2e`
-- Native flows: Maestro in `.maestro/` (needs a booted simulator).
+- Unit and dependency checks: `bun run test`.
+- Native component tests: `bun run test:mobile`.
+- Relay: `bun run test:relay` (set `SHAHI_TEST_RELAY_PORT` if 8787 is in use).
+- Browser: `bun run build:web && bun run test:e2e`.
+- Hosted client and offline/update behavior: `bun run build:site && bun run test:hosted && bun run test:pwa`.
+- Native flows: Maestro in `.maestro/` and the creation matrix in `e2e/native/`;
+  see [local iOS development](docs/on-a-mac.md).
+
+Fixture tests must never send writes to a real user session. Real-server tests
+require both a named herdr session and a fresh `XDG_CONFIG_HOME` without installed
+plugins: startup hooks can otherwise redirect the production service. Use
+dedicated test workspaces and upload directories, revoke temporary devices, and
+stop only the test services afterward. Never log terminal contents. Record real
+server checks separately from fixture results and physical-device checks.
 
 New behaviour should come with a test named after the symptom it prevents.
 

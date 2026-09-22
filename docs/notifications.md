@@ -74,14 +74,14 @@ What is missing is a device. The history is why it took so long:
   so a free-signed build cannot register for APNs at all. Push on iOS needs the
   paid Apple Developer Program.
 
-That last point is settled: a paid Apple account arrived in August 2026, and
-with it the decision that native is where this goes. The PWA is archived.
+Native and web are both maintained. Their notification channels need separate
+end-to-end checks: native on a signed physical iPhone, and Web Push in a
+supported browser or installed PWA.
 
-So the only thing standing between this and working push is running it on a
-real iPhone. The simulator reports `Device.isDevice === false` and refuses to
-mint a token, so nothing here can be proven from a Mac alone — the
-`expo_push_token` table is still empty, and the first token to land in it is
-the proof. Do not go looking for missing wiring; flip the toggle on a phone.
+The September 2026 simulator run did not establish real APNs delivery. Verify
+that enabling notifications creates an owned `device_expo_push_token` row,
+then lock the phone, trigger a request in a dedicated test agent, and open the
+notification. Do not infer delivery from simulator or component-test success.
 
 ## Server side
 

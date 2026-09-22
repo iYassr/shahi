@@ -1,0 +1,26 @@
+model = "shahi-demo"
+model_provider = "shahi_demo"
+check_for_update_on_startup = false
+model_reasoning_effort = "low"
+
+[model_providers.shahi_demo]
+name = "Shahi simulated demo"
+base_url = "http://127.0.0.1:9090/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+
+[projects."/home/demo/workspace"]
+trust_level = "trusted"
+
+[mcp_servers.shahi_demo]
+command = "bun"
+args = ["/opt/demo/tools.js"]
+startup_timeout_sec = 15
+
+# These two fixed read-only tools are safe to run without a prompt. The file
+# creation tool keeps the client's normal approval behavior.
+[mcp_servers.shahi_demo.tools.list_files]
+approval_mode = "approve"
+[mcp_servers.shahi_demo.tools.read_readme]
+approval_mode = "approve"

@@ -48,3 +48,19 @@ web/dist-hosted/
 
 # Per-install runtime verification marker.
 /.shahi-build
+
+# Private paperwork and review credentials belong outside the repository.
+/output/
+/private/
+/secrets/
+*.pdf
+*.eml
+*.p8
+*.p12
+*.pfx
+*.key
+*.mobileprovision
+credentials.json
+reviewer-access.md
+local.env
+*-device.json

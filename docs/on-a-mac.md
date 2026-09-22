@@ -47,6 +47,18 @@ build made that way still had `NSAllowsArbitraryLoads` false, so every plain
 `http://` address except localhost was refused by App Transport Security, and
 an afternoon went to a "TLS" error on a server with no TLS.
 
+### Building with Xcode 27
+
+iOS 27 requires the scene lifecycle for apps built with its SDK. Shahi enables
+it through the `expo-build-properties` plugin in `app.json`, using Expo
+57.0.23 or later. Regenerate the native project after pulling this change;
+an older generated AppDelegate compiles but the app exits at launch.
+See [Expo's scene lifecycle guide](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md).
+
+Keep simulator code signing enabled (ad hoc signing is sufficient). Disabling
+signing prevents secure storage from accessing the simulator keychain, so
+pairing can connect without saving the computer successfully.
+
 ## Give it something to talk to
 
 Two choices, and the second is usually the right one.
@@ -67,6 +79,27 @@ the browser suite uses — the same contract, the same fixtures, and writes are
 recorded rather than performed.
 
 ## Run the iOS tests
+
+The relay-based creation matrix covers both entry points (Agents and Spaces),
+each recognized agent kind, and every permission mode Shahi offers. It asserts
+that creation opens a conversation and sends exactly one request with the
+selected kind, space, and permissions. The fixture creates synthetic panes;
+this checks the app contract, not whether every CLI is installed locally.
+
+With a release build installed on a booted simulator, run these in separate
+terminals from the repository root:
+
+```sh
+HOSTED_PORT=7874 bun e2e/hosted/server.ts
+SIMULATOR_UDID=<device-id> HOSTED_PORT=7874 bun e2e/native/creation-matrix.ts
+```
+
+Use `AGENT_KINDS=claude,codex,cursor,agy` to narrow a diagnostic run. Artifacts
+are saved in the temporary directory printed by the runner. Pairing is reset
+for this synthetic computer. Never substitute a real server for the fixture.
+
+The older `.maestro/` flows below still use the retired typed-address onboarding
+and need migration before they can run against the current app.
 
 ```sh
 curl -Ls "https://get.maestro.mobile.dev" | bash      # once
@@ -117,11 +150,21 @@ started with only `HERDR_SOCKET_PATH` restores your default session's saved
 state and re-launches its agents as duplicates (four extra `claude --resume`
 processes, measured). A named session has its own directory and starts empty.
 
+A named session isolates panes, **not installed startup hooks**. Always use a
+fresh `XDG_CONFIG_HOME` as well, so no plugins are installed in the test
+configuration. On 2026-09-18, starting a named session under the normal config
+ran Shahi’s startup hook and repointed the production service at the test
+socket. Keep the normal `HOME` so installed agents remain available; do not
+copy plugins into the test configuration. Use the same configuration root when
+stopping the named session.
+
 ```sh
-herdr --session shahi-ci server &                       # a named session: its own directory, starts empty
-export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+test_config_root=$(mktemp -d)
+XDG_CONFIG_HOME="$test_config_root" herdr --session shahi-ci server &
+export HERDR_SOCKET_PATH="$test_config_root/herdr/sessions/shahi-ci/herdr.sock"
 SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
-herdr session stop shahi-ci
+XDG_CONFIG_HOME="$test_config_root" herdr session stop shahi-ci
+unset HERDR_SOCKET_PATH
 ```
 
 Two of the unit tests — the `installedAgents` detections in
@@ -137,3 +180,35 @@ box and in CI.
 **Never point the browser suite at the live server for anything that writes.**
 That mistake typed into somebody's session once already, and a Mac on the tailnet
 is exactly where it would happen again.
+
+### Reader checks against a real server
+
+`e2e/native/read-live-conversation.yaml` is a read-only flow for an already
+paired simulator. Open a real long conversation at its latest message first.
+Pass its pane ID, final message ID, and an older message ID outside the initial
+60-message page. Choose a short older message so it can fit on screen.
+
+```sh
+maestro --device SIMULATOR_ID test \
+  -e PANE_ID=YOUR_PANE_ID \
+  -e LAST_MESSAGE_ID=YOUR_LAST_MESSAGE_ID \
+  -e OLDER_MESSAGE_ID=YOUR_OLDER_MESSAGE_ID \
+  e2e/native/read-live-conversation.yaml
+```
+
+It loads earlier history, switches Read/Screen, leaves and reopens the
+conversation, and checks that Latest reaches the actual final message. It sends
+no prompts, keys, or approvals. Compare `before-leaving`, `after-toggle`, and
+`after-reopening` screenshots for paragraph alignment; keep those screenshots
+private because they contain the real conversation. This flow intentionally
+lives outside the stub suite.
+
+Verified on 2026-09-18 with the signed Release build in the iPhone 18 Pro /
+iOS 27 simulator, connected to the actual Ubuntu sidecar (herdr 0.9.0):
+Claude with 1,763 messages and Codex with 284 messages. Both reached their
+server-reported final message; settled before/after screenshots had identical
+reading-area pixels when reopening, and Claude also matched across Read/Screen.
+Earlier-history loading and jumping back to the final message were exercised
+on the Claude conversation. No agent input was sent. The final checks used an
+SSH tunnel carrying unchanged encrypted relay frames because this Mac could
+no longer reach the relay edge directly; the relay and sidecar were real.

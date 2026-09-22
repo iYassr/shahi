@@ -22,7 +22,7 @@
       <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
     </a>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated 5 September 2026.</p>
+    <p class="updated">Last updated 19 September 2026.</p>
   </header>
 
 <h2>What Shahi does</h2>
@@ -67,22 +67,45 @@
 
 <h2>Push notifications</h2>
 
-<p>Notifications are <strong>off unless you enable them</strong>. Your server stores the push registration and associates it with the device or signed-in session that registered it. Revoking a paired device, signing out through the server, or disabling notifications removes the corresponding registrations.</p>
+<p>Notifications are <strong>off unless you enable them</strong>. Your server stores the push registration and associates it with the device or signed-in session that registered it. Revoking a paired device or signing out through the server removes the corresponding registrations. Disabling notifications in iOS Settings stops display but does not itself delete the server registration.</p>
 
 <p>Native notifications travel through <strong>Expo&#x27;s push service</strong> and then the platform push provider, such as Apple&#x27;s Push Notification service. Browser notifications travel through the browser&#x27;s push provider. Notification payloads include workspace names, terminal titles, and the pane identifier to open. These providers therefore receive notification content even though relay traffic is encrypted end to end. Leave notifications off if you do not want that content sent through push providers.</p>
 
 <p>Your server stores original agent transcripts and uploaded files under your control. The relay does not store those contents.</p>
 
-<h2>Children</h2>
+<h2>Who runs Shahi</h2>
+<p>Shahi is provided by Yasser Aldosari, an independent developer in Saudi Arabia. You do not need a Shahi account: you connect to a computer you control. For privacy questions or requests, contact support@getshahi.dev.</p>
+
+<h2>Camera, photos and files</h2>
+<p>Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi does not request microphone, contacts or location access.</p>
+
+<h2>App updates and service providers</h2>
+<p>The iPhone app checks Expo for signed app updates when it opens. Expo receives network information and update-request metadata, such as the app version, platform and runtime version, and update-related crash or launch diagnostics. Updates do not send your conversations or SSH credentials to Expo. Cloudflare hosts the website and relay. The website loads fonts from Google Fonts, which receives the network information needed to deliver them. These providers may process data outside your country under their own privacy policies. The AI assistants you run on your computer use their own providers; their handling of prompts and files is separate from Shahi.</p>
+
+<h2>TestFlight and support</h2>
+<p>When you use TestFlight, Apple processes beta-testing information, including installation and usage information, crash reports and feedback you choose to send. Apple makes some of this information available to the developer. If you contact support, we receive your email address and the information or attachments you send. Avoid including passwords, pairing codes or private conversations. We use support messages to respond to your request and maintain the service, and retain them until deleted or no longer needed.</p>
+
+<h2 id="your-choices">Your choices and deletion</h2>
+<p>To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device from that computer separately. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Disable notifications in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.</p>
+
+<h2>How we use data</h2>
+<p>We use connection information to provide the service, protect it from abuse and diagnose failures. We use optional notification registrations to deliver notifications, and email information to respond to support and beta requests. We do not sell personal data, serve ads or track people across other companies’ apps and websites. Where applicable, you may have rights to access, correct, delete or restrict use of your personal information and complain to your local data protection authority. Contact us to exercise those rights.</p>
+
+<h2>Changes to this policy</h2>
+<p>We update this page when our practices change and show the date above. Material changes that require a new choice or permission will be presented through the relevant service or app permission prompt.</p>
+
+<h2 id="review-demo">Private review environment</h2>
+      <p>Apple reviewers may receive access to a separate demonstration computer hosted on Cloudflare. Its agent replies are clearly labeled simulations and do not go to an AI provider. Unlike a user's own computer, this demo is operated by us: its sample conversations, selected uploads, files, and pairing records are stored in the container and private recovery snapshots. Use sample information only. The review website uses an essential, seven-day sign-in cookie, with no advertising or cross-site tracking. Demo access expires on 19 October 2026; the next scheduled cleanup stops the computer and deletes the recovery snapshot. Contact <a href="mailto:support@getshahi.dev">support@getshahi.dev</a> to request earlier removal of review data.</p>
+      <h2>Children</h2>
 
 <p>Shahi is a developer tool and is not directed at children.</p>
 
 <h2 id="ios-beta">iOS beta requests</h2>
-<p>If you request an iOS beta invitation, we send your email address to the Shahi support inbox using Cloudflare Email Routing. We use it to contact you about TestFlight access and beta updates. The website does not keep a separate signup database. Your request remains in the support mailbox until deleted. Email privacy@getshahi.dev to withdraw your request or ask us to delete it.</p>
+<p>If you request an iOS beta invitation, we send your email address to the Shahi support inbox using Cloudflare Email Routing. We use it to contact you about TestFlight access and beta updates. The website does not keep a separate signup database. Your request remains in the support mailbox until deleted. Email support@getshahi.dev to withdraw your request or ask us to delete it.</p>
 
 <h2>Contact</h2>
 
-<p>Questions about this policy: <strong>privacy@getshahi.dev</strong>.</p>
+<p>Questions about this policy: <strong>support@getshahi.dev</strong>.</p>
 
   <footer>
     <a href="/">← Back to Shahi</a>

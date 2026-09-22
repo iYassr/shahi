@@ -12,10 +12,9 @@ gesture, a notification — is near the top.
 
 ## Before you start
 
-Check you are running the build you think you are. Settings inside the app is
-not enough; the giveaway is a feature you know is new. If the tab bar at the
-bottom is a real iOS tab bar with a blur behind it, you are on August's build or
-later. If it is two words with a line under one, you are not.
+Record the app version/build, iOS version and device model. Confirm the
+installed release contains the change being checked. Use a dedicated test
+computer/session for writes, not an existing customer conversation.
 
 **Every change needs a new build.** Updates are not delivered over the air —
 the app never calls `expo-updates` — so a JS-only fix reaches the phone the same
@@ -78,10 +77,29 @@ keyboard. Type, dismiss, reopen: the draft survives. Rotate with the keyboard
 open and the composer is still reachable.
 
 **10. Notifications arrive.**
-Turn them on. `expo_push_token` on the server should gain a row — until it does,
-nothing else in this check can pass, and as of August 2026 it never has. Then
+Turn them on. `device_expo_push_token` on the server should gain an owned
+registration; until it does, nothing else in this check can pass. Then
 lock the phone, get an agent to block, and confirm one arrives. Tap it: it
 should open that pane, not the list.
+
+**11. Customer journeys survive interruptions.**
+Type a draft, open another conversation, and return. Switch computers, including
+ones with matching pane IDs, and check drafts stay separate. Background and
+resume without killing the process. Reload/process termination is allowed to
+clear drafts; do not count that as navigation loss.
+
+Create an agent from both Agents and Spaces with a readable name containing
+spaces. It should open its own conversation without a false “gone” message.
+Interrupt the network after sending and retry only through the existing UI;
+confirm the dedicated test command ran once. Test a multi-file browser batch
+across interruption and verify only the remaining files are retried.
+
+On a real phone, switch between Wi-Fi and cellular, revoke its temporary
+access, and confirm the app exits that computer while another saved connection
+remains usable. For the PWA, install from Safari, reopen offline, then reconnect.
+Check Read/Screen, Back and Live controls in light and dark appearance, larger
+text, VoiceOver and Reduce Motion. Camera, dictation and push delivery need
+physical-device evidence; simulator success is not a substitute.
 
 ## What to write down when something fails
 

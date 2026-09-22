@@ -1,5 +1,9 @@
 @CLAUDE.md
 
+Read [CLAUDE.md](CLAUDE.md) before changing this project. It is the shared source
+of development instructions for both agent entry points. If your tool does not
+resolve the import above, open that file directly.
+
 <!--
   One source of truth, on purpose.
 

@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 5 September 2026. Published at
+_Last updated: 19 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -109,8 +109,7 @@ SDKs. Relay operational telemetry is separate from client analytics.
 
 Notifications are **off unless you enable them**. Your server stores the push
 registration and associates it with the device or signed-in session that
-registered it. Revoking a paired device, signing out through the server, or
-disabling notifications removes the corresponding registrations.
+registered it. Revoking a paired device or signing out through the server removes the corresponding registrations. Disabling notifications in iOS Settings stops display but does not itself delete the server registration.
 
 Native notifications travel through **Expo's push service** and then the
 platform push provider, such as Apple's Push Notification service. Browser
@@ -123,14 +122,54 @@ want that content sent through push providers.
 Your server stores original agent transcripts and uploaded files under your
 control. The relay does not store those contents.
 
+## Who runs Shahi
+
+Shahi is provided by Yasser Aldosari, an independent developer in Saudi Arabia. You do not need a Shahi account: you connect to a computer you control. For privacy questions or requests, contact support@getshahi.dev.
+
+## Camera, photos and files
+
+Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi does not request microphone, contacts or location access.
+
+## App updates and service providers
+
+The iPhone app checks Expo for signed app updates when it opens. Expo receives network information and update-request metadata, such as the app version, platform and runtime version, and update-related crash or launch diagnostics. Updates do not send your conversations or SSH credentials to Expo. Cloudflare hosts the website and relay. The website loads fonts from Google Fonts, which receives the network information needed to deliver them. These providers may process data outside your country under their own privacy policies. The AI assistants you run on your computer use their own providers; their handling of prompts and files is separate from Shahi.
+
+## TestFlight and support
+
+When you use TestFlight, Apple processes beta-testing information, including installation and usage information, crash reports and feedback you choose to send. Apple makes some of this information available to the developer. If you contact support, we receive your email address and the information or attachments you send. Avoid including passwords, pairing codes or private conversations. We use support messages to respond to your request and maintain the service, and retain them until deleted or no longer needed.
+
+## Your choices and deletion
+
+To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device from that computer separately. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Disable notifications in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.
+
+## How we use data
+
+We use connection information to provide the service, protect it from abuse and diagnose failures. We use optional notification registrations to deliver notifications, and email information to respond to support and beta requests. We do not sell personal data, serve ads or track people across other companies’ apps and websites. Where applicable, you may have rights to access, correct, delete or restrict use of your personal information and complain to your local data protection authority. Contact us to exercise those rights.
+
+## Changes to this policy
+
+We update this page when our practices change and show the date above. Material changes that require a new choice or permission will be presented through the relevant service or app permission prompt.
+
+## Private review environment
+
+Apple reviewers may receive access to a separate demonstration computer hosted
+on Cloudflare. Its agent replies are clearly labeled simulations and do not go
+to an AI provider. Unlike a user's own computer, this demo is operated by us: its
+sample conversations, selected uploads, files, and pairing records are stored in
+the container and private recovery snapshots. Use sample information only. The
+review website uses an essential, seven-day sign-in cookie, with no advertising
+or cross-site tracking. Demo access expires on 19 October 2026; the next scheduled
+cleanup stops the computer and deletes the recovery snapshot. Contact
+support@getshahi.dev to request earlier removal of review data.
+
 ## Children
 
 Shahi is a developer tool and is not directed at children.
 
 ## Contact
 
-Questions about this policy: **privacy@getshahi.dev**.
+Questions about this policy: **support@getshahi.dev**.
 
 ## iOS beta requests
 
-If you request an iOS beta invitation, we send your email address to the Shahi support inbox using Cloudflare Email Routing. We use it to contact you about TestFlight access and beta updates. The website does not keep a separate signup database. Your request remains in the support mailbox until deleted. Email privacy@getshahi.dev to withdraw your request or ask us to delete it.
+If you request an iOS beta invitation, we send your email address to the Shahi support inbox using Cloudflare Email Routing. We use it to contact you about TestFlight access and beta updates. The website does not keep a separate signup database. Your request remains in the support mailbox until deleted. Email support@getshahi.dev to withdraw your request or ask us to delete it.

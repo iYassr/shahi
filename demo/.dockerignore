@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!build/
+!build/*.js
+!container/
+!container/state.py
+!container/codex.toml
+!container/workspace/
+!container/workspace/**

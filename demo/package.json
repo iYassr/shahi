@@ -1,0 +1,18 @@
+{
+  "name": "shahi-review-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build.ts"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260904.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.129.0"
+  }
+}
