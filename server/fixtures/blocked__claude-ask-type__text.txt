@@ -1,0 +1,40 @@
+
+
+✻ Brewed for 6s · done 1:15 AM
+
+❯ Use the WebFetch tool to fetch https://example.org and tell me its title. Do nothing else.
+
+⏺ Fetch(https://example.org)
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cooked for 4s · done 1:15 AM
+
+❯ Call the echo tool from the probe MCP server with the text hello. Do nothing else.
+
+  Called probe
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Sautéed for 3s · done 1:16 AM
+
+❯ Use the Bash tool to run exactly this command and do nothing else: rm -rf build dist
+
+  Ran 1 shell command
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cooked for 2s · done 1:16 AM
+
+❯ Use your AskUserQuestion tool to ask me which colour I prefer: red or green. Do nothing else.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Colour
+
+Which colour do you prefer?
+
+  1. Red
+     You prefer red.
+  2. Green
+     You prefer green.
+❯ 3. Type something.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim · Esc to cancel

@@ -35,7 +35,7 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
-import { submitPrompt } from "./prompt";
+import { PromptOpen, submitPrompt } from "./prompt";
 import { OperationError, Operations } from "./operations";
 import { trackDelivery } from "./herdr-delivery";
 import { createHash } from "node:crypto";
@@ -1188,6 +1188,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               }, delivery.reachedNothing);
               return json(receipt);
             } catch (err) {
+              // Nothing was typed: a menu is open and Enter would pick for the
+              // person (see `prompt.ts`). The message says what to use instead,
+              // so every client, old ones included, shows it as it stands.
+              if (err instanceof PromptOpen) return json({ error: err.message, code: err.code }, { status: 409 });
               return failure(err);
             }
           }

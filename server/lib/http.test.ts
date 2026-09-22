@@ -31,6 +31,8 @@ const PASSCODE = "2468";
 
 /** What the fake pane shows; tests that answer a prompt set it. */
 let screen = "";
+/** Set before a boot() to make the fake pane an agent in that state. */
+let agentStatus: string | null = null;
 
 /** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
 let herdrDown: unknown = null;
@@ -64,7 +66,7 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     workspaces: [{ workspace_id: "w1", label: "one", agent_status: "unknown", pane_count: 1, tab_count: 1, focused: true }],
     tabs: [{ tab_id: "t1", workspace_id: "w1", label: "1", number: 1, agent_status: "unknown", pane_count: 1, focused: true }],
     panes: [pane],
-    agents: [],
+    agents: agentStatus ? [{ ...pane, agent: "claude", agent_status: agentStatus }] : [],
     layouts: [],
     focused_pane_id: PANE,
   };
@@ -839,4 +841,44 @@ test("chunk upload routes enforce authentication, body bounds and session owners
     expect((await fetch(path, { headers: { cookie: other } })).status).toBe(404);
     expect((await fetch(path, { method: "DELETE", headers })).status).toBe(200);
   } finally { app.stop(); }
+});
+
+// Text then Enter at a menu picks the lit row for the person: measured on
+// Claude Code's Bash permission menu, "no" + Enter ran the command. The route
+// refuses with a code and a message any client can show as it stands.
+describe("a message to an agent waiting on a menu", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    agentStatus = "blocked";
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    agentStatus = null;
+  });
+  const send = (text: string, clientMessageId: string) =>
+    fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/prompt`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify({ text, clientMessageId }),
+    });
+  const typed = (from: number) => app.calls.slice(from).filter((c) => c.method.startsWith("pane.send"));
+
+  test("is a 409 prompt_open that says what to use instead, and types nothing", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__claude-bash__text.txt"), "utf8");
+    const before = app.calls.length;
+    const res = await send("no, use yarn instead", "menu-open-1");
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe("prompt_open");
+    expect(body.error).toContain("option buttons");
+    expect(typed(before)).toEqual([]);
+  });
+
+  test("is typed when the question asks for text", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__claude-ask-type__text.txt"), "utf8");
+    const before = app.calls.length;
+    expect((await send("blue", "menu-open-2")).status).toBe(200);
+    expect(typed(before).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
 });
