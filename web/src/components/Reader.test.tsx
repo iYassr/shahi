@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import type { LogMessage } from "../api";
-import { merge } from "./Reader";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { ApiContext, api, type LogMessage, type SessionLog } from "../api";
+import { Reader, clearReaderMemory, merge } from "./Reader";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const message = (id: string, text = "hello"): LogMessage => ({
   id,
@@ -55,5 +58,75 @@ describe("reader update identity", () => {
     const current: LogMessage[] = [{ ...message("a"), blocks: [{ kind: "tool", name: "Bash", summary: "ls", result: null }] }];
     const finished: LogMessage = { ...message("a"), blocks: [{ kind: "tool", name: "Bash", summary: "ls", result: { text: "file", isError: false, truncated: false, images: [] } }] };
     expect(merge(current, [finished])[0]).toBe(finished);
+  });
+});
+
+describe("a pane reused by a new session", () => {
+  // Cursor numbers messages from `cursor-0` in every transcript, so a new chat
+  // in the same pane reuses the old chat's ids. Merged by id, the reader kept
+  // the old conversation on screen with the new one appended beneath it.
+  const said = (id: string, text: string): LogMessage => ({ ...message(id, text), role: id.endsWith("0") ? "you" : "agent" });
+  const log = (sessionId: string, messages: LogMessage[], total = messages.length): SessionLog => ({
+    sessionId, path: `/home/me/.cursor/projects/p/agent-transcripts/${sessionId}.jsonl`, messages, total, offset: 0,
+  });
+  // Longer than the new chat, as the old one usually is: its last id is one the
+  // new page never mentions, which is what the merge used to keep.
+  const oldChat = log("chat-old", [said("cursor-0", "OLD secret question"), said("cursor-1", "OLD reply 1"), said("cursor-2", "OLD follow-up"), said("cursor-3", "OLD reply 2")]);
+  const newChat = log("chat-new", [said("cursor-0", "NEW question"), said("cursor-1", "NEW answer"), said("cursor-2", "NEW follow-up")]);
+
+  let view: ReactTestRenderer | undefined;
+  let events: EventTarget;
+  const originals = new Map<string, PropertyDescriptor | undefined>();
+  beforeEach(() => {
+    clearReaderMemory();
+    events = new EventTarget();
+    for (const [key, value] of Object.entries({ window: events, document: Object.assign(new EventTarget(), { hidden: false }) })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    }
+  });
+  afterEach(async () => {
+    if (view) await act(async () => view!.unmount());
+    view = undefined;
+    clearReaderMemory();
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+  const output = () => JSON.stringify(view!.toJSON());
+  const render = (sessionLog: typeof api.sessionLog) => act(async () => {
+    view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} /></ApiContext.Provider>);
+  });
+  const logChanged = () => act(async () => { events.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w1:p1" })); });
+
+  test("an open reader shows only the new session's messages when the pane starts another chat", async () => {
+    await render(mock().mockResolvedValueOnce(oldChat).mockResolvedValue(newChat));
+    expect(output()).toContain("OLD secret question");
+    await logChanged();
+    expect(output()).toContain("NEW question");
+    expect(output()).toContain("NEW follow-up");
+    expect(output()).not.toContain("OLD");
+  });
+
+  test("reopening a pane remembered from the previous session does not carry it into the new one", async () => {
+    await render(mock().mockResolvedValue(oldChat));
+    await act(async () => view!.unmount());
+    await render(mock().mockResolvedValue(newChat));
+    expect(output()).toContain("NEW answer");
+    expect(output()).not.toContain("OLD");
+  });
+
+  test("a history page from the previous session is not prepended to the new one", async () => {
+    let olderReply!: (value: SessionLog) => void;
+    let polls = 0;
+    const sessionLog = mock((_pane: string, options: { before?: number } = {}) => options.before !== undefined
+      ? new Promise<SessionLog>(done => { olderReply = done; })
+      : Promise.resolve(++polls === 1 ? log("chat-old", oldChat.messages, 90) : newChat));
+    await render(sessionLog);
+    await act(async () => view!.root.findAllByType("button").find(b => b.props.className === "reader__more")!.props.onClick());
+    await logChanged();
+    await act(async () => olderReply(log("chat-old", [said("cursor-9", "OLD earlier history")], 90)));
+    expect(output()).not.toContain("OLD");
+    expect(output()).toContain("NEW follow-up");
   });
 });

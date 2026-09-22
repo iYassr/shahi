@@ -15,7 +15,7 @@ import { Download, RemoteImage } from "./RemoteMedia";
  * conversation and a wall of command output.
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, useApi, type Activity, type LogBlock, type LogMessage } from "../api";
+import { ApiError, useApi, type Activity, type LogBlock, type LogMessage, type SessionLog } from "../api";
 import { forgetReaderPlace, readerWasAway, useReaderScroll } from "../reader-scroll";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
@@ -48,7 +48,25 @@ const remembered = new Map<string, LogMessage[]>();
 const REMEMBER_PANES = 4;
 let memoryGeneration = 0;
 const rememberedOffsets = new Map<string, number>();
-export function clearReaderMemory() { memoryGeneration++; remembered.clear(); rememberedOffsets.clear(); forgetReaderPlace(); }
+/** Which transcript each remembered conversation was read from. See `transcriptOf`. */
+const rememberedTranscripts = new Map<string, string>();
+export function clearReaderMemory() { memoryGeneration++; remembered.clear(); rememberedOffsets.clear(); rememberedTranscripts.clear(); forgetReaderPlace(); }
+
+/**
+ * The identity of the transcript a page came from.
+ *
+ * A herdr pane outlives the agent session in it: start a new Cursor chat or
+ * restart codex in the same pane and the server moves to the new file. Message
+ * ids are only unique within one file — Cursor numbers messages from
+ * `cursor-0`, codex numbers rows — so merging by id alone kept the old
+ * session's messages on screen and interleaved the new one with them (found
+ * in the pre-release review, 2026-09). What is on screen is therefore tied to
+ * the transcript it was read from, and a page from any other transcript
+ * replaces it rather than merging into it.
+ */
+export function transcriptOf(log: Pick<SessionLog, "sessionId" | "path">): string {
+  return `${log.sessionId}\n${log.path}`;
+}
 
 interface Props {
   paneId: string;
@@ -118,6 +136,8 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
   const [unseen, setUnseen] = useState(0);
   /** What is on screen, so a poll can diff against it without re-rendering. */
   const shown = useRef<LogMessage[]>(remembered.get(paneId) ?? []);
+  /** The transcript `shown` was read from; null before the first page. */
+  const transcript = useRef<string | null>(rememberedTranscripts.get(paneId) ?? null);
   /** Mirrors `total` for the poll, which must not close over a stale value. */
   const knownTotal = useRef(0);
   const reading = useReaderScroll({ paneId, scroller, ready: !loading, revision: messages, following: pinnedToBottom,
@@ -142,12 +162,24 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       // A disjoint tail cannot be merged without hiding the missing interval.
       // Reset to a contiguous window; its explicit offset keeps all history reachable.
       const overlap = shown.current.some((message) => log.messages.some((fresh) => fresh.id === message.id));
-      const reset = shown.current.length === 0 || !overlap;
+      const source = transcriptOf(log);
+      // Another session in the same pane: its ids can collide with the old
+      // one's, so nothing on screen — history, place, unseen count — carries over.
+      const switched = transcript.current !== null && transcript.current !== source;
+      const reset = shown.current.length === 0 || !overlap || switched;
       const next = reset ? log.messages : merge(shown.current, log.messages);
       if (reset || knownTotal.current === 0) {
         const nextOffset = Math.max(0, log.total - next.length);
         setOffset(nextOffset);
         rememberedOffsets.set(paneId, nextOffset);
+      }
+      transcript.current = source;
+      rememberedTranscripts.set(paneId, source);
+      if (switched) {
+        pinnedToBottom.current = true;
+        setUnseen(0);
+        setAway(false);
+        reading.goLatest();
       }
       setError("");
 
@@ -163,7 +195,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       }
       if (remembered.size >= REMEMBER_PANES && !remembered.has(paneId)) {
         const evicted = remembered.keys().next().value!;
-        remembered.delete(evicted); rememberedOffsets.delete(evicted); forgetReaderPlace(evicted);
+        remembered.delete(evicted); rememberedOffsets.delete(evicted); rememberedTranscripts.delete(evicted); forgetReaderPlace(evicted);
       }
       remembered.set(paneId, shown.current);
       knownTotal.current = log.total;
@@ -182,6 +214,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
   useEffect(() => {
     const seed = remembered.get(paneId) ?? [];
     shown.current = seed;
+    transcript.current = rememberedTranscripts.get(paneId) ?? null;
     knownTotal.current = 0;
     setOffset(rememberedOffsets.get(paneId) ?? 0);
     setMessages(seed);
@@ -209,6 +242,9 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       pinnedToBottom.current = false;
       const older = await api.sessionLog(paneId, { limit: PAGE, before: index });
       if (!active()) return;
+      // The pane moved to another session while this page was in flight. Its
+      // messages are not this conversation's history; the poll resets instead.
+      if (transcriptOf(older) !== transcript.current) { void load(); return; }
       reading.captureBeforePrepend();
       shown.current = merge(older.messages, shown.current);
       const nextOffset = Math.max(0, index - older.messages.length);
