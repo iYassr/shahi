@@ -74,7 +74,8 @@ contexts = ["workspace"]
 command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "uninstall"]
 
 # The QR, inside herdr. A popup closes when its command exits, so the command
-# waits for Enter after printing.
+# waits for Enter after printing — and after anything a setup or a failure
+# printed, before the QR's screen or the exit can take it away.
 [[panes]]
 id = "pair"
 title = "Pair a phone"

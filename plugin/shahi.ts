@@ -38,9 +38,11 @@ import { requestUpdate } from "./releases/storage";
  * plugin log — when `[ui.toast] delivery` is on, which it is not by default,
  * so the log stays the record and the popup is where a person actually
  * reads it: `pair` runs the setup itself when the service is missing, so
- * "install, then pair" is the whole flow and its output is on screen. The
- * passcode digits stay out of the toast: a toast is also every attached
- * client, a screen share, and on some terminals the OS notification centre.
+ * "install, then pair" is the whole flow and its output is on screen — held
+ * there until Enter, success or failure, because herdr closes a popup the
+ * moment its command exits. The passcode digits stay out of the toast: a
+ * toast is also every attached client, a screen share, and on some terminals
+ * the OS notification centre.
  */
 import { existsSync, mkdirSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -226,9 +228,34 @@ function where(layout: Layout, service: Service): string {
   ].join("\n");
 }
 
-async function install(layout: Layout, service: Service): Promise<void> {
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** What a setup did, for whoever reports it: a toast from the hook, nothing from the popup (it is on screen). */
+export interface Installed {
+  answering: boolean;
+  relayUrl: string | null;
+  relayDefaulted: boolean;
+  /** A passcode was chosen, and printed, by this run. */
+  passcode: boolean;
+  linger: string | null;
+}
+
+/** Secrets, the approved release, the service, and what to know about them. */
+export async function install(layout: Layout, service: Service): Promise<Installed> {
   mkdirSync(layout.configDir, { recursive: true });
   mkdirSync(layout.stateDir, { recursive: true });
+
+  // The release before the passcode. A passcode is shown once and only its
+  // hash is kept, and this is the step a first run fails at — offline, behind
+  // a proxy, an unapproved herdr or bun. Run after the hash was written, it
+  // used up a passcode nobody ever saw, and every later run kept that hash
+  // (pre-release review, reproduced with the catalog download failing).
+  let managerRoot: string;
+  try {
+    managerRoot = await bootstrap(layout);
+  } catch (err) {
+    throw new Error(`Could not set up Shahi's approved release: ${message(err)}`, { cause: err });
+  }
 
   const existing = readEnvFile(layout.envFile);
   // An empty PASSCODE_HASH_B64 is a working configuration for a checkout (the
@@ -240,8 +267,12 @@ async function install(layout: Layout, service: Service): Promise<void> {
   // hand-made file (`PORT=7275`, at whatever mode the shell gave it) ends up
   // 0600 now that the session key is in it.
   writeEnvFile(layout.envFile, env);
+  // Printed the moment its hash is kept, so nothing that fails below can
+  // take the only sight of it with it.
+  if (passcode) {
+    console.log(`  Passcode  ${passcode}\n  Shown this once; only its hash is kept. A phone paired by code never types it.\n`);
+  }
 
-  const managerRoot = await bootstrap(layout);
   const spec = serviceSpec(layout, env);
   service.install({ ...spec, root: managerRoot, entry: join(managerRoot, "manager.js"), env: { ...spec.env, SHAHI_MANAGER_ROOT: managerRoot } });
   try { requestUpdate(managerRoot, { action: "install" }); }
@@ -261,40 +292,56 @@ async function install(layout: Layout, service: Service): Promise<void> {
   } else {
     console.log(`Shahi was started but is not answering at ${url} yet. The log says why:\n  ${layout.logPath}`);
   }
-  if (passcode) {
-    console.log(
-      `\n  Passcode  ${passcode}\n` +
-        "  Shown this once; only its hash is kept. A phone paired by code never types it.\n",
-    );
-  }
   const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));
   console.log(`\n  ${PAIR_HINT}\n  ${KEY_HINT}`);
-
-  if (info) {
-    notify(
-      "Shahi is running",
-      [
-        `${PAIR_HINT}.`,
-        ...(relayUrl ? [relayDefaulted ? "Reachable from anywhere through Shahi's relay (RELAY_URL= in the plugin's .env turns that off)." : "Reachable through your relay."] : []),
-        ...(passcode ? ["The passcode is in the plugin log: herdr plugin log list --plugin shahi (a scanned code never needs it)."] : []),
-        ...(linger ? [linger] : []),
-      ].join(" "),
-    );
-  } else {
-    notify("Shahi did not start", `See ${layout.logPath}`);
-  }
+  return { answering: info !== null, relayUrl, relayDefaulted, passcode: passcode !== null, linger };
 }
 
-async function status(layout: Layout, service: Service): Promise<number> {
+/**
+ * The startup hook and the `restart` action: their output lands in the
+ * plugin log, so a toast (when herdr shows them) says
+ * where to look. herdr ignores a failed startup hook, so a failure is toasted
+ * too — it used to be silent everywhere but the log (pre-release review).
+ */
+export async function setup(layout: Layout, service: Service): Promise<number> {
+  let done: Installed;
+  try {
+    done = await install(layout, service);
+  } catch (err) {
+    notify(
+      "Shahi is not set up",
+      `${message(err).split("\n")[0]} The rest is in: herdr plugin log list --plugin shahi. To set up in front of you: herdr plugin action invoke shahi.pair`,
+    );
+    throw err;
+  }
+  if (!done.answering) {
+    notify("Shahi did not start", `See ${layout.logPath}`);
+    return 0;
+  }
+  notify(
+    "Shahi is running",
+    [
+      `${PAIR_HINT}.`,
+      ...(done.relayUrl ? [done.relayDefaulted ? "Reachable from anywhere through Shahi's relay (RELAY_URL= in the plugin's .env turns that off)." : "Reachable through your relay."] : []),
+      ...(done.passcode ? ["The passcode is in the plugin log: herdr plugin log list --plugin shahi (a scanned code never needs it)."] : []),
+      ...(done.linger ? [done.linger] : []),
+    ].join(" "),
+  );
+  return 0;
+}
+
+export async function status(layout: Layout, service: Service): Promise<number> {
   const env = readEnvFile(layout.envFile);
   const { url } = address(env);
   const state = service.status();
   const info = await meta(url);
   const devices = info ? await deviceCount(url, env) : null;
 
-  const serviceLine = !state.installed
+  const serviceLine = service.kind === "none"
+    ? "none (no systemd): you run it — herdr plugin action invoke shahi.restart prints the command"
+    : !state.installed
     ? "not installed — restart herdr, or: herdr plugin action invoke shahi.restart"
     : state.running
       ? `running${state.pid ? ` (pid ${state.pid})` : ""}`
@@ -338,13 +385,41 @@ function logs(layout: Layout, args: string[]): void {
   }
 }
 
-/** One line from the terminal — a popup is a PTY, so a chunk is a line. */
-async function readLine(): Promise<string> {
-  const reader = Bun.stdin.stream().getReader();
-  const { value } = await reader.read();
-  reader.releaseLock();
-  return value ? new TextDecoder().decode(value).trim() : "";
+/**
+ * One line from the terminal — a popup is a PTY, so a chunk is a line.
+ *
+ * Through `process.stdin`, paused afterwards, and not `Bun.stdin.stream()`:
+ * measured in the pre-release review, a stream reader keeps reading fd 0
+ * after its lock is released, and swallowed the Enter meant for the pair.ts
+ * started after it. Waiting before the QR is new, which is how it showed.
+ */
+export function readLine(): Promise<string> {
+  return new Promise((resolve) => {
+    const done = (chunk?: Buffer | string) => {
+      process.stdin.off("data", done);
+      process.stdin.off("end", done);
+      process.stdin.pause();
+      resolve(chunk ? String(chunk).trim() : "");
+    };
+    process.stdin.once("data", done);
+    process.stdin.once("end", done);
+    process.stdin.resume();
+  });
 }
+
+/** What the pair popup does, apart from how, so its promises are testable without a service or a PTY. */
+export interface PopupSteps {
+  /** A sidecar of this plugin's is up and answering. */
+  running(): Promise<boolean>;
+  setup(): Promise<unknown>;
+  /** pair.ts's fitted QR screen, which waits for Enter itself; its exit status. */
+  showCode(): Promise<number>;
+}
+
+const POPUP_FAILED = [
+  "Pairing did not start. Fix what is said above, then open this again:  herdr plugin action invoke shahi.pair",
+  "Service state and paths:  herdr plugin action invoke shahi.status, then  herdr plugin log list --plugin shahi",
+].join("\n  ");
 
 /**
  * The popup's command. pair.ts owns the fitted screen and waits for Enter.
@@ -354,43 +429,95 @@ async function readLine(): Promise<string> {
  * other way to run it is an action whose output lands in a log. This popup
  * is a PTY a person is looking at, so "install, then pair" is the whole flow
  * and the first run's passcode and paths print where they are read.
+ *
+ * herdr closes a popup the moment its command exits, so nothing printed here
+ * may be followed by an exit or a screen change without an Enter in between
+ * (pre-release review). A setup that failed — a catalog that would not
+ * download, an unapproved herdr, a systemd with no user bus, a Linux with no
+ * systemd at all — used to flash and vanish with the popup; and a setup that
+ * worked had its passcode and lingering warning painted over within a second
+ * by the QR's alternate screen, then closed with it.
  */
-async function pair(layout: Layout, service: Service, args: string[]): Promise<void> {
-  const before = address(readEnvFile(layout.envFile));
-  if (!service.status().running || !(await meta(before.url))) {
-    console.log("Shahi is not running yet — setting it up first.\n");
-    await install(layout, service);
-    console.log("");
-  }
-  const env = readEnvFile(layout.envFile);
-  const proc = Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", "--popup", ...args], {
-    cwd: layout.root,
-    // The relay the service actually dials, default included (pair.ts reads
-    // the .env and the environment, and the environment wins).
-    env: { ...process.env, SHAHI_ENV_FILE: layout.envFile, RELAY_URL: relayUrlFor(env) ?? "" },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if ((await proc.exited) !== 0) {
-    console.log("\n  Pairing failed. Is Shahi running?  herdr plugin action invoke shahi.status");
-    if (!args.includes("--code-only")) {
-      console.log("  Press Enter to close.");
-      await readLine();
+export async function pairPopup(prepare: () => PopupSteps, waitForEnter: () => Promise<unknown>): Promise<number> {
+  try {
+    const steps = prepare();
+    if (!(await steps.running())) {
+      console.log("Shahi is not running yet — setting it up first.\n");
+      await steps.setup();
+      console.log("\n  Press Enter to show the QR code.");
+      await waitForEnter();
     }
+    if ((await steps.showCode()) === 0) return 0;
+  } catch (err) {
+    console.log(`\n${message(err)}`);
   }
+  console.log(`\n  ${POPUP_FAILED}\n  Press Enter to close.`);
+  await waitForEnter();
+  return 1;
+}
+
+function popupSteps(layout: Layout, service: Service, args: string[]): PopupSteps {
+  return {
+    // With no service manager nothing here can tell a sidecar started by hand
+    // from none, so an answering API is the whole test.
+    running: async () =>
+      (service.kind === "none" || service.status().running) && (await meta(address(readEnvFile(layout.envFile)).url)) !== null,
+    setup: () => install(layout, service),
+    // pair.ts puts on the code the relay the running sidecar reports, so only
+    // the .env (for the session key and the port) needs naming.
+    showCode: () =>
+      Bun.spawn([process.execPath, "run", "server/scripts/pair.ts", "--popup", ...args], {
+        cwd: layout.root,
+        env: { ...process.env, SHAHI_ENV_FILE: layout.envFile },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      }).exited,
+  };
 }
 
 /** This plugin's id as herdr registered it — `shahi`, or whatever a fork was linked as. */
 const pluginId = () => process.env.HERDR_PLUGIN_ID ?? "shahi";
 
-function openPair(): number {
+const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Why the popup did not open, and what works without one. herdr's
+ * `plugin action invoke` answers "running" and exits 0 before this action has
+ * even started, so the plugin log is the only place a failure can be read;
+ * measured in the pre-release review against a headless herdr with no client
+ * attached, it held only herdr's JSON `no active workspace`.
+ */
+export function openPairFailure(stderr: string, layout: Layout | null): string {
+  let reason = stderr.trim();
+  try { reason = (JSON.parse(reason) as { error?: { message?: string } }).error?.message ?? reason; } catch { /* not herdr's JSON */ }
+  return [
+    `Could not open the pairing popup: ${reason || "herdr gave no reason"}.`,
+    ...(/no active workspace/.test(reason)
+      ? ["The popup needs a herdr window, and no client is attached to this herdr. Run `herdr` in a terminal to attach, then invoke shahi.pair again from there."]
+      : []),
+    ...(layout
+      ? [
+          "Without a window, print a one-time pairing code as text (the browser app accepts it pasted):",
+          `  cd ${quote(layout.root)} && SHAHI_ENV_FILE=${quote(layout.envFile)} ${quote(process.execPath)} run server/scripts/pair.ts --code-only`,
+        ]
+      : []),
+  ].join("\n");
+}
+
+export function openPair(): number {
   const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
   const proc = Bun.spawnSync([herdr, "plugin", "pane", "open", "--plugin", pluginId(), "--entrypoint", "pair"], {
     stdout: "inherit",
-    stderr: "inherit",
+    stderr: "pipe",
   });
-  return proc.exitCode ?? 1;
+  if (proc.exitCode === 0) return 0;
+  let layout: Layout | null = null;
+  try { layout = layoutFromEnv(); } catch { /* the fallback command needs the paths; the reason does not */ }
+  const said = openPairFailure(proc.stderr.toString(), layout);
+  console.error(said);
+  notify("Shahi could not open the pairing popup", said.split("\n")[0]!);
+  return proc.exitCode || 1;
 }
 
 /**
@@ -403,7 +530,11 @@ function openPair(): number {
  */
 function uninstall(layout: Layout, service: Service): number {
   service.remove();
-  console.log(`Stopped the sidecar and removed ${service.path}.`);
+  console.log(
+    service.kind === "none"
+      ? "No service was installed here; stop the sidecar wherever you started it."
+      : `Stopped the sidecar and removed ${service.path}.`,
+  );
   // Said before the plugin goes: its log goes with it, and this is the one
   // message the person needs — where their passcode and phones still are.
   const kept = `Kept, because they hold your passcode, your paired phones and your transcripts: ${layout.configDir} and ${layout.stateDir}. Delete those by hand if you mean it.`;
@@ -434,15 +565,18 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (verb === "open-pair") return openPair();
+  const serviceHere = () => serviceFor(process.platform, homedir(), process.getuid?.() ?? 0);
+  if (verb === "pair") {
+    // Built inside the popup's guard, so even a missing variable is read before the popup closes.
+    return pairPopup(() => popupSteps(layoutFromEnv(), serviceHere(), args), args.includes("--code-only") ? async () => {} : readLine);
+  }
 
   const layout = layoutFromEnv();
-  const service = serviceFor(process.platform, homedir(), process.getuid?.() ?? 0);
-
+  const service = serviceHere();
   switch (verb) {
     case "setup":
     case "restart":
-      await install(layout, service);
-      return 0;
+      return setup(layout, service);
     case "status":
       return status(layout, service);
     case "stop":
@@ -451,9 +585,6 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     case "logs":
       logs(layout, args);
-      return 0;
-    case "pair":
-      await pair(layout, service, args);
       return 0;
     case "uninstall":
       return uninstall(layout, service);
