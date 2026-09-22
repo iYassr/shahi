@@ -5,6 +5,7 @@
  * protocol lives, and `docs/relay.md` is what it implements.
  */
 import { RelayBox } from "./box.ts";
+import { connectLimitKey } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { handleStats, record, type TelemetryEnv } from "./telemetry.ts";
 
@@ -19,7 +20,7 @@ export interface Env extends TelemetryEnv {
    * production `wrangler.toml`. It is the cheap first wall against the
    * unauthenticated amplification in pentest C1 — a stranger opening sockets
    * to arbitrary serverIds to burn the account's daily quota and take every
-   * box offline. This is per IP at each edge location and eventually
+   * box offline. This is per IPv4 address or IPv6 /64 at each edge location and eventually
    * consistent, not a global usage or billing ceiling. Account limits and
    * WAF rules are separate operational controls.
    */
@@ -57,10 +58,11 @@ export default {
     // Durable Object and burn the account's daily quota (pentest C1). Only real
     // edge traffic is rated: `cf-connecting-ip` is set by Cloudflare and cannot
     // be spoofed there, while `wrangler dev` and the test harness present a
-    // loopback address, which is not a threat surface and is skipped.
+    // loopback address, which is not a threat surface and is skipped. IPv6
+    // sources are counted by their /64 (see connectLimitKey).
     const ip = request.headers.get("cf-connecting-ip");
     if (env.CONNECT_LIMIT && ip && ip !== "127.0.0.1" && ip !== "::1") {
-      const { success } = await env.CONNECT_LIMIT.limit({ key: ip });
+      const { success } = await env.CONNECT_LIMIT.limit({ key: connectLimitKey(ip) });
       if (!success) {
         record(env, { synthetic, kind: "rate_limited", serverId, colo: coloOf(request) });
         return new Response("too many connections; slow down", { status: 429 });

@@ -31,7 +31,8 @@ new_sqlite_classes = ["RelayBox"]
 # A per-IP connection limiter at the front door (pentest C1): an over-quota
 # source is refused before a Durable Object is addressed, so a stranger cannot
 # open sockets to arbitrary serverIds and burn the account's daily quota. This
-# bounds one source per edge location; it is not a global traffic or billing
+# bounds one source (an IPv4 address, or an IPv6 /64: src/limits.ts) per edge
+# location; it is not a global traffic or billing
 # ceiling. See docs/relay.md for the remaining operational controls. The binding is read
 # optionally in src/index.ts, so `wrangler dev` and the test harness (which set
 # no binding) are unaffected.

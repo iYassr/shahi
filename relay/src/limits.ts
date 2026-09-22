@@ -54,3 +54,34 @@ export const EVICTION_GRACE_MS = 1_000;
  * through. The lifecycle test for a phone's own small frames holds the line.
  */
 export const PHONE_FRAME_MIN_BYTES = 256;
+
+/**
+ * What the front door's per-source connect limiter counts a source by: an
+ * IPv4 address as it is, an IPv6 address by its /64.
+ *
+ * `cf-connecting-ip` is a full /128 for an IPv6 client, and the limiter keys
+ * on exactly the string it is given. One host is routinely given a whole /64
+ * (a cloud VM, a home line), and binding each connection to a fresh address
+ * in it gave every connection a bucket of its own, so `CONNECT_LIMIT` never
+ * tripped (pre-release review 2026-09-22, F80). A /64 is one host or one
+ * subscriber's network by convention, and it is the unit Cloudflare's own
+ * rate limiting counts IPv6 by, so grouping by it merges no strangers. A
+ * source with a larger delegation still has one bucket per /64; the zone's
+ * rate-limiting rule is the control for that.
+ *
+ * Anything that does not parse as plain IPv6 is keyed as given, including an
+ * IPv4 address in IPv6 dress: that is one address, and keying it whole can
+ * only ever separate sources, never merge them.
+ */
+export function connectLimitKey(ip: string): string {
+  if (!ip.includes(":") || ip.includes(".")) return ip;
+  const halves = ip.toLowerCase().split("::");
+  if (halves.length > 2) return ip;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves[1] ? halves[1].split(":") : [];
+  const groups = halves.length === 2
+    ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right]
+    : left;
+  if (groups.length !== 8 || !groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return ip;
+  return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
