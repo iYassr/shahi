@@ -9,18 +9,33 @@
  * and nightly against the preview channel.
  *
  * It writes — into a scratch workspace it creates and closes, on a herdr it is
- * pointed at explicitly, which must be a *named session*:
+ * pointed at explicitly, which must be a *named session* under a fresh
+ * configuration directory:
  *
- *   herdr --session shahi-ci server &
- *   export HERDR_SOCKET_PATH=$HOME/.config/herdr/sessions/shahi-ci/herdr.sock
+ *   test_config_root=$(mktemp -d /tmp/shahi-live.XXXXXX)
+ *   XDG_CONFIG_HOME="$test_config_root" herdr --session shahi-ci server &
+ *   export HERDR_SOCKET_PATH="$test_config_root/herdr/sessions/shahi-ci/herdr.sock"
  *   SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
+ *   XDG_CONFIG_HOME="$test_config_root" herdr session stop shahi-ci
+ *   unset HERDR_SOCKET_PATH
  *
  * Both variables are required on purpose: without an explicit socket the
  * client would pick up the default session, and a scratch workspace appearing
- * in somebody's real session is not something a test should ever do. And the
- * session must be named, not just a socket override: `HERDR_SOCKET_PATH=/tmp/x
- * herdr server` restores the default session's saved state and re-launches its
- * agents as duplicates (measured: four extra `claude --resume` processes).
+ * in somebody's real session is not something a test should ever do. Inside a
+ * herdr pane the socket variable is already set, to that pane's own session,
+ * so `herdr-live-guard.ts` refuses a socket that is not a named session's and
+ * a session that holds the pane this test runs in. The session must be named,
+ * not just a socket override: `HERDR_SOCKET_PATH=/tmp/x herdr server` restores
+ * the default session's saved state and re-launches its agents as duplicates
+ * (measured: four extra `claude --resume` processes). And its configuration
+ * must be fresh: a named session under the normal configuration still runs
+ * the installed startup hooks, and on 2026-09-18 Shahi's own hook repointed
+ * the production service at the test socket.
+ *
+ * Keep the configuration root short, which is why it is not `mktemp -d`'s
+ * default: macOS limits a socket path to 104 bytes including its terminator,
+ * and under `$TMPDIR` (`/var/folders/…/T/tmp.…`) herdr's `herdr-client.sock`
+ * comes to 105, so the server cannot start.
  *
  * SHAHI_HERDR_PREVIEW=1 relaxes the exact-protocol check to `>=`, so the
  * nightly run reports a protocol bump without failing on the bump alone —
@@ -51,11 +66,26 @@ import { submitPrompt } from "./prompt";
 import { answerPrompt } from "./answer";
 import { parsePrompt } from "./prompt-parser";
 import { startAgentInTab } from "./agents";
+import { liveSocketRefusal, runsInsideTarget } from "./herdr-live-guard";
 
 const LIVE = process.env.SHAHI_HERDR_LIVE === "1";
 const LIVE_AGENT = process.env.SHAHI_HERDR_LIVE_AGENT === "1";
 const PREVIEW = process.env.SHAHI_HERDR_PREVIEW === "1";
 const SOCKET = process.env.HERDR_SOCKET_PATH;
+
+// Refused before anything is collected, so a wrong target fails the whole
+// file rather than running any test against it.
+if (LIVE) {
+  const refusal = liveSocketRefusal(process.env);
+  if (refusal) throw new Error(refusal);
+  const { snapshot } = await new HerdrClient({ socketPath: SOCKET }).rpc("session.snapshot", {});
+  if (runsInsideTarget(snapshot.panes, process.env)) {
+    throw new Error(
+      `SHAHI_HERDR_LIVE=1 refuses ${SOCKET}: it is the herdr session this test is running inside. ` +
+        "Start a fresh named session for the test (see the top of this file)",
+    );
+  }
+}
 
 const KNOWN_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
 
@@ -71,11 +101,11 @@ async function eventually<T>(read: () => Promise<T>, ok: (v: T) => boolean, ms =
 }
 
 describe.skipIf(!LIVE)("against a real herdr", () => {
-  if (LIVE && !SOCKET) {
-    throw new Error("SHAHI_HERDR_LIVE=1 needs HERDR_SOCKET_PATH pointing at a herdr started for this purpose");
-  }
   const client = new HerdrClient({ socketPath: SOCKET });
-  const scratchDir = mkdtempSync(join(tmpdir(), "shahi-live-"));
+  // Made in beforeAll, not here: a describe body runs even when the describe
+  // is skipped, and its afterAll does not, so every ordinary `bun test` left
+  // an empty directory behind (September 2026 review).
+  let scratchDir = "";
   const nonce = Math.random().toString(36).slice(2, 10);
   let workspaceId = "";
   let paneId = "";
@@ -84,6 +114,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     (await client.rpc("pane.read", { pane_id: id, source: "visible", format: "text", strip_ansi: true })).read.text;
 
   beforeAll(async () => {
+    scratchDir = mkdtempSync(join(tmpdir(), "shahi-live-"));
     const created = await client.rpc("workspace.create", { label: `shahi-live-${nonce}`, cwd: scratchDir, focus: false });
     workspaceId = created.workspace.workspace_id;
     // `tab.create` answers with the tab's root pane — the same fact
@@ -100,7 +131,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
 
   afterAll(async () => {
     if (workspaceId) await client.rpc("workspace.close", { workspace_id: workspaceId }).catch(() => undefined);
-    rmSync(scratchDir, { recursive: true, force: true });
+    if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
   }, 15_000);
 
   test("ping: the protocol these types were generated from", async () => {
