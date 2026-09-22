@@ -35,3 +35,22 @@ export const MAX_PENDING_BOXES = 8;
  * do under `CONNECT_LIMIT` (thirty per ten seconds).
  */
 export const EVICTION_GRACE_MS = 1_000;
+
+/**
+ * The least a phone frame costs against the phone's byte bucket. Charging
+ * bytes alone made a 1-byte frame cost one token, so 64 KiB/s allowed about
+ * 65,000 frames a second, and each one woke the Durable Object and counted
+ * toward its usage (pre-release review 2026-09-22, F79). With this floor the
+ * same budget allows 256 frames a second and a burst of 4,096.
+ *
+ * Real phones stay far inside it. Their small frames are requests of a couple
+ * of hundred bytes, a few a second, and delivery acknowledgements of about 50
+ * bytes sealed, one per 64 KiB received. The phone paces its sends against
+ * its own copy of the bucket, counting their real size at 90% of the relay's
+ * rate, so the floor's surcharge spends some of that 10% margin. It takes all
+ * of it only at a sustained 2 MiB/s download during an upload at the limit,
+ * and the 1 MiB burst covers a long stretch of even that. A larger floor
+ * would start to cut real uploads short; a smaller one lets more frames
+ * through. The lifecycle test for a phone's own small frames holds the line.
+ */
+export const PHONE_FRAME_MIN_BYTES = 256;

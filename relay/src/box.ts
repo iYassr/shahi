@@ -24,7 +24,7 @@ import {
   type BoxToRelay,
   type RelayToBox,
 } from "@shahi/shared/relay";
-import { EVICTION_GRACE_MS, MAX_PENDING_BOXES } from "./limits.ts";
+import { EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
 
@@ -84,6 +84,8 @@ type Attachment = BoxState | PhoneState;
 
 /** `CloseEvent` codes the relay uses beside the protocol's own. */
 const CLOSE_NORMAL = 1000;
+
+const encoder = new TextEncoder();
 
 export class RelayBox extends DurableObject<unknown> {
   #env: TelemetryEnv;
@@ -218,24 +220,34 @@ export class RelayBox extends DurableObject<unknown> {
   }
 
   private fromPhone(ws: WebSocket, state: PhoneState, message: string | ArrayBuffer): void {
-    // Text is relay control, and a phone has nothing to control: dropped, not
-    // forwarded, so a phone can never speak to the box in the clear.
-    if (typeof message === "string" || !state.open) return;
-    const size = message.byteLength;
+    if (!state.open) return;
+    const text = typeof message === "string";
+    const size = text ? encoder.encode(message).byteLength : message.byteLength;
     if (size > RELAY_LIMITS.maxFrameBytes) return this.closePhone(ws, state, RELAY_CLOSE.quota, "frame too large");
     const now = Date.now();
     const banked = Math.min(
       RELAY_LIMITS.phoneBurstBytes,
       state.tokens + ((now - state.refilled) * RELAY_LIMITS.phoneBytesPerSecond) / 1000,
     );
-    if (size > banked) return this.closePhone(ws, state, RELAY_CLOSE.quota, "rate");
+    // Every frame wakes this object, so every frame pays, and never less than
+    // the floor: the rate limit is on frames as well as bytes (see limits.ts).
+    const cost = Math.max(size, PHONE_FRAME_MIN_BYTES);
+    if (cost > banked) return this.closePhone(ws, state, RELAY_CLOSE.quota, "rate");
+    if (text) {
+      // Text is relay control, and a phone has nothing to control: dropped,
+      // not forwarded, so a phone can never speak to the box in the clear. It
+      // is not a hello and not activity either. It used to return before the
+      // bucket was read, which made text free (review 2026-09-22, F79).
+      ws.serializeAttachment({ ...state, tokens: banked - cost, refilled: now });
+      return;
+    }
     const box = this.readyBox();
     // No history and no store-and-forward: a frame with nobody to give it to
     // is dropped and the phone told why, so it reconnects and asks again.
     if (!box) return this.closePhone(ws, state, RELAY_CLOSE.boxOffline, "box offline");
     // First frame: the phone has spoken, so it holds its slot for the full
     // idle window rather than the short hello deadline.
-    ws.serializeAttachment({ ...state, spoke: true, seen: now, tokens: banked - size, refilled: now, upBytes: state.upBytes + size, upFrames: state.upFrames + 1 });
+    ws.serializeAttachment({ ...state, spoke: true, seen: now, tokens: banked - cost, refilled: now, upBytes: state.upBytes + size, upFrames: state.upFrames + 1 });
     const framed = new Uint8Array(LINK_PREFIX_BYTES + size);
     new DataView(framed.buffer).setUint32(0, state.link);
     framed.set(new Uint8Array(message), LINK_PREFIX_BYTES);
