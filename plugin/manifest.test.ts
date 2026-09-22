@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { VERBS } from "./shahi";
 
 const ROOT = join(import.meta.dir, "..");
@@ -101,13 +101,46 @@ describe("herdr-plugin.toml", () => {
     expect(existsSync(join(ROOT, "plugin", "shahi.ts"))).toBe(true);
   });
 
-  test("checks bun before installing dependencies, building web and scheduling the update", () => {
+  test("checks bun, installs only what the plugin runs, then schedules the update", () => {
+    // The whole monorepo (Expo, wrangler, Playwright: about a gigabyte) and a
+    // web build nothing served used to be installed on every computer; the
+    // service, its manager and its web app come prebuilt in a signed release
+    // (pre-public-release review).
     expect(manifest.build?.map((b) => b.command.slice(2))).toEqual([
       ["run", "plugin/releases/requirements.ts"],
-      ["install", "--frozen-lockfile"],
-      ["run", "build:web"],
+      ["install", "--frozen-lockfile", "--filter", "@shahi/server", "--filter", "@shahi/shared", "--production"],
       ["run", "plugin/update.ts"],
     ]);
+  });
+
+  test("every package the plugin's commands import is one that install fetches", () => {
+    // A filtered production install fetches the runtime dependencies of
+    // server and shared, nothing else. An import of anything else would pass
+    // every test in a full checkout and fail on the first real install.
+    const installed = new Set(["server", "shared"].flatMap((w) =>
+      Object.keys((JSON.parse(readFileSync(join(ROOT, w, "package.json"), "utf8")) as { dependencies?: object }).dependencies ?? {})));
+    const shared = (JSON.parse(readFileSync(join(ROOT, "shared", "package.json"), "utf8")) as { exports: Record<string, string> }).exports;
+    // scanImports transpiles first, so type-only imports are already gone.
+    const transpiler = new Bun.Transpiler({ loader: "ts" });
+    const seen = new Set<string>(), packages = new Set<string>();
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      for (const { path } of transpiler.scanImports(readFileSync(file, "utf8"))) {
+        if (path.startsWith(".")) {
+          const base = join(dirname(file), path);
+          const resolved = [base, `${base}.ts`, join(base, "index.ts")].find((p) => p.endsWith(".ts") && existsSync(p));
+          if (resolved) visit(resolved);
+        } else if (path === "@shahi/shared" || path.startsWith("@shahi/shared/")) {
+          visit(join(ROOT, "shared", shared[`.${path.slice("@shahi/shared".length)}`]!));
+        } else if (!/^(node|bun):/.test(path) && path !== "bun") {
+          packages.add(path.startsWith("@") ? path.split("/").slice(0, 2).join("/") : path.split("/")[0]!);
+        }
+      }
+    };
+    for (const entry of ["plugin/shahi.ts", "plugin/update.ts", "plugin/releases/requirements.ts", "server/scripts/pair.ts"]) visit(join(ROOT, entry));
+    for (const name of packages) expect(installed.has(name) ? name : `${name} (not a server or shared dependency)`).toBe(name);
+    expect([...packages].sort()).toContain("qrcode");
   });
 
   test("the startup hook is setup, and nothing else", () => {

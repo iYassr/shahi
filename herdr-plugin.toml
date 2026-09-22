@@ -23,13 +23,14 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["sh", "plugin/bun.sh", "run", "plugin/releases/requirements.ts"]
 
-# The sidecar serves the archived web client from web/dist, which is how a
-# laptop reaches a session without a build of the app.
+# The service, its manager and the web client it serves come prebuilt in a
+# signed release (plugin/releases), so the checkout needs only what the
+# plugin's own commands import: the runtime dependencies of `server` and
+# `shared`. Installing every workspace (Expo, wrangler, Playwright; about a
+# gigabyte) and building a web client nothing served made installs slow and
+# fragile on small machines (pre-public-release review).
 [[build]]
-command = ["sh", "plugin/bun.sh", "install", "--frozen-lockfile"]
-
-[[build]]
-command = ["sh", "plugin/bun.sh", "run", "build:web"]
+command = ["sh", "plugin/bun.sh", "install", "--frozen-lockfile", "--filter", "@shahi/server", "--filter", "@shahi/shared", "--production"]
 
 # Wait for installation to commit before restarting an existing service.
 [[build]]
