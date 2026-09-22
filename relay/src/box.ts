@@ -146,8 +146,17 @@ export class RelayBox extends DurableObject<unknown> {
   private async acceptPhone(ws: WebSocket, serverId: string): Promise<void> {
     const box = this.readyBox();
     if (!box) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
-    if (this.phones().length >= RELAY_LIMITS.maxPhonesPerBox) {
-      return this.refuse(ws, RELAY_CLOSE.quota, "too many phones", serverId);
+    const phones = this.phones();
+    if (phones.length >= RELAY_LIMITS.maxPhonesPerBox) {
+      // A phone sends its hello the moment it opens, so one still silent past
+      // its grace is squatting, and the newcomer may be the owner's phone.
+      // Once a phone has spoken it keeps its slot: a hello naming no device
+      // this box knows is ended by the box at once, so a stranger cannot
+      // hold a speaking slot for longer than a round trip.
+      const silent = phones.filter((phone) => !(phone.deserializeAttachment() as PhoneState).spoke);
+      const squatter = longestWaiting(silent);
+      if (!squatter) return this.refuse(ws, RELAY_CLOSE.quota, "too many phones", serverId);
+      this.closePhone(squatter, squatter.deserializeAttachment() as PhoneState, RELAY_CLOSE.quota, "too many phones");
     }
     const boxState = box.deserializeAttachment() as BoxState;
     const link = boxState.nextLink;

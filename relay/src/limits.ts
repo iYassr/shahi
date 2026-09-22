@@ -13,19 +13,23 @@
 export const MAX_PENDING_BOXES = 8;
 
 /**
- * How long a pending box socket is protected from eviction before its `auth`.
+ * How long a socket that has not yet identified itself is protected from
+ * eviction: a pending box before its `auth`, a phone before its first frame.
  *
- * When every pending slot is full, a newcomer evicts the socket that has
- * waited longest, provided that socket has had this long. Before this, the
- * relay refused the newcomer instead. Anyone who knew a serverId could then
- * hold all eight slots with silent sockets, reopened as the ten-second auth
- * deadline closed each one, and the real computer's reconnect was refused
- * with 4429 on every attempt (pre-release review 2026-09-22, F28/F33).
+ * When every slot is full, a newcomer evicts the socket that has waited
+ * longest, provided that socket has had this long. Before this, the relay
+ * refused the newcomer instead. Anyone who knew a serverId could then hold
+ * all eight pending-box slots with silent sockets, reopened as the ten-second
+ * auth deadline closed each one, and the real computer's reconnect was
+ * refused with 4429 on every attempt (pre-release review 2026-09-22,
+ * F28/F33). Phone slots had the same shape, over the fifteen-second hello
+ * deadline.
  *
- * The grace covers a real box's answer, which takes one round trip: the box
- * signs the challenge as soon as it arrives. Without the grace, an attacker
- * who saw its own squatter evicted could open eight more sockets and evict
- * the real box before its answer arrived. With it, holding every slot means
+ * The grace covers a real peer's first frame, which takes one round trip: the
+ * box signs the challenge as soon as it arrives, and a phone sends its hello
+ * the moment its socket opens. Without the grace, an attacker who saw its own
+ * squatter evicted could open eight more sockets and evict the real peer
+ * before its answer arrived. With it, holding every slot means
  * keeping eight sockets younger than one second at all times. That is eight
  * connections a second, sustained, which one IPv4 address or IPv6 /64 cannot
  * do under `CONNECT_LIMIT` (thirty per ten seconds).

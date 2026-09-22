@@ -188,13 +188,17 @@ describe("phone", () => {
     boxPeer.close();
   });
 
-  test("the ninth phone is refused with 4429", async () => {
+  test("the ninth phone is refused with 4429 while eight have spoken", async () => {
     const box = newBox();
     const boxPeer = await connectBox(box);
     const phones: Peer[] = [];
     for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox; i++) {
       phones.push(await connectPhone(box));
       expect(await boxPeer.text()).toEqual({ t: "open", link: i + 1 });
+      // A phone that has spoken holds its slot; a silent one past its grace
+      // would be evicted for the newcomer instead.
+      phones[i]!.send(new Uint8Array([i]));
+      expect(unframe(await boxPeer.binary()).link).toBe(i + 1);
     }
     const ninth = await connectPhone(box);
     expect((await ninth.closed).code).toBe(RELAY_CLOSE.quota);

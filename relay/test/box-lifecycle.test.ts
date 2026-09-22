@@ -1,6 +1,7 @@
 /** Closing sockets can remain in getWebSockets and deliver late messages.
  * Model that documented runtime behavior without waiting for a TCP timeout. */
 import { expect, mock, test } from "bun:test";
+import { RELAY_LIMITS } from "@shahi/shared";
 import { newBox, signAuth } from "./harness";
 import { EVICTION_GRACE_MS, MAX_PENDING_BOXES } from "../src/limits";
 
@@ -145,4 +146,45 @@ test("an authenticated box is never evicted to make room for a pending one", asy
   await f.connect();
   expect(live.closes).toHaveLength(0);
   expect(live.state.ready).toBe(true);
+});
+
+test("a real phone gets in while silent squatters hold every phone slot", async () => {
+  const f = fixture(), live = f.box(), past = Date.now() - EVICTION_GRACE_MS - 5_000;
+  const squatters = [];
+  for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox; i++) {
+    const squatter = await f.phone();
+    squatter.state.since = past + i;
+    squatters.push(squatter);
+  }
+  const real = await f.phone();
+  expect(real.tags).toContain("phone");
+  expect(squatters[0]!.closes).toEqual([4429]);
+  expect(squatters.slice(1).every((s) => s.closes.length === 0)).toBe(true);
+  // The box forgets the squatter's link before it learns the newcomer's.
+  expect(live.sent.slice(-2).map((m) => JSON.parse(m as string))).toEqual([{ t: "close", link: 1 }, { t: "open", link: 9 }]);
+});
+
+test("a phone that has spoken keeps its slot, and the newcomer is refused", async () => {
+  const f = fixture(), past = Date.now() - EVICTION_GRACE_MS - 5_000;
+  f.box();
+  const phones = [];
+  for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox; i++) {
+    const phone = await f.phone();
+    phone.state.since = past;
+    phone.state.spoke = true;
+    phones.push(phone);
+  }
+  const newcomer = await f.phone();
+  expect(newcomer.tags).toEqual(["refused"]);
+  expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("a silent phone inside its grace is not evicted", async () => {
+  const f = fixture();
+  f.box();
+  const phones = [];
+  for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox; i++) phones.push(await f.phone());
+  const newcomer = await f.phone();
+  expect(newcomer.tags).toEqual(["refused"]);
+  expect(phones.every((p) => p.closes.length === 0)).toBe(true);
 });
