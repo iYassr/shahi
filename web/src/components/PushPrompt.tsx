@@ -158,6 +158,11 @@ export async function registerPush(expectedGeneration = browserConnection().gene
  * Turns this computer's notifications off in this browser, and only this
  * computer's: "Disable" used to unsubscribe whatever subscription the browser
  * held, which silently ended another computer's notifications too.
+ *
+ * This computer always forgets the endpoint — a registration it holds for
+ * another computer's subscription can never deliver, only fail on every send.
+ * The browser's subscription is removed only when it was made with this
+ * computer's key.
  */
 export async function unregisterPush(expectedGeneration = browserConnection().generation): Promise<void> {
   const check = () => { if (hosted && browserConnection().generation !== expectedGeneration) throw new DOMException("Connection changed", "AbortError"); };
@@ -168,10 +173,9 @@ export async function unregisterPush(expectedGeneration = browserConnection().ge
   if (!subscription) return;
   const { publicKey } = await api.pushKey();
   check();
-  if (!publicKey || !subscribedWith(subscription, publicKey)) return;
   await api.pushUnsubscribe(subscription.endpoint);
   check();
-  await subscription.unsubscribe();
+  if (publicKey && subscribedWith(subscription, publicKey)) await subscription.unsubscribe();
 }
 
 /** Whether a subscription was made with this computer's key. */

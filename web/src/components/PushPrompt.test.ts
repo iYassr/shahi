@@ -87,7 +87,10 @@ test("disabling notifications on one computer leaves another computer's notifica
   const other = (current = subscription("https://push.example/computer-a", KEY_A));
   await unregisterPush(0);
   expect(other.unsubscribed).toBe(false);
-  expect(unregistered).toEqual([]);
+  // This computer still forgets the endpoint: a registration it held for the
+  // other computer's subscription could only fail on every send.
+  expect(unregistered).toEqual(["https://push.example/computer-a"]);
+  unregistered = [];
 
   const own = (current = subscription("https://push.example/computer-b", KEY_B));
   await unregisterPush(0);
