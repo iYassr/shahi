@@ -117,6 +117,11 @@ describe("removing the service from inside it", () => {
 });
 
 describe("the manager, after herdr no longer has the plugin", () => {
+  // A manager that outlives its test would keep its fake service running.
+  const managers: ReturnType<typeof Bun.spawn>[] = [];
+  afterEach(async () => {
+    for (const m of managers.splice(0)) if (m.exitCode === null) { m.kill("SIGTERM"); await Promise.race([m.exited, Bun.sleep(8_000)]); m.kill("SIGKILL"); }
+  });
   const release: Release = { version: "0.3.0", buildId: "retire-test", commit: "a".repeat(40), artifact: { url: "https://github.com/iYassr/shahi/releases/download/v0.3.0/shahi-service.tar.gz", sha256: "0".repeat(64), bytes: 1 }, platforms: ["linux-x64"], bun: "1.3.13", api: { min: 5, max: 5 }, transport: 2, control: 1, manager: 1, dataSchema: 1, herdr: [{ version: "0.9.0", protocol: 22 }] };
 
   async function computer(plugins: object[]) {
@@ -147,13 +152,14 @@ describe("the manager, after herdr no longer has the plugin", () => {
         PORT: "1", RELAY_URL: "",
       },
     });
+    managers.push(manager);
     const calls = () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map(l => l.replace(`${bin}/`, "")) : [];
     return { dir, unit, manager, calls };
   }
 
   test("it removes its own service instead of starting Shahi", async () => {
     const c = await computer([{ plugin_id: "other", enabled: true }]);
-    expect(await c.manager.exited).toBe(0);
+    expect(await Promise.race([c.manager.exited, Bun.sleep(20_000).then(() => "still running")])).toBe(0);
     expect(existsSync(join(c.dir, "service-started"))).toBe(false);
     expect(existsSync(c.unit)).toBe(false);
     const stops = c.calls().filter(l => l.includes(" bootout ") || l.includes(" stop "));
