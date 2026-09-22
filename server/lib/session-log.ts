@@ -364,8 +364,13 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     if (type !== "user" && type !== "assistant") continue;
 
-    // Slash-command expansions are written for the model, not the reader.
-    if (row.isMeta === true) continue;
+    // Slash-command expansions are written for the model, not the reader. So is
+    // the summary Claude Code writes after /compact or auto-compaction: a user
+    // row flagged `isCompactSummary`, 14-19KB of "This session is being
+    // continued…" handoff that rendered as a message the person typed and took
+    // over the list preview (review finding, September 2026; 4 rows in the
+    // local corpus). The boundary itself, `compact_boundary`, is already chrome.
+    if (row.isMeta === true || row.isCompactSummary === true) continue;
 
     const blocks: LogBlock[] = [];
     let imageIndex = 0;
@@ -452,9 +457,14 @@ function blocksOf(row: Record<string, unknown>): RawBlock[] {
  * as the user having typed a wall of XML — the same misattribution as showing
  * tool results as "you said", just less obvious because it is rarer.
  *
+ * `<bash-input>` and `<bash-stdout>`/`<bash-stderr>` are Claude Code's `!cmd`
+ * mode, a row for what was typed and one for what it printed (7 of each in a
+ * September 2026 census, rendered as raw XML until that review). Codex user
+ * messages carry the same tags, so its reader uses this too.
+ *
  * Returns null for anything that is not worth showing as a message.
  */
-function renderUserText(raw: string): LogBlock | null {
+export function renderUserText(raw: string): LogBlock | null {
   const text = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
   if (!text) return null;
 
@@ -481,6 +491,16 @@ function renderUserText(raw: string): LogBlock | null {
 
   const stdout = inner("local-command-stdout");
   if (stdout !== undefined) return stdout ? { kind: "text", text: stdout } : null;
+
+  // Written the way Claude Code draws it: `! ls`.
+  const bash = inner("bash-input");
+  if (bash !== undefined) return bash ? { kind: "text", text: `! ${bash}` } : null;
+
+  const printed = [inner("bash-stdout"), inner("bash-stderr")];
+  if (printed.some((part) => part !== undefined)) {
+    const output = printed.filter(Boolean).join("\n");
+    return output ? { kind: "text", text: output } : null;
+  }
 
   return { kind: "text", text };
 }

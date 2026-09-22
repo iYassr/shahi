@@ -309,6 +309,41 @@ describe("machine-generated user records", () => {
     const block = messages[0]!.blocks[0]!;
     expect(block.kind === "text" && block.text).not.toContain("<");
   });
+
+  // After /compact or auto-compaction Claude Code writes its 14-19KB handoff
+  // for the model as a user row. It showed as a message the person typed, and
+  // the list previewed "You: This session is being continued…" (review, 2026-09).
+  test("a compaction summary is not shown as something the person typed", () => {
+    const summary = {
+      type: "user",
+      uuid: "c1",
+      timestamp: "2026-07-25T02:00:02.000Z",
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: { role: "user", content: `This session is being continued from a previous conversation. ${"Summary. ".repeat(2000)}` },
+    };
+    expect(normalise([summary])).toEqual([]);
+    const messages = normalise([user("fix the build"), assistant([{ type: "text", text: "Fixed." }]), summary]);
+    expect(messages.map((m) => m.role)).toEqual(["you", "agent"]);
+    expect(previewOf(messages)).toBe("Fixed.");
+  });
+
+  // `!cmd` in Claude Code: one row for what was typed, one for what it printed.
+  // Both rendered as raw XML attributed to the person (7 of each in the census).
+  test("a ! shell command reads as what was typed and what it printed, not XML", () => {
+    expect(userText("<bash-input>git status --short</bash-input>")[0]!.blocks).toEqual([
+      { kind: "text", text: "! git status --short" },
+    ]);
+    expect(userText("<bash-stdout> M server/lib/http.ts</bash-stdout><bash-stderr>warning: stale lock</bash-stderr>")[0]!.blocks).toEqual([
+      { kind: "text", text: "M server/lib/http.ts\nwarning: stale lock" },
+    ]);
+    expect(userText("<bash-stdout>done</bash-stdout><bash-stderr></bash-stderr>")[0]!.blocks).toEqual([
+      { kind: "text", text: "done" },
+    ]);
+    // A command that printed nothing is not a message at all.
+    expect(userText("<bash-stdout></bash-stdout><bash-stderr></bash-stderr>")).toEqual([]);
+    expect(userText("<bash-input></bash-input>")).toEqual([]);
+  });
 });
 
 describe("images inside a tool result", () => {
