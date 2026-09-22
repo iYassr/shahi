@@ -1,6 +1,6 @@
 /** herdr 0.9 builds in staging and has no post-install hook. A bounded helper
  * waits for this build's marker in the registered checkout before restarting. */
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, openSync, closeSync, statSync, renameSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, openSync, closeSync, statSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -27,6 +27,25 @@ export async function finishUpdate(options: {
     await sleep();
   }
   throw new Error("The updated Shahi did not become ready. Check shahi.logs and retry shahi.restart.");
+}
+
+/**
+ * Waits for the detached helper to say it has loaded, then removes the
+ * handshake directory, whether it answered or not. Nothing removed it before,
+ * so every update left a `shahi-update-*` directory in the temp directory
+ * (pre-public-release review). Its only file is written before the helper
+ * does anything else, so the helper never needs it afterwards.
+ */
+export async function helperStarted(dir: string, { attempts = 100, sleep = () => Bun.sleep(50) } = {}): Promise<boolean> {
+  try {
+    for (let i = 0; i < attempts; i++) {
+      if (existsSync(join(dir, "ready"))) return true;
+      await sleep();
+    }
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function command(args: string[]): string {
@@ -92,13 +111,7 @@ async function main() {
   });
   closeSync(fd);
   child.unref();
-  for (let i = 0; i < 100; i++) {
-    if (existsSync(join(dir, "ready"))) {
-      console.log(`Shahi will restart after installation and verify this build. Result: ${log}`);
-      return;
-    }
-    await Bun.sleep(50);
-  }
-  throw new Error(`Could not start the update helper. See ${log}`);
+  if (!await helperStarted(dir)) throw new Error(`Could not start the update helper. See ${log}`);
+  console.log(`Shahi will restart after installation and verify this build. Result: ${log}`);
 }
 if (import.meta.main) main().catch(error => { console.error(error.message); process.exitCode = 1; });

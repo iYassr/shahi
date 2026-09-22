@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { finishUpdate } from "./update";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { finishUpdate, helperStarted } from "./update";
 
 test("keeps the old service running until installation commits, then verifies the new process", async () => {
   let ticks = 0, restarts = 0;
@@ -31,4 +34,16 @@ test("a failed restart reports failure without claiming readiness", async () => 
     verified: async () => { verified = true; return true; },
   })).rejects.toThrow("restart failed");
   expect(verified).toBe(false);
+});
+test("every update leaves no shahi-update directory behind, whether or not the helper answered", async () => {
+  // Nothing removed the helper's handshake directory, so each update left one
+  // in the temp directory (pre-public-release review).
+  const answered = mkdtempSync(join(tmpdir(), "shahi-update-"));
+  writeFileSync(join(answered, "ready"), "ready");
+  expect(await helperStarted(answered, { sleep: async () => {} })).toBe(true);
+  expect(existsSync(answered)).toBe(false);
+
+  const silent = mkdtempSync(join(tmpdir(), "shahi-update-"));
+  expect(await helperStarted(silent, { attempts: 3, sleep: async () => {} })).toBe(false);
+  expect(existsSync(silent)).toBe(false);
 });
