@@ -42,8 +42,11 @@ export function registration(options: { herdr: string | null; pluginId: string; 
   if (!list.ok) return "unknown";
   let plugins: unknown;
   try { plugins = (JSON.parse(list.out) as { result?: { plugins?: unknown } }).result?.plugins; } catch { return "unknown"; }
-  if (!Array.isArray(plugins)) return "unknown";
-  const entry = plugins.find((p: { plugin_id?: unknown }) => p?.plugin_id === pluginId) as { enabled?: unknown } | undefined;
+  // A registry whose entries do not look like herdr 0.9's (a renamed field in
+  // a later herdr) would otherwise read as "not listed" and remove every
+  // install at once.
+  if (!Array.isArray(plugins) || !plugins.every((p: { plugin_id?: unknown }) => typeof p?.plugin_id === "string")) return "unknown";
+  const entry = plugins.find((p: { plugin_id?: unknown }) => p.plugin_id === pluginId) as { enabled?: unknown } | undefined;
   return !entry || entry.enabled === false ? "removed" : "enabled";
 }
 

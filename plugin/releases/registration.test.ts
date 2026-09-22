@@ -57,6 +57,8 @@ describe("whether herdr still has the plugin", () => {
     expect(ask(herdr(configDir, { out: JSON.stringify({ error: { code: "server_not_running" } }) }))).toBe("unknown");
     expect(ask(() => ({ ok: false, out: "" }))).toBe("unknown");
     expect(registration({ herdr: null, pluginId: "shahi", configDir, command: herdr(configDir, { out: list([]) }) })).toBe("unknown");
+    // A later herdr that renames the id field must not read as "uninstalled" everywhere.
+    expect(ask(herdr(configDir, { out: list([{ id: "shahi", enabled: true }]) }))).toBe("unknown");
     // A manager outside the plugin (the smoke tests) has no config directory.
     expect(registration({ herdr: "/usr/local/bin/herdr", pluginId: "shahi", configDir: "", command: herdr("", { out: list([]) }) })).toBe("unknown");
   });
