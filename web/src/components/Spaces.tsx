@@ -173,13 +173,35 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
     [session, workspaceId],
   );
 
-  if (!session) return null;
-  if (!space) {
+  // Both early states keep the header and its back button. This route has no
+  // tab bar and no sidebar, so a bare message here was a dead end: a space
+  // closed on the computer, or a refresh while the session was still loading,
+  // left an installed app with no control that led anywhere. Found in the
+  // pre-release review.
+  if (!session || !space) {
     return (
-      <div className="empty">
-        <span className="empty__mark">○</span>
-        That space is gone.
-      </div>
+      <>
+        <header className="topbar">
+          <button className="topbar__back" onClick={() => navigate("/spaces")} aria-label="Back">
+            ‹
+          </button>
+          <div className="detail__where">{workspaceId}</div>
+        </header>
+        {session ? (
+          <div className="empty">
+            <span className="empty__mark">○</span>
+            That space is gone. It was closed on the computer.
+            <button className="empty__action" onClick={() => navigate("/spaces")}>
+              Back to spaces
+            </button>
+          </div>
+        ) : (
+          <div className="empty" role="status">
+            <span className="empty__mark">⟳</span>
+            Opening the space…
+          </div>
+        )}
+      </>
     );
   }
 
