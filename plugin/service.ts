@@ -10,6 +10,7 @@
  * reboots, which is the whole point of a phone dashboard.
  */
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 
 export const LAUNCHD_LABEL = "app.shahi.sidecar";
@@ -33,7 +34,8 @@ export interface ServiceStatus {
 }
 
 export interface Service {
-  kind: "launchd" | "systemd";
+  /** `none`: a Linux without systemd, where the person supervises the sidecar (see `unsupervised`). */
+  kind: "launchd" | "systemd" | "none";
   /** The plist or unit file. */
   path: string;
   /** How to follow the service's own view, for the docs and `status`. */
@@ -96,6 +98,20 @@ ${env}
 `;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The same process a unit would start, as one line of POSIX shell: working
+ * directory, every environment variable, the log. For a machine with no
+ * service manager this is the whole hand-over, so it has to run as printed.
+ */
+export function renderCommand(spec: ServiceSpec): string {
+  const env = Object.entries(spec.env).map(([k, v]) => `${k}=${shellQuote(v)}`).join(" ");
+  return `cd ${shellQuote(spec.root)} && exec env ${env} ${shellQuote(spec.bun)} run ${shellQuote(spec.entry ?? "server/index.ts")} >> ${shellQuote(spec.logPath)} 2>&1`;
+}
+
 function unitQuote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
@@ -132,7 +148,10 @@ WantedBy=default.target
 
 function run(argv: string[]): { ok: boolean; out: string } {
   try {
-    const proc = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
+    // `env: process.env` explicitly: without it Bun 1.4 looks the bare name up
+    // on the PATH the process started with, ignoring main()'s removal of
+    // node_modules/.bin (pentest M4) — measured in the pre-release review.
+    const proc = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe", env: process.env });
     return { ok: proc.exitCode === 0, out: proc.stdout.toString() + proc.stderr.toString() };
   } catch (err) {
     // A missing binary throws rather than failing; report it the same way.
@@ -184,8 +203,32 @@ export function launchd(home: string, uid: number): Service {
   };
 }
 
-export function systemd(home: string): Service {
+/**
+ * What to do when `systemctl --user` has no user manager to talk to. Found
+ * by running setup from `su` and `sudo -iu` shells in the pre-release review:
+ * systemd's own words — "Failed to connect to user scope bus", "$DBUS_SESSION_BUS_ADDRESS
+ * and $XDG_RUNTIME_DIR not defined" — were all a person got, and the
+ * lingering hint that would have helped is printed only after a successful
+ * install, so it never appeared.
+ */
+export function userBusHelp(out: string, user: string, uid: number): string | null {
+  if (!/Failed to connect to (user scope )?bus|XDG_RUNTIME_DIR/.test(out)) return null;
+  return [
+    `systemctl --user could not reach ${user}'s systemd: ${out.trim().split("\n").at(-1)}`,
+    "That happens in a shell without a login session of its own (su, sudo -iu, some containers).",
+    `Start herdr from a real login as ${user} (SSH or a console), or keep ${user}'s systemd running with, once:`,
+    `  sudo loginctl enable-linger ${user}`,
+    `If this shell has no XDG_RUNTIME_DIR, start herdr with:  export XDG_RUNTIME_DIR=/run/user/${uid}`,
+    "Then:  herdr plugin action invoke shahi.restart",
+  ].join("\n");
+}
+
+export function systemd(home: string, uid = process.getuid?.() ?? 0, user = userInfo().username): Service {
   const path = join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
+  const systemctl = (argv: string[]) => {
+    const { ok, out } = run(["systemctl", "--user", ...argv]);
+    if (!ok) throw new Error(userBusHelp(out, user, uid) ?? `systemctl --user ${argv.join(" ")} failed:\n${out.trim()}`);
+  };
   return {
     kind: "systemd",
     path,
@@ -193,9 +236,9 @@ export function systemd(home: string): Service {
     render: renderSystemd,
     install(spec) {
       write(path, renderSystemd(spec));
-      must(["systemctl", "--user", "daemon-reload"]);
+      systemctl(["daemon-reload"]);
       run(["systemctl", "--user", "enable", SYSTEMD_UNIT]);
-      must(["systemctl", "--user", "restart", SYSTEMD_UNIT]);
+      systemctl(["restart", SYSTEMD_UNIT]);
     },
     stop() {
       run(["systemctl", "--user", "stop", SYSTEMD_UNIT]);
@@ -214,6 +257,48 @@ export function systemd(home: string): Service {
   };
 }
 
+/**
+ * A Linux without systemd. Alpine ships busybox init with OpenRC and does not
+ * package systemd at all — `apk search -x systemd` returns nothing — so there
+ * is no user service to install there (measured on Alpine 3.23, 2026-09-04),
+ * and OpenRC has no per-user services to port the unit to.
+ *
+ * Everything except supervision works there: the sidecar runs on musl,
+ * attaches to herdr, serves /api/meta and reaches the relay. So every step of
+ * setup still happens — the secrets, the approved release — and `install`,
+ * which writes nothing, hands over the exact process a unit would have
+ * started. Refusing earlier was a dead end (pre-release review): every verb,
+ * `status` included, threw before a secret existed, and the command it
+ * suggested named neither the .env nor the relay, so it could not start.
+ */
+export function unsupervised(): Service {
+  return {
+    kind: "none",
+    path: "no service manager on this machine (no systemd)",
+    inspect: "ps -ef | grep '[m]anager.js'",
+    render: renderCommand,
+    install(spec) {
+      throw new Error(
+        "No systemd on this machine, so there is no user service to install.\n" +
+          "Alpine and other busybox/OpenRC systems do not have one, and cannot install it.\n" +
+          "\n" +
+          "Everything else is ready: the secrets and the approved release this runs.\n" +
+          "Start it yourself, and have this box's own init keep it running — restart it\n" +
+          "whenever it exits, because an update exits it on purpose:\n" +
+          "\n" +
+          `  ${renderCommand(spec)}\n` +
+          "\n" +
+          "Once it answers, pair a phone:  herdr plugin action invoke shahi.pair",
+      );
+    },
+    stop() {
+      throw new Error("No service here to stop: stop the sidecar wherever you started it.");
+    },
+    status: () => ({ installed: false, running: false, pid: null }),
+    remove() {},
+  };
+}
+
 export function serviceFor(
   platform: NodeJS.Platform,
   home: string,
@@ -223,33 +308,10 @@ export function serviceFor(
 ): Service {
   if (platform === "darwin") return launchd(home, uid);
   if (platform === "linux") {
-    // Linux does not imply systemd. Alpine ships busybox init with OpenRC and
-    // does not package systemd at all — `apk search -x systemd` returns
-    // nothing — so there is no version of this that works there (measured on
-    // Alpine 3.23, 2026-09-04). Assuming it wrote a unit file nothing could
-    // load and then failed with `Executable not found in $PATH: "systemctl"`,
-    // which tells the reader neither what went wrong nor what to do.
-    //
-    // Checking first also means no half-installed unit is left behind: this
-    // throws before `install` writes anything.
-    //
-    // Worth saying plainly in the message, because it was measured on that
-    // same box: everything except supervision works there. The sidecar runs on
-    // musl, attaches to herdr, serves /api/meta and reaches the relay. Only
-    // the thing that keeps it running is missing.
-    if (!hasSystemctl()) {
-      throw new Error(
-        "No systemd on this machine, so there is no user service to install.\n" +
-          "Alpine and other busybox/OpenRC systems do not have one, and cannot install it.\n" +
-          "\n" +
-          "Shahi itself works here — the sidecar runs, reaches herdr and dials the relay.\n" +
-          "What is missing is supervision, so start it yourself and let this box's own\n" +
-          "init keep it alive (`herdr plugin action invoke shahi.status` prints the paths):\n" +
-          "\n" +
-          "  cd \"$HERDR_PLUGIN_ROOT\" && bun run server/index.ts",
-      );
-    }
-    return systemd(home);
+    // Linux does not imply systemd. Assuming it wrote a unit file nothing
+    // could load and then failed with `Executable not found in $PATH:
+    // "systemctl"`, which tells the reader neither what went wrong nor what to do.
+    return hasSystemctl() ? systemd(home, uid) : unsupervised();
   }
   throw new Error(`Shahi's herdr plugin supervises the sidecar with launchd or systemd; ${platform} has neither.`);
 }
