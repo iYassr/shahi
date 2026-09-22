@@ -890,6 +890,9 @@ describe("a phone through the relay", () => {
       });
       expect(revoke.status).toBe(200);
 
+      // Coming back to the foreground: `close()` is for good, so the app
+      // reopens a link it closed explicitly, the way it does on resume.
+      link.ensureConnected();
       await expect(link.request(session, 5_000)).rejects.toThrow(UnauthorizedError);
       expect(expired).toBe(1);
       const opens = box.log.filter((l) => l.includes("relay.link_open")).length;
