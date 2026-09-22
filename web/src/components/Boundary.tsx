@@ -17,6 +17,7 @@
  * and hands over to a person.
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 interface Props {
   children: ReactNode;
@@ -26,10 +27,32 @@ interface State {
   error: Error | null;
   where: string | null;
   retried: boolean;
+  /** The navigation the error happened on. */
+  at: string | null;
 }
 
-export class Boundary extends Component<Props, State> {
-  override state: State = { error: null, where: null, retried: false };
+/**
+ * "Back to agents" routes inside the app rather than loading a page.
+ *
+ * It used to set `location.href = "/"`. On the hosted app that is the marketing
+ * site, not the app at /pwa/, and any page load forgets a computer paired for
+ * this session only, along with every unsent draft. Found in the pre-release
+ * review. Everything the app keeps in memory lives outside this tree, so
+ * clearing the error and drawing the new route loses none of it.
+ *
+ * The error clears when the route changes, not when the button is pressed: the
+ * router applies a navigation as a transition, after an immediate reset would
+ * already have drawn the broken screen again. Leaving by the browser's own
+ * back button gets the same fresh attempt.
+ */
+export function Boundary({ children }: Props) {
+  const navigate = useNavigate();
+  const { key } = useLocation();
+  return <Catch place={key} onHome={() => navigate("/")}>{children}</Catch>;
+}
+
+class Catch extends Component<Props & { place: string; onHome: () => void }, State> {
+  override state: State = { error: null, where: null, retried: false, at: null };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
@@ -38,12 +61,17 @@ export class Boundary extends Component<Props, State> {
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // Kept for the screen rather than only the console: the owner reads this on
     // a phone, where there is no console to open.
-    this.setState({ where: info.componentStack?.split("\n").slice(1, 4).join("\n") ?? null });
+    this.setState({ where: info.componentStack?.split("\n").slice(1, 4).join("\n") ?? null, at: this.props.place });
 
     if (!this.state.retried) {
       // One silent retry. If it was transient, nobody needs to know.
       setTimeout(() => this.setState({ error: null, where: null, retried: true }), 50);
     }
+  }
+
+  override componentDidUpdate(): void {
+    const { error, at } = this.state;
+    if (error && at !== null && at !== this.props.place) this.setState({ error: null, where: null, retried: false, at: null });
   }
 
   override render(): ReactNode {
@@ -64,9 +92,7 @@ export class Boundary extends Component<Props, State> {
           </button>
           <button
             className="empty__action"
-            onClick={() => {
-              location.href = "/";
-            }}
+            onClick={this.props.onHome}
           >
             Back to agents
           </button>
