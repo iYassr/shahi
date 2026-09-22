@@ -231,6 +231,12 @@ export class RelayLink {
    * exactly as connecting does on the HTTP path.
    */
   request(request: OutgoingRequest, timeoutMs: number): Promise<Reply> {
+    // `close()` is for good. Reopening here, as a request once did through
+    // `ensureConnected()`, let whoever heard the close's "lost" — a dashboard
+    // refreshing on loss — revive a revoked or signed-out device's link, which
+    // then redialled the relay forever (pre-release review, 2026-09). Only an
+    // explicit `ensureConnected()` reopens a closed link.
+    if (this.#closed) return Promise.reject(new UnreachableError("lost", this.host, `The connection through ${this.host} was closed.`));
     if (request.body && request.body.byteLength > RELAY_LIMITS.maxBodyBytes) {
       return Promise.reject(new UnreachableError("relay", this.host, `That was too big to send through the relay: one message carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)}.`));
     }

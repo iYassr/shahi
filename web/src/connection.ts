@@ -179,8 +179,16 @@ export async function forgetBrowser(id = identity?.serverId): Promise<void> {
   const forgotten = computers.find(c => c.identity.serverId === id)?.identity ?? (selected ? identity : null);
   if (forgotten) clearWebDrafts(draftOwner(forgotten));
   computers = computers.filter(c => c.identity.serverId !== id);
-  live.get(id ?? "")?.link.close(); live.delete(id ?? "");
+  // Retire the selection before closing its link, never after. Closing tells
+  // every subscriber the link is lost, and the dashboard answers "lost" with a
+  // refresh; while this generation was still current that refresh went out
+  // through the closed link and reopened it, leaving a signed-out or revoked
+  // browser redialling the relay for as long as the tab stayed open (found in
+  // the pre-release review, 2026-09).
   if (selected) { generation++; link = null; identity = null; remembered = false; }
+  const ended = live.get(id ?? "");
+  live.delete(id ?? "");
+  ended?.link.close();
   const forgottenGeneration = generation;
   notifyComputers();
   if (selected) { for (const url of blobs) URL.revokeObjectURL(url); blobs.clear(); }
