@@ -1,11 +1,22 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "./config";
 import { ensureSecrets, envFilePath, randomPasscode, readEnvFile, renderEnvFile, writeEnvFile } from "./secrets";
 
-const scratch = () => mkdtempSync(join(tmpdir(), "shahi-secrets-"));
+// Each scratch directory holds freshly generated session secrets and VAPID
+// keys. Every run used to leave four of them in $TMPDIR (September 2026
+// review), so they are removed when the file finishes.
+const scratches: string[] = [];
+const scratch = () => {
+  const dir = mkdtempSync(join(tmpdir(), "shahi-secrets-"));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("envFilePath", () => {
   test("is the repo root .env unless SHAHI_ENV_FILE says otherwise", () => {

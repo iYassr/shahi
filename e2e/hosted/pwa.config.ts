@@ -6,7 +6,8 @@ export default defineConfig({
   testDir: ".", testMatch: /pwa\.spec\.ts/, timeout: 45000, expect: { timeout: 15000 }, workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   webServer: [
-    { command: `HOSTED_PORT=7472 bun ${import.meta.dirname}/server.ts`, url: "http://127.0.0.1:7472/__hosted/ready", reuseExistingServer: false },
+    // SIGTERM, not Playwright's default SIGKILL, so the embedded stub removes its temp directory.
+    { command: `HOSTED_PORT=7472 bun ${import.meta.dirname}/server.ts`, url: "http://127.0.0.1:7472/__hosted/ready", reuseExistingServer: false, gracefulShutdown: { signal: "SIGTERM", timeout: 5000 } },
     { command: "bunx wrangler dev --config site/wrangler.toml --port 7672 --inspector-port 0", cwd: new URL("../../", import.meta.url).pathname, url: "http://127.0.0.1:7672/pwa/", reuseExistingServer: false, timeout: 60000 },
   ],
   use: { baseURL: "http://127.0.0.1:7472", serviceWorkers: "allow", trace: "retain-on-failure", screenshot: "only-on-failure" },

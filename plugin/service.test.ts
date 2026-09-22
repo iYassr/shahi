@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { layoutFromEnv } from "./layout";
@@ -14,6 +14,18 @@ const layout = layoutFromEnv({
 } as NodeJS.ProcessEnv);
 
 const spec: ServiceSpec = serviceSpec(layout, new Map([["PORT", "7275"]]), "/opt/homebrew/bin/bun");
+
+// Scratch directories made below, removed when the file finishes: every run
+// left them in $TMPDIR until the September 2026 review.
+const scratches: string[] = [];
+const scratch = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 /** What `install` in shahi.ts hands a service: the approved manager, not the checkout. */
 const managedSpec: ServiceSpec = {
   ...spec,
@@ -71,7 +83,7 @@ describe("renderLaunchd", () => {
 
   test("is a plist macOS accepts", () => {
     if (process.platform !== "darwin") return;
-    const path = join(mkdtempSync(join(tmpdir(), "shahi-plist-")), "x.plist");
+    const path = join(scratch("shahi-plist-"), "x.plist");
     writeFileSync(path, renderLaunchd({ ...spec, root: "/Users/me/a&b" }));
     expect(Bun.spawnSync(["plutil", "-lint", path], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
   });
@@ -123,7 +135,7 @@ describe("serviceFor", () => {
   // a unit file nothing could load, and failed with `Executable not found in
   // $PATH: "systemctl"`.
   test("a Linux without systemd installs nothing, and says what does work", () => {
-    const home = mkdtempSync(join(tmpdir(), "shahi-nosystemd-"));
+    const home = scratch("shahi-nosystemd-");
     const service = serviceFor("linux", home, 1000, () => false);
     expect(service.kind).toBe("none");
     expect(() => service.install(managedSpec)).toThrow(/No systemd on this machine/);
@@ -144,7 +156,7 @@ describe("serviceFor", () => {
  */
 describe("the Alpine hand-over command", () => {
   test("is the process the unit would run, with every variable, and it starts as printed", () => {
-    const dir = mkdtempSync(join(tmpdir(), "shahi odd 'dir' "));
+    const dir = scratch("shahi odd 'dir' ");
     const record = join(dir, "record.txt");
     // A stand-in for bun that writes down what it was started with.
     const bun = join(dir, "fake bun");
@@ -175,7 +187,7 @@ describe("the Alpine hand-over command", () => {
  */
 describe("a systemd with no user bus", () => {
   test("says how to get one, instead of systemctl's words alone", () => {
-    const dir = mkdtempSync(join(tmpdir(), "shahi-nobus-"));
+    const dir = scratch("shahi-nobus-");
     const bin = join(dir, "bin");
     mkdirSync(bin);
     writeFileSync(

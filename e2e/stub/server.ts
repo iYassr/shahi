@@ -22,7 +22,7 @@ import type { ControlHandshake } from "@shahi/shared";
  * tried to write, or push an event down the socket.
  */
 import { SHAHI_API_VERSION } from "@shahi/shared";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
@@ -54,8 +54,19 @@ let apiRange = { ...APP_SPEAKS };
 let writes: { method: string; path: string; body: unknown; at: number }[] = [];
 const sockets = new Set<ServerWebSocket<unknown>>();
 
-/** Files the file viewer can open, written once into a temp directory. */
+/**
+ * Files the file viewer can open, written once into a temp directory.
+ *
+ * Removed when the stub stops. Until the September 2026 review every start
+ * left one behind, uploads included — and the suite starts one per run. A
+ * signal handler is what makes that happen: SIGINT and SIGTERM otherwise end
+ * the process without running `exit` listeners. Playwright's configs stop
+ * the stub with SIGTERM (`gracefulShutdown`); without it they SIGKILL, and
+ * nothing can clean up after that.
+ */
 const files = mkdtempSync(join(tmpdir(), "shahi-stub-"));
+process.on("exit", () => rmSync(files, { recursive: true, force: true }));
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => process.exit(0));
 writeFileSync(join(files, "prompt-parser.ts"), "const OPTION_RE = /^\\s*(\\d+)\\.\\s+(.+)$/;\n");
 writeFileSync(join(files, "sample.pdf"), samplePdf());
 const transfers = new UploadTransfers(join(files, "uploads"));

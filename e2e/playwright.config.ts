@@ -40,6 +40,9 @@ export default defineConfig({
     url: `${STUB}/__stub/writes`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
+    // SIGTERM rather than Playwright's default SIGKILL, so the stub removes
+    // its temp directory on the way out.
+    gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
   },
 
   use: {

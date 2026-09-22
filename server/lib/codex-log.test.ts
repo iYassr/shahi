@@ -2,8 +2,20 @@ import { Database } from "bun:sqlite";
 import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { normaliseCodex, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
+
+// Scratch codex homes made below, removed when the file finishes: every run
+// left three directories in $TMPDIR until the September 2026 review.
+const scratches: string[] = [];
+const scratch = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 const event = (type: string, message?: string, timestamp = "2026-07-25T04:51:48.000Z") => ({
   timestamp,
@@ -456,7 +468,7 @@ describe("normaliseCodex, codex 0.151+ items", () => {
  * fresh copy pointed at a temp directory rather than at the real one.
  */
 describe("findCodexRollout, by session id", () => {
-  const home = mkdtempSync(join(tmpdir(), "shahi-codex-"));
+  const home = scratch("shahi-codex-");
   const id = "019f9bd1-1b6b-7f33-a046-a60cce4e6455";
   const rollout = join(home, "sessions/2026/07/26", `rollout-2026-07-26T00-26-40-${id}.jsonl`);
   mkdirSync(dirname(rollout), { recursive: true });
@@ -567,7 +579,7 @@ describe("rolloutWithinSessions", () => {
 // paths while a bare join of our own would be the link; both spellings must
 // resolve to the same file or every indexed rollout is refused.
 test("rolloutWithinSessions follows a symlinked sessions directory", () => {
-  const root = mkdtempSync(join(tmpdir(), "shahi-codex-"));
+  const root = scratch("shahi-codex-");
   const real = join(root, "real", "sessions");
   mkdirSync(join(real, "2026"), { recursive: true });
   writeFileSync(join(real, "2026", "rollout-x.jsonl"), "");
@@ -614,7 +626,7 @@ test("on Linux a codex process with two rollouts open is ambiguous, not whicheve
 
 if (process.platform === "darwin") {
   test("macOS resolves the exact process open rollout, never another file in its folder", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "shahi-open-rollout-"));
+    const dir = scratch("shahi-open-rollout-");
     const own = join(dir, "rollout-own.jsonl");
     const other = join(dir, "rollout-other.jsonl");
     writeFileSync(own, "");

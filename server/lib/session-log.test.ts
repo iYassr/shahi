@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -472,6 +472,8 @@ describe("questionsOf", () => {
  */
 describe("reading a window instead of the whole file", () => {
   const dir = mkdtempSync(join(tmpdir(), "shahi-log-"));
+  // Left in $TMPDIR on every run until the September 2026 review.
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   const assistantRow = (uuid: string, text: string) =>
     JSON.stringify({
