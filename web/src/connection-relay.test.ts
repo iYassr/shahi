@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { RELAY_PROTOCOL } from "@shahi/shared";
 import { ephemeral, open, seal, serverSession, type Session } from "@shahi/shared/e2e";
 import { fromBase64Url, toBase64Url } from "@shahi/shared/relay-client";
-import { browserComputers, browserConnection, forgetBrowser, pairBrowser } from "./connection";
+import { browserComputers, browserConnection, forgetBrowser, pairBrowser, resumeComputers } from "./connection";
 import { SessionSocket, createApi } from "./api";
 
 /*
@@ -123,4 +123,39 @@ test("a computer ending this browser's pairing does not leave its link rediallin
   expect(browserComputers()).toHaveLength(0);
   expect(FakeSocket.opened.length).toBe(before);
   socket.close();
+});
+
+test("returning to the tab keeps a healthy relay link and the agent start in flight through it", async () => {
+  const device = await paired();
+  holding.add("/api/agents/start");
+  let outcome = "pending";
+  createApi(browserConnection).startAgent("w1", "/home/me/project", null, "claude", "agent")
+    .then(() => { outcome = "resolved"; }, (error: Error) => { outcome = `rejected: ${error.message}`; });
+  await settle();
+  const before = FakeSocket.opened.length;
+  resumeComputers();
+  await settle();
+  expect(outcome).toBe("pending");
+  expect(FakeSocket.opened.length).toBe(before);
+  expect(browserConnection().link?.state).toBe("live");
+  expect(device.paths.at(-1)).toBe("/api/meta");
+});
+
+test("returning to the tab replaces a relay link that died without closing", async () => {
+  const device = await paired();
+  device.silent = true;
+  const before = FakeSocket.opened.length;
+  resumeComputers(20);
+  await Bun.sleep(60);
+  expect(FakeSocket.opened.length).toBe(before + 1);
+});
+
+test("returning to the tab replaces a relay link whose socket already closed", async () => {
+  const device = await paired();
+  // A suspended page can miss the close event; the socket state still says so.
+  device.readyState = 3;
+  const before = FakeSocket.opened.length;
+  resumeComputers();
+  await settle();
+  expect(FakeSocket.opened.length).toBe(before + 1);
 });

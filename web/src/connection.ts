@@ -1,6 +1,7 @@
 import { clearWebDrafts, draftOwner } from "./drafts";
 import { SHAHI_API_VERSION, type Session, type PairingPayload } from "@shahi/shared";
 import { RelayLink, deviceTarget, pairingTarget, type RelayIdentity } from "@shahi/shared/relay-client";
+import { UnreachableError } from "@shahi/shared/errors";
 import { parsePairingUrl } from "@shahi/shared/pairing";
 
 export const hosted = import.meta.env?.BASE_URL === "/pwa/";
@@ -126,10 +127,50 @@ function activate(next: RelayIdentity): void {
   link?.watch(null);
   identity = next; link = ensureComputer(next).link;
 }
+/**
+ * How long a link that looks live has to answer after the page returns.
+ *
+ * Generous against a box that is merely busy or a phone radio still waking:
+ * a false "dead" drops every request in flight, which is the failure this
+ * check exists to avoid. One relay round trip measured 203ms.
+ */
+const RESUME_PROBE_MS = 10_000;
+const probing = new WeakSet<RelayLink>();
+
+/**
+ * The page is visible again: keep every link that can prove it is alive.
+ *
+ * Replacing every link on every return, as this once did, dropped healthy
+ * sockets and rejected whatever was in flight through them — an agent start
+ * that takes minutes, a prompt, an image — each time someone switched tabs
+ * or apps (found in the pre-release review, 2026-09). A browser keeps a
+ * hidden tab's socket open, and a phone that froze the page for longer than
+ * the silence limit is caught by `ensureConnected()`. What is left is a
+ * socket that died without saying so, and only a round trip can tell that
+ * apart from a quiet one.
+ */
+export function resumeComputers(probeMs = RESUME_PROBE_MS): void {
+  for (const entry of live.values()) {
+    const current = entry.link;
+    current.ensureConnected();
+    // Nothing to keep, so nothing to lose: skip the backoff now someone is looking.
+    if (current.state === "lost") { current.reconnect(); continue; }
+    if (current.state !== "live" || probing.has(current)) continue;
+    probing.add(current);
+    current.request({ method: "GET", path: "/api/meta", headers: { "x-shahi-api": String(SHAHI_API_VERSION) }, body: null }, probeMs)
+      .then(() => {}, (error: unknown) => {
+        // Any answer, even an error status, proves the path works. Only
+        // silence does not; a drop has already started its own recovery.
+        if (error instanceof UnreachableError && error.reason === "timeout" && live.get(entry.identity.serverId) === entry) current.reconnect();
+      })
+      .finally(() => probing.delete(current));
+  }
+}
 if (typeof window !== "undefined") {
-  const reconnectAll = () => { for (const entry of live.values()) entry.link.reconnect(); };
-  window.addEventListener("online", reconnectAll);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reconnectAll(); });
+  // Regaining the network is different: the old socket almost certainly went
+  // with the old route, so it is replaced at once.
+  window.addEventListener("online", () => { for (const entry of live.values()) entry.link.reconnect(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resumeComputers(); });
 }
 let restoration: Promise<void> | undefined;
 export function restoreBrowser(): Promise<void> {
