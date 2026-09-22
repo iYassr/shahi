@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { BackendMonitor, herdrCompatibility } from "./backend";
+import { describe, expect, test } from "bun:test";
+import { BackendMonitor, herdrCompatibility, probeHerdr } from "./backend";
 test("herdr adapter accepts only release-tested combinations", () => {
   expect(herdrCompatibility("0.9.0", 22).state).toBe("connected");
   expect(herdrCompatibility("0.9.1", 22).state).toBe("connected");
@@ -22,4 +22,58 @@ test("does not announce Connected before the first usable snapshot", async () =>
   const check = monitor.check(); await Promise.resolve();
   expect(monitor.state.state).toBe("offline"); finish(); await check;
   expect(monitor.state.state).toBe("connected"); monitor.close();
+});
+
+/**
+ * One slow `session.snapshot` (the 5s RPC timeout under load) used to fail the
+ * probe outright: every route answered 503 "herdr is offline" and the poller
+ * and event stream were torn down, though herdr answered ping throughout.
+ */
+describe("a failed snapshot", () => {
+  const pong = async () => ({ version: "0.9.0", protocol: 22 });
+  /** A mirror whose snapshots succeed or fail from a script, one entry per attempt. */
+  function mirror(results: boolean[]) {
+    const store = {
+      lastSyncOk: true,
+      attempts: 0,
+      async resync() {
+        store.lastSyncOk = results[store.attempts++] ?? true;
+      },
+    };
+    return store;
+  }
+
+  test("does not take a herdr that still answers ping offline", async () => {
+    const store = mirror([false, true]);
+    let stops = 0;
+    const monitor = new BackendMonitor(
+      () => probeHerdr(pong, store, () => monitor.state.state === "connected"),
+      async () => {},
+      () => void stops++,
+    );
+    await monitor.check();
+    expect(monitor.state.state).toBe("connected");
+
+    await store.resync(); // the periodic snapshot times out once
+    await monitor.check();
+
+    expect(monitor.state.state).toBe("connected");
+    expect(stops).toBe(0);
+    monitor.close();
+  });
+
+  test("still reports herdr offline when the snapshot keeps failing", async () => {
+    const store = mirror([false, false]);
+    const monitor = new BackendMonitor(
+      () => probeHerdr(pong, store, () => monitor.state.state === "connected"),
+      async () => {},
+      () => {},
+    );
+    await monitor.check();
+    await store.resync();
+    await monitor.check();
+
+    expect(monitor.state.state).toBe("offline");
+    monitor.close();
+  });
 });

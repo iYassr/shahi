@@ -15,6 +15,30 @@ export function herdrCompatibility(version: string, protocol: number): BackendSt
   };
 }
 
+/**
+ * One probe of herdr: it must answer `ping`, and once connected it must also
+ * produce a usable snapshot.
+ *
+ * `lastSyncOk` is one flag set by whichever snapshot ran last, and a single
+ * slow one — the 5s RPC timeout while many agents start — used to fail the
+ * probe outright. That took every route to 503 "herdr is offline" and tore the
+ * poller and event stream down for a probe cycle or two, while herdr answered
+ * ping the whole time (pre-release review). So a failed snapshot is retried
+ * here before herdr is called offline; one that fails again still is.
+ */
+export async function probeHerdr(
+  ping: () => Promise<{ version: string; protocol: number }>,
+  snapshot: { readonly lastSyncOk: boolean; resync(): Promise<void> },
+  connected: () => boolean,
+): Promise<{ version: string; protocol: number }> {
+  const pong = await ping();
+  if (connected() && !snapshot.lastSyncOk) {
+    await snapshot.resync();
+    if (!snapshot.lastSyncOk) throw new Error("herdr snapshot unavailable");
+  }
+  return pong;
+}
+
 /** Serial probes; a failed backend never takes authentication or recovery down. */
 export class BackendMonitor {
   state: BackendState = { state: "offline", message: "Waiting for herdr on this computer." };

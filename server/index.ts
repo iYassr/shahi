@@ -15,7 +15,7 @@ import { Observability, rotatingLog } from "./lib/observability";
 import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrSubscriber } from "./lib/herdr-client";
-import { BackendMonitor } from "./lib/backend";
+import { BackendMonitor, probeHerdr } from "./lib/backend";
 import { ComputerControl } from "./lib/control";
 import { createServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
@@ -87,11 +87,7 @@ const subscriber = new HerdrSubscriber({
 });
 
 const backend = new BackendMonitor(
-  async () => {
-    const pong = await client.rpc("ping", {});
-    if (backend.state.state === "connected" && !store.lastSyncOk) throw new Error("herdr snapshot unavailable");
-    return pong;
-  },
+  () => probeHerdr(() => client.rpc("ping", {}), store, () => backend.state.state === "connected"),
   async () => {
     await store.resync();
     if (!store.lastSyncOk) throw new Error("herdr snapshot unavailable");
