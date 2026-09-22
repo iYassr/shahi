@@ -101,8 +101,9 @@ describe("herdr-plugin.toml", () => {
     expect(existsSync(join(ROOT, "plugin", "shahi.ts"))).toBe(true);
   });
 
-  test("builds dependencies and web before scheduling the update", () => {
+  test("checks bun before installing dependencies, building web and scheduling the update", () => {
     expect(manifest.build?.map((b) => b.command.slice(2))).toEqual([
+      ["run", "plugin/releases/requirements.ts"],
       ["install", "--frozen-lockfile"],
       ["run", "build:web"],
       ["run", "plugin/update.ts"],

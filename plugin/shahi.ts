@@ -263,8 +263,9 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   // used up a passcode nobody ever saw, and every later run kept that hash
   // (pre-release review, reproduced with the catalog download failing).
   let managerRoot: string;
+  let notice: string | null | undefined;
   try {
-    managerRoot = await bootstrap(layout);
+    ({ root: managerRoot, notice } = await bootstrap(layout));
   } catch (err) {
     throw new Error(`Could not set up Shahi's approved release: ${message(err)}`, { cause: err });
   }
@@ -304,6 +305,9 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   } else {
     console.log(`Shahi was started but is not answering at ${url} yet. The log says why:\n  ${layout.logPath}`);
   }
+  // An install that went ahead in the recovery state (an unapproved herdr or
+  // bun) says so, and names the versions, instead of looking like success.
+  if (notice) console.log(`\n  ${notice}`);
   const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));

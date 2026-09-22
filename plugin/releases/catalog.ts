@@ -1,6 +1,8 @@
 import { createHash, verify } from "node:crypto";
 import { API_SUPPORT, type ReleaseChannel } from "@shahi/shared";
 import { RELEASE_KEYS } from "./trust";
+import { compareVersion } from "./version";
+export { compareVersion };
 
 export interface Release {
   version: string;
@@ -64,16 +66,19 @@ export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequ
 }
 
 export interface Machine { platform: string; bun: string; herdr: { version: string; protocol: number } | null; current?: Release }
-export function compareVersion(a: string, b: string): number {
-  const [aa, ab] = a.split("-beta."); const [ba, bb] = b.split("-beta.");
-  const av = aa!.split(".").map(Number), bv = ba!.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (av[i] !== bv[i]) return av[i]! - bv[i]!;
-  return ab === bb ? 0 : ab === undefined ? 1 : bb === undefined ? -1 : Number(ab) - Number(bb);
-}
+export const supportsHerdr = (r: Release, herdr: { version: string; protocol: number }) =>
+  r.herdr.some(h => h.version === herdr.version && h.protocol === herdr.protocol);
+export const herdrProfiles = (r: Release) => r.herdr.map(h => `${h.version} (protocol ${h.protocol})`).join(", ");
+/**
+ * Each reason names both sides and the fix, because it is the one line a
+ * person sees: in the pair popup on a first install, and as the update status
+ * in the app. The bun reason used to say "The computer's installer needs an
+ * update", naming neither bun nor a version (pre-public-release review).
+ */
 export function incompatibility(r: Release, m: Machine): string | null {
-  if (!r.platforms.includes(m.platform)) return "This computer's operating system is not supported by this release.";
-  if (compareVersion(m.bun, r.bun) < 0) return "The computer's installer needs an update before it can run this release.";
-  if (m.herdr && !r.herdr.some(h => h.version === m.herdr!.version && h.protocol === m.herdr!.protocol)) return "This release has not been approved for the herdr version on this computer.";
+  if (!r.platforms.includes(m.platform)) return `Shahi ${r.version} runs on ${r.platforms.join(", ")}, and this computer is ${m.platform}.`;
+  if (compareVersion(m.bun, r.bun) < 0) return `Shahi ${r.version} needs bun ${r.bun} or newer, and this computer has bun ${m.bun}. Upgrade bun on this computer (bun upgrade, or brew upgrade bun if Homebrew installed it).`;
+  if (m.herdr && !supportsHerdr(r, m.herdr)) return `Shahi ${r.version} is approved for herdr ${herdrProfiles(r)}, and this computer runs herdr ${m.herdr.version} (protocol ${m.herdr.protocol}).`;
   // A rollback must not reinterpret a migrated database. Ship migrations only
   // after adding an explicit tested upgrade path, never by changing this test.
   if (m.current && r.dataSchema !== m.current.dataSchema) return "This release needs a separately approved data upgrade.";
