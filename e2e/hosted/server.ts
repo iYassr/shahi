@@ -2,7 +2,7 @@
 import { join, resolve } from "node:path";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ephemeral, open, seal, serverSession, type Session as CryptoSession } from "../../shared/src/e2e";
-import { RELAY_PROTOCOL, RELAY_RESPONSE_HEADERS, SHAHI_API_VERSION, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
+import { RELAY_PROTOCOL, RELAY_RESPONSE_HEADERS, SHAHI_API_VERSION, type DeviceList, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
 import type { ServerWebSocket } from "bun";
 
 const port = Number(process.env.HOSTED_PORT ?? 7472);
@@ -147,7 +147,11 @@ const fixture = Bun.serve<Link>({
             response = Response.json({ ok: true, deviceId: id, deviceSecret: b64(secret) });
           }
         } else if (!ws.data.deviceId || !devices.has(ws.data.deviceId)) response = Response.json({ error: "unauthorized" }, { status: 401 });
-        else if (message.path === "/api/devices") response = Response.json({ currentDeviceId: ws.data.deviceId, devices: [...devices].map(([id, d]) => ({ id, name: d.name, createdAt: Date.now(), lastSeenAt: Date.now() })) });
+        // The real contract's field names. This once answered `currentDeviceId`,
+        // which no client reads, so this browser's own row offered "Revoke" and
+        // signing yourself out from the list was never exercised. No typecheck
+        // covers e2e/, so the hosted test of that row is what holds this.
+        else if (message.path === "/api/devices") response = Response.json({ thisDeviceId: ws.data.deviceId, devices: [...devices].map(([id, d]) => ({ id, name: d.name, createdAt: Date.now(), lastSeenAt: Date.now() })) } satisfies DeviceList);
         else if (message.method === "DELETE" && message.path.startsWith("/api/devices/")) {
           revoke(decodeURIComponent(message.path.slice("/api/devices/".length)));
           response = Response.json({ ok: true });

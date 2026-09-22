@@ -27,6 +27,15 @@ async function pair(page: import("@playwright/test").Page, remember = false) {
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
 }
+/**
+ * Settings' own "Sign out of this computer" button. This browser's row in the
+ * device list is also named "Sign out", now that the fixture names that row
+ * the way the real box does.
+ */
+function signOutButton(page: import("@playwright/test").Page) {
+  return page.locator("section").filter({ has: page.getByRole("heading", { name: "Sign out of this computer", exact: true }) })
+    .getByRole("button", { name: "Sign out", exact: true });
+}
 test("computer picker closes on Escape, outside interaction and selection", async ({ page }) => {
   await pair(page, true);
   const picker = page.locator(".computer-switcher");
@@ -59,7 +68,7 @@ test("remembered pairing restores and explicit signout erases browser identity",
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByText("Browser test", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOutButton(page).click();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
@@ -95,6 +104,22 @@ test("revoking this browser clears its remembered connection", async ({ page, re
   await pair(page, true);
   await request.post("/__hosted/revoke");
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+});
+// The fixture once answered /api/devices with `currentDeviceId`, which no
+// client reads, so this row offered "Revoke" and this path never ran.
+test("this browser's own row in the device list signs it out", async ({ page, request }) => {
+  await pair(page, true);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const row = page.locator(".device-row").filter({ hasText: "Browser test" });
+  await expect(row.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+  let asked = "";
+  page.once("dialog", dialog => { asked = dialog.message(); void dialog.accept(); });
+  await row.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  expect(asked).toBe("Sign this browser out?");
+  expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(0);
   await page.reload();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 });
@@ -250,7 +275,7 @@ test("two remembered computers switch both ways, survive reload, and sign out in
   expect(a.writes.filter((w: any) => w.path.endsWith("/prompt")).map((w: any) => w.body.text)).toEqual(["computer-a-only"]);
   expect(b.writes.filter((w: any) => w.path.endsWith("/prompt")).map((w: any) => w.body.text)).toEqual(["computer-b-only"]);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOutButton(page).click();
   await expect(page.getByRole("heading", { name: "Computers", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Connect to .*127\.0\.0\.1:7472/ })).toHaveCount(0);
   await choose("7572");
@@ -436,7 +461,7 @@ test("a delayed sign-out removes its own computer after switching to another", a
   await expect(page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first()).toBeVisible();
   await request.post("http://127.0.0.1:7572/__hosted/hold-logout");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOutButton(page).click();
   await expect.poll(async () => (await (await request.get("http://127.0.0.1:7572/__hosted/writes")).json()).requests.some((r: {path:string}) => r.path === "/api/auth/logout")).toBe(true);
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.locator(".computer-switcher__menu button").first().click();
