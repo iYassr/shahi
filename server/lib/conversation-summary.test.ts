@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readWindow } from "./session-log";
-import { summaryOf } from "./conversation-summary";
+import { retainSummaries, summaryOf, transcriptSummary } from "./conversation-summary";
 test("message time survives rereads and changes when a new chat message is appended", async () => {
   const dir = await mkdtemp(join(tmpdir(), "shahi-chat-order-"));
   const path = join(dir, "messages.jsonl");
@@ -22,4 +22,61 @@ test("message time survives rereads and changes when a new chat message is appen
 });
 test("no transcript never invents a time from the clock or a fallback", () => {
   expect(summaryOf(null, Date.now())).toEqual({ preview: null, lastMessageAt: null });
+});
+
+// Every connected dashboard summarises every pane every 3s. Through the
+// readers' 64-transcript index caches, a session with more agent panes than
+// that evicted each round the indexes the same round needed next, and every
+// eviction was a full parse of a transcript (review finding, September 2026).
+test("a dashboard over more agent panes than the reader's index holds re-reads no unchanged transcript", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shahi-many-panes-"));
+  const panes = Array.from({ length: 70 }, (_, n) => ({ paneId: `w1:p${n}`, path: join(dir, `${n}.jsonl`) }));
+  // A whole-millisecond time, so the probe below can put it back exactly.
+  const settled = new Date("2026-09-20T03:00:00Z");
+  const reply = (text: string) =>
+    JSON.stringify({ type: "assistant", uuid: text, timestamp: "2026-09-20T02:00:00Z", message: { role: "assistant", content: [{ type: "text", text }] } }) + "\n";
+  const round = () => Promise.all(panes.map(({ paneId, path }) => transcriptSummary(paneId, path)));
+  try {
+    for (const { path } of panes) { await writeFile(path, reply("reply A")); await utimes(path, settled, settled); }
+    const first = await round();
+    expect(new Set(first.map((summary) => summary.preview))).toEqual(new Set(["reply A"]));
+    // Different bytes behind the same inode, size and modification time: a
+    // round that reads any transcript would show them.
+    for (const { path } of panes) { await writeFile(path, reply("reply B")); await utimes(path, settled, settled); }
+    expect(await round()).toEqual(first);
+    await appendFile(panes[0]!.path, reply("reply C"));
+    expect((await round())[0]!.preview).toBe("reply C");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("a pane's summary follows it to another transcript and is forgotten when it closes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shahi-summary-panes-"));
+  const settled = new Date("2026-09-20T03:00:00Z");
+  const write = async (path: string, text: string) => {
+    await writeFile(path, JSON.stringify({ type: "user", timestamp: "2026-09-20T01:00:00Z", message: { role: "user", content: text } }) + "\n");
+    await utimes(path, settled, settled);
+  };
+  const [a, b, c] = ["a", "b", "c"].map((name) => join(dir, `${name}.jsonl`)) as [string, string, string];
+  try {
+    await write(a, "first chat");
+    await write(b, "second one");
+    await write(c, "other pane");
+    expect((await transcriptSummary("w1:p1", a)).preview).toBe("You: first chat");
+    expect((await transcriptSummary("w1:p1", b)).preview).toBe("You: second one");
+    expect((await transcriptSummary("w1:p2", c)).preview).toBe("You: other pane");
+    retainSummaries(["w1:p1"]);
+    await write(c, "reopened!!");
+    expect((await transcriptSummary("w1:p2", c)).preview).toBe("You: reopened!!");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("a Cursor summary, which has no message times, is dated by its transcript", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shahi-summary-cursor-"));
+  const path = join(dir, "11111111-2222-4333-8444-555555555555.jsonl");
+  const settled = new Date("2026-09-20T03:00:00Z");
+  try {
+    await writeFile(path, JSON.stringify({ role: "assistant", message: { content: [{ type: "text", text: "done" }] } }) + "\n");
+    await utimes(path, settled, settled);
+    expect(await transcriptSummary("w1:p9", path, "cursor")).toEqual({ preview: "done", lastMessageAt: settled.getTime() });
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

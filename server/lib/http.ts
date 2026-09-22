@@ -1,4 +1,4 @@
-import { conversationSummary } from "./conversation-summary";
+import { conversationSummary, retainSummaries } from "./conversation-summary";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { buildId } from "./build";
 /**
@@ -1331,6 +1331,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
 export async function dashboard(store: SessionStore, poller: Poller, defaultGrouping: string | null = null, client?: HerdrClient) {
   const { state } = store;
+  retainSummaries(state.panes.map((pane) => pane.pane_id));
 
   const panes: DashboardPane[] = await Promise.all(state.panes.map(async (pane) => ({
     paneId: pane.pane_id,
@@ -1348,8 +1349,8 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
     prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
     isAgent: store.agent(pane.pane_id) !== undefined,
-    // The last thing said, for chat-style rows. The transcript index caches by
-    // file size, so a quiet pane costs one stat here.
+    // The last thing said, for chat-style rows. Summaries are cached by the
+    // transcript's file state, so a quiet pane costs one stat here.
     ...await conversationSummary(pane, client),
     activity: poller.frame(pane.pane_id)?.activity ?? null,
   })));
