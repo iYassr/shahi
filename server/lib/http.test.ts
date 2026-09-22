@@ -120,7 +120,7 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false, allowedHosts = [] as string[] } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls, freshCreation);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
@@ -135,6 +135,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
     vapid: null,
     webRoot: null,
     relayUrl: null,
+    allowedHosts,
   };
   // Wired the way index.ts wires them: device sessions are checked against the
   // devices table on every request, so revocation is immediate.
@@ -407,6 +408,24 @@ describe("a page that rebound its own name to this machine", () => {
     for (const host of ["localhost.attacker.example", "127.0.0.1.nip.io", "127.0.0.1@attacker.example", "[::1]x"]) {
       expect({ host, status: (await raw(s.base, request("GET", "/api/meta", host))).status }).toEqual({ host, status: 403 });
     }
+  });
+
+  // Integration of the review fixes: refusing every non-loopback name also
+  // refused `tailscale serve`, the documented way to give the local web app
+  // the HTTPS that push needs. The owner can name their own proxy; nothing
+  // else gets through, including names built around it.
+  test("a reverse proxy the owner listed still answers, and only that name", async () => {
+    const box = await boot({ allowedHosts: ["box.tailnet.ts.net"] });
+    try {
+      const status = async (host: string) => (await raw(box.base, request("GET", "/api/meta", host))).status;
+      expect(await status("box.tailnet.ts.net")).toBe(200);
+      expect(await status("BOX.tailnet.ts.net:443")).toBe(200);
+      for (const host of ["attacker.example", "box.tailnet.ts.net.attacker.example", "evil-box.tailnet.ts.net", "x.box.tailnet.ts.net"]) {
+        expect({ host, status: await status(host) }).toEqual({ host, status: 403 });
+      }
+    } finally { box.stop(); }
+    // And with nothing listed, the proxy's name is refused like any other.
+    expect((await raw(s.base, request("GET", "/api/meta", "box.tailnet.ts.net"))).status).toBe(403);
   });
 
   test("and the relay, which carries no browser's Host, is not affected", async () => {

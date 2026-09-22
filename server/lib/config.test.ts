@@ -105,3 +105,23 @@ describe("loadConfig", () => {
     });
   });
 });
+
+// Integration of the review fixes (F26/F36 and the tunnel path in
+// docs/notifications.md): the listener's extra names come only from an
+// explicit, validated list.
+describe("SHAHI_ALLOWED_HOSTS", () => {
+  test("is empty unless set, so only loopback names are answered", () => {
+    expect(loadConfig({ ...base }).allowedHosts).toEqual([]);
+  });
+
+  test("takes full host names, trimmed and lower-cased", () => {
+    expect(loadConfig({ ...base, SHAHI_ALLOWED_HOSTS: " Box.Tailnet.ts.net , shahi.example.com" }).allowedHosts)
+      .toEqual(["box.tailnet.ts.net", "shahi.example.com"]);
+  });
+
+  test("refuses ports, wildcards and anything that is not a host name, rather than skipping them", () => {
+    for (const bad of ["box.tailnet.ts.net:443", "*.ts.net", "localhost", "http://box.ts.net", "a..b.com", "-x.example.com"]) {
+      expect(() => loadConfig({ ...base, SHAHI_ALLOWED_HOSTS: bad })).toThrow(/SHAHI_ALLOWED_HOSTS/);
+    }
+  });
+});

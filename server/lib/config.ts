@@ -32,9 +32,34 @@ export interface Config {
    * reachable only directly. The box connects out; nothing is opened here.
    */
   relayUrl: string | null;
+  /**
+   * Host names, besides loopback, that the port listener answers to — for a
+   * reverse proxy the owner runs in front of it, such as `tailscale serve`
+   * giving the local web app the HTTPS a service worker needs. Empty by
+   * default: the listener otherwise refuses any name a browser page could
+   * have rebound to 127.0.0.1 (review findings F26/F36), and that refusal
+   * is what stops a rebinding page from guessing the passcode.
+   */
+  allowedHosts?: readonly string[];
 }
 
 const DEFAULT_PORT = 7171;
+
+/**
+ * Parses SHAHI_ALLOWED_HOSTS: comma-separated host names, no ports, no
+ * wildcards. A malformed entry stops startup rather than being skipped — a
+ * typo here would otherwise read as "the proxy is broken", and a pattern
+ * would widen the one list that stands between a rebinding page and login.
+ */
+export function allowedHosts(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw.split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean).map((name) => {
+    if (!/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(name)) {
+      throw new Error(`SHAHI_ALLOWED_HOSTS: "${name}" is not a host name. List full names separated by commas, without ports or wildcards, e.g. box.tailnet.ts.net.`);
+    }
+    return name;
+  });
+}
 
 function required(name: string, value: string | undefined, hint: string): string {
   if (!value) {
@@ -125,5 +150,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         : null,
     webRoot: env.WEB_ROOT ?? null,
     relayUrl: relayUrl(env.RELAY_URL),
+    allowedHosts: allowedHosts(env.SHAHI_ALLOWED_HOSTS),
   };
 }

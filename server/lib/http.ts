@@ -250,11 +250,21 @@ function originAllowed(req: Request): boolean {
  * way in that is meant to reach this port — this machine's own browser, the
  * app's SSH forward, `ssh -L` — names loopback already. A reverse proxy
  * that keeps its public name in `Host` (`tailscale serve` does) is refused
- * with it: the ways in are the relay and an SSH tunnel, as `config.ts` says
- * when it refuses a non-loopback bind. The relay's `dispatch` does not pass
- * through here; nothing a browser chose reaches it.
+ * unless the owner lists that name in SHAHI_ALLOWED_HOSTS: the documented
+ * way to give the local web app HTTPS for push (docs/notifications.md) must
+ * keep working, and a rebinding page cannot make the owner's own proxy name
+ * resolve to its page. The relay's `dispatch` does not pass through here;
+ * nothing a browser chose reaches it.
  */
 const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
+
+/** Whether a request's Host names this machine: loopback, or a proxy the owner listed. */
+export function addressedHere(host: string, allowed: readonly string[]): boolean {
+  if (LOOPBACK_HOST.test(host)) return true;
+  if (allowed.length === 0) return false;
+  const name = host.toLowerCase().replace(/:\d{1,5}$/, "");
+  return allowed.includes(name);
+}
 
 /**
  * Requests that present a credential before any session exists, each with its
@@ -510,10 +520,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
     async fetch(req, srv) {
       // Before anything else, including the in-flight budget: see LOOPBACK_HOST.
-      if (!LOOPBACK_HOST.test(req.headers.get("host") ?? "")) {
+      if (!addressedHere(req.headers.get("host") ?? "", config.allowedHosts ?? [])) {
         void req.body?.cancel().catch(() => {});
         return harden(json(
-          { error: "Shahi answers only at 127.0.0.1 or localhost. Connect through the relay or an SSH tunnel." },
+          { error: "Shahi answers only at 127.0.0.1 or localhost. Connect through the relay or an SSH tunnel, or list your own reverse proxy's host name in SHAHI_ALLOWED_HOSTS." },
           { status: 403 },
         ));
       }
