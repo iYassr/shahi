@@ -62,6 +62,14 @@ async function render() {
   await settle();
 }
 
+test("a slow first answer shows Shahi opening instead of an empty page", async () => {
+  // A half-open SSH tunnel after the laptop slept: the auth check hangs until
+  // its fifteen-second deadline, and nothing at all was drawn meanwhile.
+  await render();
+  expect(view!.toJSON()).not.toBeNull();
+  expect(text()).toContain("Opening Shahi…");
+});
+
 test("a computer on another contract version says which side to update instead of reconnecting", async () => {
   routes["/api/auth/status"] = json({ required: false, authenticated: true });
   routes["/api/session"] = refused;

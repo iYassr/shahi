@@ -56,8 +56,9 @@ export function App(props: { initialPairingCode?: string }) {
     window.addEventListener("shahi:computer-changed", changed);
     return () => window.removeEventListener("shahi:computer-changed", changed);
   }, []);
-  return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} /></ApiContext.Provider> : <div className="app" role="status">Opening Shahi…</div>;
+  return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} /></ApiContext.Provider> : <Opening />;
 }
+function Opening() { return <div className="app" role="status">Opening Shahi…</div>; }
 function AppSession({ initialPairingCode = "", openPairing = false }: { initialPairingCode?: string; openPairing?: boolean }) {
   const api = useApi();
   const routeLocation = useLocation();
@@ -286,7 +287,11 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   }, [navigate]);
 
   useEffect(() => { if (session?.serverName && hosted) nameBrowserComputer(session.serverName); }, [session?.serverName]);
-  if (authenticated === null) return null;
+  // Until the first auth answer. Drawing nothing here left the locally served
+  // app a blank page for up to the check's fifteen-second deadline behind a
+  // half-open SSH tunnel, which is the "blank" refresh shape (pre-release
+  // review, 2026-09). The deadline then shows "Cannot reach Shahi" and Try again.
+  if (authenticated === null) return <Opening />;
   if (hosted && !authenticated && !pairingRequested && browserComputers().length > 0) {
     return <div className="app"><Computers /></div>;
   }
