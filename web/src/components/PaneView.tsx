@@ -17,6 +17,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   GAP_MARKER,
   ApiError,
+  IncompatibleServerError,
   UnauthorizedError,
   useApi,
   requestId,
@@ -181,6 +182,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         // The API already signals expired sessions to App. Do not turn that
         // into an unhandled promise rejection or a claim the pane was closed.
         if (err instanceof UnauthorizedError) { setLoadError("Please reconnect to your computer."); return; }
+        // Retrying cannot help a version refusal; its words say what will.
+        if (err instanceof IncompatibleServerError) { setLoadError(err.message); return; }
         setLoadError("Could not load this conversation. Reconnecting…");
         // Browser online can precede the relay reconnect. Keep recovering even
         // if that first online request still fails, without discarding the pane.

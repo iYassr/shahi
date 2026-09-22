@@ -11,6 +11,7 @@ import { PairBrowser } from "./components/PairBrowser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
+  IncompatibleServerError,
   SessionSocket,
   UnauthorizedError,
   ApiContext, createApi, useApi,
@@ -79,6 +80,13 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
    */
   const [connectionError, setConnectionError] = useState("");
   const [healthError, setHealthError] = useState<Error | null>(null);
+  /*
+   * A computer on another contract version is not reconnecting; it is
+   * refusing. The live stream stops, as on mobile, because its pushes are in
+   * a shape this build may misread and each one cleared the "Update needed"
+   * notice. Only a request that succeeds — Retry, after updating — ends it.
+   */
+  const incompatible = healthError instanceof IncompatibleServerError;
   const [reachable, setReachable] = useState(true);
   const [session, setSession] = useState<Session | null>(() => browserConnection().session);
   const sessionRef = useRef(session);
@@ -135,7 +143,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   const onMessage = useCallback((msg: SocketMessage) => {
     switch (msg.type) {
       case "session":
-        setHealthError(null);
+        setHealthError((current) => current instanceof IncompatibleServerError ? current : null);
         setSession(msg.session);
         setPrompts((current) => {
           const next: Record<string, ParsedPrompt> = {};
@@ -173,7 +181,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   }, []);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || incompatible) return;
     const socket = new SessionSocket(msg => { if (active()) onMessage(msg); }, (state) => {
       if (!active()) return;
       setLink(state);
@@ -190,7 +198,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       socket.close();
       socketRef.current = null;
     };
-  }, [authenticated, onMessage]);
+  }, [authenticated, onMessage, incompatible]);
 
   const watch = useCallback((paneId: string | null) => {
     socketRef.current?.watch(paneId);

@@ -2,7 +2,7 @@ import { clearWebDrafts, webDraft } from "../drafts";
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { ApiContext, ApiError, UnauthorizedError, api } from "../api";
+import { ApiContext, ApiError, IncompatibleServerError, UnauthorizedError, api } from "../api";
 import { PaneView } from "./PaneView";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,6 +59,16 @@ test("an expired session neither claims a closed pane nor rejects unhandled", as
   await render(mock().mockRejectedValue(new UnauthorizedError()));
   expect(output()).toContain("Please reconnect to your computer");
   expect(output()).not.toContain("This pane is gone");
+});
+
+test("a computer on another contract version says what to update instead of reconnecting forever", async () => {
+  const words = "This app is older than the Shahi on this server. Update the app.";
+  const pane = mock().mockRejectedValue(new IncompatibleServerError(words, { min: 6, max: 6 }));
+  await render(pane);
+  expect(output()).toContain(words);
+  expect(output()).not.toContain("Reconnecting");
+  await act(async () => { await Bun.sleep(2100); });
+  expect(pane).toHaveBeenCalledTimes(1);
 });
 
 test("retries after online fires before the relay has recovered", async () => {

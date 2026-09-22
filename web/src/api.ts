@@ -4,6 +4,7 @@ import { clearWebDrafts } from "./drafts";
 import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
+import { IncompatibleServerError } from "@shahi/shared/errors";
 import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PromptReceipt } from "@shahi/shared";
 /**
  * Client for the Shahi server.
@@ -85,6 +86,22 @@ const SILENCE_LIMIT_MS = 50_000;
 const WATCHDOG_INTERVAL_MS = 5_000;
 
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
+export { IncompatibleServerError };
+
+/**
+ * A 426 is the computer declining this contract version, in words that say
+ * which side to update. Reported as an ordinary failure it read as
+ * "Reconnecting… You don't need to pair again", indefinitely, while every
+ * request was refused (pre-release review, 2026-09). Mobile has always
+ * mapped it this way.
+ */
+async function incompatible(res: Response): Promise<IncompatibleServerError> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string; api?: { min: number; max: number } };
+  return new IncompatibleServerError(
+    body.error ?? "This app and the Shahi on this computer do not speak the same version. Update whichever is older.",
+    body.api ?? { min: 0, max: 0 },
+  );
+}
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -126,6 +143,7 @@ async function dispatch(path: string, init?: RequestInit): Promise<Response> {
     if (hosted) { await forgetBrowser(); if (browserConnection().generation !== generation + 1) throw new DOMException("Connection changed", "AbortError"); }
     window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError();
   }
+  if (res.status === 426) throw await incompatible(res);
   return res;
 }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
