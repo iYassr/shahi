@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { firstRelease } from "./bootstrap";
-import type { Catalog, Release } from "./catalog";
+import { selectRelease, type Catalog, type Release } from "./catalog";
 import { bunRequirement } from "./requirements";
 
 const release = (version: string, patch: Partial<Release> = {}): Release => ({
@@ -31,6 +31,12 @@ describe("the release a first install runs", () => {
     expect(chosen.notice).toContain("this computer runs herdr 0.9.2 (protocol 22)");
     expect(chosen.notice).toContain("approved for herdr 0.9.0 (protocol 22), 0.9.1 (protocol 22)");
     expect(chosen.notice).toContain("pair now");
+  });
+
+  test("the app's update status names both herdr versions too", () => {
+    // Once installed in recovery, the manager's catalog check reports this as the reason no update applies.
+    expect(selectRelease(catalog, { ...machine, herdr: { version: "0.9.2", protocol: 22 } }).reason)
+      .toBe("Shahi 0.3.6 is approved for herdr 0.9.0 (protocol 22), 0.9.1 (protocol 22), and this computer runs herdr 0.9.2 (protocol 22).");
   });
 
   test("an approved herdr gets the newest release that supports it, with nothing to explain", () => {
