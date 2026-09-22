@@ -901,6 +901,19 @@ describe("a phone through the relay", () => {
     }
   });
 
+  // The same gap one step later: revoked after the box answered the hello but
+  // before the phone's first sealed frame. That link used to end like a
+  // stranger's too, costing the phone a reconnect before it learned anything.
+  test("a phone revoked between its hello and its first sealed frame is told bye", async () => {
+    const { device, secret } = box.devices.create("Revoked mid-handshake");
+    const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: device.id }, secret);
+    await p.hello;
+    expect(box.devices.revoke(device.id)).toBe(true);
+    p.unwatch();
+    expect((await p.closed).code).toBe(1000);
+    expect(p.sawBye()).toBe(true);
+  });
+
   // Also from that review: the heartbeat closes a link whose own token has
   // expired with the same code as a revocation, and the box answered both with
   // a bye, erasing a pairing that was still valid. A new link mints a new token.
