@@ -56,6 +56,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .pair-browser__qr-mark { display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px; background: var(--accent-soft); border: 1px solid var(--line-bright); }
 .pair-browser__form input:not([type=checkbox]), .pair-browser__form textarea { width: 100%; box-sizing: border-box; padding: 12px; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .pair-browser__form textarea { min-height: 92px; resize: vertical; overflow-wrap: anywhere; }
+.pair-browser__target { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.pair-browser__target dt { color: var(--muted); }
+.pair-browser__target dd { margin: 0; overflow-wrap: anywhere; }
 .pair-browser__form button { padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; min-height: 44px; }
 .pair-browser__form .pair-browser__scan { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .pair-browser__scan:hover:not(:disabled) { background: var(--focus-ring); }

@@ -1,12 +1,16 @@
 import { UiIcon } from "./UiIcon";
 import { Logo } from "./Logo";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import jsQR from "jsqr";
-import { browserConnection, pairBrowser } from "../connection";
+import { browserConnection, pairBrowser, readPairing } from "../connection";
 import { InstallApp } from "./InstallApp";
 import { useDialog } from "../use-dialog";
 import { SetupIcon } from "./SetupIcon";
 
+/**
+ * `initialCode` is a code that arrived in the page's `#pair=` fragment, from a
+ * link rather than from anything the person did on this page.
+ */
 export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCode: string; onConsumed(): void; onSuccess(): void }) {
   const [code, setCode] = useState(initialCode);
   const [name, setName] = useState("Web browser");
@@ -14,6 +18,25 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  /*
+   * A linked code is shown for confirmation, never just pre-filled.
+   *
+   * Anyone can send a getshahi.dev/pwa/#pair= link for their own computer; it
+   * opened straight onto a filled-in form whose Connect button attached this
+   * browser to that stranger's computer, under whatever name it chose — even
+   * a copy of the victim's own (pre-release review, 2026-09). The native app
+   * has held linked codes on a confirm card since pentest M2; this is the
+   * same card: who is asking, and where the browser would connect.
+   */
+  const [fromLink, setFromLink] = useState(Boolean(initialCode));
+  const linked = useMemo(() => {
+    if (!fromLink) return null;
+    try {
+      const payload = readPairing(code);
+      return { host: new URL(payload.relay).host, identity: `${payload.server.slice(0, 16)}…`, error: "" };
+    } catch (e) { return { host: "", identity: "", error: e instanceof Error ? e.message : "This pairing link is not valid." }; }
+  }, [fromLink, code]);
+  const dismissLink = () => { setFromLink(false); setCode(""); setError(""); onConsumed(); };
   return <main className="pair-browser">
     <div className="pair-browser__intro">
       <div className="pair-browser__welcome"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><span>Welcome to Shahi</span></div>
@@ -33,19 +56,35 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
       <p className="app-help__links"><a href="https://getshahi.dev/privacy">Privacy</a><a href="mailto:support@getshahi.dev">Support</a></p>
     </div>
     <form id="pair-browser-form" className="pair-browser__form" onSubmit={(event) => {
-      event.preventDefault(); setBusy(true); setError("");
-      const secret = code; setCode(""); onConsumed();
+      event.preventDefault();
+      if (linked?.error) return;
+      setBusy(true); setError("");
+      const secret = code; setCode(""); setFromLink(false); onConsumed();
       void pairBrowser(secret, name, remember).then(onSuccess).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
     }}>
-      <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2>Connect this browser</h2></div>
-      <p>Use the QR code or pairing code shown on your computer.</p>
-      <button className="pair-browser__scan" type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}><SetupIcon name="qr" size={26} /><span>Scan QR code</span></button>
-      <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
+      {linked ? <>
+        <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2>Connect this browser?</h2></div>
+        <p role="alert">A link is asking to connect this browser to a Shahi computer. Only continue if you opened this link yourself, from a computer you control.</p>
+        {linked.error ? <p className="login__error">{linked.error}</p> : <dl className="pair-browser__target">
+          <dt>Relay</dt><dd><code>{linked.host}</code></dd>
+          <dt>Computer identity</dt><dd><code>{linked.identity}</code></dd>
+        </dl>}
+      </> : <>
+        <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2>Connect this browser</h2></div>
+        <p>Use the QR code or pairing code shown on your computer.</p>
+        <button className="pair-browser__scan" type="button" disabled={busy} onClick={() => { setScanning(true); setError(""); }}><SetupIcon name="qr" size={26} /><span>Scan QR code</span></button>
+        <label htmlFor="pairing-code">Pairing code</label><textarea id="pairing-code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="shahi://pair#…" disabled={busy} />
+      </>}
       <label htmlFor="browser-name">Device name</label><input id="browser-name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoComplete="off" disabled={busy} />
       <label className="pair-browser__remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />Remember this browser</label>
       <p className="pair-browser__note">{remember ? "Stay connected next time you open Shahi. Use this only on your own device: anyone using this browser can access your computer." : "You’ll need a new code if you close or refresh this page. Each code works once."}</p>
       {error && <p role="alert" className="login__error">{error}</p>}
-      <button type="submit" className="pair-browser__connect" disabled={busy || !code.trim()}>{busy ? "Connecting securely…" : "Connect"}</button>
+      {linked
+        ? <>
+          {!linked.error && <button type="submit" className="pair-browser__connect" disabled={busy}>{`Connect to ${linked.host}`}</button>}
+          <button type="button" onClick={dismissLink} disabled={busy}>Cancel</button>
+        </>
+        : <button type="submit" className="pair-browser__connect" disabled={busy || !code.trim()}>{busy ? "Connecting securely…" : "Connect"}</button>}
       {error && browserConnection().identity && <button type="button" onClick={onSuccess}>Continue for this session</button>}
       <p className="pair-browser__note">Connecting lets this browser control your work on the computer. You can remove its access in Settings from any connected device.</p>
     </form>

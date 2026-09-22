@@ -138,9 +138,11 @@ test("a browser revoked while it was closed signs out when it next opens", async
 });
 test("fragment pairing is removed before connecting and no secret is stored in web storage", async ({ page }) => {
   await page.goto(web);
-  await expect(page.getByLabel("Pairing code", { exact: true })).toHaveValue(code);
+  // A linked code is held for confirmation, never just pre-filled.
+  await expect(page.getByText("A link is asking to connect this browser")).toBeVisible();
+  await expect(page.getByLabel("Pairing code", { exact: true })).toHaveCount(0);
   expect(new URL(page.url()).hash).toBe("");
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: `Connect to ${new URL(web).host}`, exact: true }).click();
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
   const values = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(values.includes("deviceSecret")).toBe(false);
