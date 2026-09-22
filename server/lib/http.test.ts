@@ -724,6 +724,25 @@ test("authenticated file ranges preserve bytes and detect a changing download", 
   expect(changed.status).toBe(409);
 });
 
+// Review finding F38: a header value above U+00FF threw while the response was
+// built, and the route answered "cannot read that file" for a file that was there.
+test("a file named in Arabic, with an emoji, or by a macOS screenshot opens and keeps its name", async () => {
+  const names = ["صورة.png", "Screenshot 2026-09-22 at 10.15.32\u202FAM.png", "notes \u{1F600}.txt", "a \"quoted\" name (1).txt", "plain.txt"];
+  for (const name of names) {
+    writeFileSync(join(scratch, name), "contents");
+    for (const download of [false, true]) {
+      const res = await fetch(`${s.base}/api/file?path=${encodeURIComponent(join(scratch, name))}${download ? "&download=1" : ""}`, { headers: { cookie: s.cookie } });
+      expect({ name, status: res.status }).toEqual({ name, status: 200 });
+      expect(await res.text()).toBe("contents");
+      const header = res.headers.get("content-disposition")!;
+      expect(header).toStartWith(`${download ? "attachment" : "inline"}; filename="`);
+      // The ASCII fallback stays a well-formed quoted string.
+      expect(header.match(/filename="([^"]*)";/)![1]).toMatch(/^[\x20-\x7e]*$/);
+      expect(decodeURIComponent(header.match(/filename\*=UTF-8''([^;]+)$/)![1]!)).toBe(name);
+    }
+  }
+});
+
 
 test("chunk upload routes enforce authentication, body bounds and session ownership", async () => {
   const app = await boot();

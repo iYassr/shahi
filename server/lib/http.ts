@@ -313,6 +313,28 @@ async function smallJsonObject<T extends object>(req: Request, limit: number): P
   return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Partial<T>) : {};
 }
 
+/**
+ * A `Content-Disposition` for any name a file can have.
+ *
+ * Header values are bytes, and `Headers` throws on anything above U+00FF: an
+ * Arabic or emoji name, or the U+202F macOS puts before "AM" in a screenshot's
+ * name, made `/api/file` answer "cannot read that file" for a file that was
+ * there (review finding F38). RFC 6266 has the answer: an ASCII `filename`
+ * for clients that know no better and the real name, percent-encoded, in
+ * `filename*`. Quotes and backslashes would end the quoted string and control
+ * characters (a newline is a legal filename on Linux) would end the header, so
+ * the fallback replaces them too.
+ */
+function contentDisposition(kind: "inline" | "attachment", name: string): string {
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  // encodeURIComponent leaves ' ( ) * alone, which RFC 8187 does not allow bare.
+  const encoded = encodeURIComponent(name.toWellFormed()).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export interface ServerOptions {
   uploadDir?: string;
   /** How often to ping and to re-check every socket's session. */
@@ -983,11 +1005,6 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (rangeHeader && !match) return json({ error: "Unsupported file range" }, { status: 416 });
           const file = await readWithinHome({ path, download, range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined });
           if (req.headers.get("x-shahi-file-version") && req.headers.get("x-shahi-file-version") !== file.version) return json({ error: "The file changed while downloading. Try again." }, { status: 409 });
-          // Quotes and backslashes would end the quoted-string; control
-          // characters (a newline is a legal filename on Linux) would end the
-          // header, and `Headers` throws on them — a 500 for a file that
-          // merely has an odd name.
-          const safeName = file.name.replace(/[\x00-\x1f\x7f"\\]/g, "_");
           return new Response(file.bytes, {
             status: file.range ? 206 : 200,
             headers: {
@@ -996,7 +1013,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               "x-shahi-file-version": file.version,
               ...(file.range ? { "content-range": `bytes ${file.range.start}-${file.range.end}/${file.total}` } : {}),
               "content-length": String(file.bytes.byteLength),
-              "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+              "content-disposition": contentDisposition(download ? "attachment" : "inline", file.name),
               // The agent may rewrite it a second later.
               "cache-control": "no-store",
             },
