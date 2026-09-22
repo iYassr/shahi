@@ -6,7 +6,7 @@ import { browserConnection, hosted } from "../connection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeviceList } from "@shahi/shared";
 import { useApi } from "../api";
-import { registerPush } from "./PushPrompt";
+import { confirmSwitch, registerPush, unregisterPush } from "./PushPrompt";
 import { InstallApp } from "./InstallApp";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
@@ -45,16 +45,10 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
           checkPushConnection(hosted, browserConnection(), generation);
           if (!("Notification" in window)) throw new Error("Install Shahi on your Home Screen to enable notifications on this browser.");
           if (await Notification.requestPermission() !== "granted") throw new Error("Notifications are blocked in browser settings.");
-          await registerPush(generation); preferences.remove("shahi.push.dismissed"); onToast("Notifications on");
+          await registerPush(generation, confirmSwitch); preferences.remove("shahi.push.dismissed"); onToast("Notifications on");
         })}>Enable notifications</button>
         <button className="empty__action" disabled={busy} onClick={() => void run(async () => {
-          const generation = browserConnection().generation;
-          const check = () => { if (hosted && browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError"); };
-          const registration = await navigator.serviceWorker?.getRegistration(import.meta.env.BASE_URL);
-          check();
-          const subscription = await registration?.pushManager.getSubscription();
-          check();
-          if (subscription) { await api.pushUnsubscribe(subscription.endpoint); check(); await subscription.unsubscribe(); }
+          await unregisterPush();
           preferences.set("shahi.push.dismissed", "1"); onToast("Notifications off");
         })}>Disable notifications</button>
       </section>

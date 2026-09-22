@@ -71,7 +71,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
         setState("hidden");
         return;
       }
-      await registerPush(generation);
+      await registerPush(generation, confirmSwitch);
       setState("done");
       onToast("Notifications on");
     } catch (err) {
@@ -107,7 +107,19 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   );
 }
 
-export async function registerPush(expectedGeneration = browserConnection().generation): Promise<void> {
+/**
+ * A browser holds one push subscription for this app, and it is bound to the
+ * key it was made with. Every computer has its own VAPID key, and a push
+ * service rejects a send signed with any other — so on the hosted app, where
+ * several computers share one service worker, a second computer used to adopt
+ * the first one's subscription, report "Notifications on", and never notify.
+ * Found in the pre-release review. Moving the subscription is the person's
+ * choice, because it silences the computer that had it.
+ */
+export const ONE_COMPUTER = "This browser already gets notifications from another computer. A browser can get notifications from one computer at a time.";
+export const confirmSwitch = () => window.confirm(`${ONE_COMPUTER} Get them from this computer instead?`);
+
+export async function registerPush(expectedGeneration = browserConnection().generation, allowSwitch?: () => boolean): Promise<void> {
   const check = () => checkPushConnection(hosted, browserConnection(), expectedGeneration);
   check();
   const { publicKey } = await api.pushKey();
@@ -119,6 +131,12 @@ export async function registerPush(expectedGeneration = browserConnection().gene
   check();
   let subscription = await registration.pushManager.getSubscription();
   check();
+  if (subscription && !subscribedWith(subscription, publicKey)) {
+    if (!allowSwitch?.()) throw new Error(ONE_COMPUTER);
+    await subscription.unsubscribe();
+    check();
+    subscription = null;
+  }
   let created = false;
   try {
     if (!subscription) {
@@ -134,6 +152,37 @@ export async function registerPush(expectedGeneration = browserConnection().gene
     if (created && subscription && (current.generation === expectedGeneration || !current.identity)) await subscription.unsubscribe().catch(() => {});
     throw error;
   }
+}
+
+/**
+ * Turns this computer's notifications off in this browser, and only this
+ * computer's: "Disable" used to unsubscribe whatever subscription the browser
+ * held, which silently ended another computer's notifications too.
+ */
+export async function unregisterPush(expectedGeneration = browserConnection().generation): Promise<void> {
+  const check = () => { if (hosted && browserConnection().generation !== expectedGeneration) throw new DOMException("Connection changed", "AbortError"); };
+  const registration = await navigator.serviceWorker?.getRegistration(import.meta.env.BASE_URL);
+  check();
+  const subscription = await registration?.pushManager.getSubscription();
+  check();
+  if (!subscription) return;
+  const { publicKey } = await api.pushKey();
+  check();
+  if (!publicKey || !subscribedWith(subscription, publicKey)) return;
+  await api.pushUnsubscribe(subscription.endpoint);
+  check();
+  await subscription.unsubscribe();
+}
+
+/** Whether a subscription was made with this computer's key. */
+export function subscribedWith(subscription: PushSubscription, publicKey: string): boolean {
+  const key = subscription.options?.applicationServerKey;
+  // A browser that cannot say is treated as a match: guessing otherwise would
+  // move or remove another computer's notifications.
+  if (!key) return true;
+  const held = new Uint8Array(key);
+  const wanted = new Uint8Array(urlBase64ToUint8Array(publicKey));
+  return held.length === wanted.length && held.every((byte, index) => byte === wanted[index]);
 }
 
 /**
