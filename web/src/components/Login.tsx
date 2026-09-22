@@ -45,6 +45,13 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
       <button type="submit" disabled={busy || passcode === ""}>
         {busy ? "Checking…" : "Unlock"}
       </button>
+      {/* Only the passcode's hash is kept, so a lost one is replaced rather
+          than found; this page used to give no way back at all (pre-release
+          review). The native SSH form says the same. */}
+      <p className="login__help">
+        Lost it? On this computer, run <code>herdr plugin action invoke shahi.reset-passcode</code>, then read the new
+        one with <code>herdr plugin log list --plugin shahi</code>.
+      </p>
     </form>
   );
 }

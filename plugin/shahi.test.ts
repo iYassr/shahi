@@ -319,6 +319,27 @@ describe("the first setup's passcode", () => {
     const hash = Buffer.from(readEnvFile(layout.envFile).get("PASSCODE_HASH_B64")!, "base64").toString("utf8");
     expect(await Bun.password.verify(printed!, hash)).toBe(true);
   });
+
+  test("can be replaced, since only its hash is kept: reset-passcode prints a new one and restarts", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    const meta = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ serverId: "s".repeat(43), api: { min: 5, max: 5 } }) });
+    restore.push(() => void meta.stop(true));
+    mkdirSync(layout.configDir, { recursive: true });
+    writeFileSync(layout.envFile, `PORT=${meta.port}\n`);
+    await install(layout, fakeService());
+    const first = readEnvFile(layout.envFile).get("PASSCODE_HASH_B64");
+
+    let restarted = 0;
+    await install(layout, fakeService(() => { restarted++; }), { newPasscode: true });
+    const printed = [...out.text().matchAll(/Passcode {2}(\d{4})/g)].map((m) => m[1]!);
+    expect(printed).toHaveLength(2);
+    const hash = readEnvFile(layout.envFile).get("PASSCODE_HASH_B64")!;
+    expect(hash).not.toBe(first);
+    expect(await Bun.password.verify(printed[1]!, Buffer.from(hash, "base64").toString("utf8"))).toBe(true);
+    expect(restarted).toBe(1);
+  });
 });
 
 /**

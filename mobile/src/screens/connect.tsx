@@ -473,8 +473,12 @@ function SshForm({
         testID="ssh-passcode"
         accessibilityLabel="Shahi passcode"
       />
+      {/* Only the passcode's hash is kept, and the first run shows it in the
+          pair popup, not the plugin log — so "find that message again" had
+          nothing to find. Replacing it is the recovery (pre-release review). */}
       <Text style={styles.fieldHelp}>
-        Shown once when the Shahi plugin is first installed. To find that message again, run{" "}
+        Shown once when Shahi was set up. Lost it? On the computer, run{" "}
+        <Text style={styles.mono}>herdr plugin action invoke shahi.reset-passcode</Text>, then read the new one with{" "}
         <Text style={styles.mono}>herdr plugin log list --plugin shahi</Text>. Pairing by QR does not need it.
       </Text>
     </>

@@ -10,6 +10,7 @@ import { requestUpdate } from "./releases/storage";
  *   sh plugin/bun.sh run plugin/shahi.ts logs        the tail of the sidecar's log
  *   sh plugin/bun.sh run plugin/shahi.ts pair        the QR, then wait for Enter (the popup)
  *   sh plugin/bun.sh run plugin/shahi.ts open-pair   open that popup (the action)
+ *   sh plugin/bun.sh run plugin/shahi.ts reset-passcode   a new passcode, printed once, and a restart
  *   sh plugin/bun.sh run plugin/shahi.ts uninstall   the service, then the plugin; the data stays
  *
  * Every verb needs the environment herdr injects (HERDR_PLUGIN_ROOT and
@@ -53,7 +54,7 @@ import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../ser
 import { layoutFromEnv, type Layout } from "./layout";
 import { serviceFor, type Service, type ServiceSpec } from "./service";
 
-export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "uninstall"] as const;
+export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "reset-passcode", "uninstall"] as const;
 type Verb = (typeof VERBS)[number];
 
 /** herdr 0.8.2 has no menu for plugin actions: the CLI, or a key the person binds. */
@@ -240,8 +241,12 @@ export interface Installed {
   linger: string | null;
 }
 
-/** Secrets, the approved release, the service, and what to know about them. */
-export async function install(layout: Layout, service: Service): Promise<Installed> {
+/**
+ * Secrets, the approved release, the service, and what to know about them.
+ * `newPasscode` replaces the passcode (the `reset-passcode` action); otherwise
+ * one is chosen only when there is none.
+ */
+export async function install(layout: Layout, service: Service, opts: { newPasscode?: boolean } = {}): Promise<Installed> {
   mkdirSync(layout.configDir, { recursive: true });
   mkdirSync(layout.stateDir, { recursive: true });
 
@@ -261,7 +266,7 @@ export async function install(layout: Layout, service: Service): Promise<Install
   // An empty PASSCODE_HASH_B64 is a working configuration for a checkout (the
   // gate is off) and never for a plugin: this port is full control of every
   // agent on the machine, so the plugin always keeps a passcode.
-  const passcode = existing.get("PASSCODE_HASH_B64") ? null : randomPasscode();
+  const passcode = opts.newPasscode || !existing.get("PASSCODE_HASH_B64") ? randomPasscode() : null;
   const { env } = await ensureSecrets(existing, { passcode });
   // Written even when nothing changed: it is the cheapest way to make sure a
   // hand-made file (`PORT=7275`, at whatever mode the shell gave it) ends up
@@ -300,15 +305,15 @@ export async function install(layout: Layout, service: Service): Promise<Install
 }
 
 /**
- * The startup hook and the `restart` action: their output lands in the
- * plugin log, so a toast (when herdr shows them) says
+ * The startup hook and the `restart` and `reset-passcode` actions: their
+ * output lands in the plugin log, so a toast (when herdr shows them) says
  * where to look. herdr ignores a failed startup hook, so a failure is toasted
  * too — it used to be silent everywhere but the log (pre-release review).
  */
-export async function setup(layout: Layout, service: Service): Promise<number> {
+export async function setup(layout: Layout, service: Service, opts: { newPasscode?: boolean } = {}): Promise<number> {
   let done: Installed;
   try {
-    done = await install(layout, service);
+    done = await install(layout, service, opts);
   } catch (err) {
     notify(
       "Shahi is not set up",
@@ -577,6 +582,10 @@ export async function main(argv: string[]): Promise<number> {
     case "setup":
     case "restart":
       return setup(layout, service);
+    case "reset-passcode":
+      // Only its hash is kept, so a forgotten passcode is replaced, not
+      // recovered. Through the whole setup, so the sidecar restarts with it.
+      return setup(layout, service, { newPasscode: true });
     case "status":
       return status(layout, service);
     case "stop":
