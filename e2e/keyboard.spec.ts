@@ -1,5 +1,6 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
+import { scenario } from "./stub/control";
 
 /**
  * The on-screen keyboard, which is where a phone browser stops behaving like a
@@ -54,7 +55,11 @@ async function toolbarShifts(page: Page): Promise<void> {
   });
 }
 
+// The stub keeps one scenario for the whole run, so a test that does not
+// choose one inherits whatever ran before it; left on "empty", every test
+// here failed at the first row (September 2026 review).
 const openPane = async (page: Page) => {
+  await scenario(page, "busy");
   await page.goto("/");
   await page.locator(".row").first().click();
   await expect(page).toHaveURL(/\/pane\//);

@@ -81,6 +81,9 @@ test.describe("resilience", () => {
 
   /** What a stale notification opens: the pane it names has since closed. */
   test("says so when a pane is gone instead of spinning", async ({ page }) => {
+    // A scenario also resets the stub's contract range and control state, so
+    // a test that failed while overriding them cannot turn this into a 426.
+    await scenario(page, "busy");
     await page.goto("/pane/wZ%3Ap9");
     await expect(page.getByText(/this pane is gone/i)).toBeVisible({ timeout: 20_000 });
     // And no composer aimed at nothing.

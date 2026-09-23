@@ -14,6 +14,9 @@ test.describe("getting around", () => {
   });
 
   test("opens a space and its panes", async ({ page }) => {
+    // Chosen here, not inherited from the test above: run alone or after a
+    // test that left "empty", there was no space to open.
+    await scenario(page, "busy");
     await page.goto("/spaces");
     await page.locator(".row, .space").first().click();
     await expect(page).toHaveURL(/\/space\//);
