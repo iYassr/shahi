@@ -1291,15 +1291,40 @@ function FileView({
   );
 }
 
-/** Images come from the server rather than the transcript payload. */
+/**
+ * Images come from the server rather than the transcript payload, through the
+ * computer's own API so they travel however that computer is reached — see
+ * `api.transcriptImage`. A failure says so in the box it would have filled.
+ */
 function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
-  const { transport: connection } = useSession();
-  const uri = `${connection.baseUrl}/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(imageRef)}`;
+  const { api } = useSession();
+  const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setSource(null);
+    setFailed(null);
+    api.transcriptImage(paneId, imageRef).then(
+      (loaded) => { if (live) setSource(loaded); },
+      (e: Error) => { if (live) setFailed(e instanceof UnauthorizedError ? "This image could not be loaded." : e.message); },
+    );
+    return () => { live = false; };
+  }, [api, paneId, imageRef]);
+  if (!source) {
+    return (
+      <View style={[styles.image, styles.imagePending]}>
+        {failed ? <Text style={styles.toolAside}>{failed}</Text> : <ActivityIndicator color={theme.dim} />}
+      </View>
+    );
+  }
   return (
     <Image
-      source={{ uri, headers: connection.cookie ? { cookie: connection.cookie } : undefined }}
+      testID="transcript-image"
+      accessibilityLabel="Image from the conversation"
+      source={source}
       style={styles.image}
       resizeMode="contain"
+      onError={() => { setSource(null); setFailed("This image could not be loaded."); }}
     />
   );
 }
@@ -1733,6 +1758,7 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     backgroundColor: theme.surface,
   },
+  imagePending: { alignItems: "center", justifyContent: "center", padding: 16 },
 
   promptCard: {
     margin: 16,

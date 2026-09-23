@@ -71,6 +71,7 @@ jest.mock("@/lib/api", () => {
       readFile: jest.fn(),
       dirs: jest.fn(),
       answerPrompt: jest.fn(),
+      transcriptImage: jest.fn(),
     },
   };
 });
@@ -86,6 +87,7 @@ const mocked = api as unknown as {
   pane: jest.Mock;
   send: jest.Mock;
   sendKeys: jest.Mock;
+  transcriptImage: jest.Mock;
 };
 
 /** What the socket does when the server says this pane has something new. */
@@ -914,4 +916,28 @@ test("answering from the pane says which question the card showed", async () => 
   await settle();
   expect(answerPrompt).toHaveBeenCalledWith(PANE, bash.options[0], bash);
   view.unmount();
+});
+
+describe("transcript images", () => {
+  const withImage: LogMessage = { id: "i1", role: "you", at: 1, blocks: [{ kind: "image", mediaType: "image/png", ref: "uuid-1:0" }] };
+
+  // Over the relay there is no URL an Image could load; the reader used to
+  // build one anyway, a host-less path, and every image was an empty box.
+  test("an image is shown from what the computer's API fetched, not from a URL built on the screen", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    mocked.sessionLog.mockResolvedValue(log([withImage]));
+    mocked.transcriptImage.mockResolvedValue({ uri: png });
+    const view = render(<Pane paneId={PANE} />);
+    const image = await view.findByTestId("transcript-image");
+    expect(mocked.transcriptImage).toHaveBeenCalledWith(PANE, "uuid-1:0");
+    expect(image.props.source).toEqual({ uri: png });
+  });
+
+  test("an image that cannot come through says why in its place", async () => {
+    mocked.sessionLog.mockResolvedValue(log([withImage]));
+    mocked.transcriptImage.mockRejectedValue(new Error("This image is too large to show through the relay. Connect over SSH, or open it on your computer."));
+    const view = render(<Pane paneId={PANE} />);
+    expect(await view.findByText(/too large to show through the relay/)).toBeTruthy();
+    expect(view.queryByTestId("transcript-image")).toBeNull();
+  });
 });

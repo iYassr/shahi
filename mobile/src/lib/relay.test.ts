@@ -751,6 +751,60 @@ describe("files over the relay", () => {
   });
 });
 
+/**
+ * Images in a conversation — pasted in, or returned by a tool. `Image` loads
+ * through the phone's own networking, which cannot reach a sealed link, so
+ * over the relay the reader used to show an empty box for every one (review
+ * F15/F31/F35). The bytes now come through the link as a data URL.
+ */
+describe("transcript images over the relay", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d]);
+
+  test("a transcript image over the relay arrives as a data URL, since an Image cannot fetch through the link", async () => {
+    const { box } = await openLink();
+    const call = api.transcriptImage("w1:p1", "uuid-1:0");
+    await tick();
+    const [req] = box.read() as RelayRequest[];
+    expect(req).toMatchObject({ method: "GET", path: "/api/panes/w1%3Ap1/image?ref=uuid-1%3A0" });
+    box.answer(req!, 200, png, { "content-type": "image/png" });
+    // Standard, padded base64: what a data URL is, and what `Image` decodes.
+    await expect(call).resolves.toEqual({ uri: `data:image/png;base64,${btoa(String.fromCharCode(...png))}` });
+  });
+
+  // Three large screenshots answered together overran the link's
+  // unacknowledged-bytes window, and the box ended the link (pre-release review).
+  test("images are fetched one at a time, and one already shown is not fetched again", async () => {
+    const { box } = await openLink();
+    const first = api.transcriptImage("w1:p1", "uuid-2:0");
+    const second = api.transcriptImage("w1:p1", "uuid-3:0");
+    await tick();
+    const pending = box.read() as RelayRequest[];
+    expect(pending).toHaveLength(1);
+    box.answer(pending[0]!, 200, png, { "content-type": "image/png" });
+    await first;
+    await tick();
+    const [next] = box.read() as RelayRequest[];
+    expect(next!.path).toContain("uuid-3%3A0");
+    box.answer(next!, 200, png, { "content-type": "image/png" });
+    await second;
+    const again = await api.transcriptImage("w1:p1", "uuid-2:0");
+    expect(again.uri).toMatch(/^data:image\/png;base64,/);
+    await tick();
+    expect(box.read()).toEqual([]);
+  });
+
+  test("an image too large for the relay, or not an image at all, is refused in words", async () => {
+    const { box } = await openLink();
+    const big = api.transcriptImage("w1:p1", "uuid-4:0");
+    await tick();
+    box.answer(box.read()[0] as RelayRequest, 413, { error: "too large" });
+    await expect(big).rejects.toThrow(/too large to show through the relay/);
+    const page = api.transcriptImage("w1:p1", "uuid-5:0");
+    await tick();
+    box.answer(box.read()[0] as RelayRequest, 200, "<svg onload=alert(1)>", { "content-type": "image/svg+xml" });
+    await expect(page).rejects.toThrow(/cannot be shown here/);
+  });
+});
 
 describe("pairing over the relay", () => {
   test("the hello names the code by the hash of its bytes, and the claim answers with a device", async () => {

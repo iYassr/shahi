@@ -628,3 +628,18 @@ describe("an SSH upload", () => {
     } finally { jest.useRealTimers(); }
   });
 });
+
+/**
+ * Transcript images over SSH are a URL the image loader fetches and caches
+ * itself, with this computer's cookie — never bytes pushed through JS. The
+ * relay case, where no URL could work, is in relay.test.ts.
+ */
+test("a transcript image over SSH is the tunnel's URL with this computer's cookie", async () => {
+  const computer = { baseUrl: "http://127.0.0.1:50999", cookie: "shahi_session=ssh", relay: null };
+  const fetchMock = jest.fn();
+  (globalThis as { fetch: unknown }).fetch = fetchMock;
+  const source = await createApi(computer).transcriptImage("w1:p1", "uuid-1:0");
+  expect(source.uri).toBe("http://127.0.0.1:50999/api/panes/w1%3Ap1/image?ref=uuid-1%3A0");
+  expect(source.headers?.cookie).toBe("shahi_session=ssh");
+  expect(fetchMock).not.toHaveBeenCalled();
+});

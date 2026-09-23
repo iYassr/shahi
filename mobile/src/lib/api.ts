@@ -209,6 +209,17 @@ function abortable<T>(signal: AbortSignal | undefined, work: Promise<T>): Promis
   });
 }
 
+/** Standard, padded base64 in a data URL: the one form of "here are the bytes" `Image` accepts. */
+function dataUrl(type: string, bytes: Uint8Array): string {
+  const base64 = toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/");
+  return `data:${type};base64,${base64}${"=".repeat((4 - (base64.length % 4)) % 4)}`;
+}
+
+/** Transcript images the reader can show; anything else is refused rather than rendered. */
+const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/;
+/** Relay images kept per computer, by total base64 length (~6 MB of pictures). */
+const IMAGE_CACHE_CHARS = 8 * 1024 * 1024;
+
 /**
  * How long an SSH upload may take: a minute, plus the file at 64 KiB/s — well
  * under a weak cellular uplink. A fixed minute could not carry the documented
@@ -322,6 +333,21 @@ const postJson = <T>(path: string, body: unknown, ms = REQUEST_TIMEOUT_MS) =>
  * is returned unchanged on a 304, so the reader's `merge` sees no difference.
  */
 const transcriptCache = new Map<string, { etag: string; value: SessionLog }>();
+
+/**
+ * Transcript images fetched through the relay, most recent last, and the
+ * queue that fetches them one at a time.
+ *
+ * One at a time because a relay link carries only so many unacknowledged
+ * bytes: three large screenshots answered at once overran it and the box ended
+ * the whole link, failing every request on it (pre-release review). Kept because the
+ * reader's list unmounts cells far off screen, and a ref names the same
+ * picture forever (the server marks the route immutable) — over HTTP the image
+ * loader's cache does this; the relay has none.
+ */
+const images = new Map<string, string>();
+let imageChars = 0;
+let imageQueue: Promise<unknown> = Promise.resolve();
 
 const api = {
   control: async (): Promise<import("@shahi/shared").ControlHandshake | null> => {
@@ -534,8 +560,7 @@ const api = {
       // the bytes only exist inside a sealed frame — so they are handed over as
       // a data URL, which is the one form of "here are the bytes" it accepts.
       if (!connection.relay) return { imageUrl: `${connection.baseUrl}${route}` };
-      const base64 = toBase64Url(await res.bytes()).replace(/-/g, "+").replace(/_/g, "/");
-      return { imageUrl: `data:${type.split(";")[0]};base64,${base64}` };
+      return { imageUrl: dataUrl(type.split(";")[0]!, await res.bytes()) };
     }
     if (type && !type.startsWith("text/") && !/^application\/(json|xml)(?:;|$)/.test(type)) {
       throw new Error("Preview unavailable for this file type. Open it on your computer. Text files and images can be viewed in Shahi.");
@@ -547,6 +572,52 @@ const api = {
     if (!configured()) throw new Error("No server address configured");
     const { bytes } = await downloadFileBytes(headers => dispatch(`/api/file?path=${encodeURIComponent(path)}&download=1`, { headers: { ...baseHeaders(), ...headers } }));
     return toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/");
+  },
+
+  /**
+   * An image out of a transcript — pasted into the conversation or returned by
+   * a tool — as a source `Image` can load.
+   *
+   * Over SSH that is the URL and the headers, as `readFile` hands back: the
+   * image loader fetches and caches it. Over the relay, the default transport,
+   * there is no URL an `Image` could fetch — the bytes exist only inside a
+   * sealed frame — so they come through the link and back as a data URL. The
+   * reader used to build the URL either way, which over the relay was a
+   * host-less path: every image an empty box (pre-release review).
+   */
+  transcriptImage: async (paneId: string, ref: string): Promise<{ uri: string; headers?: Record<string, string> }> => {
+    if (!configured()) throw new Error("No server address configured");
+    const route = `/api/panes/${encodeURIComponent(paneId)}/image?ref=${encodeURIComponent(ref)}`;
+    if (!connection.relay) return { uri: `${connection.baseUrl}${route}`, headers: baseHeaders() };
+    const key = `${paneId}\n${ref}`;
+    const fetchImage = async () => {
+      const kept = images.get(key);
+      if (kept !== undefined) {
+        images.delete(key);
+        images.set(key, kept);
+        return kept;
+      }
+      const res = await dispatch(route, { headers: baseHeaders() });
+      // The box refuses a response too big for one sealed frame rather than
+      // letting the relay drop the link over it.
+      if (res.status === 413) throw new Error("This image is too large to show through the relay. Connect over SSH, or open it on your computer.");
+      if (res.status === 401) throw new UnauthorizedError();
+      if (!res.ok) throw new Error("This image could not be loaded.");
+      const type = (res.headers.get("content-type") ?? "").split(";")[0]!.trim();
+      if (!IMAGE_TYPES.test(type)) throw new Error("This image's format cannot be shown here.");
+      const uri = dataUrl(type, await res.bytes());
+      images.set(key, uri);
+      imageChars += uri.length;
+      for (const [old, value] of images) {
+        if (imageChars <= IMAGE_CACHE_CHARS || old === key) break;
+        images.delete(old);
+        imageChars -= value.length;
+      }
+      return uri;
+    };
+    const next = imageQueue.then(fetchImage, fetchImage);
+    imageQueue = next.catch(() => undefined);
+    return { uri: await next };
   },
 
   /**
