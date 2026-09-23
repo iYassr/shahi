@@ -5,6 +5,12 @@ release catalog, updater and publication workflow for Shahi 0.3.2. It combines
 source review, adversarial regression tests and actual GitHub environment
 inspection. The baseline was 0.3.1 (`a80d07b4`). It is not an independent audit.
 
+> *Note, 23 September 2026:* "Catalogs must be renewed before their 120-day
+> expiry", under *Boundaries that remain*, was a manual step with nothing
+> watching the date. `.github/workflows/catalog-expiry.yml` now re-signs any
+> channel with fewer than 30 days left every week and files an issue when it
+> cannot; see [operations.md](operations.md#release-catalogs).
+
 ## Findings and fixes
 
 ### Device revocation while an update body arrives

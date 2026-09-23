@@ -25,7 +25,7 @@ that module together, and by bumping `RELAY_PROTOCOL`.
   box and its phones. It never sees a key, a passcode, a request path or a byte
   of a terminal. What it does see, and Cloudflare with it: both ends' IP
   addresses; the `serverId` (in the box's URL, so in request analytics) and
-  the box's public key; a presence timeline (the box pings every minute); each
+  the box's public key; a presence timeline (the box pings every twenty seconds); each
   phone's `deviceId` or pairing-code hash, in the clear in its hello; how many
   phones a box has; and the size and timing of every frame. The default relay
   is `relay.getshahi.dev`, run by Shahi's author.
@@ -47,7 +47,14 @@ secrets for phones:
   `{"t":"ready"}`. Anything else, or ten seconds of silence, closes with
   `4401`. A second box connection for the same id replaces the first (the old
   one is closed with `4409`): a restarted sidecar must not be locked out by
-  its own zombie.
+  its own zombie. Replacement happens only on a proven `auth`, never on
+  connect. At most eight unauthenticated box sockets may wait per `serverId`.
+  A ninth closes the longest-waiting pending one, if it has waited at least a
+  second, with `4429` "too many pending boxes"; if all eight are younger than
+  that, the newcomer gets the close instead. An authenticated box is never
+  evicted by this. Refusing the newcomer outright, as the relay once did, let
+  anyone who knew a `serverId` hold all eight slots with silent sockets and
+  keep the real computer's reconnect out.
 - `wss://<relay>/v1/phone/<serverId>` — a phone's connection. If no box is
   connected the relay closes it at once with `4404` ("box offline"); the app
   shows that in words. Otherwise the relay assigns a **link** number and tells
@@ -86,7 +93,11 @@ socket carries every phone. Text frames are relay control only, as above.
 Limits, enforced by the relay: payload ≤ 1 MiB, at most 8 phones per box,
 at most 64 KiB/s sustained per phone with a burst of 1 MiB (a reader window is
 ~15 KB; a photo upload is the reason for the burst), and idle phone sockets
-closed after 10 minutes without a frame. The relay keeps no history: a frame
+closed after 10 minutes without a frame. Every phone frame, text included, is
+charged at least 256 bytes against that bucket, so a phone gets at most 256
+frames a second sustained and 4,096 in a burst: each frame wakes the Durable
+Object, and charging bytes alone let 1-byte frames through at about 65,000 a
+second. Phone text frames are charged and then dropped, never forwarded. The relay keeps no history: a frame
 that arrives while the box is disconnected is dropped and the phone's socket
 is closed with `4404`, which is honest — the phone reconnects and asks again.
 
@@ -113,10 +124,15 @@ Both sides then derive a session exactly as `shared/src/e2e.ts` does —
 `clientSession` on the phone, `serverSession` on the box — with the shared
 secret as the pairing secret argument. A relay, or anyone, who does not hold
 that secret derives different keys, and the first sealed frame fails to open;
-the box closes the link with `4403`. An unknown `deviceId` or pairing id is
-`4401`. Every frame after hello is a sealed message from `e2e.ts`
-(`counter ‖ ciphertext`), each direction on its own key, counters never reused,
-a replayed frame refused.
+the box ends the link. It does the same, without answering, to a hello naming
+a `deviceId` or pairing id it does not know, or one that is malformed. The box
+cannot choose the phone's close code: ending a link is the `close` control
+above, which the relay delivers to the phone as `1000` "closed by box" in
+every one of these cases. A `deviceId` the box knows but has revoked is the
+exception: the box answers its hello, keyed from the revoked row's retained
+secret, sends one sealed `bye` (below) and then ends the link. Every frame
+after hello is a sealed message from `e2e.ts` (`counter ‖ ciphertext`), each
+direction on its own key, counters never reused, a replayed frame refused.
 
 **Inside a sealed frame** is UTF-8 JSON, one of:
 
@@ -124,18 +140,34 @@ a replayed frame refused.
   from the phone; `body` is base64url of the request bytes when there is one.
   `headers` carries `content-type` and `x-shahi-api`; the box adds the session.
 - `{"t":"res","id":n,"status":200,"headers":{…},"body":"<base64url>"}` from
-  the box, `headers` limited to `content-type`, `etag`, `cache-control`.
+  the box, `headers` limited to `RELAY_RESPONSE_HEADERS` in
+  `shared/src/relay.ts`: `content-type`, `etag`, `cache-control`,
+  `content-range` and `x-shahi-file-version`. The last two are what ranged
+  file downloads (512 KiB ranges, answered `206`) read; the list stopped at the
+  first three until the September 2026 pre-release review, so every PDF,
+  Save / Share and web download through the relay failed while SSH worked. The
+  hosted browser fixture filters by the same constant.
 - `{"t":"ws","data":<SocketMessage>}` from the box — the same messages the
   `/ws` socket pushes (`session`, `frame`, `prompt`, `status`, `log_changed`,
   `ping`) — and `{"t":"ws","data":{"type":"watch","paneId":"…"}}` /
   `{"type":"unwatch"}` from the phone. One link is therefore both the request
   channel and the dashboard stream; the app opens exactly one.
-- `{"t":"bye"}` from the box: the phone's session is gone — revoked in Settings,
-  or expired — so it signs out and stops reconnecting, the mirror of a `/ws`
-  close with `4001`. It has to be a sealed message rather than a close code
-  because the relay flattens a box-driven close to `1000`, which the phone would
-  retry; without it a revoked phone reconnected on a backoff loop forever, cut
-  off but never told to sign out. Additive and unversioned: an older box never
+- `{"t":"bye"}` from the box: this device is no longer paired, so the phone
+  signs out and stops reconnecting, the mirror of a `/ws` close with `4001`.
+  It has to be a sealed message rather than a close code because the relay
+  flattens a box-driven close to `1000`, which the phone would retry; without
+  it a revoked phone reconnected on a backoff loop forever, cut off but never
+  told to sign out. It goes to a device revoked while its link is open, to one
+  revoked between its hello and its first sealed frame, and to one revoked
+  while its link was down, which is told on its next connection: the box keys
+  that link from the revoked row's retained secret, which authorizes nothing
+  and is used only for this. It does not go to a link whose own session token
+  merely expired (the heartbeat's `4001`): that link just ends, and the phone
+  reconnects and gets a new token, because a `bye` there erased a valid
+  pairing. Logout over the relay revokes the link's token before the device,
+  so that link also ends without a `bye`; both clients sign out locally
+  anyway. Anything still queued for the link is dropped, and the `bye` goes
+  ahead of the delivery window. Additive and unversioned: an older box never
   sends it, an older phone ignores an unknown `t`.
 
 **Authentication inside the box.** A plaintext hello naming a device is not
@@ -145,8 +177,23 @@ a sealed watch/unwatch after deriving device-session keys; a pairing client send
 its sealed metadata request. The deadline is cleared only by a successfully
 opened message, never by the hello or outbound heartbeats. Before proof, the box
 issues no session and attaches no stream. It rechecks device revocation at proof
-time. Unproved links are closed so they cannot occupy all eight phone slots
-indefinitely. Repeated connection floods can still disrupt availability.
+time, and answers a device revoked in the meantime with a sealed `bye`.
+
+The relay holds at most eight phones per box. When all eight slots are full, a
+new phone closes the longest-silent one — a phone that has sent no frame yet
+and has been open at least a second — with `4429` "too many phones". A phone
+that has sent a frame keeps its slot, and the box ends any link whose hello is
+malformed or names a device or code it does not know, so a stranger cannot
+stay in the speaking state for longer than a round trip.
+
+What remains is a denial of service by anyone who can name the `serverId`.
+Holding every pending-box or silent-phone slot means keeping eight sockets
+younger than one second at all times: eight new connections a second,
+sustained, to one `serverId`. Under `CONNECT_LIMIT` (below) that takes at least
+three IPv4 addresses or IPv6 /64s, and it can keep a reconnecting box, or a
+new phone when all slots are full, out. The relay operator, or anyone holding a
+valid unrevoked device id, can also hold a speaking phone slot until the
+sidecar's fifteen-second proof deadline ends it.
 
 After proof, a device link mints a session token bound to the device
 id for the link and attaches it to every request it dispatches, so the sidecar's
@@ -173,11 +220,14 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
   pairing code.
 - `server/lib/identity.ts` (the keypair and `serverId`), `server/lib/relay-client.ts`
   (dial out, authenticate, hold links, hello, seal/open, dispatch), started by
-  `server/index.ts` when `RELAY_URL` is set. Pairing codes carry
-  `relay` beside `endpoint` when the box has one.
-- `mobile/src/lib/relay.ts` — the transport: one socket, hello, sealed
-  request/response with ids, the dashboard stream folded into `SessionSocket`.
-  `api.ts` routes through it whenever the stored connection is a relay one.
+  `server/index.ts` when `RELAY_URL` is set. A box without one mints no
+  pairing codes.
+- `shared/src/relay-client.ts` — the phone side both clients share: one
+  socket, hello, sealed request/response with ids, acknowledgments and
+  recovery. `mobile/src/lib/relay.ts` folds the dashboard stream into the
+  native app's `SessionSocket`, and `api.ts` routes through it whenever the
+  stored connection is a relay one; the web client uses it from
+  `web/src/connection.ts`.
 
 ## What this deliberately does not do
 
@@ -189,8 +239,9 @@ cookie) and turns the `Response` into a `res`. The Origin check is satisfied
   schedules nothing (2026-09-02 review, R7). A *box* connection, though, is
   accepted and challenged, and that schedules a ten-second auth-timeout alarm
   — one storage write per attempt (2026-09-02 pentest, L3). Both are bounded
-  by Cloudflare's own limits and by the per-IP front-door limiter; neither
-  accumulates, since an unauthenticated box is dropped at the timeout.
+  by Cloudflare's own limits and by the per-source front-door limiter (an IPv4
+  address, or an IPv6 /64); neither accumulates, since an unauthenticated box
+  is dropped at the timeout.
 - No history, no store-and-forward, no direct WebRTC. The relay is a pipe.
 - No protection of frame *sizes and timing*, addresses or identifiers from
   the relay. That is the metadata a blind pipe still sees; the list is under
@@ -240,10 +291,8 @@ RELAY_URL=https://relay.example.com   # what `wrangler deploy` prints; the box s
 ```
 
 in the sidecar's environment (the plugin's `.env` is at `herdr plugin
-config-dir shahi`; under the hand-made systemd unit it is
-`~/.config/shahi/env`, see `operations.md`). Pairing codes minted after that carry the relay beside
-the LAN endpoint, and the app prefers the relay because it works from
-anywhere. Nothing on the box needs a port opened.
+config-dir shahi`). Pairing codes minted after that carry the relay, and the
+app connects through it from anywhere. Nothing on the box needs a port opened.
 
 **Run one yourself.** Anyone may: the app takes the relay address from the
 pairing code, so a box and its phones agree on whichever relay the box was
@@ -261,12 +310,17 @@ bun run test:relay                 # starts and stops its own wrangler dev on 87
 `wrangler dev` runs the real runtime (workerd) with Durable Objects,
 hibernation and alarms, which is why the test suite needs no mocks: it opens
 sockets as a box and as phones and checks every close code in the table
-above. A `wrangler dev` already on the port is used as is, so the suite can be
-re-run against one left open.
+below. The suite starts and stops its own `wrangler dev`, on 8787 or
+`SHAHI_TEST_RELAY_PORT`, and keeps its Durable Objects in a temporary
+`--persist-to` directory it deletes, so nothing lands in
+`relay/.wrangler/state`. It fails at once if the port is already taken rather
+than testing whatever holds it. To test against a `wrangler dev` you left
+running, set `SHAHI_TEST_RELAY_EXTERNAL=1`; that relay must answer `/health`
+as `shahi-relay`.
 
 **Liveness.** The Workers runtime cannot send WebSocket ping frames from a
 Durable Object, so a dead box is detected the other way round: **a box sends
-the text frame `ping` once a minute.** The runtime answers `pong` from
+the text frame `ping` every twenty seconds.** The runtime answers `pong` from
 outside the object (`setWebSocketAutoResponse`), so a healthy idle box never
 wakes it; an alarm every five minutes reads the timestamp of the last such
 answer and closes any box not heard from in five minutes (code `1000`,
@@ -275,9 +329,17 @@ not ping is therefore dropped every five minutes: the sidecar's relay client
 must ping. Phones may ping too and get the same `pong`, but nothing depends
 on it — an idle phone is closed after the ten-minute limit regardless.
 
-**What it logs.** Nothing about frames. Beyond wrangler's own request log,
-the relay records one **Workers Analytics Engine** data point per lifecycle
-event, and nothing else — it stays as blind here as on the wire.
+**What it logs.** Nothing about frames. The relay records one **Workers
+Analytics Engine** data point per lifecycle event, and writes the same fields
+as one structured line to **Workers Logs** (`relay/src/telemetry.ts`).
+Automatic invocation logs, which would carry raw request URLs, and tracing are
+off in `wrangler.toml`. It stays as blind here as on the wire.
+
+**HTTPS.** Every relay response served over HTTPS carries
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`, the
+WebSocket `101` included; nothing is sent over plain HTTP, where a host must
+not send it and where `wrangler dev` and the tests speak. Redirecting HTTP to
+HTTPS is a Cloudflare zone setting, not relay code.
 
 ## Observability
 
@@ -296,7 +358,9 @@ transiently; the dataset does not).
 value (a close code, a phone count, or 1), `double2` uploaded bytes,
 `double3` downloaded bytes, `double4` uploaded frames, `double5` downloaded
 frames, `double6` duration in milliseconds, `index1` kind. The additional kinds
-are `traffic`, `box_presence`, `auth_failed` and `internal_error`. Traffic is
+are `traffic`, `box_presence`, `auth_failed` and `internal_error`. `detail` is
+one of a fixed list of close and refusal reasons (anything else is recorded
+empty); `too many pending boxes` joined it with the pending-box limit. Traffic is
 aggregated on socket attachments and flushed on alarms/close, not per frame.
 Authenticated synthetic probes are tagged and excluded from fleet summaries.
 Presence includes already-connected boxes, rather than counting recent
@@ -348,8 +412,14 @@ With no `STATS_TOKEN` the endpoint is a 404; with it but no query credentials
 it is a 503 that says so.
 
 **Abuse limits and alerts.** The `CONNECT_LIMIT` binding allows thirty
-connection attempts per IP per ten seconds at each edge location. It is
-eventually consistent and is not a global traffic or billing ceiling; see
+connection attempts per source per ten seconds at each edge location, counting
+an IPv4 source by its address and an IPv6 source by its /64. The full IPv6
+address used to be the key, and one host normally holds a whole /64, so binding
+each connection to a fresh address gave each its own budget. A source with a
+larger delegation (/56, /48) still gets one bucket per /64, so the binding
+alone cannot bound one host's IPv6 abuse; the optional zone WAF rule below is
+the control for that. The limiter is eventually consistent and is not a global
+traffic or billing ceiling; see
 [Cloudflare's locality and accuracy documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 Retiring alternate hostnames does not itself configure a WAF rule. Review the
 actual account's limits and set these controls in the Cloudflare dashboard:
@@ -360,8 +430,9 @@ actual account's limits and set these controls in the Cloudflare dashboard:
 - A **spend / usage** notification — so an abuse spike on the paid plan
   arrives as a message, not a surprise bill.
 - Optionally a **WAF rate-limit rule** on `/v1/*` keyed on client IP, a second
-  limit ahead of Worker and Durable Object execution. Distributed floods remain
-  an availability risk even with per-IP limits.
+  limit ahead of Worker and Durable Object execution, and the one that can
+  group a larger IPv6 delegation. Distributed floods remain an availability
+  risk even with per-source limits.
 
 What the relay still cannot tell you is a box that is *up but wedged* (herdr
 down behind a healthy socket); that needs a status byte in the box's
@@ -374,14 +445,17 @@ ping, which lives in the sidecar, not here — a deliberate next step.
 | `4401` | `unauthorized`      | box   | bad `auth`, or anything that is not one           |
 | `4401` | `auth timeout`      | box   | ten seconds after the challenge with no `auth`    |
 | `4409` | `replaced`          | box   | another connection proved the same key            |
+| `4429` | `too many pending boxes` | box | a ninth unauthenticated box connection: the longest-waiting pending one (at least 1 s old) is closed, or the newcomer if all eight are younger |
 | `1000` | `silent`            | box   | five minutes without a frame or a `ping`          |
 | `4429` | `frame too large`   | box   | a data frame over 1 MiB (its phones get `4404`)   |
+| `4429` | `control too large` | either | a text frame over 4 KiB                          |
 | `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away |
-| `4429` | `too many phones`   | phone | the ninth phone                                   |
+| `4429` | `too many phones`   | phone | the ninth phone while all eight have spoken; otherwise the longest-silent phone older than 1 s is closed with this |
 | `4429` | `frame too large`   | phone | a frame over 1 MiB                                |
-| `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry   |
+| `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry; every phone frame, text included, costs at least 256 bytes, so at most 256 frames/s sustained and 4,096 in a burst |
+| `1000` | `no hello`          | phone | fifteen seconds after opening without a frame     |
 | `1000` | `idle`              | phone | ten minutes without a frame either way            |
-| `1000` | `closed by box`     | phone | the box sent `close` for the link                 |
+| `1000` | `closed by box`     | phone | the box sent `close` for the link: a failed proof, an unknown or malformed hello, a revoked device after its `bye`, or any other end the box chose |
 
 Telemetry events are retained by Analytics Engine for three months. The stable
 server identifier can correlate a box's events. The public policy documents
@@ -393,10 +467,17 @@ stop Shahi event collection on a self-hosted relay.
 
 Phones acknowledge every accumulated 64 KiB of received encrypted frames with
 an encrypted `{ t: "ack", bytes }`. Counts include the 24-byte encryption
-overhead and exclude the initial clear hello. A sidecar allows at most 2 MiB
-unacknowledged per link; a slow receiver ends only that link. The relay cannot
-forge acknowledgments. Do not drop a sealed frame and continue the same link:
-strict crypto counters would reject everything that follows it.
+overhead and exclude the initial clear hello. A sidecar sends at most 2 MiB
+unacknowledged per link. Frames beyond that window are held, in order and
+unsealed, up to (`maxRequestsPerLink` + 1) × `maxFrameBytes` = 5 MiB, and leave
+as acknowledgments arrive; they are sealed only as they leave, so counters stay
+in sequence. Ending the link at the window, as the sidecar once did, cost a
+phone its link and every request on it whenever a few large answers came back
+together. A request keeps its slot until its answer has left, so excess work
+still gets 429 rather than a queue. A phone that stops acknowledging fills the
+held frames and loses only its own link. The `bye` skips the queue. The relay
+cannot forge acknowledgments. Do not drop a sealed frame and continue the same
+link: strict crypto counters would reject everything that follows it.
 
 Pending client work is capped at 16 requests and 2 MiB of bodies. The sidecar
 runs at most four requests per link and sixteen across the relay, and its HTTP
@@ -446,10 +527,26 @@ behind one office/VPN address; a paid Workers plan does not remove them.
 ## Recovering from network changes
 
 A pairing is durable; its WebSocket is replaceable. Opening a saved computer
-after an offline launch retries automatically. Returning to the foreground or
-regaining/changing the phone's network starts a fresh connection immediately,
-while repeated notifications share the same new attempt. Ordinary polling still
-respects the retry backoff, and each saved computer recovers independently.
+after an offline launch retries automatically. Regaining or changing the
+network starts a fresh connection immediately, while repeated notifications
+share the same new attempt. Ordinary polling still respects the retry backoff,
+and each saved computer recovers independently.
+
+Returning to the foreground differs by client. The native app starts a fresh
+connection immediately. The hosted web app keeps any relay link that can show
+it is alive: a socket already closed, or silent past the shared silence limit,
+is replaced at once without backoff; a link that looks live gets one
+`/api/meta` probe, and only ten seconds of silence replaces it. Replacing every
+link on every return dropped whatever was in flight through it — an agent
+start that takes minutes, a prompt, a file transfer — each time someone
+switched tabs or apps.
+
+`RelayLink.close()` is final. A request on a closed link rejects with "The
+connection through <relay> was closed." instead of reopening it; only
+`ensureConnected()` reopens one. A request once did reopen it, so after sign-out,
+revocation or a `bye` the web client redialled the relay for a computer it had
+just left. It now also retires the computer before closing that computer's
+link.
 
 Connection establishment has a 15-second deadline, including the first
 authenticated response. A stuck CONNECTING/CLOSING socket, send failure, or

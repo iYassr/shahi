@@ -5,6 +5,12 @@
 > Upgrade the sidecar and clients together. Older snapshots, including
 > `91eda62`, do not contain these fixes. See [remediation](#remediation--5-september-2026)
 > for scope and verification. This is a maintainer review, not an independent audit.
+>
+> *Note, 23 September 2026:* "Browser-origin checks guard API writes and direct
+> WebSocket upgrades", under *Controls that checked out*, did not cover DNS
+> rebinding, where the attacking page is same-origin with itself. That held
+> only once the pre-public-release review added a `Host` allowlist to the
+> loopback listener; see [the security review](security-review.md#pre-public-release-review--2026-09-22).
 
 The encryption claim is supported by the reviewed implementation: a relay that
 only controls transport cannot simply read or forge a session. That is a useful,

@@ -3,6 +3,15 @@
 This checks the working tree after the TestFlight build 12 release. The changes
 below have not yet been deployed to the production plugin or a new iOS build.
 
+> *Note, 23 September 2026:* the "native PDF attachment check through the
+> encrypted fixture" below passed against a fixture that forwarded every
+> response header. A real sidecar forwarded only `content-type`, `etag` and
+> `cache-control` through the relay, so the same flow failed there with "The
+> computer returned an incomplete file." The sidecar now forwards the ranged
+> download's headers too (`RELAY_RESPONSE_HEADERS`) and the fixture filters by
+> the same list. The check needs repeating against a computer release newer
+> than 0.3.6 before it counts as evidence.
+
 ## Scope
 
 The native iOS 27 simulator and both Chromium/WebKit browser engines exercise

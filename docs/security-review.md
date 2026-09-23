@@ -42,6 +42,12 @@ runs pages — but the archived PWA in a browser is exactly the victim.
 `x-forwarded-host`. Believing `x-forwarded-host` is safe: a browser cannot set
 it on an upgrade, and setting it on a fetch forces a preflight this server
 never answers. Reads are left to CORS, which already denies the page the body.
+*Later (September 2026):* the Origin check never covered DNS rebinding, where
+the attacking page's own name resolves to `127.0.0.1` and its requests are
+same-origin. The loopback listener now also refuses with 403, before routing,
+any request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]` (any port),
+unless the owner lists a proxy's name in `SHAHI_ALLOWED_HOSTS`. See the
+pre-public-release section at the end.
 
 **H2. A WebSocket outlived the session that opened it.**
 `server/lib/http.ts:323`. The gate ran at upgrade and never again; the
@@ -185,6 +191,12 @@ shell, the prompt text runs as a command. **Accepted:** that is the terminal
 path's nature — a shell pane gets the same treatment on purpose — and the
 person sending it holds the passcode. Worth knowing; not worth a second
 round trip to re-check status, which would still race.
+*Later (September 2026, F41):* the terminal path to an agent now reads the
+screen first, and when the prompt parser finds an open menu whose highlighted
+row is not a text field it types nothing and answers 409 `prompt_open`.
+Measured on Claude Code with the cursor on "1. Yes", typing "no" and Enter had
+run the command. The accepted residual above still stands: an agent that
+finished and left a shell with no menu on screen gets the text as a command.
 
 **L3. A prompt receipt could be replayed within a pane, never across panes.**
 `server/lib/prompt.ts:72`. The key is `(paneId, clientMessageId)`, so the
@@ -206,7 +218,11 @@ owner**, with a shape that keeps sessions stateless: a single integer
 one), signed into the token and bumped by logout — one column, and logout
 means something. One observation meanwhile: with H2 fixed, rotating
 `SESSION_SECRET` and restarting is now a complete revocation — it ends every
-socket too.
+socket too. *Later:* no longer complete. Server-side logout now records the
+signed-out token as revoked, and a relay-paired device proves its own device secret on
+every link and is issued a fresh session signed with whatever `SESSION_SECRET`
+is current, so rotation ends passcode sessions but not relay pairings; those
+are revoked per device (`docs/pairing.md`).
 
 **L5. The cookie is never `Secure`.**
 `server/lib/auth.ts:72`. The comment's reason is that direct `http://127.0.0.1`
@@ -225,7 +241,15 @@ the brief said not to change it. **Deferred:** with a per-address key now
 available, a per-address throttle in front of the global one would let a
 scanner exhaust its own budget without slowing the owner. Note the
 serialisation also caps bcrypt CPU at one verify at a time, which is a
-property worth keeping.
+property worth keeping. *Later (September 2026, F37):* still deferred, but
+login and `/api/pair/claim` now each have their own admission budget of four
+waiting requests, outside the 32 in-flight slots every phone shares; a fifth
+gets 429 with `retry-after: 30`, and bodies over 4 KiB get 413. Thirty-two
+wrong passcodes from any local process had held every slot for thirteen
+minutes, so phones, the relay's included, were told the box was busy. A
+sign-in flood can still delay or refuse the owner's own passcode login while
+it lasts. Pairing claims have had a throttle separate from login's since the
+pentest's L1.
 
 **L7. `/api/push/subscribe` makes the server POST to any `https://` endpoint.**
 `server/lib/push.ts:80`, `http.ts:575`. An authenticated web client can
@@ -252,7 +276,10 @@ tidiness, not the boundary.
 **L10. A `Content-Disposition` filename with a control character was a 500.**
 `server/lib/http.ts:539`. `/api/file` quoted the basename after replacing
 only `"` and `\`; a newline is a legal filename on Linux and `Headers` throws
-on it. **Fixed:** control characters are replaced too.
+on it. **Fixed:** control characters are replaced too. *Later (September
+2026):* the header now carries an ASCII `filename` fallback plus an RFC
+6266/8187 `filename*` (UTF-8, percent-encoded), so a name outside Latin-1
+opens and downloads under its own name.
 
 **L11. `SLOW_METHODS[method]` found prototype members.**
 `server/lib/http.ts:788`. A `method` of `constructor` on `/api/rpc` read
@@ -469,7 +496,10 @@ attacker-chosen `serverId`. A *phone* refusal writes and schedules nothing;
 a *box* connection schedules a ten-second auth-timeout alarm, one storage
 write per attempt (corrected by the 2026-09-02 pentest, L3), bounded by the
 per-IP front-door limiter and evicted at the timeout. Noted in
-`docs/relay.md`.
+`docs/relay.md`. *Later (September 2026, F80):* the limiter keyed an IPv6
+source by its full address, so one host with a /64 got a fresh budget per
+address; it now counts an IPv4 address or an IPv6 /64. A larger delegation
+still has one bucket per /64; the zone's WAF rule is the control for that.
 
 **R8 (Info).** Box replacement is proven by key, and phone links are
 unauthenticated at the relay by design; both verified sound.
@@ -482,3 +512,75 @@ command-injection defences, the phone's serverId-before-secret pairing check,
 SecureStore and SSH host-key pinning, no HTML rendering on the phone, the
 `.env` at 0600, no secrets in git history, and CI not exposing secrets to
 pull requests.
+
+## Pre-public-release review — 2026-09-22
+
+A review of the whole product before the repository went public. Its fixes
+landed together on `integrate/release-fixes`; most reach users only in the
+next signed computer release after 0.3.6, the relay's on the next relay
+deploy. What changed the posture recorded above, by the review's finding
+numbers:
+
+- **DNS rebinding (F26, F36).** The Origin check (H1) let a rebinding page
+  through. The loopback listener now refuses any `Host` but `127.0.0.1`,
+  `localhost` or `[::1]` with 403 before routing; a reverse proxy the owner
+  runs, such as `tailscale serve` for Web Push, must be named in
+  `SHAHI_ALLOWED_HOSTS`, and a malformed entry stops startup rather than
+  widening the list. The relay's `dispatch` never passes through this check,
+  and nothing a browser chose reaches it.
+- **Credential floods (F37).** Separate admission budgets for login and
+  pairing claims (L6).
+- **Typing into an open menu (F41).** The terminal path refuses with
+  `prompt_open` (L2). Answers now also carry the question and context the card
+  showed, and the server requires them to match a fresh parse, because every
+  Claude permission offers "1. Yes".
+- **A revoked phone was never told (F34).** A phone revoked while its link was
+  down reconnected forever, because the relay flattens a box's close to a
+  routine `1000`. The box now answers such a phone's hello with keys from the
+  revoked row's retained secret and sends one sealed `bye`, which the relay
+  cannot forge. **Revoked device rows keep their secrets for this and nothing
+  else**; the secret authorizes nothing once `revoked_at` is set. Revocation
+  must never erase or delete a row's secret without replacing this mechanism.
+  A link whose own session token merely expired gets no `bye`.
+- **Relay slot squatting (F28, F33) and free frames (F79).** Anyone who knew a
+  `serverId` could hold all eight pending-box slots, or all eight phone slots,
+  with silent sockets and keep the real computer or phone out. The newcomer now
+  evicts the longest-waiting silent socket once it is a second old. Every phone
+  frame now costs at least 256 bytes of the rate bucket, text included. The
+  remaining denial of service, eight fresh connections a second from at least
+  three sources, is documented in `docs/relay.md`.
+- **IPv6 rate limits (F80).** The relay's connect limiter, the beta signup form
+  and the App Review login keyed an IPv6 client by its full address; all three
+  now use the /64 (R7).
+- **HSTS on the relay.** Every relay response over HTTPS, the WebSocket
+  upgrade included, now carries `Strict-Transport-Security`.
+- **Pairing links in the browser.** The native app has held a linked code on a
+  confirmation card since pentest M2. The hosted web client opened a
+  `#pair=` link straight onto a filled-in form, one tap from attaching the
+  browser to a stranger's computer; it now shows the same card, so M2 is
+  mitigated on both clients.
+- **Uploads.** Multipart uploads are written 0600 in a 0700 directory,
+  authorization is checked again after the body arrives, and a transfer a
+  device abandoned is discarded when it begins another, or after ten idle
+  minutes, instead of blocking it for the hour-long expiry.
+- **The OTA signing key and an unlocked CLI (F23).** The Signed Shahi phone
+  update workflow ran `bunx eas-cli@23.2.0`, which pinned eas-cli and resolved
+  its ~480-package tree by semver range on every publish, with the key every
+  installed app trusts in the environment. It now installs eas-cli 23.2.0 from
+  `.github/eas/bun.lock`, frozen with integrity hashes, into `$RUNNER_TEMP`,
+  and unsets the key once it is written to a 0600 file. It is not a workspace
+  dependency, because in the app's tree its older `@expo/config` would be
+  hoisted over SDK 57's and change what the phone is built from, and it is
+  installed outside the checkout because Metro crawls the repository root.
+- **Unchecked herdr binaries and persisted tokens in CI (F64).** Pinned herdr
+  tags were fetched by URL, the nightly took the newest prerelease as it was,
+  and stable came from `curl herdr.dev/install.sh | sh`, on runners whose
+  checkouts left the job token in `.git/config`. `.github/scripts/install-herdr.sh`
+  now installs only a binary matching GitHub's SHA-256 digest for the release
+  asset and, for pinned tags, the digest in `ci.yml` (for stable, the one in
+  `herdr.dev/latest.json`, cross-checked against GitHub); it never runs what
+  it installs. Every checkout in every workflow sets
+  `persist-credentials: false`, which `.github/workflows.test.ts` enforces for
+  each workflow file, and the nightly preview's issue is filed by a separate
+  `report` job that has only `issues: write`, no checkout, and runs nothing but
+  `gh`.

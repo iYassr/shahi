@@ -1,5 +1,11 @@
 # Public PWA release checks — 11 September 2026
 
+> *Note, 23 September 2026:* "Drafts, attachments, submissions, and open
+> dialogs now defer reload" below held only for the conversation on screen. A
+> draft left in another conversation was lost to an automatic update until
+> `fcb17ee`, which checks every conversation in the draft store; the "cache
+> v8" named below has also been replaced by a cache per release.
+
 Public entry point: <https://getshahi.dev/pwa/>. The hosted PWA pairs through
 Shahi's encrypted relay; the same web client ships in the approved computer
 release. This assessment covers the PWA, not App Store approval or native OTA
