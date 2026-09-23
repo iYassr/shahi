@@ -13,5 +13,39 @@ licensing change must account for contributor rights and dependency licenses;
 it does not remove permissions already granted for earlier MIT versions.
 
 The repository's license does not determine App Store pricing or replace
-Apple's distribution requirements. Bundled OpenSSL and libssh2 retain their
-respective notices in `mobile/modules/ssh-tunnel/`.
+Apple's distribution requirements.
+
+## What carries its own license
+
+- **`mobile/`** is Shahi's MIT code. It was first generated from Expo's
+  project template; [`mobile/LICENSE`](../mobile/LICENSE) keeps that template's
+  MIT notice (650 Industries, Inc.) for whatever template-derived code remains,
+  and points at the root license for the rest. It used to be the template's
+  file alone, which made the product directory read as Expo's copyright.
+- **OpenSSL 3.6.3** (Apache License 2.0) and **libssh2 1.11.0** (BSD
+  3-Clause) are vendored as prebuilt binaries in
+  `mobile/modules/ssh-tunnel/ios/` and linked into the iOS app for the SSH
+  tunnel. Their upstream license texts, copied unchanged from the
+  `openssl-3.6.3` and `libssh2-1.11.0` tags, are in
+  [`mobile/modules/ssh-tunnel/licenses/`](../mobile/modules/ssh-tunnel/licenses/).
+  OpenSSL ships no `NOTICE` file at that tag. Where the binaries came from is
+  in [ssh.md](ssh.md#the-binaries).
+- **Icons.** The app's chrome icons are Lucide (ISC); agent marks come from
+  Simple Icons (CC0, brand marks belong to their owners) and Tabler (MIT). The
+  path data is embedded in `mobile/src/components/icons.tsx`.
+- **Fonts on the website.** getshahi.dev serves its own subsets of IBM Plex
+  Sans and IBM Plex Mono (SIL Open Font License 1.1); the license is beside
+  them in `site/public/fonts/LICENSE.txt`.
+- **JavaScript dependencies** (React Native, Expo modules, React, the web
+  client's libraries) carry their licenses in their packages; almost all are
+  MIT.
+
+## Where someone with only the app finds the notices
+
+Nowhere yet, and that is a gap. libssh2's license requires a binary
+redistribution to "reproduce the above copyright notice … in the documentation
+and/or other materials provided with the distribution", and the Apache and MIT
+licenses ask the same of their notices. The header files that carry some of
+those notices are not in the IPA, and the app has no licenses screen. Until
+the app shows them, a TestFlight or App Store build is missing its third-party
+notices; the texts above are what such a screen has to reproduce.
