@@ -11,7 +11,7 @@
  * sidecar behind it, and signs in over that — see `lib/tunnel.ts`.
  * Credentials go straight to the Keychain and never leave the phone.
  */
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { KeyboardAvoidingView, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
@@ -24,7 +24,7 @@ import { GreetingLogo } from "@/components/greeting-logo";
 import { Scanner } from "@/components/scanner";
 import { PrivacyLinks } from "@/components/privacy-links";
 import { parsePairingUrl } from "@/lib/pairing";
-import { useURL } from "expo-linking";
+import { dismissPairing, usePendingPairing } from "@/lib/incoming-pairing";
 import { openTunnel, closeTunnel, sshTunnelAvailable } from "@/lib/tunnel";
 import { committed } from "@/lib/feel";
 import {
@@ -51,25 +51,14 @@ export function Connect({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  // A code that arrived as a link (useURL), not from the camera. It is shown
-  // for confirmation before anything is sent: a tapped or injected
-  // shahi://pair link must not silently repoint the app at a stranger's box
-  // (pentest M2). The camera scanner is already an explicit act and pairs
-  // directly.
-  const [pending, setPending] = useState<PairingPayload | null>(null);
-
-  // A pairing code can arrive as a link as well as a picture: `shahi://pair#…`
-  // tapped in a terminal or a message, or opened by a test — the simulator has
-  // no camera to point at anything. It is the same payload the scanner reads,
-  // so it takes the same path; an unparseable link is ignored rather than
-  // reported, since nothing on screen asked for it.
-  const openedUrl = useURL();
-  useEffect(() => {
-    const payload = openedUrl ? parsePairingUrl(openedUrl) : null;
-    // Show it, do not act on it: the confirm card is the tap the finding wants
-    // between an untrusted link and this phone's secret.
-    if (payload) setPending(payload);
-  }, [openedUrl]);
+  // A code that arrived as a link, not from the camera: `shahi://pair#…`
+  // tapped in a terminal or a message, opened by the iPhone Camera, or by a
+  // test (the simulator has no camera). `lib/incoming-pairing` holds it from
+  // the moment it arrives. It is shown for confirmation before anything is
+  // sent: a tapped or injected link must not silently repoint the app at a
+  // stranger's box (pentest M2). The camera scanner is already an explicit
+  // act and pairs directly.
+  const pending = usePendingPairing();
 
   // A link is asking to pair. Confirm the target before a byte is sent.
   if (pending) {
@@ -97,7 +86,7 @@ export function Connect({
         >
           <Text style={styles.buttonText}>{busy ? "Pairing…" : `Pair with ${host}`}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.link} onPress={() => { setPending(null); setError(null); }} testID="confirm-cancel">
+        <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(); setError(null); }} testID="confirm-cancel">
           <Text style={styles.link}>Cancel</Text>
         </Pressable>
       </View>
@@ -139,6 +128,9 @@ export function Connect({
         deviceId: claim.deviceId,
         deviceSecret: claim.deviceSecret,
       });
+      // After signing in, so the route never sees "no link, not connected"
+      // in between and sends a person with saved computers to the chooser.
+      if (payload === pending) dismissPairing();
     } catch (e) {
       // A box that refuses the link does not know this code — spent, expired,
       // or minted before a restart. The transport's words are about a device
