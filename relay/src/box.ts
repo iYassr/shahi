@@ -9,8 +9,9 @@
  * instance fields: the only state that survives is what is attached to each
  * socket (`serializeAttachment`) and the tags it was accepted with. The
  * attachment on the box socket carries the nonce, whether it has proven
- * itself, and the next link number; a phone's carries its link, its token
- * bucket and when it was last heard from. Nothing is written to storage.
+ * itself, whether it reports its links' proofs, and the next link number; a
+ * phone's carries its link, its token bucket, when it was last heard from and
+ * whether the box has vouched for it. Nothing is written to storage.
  *
  * Nothing here logs a frame. The relay's whole point is that it cannot read
  * one, and a console.log of a payload would be the one way to break that.
@@ -54,6 +55,12 @@ interface BoxState {
   heard: number;
   /** Never reused within one box connection, so a stale `close` from the box can only name a dead link. */
   nextLink: number;
+  /**
+   * The box promised at `auth` to send `proven` for each link that proves
+   * itself, so a link it has not vouched for may be closed for a newcomer. A
+   * box older than that promise leaves this false, and only silent phones are.
+   */
+  proofs?: boolean;
   synthetic: boolean;
 }
 
@@ -69,6 +76,8 @@ interface PhoneState {
   since: number;
   /** True once the phone has sent a frame — its hello. A socket that never does is squatting. */
   spoke: boolean;
+  /** True once the box said the link holds the secret its hello named. Only the box can tell. */
+  proven?: boolean;
   /** Last frame in either direction: a phone that only listens is not idle. */
   seen: number;
   /** Token bucket: bytes banked, and when they were last topped up. */
@@ -152,18 +161,24 @@ export class RelayBox extends DurableObject<unknown> {
     const box = this.readyBox();
     if (!box) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
     const phones = this.phones();
+    const boxState = box.deserializeAttachment() as BoxState;
     if (phones.length >= RELAY_LIMITS.maxPhonesPerBox) {
-      // A phone sends its hello the moment it opens, so one still silent past
-      // its grace is squatting, and the newcomer may be the owner's phone.
-      // Once a phone has spoken it keeps its slot: a hello naming no device
-      // this box knows is ended by the box at once, so a stranger cannot
-      // hold a speaking slot for longer than a round trip.
-      const silent = phones.filter((phone) => !(phone.deserializeAttachment() as PhoneState).spoke);
-      const squatter = longestWaiting(silent);
+      // The newcomer may be the owner's phone, so a link that has not shown it
+      // belongs here makes room, provided it has had its grace. First one still
+      // silent: a phone sends its hello the moment it opens. Then, on a box that
+      // reports proofs, one that has spoken but never proven itself. A hello is
+      // only a claim, and one naming a real device id without its secret used
+      // to hold its slot until the box's fifteen-second proof deadline — any
+      // revoked phone that had once read the device list could keep the owner
+      // out that way (review 2026-09-22, F33). A proven link is never closed.
+      // A box that reports nothing gets the old rule: a phone that has spoken
+      // keeps its slot.
+      const unproven = phones.filter((phone) => !(phone.deserializeAttachment() as PhoneState).proven);
+      const silent = unproven.filter((phone) => !(phone.deserializeAttachment() as PhoneState).spoke);
+      const squatter = longestWaiting(silent) ?? (boxState.proofs ? longestWaiting(unproven) : null);
       if (!squatter) return this.refuse(ws, RELAY_CLOSE.quota, "too many phones", serverId);
       this.closePhone(squatter, squatter.deserializeAttachment() as PhoneState, RELAY_CLOSE.quota, "too many phones");
     }
-    const boxState = box.deserializeAttachment() as BoxState;
     const link = boxState.nextLink;
     box.serializeAttachment({ ...boxState, nextLink: link + 1 });
     this.ctx.acceptWebSocket(ws, ["phone", linkTag(link)]);
@@ -261,11 +276,15 @@ export class RelayBox extends DurableObject<unknown> {
     ws.serializeAttachment({ ...state, heard: Date.now() });
     if (typeof message === "string") {
       const control = parse<BoxToRelay>(message);
-      if (control?.t !== "close" || typeof control.link !== "number") return;
+      if ((control?.t !== "close" && control?.t !== "proven") || typeof control.link !== "number") return;
       const phone = this.phone(control.link);
       if (!phone) return;
-      // The box asked, so it is not told again.
       const phoneState = phone.deserializeAttachment() as PhoneState;
+      if (control.t === "proven") {
+        phone.serializeAttachment({ ...phoneState, proven: true });
+        return;
+      }
+      // The box asked, so it is not told again.
       this.traffic(phoneState);
       this.record({ kind: "phone_close", serverId: state.serverId, detail: "closed by box", value: CLOSE_NORMAL, durationMs: Date.now() - phoneState.since });
       phone.serializeAttachment({ ...phoneState, open: false });
@@ -315,7 +334,7 @@ export class RelayBox extends DurableObject<unknown> {
       this.closeBox(other, other.deserializeAttachment() as BoxState, RELAY_CLOSE.replaced, "replaced");
     }
     const now = Date.now();
-    ws.serializeAttachment({ ...state, ready: true, since: now, heard: now });
+    ws.serializeAttachment({ ...state, ready: true, since: now, heard: now, proofs: auth.proofs === true });
     this.tell(ws, { t: "ready" });
     this.record({ kind: "box_auth", serverId: state.serverId, durationMs: now - state.since });
     await this.schedule();

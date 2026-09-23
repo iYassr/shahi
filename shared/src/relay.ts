@@ -3,7 +3,8 @@
  *
  * Three programs speak this: the Worker in `relay/`, the sidecar's relay
  * client, and the app's relay transport. They are built separately and meet
- * on these types, so nothing here is optional or inferred.
+ * on these types, so nothing here is inferred, and a field is optional only
+ * where an older peer that never sends it is still supported.
  */
 import type { SocketMessage } from "./index";
 
@@ -22,8 +23,16 @@ export type RelayToBox =
   | { t: "close"; link: number };
 
 export type BoxToRelay =
-  | { t: "auth"; pub: string; sig: string }
-  | { t: "close"; link: number };
+  /**
+   * `proofs: true` is the box's promise to send `proven` for every link that
+   * proves itself, which lets the relay make room by closing links that have
+   * not. Optional because it is additive: a box that predates it omits it, and
+   * the relay then keeps any link that has spoken (`docs/relay.md`).
+   */
+  | { t: "auth"; pub: string; sig: string; proofs?: true }
+  | { t: "close"; link: number }
+  /** Link `link` sent a sealed frame that opened: it holds the secret its hello named. */
+  | { t: "proven"; link: number };
 
 /** Bytes prefixed to every data frame on the box side: the link number, big-endian. */
 export const LINK_PREFIX_BYTES = 4;

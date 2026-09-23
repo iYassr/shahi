@@ -14,7 +14,8 @@ export const MAX_PENDING_BOXES = 8;
 
 /**
  * How long a socket that has not yet identified itself is protected from
- * eviction: a pending box before its `auth`, a phone before its first frame.
+ * eviction: a pending box before its `auth`; a phone before its first frame,
+ * or, on a box that reports proofs, before the box says it has proven itself.
  *
  * When every slot is full, a newcomer evicts the socket that has waited
  * longest, provided that socket has had this long. Before this, the relay
@@ -23,16 +24,23 @@ export const MAX_PENDING_BOXES = 8;
  * auth deadline closed each one, and the real computer's reconnect was
  * refused with 4429 on every attempt (pre-release review 2026-09-22,
  * F28/F33). Phone slots had the same shape, over the fifteen-second hello
- * deadline.
+ * deadline, and again over the box's fifteen-second proof deadline for a
+ * hello that named a real device id without holding its secret.
  *
  * The grace covers a real peer's first frame, which takes one round trip: the
  * box signs the challenge as soon as it arrives, and a phone sends its hello
- * the moment its socket opens. Without the grace, an attacker who saw its own
- * squatter evicted could open eight more sockets and evict the real peer
- * before its answer arrived. With it, holding every slot means
- * keeping eight sockets younger than one second at all times. That is eight
- * connections a second, sustained, which one IPv4 address or IPv6 /64 cannot
- * do under `CONNECT_LIMIT` (thirty per ten seconds).
+ * the moment its socket opens. A phone's proof takes about two round trips
+ * more (the box's hello back, the phone's first sealed frame, the box's
+ * `proven`), and an attacker must also replace every older squatter inside
+ * that window before its next socket reaches the phone, so the phone's real
+ * margin is eight of the attacker's connections, not one second. Without the
+ * grace, an attacker who saw its own squatter evicted could open eight more
+ * sockets and evict the real peer before its answer arrived. With it, holding
+ * every slot means keeping eight sockets younger than one second at all
+ * times. That is eight connections a second, sustained, which one IPv4
+ * address or IPv6 /64 cannot do under `CONNECT_LIMIT` (thirty per ten
+ * seconds). A longer grace would lower that rate: at three seconds, one
+ * source could do it.
  */
 export const EVICTION_GRACE_MS = 1_000;
 

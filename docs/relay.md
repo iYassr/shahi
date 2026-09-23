@@ -10,7 +10,9 @@ read; everything that matters happens end to end between phone and box.
 This file is the protocol, version 2. The three parts are built separately and
 meet here, so every byte on the wire is specified below and the shared shapes
 live in `shared/src/relay.ts`. Change the protocol by changing this file and
-that module together, and by bumping `RELAY_PROTOCOL`.
+that module together, and by bumping `RELAY_PROTOCOL`. An addition that an
+older peer can ignore without harm — the sealed `bye`, the box's `proofs` and
+`proven` — is unversioned, and says so where it is described.
 
 ## Who is who
 
@@ -27,8 +29,10 @@ that module together, and by bumping `RELAY_PROTOCOL`.
   addresses; the `serverId` (in the box's URL, so in request analytics) and
   the box's public key; a presence timeline (the box pings every twenty seconds); each
   phone's `deviceId` or pairing-code hash, in the clear in its hello; how many
-  phones a box has; and the size and timing of every frame. The default relay
-  is `relay.getshahi.dev`, run by Shahi's author.
+  phones a box has; which links the box says proved their secret (`proven`,
+  below, which their traffic after the hello showed anyway); and the size and
+  timing of every frame. The default relay is `relay.getshahi.dev`, run by
+  Shahi's author.
 - **Phone.** Holds, per box, a `deviceId` and a 32-byte **device secret**
   handed to it at pairing, in the Keychain. Before pairing it holds only the
   32-byte **pairing secret** from the QR.
@@ -40,9 +44,11 @@ secrets for phones:
 
 - `wss://<relay>/v1/box/<serverId>` — the box's persistent connection. On
   open the relay sends `{"t":"challenge","nonce":"<base64url 32 bytes>"}`. The
-  box answers `{"t":"auth","pub":"<base64url 32>","sig":"<base64url 64>"}`
+  box answers
+  `{"t":"auth","pub":"<base64url 32>","sig":"<base64url 64>","proofs":true}`
   where `sig` is Ed25519 over the UTF-8 bytes of
-  `"shahi-relay-box-v1" + serverId + nonce`. The relay checks
+  `"shahi-relay-box-v1" + serverId + nonce`, and `proofs` (optional, unsigned,
+  only ever `true`) promises the `proven` control below. The relay checks
   `base64url(sha256(pub)) == serverId` and the signature, then sends
   `{"t":"ready"}`. Anything else, or ten seconds of silence, closes with
   `4401`. A second box connection for the same id replaces the first (the old
@@ -60,6 +66,14 @@ secrets for phones:
   shows that in words. Otherwise the relay assigns a **link** number and tells
   the box `{"t":"open","link":n}`; when the phone goes it tells the box
   `{"t":"close","link":n}`; the box can end a link with the same message.
+  Once a link has sent a sealed frame that opened on the box — proof that it
+  holds the secret its hello named — a box that sent `"proofs":true` tells
+  the relay `{"t":"proven","link":n}`, once per link. The relay uses it for
+  one thing, choosing which link may be closed for a newcomer (below). Both
+  are additive and unversioned: a relay that predates them ignores the field
+  and drops the control, as it drops every box control but `close`, and a
+  relay that has them treats a box whose `auth` lacks `"proofs":true` as one
+  that will never send `proven`.
 
 The relay cannot ping a box (a Durable Object cannot originate one), so the
 box sends the text frame `ping` every twenty seconds once ready; the relay
@@ -182,20 +196,39 @@ issues no session and attaches no stream. It rechecks device revocation at proof
 time, and answers a device revoked in the meantime with a sealed `bye`.
 
 The relay holds at most eight phones per box. When all eight slots are full, a
-new phone closes the longest-silent one — a phone that has sent no frame yet
-and has been open at least a second — with `4429` "too many phones". A phone
-that has sent a frame keeps its slot, and the box ends any link whose hello is
-malformed or names a device or code it does not know, so a stranger cannot
-stay in the speaking state for longer than a round trip.
+new phone closes a link that has not shown it belongs there, with `4429` "too
+many phones", provided that link has been open at least a second; if none
+qualifies, the newcomer gets that close. The link closed is the longest-silent
+one, a phone that has sent no frame yet; failing that, on a box that sent
+`"proofs":true`, the longest-waiting link the box has not reported `proven`.
+A proven link is never closed for a newcomer.
+
+A hello is only a claim. The box ends a link whose hello is malformed or names
+a device or code it does not know within a round trip, but it answers a hello
+naming a real device id and then waits the full fifteen seconds for a sealed
+frame, since only that frame can show whether the sender holds the secret.
+Until the relay learned of proofs, such a link kept its slot for all fifteen
+seconds, so anyone who knew one device id and not its secret — a revoked phone
+that had once listed the devices, for one — could hold all eight slots at about
+one connection every two seconds and keep the owner's phones out (pre-release
+review 2026-09-22, F33). For a box that never sends `"proofs":true`, a
+sidecar older than this, the relay keeps that old rule, because it cannot
+tell such a box's owner phone from a stranger's hello, and that box stays open
+to this lockout until it is updated.
 
 What remains is a denial of service by anyone who can name the `serverId`.
-Holding every pending-box or silent-phone slot means keeping eight sockets
-younger than one second at all times: eight new connections a second,
-sustained, to one `serverId`. Under `CONNECT_LIMIT` (below) that takes at least
-three IPv4 addresses or IPv6 /64s, and it can keep a reconnecting box, or a
-new phone when all slots are full, out. The relay operator, or anyone holding a
-valid unrevoked device id, can also hold a speaking phone slot until the
-sidecar's fifteen-second proof deadline ends it.
+Holding every pending-box slot means keeping eight sockets younger than one
+second at all times: eight new connections a second, sustained, to one
+`serverId`. Under `CONNECT_LIMIT` (below) that takes at least three IPv4
+addresses or IPv6 /64s, and it keeps a reconnecting box out. Phone slots work
+the same way, except that a proven phone's slot is out of reach: keeping a new
+phone out means keeping every other slot filled with sockets under a second
+old, which is eight connections a second while none of the owner's phones is
+connected and one fewer for each that is. An attacker at such a rate who also
+knows a device id can close a new phone that has not yet proven itself, which
+takes it about two round trips after it opens, once its second of grace is up
+and every older unproven link has been replaced. None of this binds the relay
+operator, who runs the pipe and can drop any socket it likes.
 
 After proof, a device link mints a session token bound to the device
 id for the link and attaches it to every request it dispatches, so the sidecar's
@@ -452,7 +485,7 @@ ping, which lives in the sidecar, not here — a deliberate next step.
 | `4429` | `frame too large`   | box   | a data frame over 1 MiB (its phones get `4404`)   |
 | `4429` | `control too large` | either | a text frame over 4 KiB                          |
 | `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away |
-| `4429` | `too many phones`   | phone | the ninth phone while all eight have spoken; otherwise the longest-silent phone older than 1 s is closed with this |
+| `4429` | `too many phones`   | phone | a ninth phone: the longest-silent phone open at least 1 s is closed with this, or else, on a box that sent `"proofs":true`, the longest-waiting one it has not reported `proven`; the newcomer if neither exists |
 | `4429` | `frame too large`   | phone | a frame over 1 MiB                                |
 | `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry; every phone frame, text included, costs at least 256 bytes, so at most 256 frames/s sustained and 4,096 in a burst |
 | `1000` | `no hello`          | phone | fifteen seconds after opening without a frame     |

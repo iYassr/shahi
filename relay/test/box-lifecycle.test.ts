@@ -41,7 +41,25 @@ function fixture() {
   /** A box connection as the relay accepts it: challenged, not yet proven. */
   async function connect() { const ws = new Socket(null, []); await relay.acceptBox(ws, identity.serverId); return ws; }
   async function phone() { const ws = new Socket(null, []); await relay.acceptPhone(ws, identity.serverId); return ws; }
-  return { relay, identity, sockets, box, connect, phone, alarm: () => alarm };
+  /** A box through the real `auth` path, with whatever else its `auth` carries. */
+  async function authenticated(extra: Record<string, unknown> = {}) {
+    const ws = await connect();
+    await relay.webSocketMessage(ws, JSON.stringify({ ...signAuth(identity, ws.state.nonce), ...extra }));
+    expect(ws.state.ready).toBe(true);
+    return ws;
+  }
+  /** Every slot filled by a phone that has sent its hello, all past their grace. */
+  async function speakingPhones(past = Date.now() - EVICTION_GRACE_MS - 5_000) {
+    const phones = [];
+    for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox; i++) {
+      const ws = await phone();
+      await relay.webSocketMessage(ws, new Uint8Array([i]).buffer);
+      ws.state.since = past + i;
+      phones.push(ws);
+    }
+    return phones;
+  }
+  return { relay, identity, sockets, box, connect, phone, authenticated, speakingPhones, alarm: () => alarm };
 }
 
 test("a closing phone cannot shadow a new phone after box replacement", async () => {
@@ -166,7 +184,7 @@ test("a real phone gets in while silent squatters hold every phone slot", async 
   expect(live.sent.slice(-2).map((m) => JSON.parse(m as string))).toEqual([{ t: "close", link: 1 }, { t: "open", link: 9 }]);
 });
 
-test("a phone that has spoken keeps its slot, and the newcomer is refused", async () => {
+test("a phone that has spoken keeps its slot on a box that reports no proofs, and the newcomer is refused", async () => {
   const f = fixture(), past = Date.now() - EVICTION_GRACE_MS - 5_000;
   f.box();
   const phones = [];
@@ -179,6 +197,111 @@ test("a phone that has spoken keeps its slot, and the newcomer is refused", asyn
   const newcomer = await f.phone();
   expect(newcomer.tags).toEqual(["refused"]);
   expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("hellos naming a real device without its secret cannot keep the owner's phone out", async () => {
+  // The box answers such a hello and waits fifteen seconds for a sealed frame
+  // that never comes, and a phone that had spoken kept its slot all that time.
+  // Anyone holding a device id and no secret — a revoked phone that once read
+  // the device list — could keep all eight slots and lock the owner's phones
+  // out (review 2026-09-22, F33). Only the box can tell them apart.
+  const f = fixture(), live = await f.authenticated({ proofs: true });
+  const squatters = await f.speakingPhones();
+  const owner = await f.phone();
+  expect(owner.tags).toContain("phone");
+  expect(squatters[0]!.closes).toEqual([4429]);
+  expect(squatters[0]!.reason).toBe("too many phones");
+  expect(squatters.slice(1).every((s) => s.closes.length === 0)).toBe(true);
+  expect(live.sent.slice(-2).map((m) => JSON.parse(m as string))).toEqual([{ t: "close", link: 1 }, { t: "open", link: 9 }]);
+});
+
+test("a phone the box has proven keeps its slot, and the newcomer is refused", async () => {
+  const f = fixture(), live = await f.authenticated({ proofs: true });
+  const phones = await f.speakingPhones();
+  for (const phone of phones) await f.relay.webSocketMessage(live, JSON.stringify({ t: "proven", link: phone.state.link }));
+  expect(phones.every((p) => p.state.proven === true)).toBe(true);
+  const newcomer = await f.phone();
+  expect(newcomer.tags).toEqual(["refused"]);
+  expect(newcomer.closes).toEqual([4429]);
+  expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("the newcomer passes over proven phones to the one that has not proven itself", async () => {
+  const f = fixture(), live = await f.authenticated({ proofs: true });
+  const phones = await f.speakingPhones();
+  // The oldest seven proved themselves; the youngest never did.
+  for (const phone of phones.slice(0, -1)) await f.relay.webSocketMessage(live, JSON.stringify({ t: "proven", link: phone.state.link }));
+  await f.phone();
+  expect(phones.at(-1)!.closes).toEqual([4429]);
+  expect(phones.slice(0, -1).every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("a silent squatter makes room before a phone that has spoken but not yet proven itself", async () => {
+  const f = fixture(), past = Date.now() - EVICTION_GRACE_MS - 5_000;
+  await f.authenticated({ proofs: true });
+  const phones = [];
+  for (let i = 0; i < RELAY_LIMITS.maxPhonesPerBox - 1; i++) {
+    const phone = await f.phone();
+    await f.relay.webSocketMessage(phone, new Uint8Array([i]).buffer);
+    phone.state.since = past + i;
+    phones.push(phone);
+  }
+  // Younger than every phone that has spoken, but past its grace, and silent.
+  const silent = await f.phone();
+  silent.state.since = past + 100;
+  await f.phone();
+  expect(silent.closes).toEqual([4429]);
+  expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("a phone that has spoken but not proven itself is not evicted inside its grace", async () => {
+  const f = fixture();
+  await f.authenticated({ proofs: true });
+  const phones = await f.speakingPhones(Date.now());
+  const newcomer = await f.phone();
+  expect(newcomer.tags).toEqual(["refused"]);
+  expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+});
+
+test("a box that predates proofs keeps the old rule: a phone that has spoken holds its slot", async () => {
+  // A relay deployed with `proven` still serves boxes that never send it. For
+  // those, closing a link that has spoken could close the owner's own phone,
+  // so nothing changes: a newcomer is refused. A `proofs` that is not `true`
+  // is no promise either.
+  for (const extra of [{}, { proofs: 1 }, { proofs: "true" }]) {
+    const f = fixture(), live = await f.authenticated(extra);
+    expect(live.state.proofs).toBe(false);
+    const phones = await f.speakingPhones();
+    const newcomer = await f.phone();
+    expect(newcomer.tags).toEqual(["refused"]);
+    expect(phones.every((p) => p.closes.length === 0)).toBe(true);
+  }
+});
+
+test("a malformed proven control changes nothing and never takes the relay down", async () => {
+  const f = fixture(), live = await f.authenticated({ proofs: true });
+  const phones = await f.speakingPhones();
+  for (const control of [
+    '{"t":"proven"}', '{"t":"proven","link":"1"}', '{"t":"proven","link":null}', '{"t":"proven","link":{}}',
+    '{"t":"proven","link":[1]}', '{"t":"proven","link":-1}', '{"t":"proven","link":1.5}', '{"t":"proven","link":99}',
+    '{"t":"proven","link":1e999}', '{"t":"PROVEN","link":1}', '["proven",1]', "null", "proven", '{"t":"proven","link":1',
+  ]) await f.relay.webSocketMessage(live, control);
+  expect(live.state.ready).toBe(true);
+  expect(live.closes).toHaveLength(0);
+  expect(phones.every((p) => !p.state.proven && p.closes.length === 0)).toBe(true);
+  // Nothing was proven, so the oldest still makes room.
+  await f.phone();
+  expect(phones[0]!.closes).toEqual([4429]);
+});
+
+test("a box that has not authenticated cannot vouch for a link", async () => {
+  const f = fixture(), live = await f.authenticated({ proofs: true });
+  const phones = await f.speakingPhones();
+  const stranger = await f.connect();
+  await f.relay.webSocketMessage(stranger, JSON.stringify({ t: "proven", link: 1 }));
+  expect(stranger.closes).toEqual([4401]);
+  expect(phones[0]!.state.proven).toBeUndefined();
+  expect(live.state.ready).toBe(true);
 });
 
 test("a silent phone inside its grace is not evicted", async () => {

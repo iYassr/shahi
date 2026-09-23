@@ -17,6 +17,7 @@ import { PushService } from "../../server/lib/push";
 import { TranscriptStore } from "../../server/lib/transcript";
 import type { Config } from "../../server/lib/config";
 import type { HerdrClient } from "../../server/lib/herdr-client";
+import { EVICTION_GRACE_MS } from "../src/limits";
 import { startRelay, Peer, HTTP, WS } from "./harness";
 
 const scratch = mkdtempSync(join(tmpdir(), "shahi-relay-security-"));
@@ -27,6 +28,7 @@ const identity = serverIdentity(db);
 const transcript = new TranscriptStore(join(scratch, "transcript.sqlite"));
 const peers: Peer[] = [];
 let server: ShahiServer;
+let auth: Auth;
 let relay: RelayClient;
 let stopRelay: () => Promise<void> = async () => {};
 const encoder = new TextEncoder();
@@ -38,7 +40,7 @@ beforeAll(async () => {
     passcodeHash: "configured-test-gate", sessionSecret: "isolated-session-test-secret",
     sessionTtlMs: 60_000, vapid: null, webRoot: null, relayUrl: HTTP,
   };
-  const auth = new Auth({ ...config, deviceActive: (id) => devices.isActive(id) }, db);
+  auth = new Auth({ ...config, deviceActive: (id) => devices.isActive(id) }, db);
   const client = { rpc: async (method: string) => {
     if (method === "session.snapshot") return { snapshot: {
       version: "0.8.2", protocol: 20, workspaces: [], tabs: [], panes: [], agents: [], layouts: [], focused_pane_id: null,
@@ -62,8 +64,8 @@ afterAll(async () => {
   await stopRelay(); rmSync(scratch, { recursive: true, force: true });
 });
 
-async function hello(deviceId: string) {
-  const peer = await Peer.open(`${WS}/v1/phone/${identity.serverId}`);
+async function hello(deviceId: string, serverId = identity.serverId) {
+  const peer = await Peer.open(`${WS}/v1/phone/${serverId}`);
   peers.push(peer);
   const key = ephemeral(crypto.getRandomValues(new Uint8Array(32)));
   peer.send(encoder.encode(JSON.stringify({ t: "hello", v: RELAY_PROTOCOL, pub: Buffer.from(key.pub).toString("base64url"), auth: { kind: "device", deviceId } })));
@@ -77,9 +79,6 @@ test("eight valid-looking device hellos get no stream and expire, allowing a rea
   for (let i = 0; i < 8; i++) squatters.push((await hello(device.id)).peer);
   // No encrypted dashboard or heartbeat is sent before client proof.
   expect(await squatters[0]!.hears(80)).toBe(false);
-  const refused = await Peer.open(`${WS}/v1/phone/${identity.serverId}`);
-  peers.push(refused);
-  expect((await refused.closed).code).toBe(4429);
   const closed = await Promise.all(squatters.map((p) => p.closed));
   expect(closed.every((event) => event.code === 1000)).toBe(true);
 
@@ -90,6 +89,44 @@ test("eight valid-looking device hellos get no stream and expire, allowing a rea
   expect(dashboard).toMatchObject({ t: "ws", data: { type: "session" } });
   real.peer.close();
 }, 5000);
+
+test("hellos naming a real device without its secret cannot keep the owner's phone out", async () => {
+  // The sidecar answers such a hello and holds the link until its proof
+  // deadline, and the relay kept a link that had spoken, so eight of them
+  // locked the owner's phones out; anyone with a device id could do it, a
+  // revoked phone that once read the device list included (review
+  // 2026-09-22, F33). A second box, with a deadline long enough that expiry
+  // cannot be what lets the owner in.
+  const patientDb = new Database(join(scratch, "patient.sqlite"));
+  const patientId = serverIdentity(patientDb);
+  const patient = new RelayClient({ url: HTTP, identity: patientId, devices, pairing, auth, server, log() {} }, { phoneAuthMs: 60_000 });
+  patient.start();
+  try {
+    for (let i = 0; !patient.connected && i < 500; i++) await Bun.sleep(10);
+    expect(patient.connected).toBe(true);
+    const { device, secret } = devices.create("Owner's phone");
+    const squatters: Peer[] = [];
+    for (let i = 0; i < 8; i++) squatters.push((await hello(device.id, patientId.serverId)).peer);
+    await Bun.sleep(EVICTION_GRACE_MS + 100);
+
+    const owner = await hello(device.id, patientId.serverId);
+    expect(await squatters[0]!.closed).toEqual({ code: 4429, reason: "too many phones" });
+    const session = clientSession(owner.key, owner.pub, secret);
+    owner.peer.send(seal(session, encoder.encode(JSON.stringify({ t: "ws", data: { type: "unwatch" } }))));
+    expect(JSON.parse(new TextDecoder().decode(open(session, await owner.peer.binary())))).toMatchObject({ t: "ws", data: { type: "session" } });
+
+    // The box has now told the relay the owner proved itself. Seven more
+    // hellos displace the older ones; once they are past their grace, the
+    // eighth finds the owner the longest-waiting link, and must pass it over.
+    const strangers: Peer[] = [];
+    for (let i = 0; i < 7; i++) strangers.push((await hello(device.id, patientId.serverId)).peer);
+    for (const squatter of squatters.slice(1)) expect((await squatter.closed).code).toBe(4429);
+    await Bun.sleep(EVICTION_GRACE_MS + 100);
+    strangers.push((await hello(device.id, patientId.serverId)).peer);
+    expect(await Promise.race([owner.peer.closed.then(() => "closed"), Bun.sleep(500).then(() => "open")])).toBe("open");
+    expect(await strangers[0]!.closed).toEqual({ code: 4429, reason: "too many phones" });
+  } finally { patient.stop(); await Bun.sleep(50); patientDb.close(); }
+}, 20_000);
 
 test("revocation between hello and proof cannot establish a session", async () => {
   const { device, secret } = devices.create("Revoked during handshake");

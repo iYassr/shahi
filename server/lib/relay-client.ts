@@ -292,7 +292,9 @@ export class RelayClient {
         this.#challenged = true;
         const { identity } = this.#deps;
         const signed = encoder.encode(BOX_AUTH_PREFIX + identity.serverId + msg.nonce);
-        const auth: BoxToRelay = { t: "auth", pub: b64(identity.publicKey), sig: b64(identity.sign(signed)) };
+        // `proofs`: this box reports each link that proves itself (see
+        // `Wire.proven`). A relay that predates it ignores the field.
+        const auth: BoxToRelay = { t: "auth", pub: b64(identity.publicKey), sig: b64(identity.sign(signed)), proofs: true };
         ws.send(JSON.stringify(auth));
         return;
       }
@@ -364,13 +366,17 @@ export class RelayClient {
     },
     end: (link) => {
       this.#links.delete(link);
-      const message: BoxToRelay = { t: "close", link };
-      const ws = this.#ws;
-      if (ws?.readyState === WebSocket.OPEN && this.#ready) {
-        try { ws.send(JSON.stringify(message)); } catch { this.#disconnect(ws, 1006); }
-      }
+      this.#tell({ t: "close", link });
     },
+    proven: (link) => this.#tell({ t: "proven", link }),
   };
+
+  #tell(message: BoxToRelay): void {
+    const ws = this.#ws;
+    if (ws?.readyState === WebSocket.OPEN && this.#ready) {
+      try { ws.send(JSON.stringify(message)); } catch { this.#disconnect(ws, 1006); }
+    }
+  }
 
   #releaseAll(): void {
     for (const link of this.#links.values()) link.release();
@@ -383,6 +389,15 @@ interface Wire {
   release(): void;
   send(link: number, payload: Uint8Array): void;
   end(link: number): void;
+  /**
+   * Tells the relay this link holds the secret its hello named. Only the box
+   * can know that, and without it the relay could not tell the owner's phone
+   * from someone who knows a device id but not its secret: such a hello kept
+   * its slot until the proof deadline ended it, and eight of them kept the
+   * owner's phones out (review 2026-09-22, F33). With it, a full relay makes
+   * room by closing a link that has not proven itself.
+   */
+  proven(link: number): void;
 }
 
 /**
@@ -479,6 +494,7 @@ class Link implements StreamClient {
       }
       this.#confirmed = true;
       clearTimeout(this.#authTimer);
+      this.wire.proven(this.id);
     }
     if (msg.t === "req") {
       // Not awaited: requests on a link are concurrent and answered by id.

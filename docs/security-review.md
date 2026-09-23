@@ -547,10 +547,18 @@ numbers:
 - **Relay slot squatting (F28, F33) and free frames (F79).** Anyone who knew a
   `serverId` could hold all eight pending-box slots, or all eight phone slots,
   with silent sockets and keep the real computer or phone out. The newcomer now
-  evicts the longest-waiting silent socket once it is a second old. Every phone
-  frame now costs at least 256 bytes of the rate bucket, text included. The
-  remaining denial of service, eight fresh connections a second from at least
-  three sources, is documented in `docs/relay.md`.
+  evicts the longest-waiting silent socket once it is a second old. Anyone who
+  also knew a device id, without its secret, could still hold every phone slot
+  with hellos the box answers and holds for its fifteen-second proof deadline.
+  The box now tells the relay which links proved their secret (`proven`,
+  promised by `"proofs":true` in its `auth`), and on such a box a newcomer
+  evicts the longest-waiting unproven link instead; a proven phone is never
+  evicted. A box older than this change keeps the previous rule and that
+  exposure. Every phone frame now costs at least 256 bytes of the rate bucket,
+  text included. The remaining denial of service, eight fresh connections a
+  second from at least three sources (one fewer for each of the owner's
+  phones already connected and proven, which it cannot touch), is documented
+  in `docs/relay.md`.
 - **IPv6 rate limits (F80).** The relay's connect limiter, the beta signup form
   and the App Review login keyed an IPv6 client by its full address; all three
   now use the /64 (R7).

@@ -278,10 +278,14 @@ export class Peer {
   }
 }
 
-/** The box side of a relay connection, up to and including `ready`. */
-export async function connectBox(box: Box): Promise<Peer> {
+/**
+ * The box side of a relay connection, up to and including `ready`. `extra`
+ * rides on the `auth`: `{ proofs: true }` is what the sidecar sends, and a box
+ * without it is one that predates `proven`.
+ */
+export async function connectBox(box: Box, extra: Record<string, unknown> = {}): Promise<Peer> {
   const peer = await Peer.open(`${WS}/v1/box/${box.serverId}`);
-  peer.send(signAuth(box, await peer.challenge()));
+  peer.send({ ...signAuth(box, await peer.challenge()), ...extra });
   const ready = await peer.text();
   if (ready.t !== "ready") throw new Error(`expected ready, got ${ready.t}`);
   return peer;

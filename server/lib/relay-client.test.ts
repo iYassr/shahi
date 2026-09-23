@@ -4,9 +4,11 @@
  * The relay here is the protocol in `docs/relay.md` reduced to what a test
  * needs: it challenges boxes and checks their signatures, numbers phones into
  * links, prefixes and strips the link number, and closes what it is told to
- * close. The phone is the other end of `shared/src/e2e.ts`: it says hello,
- * derives the session, and seals requests. Between them is the real
- * `RelayClient` on the real `createServer`, with only herdr faked.
+ * close. Every other control it records and ignores, as a relay that predates
+ * `proven` does, so every test here is also the box against an older relay.
+ * The phone is the other end of `shared/src/e2e.ts`: it says hello, derives
+ * the session, and seals requests. Between them is the real `RelayClient` on
+ * the real `createServer`, with only herdr faked.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
@@ -82,6 +84,8 @@ interface FakeRelay {
   boxes: Map<string, BoxConn>;
   /** Auth frames seen, good or bad. */
   authAttempts: number;
+  /** Every JSON control a box sent, in order. */
+  controls: { serverId: string; msg: BoxToRelay }[];
   /** Text `ping`s from boxes, each answered with `pong` as the Worker does. */
   pings: number;
   boxConnections: number;
@@ -96,6 +100,7 @@ function fakeRelay(): FakeRelay {
     url: "",
     boxes: new Map(),
     authAttempts: 0,
+    controls: [],
     pings: 0,
     boxConnections: 0,
     silent: false,
@@ -142,6 +147,7 @@ function fakeRelay(): FakeRelay {
               return;
             }
             const msg = JSON.parse(raw) as BoxToRelay;
+            state.controls.push({ serverId: ws.data.serverId, msg });
             if (msg.t === "auth") {
               state.authAttempts += 1;
               const pub = unb64(msg.pub);
@@ -311,6 +317,11 @@ function phone(relay: FakeRelay, serverId: string, auth: PhoneHello["auth"], sec
     resolveClosed({ code: event.code, reason: event.reason });
   };
   return result;
+}
+
+/** The links the box has reported proven since `mark` controls ago, in order. */
+function provenSince(mark: number): number[] {
+  return relay.controls.slice(mark).flatMap(({ serverId, msg }) => (serverId === box.identity.serverId && msg.t === "proven" ? [msg.link] : []));
 }
 
 /** The phone both apps run — the shared link, with its acks, bye handling and retries. */
@@ -485,6 +496,13 @@ describe("box authentication", () => {
       expect((await fetch(`http://127.0.0.1:${box.server.port}/api/auth/status`)).status).toBe(200);
     }
   });
+  test("the box promises at auth to report which links prove themselves", () => {
+    // Without the promise a relay must keep any link that has spoken, since it
+    // could be an older box's owner phone (docs/relay.md).
+    const auth = relay.controls.find((c) => c.serverId === box.identity.serverId && c.msg.t === "auth");
+    expect(auth?.msg).toMatchObject({ t: "auth", proofs: true });
+  });
+
   test("the box URL is the relay's over ws(s), with the server id on the path", () => {
     expect(boxUrl("https://relay.example.workers.dev", "abc")).toBe("wss://relay.example.workers.dev/v1/box/abc");
     expect(boxUrl("http://127.0.0.1:9999/", "abc")).toBe("ws://127.0.0.1:9999/v1/box/abc");
@@ -786,6 +804,47 @@ describe("a phone through the relay", () => {
     // Nothing was answered, and nothing will be.
     expect(await Promise.race([answer, Bun.sleep(100).then(() => "nothing")])).toBe("nothing");
     expect(box.log.some((l) => l.includes("did not open"))).toBe(true);
+  });
+
+  // The relay closes a link the box has not vouched for to make room for a
+  // newcomer, so the box must vouch for exactly the links that proved their
+  // secret. A hello naming a real device id without it kept its slot for the
+  // whole proof deadline, and eight of them kept the owner's phones out
+  // (review 2026-09-22, F33).
+  test("a link is reported proven once its first sealed frame opens, and only once", async () => {
+    const mark = relay.controls.length;
+    const p = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
+    await p.hello;
+    const link = relay.boxes.get(box.identity.serverId)!.nextLink;
+    expect(provenSince(mark)).toEqual([]);
+    expect((await p.request("GET", "/api/meta")).status).toBe(200);
+    expect((await p.request("GET", "/api/session")).status).toBe(200);
+    expect(provenSince(mark)).toEqual([link]);
+    p.close();
+    await p.closed;
+  });
+
+  test("a hello naming a real device is never reported proven without the device's secret", async () => {
+    const mark = relay.controls.length;
+    // The wrong secret: its first sealed frame does not open.
+    const wrong = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, new Uint8Array(32));
+    await wrong.hello;
+    void wrong.request("GET", "/api/session");
+    expect((await wrong.closed).code).toBe(1000);
+    // A hello and then nothing, which is all a squatter need send.
+    const quiet = phone(relay, box.identity.serverId, { kind: "device", deviceId: paired.deviceId }, unb64(paired.deviceSecret));
+    await quiet.hello;
+    await Bun.sleep(100);
+    quiet.close();
+    await quiet.closed;
+    // Revoked between the hello and the proof: told bye, never vouched for.
+    const { device, secret } = box.devices.create("Revoked before its proof");
+    const revoked = phone(relay, box.identity.serverId, { kind: "device", deviceId: device.id }, secret);
+    await revoked.hello;
+    box.devices.revoke(device.id);
+    revoked.unwatch();
+    expect((await revoked.closed).code).toBe(1000);
+    expect(provenSince(mark)).toEqual([]);
   });
 
   test("a hello with a low-order public key ends the link, and the box is still there", async () => {
