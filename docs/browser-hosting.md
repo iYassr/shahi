@@ -5,12 +5,23 @@ on the user's computer and connects outbound to the relay. The website does not
 proxy terminal traffic or hold pairing credentials. The browser runs the same
 pairing and encrypted relay protocol as the native app.
 
-Run the plugin's pairing action, scan its QR in the browser app, paste the
-`shahi://pair#…` code, or open the browser link printed underneath it. The link
-carries the complete native pairing code in its URL fragment, never a query
-parameter. A fragment is not sent in HTTP requests or referrers. Treat the
-whole link as a secret; it expires after ten minutes and can be claimed once.
-Mint a separate code for each browser or native installation.
+Run the plugin's pairing action, then scan its QR in the browser app, paste the
+`shahi://pair#…` code, or press T then Enter in the popup to show the code as a
+`https://getshahi.dev/pwa/#pair=…` link and open that. The link carries the
+complete native pairing code in its URL fragment, never a query parameter. A
+fragment is not sent in HTTP requests or referrers. Treat the whole link as a
+secret; it expires after ten minutes and can be claimed once. Mint a separate
+code for each browser or native installation.
+
+A browser opened on a `#pair=` link does not pair from it directly. It shows a
+**Connect this browser?** card: "A link is asking to connect this browser to a
+Shahi computer. Only continue if you opened this link yourself, from a computer
+you control.", the relay's host, the first 16 characters of the computer's
+identity, a **Connect to <relay host>** button and **Cancel**, which discards
+the code. A malformed link shows its error and only Cancel. Anyone can send
+such a link for a computer of their own, and before this card it opened onto a
+filled-in form one tap from attaching the browser to that stranger's computer.
+Pasted and scanned codes pair as before.
 
 ## Build and publish
 
@@ -31,8 +42,20 @@ as its base. Hosted output is independently built in `web/dist-hosted` with
 `/pwa/` as its base. Both generated directories are ignored by Git.
 
 The static host explicitly rewrites browser routes to the `/pwa/` application shell; it
-returns 404 for unknown paths, including `/api/*`. It must never supply a fake
-successful HTML response to an API request. The site is not an HTTP API proxy.
+returns 404 for unknown paths, including `/api/*`. Those 404s carry the site's
+"Page not found" page (`site/public/404.html`, with its own CSP in a meta tag)
+rather than an empty body; still a 404, never a fake success. It must never
+supply a successful HTML response to an API request. The site is not an HTTP
+API proxy.
+
+Caching, from `site/public/_headers`: every unhashed file under `/pwa/`,
+including each app route rewritten to the shell, is `no-cache`, so a browser
+revalidates it; `/pwa/assets/*` is
+`public, no-transform, max-age=31536000, immutable`; `/pwa/sw.js` is
+`no-store`. The rule once named `/pwa/` alone, and since header rules match
+the requested path rather than the rewrite behind it, `/pwa/pane/*` and every
+other app route were served the same HTML with nothing telling a cache to
+revalidate it.
 
 ## Browser boundaries
 
@@ -44,12 +67,32 @@ only for QR scanning. Referrers are disabled. No third-party scripts should be
 added to this origin: code delivered by the website is part of the browser's
 trusted computing base.
 
+The whole `getshahi.dev` origin loads no third-party resources. Its fonts are
+IBM Plex subsets served from `/fonts/`, with IBM's OFL licence beside them;
+they came from Google Fonts until the pre-public-release review, which handed
+every visitor's address to Google for the sake of a typeface. The marketing
+and privacy pages' CSP allows fonts and styles only from `'self'`.
+
 Service-worker and manifest scopes are `/pwa/`. The service worker caches only
 the public application shell and built assets. It skips API paths, files,
-requests with authentication headers, query-bearing URLs, and non-GET requests.
+requests with authentication headers, query-bearing URLs (except the
+notification route, which gets the canonical shell), and non-GET requests.
 Navigation caching fetches the canonical shell instead of storing pane URLs.
-Cache cleanup only removes this application's old cache entries. Browser
-credentials and terminal/session data must never be placed in Cache Storage.
+Browser credentials and terminal/session data must never be placed in Cache
+Storage.
+
+Each release has its own cache, named after a hash of every file the release
+ships, which `web/sw-build.ts` stamps into `sw.js` at build time; there is no
+hand-bumped version. Installing a release precaches every file it ships,
+lazily loaded chunks included (the terminal, the PDF viewer and pdf.js's
+worker, about 2.7 MB uncompressed), so a page left open across a deploy can
+still open the terminal or a PDF. Activation keeps the newest earlier complete
+release for pages still running it and deletes older ones, so at most two
+releases are cached, and never another application's caches on the same
+origin. Navigations try the network for 1.5 seconds before falling back to the
+cached shell. A lazily loaded chunk that still fails to load shows a "could not
+be loaded" notice with Try again in place of the error screen; if the server
+names a newer bundle, the update banner appears instead.
 
 A browser's storage is isolated by origin, not pathname: `/pwa/` is not a security
 boundary from other code at `getshahi.dev`. Keep the marketing website free of
@@ -71,6 +114,24 @@ computer and pairing grant. Switching conversations or computers preserves
 them within the bounded draft cache; reloading the page clears them. Logout and
 revocation clear that connection’s drafts. The service worker does not persist
 conversation data or drafts.
+
+Because a reload would lose them, the automatic update waits while any
+conversation in the draft store holds a draft, an attachment or a pending or
+in-flight send, including conversations no longer on screen; it used to check
+only the open one. Tapping a notification while the app is open routes inside
+the page, without a reload, so session-only computers and drafts survive; a page
+from an older release that does not answer the service worker within three
+seconds is navigated as before. The error screen's **Back to agents** also
+routes inside the app, so it stays under `/pwa/` and keeps session-only
+pairings. A space that is still loading, or has closed, keeps its header and
+Back.
+
+Returning to the foreground keeps any relay link that can show it is alive, so
+an agent start, a prompt or a file transfer in flight is not dropped by a tab
+or app switch; [relay.md](relay.md#recovering-from-network-changes) has the
+rule. Signing out, revocation or a sealed `bye` retires the computer before its
+link is closed, and a closed link stays closed, so a signed-out browser does
+not redial the relay.
 
 Updated clients and computers support 32 MiB relay uploads, split into bounded
 64 KiB chunks with progress, cancellation and recovery from transient disconnects.

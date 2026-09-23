@@ -129,7 +129,7 @@ format is in the [relay specification](relay.md).
 | Your phone or browser | Decrypted conversations, files, commands, and the credentials needed for its session. |
 | Your computer and Shahi service | Decrypted requests and results; local files, agent transcripts, and device credentials needed to authorize access. |
 | Relay and Cloudflare infrastructure | Connection metadata such as IP addresses, public server/device identifiers, public handshake values, connection times, and traffic sizes and timing. Application payloads remain encrypted. |
-| Optional push providers | Notification content sent through their separate delivery path. Native push uses Expo and the platform provider; web push uses the browser’s provider. |
+| Optional push providers | Native push goes through Expo and the platform provider, which can read the notification: workspace name, terminal title, the pane to open and your computer’s public server identifier. Web push carries the same fields through the browser’s push service, encrypted so only your browser can read them. |
 | Your agent’s model provider | Whatever the agent itself sends under its own configuration. Shahi’s relay encryption does not change that separate connection. |
 
 The relay is not a conversation-history service. It forwards frames and does
@@ -140,9 +140,17 @@ specific fields, providers, and retention periods.
 
 ## 5. You can remove a device’s access
 
-In **Settings → Paired devices**, revoke the phone or browser you no longer
+In **Settings → Devices with access**, revoke the phone or browser you no longer
 trust. The sidecar refuses further authenticated requests and closes its active
-relay connections. A revoked device needs a fresh pairing code to return.
+relay connections. A device that was offline when you revoked it is told so,
+in a sealed message the relay cannot forge, the next time it connects through
+the relay, and signs out. A revoked device needs a fresh pairing code to return.
+
+Revocation happens from another paired device: the computer has no list of
+devices to revoke from. If a lost phone was your only paired device, pair a new
+phone or browser first, then revoke the lost one. Rotating `SESSION_SECRET` on
+the computer ends passcode sessions but not relay pairings, which prove their
+own device secrets.
 
 Revocation cannot undo a command already accepted or remove data the device
 already downloaded. Review devices before lending or disposing of a phone.

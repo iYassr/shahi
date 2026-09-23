@@ -10,7 +10,8 @@ telling you why. This is that map.
 | how you opened it | notifications | what you need |
 |---|---|---|
 | Safari tab on iOS | **no** | nothing will help — the API is not there |
-| PWA on the home screen, over HTTPS | **yes** | `tailscale serve`, then Add to Home Screen |
+| hosted PWA (`getshahi.dev/pwa`) on the home screen | **yes** | pair with **Remember this browser**, then Add to Home Screen |
+| the computer's own web app on the home screen, over HTTPS | **yes** | a proxy such as `tailscale serve`, its name in `SHAHI_ALLOWED_HOSTS`, then Add to Home Screen |
 | PWA over plain HTTP | **no** | not a secure context, so no service worker |
 | Expo Go | **no** | impossible at any SDK since 53 |
 | a development build | yes | EAS project id, and a paid Apple account |
@@ -21,8 +22,10 @@ telling you why. This is that map.
 Three things must all be true, and the failure of any of them is quiet:
 
 1. **A secure context.** Browsers refuse to register a service worker off one,
-   and on iOS the service worker is the entire delivery path. Plain
-   `http://100.x.y.z:7171` cannot work. `tailscale serve` in front of the same
+   and on iOS the service worker is the entire delivery path. The hosted PWA
+   at `https://getshahi.dev/pwa/` is one, and reaches the computer through the
+   relay. For the web app a computer serves itself, plain
+   `http://100.x.y.z:7171` cannot work; `tailscale serve` in front of the same
    port can.
 2. **Installed to the home screen.** iOS grants Web Push only to a PWA launched
    from its icon. In a Safari tab the button appears to work and nothing ever
@@ -33,15 +36,33 @@ Three things must all be true, and the failure of any of them is quiet:
    threw during first render and left the whole dashboard blank in a Safari tab.
    Guarded now; be careful adding another reference.
 
-Setup, once:
+With the hosted PWA: open `https://getshahi.dev/pwa/`, pair with **Remember
+this browser** selected (a session-only pairing cannot keep a subscription),
+Share → Add to Home Screen, open it from the icon, and turn notifications on in
+Settings. Neither app has a test button (the server's `POST /api/push/test`
+has no caller in either client), so check delivery with a dedicated test agent
+that you make wait for an answer before you rely on it.
+
+With the computer's own web app, setup once:
 
 ```sh
 sudo tailscale serve --bg --https=443 http://127.0.0.1:7171
+echo 'SHAHI_ALLOWED_HOSTS=<host>.<tailnet>.ts.net' >> "$(herdr plugin config-dir shahi)/.env"
+herdr plugin action invoke shahi.restart
 ```
 
-Then on the phone: open `https://<host>.<tailnet>.ts.net`, enter the passcode,
-Share → Add to Home Screen, open it from the icon, and turn notifications on.
-There is a "Send a test" in the app; use it before you rely on it.
+The second line is needed because `tailscale serve` keeps the tailnet name in
+`Host`, and the sidecar refuses any `Host` but loopback unless the owner lists
+it: that check is the DNS-rebinding defence. Then on the phone: open
+`https://<host>.<tailnet>.ts.net`, enter the passcode, Share → Add to Home
+Screen, open it from the icon, and turn notifications on.
+
+A browser gets notifications from one computer at a time: each computer has its
+own VAPID key, and every computer paired in the hosted PWA shares its one
+service-worker scope. Turning them on for a second computer asks before moving
+them. Turning them off removes only the current computer's registration, and
+unsubscribes the browser only when the subscription was made with that
+computer's key.
 
 ## What fires one
 
@@ -52,8 +73,12 @@ pane's status with no previous value, and those are deliberately not notified �
 waking a phone for agents that were already waiting before the process started is
 noise.
 
-The payload carries the pane id, so tapping the notification opens that pane
-rather than the list.
+The payload carries the pane id and the computer's `serverId`, so tapping the
+notification opens that pane rather than the list. In a browser whose app is
+already open, the service worker posts the pane and computer to the page, which
+routes in place without a reload, so drafts and session-only pairings survive;
+a page from an older release that does not answer within three seconds is
+navigated to the pane as before.
 
 ## The native app, and what is left to prove
 

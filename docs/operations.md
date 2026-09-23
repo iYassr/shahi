@@ -26,6 +26,15 @@ phone then reaches the box over SSH.
 so nothing needs it exposed — and it runs arbitrary commands as you. That goes
 double for `tailscale funnel`, which would publish it to the internet.
 
+The port also answers only requests whose `Host` is `127.0.0.1`, `localhost`
+or `[::1]` (any port), which is what stops a DNS-rebinding page from reaching
+it. A 403 saying "Shahi answers only at 127.0.0.1 or localhost. Connect through
+the relay or an SSH tunnel…" means the request came through a reverse proxy or
+a hosts-file name. A proxy of your own, such as `tailscale serve`, works once
+its full host name is in `SHAHI_ALLOWED_HOSTS` (comma-separated, no ports or
+wildcards) in the plugin's `.env`, followed by `shahi.restart`; a malformed
+entry stops the sidecar from starting.
+
 ## Standing it up
 
 ```sh
@@ -46,6 +55,13 @@ it the user service stops when your last SSH session ends — exactly when you
 would want to reach it from a phone. The plugin cannot do this for you because
 it needs sudo on some distributions.
 
+Setup run from a shell with no login session of its own (`su`, `sudo -iu`, some
+containers) finds no user systemd to talk to, and says so instead of passing on
+"Failed to connect to user scope bus": start herdr from a real login as that
+user, or `sudo loginctl enable-linger <user>`, and if the shell has no
+`XDG_RUNTIME_DIR`, `export XDG_RUNTIME_DIR=/run/user/<uid>` before starting
+herdr. Then `herdr plugin action invoke shahi.restart`.
+
 ## Where things live
 
 herdr gives the plugin two directories and keeps them apart from the checkout,
@@ -53,7 +69,8 @@ so an upgrade never touches your secrets or your data.
 
 | what | where |
 |---|---|
-| the checkout | `$HERDR_PLUGIN_ROOT` — replaced on upgrade, never edit |
+| the checkout | `$HERDR_PLUGIN_ROOT` — replaced on upgrade, never edit; the service does not run from it |
+| releases | `$HERDR_PLUGIN_STATE_DIR/managed/` — the manager and the verified releases it runs |
 | secrets | `$HERDR_PLUGIN_CONFIG_DIR/.env`, mode 0600 |
 | database | `$HERDR_PLUGIN_STATE_DIR/shahi.sqlite` — devices, push, transcripts |
 | log | `$HERDR_PLUGIN_STATE_DIR/shahi.log` |
@@ -82,24 +99,32 @@ These work on both platforms. The underlying `launchctl` and `systemctl --user`
 commands still work if you prefer them, but the actions are what the plugin
 keeps in step.
 
-**Rebuild and restart after touching `web/`.** The sidecar serves `web/dist`,
-so an unbuilt change is invisible.
+**A managed service serves the web app inside its release**, not the
+checkout's `web/dist`, so a change to `web/` reaches it only in a new approved
+release. A development server run from a checkout serves `web/dist`: rebuild
+(`bun run build:web`) and restart after touching `web/`.
 
 ## What healthy looks like
 
-Startup prints the version, the address, and what it found:
+Startup prints the address and what it found (`shahi.logs` shows it):
 
 ```
-herdr 0.8.2 (protocol 20) at /home/you/.config/herdr/herdr.sock
 listening on http://127.0.0.1:7171
   11 workspaces, 47 panes, 14 agents (0 blocked)
   passcode required
-  relay: connected
+  push enabled, 1 subscription(s)
+  devices 2 paired — pair a phone: herdr plugin action invoke shahi.pair
+  relay dialling https://relay.getshahi.dev as <serverId>
+  data /home/you/.local/state/herdr/plugins/shahi/shahi.sqlite
 ```
 
-A protocol other than 20 prints a loud warning. herdr's schema is unversioned
-for third parties, so a mismatch means something in `server/lib/herdr-schema.ts`
-may now be wrong — regenerate with `bun run gen:types` and read the diff.
+`shahi.status` adds whether the relay is connected and which Shahi release and
+herdr version and protocol `/api/meta` reports. A herdr the running release is
+not approved for puts the sidecar in its recovery state rather than printing a
+warning: pairing and updates keep working, agent commands are refused, and the
+app says which side to update (see [releases.md](releases.md)). A new herdr
+protocol means something in `server/lib/herdr-schema.ts` may now be wrong —
+regenerate with `bun run gen:types` and read the diff.
 
 ## When something is wrong
 
@@ -123,17 +148,21 @@ process has exited accepts input into nothing.
 ran the hook last. If you use named sessions, the one that started most
 recently owns it — `shahi.status` prints the socket it is attached to.
 
-## Rotating the passcode
+## Replacing the passcode
 
 ```sh
-bun run server/scripts/init-secrets.ts --passcode <digits>
-herdr plugin action invoke shahi.restart
+herdr plugin action invoke shahi.reset-passcode
+herdr plugin log list --plugin shahi        # the new passcode, printed once
 ```
 
-Only the bcrypt hash is stored; the plaintext lives nowhere. The session secret
-is left alone, so paired devices stay signed in. To revoke one phone instead,
-use Settings in the app — revocation takes effect on its next request and on its
-open socket.
+Only the bcrypt hash is stored; the plaintext lives nowhere, so a lost passcode
+is replaced rather than recovered. The session secret is left alone, so
+sessions already signed in and paired devices stay signed in. To revoke one
+phone instead, use Settings → Devices with access on another paired device —
+revocation takes effect on its next request and on its open socket, and a
+phone that was offline is signed out when it next connects through the relay.
+There is no way to revoke a device from the computer itself; see
+[pairing.md](pairing.md) for a lost phone that was your only one.
 
 Note that the passcode `4821` appears in this repository's early history, in a
 script that hardcoded it as a default. Rotating is the clean fix if that matters
@@ -142,6 +171,19 @@ to you.
 ## Backing up
 
 Back up the private `.env` and a consistent SQLite backup, including its relay identity and device credentials. The checkout regenerates from the plugin repository.
+
+## Release catalogs
+
+A signed release catalog is valid for 120 days, and a computer refuses an
+expired one: a fresh `herdr plugin install` then stops before anything is
+staged, and installed managers stop finding updates, though an installed
+release keeps running. `.github/workflows/catalog-expiry.yml` renews them. It
+runs every Monday at 05:23 UTC, re-signs any channel with fewer than 30 days
+left, and files a "Release catalog renewal failed" issue when it cannot. It can
+also be dispatched by hand to renew now or to retire versions. GitHub pauses
+scheduled workflows after 60 days without repository activity, so check that
+it is still enabled; a paused schedule is a lapse waiting to happen.
+[releases.md](releases.md) has the commands.
 
 ## Operational logs and request analytics
 
@@ -250,7 +292,8 @@ reported run used its own harness and sent a hello immediately while opening
 the fleet.
 
 This is a local capacity/regression check, not a production SLA. Cloudflare
-WAF/per-IP connection limits, shared office/VPN addresses, global latency,
+WAF and front-door connection limits (per IPv4 address or IPv6 /64), shared
+office/VPN addresses, global latency,
 long-lived workloads and regional failures require separate production-like
 capacity tests. There are still eight phone links maximum per box. The paid
 Workers plan does not raise application quotas. Updated clients/computers support 32 MiB relay uploads in bounded chunks; older

@@ -86,34 +86,69 @@ view rather than a formatted conversation.
 
 ### 1. Install on the computer doing the work
 
-Shahi supports **herdr 0.9.0 and 0.9.1** on macOS or Linux. New herdr releases are checked before support is added. Linux service installation
-requires systemd; see the [installation requirements](docs/plugin.md).
-Run your agents inside herdr, then install Shahi:
+Shahi runs on **macOS or Linux** with **herdr 0.9.0 or newer**. Each Shahi
+release is approved for specific herdr versions, today 0.9.0 and 0.9.1, after
+the live adapter suite passes against them. On a herdr no release is approved
+for yet, Shahi still installs, in a recovery state: you can pair and update,
+but agent commands are refused until an approved Shahi or herdr arrives, and
+setup names both versions. The computer also needs `git`, which herdr uses to
+fetch the plugin, and bun 1.3.13 or newer; with no bun at all, the install
+fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`.
+Linux service installation requires systemd; see the
+[installation requirements](docs/plugin.md). Run your agents inside herdr,
+then install Shahi:
 
 ```sh
 herdr plugin install iYassr/shahi
 ```
 
-The plugin installs Shahi’s local service and generates its credentials. Need
-herdr first? Start with [herdr’s installation instructions](https://herdr.dev).
+herdr shows the commands it will run before running them. None of them starts
+Shahi: the service comes from a signed release and is set up the first time
+you pair (below), or at the next herdr start. Need herdr first? Start with
+[herdr’s installation instructions](https://herdr.dev).
+
+On a headless Linux server, also run `loginctl enable-linger $USER` once, or
+the service stops when your last SSH session ends.
 
 ### 2. Show a pairing code
 
-On that same computer:
+From a terminal inside herdr on that same computer:
 
 ```sh
 herdr plugin action invoke shahi.pair
 ```
 
+The code appears in a popup in herdr’s window, so a herdr window must be open;
+on a server with no herdr window attached, run `herdr` first and invoke it from
+there. The first time, the popup sets Shahi up in front of you and prints a
+four-digit passcode, shown only once and needed only for SSH, and on Linux the
+lingering reminder when it applies. It waits for Enter before showing the QR,
+and keeps any failure on screen until Enter, with what to do next.
+
+Press **T** then Enter to see the code as a `https://getshahi.dev/pwa/#pair=…`
+link instead of a QR; T and Enter again brings the QR back, and Enter alone
+closes the popup.
+
 The code can be claimed **once** and expires after **10 minutes**. Generate a
 separate code for each phone or browser. Treat the QR code and pairing link as
 credentials: anyone who claims a valid code can gain access to your session.
 
+**If nothing appears,** check `herdr plugin action invoke shahi.status` (the
+service, the relay, and whether the API answers) and
+`herdr plugin log list --plugin shahi` (every action’s output). herdr’s CLI
+exits successfully even when the popup could not open, for example with no
+herdr window attached; the plugin log then holds the reason and a command that
+prints the code as text. **Lost the passcode?**
+`herdr plugin action invoke shahi.reset-passcode` prints a new one to that same
+log; existing sessions and paired phones stay signed in.
+
 ### 3. Open Shahi on your phone
 
-- **Browser:** open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) and scan the QR.
-  You can also paste the pairing code or use the browser link printed with it.
-  Add Shahi to your home screen for a standalone app window.
+- **Browser:** open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) and scan the
+  QR, or paste the code. Opening the `#pair=` link from the popup shows a
+  **Connect this browser?** card first, naming the relay and the computer;
+  continue only if you opened that link yourself. Add Shahi to your home screen
+  for a standalone app window.
 - **iPhone app:** [request a TestFlight beta invite](https://getshahi.dev/#ios-beta).
   Once invited, open the app and choose **Scan QR code**. Invitations depend on
   beta availability; the signup form does not immediately grant access.
@@ -139,9 +174,11 @@ In the iPhone app, links to files on your computer open a labeled preview throug
 your existing connection. Text, images and PDFs can be viewed in Shahi. Use
 Save / Share on iPhone to keep a copy in Files or open it in another app; the web
 viewer has a Download button. PDFs have native scrolling and zoom on iPhone, and
-page and zoom controls on the web. Downloads are limited to 25 MiB; larger files
-travel through the encrypted relay in smaller parts with an updated computer
-plugin. Older plugins may require an update for files beyond one relay message.
+page and zoom controls on the web. Downloads are limited to 25 MiB and travel
+through the encrypted relay in 512 KiB parts. Through the relay, that needs a
+computer release newer than 0.3.6: earlier ones withheld the response headers
+the parts depend on, so PDFs, Save / Share and web downloads failed there while
+SSH worked.
 
 Read mode supports Claude Code, Codex and Cursor CLI transcripts. Cursor tool
 calls appear when present in its transcript; outputs that Cursor does not store
@@ -159,6 +196,44 @@ losses while the upload remains open. Larger files take several minutes;
 closing the app may require selecting the file again. Older computer services
 keep the previous 761 KiB relay limit. Browser batches can retry remaining files
 without adding completed attachments again.
+
+## Uninstall
+
+```sh
+herdr plugin action invoke shahi.uninstall
+```
+
+This stops Shahi and removes its LaunchAgent or systemd user unit at once, then
+runs `herdr plugin uninstall shahi`. A plain `herdr plugin uninstall shahi` or
+`herdr plugin disable shahi` also stops Shahi and removes its service, within
+about 40 seconds: the service asks herdr every 30 seconds whether the plugin is
+still installed and enabled, and confirms a “no” five seconds later before it
+removes itself.
+
+Either way, your passcode, paired devices and data stay in the plugin’s config
+and state directories. Deleting them as well ends every pairing:
+
+```sh
+rm -r "$(herdr plugin config-dir shahi)" ~/.local/state/herdr/plugins/shahi
+```
+
+Those are the default paths; with `XDG_*` variables set, herdr’s follow them,
+and `herdr plugin action invoke shahi.status` prints the actual ones while the
+plugin is still installed. If herdr itself is already gone, the service cannot
+ask it and keeps running. Remove it by hand. On macOS:
+
+```sh
+launchctl bootout gui/$(id -u)/app.shahi.sidecar
+rm ~/Library/LaunchAgents/app.shahi.sidecar.plist
+```
+
+On Linux:
+
+```sh
+systemctl --user disable --now shahi.service
+rm ~/.config/systemd/user/shahi.service
+systemctl --user daemon-reload
+```
 
 ## How it connects
 
@@ -206,14 +281,14 @@ connection is designed around a few concrete protections:
 | **Proof before access** | Knowing a device identifier is insufficient. The device must prove possession of its secret with a valid encrypted message before the server grants session access. |
 | **Fresh connection keys** | Each connection uses ephemeral X25519 keys. HKDF-SHA-256 mixes the exchange with the pairing or device secret; ChaCha20-Poly1305 protects messages. |
 | **Message integrity and ordering** | Altered messages and unexpected counters are rejected rather than accepted as commands. |
-| **Device revocation** | Revoke a paired device in Settings to close its active connection and refuse further authenticated requests. |
-| **Local service boundary** | The sidecar binds to loopback. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
+| **Device revocation** | Revoke a paired device in Settings to close its active connection and refuse further authenticated requests. A device revoked while offline is signed out the next time it connects through the relay. |
+| **Local service boundary** | The sidecar binds to loopback and answers only requests addressed to `127.0.0.1` or `localhost`. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
 
 **Encryption has a boundary.** The relay and its infrastructure provider can
 observe connection metadata, including IP addresses, identifiers, and traffic
 sizes and timing. A compromised phone, computer, or browser application can
-access data at an endpoint. Optional push notifications use separate providers
-that receive notification content. Your coding agent’s own model-provider
+access data at an endpoint. Optional notifications on iPhone pass through Expo
+and Apple, which receive their content. Your coding agent’s own model-provider
 connection is also separate from Shahi.
 
 The native app stores pairing credentials in the iOS Keychain. Browser pairing
