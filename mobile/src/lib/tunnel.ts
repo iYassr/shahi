@@ -14,15 +14,23 @@
  * function — the Direct connection path keeps working regardless.
  */
 import { requireOptionalNativeModule } from "expo";
-import { readSecret, writeSecret } from "./keychain";
+import { deleteSecret, readSecret, writeSecret } from "./keychain";
+import { HostKeyError } from "./errors";
 import type { SshProfile } from "@/lib/ssh";
 
 interface SshTunnelModule {
   /**
+   * Connects and completes the SSH handshake, then disconnects. Nothing that
+   * identifies the user is sent. Resolves with the server's host key: the
+   * SHA-256 of its key blob (base64) and its type.
+   */
+  hostKey(config: { host: string; port: number }): Promise<{ hostKey: string; keyType: string }>;
+  /**
    * Opens the session and the forward, resolving with the local port the
-   * forward is listening on and the server's host-key fingerprint. Rejects with
-   * a human-readable reason — bad credentials, host unreachable, host key
-   * changed — suitable to show as-is.
+   * forward is listening on. Refuses before authenticating unless the server
+   * presents exactly `expectedHostKey`. Rejects with a human-readable reason —
+   * bad credentials, host unreachable, host key changed — suitable to show
+   * as-is.
    */
   open(config: {
     id: string;
@@ -32,10 +40,10 @@ interface SshTunnelModule {
     password?: string;
     privateKey?: string;
     passphrase?: string;
-    expectedHostKey?: string;
+    expectedHostKey: string;
     remoteHost: string;
     remotePort: number;
-  }): Promise<{ localPort: number; hostKey?: string }>;
+  }): Promise<{ localPort: number }>;
   /** Tears down the forward and the session. Safe to call when nothing is open. */
   close(id: string | null): Promise<void>;
 }
@@ -47,13 +55,38 @@ export function sshTunnelAvailable(): boolean {
 }
 
 /**
- * Known-hosts, trust-on-first-use, kept in the Keychain.
+ * What a person is asked to check before this phone signs in to an SSH server
+ * it does not already trust.
+ */
+export interface HostKeyReview {
+  host: string;
+  port: number;
+  /** `SHA256:…`, the form `ssh-keygen -lf` prints on the server. */
+  fingerprint: string;
+  /** `ED25519`, `ECDSA`, `RSA`: which of the server's host keys it presented. */
+  keyType: string;
+  /** The fingerprint trusted before, when the key has changed since. */
+  previous: string | null;
+}
+
+/** Resolves true only when the person chose to trust the key. */
+export type ReviewHostKey = (review: HostKeyReview) => Promise<boolean>;
+
+/** The person declined the key; nothing was sent to that server. */
+export class HostKeyNotTrustedError extends Error {
+  constructor() {
+    super("Not connected. Nothing was sent to that computer.");
+  }
+}
+
+/**
+ * Known hosts, kept in the Keychain.
  *
- * The fingerprint the server presented the first time we connected, keyed by
- * host:port. The native side verifies against it BEFORE sending credentials, so
- * a server whose key has changed — a different machine, or a man in the middle —
- * is refused before the password or key leaves the phone. SecureStore keys
- * cannot contain some characters, so the host:port is hashed into the key name.
+ * The fingerprint this phone trusted for a host:port. The native side checks
+ * it BEFORE sending credentials, so a server whose key has changed — a
+ * different machine, or a man in the middle — is refused before the password
+ * or key leaves the phone. A first key is trusted only after a person has
+ * seen its fingerprint (`openTunnel`'s review), never silently.
  */
 function knownHostKeyName(host: string, port: number): string {
   // SecureStore keys allow only [A-Za-z0-9._-]; a host:port maps into that
@@ -62,39 +95,54 @@ function knownHostKeyName(host: string, port: number): string {
   return `shahi.knownhost.${id}`;
 }
 
-async function rememberedHostKey(host: string, port: number): Promise<string | null> {
-  try {
-    return await readSecret(knownHostKeyName(host, port));
-  } catch {
-    return null;
-  }
+/** The stored form is libssh2's base64 hash; people compare `ssh-keygen`'s. */
+function fingerprint(hostKey: string): string {
+  return `SHA256:${hostKey.replace(/=+$/, "")}`;
 }
 
-async function rememberHostKey(host: string, port: number, fingerprint: string): Promise<void> {
-  try {
-    await writeSecret(knownHostKeyName(host, port), fingerprint);
-  } catch {
-    // A failed write just means we re-trust on first use next time; not fatal.
-  }
+/**
+ * Forgets the host key trusted for a removed computer, so adding it again
+ * starts from a fresh review rather than a pin nothing in the app can clear.
+ * Another saved login to the same host:port keeps the pin it relies on.
+ */
+export async function forgetHostKey(removed: SshProfile, remaining: SshProfile[]): Promise<void> {
+  const name = knownHostKeyName(removed.host, removed.port);
+  if (remaining.some(profile => knownHostKeyName(profile.host, profile.port) === name)) return;
+  await deleteSecret(name);
 }
 
 /** Remove Expo's native-bridge envelope before a tunnel error reaches the UI. */
 function tunnelFailureMessage(error: unknown): string | null {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const message = raw
-    .replace(/^ssh_tunnel:\s*/i, "")
-    .replace(/\s*\(at ExpoModulesCore\/Promise\.swift:\d+\)\s*$/i, "")
+    .replace(/^ssh_(?:tunnel|host_key):\s*/i, "")
+    .replace(/\s*\(at [^()]+\.swift:\d+\)\s*$/i, "")
     .trim();
   // Expo uses this placeholder when an Objective-C rejection has no reason.
   return message && !/^undefined(?: reason)?$/i.test(message) ? message : null;
+}
+
+function nativeFailure(error: unknown, host: string, port: number): Error {
+  // The native side refused a key it was not told to trust. Its own words say
+  // what to do, and a retry cannot help, so the screens must not say
+  // "reconnecting" (see HostKeyError).
+  if ((error as { code?: unknown } | null)?.code === "ssh_host_key") {
+    return new HostKeyError(tunnelFailureMessage(error) ?? `${host}:${port} did not present the host key this phone trusts, so your login was not sent.`);
+  }
+  // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and
+  // sometimes substitutes "undefined reason". Neither is useful to someone
+  // holding a phone; keep a real native reason, otherwise name what to check.
+  return new Error(
+    tunnelFailureMessage(error) ??
+      `Couldn't open the SSH tunnel to ${host}:${port}. Check the host, port, username, and key or password — and that the server allows this login.`,
+  );
 }
 
 // Every forward has its own native id, and whoever opened it closes it by its
 // base URL. Ids used to be derived from the computer, so re-adding a saved
 // computer opened a forward that replaced the saved one, and disposing the
 // old session then closed the new forward it had just been handed (pre-release
-// review). The date keeps ids unique across a development reload. A sign-out
-// while a forward opens is the opener's to close (ComputerSession.connect).
+// review). The date keeps ids unique across a development reload.
 const forwards = new Map<string, string>();
 let opened = 0;
 
@@ -105,19 +153,63 @@ let opened = 0;
  * loopback, and from the box's own point of view that is where it lives — the
  * SSH session is already "on" the box, so localhost there is the sidecar.
  *
- * Host-key trust-on-first-use is threaded through here: the remembered
- * fingerprint (if any) is passed down so the native side can refuse a changed
- * key before authenticating, and the fingerprint it reports back is stored the
- * first time.
+ * With `review`, the server's key is fetched first by a handshake that sends
+ * no credentials. A key this phone has not trusted for that host:port, a first
+ * one or a changed one, goes to the person with its fingerprint, and the login
+ * follows only if they trust it. The trusted key is saved before anything is
+ * sent, and a Keychain that refuses the write stops the connection rather than
+ * leaving it unpinned: the pre-release review found the first key trusted
+ * silently, with the password in the same native call, and a failed write
+ * reopening that window on every later connect.
+ *
+ * Without `review` (a saved computer reconnecting, with nobody to ask) only a
+ * remembered key is accepted.
  */
-export async function openTunnel(profile: SshProfile): Promise<string> {
+export async function openTunnel(profile: SshProfile, review?: ReviewHostKey): Promise<string> {
   if (!native) {
     throw new Error(
       "SSH isn't available in this build. It needs the native tunnel module — rebuild the app to use it.",
     );
   }
   const host = profile.host.trim();
-  const expectedHostKey = (await rememberedHostKey(host, profile.port)) ?? undefined;
+  const { port } = profile;
+  const name = knownHostKeyName(host, port);
+  let remembered;
+  try {
+    remembered = await readSecret(name);
+  } catch {
+    throw new Error("Couldn't read the host keys this phone trusts, so nothing was sent. Unlock the phone and try again.");
+  }
+
+  let expectedHostKey = remembered;
+  if (review) {
+    let presented;
+    try {
+      presented = await native.hostKey({ host, port });
+    } catch (e) {
+      throw nativeFailure(e, host, port);
+    }
+    if (presented.hostKey !== remembered) {
+      const trusted = await review({
+        host, port,
+        fingerprint: fingerprint(presented.hostKey),
+        keyType: presented.keyType,
+        previous: remembered ? fingerprint(remembered) : null,
+      });
+      if (!trusted) throw new HostKeyNotTrustedError();
+      try {
+        await writeSecret(name, presented.hostKey);
+      } catch {
+        throw new Error("Couldn't save this computer's host key on the phone, so your login was not sent. Try again.");
+      }
+    }
+    expectedHostKey = presented.hostKey;
+  }
+  if (!expectedHostKey) {
+    throw new HostKeyError(
+      `This phone has no trusted host key for ${host}:${port}, so it did not send your login. Add the computer again from Computers to check its key.`,
+    );
+  }
 
   const id = `${Date.now().toString(36)}.${++opened}`;
   let result;
@@ -125,33 +217,19 @@ export async function openTunnel(profile: SshProfile): Promise<string> {
     result = await native.open({
       id,
       host,
-      port: profile.port,
+      port,
       username: profile.username.trim(),
       ...(profile.auth.kind === "password"
         ? { password: profile.auth.password }
         : { privateKey: profile.auth.privateKey, passphrase: profile.auth.passphrase }),
-      ...(expectedHostKey ? { expectedHostKey } : {}),
+      expectedHostKey,
       remoteHost: "127.0.0.1",
       remotePort: profile.remotePort,
     });
   } catch (e) {
-    // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and
-    // sometimes substitutes "undefined reason". Neither is useful to someone
-    // holding a phone; keep a real native reason, otherwise name what to check.
-    const msg = tunnelFailureMessage(e);
-    throw new Error(
-      msg
-        ? msg
-        : `Couldn't open the SSH tunnel to ${host}:${profile.port}. Check the host, port, username, and key or password — and that the server allows this login.`,
-    );
+    throw nativeFailure(e, host, port);
   }
-  const { localPort, hostKey } = result;
-
-  // First connection to this host: remember the key we just trusted, so the
-  // next connection can catch a change.
-  if (hostKey && !expectedHostKey) await rememberHostKey(host, profile.port, hostKey);
-
-  const baseUrl = `http://127.0.0.1:${localPort}`;
+  const baseUrl = `http://127.0.0.1:${result.localPort}`;
   forwards.set(baseUrl, id);
   return baseUrl;
 }

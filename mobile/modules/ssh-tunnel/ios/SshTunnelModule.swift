@@ -8,7 +8,7 @@ import ExpoModulesCore
 // ObjC imports libssh2.h without the Swift module-map dance. The app then
 // points its ordinary fetch and WebSocket at 127.0.0.1:<localPort> and never
 // knows SSH is underneath. This module just marshals the config across and
-// keeps one forwarder per computer alive.
+// keeps each forward alive under the id the app gave it.
 
 public class SshTunnelModule: Module {
   private var tunnels: [String: Tunnel] = [:]
@@ -16,6 +16,20 @@ public class SshTunnelModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SshTunnel")
+
+    // The server's host key, from a handshake that sends no user name and no
+    // credential, so the app can show its fingerprint before a login goes
+    // anywhere (see lib/tunnel.ts). Off the tunnels' queue: a slow or silent
+    // host must not hold up opening or closing another computer's forward.
+    AsyncFunction("hostKey") { (config: HostKeyConfig, promise: Promise) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          promise.resolve(try SshForwarder.hostKey(forHost: config.host, port: Int32(config.port)))
+        } catch {
+          promise.reject(TunnelException(TunnelError(message: (error as NSError).localizedDescription)))
+        }
+      }
+    }
 
     AsyncFunction("open") { (config: OpenConfig, promise: Promise) in
       self.queue.async {
@@ -25,13 +39,11 @@ public class SshTunnelModule: Module {
         self.tunnels[config.id] = tunnel
         tunnel.open(config) { result in
           switch result {
-          case .success(let opened):
-            // Hand back the host-key fingerprint so JS can store it (first use)
-            // or confirm it matched — see lib/tunnel.ts.
-            promise.resolve(["localPort": opened.localPort, "hostKey": opened.hostKey as Any])
+          case .success(let localPort):
+            promise.resolve(["localPort": localPort])
           case .failure(let error):
             self.tunnels.removeValue(forKey: config.id)
-            promise.reject("ssh_tunnel", error.message)
+            promise.reject(TunnelException(error))
           }
         }
       }
@@ -54,6 +66,11 @@ public class SshTunnelModule: Module {
   }
 }
 
+struct HostKeyConfig: Record {
+  @Field var host: String
+  @Field var port: Int = 22
+}
+
 struct OpenConfig: Record {
   @Field var id: String
   @Field var host: String
@@ -62,19 +79,45 @@ struct OpenConfig: Record {
   @Field var password: String?
   @Field var privateKey: String?
   @Field var passphrase: String?
-  /** The SHA-256 host-key fingerprint remembered from a previous connection. */
+  /**
+   * The SHA-256 host key the person trusted, as `hostKey` returned it.
+   * SshForwarder refuses to authenticate without it or on any other key.
+   */
   @Field var expectedHostKey: String?
   @Field var remoteHost: String = "127.0.0.1"
   @Field var remotePort: Int
 }
 
-struct TunnelError: Error { let message: String }
-struct Opened { let localPort: Int; let hostKey: String? }
+struct TunnelError: Error { let message: String; var hostKeyRefused = false }
+
+/**
+ * A failure in SshForwarder's own words, as JavaScript receives it.
+ *
+ * `promise.reject(code, description)` reached JavaScript as "ssh_tunnel:
+ * undefined reason": Expo builds the message from `reason`, which only a
+ * subclass sets, so every native explanation ("Authentication failed…", "host
+ * key has changed…") was replaced by the app's generic fallback. Seen on a
+ * simulator in the pre-release review. A refused host key has its own code, so
+ * the app can say "check this computer's identity" rather than "reconnecting"
+ * to a refusal no retry fixes.
+ */
+final class TunnelException: Exception, @unchecked Sendable {
+  private let message: String
+  private let hostKeyRefused: Bool
+  init(_ error: TunnelError) {
+    message = error.message
+    hostKeyRefused = error.hostKeyRefused
+    super.init()
+    name = code
+  }
+  override var reason: String { message }
+  override var code: String { hostKeyRefused ? "ssh_host_key" : "ssh_tunnel" }
+}
 
 final class Tunnel {
   private var forwarder: SshForwarder?
 
-  func open(_ config: OpenConfig, completion: @escaping (Result<Opened, TunnelError>) -> Void) {
+  func open(_ config: OpenConfig, completion: @escaping (Result<Int, TunnelError>) -> Void) {
     // The forwarder does everything synchronously — connect, handshake, verify
     // the host key, auth, then bind a local port (0 → the OS picks a free one)
     // and splice each accepted connection to its own direct-tcpip channel.
@@ -94,11 +137,15 @@ final class Tunnel {
     self.forwarder = forwarder
     do {
       let localPort = try forwarder.start()
-      completion(.success(Opened(localPort: localPort.intValue, hostKey: forwarder.hostKeyFingerprint)))
+      completion(.success(localPort.intValue))
     } catch {
       forwarder.stop()
       self.forwarder = nil
-      completion(.failure(TunnelError(message: (error as NSError).localizedDescription)))
+      let failure = error as NSError
+      completion(.failure(TunnelError(
+        message: failure.localizedDescription,
+        hostKeyRefused: failure.domain == "SshForwarder" && failure.code == SshForwarderHostKeyRefused
+      )))
     }
   }
 

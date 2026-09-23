@@ -1,12 +1,15 @@
 /**
- * Adding a computer over SSH.
+ * Adding a computer over SSH: what the person sees before their login leaves
+ * the phone.
  *
  * The screen, `lib/tunnel` and the Keychain helper are real; only the native
  * SSH module (modelled on SshTunnelModule.swift, which replaces a forward
  * already open under the same id) and the two sidecar calls are faked. The
- * pre-release review found a failed re-add closing a saved computer's tunnel.
+ * pre-release review found the first host key trusted without a word, a
+ * changed key a dead end, and a failed re-add closing a saved computer's
+ * tunnel.
  */
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import type { SshProfile } from "@/lib/ssh";
 
@@ -63,6 +66,36 @@ function fillSshForm() {
   fireEvent.press(screen.getByTestId("connect"));
   return onConnectedSsh;
 }
+
+test("a first SSH connection shows the server's fingerprint before the login, and Cancel sends nothing", async () => {
+  fillSshForm();
+
+  expect(await screen.findByText("Check this computer’s identity")).toBeTruthy();
+  expect(screen.getByTestId("host-key-fingerprint").props.children).toBe("SHA256:bmV3LWtleS1zaGEyNTY");
+  expect(screen.getByText("ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub")).toBeTruthy();
+  expect(mockNative.open).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId("reject-host-key"));
+  expect(await screen.findByText("Not connected. Nothing was sent to that computer.")).toBeTruthy();
+  expect(mockNative.open).not.toHaveBeenCalled();
+  expect(mockLogin).not.toHaveBeenCalled();
+  expect(pins.size).toBe(0);
+});
+
+test("a changed host key shows both fingerprints and connects only after a deliberate re-trust", async () => {
+  pins.set("shahi.knownhost.box.example_22", "b2xkLWtleS1zaGEyNTY=");
+  const onConnectedSsh = fillSshForm();
+
+  expect(await screen.findByText("This computer’s identity has changed")).toBeTruthy();
+  expect(screen.getByTestId("host-key-previous").props.children).toBe("SHA256:b2xkLWtleS1zaGEyNTY");
+  expect(screen.getByTestId("host-key-fingerprint").props.children).toBe("SHA256:bmV3LWtleS1zaGEyNTY");
+  expect(mockNative.open).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByText("Trust the new key"));
+  await waitFor(() => expect(onConnectedSsh).toHaveBeenCalledWith(expect.objectContaining<Partial<SshProfile>>({ host: "box.example" })));
+  expect(mockNative.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "bmV3LWtleS1zaGEyNTY=" }));
+  expect(pins.get("shahi.knownhost.box.example_22")).toBe("bmV3LWtleS1zaGEyNTY=");
+});
 
 test("a failed re-add of a saved SSH computer leaves that computer's own tunnel running", async () => {
   pins.set("shahi.knownhost.box.example_22", "bmV3LWtleS1zaGEyNTY=");

@@ -1,5 +1,6 @@
 /**
- * A saved SSH computer, end to end in the app: restore, reconnect and re-add.
+ * A saved SSH computer, end to end in the app: restore, reconnect, re-add, a
+ * changed server key and removal.
  *
  * Everything below the network is real — SessionProvider, ComputerSession,
  * the api client, `lib/tunnel`, the Keychain helper and, for the reader, the
@@ -42,6 +43,7 @@ import { COMPUTERS_KEY, computerId, type SavedComputer } from "./computers";
 import { connection } from "./api";
 import { openTunnel } from "./tunnel";
 import { Pane } from "@/screens/pane";
+import { ConnectionHealth } from "@/components/connection-health";
 
 const native = requireOptionalNativeModule("SshTunnel") as unknown as {
   forwards: Map<string, number>; opening: null | Promise<void>; open: jest.Mock; close: jest.Mock;
@@ -102,12 +104,13 @@ class FakeSocket {
 const store = new Map<string, string>();
 const bank = (): SavedComputer[] => JSON.parse(store.get(COMPUTERS_KEY) ?? "[]");
 let value: ReturnType<typeof useSession>;
-function Probe({ reader = false }: { reader?: boolean }) {
+function Probe({ reader = false, health = false }: { reader?: boolean; health?: boolean }) {
   value = useSession();
+  if (health) return <ConnectionHealth />;
   return reader && value.connected ? <Pane paneId="w1:p1" /> : null;
 }
-async function mount(reader = false) {
-  const ui = render(<SessionProvider><Probe reader={reader} /></SessionProvider>);
+async function mount(reader = false, health = false) {
+  const ui = render(<SessionProvider><Probe reader={reader} health={health} /></SessionProvider>);
   await waitFor(() => expect(value.ready).toBe(true));
   return ui;
 }
@@ -198,5 +201,32 @@ test("re-adding a saved SSH computer keeps the tunnel Connect just opened", asyn
   expect(value.transport.baseUrl).toBe(added);
   await act(async () => { await value.refresh(); });
   expect(value.error).toBeNull();
+  ui.unmount();
+});
+
+// The server was reinstalled, so the saved computer refuses its new key before
+// any login. That refusal said what to do, but the screen said "Reconnecting…"
+// for good; seen on a simulator.
+test("a saved SSH computer whose server key changed says to check its identity, not that it is reconnecting", async () => {
+  native.open.mockImplementationOnce(async () => {
+    throw Object.assign(new Error("ssh_host_key: This computer's host key has changed since you trusted it, so your login was not sent. (at ExpoModulesCore/Promise.swift:65)"), { code: "ssh_host_key" });
+  });
+  const ui = await mount(false, true);
+  expect(await screen.findByText("Check this computer’s identity")).toBeTruthy();
+  expect(screen.getByText(/host key has changed since you trusted it/)).toBeTruthy();
+  expect(screen.queryByText(/Reconnecting/)).toBeNull();
+  // Nothing about the saved login was thrown away on the way.
+  expect(bank().map(c => c.id)).toEqual([saved.id]);
+  expect(store.get(PIN)).toBe("cGlubmVkLWhvc3Qta2V5");
+  ui.unmount();
+});
+
+test("signing out of an SSH computer forgets the host key it trusted", async () => {
+  const ui = await mount();
+  await live();
+  await act(async () => { value.signOut(); for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  expect(value.computers).toEqual([]);
+  expect(store.has(PIN)).toBe(false);
+  expect(native.forwards.size).toBe(0);
   ui.unmount();
 });

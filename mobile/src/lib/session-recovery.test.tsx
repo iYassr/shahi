@@ -5,7 +5,7 @@ import { openTunnel, closeTunnel } from "./tunnel";
 import type { SshProfile } from "./ssh";
 
 const mockSockets: Array<{ watch: jest.Mock; close: jest.Mock; ensureConnected: jest.Mock }> = [];
-jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}) }));
+jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}), forgetHostKey: jest.fn(async () => {}) }));
 jest.mock("./api", () => {
   const actual = jest.requireActual("./api");
   return { ...actual, createApi: () => require("./api").api, api: { meta: jest.fn(async () => ({ serverId: "fake-box" })), login: jest.fn(async () => {}), session: jest.fn() },

@@ -24,6 +24,7 @@ import { hostOf } from "@/lib/errors";
 import { closeRelay, type RelayIdentity } from "@/lib/relay";
 import { configurePushProfile, forgetPushRegistration, restorePushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
+import { forgetHostKey } from "@/lib/tunnel";
 import { COMPUTERS_KEY, computerAddress, computerId, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
@@ -209,8 +210,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     lastUpdate.listeners.forEach(fn => fn());
   }
   function forget(id: string) {
+    const removed = bank.current.find(c => c.id === id);
     live.current.get(id)?.dispose(); live.current.delete(id);
     bank.current = bank.current.filter(c => c.id !== id);
+    // Its trusted host key goes too, unless another saved login uses that
+    // host:port. A pin nothing could clear locked a rebuilt server out of SSH
+    // for good, surviving even a reinstall (pre-release review).
+    if (removed?.connection.kind === "ssh") {
+      const others = bank.current.flatMap(c => c.connection.kind === "ssh" ? [c.connection.ssh] : []);
+      void forgetHostKey(removed.connection.ssh, others).catch(() => {});
+    }
     if (selected.current === id) { choose(null); setAddingComputer(false); }
     void persist(); paint();
   }

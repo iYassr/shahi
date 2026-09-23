@@ -78,6 +78,23 @@ export class UnreachableError extends Error {
 }
 
 /**
+ * An SSH server did not present the host key this phone trusts for it, or
+ * this phone trusts none for it yet, so no login was sent.
+ *
+ * Only the native app speaks SSH. This lives here because `connectionHealth`,
+ * which both clients share, words every connection state: a saved computer
+ * whose server was reinstalled sat on "Reconnecting…" for good, because the
+ * refusal's own words, which say what to do, never reached the screen (seen on
+ * a simulator during the pre-release review).
+ */
+export class HostKeyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HostKeyError";
+  }
+}
+
+/**
  * `host:port` of a URL, for messages. A regex rather than `URL`, because a
  * malformed address is one of the cases being described and must produce a
  * message rather than a second exception.

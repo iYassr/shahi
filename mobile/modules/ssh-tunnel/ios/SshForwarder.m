@@ -27,6 +27,91 @@ typedef struct Conn {
   struct Conn *next;
 } Conn;
 
+static NSError *Failure(NSString *message) {
+  return [NSError errorWithDomain:@"SshForwarder" code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+static NSError *HostKeyRefused(NSString *message) {
+  return [NSError errorWithDomain:@"SshForwarder" code:SshForwarderHostKeyRefused userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+// A blocking TCP connect, resolving the host. Returns the fd or -1.
+static int ConnectSocket(NSString *host, int32_t port) {
+  struct addrinfo hints = {0};
+  hints.ai_family = AF_UNSPEC;      // v4 or v6, whichever resolves
+  hints.ai_socktype = SOCK_STREAM;
+  struct addrinfo *res = NULL;
+  const char *service = [NSString stringWithFormat:@"%d", port].UTF8String;
+  if (getaddrinfo(host.UTF8String, service, &hints, &res) != 0 || res == NULL) return -1;
+
+  int fd = -1;
+  for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
+    fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd < 0) continue;
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+    int result = connect(fd, ai->ai_addr, ai->ai_addrlen);
+    if (result < 0 && errno == EINPROGRESS) {
+      fd_set writable;
+      FD_ZERO(&writable);
+      FD_SET(fd, &writable);
+      struct timeval timeout = { .tv_sec = 15, .tv_usec = 0 };
+      if (select(fd + 1, NULL, &writable, NULL, &timeout) > 0) {
+        int status = 0;
+        socklen_t size = sizeof(status);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &status, &size) == 0 && status == 0) result = 0;
+      }
+    }
+    if (result == 0) {
+      fcntl(fd, F_SETFL, 0);
+      break;
+    }
+    close(fd);
+    fd = -1;
+  }
+  freeaddrinfo(res);
+  return fd;
+}
+
+// A handshaken session over `fd`, or NULL. Blocking is simplest and happens once.
+static LIBSSH2_SESSION *Handshake(int fd) {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{ libssh2_init(0); });
+  LIBSSH2_SESSION *ssh = libssh2_session_init();
+  if (ssh == NULL) return NULL;
+  libssh2_session_set_timeout(ssh, 15000);
+  if (libssh2_session_handshake(ssh, fd) != 0) {
+    libssh2_session_free(ssh);
+    return NULL;
+  }
+  return ssh;
+}
+
+// The SHA-256 of the host key blob, base64: the hash OpenSSH shows as
+// `SHA256:<this, unpadded>`.
+static NSString *HostKeyHash(LIBSSH2_SESSION *ssh) {
+  const char *hash = libssh2_hostkey_hash(ssh, LIBSSH2_HOSTKEY_HASH_SHA256);
+  return hash ? [[NSData dataWithBytes:hash length:32] base64EncodedStringWithOptions:0] : nil;
+}
+
+// Which of the server's host keys it presented, named as ssh-keygen names
+// them, so the app can say which key file on the server to compare against.
+static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
+  size_t length = 0;
+  int type = LIBSSH2_HOSTKEY_TYPE_UNKNOWN;
+  if (libssh2_session_hostkey(ssh, &length, &type) == NULL) return @"UNKNOWN";
+  switch (type) {
+    case LIBSSH2_HOSTKEY_TYPE_ED25519: return @"ED25519";
+    case LIBSSH2_HOSTKEY_TYPE_ECDSA_256:
+    case LIBSSH2_HOSTKEY_TYPE_ECDSA_384:
+    case LIBSSH2_HOSTKEY_TYPE_ECDSA_521: return @"ECDSA";
+    case LIBSSH2_HOSTKEY_TYPE_RSA: return @"RSA";
+    case LIBSSH2_HOSTKEY_TYPE_DSS: return @"DSA";
+    default: return @"UNKNOWN";
+  }
+}
+
 @implementation SshForwarder {
   NSString *_host;
   int32_t _port;
@@ -45,6 +130,33 @@ typedef struct Conn {
   BOOL _stopped;
   dispatch_semaphore_t _loopDone;
   Conn *_conns;
+}
+
++ (nullable NSDictionary<NSString *, NSString *> *)hostKeyForHost:(NSString *)host
+                                                             port:(int32_t)port
+                                                            error:(NSError **)error {
+  int fd = ConnectSocket(host, port);
+  if (fd < 0) {
+    if (error) *error = Failure([NSString stringWithFormat:@"Could not reach %@:%d.", host, port]);
+    return nil;
+  }
+  LIBSSH2_SESSION *ssh = Handshake(fd);
+  if (ssh == NULL) {
+    close(fd);
+    if (error) *error = Failure(@"The SSH handshake failed.");
+    return nil;
+  }
+  NSString *hostKey = HostKeyHash(ssh);
+  NSString *keyType = HostKeyType(ssh);
+  // Nothing past the key exchange: no user name, no authentication request.
+  libssh2_session_disconnect(ssh, "bye");
+  libssh2_session_free(ssh);
+  close(fd);
+  if (hostKey == nil) {
+    if (error) *error = Failure(@"Could not read the server's host key.");
+    return nil;
+  }
+  return @{@"hostKey": hostKey, @"keyType": keyType};
 }
 
 - (instancetype)initWithHost:(NSString *)host
@@ -77,40 +189,43 @@ typedef struct Conn {
 
 - (nullable NSNumber *)start:(NSError **)error {
   // 1. Resolve and connect a socket to the SSH host.
-  _sessionFd = [self connectSocketTo:_host port:_port];
+  _sessionFd = ConnectSocket(_host, _port);
   if (_sessionFd < 0) {
-    if (error) *error = [self errorWithMessage:[NSString stringWithFormat:@"Could not reach %@:%d.", _host, _port]];
+    if (error) *error = Failure([NSString stringWithFormat:@"Could not reach %@:%d.", _host, _port]);
     return nil;
   }
 
-  // 2. libssh2 handshake over that socket. Blocking is simplest and happens once.
-  static dispatch_once_t once;
-  dispatch_once(&once, ^{ libssh2_init(0); });
-  _ssh = libssh2_session_init();
-  if (_ssh) libssh2_session_set_timeout(_ssh, 15000);
-  if (_ssh == NULL || libssh2_session_handshake(_ssh, _sessionFd) != 0) {
-    if (error) *error = [self errorWithMessage:@"The SSH handshake failed."];
+  // 2. libssh2 handshake over that socket.
+  _ssh = Handshake(_sessionFd);
+  if (_ssh == NULL) {
+    if (error) *error = Failure(@"The SSH handshake failed.");
     [self stop];
     return nil;
   }
 
   // 2a. Verify the host key BEFORE authenticating — otherwise a man in the
-  // middle collects the password/key you are about to send. Trust on first use:
-  // the app has no stored fingerprint the first time, accepts, and remembers it;
-  // every connection after passes that fingerprint back as expectedHostKey, and
-  // a mismatch (a different server, or an interception) is refused here, before
-  // any credential leaves the device.
-  const char *hash = libssh2_hostkey_hash(_ssh, LIBSSH2_HOSTKEY_HASH_SHA256);
-  if (hash == NULL) {
-    if (error) *error = [self errorWithMessage:@"Could not read the server's host key."];
+  // middle collects the password/key you are about to send. Only a key the
+  // person has seen and trusted is accepted: the app fetches it first with
+  // +hostKeyForHost:port:error:, shows its fingerprint, and passes the trusted
+  // one here. With no expected key there is nothing to verify against, so
+  // nothing is sent. This used to trust whatever key answered first, silently
+  // and in the same call as the password (pre-release review).
+  NSString *presented = HostKeyHash(_ssh);
+  if (presented == nil) {
+    if (error) *error = Failure(@"Could not read the server's host key.");
     [self stop];
     return nil;
   }
-  _hostKeyFingerprint = [[NSData dataWithBytes:hash length:32] base64EncodedStringWithOptions:0];
-  if (_expectedHostKey.length > 0 && ![_expectedHostKey isEqualToString:_hostKeyFingerprint]) {
+  if (_expectedHostKey.length == 0) {
+    if (error) *error = HostKeyRefused(@"This phone has not trusted this computer's host key, so your login was not sent.");
+    [self stop];
+    return nil;
+  }
+  if (![_expectedHostKey isEqualToString:presented]) {
     if (error)
-      *error = [self errorWithMessage:@"The server's host key has changed since you last connected. "
-                                       "This can mean a man-in-the-middle — connection refused."];
+      *error = HostKeyRefused(@"This computer's host key has changed since you trusted it, so your login was not sent. "
+                        "It can mean someone is intercepting the connection. If the computer was reinstalled, "
+                        "add it again from Computers to compare and trust its new key.");
     [self stop];
     return nil;
   }
@@ -126,7 +241,7 @@ typedef struct Conn {
     rc = libssh2_userauth_password(_ssh, user, _password ? _password.UTF8String : "");
   }
   if (rc != 0 || libssh2_userauth_authenticated(_ssh) == 0) {
-    if (error) *error = [self errorWithMessage:@"Authentication failed — check the username and credentials."];
+    if (error) *error = Failure(@"Authentication failed — check the username and credentials.");
     return nil;
   }
 
@@ -135,7 +250,7 @@ typedef struct Conn {
 
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
-    if (error) *error = [self errorWithMessage:@"Could not create a local socket."];
+    if (error) *error = Failure(@"Could not create a local socket.");
     return nil;
   }
   int yes = 1;
@@ -147,7 +262,7 @@ typedef struct Conn {
   addr.sin_port = 0;                             // OS picks a free port
   if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 || listen(fd, 8) < 0) {
     close(fd);
-    if (error) *error = [self errorWithMessage:@"Could not bind a local port."];
+    if (error) *error = Failure(@"Could not bind a local port.");
     return nil;
   }
   socklen_t len = sizeof(addr);
@@ -314,49 +429,6 @@ typedef struct Conn {
   }
   if (_sessionFd >= 0) { close(_sessionFd); _sessionFd = -1; }
   }
-}
-
-// A blocking TCP connect, resolving the host. Returns the fd or -1.
-- (int)connectSocketTo:(NSString *)host port:(int32_t)port {
-  struct addrinfo hints = {0};
-  hints.ai_family = AF_UNSPEC;      // v4 or v6, whichever resolves
-  hints.ai_socktype = SOCK_STREAM;
-  struct addrinfo *res = NULL;
-  const char *service = [NSString stringWithFormat:@"%d", port].UTF8String;
-  if (getaddrinfo(host.UTF8String, service, &hints, &res) != 0 || res == NULL) return -1;
-
-  int fd = -1;
-  for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
-    fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-    if (fd < 0) continue;
-    int yes = 1;
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-    int result = connect(fd, ai->ai_addr, ai->ai_addrlen);
-    if (result < 0 && errno == EINPROGRESS) {
-      fd_set writable;
-      FD_ZERO(&writable);
-      FD_SET(fd, &writable);
-      struct timeval timeout = { .tv_sec = 15, .tv_usec = 0 };
-      if (select(fd + 1, NULL, &writable, NULL, &timeout) > 0) {
-        int status = 0;
-        socklen_t size = sizeof(status);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &status, &size) == 0 && status == 0) result = 0;
-      }
-    }
-    if (result == 0) {
-      fcntl(fd, F_SETFL, 0);
-      break;
-    }
-    close(fd);
-    fd = -1;
-  }
-  freeaddrinfo(res);
-  return fd;
-}
-
-- (NSError *)errorWithMessage:(NSString *)message {
-  return [NSError errorWithDomain:@"SshForwarder" code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
 }
 
 @end

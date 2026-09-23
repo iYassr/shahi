@@ -1,4 +1,4 @@
-import { IncompatibleServerError, UnauthorizedError, UnreachableError } from "./errors";
+import { HostKeyError, IncompatibleServerError, UnauthorizedError, UnreachableError } from "./errors";
 
 /** Only describe causes reported by the transport; silence cannot prove sleep. */
 export function connectionHealth({ link, error, transport, online = true, computerName }: {
@@ -14,6 +14,8 @@ export function connectionHealth({ link, error, transport, online = true, comput
   };
   if (error instanceof UnauthorizedError) return { title: "Access ended", detail: "Sign in again or scan a fresh pairing code from your computer." };
   if (error instanceof IncompatibleServerError) return { title: "Update needed", detail: error.message };
+  // Retrying cannot help, and the refusal says what will.
+  if (error instanceof HostKeyError) return { title: "Check this computer’s identity", detail: error.message };
   if (error instanceof UnreachableError && error.reason === "box") return {
     title: "Computer disconnected", detail: "Wake your computer and check that Shahi is running. We’ll keep trying to reconnect.",
   };

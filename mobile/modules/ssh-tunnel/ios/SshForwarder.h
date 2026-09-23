@@ -3,6 +3,14 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /**
+ * The `SshForwarder` error code for a refusal to authenticate because the
+ * server did not present the trusted host key, or none was given. Every other
+ * failure is code 1. A caller tells the two apart so a person is sent to
+ * check the computer's identity rather than told to retry.
+ */
+static const NSInteger SshForwarderHostKeyRefused = 2;
+
+/**
  * The whole tunnel: connect, handshake, authenticate, and forward — all
  * libssh2, no NMSSH. It connects a socket to host:port, does the SSH
  * handshake, authenticates (password or in-memory key), then binds a local
@@ -15,6 +23,22 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @interface SshForwarder : NSObject
 
+/**
+ * Connects and completes the SSH handshake only, then disconnects: no user
+ * name and no credential is sent. Returns the server's host key as
+ * `hostKey` (the base64 SHA-256 of its key blob, the form `expectedHostKey`
+ * takes and `ssh-keygen -lf` prints unpadded) and `keyType` (`ED25519`,
+ * `ECDSA`, `RSA`, `DSA`), or nil with a human-readable error.
+ *
+ * This is what a person checks before trusting a server. The first key used
+ * to be accepted inside -start:, in the same call that sent the password, so
+ * nobody ever saw it (pre-release review).
+ */
++ (nullable NSDictionary<NSString *, NSString *> *)hostKeyForHost:(NSString *)host
+                                                             port:(int32_t)port
+                                                            error:(NSError **)error
+    NS_SWIFT_NAME(hostKey(forHost:port:));
+
 - (instancetype)initWithHost:(NSString *)host
                         port:(int32_t)port
                     username:(NSString *)username
@@ -26,17 +50,13 @@ NS_ASSUME_NONNULL_BEGIN
                   remotePort:(int32_t)remotePort;
 
 /**
- * The server's SHA-256 host-key fingerprint (base64), captured during the
- * handshake. The app stores it on first connect and passes it back as
- * `expectedHostKey` next time, so a changed key is caught.
- */
-@property (nonatomic, readonly, nullable) NSString *hostKeyFingerprint;
-
-/**
  * Connects, verifies the host key, authenticates, and starts the forward,
  * returning the local port it listens on. Returns nil with a human-readable
  * error on any failure — an NSNumber (not a scalar) so Swift imports it as a
- * throwing call. On a host-key mismatch the message contains "host key".
+ * throwing call. The server must present exactly `expectedHostKey`, a key the
+ * person has trusted (see +hostKeyForHost:port:error:); without one, or on a
+ * mismatch, it refuses before authenticating with code
+ * SshForwarderHostKeyRefused.
  */
 - (nullable NSNumber *)start:(NSError **)error;
 
