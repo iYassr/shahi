@@ -1124,6 +1124,67 @@ describe("the largest text sizes", () => {
     expect(view.getByText("Type something.")).toBeTruthy();
     expect(view.getByPlaceholderText("Reply to this agent…")).toBeTruthy();
   });
+
+  // At AX5 the reply box sat between attach and Send, a few characters wide,
+  // and its placeholder was cut (September 2026 review).
+  describe("the composer", () => {
+    const window = Dimensions.get("window");
+    const screenSize = Dimensions.get("screen");
+    const AX5 = 3.12;
+    // Jest's React Native preset reports a font scale of 2, already an
+    // accessibility size here, so the default size is set explicitly.
+    const atSize = (fontScale: number) => act(() => Dimensions.set({ window: { ...window, fontScale }, screen: screenSize }));
+    afterEach(() => act(() => Dimensions.set({ window, screen: screenSize })));
+    const hostParent = (node: { parent: any }) => {
+      let parent = node.parent;
+      while (parent && typeof parent.type !== "string") parent = parent.parent;
+      return parent;
+    };
+
+    function expectPlaceholderReadable(view: ReturnType<typeof render>) {
+      const input = view.getByPlaceholderText("Reply to this agent…");
+      const style = StyleSheet.flatten(input.props.style);
+      // A line of its own, with Send on the line under it...
+      expect(style.flexBasis).toBe("100%");
+      expect(StyleSheet.flatten(hostParent(input).props.style).flexWrap).toBe("wrap");
+      expect(hostParent(hostParent(view.getByText("Send")))).not.toBe(hostParent(input));
+      // ...and tall enough for the placeholder wrapped once at this size.
+      expect(style.maxHeight).toBeGreaterThanOrEqual(2 * style.fontSize * AX5 * 1.2 + 2 * style.paddingVertical);
+    }
+
+    test("its placeholder is not cut at the largest text size, at a cold launch", async () => {
+      atSize(AX5);
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/Ready\./);
+      expectPlaceholderReadable(view);
+    });
+
+    test("its placeholder is not cut when the size changes while typing, and the input is not replaced", async () => {
+      atSize(1);
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/Ready\./);
+      const before = view.getByPlaceholderText("Reply to this agent…");
+      expect(StyleSheet.flatten(before.props.style).flexBasis).toBeUndefined();
+      atSize(AX5);
+      expectPlaceholderReadable(view);
+      // Replacing it would drop focus, and the keyboard, mid-reply.
+      expect(view.getByPlaceholderText("Reply to this agent…")).toBe(before);
+    });
+
+    test("at the default size the reply box stays between attach and Send", async () => {
+      atSize(1);
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/Ready\./);
+      const input = view.getByPlaceholderText("Reply to this agent…");
+      const style = StyleSheet.flatten(input.props.style);
+      expect(style.flexBasis).toBeUndefined();
+      expect(style.maxHeight).toBe(120);
+      expect(hostParent(hostParent(view.getByText("Send")))).toBe(hostParent(input));
+    });
+  });
 });
 
 // The terminal is a place too, and the one the reader's memory never covered:

@@ -28,7 +28,7 @@ import {
   View,
   type NativeScrollEvent,
 } from "react-native";
-import { Text } from "@/components/text";
+import { Text, useLargeText } from "@/components/text";
 import { Stack } from "expo-router";
 import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
@@ -608,6 +608,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   // window — without the offset the composer stops a header's height short.
   const headerHeight = useHeaderHeight();
   const keyboard = useKeyboardHeight();
+  const largeText = useLargeText();
 
   // Back should close the attachment sheet before it leaves the pane.
   useEffect(() => {
@@ -914,6 +915,28 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     }
   }
 
+  const attach = supports(control?.handshake ?? null, "attachments") && (
+    <Pressable
+      style={styles.attach}
+      disabled={sending}
+      onPress={() => setAttaching(true)}
+      accessibilityRole="button"
+      accessibilityLabel="Attach a file"
+    >
+      <Text style={styles.attachText}>+</Text>
+    </Pressable>
+  );
+  const send = (
+    <Pressable
+      accessibilityRole="button"
+      style={[styles.send, (sending || !draft.trim()) && styles.sendOff]}
+      disabled={sending || !draft.trim()}
+      onPress={() => void submit()}
+    >
+      <Text style={styles.sendText}>Send</Text>
+    </Pressable>
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -1207,18 +1230,15 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           ))}
         </ScrollView>
         )}
-        <View style={styles.composeRow}>
-          {supports(control?.handshake ?? null, "attachments") && <Pressable
-            style={styles.attach}
-            disabled={sending}
-            onPress={() => setAttaching(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Attach a file"
-          >
-            <Text style={styles.attachText}>+</Text>
-          </Pressable>}
+        {/* At accessibility sizes the reply box takes a line of its own, with
+            the buttons on the line under it. Beside them it was left a few
+            characters wide and its placeholder was cut (AX5, September 2026
+            review). The input keeps its place among its siblings in both
+            layouts, so a size change while typing does not remount it. */}
+        <View style={[styles.composeRow, largeText && styles.composeRowStacked]}>
+          {!largeText && attach}
           <TextInput
-            style={styles.input}
+            style={[styles.input, largeText && styles.inputStacked]}
             value={draft}
             editable={!sending}
             onChangeText={setDraft}
@@ -1226,14 +1246,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             placeholderTextColor={theme.dim}
             multiline
           />
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.send, (sending || !draft.trim()) && styles.sendOff]}
-            disabled={sending || !draft.trim()}
-            onPress={() => void submit()}
-          >
-            <Text style={styles.sendText}>Send</Text>
-          </Pressable>
+          {largeText ? <View style={styles.composeButtons}>{attach || <View />}{send}</View> : send}
         </View>
       </View>
 
@@ -2059,6 +2072,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     maxHeight: 120,
   },
+  composeRowStacked: { flexWrap: "wrap" },
+  // An empty multiline input is as tall as its wrapped placeholder. At AX5 the
+  // 15pt text is about 47pt on 56pt lines, and even a full-width line wraps
+  // "Reply to this agent…" once: 132pt with padding, over the 120 cap.
+  inputStacked: { flexBasis: "100%", maxHeight: 200 },
+  // Attach at the left (or an empty slot, keeping Send at the right), in the
+  // order VoiceOver reads them.
+  composeButtons: { flexBasis: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   send: {
     minHeight: 44,
     paddingHorizontal: 16,
