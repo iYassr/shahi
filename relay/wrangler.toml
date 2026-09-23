@@ -32,10 +32,10 @@ new_sqlite_classes = ["RelayBox"]
 # source is refused before a Durable Object is addressed, so a stranger cannot
 # open sockets to arbitrary serverIds and burn the account's daily quota. This
 # bounds one source (an IPv4 address, or an IPv6 /64: src/limits.ts) per edge
-# location; it is not a global traffic or billing
-# ceiling. See docs/relay.md for the remaining operational controls. The binding is read
-# optionally in src/index.ts, so `wrangler dev` and the test harness (which set
-# no binding) are unaffected.
+# location; it is not a global traffic or billing ceiling. See docs/relay.md
+# for the remaining operational controls. The binding is read optionally in
+# src/index.ts, so `wrangler dev` and the test harness (which set no binding)
+# are unaffected.
 # Telemetry: one Analytics Engine data point per relay event (box auth, phone
 # open/close with its code, refusals), plus aggregated traffic and durations.
 # The relay stays blind — only the serverId (a hash) and coarse signals are
