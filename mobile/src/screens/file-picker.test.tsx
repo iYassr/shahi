@@ -64,3 +64,28 @@ test("closing while choosing a file prevents a later upload", async () => {
   expect(mockApi.upload).not.toHaveBeenCalled();
   expect(onPick).not.toHaveBeenCalled();
 });
+
+// An upload that finished as Cancel was tapped used to attach itself anyway:
+// over SSH nothing listened to Cancel, so the path landed in the composer the
+// person had just said no to, ready to be sent (pre-release review).
+test("a cancelled upload is never attached, even when it finishes anyway", async () => {
+  let finish!: (value: unknown) => void;
+  let signal: AbortSignal | undefined;
+  mockApi.upload.mockImplementation((_file: unknown, options: { signal?: AbortSignal }) => {
+    signal = options.signal;
+    return new Promise(done => { finish = done; });
+  });
+  (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [{ uri: "file://big.mov", name: "big.mov", size: 20 * 1024 * 1024 }] });
+  const onPick = jest.fn();
+  const view = render(<FilePicker onPick={onPick} onClose={jest.fn()} />);
+  fireEvent.press(view.getByText("File on phone"));
+  await waitFor(() => view.getByText("Cancel upload"));
+  // The picker's size travels with the file: it bounds an SSH upload's deadline.
+  expect(mockApi.upload.mock.calls[0][0]).toMatchObject({ name: "big.mov", size: 20 * 1024 * 1024 });
+  fireEvent.press(view.getByText("Cancel upload"));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish({ path: "/home/y/.shahi/uploads/big.mov", name: "big.mov", size: 1 }));
+  expect(onPick).not.toHaveBeenCalled();
+  expect(view.getByText("Upload cancelled.")).toBeTruthy();
+  expect(view.queryByText("Cancel upload")).toBeNull();
+});

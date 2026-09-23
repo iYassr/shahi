@@ -713,7 +713,44 @@ describe("files over the relay", () => {
       mocked.mockRestore();
     }
   });
+
+  // An old computer takes the file in one sealed request, which cannot be
+  // aborted mid-flight. Cancel used to wait for it and then attach the file.
+  test("Cancel on an old computer's relay upload answers at once and hands back nothing", async () => {
+    const { box } = await openLink();
+    const bytes = new Uint8Array([1, 2, 3]);
+    const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: bytes.length, readBytes: () => bytes, close: jest.fn() } as never);
+    try {
+      const controller = new AbortController();
+      const call = api.upload({ uri: "file:///tmp/shot.png", name: "shot.png", type: "image/png" }, { signal: controller.signal });
+      await tick();
+      box.answer(box.read()[0] as RelayRequest, 404, { error: "not found" });
+      await sleep(5);
+      const [req] = box.read() as RelayRequest[];
+      expect(req).toMatchObject({ method: "POST", path: "/api/uploads" });
+      controller.abort();
+      await expect(call).rejects.toThrow("Upload cancelled.");
+      box.answer(req!, 200, { path: "/home/y/.shahi/uploads/shot.png", name: "shot.png", size: 3 });
+    } finally { mocked.mockRestore(); }
+  });
+
+  // The typed address "connect directly" meant was removed on 2026-09-04.
+  test("a file too big for an old computer's relay upload points to SSH or an update, not a direct connection", async () => {
+    const { box } = await openLink();
+    const readBytes = jest.fn();
+    const mocked = jest.spyOn(File.prototype, "open").mockReturnValue({ size: 5 * 1024 * 1024, readBytes, close: jest.fn() } as never);
+    try {
+      const call = api.upload({ uri: "file:///tmp/big.jpg", name: "big.jpg", type: "image/jpeg" });
+      await tick();
+      box.answer(box.read()[0] as RelayRequest, 404, { error: "not found" });
+      const e = (await call.catch((err: unknown) => err)) as Error;
+      expect(e.message).toMatch(/Update Shahi on your computer to send files up to 32 MB through the relay, or connect over SSH\./);
+      expect(e.message).not.toMatch(/directly|the box/);
+      expect(readBytes).not.toHaveBeenCalled();
+    } finally { mocked.mockRestore(); }
+  });
 });
+
 
 describe("pairing over the relay", () => {
   test("the hello names the code by the hash of its bytes, and the claim answers with a device", async () => {

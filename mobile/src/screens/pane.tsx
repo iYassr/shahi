@@ -1502,7 +1502,7 @@ export function FilePicker({
     const controller = new AbortController(); uploadAbort.current = controller;
     setError(null);
     try {
-      let file: { uri: string; name: string; type: string };
+      let file: { uri: string; name: string; type: string; size?: number };
       if (source === "photos") {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!active()) return;
@@ -1517,17 +1517,22 @@ export function FilePicker({
         });
         const asset = result.assets?.[0];
         if (result.canceled || !asset || !active()) return;
-        file = { uri: asset.uri, name: asset.fileName ?? `photo.${asset.uri.split(".").pop() ?? "jpg"}`, type: asset.mimeType ?? "image/jpeg" };
+        file = { uri: asset.uri, name: asset.fileName ?? `photo.${asset.uri.split(".").pop() ?? "jpg"}`, type: asset.mimeType ?? "image/jpeg", size: asset.fileSize };
       } else {
         const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
         const asset = result.assets?.[0];
         if (result.canceled || !asset || !active()) return;
-        file = { uri: asset.uri, name: asset.name, type: asset.mimeType ?? "application/octet-stream" };
+        file = { uri: asset.uri, name: asset.name, type: asset.mimeType ?? "application/octet-stream", size: asset.size };
       }
       const stored = await api.upload(file, { signal: controller.signal, onProgress: (sent, total) => { if (active()) setUploadProgress(total ? Math.floor(sent / total * 100) : 100); } });
-      if (active()) onPick(stored.path);
+      // A cancelled upload is never attached, even one that finished as Cancel
+      // was tapped: attaching it put a path in the composer the person had
+      // just said no to, ready to be sent (pre-release review).
+      if (!active()) return;
+      if (controller.signal.aborted) setError("Upload cancelled.");
+      else onPick(stored.path);
     } catch (e) {
-      if (active()) setError(e instanceof Error ? e.message : "Couldn't attach this file. Please try again.");
+      if (active()) setError(controller.signal.aborted ? "Upload cancelled." : e instanceof Error ? e.message : "Couldn't attach this file. Please try again.");
     } finally {
       if (active()) setUploading(false);
     }

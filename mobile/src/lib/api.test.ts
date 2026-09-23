@@ -574,3 +574,57 @@ test("a retained computer client keeps its own address and credential after swit
   expect(fetchMock.mock.calls[0][0]).toBe("http://computer-a.test/api/devices/a-phone");
   expect(fetchMock.mock.calls[0][1].headers.cookie).toBe("shahi_session=a");
 });
+
+/**
+ * Uploads over SSH: one multipart request through the tunnel. Cancel used to
+ * reach only the relay's chunked transfer; here the caller's signal was
+ * replaced by the timeout's own, so nothing stopped the request (pre-release review).
+ */
+describe("an SSH upload", () => {
+  /** A request that hangs until something aborts it, as a slow uplink would. */
+  const hanging = jest.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+    init.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+  }));
+  const photo = { uri: "file:///tmp/clip.mov", name: "clip.mov", type: "video/quicktime" };
+
+  beforeEach(() => {
+    connection.baseUrl = "http://127.0.0.1:50123";
+    connection.cookie = "shahi_session=x";
+    connection.relay = null;
+    hanging.mockClear();
+    (globalThis as { fetch: unknown }).fetch = hanging;
+  });
+
+  test("Cancel on an SSH upload stops the request and never hands back a file", async () => {
+    const controller = new AbortController();
+    const call = api.upload(photo, { signal: controller.signal });
+    await Promise.resolve();
+    expect(hanging).toHaveBeenCalledTimes(1);
+    const sent = hanging.mock.calls[0]![1].signal!;
+    controller.abort();
+    await expect(call).rejects.toMatchObject({ name: "AbortError", message: "Upload cancelled." });
+    expect(sent.aborted).toBe(true);
+  });
+
+  test("an upload cancelled before it starts sends nothing", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(api.upload(photo, { signal: controller.signal })).rejects.toThrow("Upload cancelled.");
+    expect(hanging).not.toHaveBeenCalled();
+  });
+
+  // The documented SSH limit is 32 MB; a fixed minute cannot carry that over
+  // a 2–4 Mbps cellular uplink, so the deadline grows with the file.
+  test("a large SSH upload is not cut off after a minute", async () => {
+    jest.useFakeTimers();
+    try {
+      const call = api.upload({ ...photo, size: 20 * 1024 * 1024 });
+      const settled = jest.fn();
+      call.then(settled, settled);
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(settled).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(400_000);
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringMatching(/seconds/) }));
+    } finally { jest.useRealTimers(); }
+  });
+});

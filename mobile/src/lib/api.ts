@@ -161,17 +161,61 @@ const pairingConnection = connection;
  */
 const REQUEST_TIMEOUT_MS = 15_000;
 
-/** Runs `fetch` with an abort-on-timeout, turning the abort into a clear error. */
+/**
+ * Runs `fetch` with an abort-on-timeout, turning the abort into a clear error.
+ *
+ * A caller's own `signal` still cancels the request. It used to be replaced by
+ * the timeout's, so Cancel on an SSH upload did nothing until the upload
+ * finished and attached itself anyway (pre-release review).
+ */
 export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
+  const caller = init.signal;
+  const cancel = () => controller.abort();
+  caller?.addEventListener("abort", cancel);
+  if (caller?.aborted) cancel();
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
+    // The caller's own cancel, which is not the host failing to answer.
+    if (caller?.aborted) throw cancelled();
     throw describeTransportFailure(e, url, ms);
   } finally {
     clearTimeout(timer);
+    caller?.removeEventListener("abort", cancel);
   }
+}
+
+/** What a request the person cancelled rejects with: not a transport failure. */
+function cancelled(): Error {
+  return Object.assign(new Error("Upload cancelled."), { name: "AbortError" });
+}
+
+/**
+ * Stops waiting the moment `signal` aborts. Only for work that cannot itself
+ * be cancelled mid-request — a relay request, or the chunk a transfer is
+ * sending — so the sheet answers Cancel at once rather than when that request
+ * returns. What was in flight still finishes, and is not used.
+ */
+function abortable<T>(signal: AbortSignal | undefined, work: Promise<T>): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(cancelled());
+    signal.addEventListener("abort", stop);
+    // Always observed, so abandoned work never surfaces as an unhandled rejection.
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
+    if (signal.aborted) stop();
+  });
+}
+
+/**
+ * How long an SSH upload may take: a minute, plus the file at 64 KiB/s — well
+ * under a weak cellular uplink. A fixed minute could not carry the documented
+ * 32 MB over a 2–4 Mbps uplink (pre-release review); Cancel covers a dead tunnel.
+ */
+function uploadTimeout(size: number | undefined): number {
+  return 60_000 + Math.ceil((size ?? 32 * 1024 * 1024) / (64 * 1024)) * 1000;
 }
 
 /**
@@ -554,54 +598,64 @@ const api = {
   unregisterPush: (token: string) =>
     postJson<{ ok: boolean }>("/api/push/expo/unsubscribe", { token }),
 
-  upload: async (file: { uri: string; name: string; type: string }, options: UploadOptions = {}): Promise<StoredUpload> => {
-    if (connection.relay) {
-      const transferRequest: UploadRequest = (path, init) => dispatch(path, { ...init, headers: baseHeaders(init.headers) }, 60_000);
-      const limits = await uploadCapability(transferRequest);
-      if (limits) {
-        const { File } = require("expo-file-system") as typeof import("expo-file-system");
-        const handle = new File(file.uri).open();
-        try {
-          if (handle.size === null) throw new Error("Could not read this file");
-          return await uploadFile(transferRequest, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`, {
-            name: file.name, type: file.type, size: handle.size,
-            read: async (offset, count) => { handle.offset = offset; return handle.readBytes(count); },
-          }, limits, options);
-        } finally { handle.close(); }
+  /**
+   * Sends a file from the phone. `size`, when the picker knows it, bounds an
+   * SSH upload's deadline. Every path honours `options.signal`: an SSH request
+   * is aborted, and a relay request (which cannot be) is abandoned, so Cancel
+   * answers at once and a cancelled file is never handed back to attach.
+   */
+  upload: (file: { uri: string; name: string; type: string; size?: number }, options: UploadOptions = {}): Promise<StoredUpload> =>
+    abortable(options.signal, (async () => {
+      if (connection.relay) {
+        const transferRequest: UploadRequest = (path, init) => dispatch(path, { ...init, headers: baseHeaders(init.headers) }, 60_000);
+        const limits = await uploadCapability(transferRequest);
+        if (limits) {
+          const { File } = require("expo-file-system") as typeof import("expo-file-system");
+          const handle = new File(file.uri).open();
+          try {
+            if (handle.size === null) throw new Error("Could not read this file");
+            return await uploadFile(transferRequest, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`, {
+              name: file.name, type: file.type, size: handle.size,
+              read: async (offset, count) => { handle.offset = offset; return handle.readBytes(count); },
+            }, limits, options);
+          } finally { handle.close(); }
+        }
       }
-    }
-    // A photo over a slow tailnet needs longer than the default 15s, but still
-    // a bound: a raw fetch here hung forever on a dead host (data-fetching audit).
-    const res = connection.relay
-      ? await dispatch("/api/uploads", tooBigForRelay(await multipart(file)), 60_000)
-      : await (async () => {
-          const body = new FormData();
-          // React Native's FormData takes this shape rather than a File.
-          body.append("file", { uri: file.uri, name: file.name, type: file.type } as never);
-          return fetchWithTimeout(
-            `${connection.baseUrl}/api/uploads`,
-            { method: "POST", headers: baseHeaders(), body, credentials: "omit" }, // see `dispatch`
-            60_000,
-          );
-        })();
-    if (res.status === 426) throw await incompatible(res);
-    const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
-    if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
-    return payload;
-  },
+      if (options.signal?.aborted) throw cancelled();
+      // Always a bound: a raw fetch here hung forever on a dead host
+      // (data-fetching audit). An old computer's relay upload is one frame.
+      const res = connection.relay
+        ? await dispatch("/api/uploads", tooBigForRelay(await multipart(file)), 60_000)
+        : await (async () => {
+            const body = new FormData();
+            // React Native's FormData takes this shape rather than a File.
+            body.append("file", { uri: file.uri, name: file.name, type: file.type } as never);
+            return fetchWithTimeout(
+              `${connection.baseUrl}/api/uploads`,
+              { method: "POST", headers: baseHeaders(), body, credentials: "omit", signal: options.signal }, // see `dispatch`
+              uploadTimeout(file.size),
+            );
+          })();
+      if (res.status === 426) throw await incompatible(res);
+      const payload = (await res.json().catch(() => ({}))) as StoredUpload & { error?: string };
+      if (!res.ok || !payload.path) throw new Error(payload.error ?? "upload failed");
+      return payload;
+    })()),
 };
 
 /**
  * A relay request is one sealed frame and the relay closes the link on one
  * over its cap — which the app reported as "the relay is throttling this
  * phone" and which retrying repeated (measured: every iPhone photo is over
- * it). Refused here, before anything is sent, with the number.
+ * it). Refused here, before anything is sent, with the number — and with the
+ * two ways that do carry it. "Connect directly" was the advice until the typed
+ * address it meant was removed on 2026-09-04.
  */
+const LARGER_FILES = "Update Shahi on your computer to send files up to 32 MB through the relay, or connect over SSH.";
 function tooBigForRelay<T extends { body: Uint8Array }>(request: T): T {
   if (request.body.length <= RELAY_LIMITS.maxBodyBytes) return request;
   throw new Error(
-    `This file is ${humanSize(request.body.length)} and the relay carries up to ${humanSize(RELAY_LIMITS.maxBodyBytes)} in one message. ` +
-      "On the same network as the box, connect directly to send it.",
+    `This file is ${humanSize(request.body.length)} and this computer's Shahi accepts up to ${humanSize(RELAY_LIMITS.maxBodyBytes)} through the relay. ${LARGER_FILES}`,
   );
 }
 
@@ -626,7 +680,7 @@ async function multipart(file: {
   let bytes: Uint8Array;
   try {
     const limit = RELAY_LIMITS.maxBodyBytes - 4096;
-    if (handle.size === null || handle.size > limit) throw new Error(`The relay accepts files up to ${humanSize(limit)}. Use an SSH connection for larger files (up to 32 MB).`);
+    if (handle.size === null || handle.size > limit) throw new Error(`This computer's Shahi accepts files up to ${humanSize(limit)} through the relay. ${LARGER_FILES}`);
     bytes = handle.readBytes(limit + 1);
     if (bytes.length > limit) throw new Error("This file grew beyond the relay upload limit.");
   } finally { handle.close(); }
