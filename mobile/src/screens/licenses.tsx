@@ -7,12 +7,13 @@
  * whole and selectable, never summarised or linked: the licenses ask for
  * their text.
  *
- * Three kinds, each with its own source: the SSH libraries and Lucide's icons
- * are kept by hand in licenses-text.ts, the agent marks' notices in
- * @shahi/shared (both clients draw them), and every npm package in the build
- * is generated into third-party-notices.json by scripts/app-notices.ts.
+ * Four kinds, each with its own source: the SSH libraries and Lucide's icons
+ * are kept by hand in licenses-text.ts, the native libraries CocoaPods builds
+ * in from outside node_modules in native-notices.ts, the agent marks' notices
+ * in @shahi/shared (both clients draw them), and every npm package in the
+ * build is generated into third-party-notices.json by scripts/app-notices.ts.
  *
- * About 90 packages and 60 KB of text, so a virtualised list of short rows
+ * About 100 entries and 120 KB of text, so a virtualised list of short rows
  * rather than one scroll view of whole texts: iOS draws each Text into a
  * backing store the size of the text, and at accessibility sizes the Apache
  * License alone would be one view tens of thousands of points tall. Each
@@ -26,6 +27,7 @@ import { ARTWORK_NOTICES } from "@shahi/shared/artwork-notices";
 import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
 import { LUCIDE_LICENSE, NOTICES } from "./licenses-text";
+import { NATIVE_NOTICES } from "./native-notices";
 import generated from "./third-party-notices.json";
 
 /** One entry of the generated file; see scripts/third-party-notices.ts. */
@@ -99,12 +101,22 @@ export function licenseRows(): Row[] {
         meta: [notice.license, ...notice.copyright ? [notice.copyright] : []] },
       ...textRows(`ssh:${notice.name}`, notice.text),
     ]),
+    { kind: "section", key: "section:native", testID: "licenses-native", title: "Native libraries React Native and Expo build in" },
+    ...NATIVE_NOTICES.flatMap((notice): Row[] => [
+      { kind: "title", key: `native:${notice.name}`, testID: `license-${notice.name}`, title: `${notice.name} ${notice.version}`,
+        meta: [notice.license, notice.in, `${notice.repository} at ${notice.tag}`] },
+      // Which upstream file each text is, above it: Hermes carries six.
+      ...notice.files.flatMap((file, index): Row[] => [
+        { kind: "text", key: `native-file:${notice.name}:${index}`, text: file.path, mono: false, paragraph: true },
+        ...textRows(`native:${notice.name}:${index}`, file.text),
+      ]),
+    ]),
     { kind: "section", key: "section:artwork", testID: "licenses-artwork", title: "Icons and marks" },
     ...ARTWORK.flatMap((notice): Row[] => [
       { kind: "title", key: `art:${notice.name}`, testID: `license-${notice.name}`, title: notice.name, meta: [notice.covers, notice.license] },
       ...textRows(`art:${notice.name}`, notice.text),
     ]),
-    { kind: "section", key: "section:packages", testID: "licenses-packages", title: `JavaScript and native modules (${PACKAGES.packages.length})` },
+    { kind: "section", key: "section:packages", testID: "licenses-packages", title: `JavaScript and native modules from npm (${PACKAGES.packages.length})` },
     ...packageRows(),
   ];
 }

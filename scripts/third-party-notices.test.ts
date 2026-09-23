@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import recorded from "../mobile/src/screens/third-party-notices.json";
 import { MOBILE, nestedPolicy } from "./app-notices";
-import { closureDigest, collectNotices, dependencyClosure, formatNotices, packageDirOf } from "./third-party-notices";
+import { EXTERNAL_PODS } from "../mobile/src/screens/native-notices";
+import { closureDigest, collectNotices, dependencyClosure, externalPods, formatNotices, packageDirOf } from "./third-party-notices";
 
 const REGENERATE = "Run `bun run notices:app` and commit mobile/src/screens/third-party-notices.json.";
 const closure = dependencyClosure(MOBILE);
@@ -31,6 +32,19 @@ test("every notice the app shows is its package's own licence file, at the insta
   const regenerated = collectNotices(dirs, nestedPolicy);
   expect(regenerated.packages).toEqual(recorded.packages);
   expect(regenerated.texts).toEqual(recorded.texts);
+});
+
+// Folly, Hermes, ZXingObjC and ReachabilitySwift reached the App Store binary
+// from outside node_modules with no notice (F27): CocoaPods fetched them
+// because a podspec asked. A podspec that starts asking for another pod
+// fails here until native-notices.ts carries its notice or EXTERNAL_PODS says
+// why the app does not link it.
+test("a native library from outside node_modules cannot reach the app without its notice being decided", () => {
+  const wanted = externalPods(closure.keys());
+  const undecided = [...wanted].filter(([pod]) => !(pod in EXTERNAL_PODS)).map(([pod, from]) => `${pod} (asked for by ${from.join(", ")})`);
+  expect(undecided).toEqual([]);
+  // And nothing is decided that no podspec asks for any more.
+  expect(Object.keys(EXTERNAL_PODS).filter((pod) => !wanted.has(pod))).toEqual([]);
 });
 
 const fixture = mkdtempSync(join(tmpdir(), "shahi-notices-test-"));

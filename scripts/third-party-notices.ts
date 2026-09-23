@@ -233,6 +233,31 @@ export function dependencyClosure(project: string): Map<string, string> {
   return found;
 }
 
+/**
+ * Pods that the podspecs in these package directories depend on and none of
+ * them provides, with the podspecs that ask for each: native code CocoaPods
+ * would fetch from outside node_modules, which no licence file here can
+ * describe. A podspec provides the pod named by its file name.
+ */
+export function externalPods(dirs: Iterable<string>): Map<string, string[]> {
+  const podspecs: string[] = [];
+  const walk = (at: string) => {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name !== "node_modules") walk(join(at, entry.name));
+      else if (entry.isFile() && entry.name.endsWith(".podspec")) podspecs.push(join(at, entry.name));
+    }
+  };
+  for (const dir of dirs) walk(dir);
+  const provided = new Set(podspecs.map((path) => path.slice(path.lastIndexOf(sep) + 1, -".podspec".length)));
+  const wanted = new Map<string, string[]>();
+  for (const path of podspecs) {
+    for (const [, pod] of readFileSync(path, "utf8").matchAll(/\.dependency\s*\(?\s*['"]([^'"/]+)/g)) {
+      if (!provided.has(pod!)) wanted.set(pod!, [...new Set([...wanted.get(pod!) ?? [], path])]);
+    }
+  }
+  return wanted;
+}
+
 /** A short fingerprint of that closure: which versions, not where they sit. */
 export function closureDigest(closure: Map<string, string>): string {
   return createHash("sha256").update([...new Set(closure.values())].sort().join("\n")).digest("hex");
