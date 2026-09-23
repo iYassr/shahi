@@ -97,9 +97,11 @@ closed after 10 minutes without a frame. Every phone frame, text included, is
 charged at least 256 bytes against that bucket, so a phone gets at most 256
 frames a second sustained and 4,096 in a burst: each frame wakes the Durable
 Object, and charging bytes alone let 1-byte frames through at about 65,000 a
-second. Phone text frames are charged and then dropped, never forwarded. The relay keeps no history: a frame
-that arrives while the box is disconnected is dropped and the phone's socket
-is closed with `4404`, which is honest — the phone reconnects and asks again.
+second. Phone text frames are charged and then dropped, never forwarded.
+
+The relay keeps no history: a frame that arrives while the box is disconnected
+is dropped and the phone's socket is closed with `4404`, which is honest — the
+phone reconnects and asks again.
 
 ## What the box and phone do (end to end, opaque to the relay)
 
