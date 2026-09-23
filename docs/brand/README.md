@@ -62,7 +62,7 @@ At full opacity on Steeped, calculated contrast ratios are porcelain 15.21:1, wa
 
 ## Type, layout, and motion
 
-- Website: IBM Plex Sans for prose and UI, IBM Plex Mono for technical snippets. Product: native system sans and system monospace, with no font download needed to connect.
+- Website: IBM Plex Sans for prose and UI, IBM Plex Mono for technical snippets. The site serves IBM's own subsets itself, unmodified, from `site/public/fonts/` (@ibm/plex-sans 1.1.0 and @ibm/plex-mono 2.5.0, SIL Open Font License beside them); no page loads a font from a third party. Product: native system sans and system monospace, with no font download needed to connect.
 - Use sans for conversation, buttons, filters, headings, and answer choices. Use mono for code, paths, commands, identifiers, and compact technical metadata.
 - Body and answer text: 16px or larger when space permits; controls: 14–16px; secondary metadata: 12–13px. Keep technical content readable without rewriting terminal output.
 - Use sentence case. Reserve tracked capitals for short, infrequent status or section labels.

@@ -19,7 +19,12 @@ connections, optional notifications, camera and attachment permissions, Expo
 updates, TestFlight feedback, website providers, support, and deletion choices.
 Removing a computer does not delete files or conversations on that computer.
 Disabling notifications in iOS stops display; it does not delete a server's push
-registration. Offline removal requires separate server-side revocation.
+registration. Removing a computer while it is offline leaves its device record
+active until it is revoked from another paired phone or browser; the computer
+itself has no revocation command. Native notification payloads, which Expo and
+Apple can read, include the workspace name, terminal title, pane identifier and
+the computer's stable public server identifier (policy updated 23 September
+2026).
 
 ## Apple data categories
 

@@ -37,6 +37,12 @@ alone does not publish anything. Publishing replaces the current static website
 and browser app together. There are no server credentials or environment files
 in the output. The browser receives the relay address during pairing.
 
+Publish only from a clean checkout of a committed revision, and record the
+Cloudflare version ID beside that commit, as the verified-deployment section
+below does. The privacy policy the App Store listing links to was once
+deployed from uncommitted work, so for days the text users read existed in no
+commit at all.
+
 `bun run build:web` still builds the local sidecar client in `web/dist` with `/`
 as its base. Hosted output is independently built in `web/dist-hosted` with
 `/pwa/` as its base. Both generated directories are ignored by Git.
