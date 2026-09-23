@@ -15,6 +15,11 @@ import { BOX_AUTH_PREFIX, type BoxToRelay, type RelayToBox } from "@shahi/shared
 export const PORT = Number(process.env.SHAHI_TEST_RELAY_PORT ?? 8787);
 export const HTTP = `http://127.0.0.1:${PORT}`;
 export const WS = `ws://127.0.0.1:${PORT}`;
+/**
+ * Set to `1` to test against a relay already running on the port, such as a
+ * `wrangler dev` left open to iterate against, instead of starting one.
+ */
+export const EXTERNAL = process.env.SHAHI_TEST_RELAY_EXTERNAL === "1";
 
 const RELAY_DIR = new URL("..", import.meta.url).pathname;
 
@@ -44,9 +49,7 @@ export async function startRelay(): Promise<() => Promise<void>> {
   // release it only after the last suite finishes.
   relayUsers++;
   relayStart ??= (async () => {
-    // A relay already on the port (a `wrangler dev` left running to iterate
-    // against) is used as is, and left running.
-    if (await answers()) return "external";
+    if ((await claimPort(PORT, EXTERNAL)) === "external") return "external";
     ownedState = mkdtempSync(join(tmpdir(), "shahi-relay-test-"));
     ownedRelay = Bun.spawn(
       [
@@ -101,6 +104,55 @@ export function relayStateDir(): string | null {
   return ownedState;
 }
 
+/**
+ * Whether the tests start their own relay on `port` or use the one already
+ * there, and a failure that says what to do when neither is right.
+ *
+ * Only a relay asked for with SHAHI_TEST_RELAY_EXTERNAL is used. Anything
+ * that answered 404 used to be taken for one, so a stale `wrangler dev` or
+ * some other server on the port was tested in place of this checkout's relay,
+ * and the run passed or failed on code nobody was looking at (review
+ * 2026-09-22, P02-X3). Without the variable, a port that is already taken
+ * fails the run before a test can reach whatever holds it.
+ */
+export async function claimPort(port: number, external: boolean): Promise<"start" | "external"> {
+  const url = `http://127.0.0.1:${port}`;
+  if (external) {
+    if (await isRelay(url)) return "external";
+    throw new Error(`SHAHI_TEST_RELAY_EXTERNAL is set, but no Shahi relay answers at ${url}.`);
+  }
+  if (await listening(port)) {
+    throw new Error(
+      `Port ${port} is already in use, so the relay tests cannot start their own relay there. ` +
+        "Stop what is listening, choose another port with SHAHI_TEST_RELAY_PORT, " +
+        "or set SHAHI_TEST_RELAY_EXTERNAL=1 to test against a relay you are running there.",
+    );
+  }
+  return "start";
+}
+
+/** Whether anything accepts a connection on the port: an HTTP answer is not needed to hold it. */
+async function listening(port: number): Promise<boolean> {
+  try {
+    const socket = await Bun.connect({ hostname: "127.0.0.1", port, socket: { data() {} } });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The relay's own health answer, which nothing else on a port gives by accident. */
+async function isRelay(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5_000) });
+    return ((await response.json()) as { service?: unknown }).service === "shahi-relay";
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the relay this process started has built its Worker: its front door answers 404 at `/`. */
 async function answers(): Promise<boolean> {
   try {
     return (await fetch(`${HTTP}/`)).status === 404;
