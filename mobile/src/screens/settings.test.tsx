@@ -74,6 +74,12 @@ test("the Settings large title is not covered by an opaque bar at rest", () => {
   expect(mockStackOptions).toHaveBeenCalledWith(expect.objectContaining({ headerLargeStyle: { backgroundColor: "transparent" } }));
 });
 
+test("the open-source licenses are one tap from Settings", () => {
+  const view = render(<Settings />);
+  fireEvent.press(view.getByText("Open-source licenses"));
+  expect(router.push).toHaveBeenCalledWith("/licenses");
+});
+
 // AX5 on the simulator drew "Computers" one letter per line beside its
 // "Switch or add" value (September 2026 review).
 describe("at accessibility text sizes", () => {

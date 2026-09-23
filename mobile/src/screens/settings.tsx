@@ -195,6 +195,8 @@ export function Settings() {
         />
         <Separator />
         <Row icon="info" tint={theme.dim} label="App" value={Constants.expoConfig?.version ?? "dev"} />
+        <Separator />
+        <Row icon="file-text" tint={theme.dim} label="Open-source licenses" onPress={() => router.push("/licenses")} />
       </View>
 
       <View style={styles.group}>

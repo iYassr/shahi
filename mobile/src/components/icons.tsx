@@ -53,6 +53,7 @@ const ICONS = {
   server: { d: "M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM6 6h.01M6 18h.01", filled: false },
   "log-out": { d: "m16 17l5-5l-5-5m5 5H9m0 9H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", filled: false },
   info: { d: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20M12 16v-4m0-4h.01", filled: false },
+  "file-text": { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zM14 2v4a2 2 0 0 0 2 2h4M10 9H8m8 4H8m8 4H8", filled: false },
   activity: { d: "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2", filled: false },
   "chevron-down": { d: "m6 9 6 6 6-6", filled: false },
   "chevron-up": { d: "m18 15-6-6-6 6", filled: false },
