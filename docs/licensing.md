@@ -42,10 +42,17 @@ Apple's distribution requirements.
 
 ## Where someone with only the app finds the notices
 
-Nowhere yet, and that is a gap. libssh2's license requires a binary
-redistribution to "reproduce the above copyright notice … in the documentation
-and/or other materials provided with the distribution", and the Apache and MIT
-licenses ask the same of their notices. The header files that carry some of
-those notices are not in the IPA, and the app has no licenses screen. Until
-the app shows them, a TestFlight or App Store build is missing its third-party
-notices; the texts above are what such a screen has to reproduce.
+In the app: Settings → Open-source licenses reproduces the OpenSSL 3.6.3
+(Apache-2.0) and libssh2 1.11.0 (BSD-3-Clause) texts in full — the two
+libraries compiled into the binary for SSH, and the two whose licenses most
+plainly require it: libssh2's asks a binary redistribution to "reproduce the
+above copyright notice … in the documentation and/or other materials provided
+with the distribution", and the header files that carry those notices are not
+in the IPA. The screen's texts are the files in
+`mobile/modules/ssh-tunnel/licenses/`, unchanged.
+
+Not yet in the app: the icon sets' notices (Lucide ISC, Tabler MIT) and the
+MIT/ISC notices of the JavaScript libraries bundled into the app. Those
+licenses ask the same of their notices, so a public App Store build should
+also list them; until then this page and the packages themselves are where
+they are.
