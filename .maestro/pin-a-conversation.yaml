@@ -6,37 +6,35 @@
 # The swipe actions reach the same handlers and stay a finger-only
 # convenience, hand-checked via docs/verify-on-device.md.
 #
-# clearKeychain wipes stored pins, so this starts unpinned by construction —
-# which is also why no cleanup step is needed at the end.
+# Pins belong to the saved computer, and clearState/clearKeychain start this
+# with none — which is also why no cleanup step is needed at the end.
 appId: app.shahi.mobile
 name: Pin a conversation and it stays pinned
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
-- tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- swipe:
-    direction: UP
-    duration: 400
-- assertVisible: ".*Summarise the meeting.*"
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow: fixture/pair.yaml
+- scrollUntilVisible:
+    element:
+      id: "row-w2:p1"
+    direction: DOWN
 
-- longPressOn: ".*Summarise the meeting.*"
+- longPressOn:
+    id: "row-w2:p1"
 - tapOn: "Pin"
 - assertVisible:
     id: "row-w2:p1-pinned"
 
 # And it survives an app relaunch.
+- stopApp
 - launchApp
-- assertVisible:
-    id: "row-w2:p1-pinned"
+- extendedWaitUntil:
+    visible:
+      id: "row-w2:p1-pinned"
+    timeout: 30000

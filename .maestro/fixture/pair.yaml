@@ -1,0 +1,26 @@
+# Pairs the app, sitting on "Connect your computer", with the recording
+# fixture: e2e/hosted/server.ts, an encrypted relay and a box in one process
+# whose writes end at a stub. It is how a phone really arrives — a
+# shahi://pair code — with nothing real on the other end. SCENARIO picks the
+# stub's situation; the default is "busy".
+appId: app.shahi.mobile
+---
+- runScript:
+    file: reset.js
+    env:
+      # An unset variable arrives as the string "undefined", not as nothing.
+      SCENARIO: ${SCENARIO || "busy"}
+- openLink: ${output.pairingCode}
+# iOS may ask before handing a link to the app.
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "confirm-pair"
+    timeout: 15000
+- tapOn:
+    id: "confirm-pair"
+- extendedWaitUntil:
+    visible: "Agents"
+    timeout: 30000

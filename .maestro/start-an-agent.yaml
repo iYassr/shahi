@@ -1,40 +1,45 @@
 # Starting an agent, with the permission mode chosen up front.
 #
 # The mode picker is the thing most worth testing on a device: getting it wrong
-# means an agent runs with flags nobody chose. The stub records what was asked
-# for rather than starting anything, so this asserts the intent, and the
-# workflow checks the recorded write afterwards.
-#
-# clearKeychain and the .*…* wrappers are explained in connect-and-read.yaml:
-# the session survives clearState in the keychain, and React Native flattens a
-# Pressable's children into one accessibility label that Maestro matches whole.
+# means an agent runs with flags nobody chose. Every mode and the payload each
+# one sends are covered by e2e/native/creation-matrix.ts; this pins what a
+# person must see before choosing — every claude mode offered, and the caution
+# on the one that never asks, visible before anyone selects it.
 appId: app.shahi.mobile
 name: Start an agent with a permission mode
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
-- tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow: fixture/pair.yaml
 
 - tapOn: "Spaces"
-- tapOn: ".*project.*"
-- tapOn: "+ New agent"
+- tapOn:
+    id: "space-w1"
+- scrollUntilVisible:
+    element:
+      id: "space-new-agent"
+    direction: DOWN
+- tapOn:
+    id: "space-new-agent"
+- scrollUntilVisible:
+    element:
+      id: "agent-kind-claude"
+    direction: DOWN
+- tapOn:
+    id: "agent-kind-claude"
 
-# Every claude mode should be offered, and the dangerous one should be
-# reachable rather than hidden.
 - assertVisible: "PERMISSIONS"
 - assertVisible: ".*Ask me.*"
 - assertVisible: ".*Plan first.*"
-- tapOn: ".*Skip all permissions.*"
+- scrollUntilVisible:
+    element:
+      id: "agent-mode-bypass"
+    direction: DOWN
+- assertVisible: ".*No approval before changes.*"
 - assertVisible: ".*Never asks. It can run any command as you, without a prompt.*"

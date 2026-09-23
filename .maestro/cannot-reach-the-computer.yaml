@@ -1,0 +1,70 @@
+# A computer that cannot be reached says so in words, not in Swift.
+#
+# Reported from a phone when addresses were still typed: one that did not
+# resolve showed "fetch failed: unexpected exception: A server with the
+# specified hostname could not be found. at ExpoModulesCore/Promise.swift:56".
+# The typed address is gone. What a person meets now is a pairing code for a
+# computer that is asleep, or one naming a relay that nothing answers at, so
+# this pairs through both and checks that the words which come back say what
+# happened and never name the file.
+appId: app.shahi.mobile
+name: A computer that cannot be reached says so plainly
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
+---
+# The relay answers, and the computer behind it does not.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 30000
+- runScript:
+    file: fixture/reset.js
+    env:
+      SCENARIO: "busy"
+- runScript: fixture/offline.js
+- openLink: ${output.pairingCode}
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "confirm-pair"
+    timeout: 15000
+- tapOn:
+    id: "confirm-pair"
+- extendedWaitUntil:
+    visible: ".*is offline — its Shahi service is not connected to the relay.*"
+    timeout: 30000
+- assertNotVisible: ".*Promise.swift.*"
+- assertNotVisible: ".*unexpected exception.*"
+
+# Nothing answers at the relay's address: the same code, pointed at port 9,
+# where nothing unprivileged can listen on the Mac the simulator shares.
+- runScript:
+    file: fixture/reset.js
+    env:
+      SCENARIO: "busy"
+- evalScript: ${output.deadRelay = output.pairingCode.replace(/relay=[^&]*/, "relay=" + encodeURIComponent("http://127.0.0.1:9"))}
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 30000
+- openLink: ${output.deadRelay}
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "confirm-pair"
+    timeout: 15000
+- tapOn:
+    id: "confirm-pair"
+- extendedWaitUntil:
+    visible: ".*The connection through 127.0.0.1:9.*"
+    timeout: 30000
+- assertNotVisible: ".*Promise.swift.*"
+- assertNotVisible: ".*unexpected exception.*"

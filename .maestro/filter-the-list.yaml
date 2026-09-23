@@ -4,35 +4,37 @@
 # that still shows everything the screen exists to show.
 appId: app.shahi.mobile
 name: Filter the agent list
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow: fixture/pair.yaml
+- extendedWaitUntil:
+    visible: ".*Which colour do you prefer.*"
     timeout: 15000
-- tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- assertVisible: ".*Waiting on you.*"
 
-- tapOn: "codex"
+- tapOn: "Codex"
 - assertNotVisible: ".*Convert PDF to markdown.*"
 - assertNotVisible: ".*Which colour do you prefer.*"
 - assertVisible: ".*Summarise the meeting.*"
 
+# The chips scroll sideways, and Shells starts past the edge of the screen.
+- swipe:
+    from: "Waiting 1"
+    direction: LEFT
 - tapOn: "Shells"
-# The shell row: no title, so the pane id — its second line is now the
-# working folder rather than the old "A plain shell." filler.
-- assertVisible: ".*w1:p3.*"
+- assertVisible:
+    id: "row-w1:p3"
 - assertNotVisible: ".*Summarise the meeting.*"
 
+- swipe:
+    from: "Shells"
+    direction: RIGHT
 - tapOn: "Waiting 1"
 - assertVisible: ".*Which colour do you prefer.*"
 - assertNotVisible: ".*Summarise the meeting.*"

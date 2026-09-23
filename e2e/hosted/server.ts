@@ -2,7 +2,7 @@
 import { join, resolve } from "node:path";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ephemeral, open, seal, serverSession, type Session as CryptoSession } from "../../shared/src/e2e";
-import { RELAY_PROTOCOL, RELAY_RESPONSE_HEADERS, SHAHI_API_VERSION, type DeviceList, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
+import { RELAY_PROTOCOL, RELAY_RESPONSE_HEADERS, type DeviceList, type PhoneHello, type PhoneToBox } from "../../shared/src/index";
 import type { ServerWebSocket } from "bun";
 
 const port = Number(process.env.HOSTED_PORT ?? 7472);
@@ -136,7 +136,10 @@ const fixture = Bun.serve<Link>({
         transcript.push({ path: message.path, method: message.method });
         const body = message.body === null ? undefined : bytes(message.body);
         let response: Response;
-        if (message.path === "/api/meta") response = Response.json({ serverId, control: 1, api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION } });
+        // The contract range is the stub's, so /__stub/meta can stage a
+        // computer on another version before a phone pairs with it, as the
+        // native update-needed flow does. Unset, it is the app's own.
+        if (message.path === "/api/meta") response = Response.json({ serverId, control: 1, api: ((await (await fetch(`${apiBase}/api/meta`)).json()) as { api: { min: number; max: number } }).api });
         else if (message.path === "/api/pair/claim" && ws.data.pairing) {
           const claim = JSON.parse(new TextDecoder().decode(body));
           if (pairingUsed || claim.secret !== b64(pairingSecret)) response = Response.json({ error: "Expired pairing code" }, { status: 401 });

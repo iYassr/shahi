@@ -10,29 +10,19 @@
 # server walks the cursor — never a digit to `/keys`.
 appId: app.shahi.mobile
 name: A cursor menu is answered from the card
-onFlowComplete:
-  - runScript: stub/reset.js
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
-- runScript:
-    file: stub/set-scenario.js
-    env:
-      NAME: "trust"
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
-- tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- assertVisible: "Agents"
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow:
+    file: fixture/pair.yaml
+    env:
+      SCENARIO: "trust"
 - extendedWaitUntil:
     visible: ".*Yes, I trust this folder.*"
     timeout: 15000
@@ -41,6 +31,6 @@ onFlowComplete:
 - assertNotVisible: ".*2\\. Yes, I trust this folder.*"
 - tapOn: ".*Yes, I trust this folder.*"
 - runScript:
-    file: stub/expect-answer.js
+    file: fixture/expect-answer.js
     env:
       LABEL: "Yes, I trust this folder"

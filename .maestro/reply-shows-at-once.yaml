@@ -1,0 +1,40 @@
+# A reply shows the moment you send it, with the keyboard up.
+#
+# Three reports, one send. The reader must react at once, not sit silent and
+# then pop the reply in: the real "working" indicator comes from a poll that
+# lags the tap, so "Working" is shown optimistically. Your own words must
+# appear in the thread at once, not when the next transcript poll fetches them
+# back. And the send has to land while iOS lays the keyboard over the app —
+# the known failure was a Send tap landing on the keyboard's own Enter key —
+# which the draft clearing proves: the placeholder only comes back if Send was
+# really tapped.
+#
+# The pane is "Summarise the meeting", which is done and never answers in the
+# fixture, so "Working" and the text can only be the optimistic ones.
+#
+# By hand on a Mac this needs the software keyboard: Simulator > I/O >
+# Keyboard > Connect Hardware Keyboard must be off, or it never rises.
+appId: app.shahi.mobile
+name: A reply shows at once, with the keyboard up
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow: fixture/pair.yaml
+- scrollUntilVisible:
+    element:
+      id: "row-w2:p1"
+    direction: DOWN
+- tapOn:
+    id: "row-w2:p1"
+- tapOn: "Reply to this agent…"
+- inputText: "optimistic echo check 42"
+- tapOn: "Send"
+- assertVisible: "Working"
+- assertVisible: "optimistic echo check 42"
+- assertVisible: "Reply to this agent…"

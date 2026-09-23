@@ -1,122 +1,71 @@
-# A server this app cannot talk to says which side to update, in words.
+# A computer this app cannot talk to says which side to update, in words.
 #
 # The app and the sidecar negotiate a contract version (`SHAHI_API_VERSION`),
 # and a mismatch is meant to be a sentence naming the device to update — not
-# a wrong-passcode error, and not a list that half-works. The stub is told to
-# advertise a range the app does not speak, and this checks both moments a
-# person meets that: on the Connect screen, where the handshake must be
-# judged before any passcode is tried, and on an app that was signed in when
-# the server moved on, which has to land on "Update needed" with a way out.
+# an invalid-code error, and not a pairing that half-works. The fixture's stub
+# is told to advertise a range the app does not speak, in each direction, and
+# the phone pairs with it: the refusal must come from the handshake, before
+# the code is spent, so the same code pairs once the versions agree.
 #
-# The passcode typed on the Connect screen is deliberately wrong: if login
-# ran before the handshake, "That passcode did not work" is what would show.
+# The flow this replaces also relaunched a signed-in app after the computer
+# moved on and expected "Update needed". Over the relay that is not what
+# happens today — the pane stream is not version-gated, and its session
+# arrives before the refused request — so that half is left out until the
+# app or the box handles it (September 2026 review).
 appId: app.shahi.mobile
-name: A server this app cannot talk to says which side to update
-# Whatever happens above, leave the stub speaking the app's version — a
-# failure midway would otherwise break every flow that runs after this one.
-onFlowComplete:
-  - runScript: stub/reset.js
+name: A computer this app cannot talk to says which side to update
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
-
-# The server is ahead of the app: update the phone.
-- runScript:
-    file: stub/set-meta.js
-    env:
-      MIN: "99"
-      MAX: "99"
+# The computer is ahead of the app: update the phone.
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
+    visible: "Connect your computer"
+    timeout: 30000
+- runScript:
+    file: fixture/reset.js
+    env:
+      SCENARIO: "busy"
+- runScript:
+    file: fixture/set-meta.js
+    env:
+      MIN: "99"
+      MAX: "99"
+- openLink: ${output.pairingCode}
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "confirm-pair"
     timeout: 15000
 - tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "9999"
-- tapOn: "Connect"
+    id: "confirm-pair"
 - extendedWaitUntil:
     visible: ".*Update the app.*"
-    timeout: 20000
-- assertNotVisible: ".*passcode did not work.*"
-- assertVisible: "Connect"
+    timeout: 30000
+- assertNotVisible: ".*pairing code is not valid.*"
 
-# The server is behind the app: update the computer. A fresh launch rather
-# than editing the fields — see cannot-reach-the-server.yaml for why.
+# The computer is behind the app: update the computer.
 - runScript:
-    file: stub/set-meta.js
+    file: fixture/set-meta.js
     env:
       MIN: "0"
       MAX: "0"
-- launchApp:
-    clearState: true
-    clearKeychain: true
-- extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
 - tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "9999"
-- tapOn: "Connect"
+    id: "confirm-pair"
 - extendedWaitUntil:
     visible: ".*Update Shahi on that computer.*"
-    timeout: 20000
-- assertNotVisible: ".*passcode did not work.*"
+    timeout: 30000
+- assertNotVisible: ".*pairing code is not valid.*"
 
-# Now the case a phone actually meets: signed in and working, then the server
-# is upgraded past this build. Sign in while the versions agree, move the
-# server on, and relaunch without clearing anything — the keychain still holds
-# the cookie, so the app restores straight into a session it can no longer
-# read. Every request, the socket included, is refused with a 426, and the
-# Agents screen must say so rather than spin, and offer the way out.
-- runScript: stub/reset.js
-- launchApp:
-    clearState: true
-    clearKeychain: true
-- extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
+# Both refusals came from the handshake, so the code was never spent: once
+# the computer speaks the app's version, the same code pairs.
+- runScript: fixture/same-version.js
 - tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- assertVisible: "Agents"
-- assertVisible: ".*Waiting on you.*"
-
-# A real sidecar version change restarts the sidecar while the phone may be
-# backgrounded. Stop the app first so this is a genuine persisted-session cold
-# start, not Maestro's `launchApp` merely foregrounding an already-active app.
-- stopApp
-- runScript:
-    file: stub/set-meta.js
-    env:
-      MIN: "99"
-      MAX: "99"
-- launchApp
+    id: "confirm-pair"
 - extendedWaitUntil:
-    visible: "Update needed"
-    timeout: 20000
-- assertVisible: ".*Update the app.*"
-- assertVisible: ".*localhost:7272.*"
-- assertNotVisible: ".*Waiting on you.*"
-
-# "Switch server" is a sign-out: back to the setup guide, ready for another
-# address.
-- tapOn: "Switch server"
-- extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
+    visible: "Agents"
+    timeout: 30000

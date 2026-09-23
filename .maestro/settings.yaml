@@ -1,47 +1,48 @@
-# Settings' load-bearing rows: the server you are on, and the way out.
-# Signing out was unreachable before this screen — switching servers meant
-# deleting the app — so the flow proves the whole loop: out to the connect
-# screen, and back in.
+# Settings' load-bearing rows: the computer you are on, and the way out.
+# Signing out was unreachable before this screen — switching computers meant
+# deleting the app — so the flow proves the whole loop: out to the pairing
+# screen, and back in with a new code. The connection details stay folded
+# until asked for.
 appId: app.shahi.mobile
-name: Settings shows the connection and signs out
+name: Settings names the computer and signs out
+env:
+  FIXTURE_PORT: ${FIXTURE_PORT || "7572"}
 ---
 - launchApp:
     clearState: true
     clearKeychain: true
 - extendedWaitUntil:
-    visible: "Connect your server"
-    timeout: 15000
-- tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- assertVisible: "Agents"
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow: fixture/pair.yaml
 
 - tapOn: "Settings"
-- assertVisible: ".*localhost:7272.*"
-- assertVisible: ".*protocol 19.*"
-# Settings is longer than a screen now that it lists paired devices, and the
-# floating tab bar covers whatever sits under it at rest — a tap there lands on
-# the bar. Scroll first, as a person does.
-- swipe:
-    direction: UP
-- tapOn: "Sign out"
-- assertVisible: "Shahi"
+# The fixture's box is called stub-box.
+- assertVisible: ".*stub-box, Connected.*"
+- assertNotVisible: ".*Encrypted relay connection.*"
+- tapOn:
+    id: "server-identity"
+- assertVisible: ".*Encrypted relay connection.*"
 
-# And back in, which is the other half of switching servers. Sign-out returns
-# to the setup guide, so step through it again.
+# Settings is longer than a screen, and the floating tab bar covers whatever
+# sits under it at rest — a tap there lands on the bar. Scroll first, as a
+# person does.
+- scrollUntilVisible:
+    element: "Sign out"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Sign out"
+- extendedWaitUntil:
+    visible: "Sign out of this computer?"
+    timeout: 5000
+# The alert's own button, not the row behind it with the same words.
 - tapOn:
-    id: "intro-continue"
-- tapOn:
-    id: "server-address"
-- inputText: "http://localhost:7272"
-- tapOn:
-    id: "passcode"
-- inputText: "1234"
-- tapOn: "Connect"
-- assertVisible: ".*Waiting on you.*"
+    text: "Sign out"
+    rightOf: "Cancel"
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 20000
+
+# And back in, which is the other half of switching computers.
+- runFlow: fixture/pair.yaml
+- assertVisible: ".*Convert PDF to markdown.*"
