@@ -242,7 +242,7 @@ export class RelayLink {
     }
     const heldBytes = [...this.#pending.values()].reduce((n, p) => n + (p.request.body?.byteLength ?? 0), 0);
     if (this.#pending.size >= RELAY_LIMITS.maxPendingRequests || heldBytes + (request.body?.byteLength ?? 0) > RELAY_LIMITS.maxPendingBodyBytes) {
-      return Promise.reject(new UnreachableError("relay", this.host, "Too many requests are waiting for this box. Try again shortly."));
+      return Promise.reject(new UnreachableError("relay", this.host, "Too many requests are waiting for this computer. Try again shortly."));
     }
     return new Promise<Reply>((resolve, reject) => {
       const id = this.#nextId++;
@@ -252,7 +252,7 @@ export class RelayLink {
           new UnreachableError(
             "timeout",
             this.host,
-            `Your box didn't answer within ${Math.round(timeoutMs / 1000)} seconds. It is connected to the relay, so it may be busy or asleep.`,
+            `Your computer didn't answer within ${Math.round(timeoutMs / 1000)} seconds. It is connected to the relay, so it may be busy or asleep.`,
           ),
         );
       }, timeoutMs);
@@ -362,7 +362,7 @@ export class RelayLink {
         // stale/new link race can produce either code, so retain the saved
         // device and reconnect. Revocation travels as a sealed `bye` instead.
         this.#drop(socket,
-          new UnreachableError("lost", this.host, `The box rejected this connection through ${this.host}. Reconnecting…`),
+          new UnreachableError("lost", this.host, `The computer rejected this connection through ${this.host}. Reconnecting…`),
         );
         return;
       }
@@ -386,7 +386,7 @@ export class RelayLink {
         new UnreachableError(
           "unknown",
           this.host,
-          `The box answered the relay with ${version}; this app speaks v${RELAY_PROTOCOL}. Update the app or Shahi on that computer.`,
+          `The computer answered the relay with ${version}; this app speaks v${RELAY_PROTOCOL}. Update the app or Shahi on that computer.`,
         ),
       );
       this.close();
@@ -423,7 +423,7 @@ export class RelayLink {
             !msg.headers || typeof msg.headers !== "object" || Array.isArray(msg.headers)) throw new Error("invalid response");
         pending.resolve(reply(msg));
       } catch {
-        pending.reject(new UnreachableError("relay", this.host, "The box sent an invalid response."));
+        pending.reject(new UnreachableError("relay", this.host, "The computer sent an invalid response."));
       }
     } else if (msg.t === "ws") {
       if (!msg.data || typeof msg.data !== "object" || typeof msg.data.type !== "string") return;
@@ -441,7 +441,7 @@ export class RelayLink {
       // we would retry; this sealed signal is how that reaches the app,
       // exactly as a `/ws` close with 4001 does on a direct connection. Sign
       // out and stop, rather than reconnecting into a refusal forever.
-      this.#refuse("This phone is no longer paired with that box.");
+      this.#refuse("This phone is no longer paired with that computer.");
     }
   }
 
@@ -588,7 +588,7 @@ export class RelayLink {
  */
 function closeError(code: number, reason: string, host: string): UnreachableError {
   if (code === RELAY_CLOSE.boxOffline) {
-    return new UnreachableError("box", host, "Your box is offline — its Shahi service is not connected to the relay.");
+    return new UnreachableError("box", host, "Your computer is offline — its Shahi service is not connected to the relay.");
   }
   if (code === RELAY_CLOSE.quota) {
     if (reason === "frame too large") {

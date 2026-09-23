@@ -452,7 +452,7 @@ describe("the relay's close codes", () => {
     const e = await call.catch((err: unknown) => err);
     expect(e).toBeInstanceOf(UnreachableError);
     expect((e as UnreachableError).reason).toBe("box");
-    expect((e as Error).message).toBe("Your box is offline — its Shahi service is not connected to the relay.");
+    expect((e as Error).message).toBe("Your computer is offline — its Shahi service is not connected to the relay.");
     expect(states).toEqual(["lost", "connecting", "lost"]);
     await sleep(600);
     expect(FakeSocket.opened).toHaveLength(2); // the box may come back

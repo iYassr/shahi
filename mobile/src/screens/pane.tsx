@@ -39,7 +39,7 @@ import { CopyButton, CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
-import { connection, UnauthorizedError } from "@/lib/api";
+import { connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells, type ScrollAnchor } from "@/lib/scroll-cells";
 import { committed, refused } from "@/lib/feel";
@@ -237,7 +237,7 @@ interface Props {
 }
 
 export function Pane({ paneId, initialView = "reader" }: Props) {
-  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut } = useSession();
+  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut, link } = useSession();
   const savedDraft = useRef(nativeDraft(api, paneId)).current;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -332,6 +332,22 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
   const [columns, setColumns] = useState(terminalWidth);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether the banner reports that the computer could not be reached. Such a
+   * banner is cleared when the link is live again: it used to stay under a
+   * LIVE connection, beside the recovered conversation, until dismissed by hand.
+   */
+  const errorUnreachable = useRef(false);
+  function showError(e: unknown) {
+    errorUnreachable.current = e instanceof UnreachableError;
+    setError((e as Error).message);
+  }
+  useEffect(() => {
+    if (link === "live" && errorUnreachable.current) {
+      errorUnreachable.current = false;
+      setError(null);
+    }
+  }, [link]);
   const listRef = useRef<FlatList<LogMessage>>(null);
   const olderCursor = useRef<number | null>(null);
   const [hasOlder, setHasOlder] = useState(false);
@@ -727,7 +743,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       await api.answerPrompt(paneId, option, shown);
     } catch (e) {
       endAwaiting();
-      setError((e as Error).message);
+      showError(e);
     }
   }
 
@@ -774,7 +790,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setDraft(text);
       endAwaiting();
       refused();
-      setError((e as Error).message);
+      showError(e);
     } finally {
       promptInFlight.current = false;
       savedDraft.inFlight = false;
@@ -1034,7 +1050,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 
         {view === "reader" && away && (
           <View style={styles.jumpWrap} pointerEvents="box-none">
-            <Pressable accessibilityRole="button" accessibilityLabel="Go to latest" testID="go-to-latest" style={styles.jump} onPress={jumpToLatest}>
+            <Pressable
+              accessibilityRole="button"
+              // The count is the pill's news: a fixed "Go to latest" hid it from VoiceOver.
+              accessibilityLabel={unseen > 0 ? `${unseen} new ${unseen === 1 ? "message" : "messages"}. Go to latest` : "Go to latest"}
+              testID="go-to-latest"
+              style={styles.jump}
+              onPress={jumpToLatest}
+            >
               <Text style={styles.jumpText}>{unseen > 0 ? `${unseen} new ↓` : "Latest ↓"}</Text>
             </Pressable>
           </View>
@@ -1076,7 +1099,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
                 committed();
                 api.sendKeys(paneId, keys).then(chase, (e: Error) => {
                   refused();
-                  setError(e.message);
+                  showError(e);
                 });
               }}
             >
@@ -1158,9 +1181,15 @@ function Prompt({
       <Text style={styles.question}>{prompt.question}</Text>
       {prompt.options.map((option) => {
         const isArmed = armed === option.index;
+        const current = isArmed || (armed === null && option.selected);
         return (
           <Pressable
             accessibilityRole="button"
+            // One clean sentence rather than the row's parts: the cursor glyph
+            // and its blank placeholder were read aloud, and which row the
+            // menu's cursor is on was only visible, never spoken.
+            accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail].filter(Boolean).join(". ")}
+            accessibilityState={{ selected: current, disabled: armed !== null }}
             key={option.index}
             style={[styles.choice, isArmed && styles.choiceArmed]}
             disabled={armed !== null}
@@ -1169,9 +1198,7 @@ function Prompt({
               void onAnswer(option).catch(() => setArmed(null));
             }}
           >
-            <Text style={styles.cursor}>
-              {isArmed || (armed === null && option.selected) ? "❯" : " "}
-            </Text>
+            <Text style={styles.cursor}>{current ? "❯" : " "}</Text>
             {/* The digit is what the terminal takes; a cursor menu has none. */}
             {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
             <View style={styles.choiceBody}>

@@ -443,7 +443,7 @@ const api = {
     const body = (await res.json().catch(() => ({}))) as Partial<ClaimResult> & { error?: string };
     if (res.status === 401) throw new Error(body.error ?? "That pairing code is not valid.");
     if (!res.ok || !body.deviceId || !body.deviceSecret) {
-      throw new Error(body.error ?? `The box answered the claim with HTTP ${res.status} and no device.`);
+      throw new Error(body.error ?? `The computer answered the claim with HTTP ${res.status} and no device.`);
     }
     return { ok: true, deviceId: body.deviceId, deviceSecret: body.deviceSecret };
   },

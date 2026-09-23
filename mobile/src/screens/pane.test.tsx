@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
-import { api, connection, UnauthorizedError } from "@/lib/api";
+import { api, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 
 // The first test in this file pays for loading the screen and its mocks under
@@ -1269,5 +1269,86 @@ describe("transcript images", () => {
     const view = render(<Pane paneId={PANE} />);
     expect(await view.findByText(/too large to show through the relay/)).toBeTruthy();
     expect(view.queryByTestId("transcript-image")).toBeNull();
+  });
+});
+
+// Two banners stayed on screen after a failed send: "Computer disconnected",
+// which goes when the link returns, and the send's own error, which did not.
+test("a send that failed because the computer was offline stops saying so once the link is live again", async () => {
+  const previous = mockSession.link;
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    mocked.send.mockRejectedValue(new UnreachableError("box", "relay.example", "Your computer is offline — its Shahi service is not connected to the relay."));
+    mockSession.link = "lost";
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "hello");
+    fireEvent.press(view.getByText("Send"));
+    await view.findByText(/Your computer is offline/);
+
+    mockSession.link = "live";
+    view.rerender(<Pane paneId={PANE} />);
+    expect(view.queryByText(/Your computer is offline/)).toBeNull();
+    // The draft was returned to the composer and is still not sent.
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("hello");
+    expect(mocked.send).toHaveBeenCalledTimes(1);
+  } finally {
+    mockSession.link = previous;
+  }
+});
+
+test("a refusal from the computer is not cleared by a reconnect", async () => {
+  const previous = mockSession.link;
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    mocked.send.mockRejectedValue(new Error("herdr said no"));
+    mockSession.link = "connecting";
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "hello");
+    fireEvent.press(view.getByText("Send"));
+    await view.findByText("herdr said no");
+    mockSession.link = "live";
+    view.rerender(<Pane paneId={PANE} />);
+    expect(view.getByText("herdr said no")).toBeTruthy();
+  } finally {
+    mockSession.link = previous;
+  }
+});
+
+describe("spoken labels", () => {
+  test("the jump pill says how many messages arrived while you were away", async () => {
+    let transcript = [said("a1", "agent", "First."), said("a2", "agent", "Second.")];
+    mocked.sessionLog.mockImplementation(async () => log(transcript));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Second\./);
+    const list = view.UNSAFE_getByType(FlatList);
+    act(() => list.props.onScrollBeginDrag());
+    fireEvent(list, "scroll", { nativeEvent: { contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 100 } } });
+    expect(view.getByTestId("go-to-latest").props.accessibilityLabel).toBe("Go to latest");
+
+    transcript = [...transcript, said("a3", "agent", "Third."), said("a4", "agent", "Fourth.")];
+    logChanged();
+    await view.findByText(/Fourth\./);
+    expect(view.getByText("2 new ↓")).toBeTruthy();
+    expect(view.getByTestId("go-to-latest").props.accessibilityLabel).toBe("2 new messages. Go to latest");
+  });
+
+  test("a prompt's options are read as their words, and the row under the cursor is announced as selected", async () => {
+    const prompt: ParsedPrompt = {
+      question: "Do you want to proceed?",
+      answer: "digit",
+      options: [
+        { index: 1, label: "Yes", selected: true },
+        { index: 2, label: "No, and tell Claude what to do differently", selected: false, detail: "Esc" },
+      ],
+    } as ParsedPrompt;
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "May I?")]));
+    mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+    const view = render(<Pane paneId={PANE} />);
+    const yes = await view.findByRole("button", { name: "1. Yes" });
+    expect(yes.props.accessibilityState).toMatchObject({ selected: true });
+    const no = view.getByRole("button", { name: "2. No, and tell Claude what to do differently. Esc" });
+    expect(no.props.accessibilityState).toMatchObject({ selected: false });
   });
 });
