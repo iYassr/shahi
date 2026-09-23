@@ -54,7 +54,8 @@ default port, 7171; the SSH form has no port field, so a sidecar moved with
 - `src/lib/tunnel.ts` — the thin face of the native module; degrades to a clear
   "needs the native build" message where the module is absent, leaving the
   relay as the way in.
-- `src/screens/connect.tsx` — the SSH form, beneath Scan a code.
+- `src/screens/connect.tsx` — the SSH form, behind **Want to use SSH?** under
+  Scan QR code.
 - `src/lib/session.tsx` — stores the profile, re-opens the tunnel on restore,
   and tears it down on sign-out.
 - `modules/ssh-tunnel/` — the native forwarder, all libssh2, no NMSSH. Swift

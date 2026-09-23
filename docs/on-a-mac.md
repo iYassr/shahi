@@ -3,10 +3,11 @@
 The server lives on the Ubuntu box; the app is built and tested wherever there
 is an Xcode. This is the second one.
 
-The whole reason to bother: **a Mac makes the iOS tests free.** The Maestro flows
-in `.maestro/` are gated behind a paid EAS plan when they run in Expo's cloud,
-and gated behind nothing at all when they run against a simulator on your own
-machine.
+The whole reason to bother: **a Mac makes the iOS tests free.** Simulator runs
+are gated behind a paid EAS plan in Expo's cloud, and behind nothing at all
+against a simulator on your own machine: the Maestro runs in `e2e/native/` and
+the XCUITest harness in `mobile/uitests/` both run here, and neither runs in
+CI.
 
 ## Once
 
@@ -61,22 +62,29 @@ pairing can connect without saving the computer successfully.
 
 ## Give it something to talk to
 
-Two choices, and the second is usually the right one.
+The app has no typed-address sign-in: it reaches a computer by a relay pairing
+code or over SSH. Two choices, and the second is usually the right one.
 
-**The real server**, if the Mac is on the tailnet: enter
-`https://<your-host>.<your-tailnet>.ts.net` and the passcode. Live agents, real
-transcripts, and every keystroke you send is real.
+**A real computer**: pair with `herdr plugin action invoke shahi.pair` on it.
+The simulator has no camera, so show the code as text (T then Enter in the
+popup) and open the `shahi://pair#…` code in the simulator with
+`xcrun simctl openurl booted '<code>'`; the app asks you to confirm first. Or
+connect over SSH with the passcode. Live agents, real transcripts, and every
+keystroke you send is real.
 
-**The stub**, for anything you would rather not do to a live session:
+**The encrypted fixture**, for anything you would rather not do to a live
+session:
 
 ```sh
-PORT=7272 bun run e2e/stub/server.ts     # from the repo root
+HOSTED_PORT=7874 bun e2e/hosted/server.ts     # from the repo root
 ```
 
-Then connect to `http://localhost:7272` with passcode `1234`. The simulator
-shares the Mac's network stack, so localhost is the Mac. This is the same stub
-the browser suite uses — the same contract, the same fixtures, and writes are
-recorded rather than performed.
+It is a relay and a sidecar in one process, speaking the real encrypted
+protocol to the app, with the browser suite's stub behind it (on
+`HOSTED_PORT` + 1), so writes are recorded rather than performed.
+`POST /__hosted/reset` mints a single-use pairing code; the scripts in
+`e2e/native/` call it and open the code in the simulator themselves. The
+simulator shares the Mac's network stack, so `127.0.0.1` is the Mac.
 
 ## Run the iOS tests
 
@@ -97,38 +105,27 @@ SIMULATOR_UDID=<device-id> HOSTED_PORT=7874 bun e2e/native/creation-matrix.ts
 Use `AGENT_KINDS=claude,codex,cursor,agy` to narrow a diagnostic run. Artifacts
 are saved in the temporary directory printed by the runner. Pairing is reset
 for this synthetic computer. Never substitute a real server for the fixture.
+The other scripts in `e2e/native/` follow the same shape. For checks that need
+an element's position or precise gestures, the XCUITest harness in
+`mobile/uitests/` drives the installed app; its README says how to run it
+against the same fixture.
 
-The older `.maestro/` flows below still use the retired typed-address onboarding
-and need migration before they can run against the current app.
+The runs drive the app with Maestro:
 
 ```sh
 curl -Ls "https://get.maestro.mobile.dev" | bash      # once
 ```
 
-With the app installed on a booted simulator and the stub running:
-
-```sh
-maestro test .maestro/
-```
-
-Two things the first local run taught:
+Two things the first local runs taught:
 
 - The `expo run:ios` build has no embedded bundle — Metro must be running or
   the app opens on a red "No script URL provided" screen. Launch the app once
-  by hand before `maestro test`, so the first flow is not racing a cold bundle
+  by hand before a run, so the first flow is not racing a cold bundle
   compile.
 - Maestro's iOS driver sometimes wedges between runs and the next run dies
   with "iOS driver not ready in time". `pkill -9 -f maestro-driver-iosUITests`
   clears it; a simulator that has stopped answering `simctl` needs a shutdown
   and boot.
-
-Eleven flows today, all against the stub. The first signs in, crosses the tab bar
-both ways and opens a pane — the route restructure and the native tab bar,
-which nothing else can verify. Another opens New agent and checks every claude
-permission mode is offered, because getting that wrong means an agent runs with
-flags nobody chose. `cannot-reach-the-server.yaml` needs no stub at all: it
-connects to a name that cannot resolve and to a port with nothing behind it,
-and checks the words that come back name the address and not a Swift file.
 
 `maestro studio` opens an inspector against the running app, which is the
 fastest way to write the next flow: it shows you the selectors that exist rather
@@ -137,10 +134,13 @@ than the ones you hoped for.
 ## Everything else runs here too
 
 ```sh
-bun test shared/src server web/src   # 313, no device
+bun run test                         # unit, workflow-policy and dependency checks, no device
 bun run test:mobile                  # unit and component tests, no simulator
-bun run test:e2e                     # 164 browser tests, both engines
+bun run test:e2e                     # browser tests, both engines
 ```
+
+Use `bun run test` rather than a hand-typed `bun test` list: it includes
+`./.github`, which bun would skip without the `./`.
 
 The last one needs `bunx playwright install chromium webkit` first.
 
@@ -159,7 +159,7 @@ copy plugins into the test configuration. Use the same configuration root when
 stopping the named session.
 
 ```sh
-test_config_root=$(mktemp -d)
+test_config_root=$(mktemp -d /tmp/shahi-live.XXXXXX)
 XDG_CONFIG_HOME="$test_config_root" herdr --session shahi-ci server &
 export HERDR_SOCKET_PATH="$test_config_root/herdr/sessions/shahi-ci/herdr.sock"
 SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
@@ -167,13 +167,15 @@ XDG_CONFIG_HOME="$test_config_root" herdr session stop shahi-ci
 unset HERDR_SOCKET_PATH
 ```
 
-Two of the unit tests — the `installedAgents` detections in
-`server/lib/agents.test.ts` — can fail here with agents resolving to nothing.
-Measured on macOS 27.0 with bun 1.3.14: under `bun test` a spawned child's
-writes to its stdout pipe fail (the same child writes files fine, and the same
-spawn under `bun -e` works), and it comes and goes across minutes. That is a
-bun test-runner fault, not a detection bug; the same tests pass on the Ubuntu
-box and in CI.
+Keep the root under `/tmp`. A plain `mktemp -d` here lands under `$TMPDIR`
+(`/var/folders/…/T/`), which makes the session's `herdr-client.sock` path 105
+bytes — over the 104 a macOS socket address holds — and herdr refuses to start.
+
+The `installedAgents` detections in `server/lib/agents.test.ts` used to fail
+here intermittently with agents resolving to nothing: under bun's test runner a
+spawned child's stdout pipe could be handed an invalid descriptor. Discovery
+now has the shell write to a private temporary file instead, and the whole
+file passed on this Mac with bun 1.4.0 on 2026-09-23.
 
 ## What not to do
 
@@ -186,7 +188,10 @@ is exactly where it would happen again.
 `e2e/native/read-live-conversation.yaml` is a read-only flow for an already
 paired simulator. Open a real long conversation at its latest message first.
 Pass its pane ID, final message ID, and an older message ID outside the initial
-60-message page. Choose a short older message so it can fit on screen.
+60-message page. Choose a short older message so it can fit on screen. For
+Codex and Cursor panes the message IDs are scoped to their transcript
+(`<sessionId>:codex-<row>`, `<sessionId>:cursor-<n>`); copy them from the
+current sidecar, because IDs from a sidecar before that change will not match.
 
 ```sh
 maestro --device SIMULATOR_ID test \

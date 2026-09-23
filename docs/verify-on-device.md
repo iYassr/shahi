@@ -1,8 +1,8 @@
 # Ten minutes on the actual phone
 
-The native app has Jest component/unit coverage and Maestro simulator flows,
-but neither can prove behavior that exists only in a signed binary on physical
-hardware. This checklist is the release-candidate complement to automation: it
+The native app has Jest component/unit coverage and simulator runs
+(`e2e/native/`, `mobile/uitests/`), but neither can prove behavior that exists
+only in a signed binary on physical hardware. This checklist is the release-candidate complement to automation: it
 covers APNs, camera behavior, haptics, Keychain upgrades, radio changes,
 assistive technology, and actual touch ergonomics.
 
@@ -16,9 +16,17 @@ Record the app version/build, iOS version and device model. Confirm the
 installed release contains the change being checked. Use a dedicated test
 computer/session for writes, not an existing customer conversation.
 
-**Every change needs a new build.** Updates are not delivered over the air —
-the app never calls `expo-updates` — so a JS-only fix reaches the phone the same
-way a native one does. Backgrounding and reopening changes nothing.
+**Know which JavaScript the phone is running.** The app checks Expo for a
+signed over-the-air update every time it launches (`checkAutomatically:
+ON_LOAD` in `mobile/app.json`, verified against the pinned certificate), and
+with `fallbackToCacheTimeout: 0` it does not wait for one: an update downloads
+in the background and applies on the **next cold launch**. Backgrounding and
+reopening applies nothing; force-quitting and reopening after a download does.
+So a JS-only fix can reach an installed build without a new binary, while a
+native change needs a new build with a matching runtime fingerprint
+(`docs/releases.md`). The app does not show which update it runs, so record the
+build number together with the update last published to its channel (or that
+none was), and cold-launch twice before a check that depends on a fresh fix.
 
 ## The checks
 
@@ -56,10 +64,15 @@ Find a blocked agent. The card should carry the question, the numbered options,
 and — for codex — the command it wants to run above them. If you see a bare
 "Allow?" with nothing to judge, the context lines are missing.
 
-**6. A file a tool touched opens.**
+**6. A file a tool touched opens, and can be saved.**
 In a transcript, find a tool row naming a file and tap the filename. Text should
-open in a sheet; an image should open as an image. There is deliberately no
-download button.
+open in a sheet; an image should open as an image; a PDF should render in
+PDFKit with native scrolling and zoom. **Save / Share** should open the iOS
+share sheet with the file; for a PDF, the protected temporary copy it shares
+should be gone once the sheet closes. Files up to 25 MiB arrive in 512 KiB
+ranges, and through the relay that needs a computer release newer than 0.3.6
+(earlier ones withheld the range headers, and the viewer said "The computer
+returned an incomplete file."). Check one file over the relay and one over SSH.
 
 **7. It taps back.**
 Answering a prompt, sending a message, and starting an agent should each give a

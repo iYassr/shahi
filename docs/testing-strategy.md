@@ -151,6 +151,13 @@ messages. Include:
 - multiple sessions in one project;
 - logs from macOS and Linux paths.
 
+Status, 23 September 2026: compaction now has fixtures (the Claude reader
+drops `isCompactSummary` rows, `server/lib/session-log.test.ts`), and the codex
+0.151+ `item_completed` shapes (`Reasoning`, `McpToolCall`, `FileChange`,
+`WebSearch`) have synthetic fixtures built from the key names a census of 65
+local rollouts found. They are still hand-written shapes, not the versioned,
+sanitized recordings this section asks for.
+
 Run the corpus against both the indexed/windowed reader and a deliberately
 simple reference implementation. Their normalized output must match. Unknown
 records should be counted in test diagnostics even when production safely drops

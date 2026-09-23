@@ -24,12 +24,17 @@ Building the iOS app needs a Mac — see
 behind a paid EAS plan.
 
 ```sh
-bun test shared/src server web/src plugin # unit
+bun run test                              # unit, workflow policy and dependency checks
 bun run test:e2e                          # both engines, against the stub
 bun run test:e2e --project=ios            # WebKit only — what the phone runs
 bun run build:site && bun run test:hosted && bun run test:pwa # public PWA, encrypted fixtures and real cache
-bun run build:web && systemctl --user restart shahi   # deploy
+bun run build:web                         # what a development server serves
 ```
+
+`bun run test` is the canonical unit command (package.json's `test`); it also
+runs `./.github`, the workflow-policy and herdr-installer tests. The `./` is
+load-bearing: `bun test` skips dot-directories unless a path names one, so
+`.github` without it silently matches nothing.
 
 **Rebuild after touching `web/`.** Development servers serve `web/dist`.
 Managed production services serve the web assets inside their approved release;
@@ -66,8 +71,9 @@ them.
 The docs are wrong in places. These were established against herdr 0.7.5,
 protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
 an afternoon. They are now also asserted by `server/lib/herdr-live.test.ts`
-against a real herdr on every push (see Testing), so the next drift is a red
-job rather than a report from a phone.
+against a real herdr on every push — 0.9.0 and 0.9.1, protocol 22, and
+whatever is current (see Testing) — so the next drift is a red job rather than
+a report from a phone.
 
 - **One response per connection.** The socket API closes after answering, though
   the docs describe persistent connections. Open one socket per RPC. The single
@@ -92,7 +98,11 @@ job rather than a report from a phone.
 - **Key names are strict.** `shift+tab` is accepted, `S-Tab` is not — it answers
   `invalid_key`. Every name in the key bar has been sent to a live pane.
 - **Agent detection needs an interactive shell.** `bash -lc` found 2 of 4;
-  `bash -ic` finds 4, because `~/.bashrc` is where nvm and friends live.
+  `bash -ic` finds 4, because `~/.bashrc` is where nvm and friends live. A
+  slow profile must not freeze the sidecar, so discovery is asynchronous
+  (`Bun.spawn`) with a 10s timeout that SIGKILLs the shell (an interactive
+  shell ignores SIGTERM); callers that arrive together share one shell, and a
+  killed shell's empty answer is not cached.
 - **`agent.start` races the shell it needs.** The pane exists before its shell
   does, so starting immediately fails with `agent_pane_busy`. The server owns
   the retry (`startAgentInTab`), and clients call one route.
@@ -105,6 +115,15 @@ job rather than a report from a phone.
   `pane.send_text`, 200ms, Enter — and falls back to it if herdr answers
   `agent_blocked` under a stale status. The 200ms is measured: codex's composer
   drops Enter that arrives too soon after pasted text (150ms sufficed).
+  Before typing at an agent that way, `prompt.ts` reads the visible screen: if
+  the prompt parser finds a menu whose highlighted row is not a text field,
+  nothing is typed and `/api/panes/:id/prompt` answers 409 `prompt_open`.
+  Measured on Claude Code 2.1.280 / herdr 0.9.1 (2026-09-23): at the Bash
+  permission menu with the cursor on `1. Yes`, typing "no" then Enter ran the
+  command. The text-field rows are `Type something.` (the question tool) and
+  `Tell Claude what to change` (plan approval): typed text replaces their
+  label and Enter submits it, so those are still typed. `No, and tell Claude
+  what to do differently` ignores typing. Shells are unaffected.
 - **Claude Code's folder-trust question is an unnumbered menu, and its
   default quits.** `❯ No, exit` over `Yes, I trust this folder`, no digits,
   `Enter to confirm` beneath. Measured on a live pane: a digit does nothing
@@ -112,7 +131,15 @@ job rather than a report from a phone.
   cursor; several keys in one `pane.send_keys` land in order; and herdr reports
   the pane `unknown` for a few seconds after `agent.start` before `blocked`.
   The parser anchors this shape on the confirm hint, and the server walks the
-  cursor to answer it (`answer.ts`).
+  cursor to answer it (`answer.ts`). A menu read during that `unknown` window
+  is kept, and the poller asks herdr's status again on an unchanged screen, so
+  the card gains its buttons once herdr says `blocked`; a static menu never
+  changes the hash that would otherwise trigger a re-parse.
+- **The plugin CLI, measured on 0.9.1.** `herdr plugin list --json` and
+  `herdr plugin config-dir <id>` read the registry and work without a server;
+  `config-dir` resolves for any id, installed or not. `disable`, `enable` and
+  `uninstall` need a running server; `disable` leaves the entry with
+  `enabled: false`, and `uninstall` drops it.
 
 ## Decisions worth not relitigating
 
@@ -124,6 +151,10 @@ SessionStart hook that reports one. Without it the reader falls back to asking
 `/proc` what file the codex process has open, and never guesses from the working directory: a new session must not show
 another session’s transcript. On macOS, `lsof` supplies the same exact process-file lookup; installing the
 Codex integration also keeps transcripts available after the process exits.
+The process-file lookup answers only when the codex process has exactly one
+rollout open. With more than one — subagent threads, or a thread still loaded
+after `/new` — there is no transcript until herdr reports a session id, which
+is the same refusal to guess.
 
 Reading those files is what makes a phone-shaped conversation possible at all —
 terminal text arrives pre-wrapped at 146 columns and cannot be reflowed. The
@@ -132,12 +163,32 @@ terminal is still there, on the Screen tab, for when you need the real screen.
 **Unknown shapes are dropped, never guessed.** The codex reader renders a
 fixed set of shapes and nothing else: conversation, reasoning, tool calls, MCP
 and web-search activity, and native `apply_patch` edits — an unrecognised type
-renders nothing rather than something invented. The Claude reader's system-note
-handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`) for the same reason:
-`away_summary` and `model_refusal_fallback` carry text the person saw, every
-other `system` subtype is chrome and stays dropped. Same for the prompt parser:
-no confident parse means the raw terminal and a free-text box, which is a far
-better failure than answer buttons for a question nobody asked.
+renders nothing rather than something invented. Since codex 0.151, reasoning,
+MCP calls, native edits and web searches arrive only as `item_completed` items
+(`Reasoning`, `McpToolCall`, `FileChange`, `WebSearch`); the legacy events are
+still read for old rollouts. The `exec` row that wraps a native edit or MCP
+call deliberately stays beside the item: items carry no call id to join on,
+and a failed patch emits no `FileChange`, so the exec row is the only record of
+that failure. Other item types (`CommandExecution`, `ImageView`,
+`ContextCompaction`, anything new) stay dropped. Codex user messages that are
+really `<task-notification>` reports, `<send_user_message_question_reply>`
+answers, or Claude Code's command and `!cmd` tags are unwrapped. The Claude
+reader's system-note handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`)
+for the same reason: `away_summary` and `model_refusal_fallback` carry text the
+person saw, every other `system` subtype is chrome and stays dropped. User rows
+flagged `isCompactSummary` — the 14–19KB handoff Claude Code writes after
+`/compact` — are dropped like `isMeta` rows; `<bash-input>` renders as
+`! <cmd>`, and `<bash-stdout>`/`<bash-stderr>` as its output, with no message
+when nothing was printed. Same for the prompt parser: no confident parse means
+the raw terminal and a free-text box, which is a far better failure than answer
+buttons for a question nobody asked.
+
+Claude Code permission dialogs put the tool and command above a generic
+question. When the question sits directly on the options, the prompt's context
+is the dialog's block between its full-width top rule (20 or more `─`) and the
+question, in screen order, one entry per paragraph, keeping line breaks and
+relative indentation; with no rule on screen there is no context.
+`AskUserQuestion` cards carry their header row (`☐ Colour`) as context.
 
 **The prompt parser requires exactly one cursor.** An agent writing a numbered
 list in prose is common; a rendered menu always has its cursor on exactly one
@@ -146,18 +197,25 @@ menu needs more: rows whose labels line up, directly above an `Enter to
 confirm` hint — the `❯` glyph alone is the shell's echo and the composer.
 
 **A prompt is answered by the server, against a fresh read of the screen.**
-Both clients post the option they showed (index and label) to `/answer`; the
-server re-reads the pane, re-parses, and only if the same option is still on
-offer presses the keys — the digit for a numbered menu, cursor moves and Enter
-for an unnumbered one. The client's copy of the screen can be seconds old, a
-move computed from a stale cursor lands on the wrong row, and the trust menu's
-wrong row exits the agent. A 409 with `prompt_gone` or `prompt_changed` is the
-answer when the screen moved on; nothing is pressed.
+Both clients post the option they showed — index, label, and the question and
+context it sat under — to `/answer`; the server re-reads the pane, re-parses,
+and only if all of them still match presses the keys — the digit for a
+numbered menu, cursor moves and Enter for an unnumbered one. The client's copy
+of the screen can be seconds old, a move computed from a stale cursor lands on
+the wrong row, and the trust menu's wrong row exits the agent. The question
+and context are compared because index and label are not enough: every Claude
+permission offers "1. Yes". An older client that sends only index and label is
+still answered on those two. A 409 with `prompt_gone` or `prompt_changed` is
+the answer when the screen moved on; nothing is pressed.
 
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
-the loopback listener plus the passcode, or possession of a paired device's
-secret over the encrypted relay. Missing passcode configuration and non-loopback
+the loopback listener — the bind, and a `Host` allowlist that refuses anything
+but `127.0.0.1`, `localhost` or `[::1]` before routing, so a DNS-rebinding page
+cannot reach it — plus the passcode, or possession of a paired device's secret
+over the encrypted relay. An owner's own reverse proxy (`tailscale serve` for
+Web Push) is let through only by naming it in `SHAHI_ALLOWED_HOSTS`, and a
+malformed entry stops startup. Missing passcode configuration and non-loopback
 binds prevent startup. Given that, file reads are scoped
 to `$HOME` and the OS temp directory (`tmpdir()`, which on macOS is
 `/var/folders/…` and not `/tmp`) for tidiness rather than security.
@@ -185,8 +243,12 @@ request carrying `x-shahi-api`, which every app request does.
 **The app and the sidecar negotiate a contract version.** `SHAHI_API_VERSION`
 in `shared/` is the number; `GET /api/meta` (unauthenticated) says what the
 server speaks, every request carries `x-shahi-api`, and a mismatch is a 426
-whose text says which side to update. Bump the number when a route or payload
-changes in a way an older client would misread — not for additions.
+whose text says which side to update. Both clients map a 426 to
+`IncompatibleServerError`: the web client shows "Update needed" with the
+server's words and stops its live stream while that notice is up, as the native
+app does, and its pane view shows the words instead of retrying. Bump the
+number when a route or payload changes in a way an older client would
+misread — not for additions.
 
 **The plugin's startup hook installs a service; it is not the service.**
 herdr's `[[startup]]` commands are one-shot by contract — "not supervised
@@ -201,22 +263,36 @@ key, because a fresh install that ended at "no address to give a phone yet"
 was the whole onboarding problem: with the relay the first QR works from
 anywhere. The default is in code, not written to the user's file — on disk it
 would be every install's trust anchor for life, and the relay could never
-move. `RELAY_URL=` empty means direct-only. herdr 0.8.2 has no menu for plugin
-actions (the CLI and a bound key are the ways in) and its notifications are
-off by default, so the `pair` popup runs the setup itself when the service is
-missing: "install, then pair" is the whole flow and the first run's output is
-on a screen a person is looking at. `herdr notification show` is sent too,
-without the passcode digits — a toast is every attached client.
-`plugin/bun.sh` installs bun during `herdr plugin install` only, and the
-`uninstall` action does the whole uninstall, service first, then
-`herdr plugin uninstall`.
+move. `RELAY_URL=` empty means direct-only. herdr 0.8.2, where this was
+measured, had no menu for plugin actions (the CLI and a bound key are the ways
+in), herdr's notifications are off by default, and `herdr plugin install`
+cannot run the startup hook (build commands get no plugin context), so the
+`pair` popup runs the setup itself when the service is missing: "install, then
+pair" is the whole flow and the first run's output is on a screen a person is
+looking at. herdr closes a popup the moment its command exits, so the popup
+holds everything it printed until Enter — the passcode and the lingering
+warning before the QR, and any failure before it closes. `herdr notification
+show` is sent too, without the passcode digits — a toast is every attached
+client — and a startup hook that fails is toasted as well, because herdr
+ignores its exit status. A lost passcode is replaced by the `reset-passcode`
+action, which prints the new one once to the plugin log. `plugin/bun.sh`
+installs bun during `herdr plugin install` only. herdr has no uninstall or
+disable hook, and the service no longer needs the checkout it deletes, so the
+manager asks herdr every 30 seconds whether the plugin is still installed and
+enabled for the configuration root it was installed from, and on a "no"
+confirmed five seconds later removes its own service. Anything short of a
+clear answer leaves it running. The `uninstall` action remains the immediate
+path: service first, then `herdr plugin uninstall`.
 
 **A phone is introduced by a code, and can be revoked.** `bun run
 server/scripts/pair.ts` prints a single-use, ten-minute code as a QR; the app
 scans it, checks the server's identity against the code, and receives a
 session bound to a per-device row that Settings can revoke — immediately, on
-the next request and on the open socket. The passcode stays as the fallback
-and is not a device. See `docs/pairing.md`. The security posture of the whole
+the next request and on the open socket, and a phone that was offline is told
+on its next relay connection by a sealed `bye` keyed from the revoked row's
+secret. That is why revoked rows keep their secrets; never delete one without
+replacing that mechanism. The passcode stays as the fallback and is not a
+device. See `docs/pairing.md`. The security posture of the whole
 surface, what was fixed and what is deferred to whom, is in
 `docs/security-review.md`.
 
@@ -264,7 +340,11 @@ pane the server watches that pane's transcript file and sends `log_changed`
 (size only, no content) the moment it grows; the reader fetches its tail then.
 The 2.5s poll stays as the backstop for a dropped socket or a missed file
 event. `fs.watch` alone is not enough — it can miss — so a 1s size check backs
-it (`transcript-watch.ts`).
+it (`transcript-watch.ts`). The watched pane's transcript path is looked up
+again every 3s and the watcher moves when it changes — after `/clear`, a new
+codex or Cursor session, or a codex process exit — and the move is pushed as
+`log_changed`. While no file is found yet, frames trigger an immediate lookup;
+a lookup that finds nothing keeps the current watch.
 
 **The mirror is re-snapshotted every 3s.** Events alone drift: `pane.updated`
 does not report status transitions, and 18 of 18 panes were wrong after a few
@@ -316,16 +396,29 @@ Break one of these and the app regresses quietly, which is the worst kind.
 would show agent states that are hours old, and a stale agent list is worse than
 an honest failure. Assets are hashed, so they are cached forever; the HTML is
 network-first with a 1.5s grace, because cache-first means every deploy takes two
-launches to appear. It precaches the HTML *and* the bundle that HTML names —
-without the second part, the first visit cached a page whose JavaScript was not
-there, and going offline produced a blank screen.
+launches to appear. Normal launches were in fact served cache-first from
+`dca0e80` until the pre-public-release review, contradicting this paragraph;
+they are network-first again. The cache is named after its release: a hash of
+every built file, which `web/sw-build.ts` stamps into `sw.js` at build time, so
+there is no hand-bumped version constant to forget. Each release precaches
+every file it ships, the lazily loaded terminal chunk, the PDF viewer and the
+pdf.js worker included (about 2.7 MB uncompressed), because the first visit
+once cached a page whose JavaScript was not there, and a page left open across
+a deploy could not open the terminal or a PDF. Activation keeps the newest
+earlier complete release, for pages still running it, and deletes older ones,
+so at most two are cached. A response of type `text/html` is never stored as
+an asset: a sidecar answers a missing path with the app's HTML and a 200.
 
 **The app compares its own bundle against the served one** whenever it comes to
 the foreground, and reloads if they differ when it is safe to do so. Drafts,
-attachments, pending sends/uploads and open dialogs defer the reload. A home-screen app is resumed far more
+attachments, pending or in-flight sends and uploads, and open dialogs defer the
+reload — in every conversation held in the draft store, not only the one on
+screen, which is all it checked until the pre-public-release review. A home-screen app is resumed far more
 often than launched — iOS keeps one alive for days — so without this a fix can go
 unseen indefinitely, and every conversation turns into "are you sure you
-reloaded?".
+reloaded?". A lazily loaded chunk that fails to load shows an in-place "could
+not be loaded" notice with Try again; if the server names a newer bundle, the
+update banner appears instead of the error screen.
 
 **The reader reads a window, not a file.** A transcript is indexed once by the
 byte offset of the line that produced each message — two numbers per message
@@ -375,8 +468,10 @@ Stated plainly, because a vague gaps list is worse than none.
   invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
 - **The native app's automated coverage is thin but no longer zero.** What
-  `bun run test:mobile` and `.maestro/` cover is the answer — the counts used
-  to be written here and rotted within weeks, so they are not any more. The reader is now
+  `bun run test:mobile`, the simulator runs in `e2e/native/` (paired through
+  the encrypted hosted fixture) and the XCUITest harness in `mobile/uitests/`
+  cover is the answer — the counts used to be written here and rotted within
+  weeks, so they are not any more. None of the simulator runs is in CI. The reader is now
   proven by `pane.test.tsx` — echo, working state, coalesced refresh,
   concurrent fetches, sign-out on 401, the restore guard — each checked by
   mutation: dropping the code fails exactly the test named for it. `web/` has a broader browser suite,
@@ -386,10 +481,14 @@ Stated plainly, because a vague gaps list is worse than none.
   `expo-notifications` with an inline `require` rather than `import()`, which
   Metro defers identically and Jest can actually execute.
 - **The refresh problem is not root-caused.** The owner reports needing to
-  refresh the page; two plausible causes were fixed (a render crash with no
-  boundary, and a WebKit-only crash on `Notification`) and neither is confirmed
-  to be *the* one. If it recurs, what matters is which of three shapes it takes —
-  blank, frozen-with-stale-data, or claiming LIVE while not updating.
+  refresh the page; four plausible causes were fixed (a render crash with no
+  boundary, a WebKit-only crash on `Notification`, a Screen tab left blank when
+  a pane's real size arrived after its first frame — the terminal is now
+  resized in place and repainted — and a locally served app that drew nothing
+  for up to 15s while its first auth check was pending, which now says
+  "Opening Shahi…") and none is confirmed to be *the* one. If it recurs, what
+  matters is which of three shapes it takes — blank, frozen-with-stale-data, or
+  claiming LIVE while not updating.
 - **The plugin has been installed on five Linux distributions, by hand, once.**
   OrbStack VMs, 2026-09-04. Ubuntu 26.04 by `herdr plugin link`; Debian 12,
   Fedora 44 and Arch by the documented `herdr plugin install iYassr/shahi`.
@@ -406,10 +505,14 @@ Stated plainly, because a vague gaps list is worse than none.
   not a missing dependency but a different world. Everything else works there:
   the sidecar runs on musl, attaches to herdr, serves `/api/meta` and reaches
   the relay, all verified by running the unit's own ExecStart by hand. Only
-  supervision is missing, and `serviceFor` now says exactly that instead of
-  failing with `Executable not found in $PATH: "systemctl"`. An OpenRC branch
-  would not be a port of the user unit — OpenRC has no per-user services — so
-  it is deliberately not written.
+  supervision is missing. `serviceFor` returns an unsupervised service
+  instead of failing with `Executable not found in $PATH: "systemctl"`, and
+  setup still writes the secrets and stages the approved release, then hands
+  over the exact command a unit would have run, for the box's own init to keep
+  running; `status` and `pair` work. It used to refuse before any of that,
+  which left every verb, `status` included, failing before a secret existed.
+  An OpenRC branch would not be a port of the user unit — OpenRC has no
+  per-user services — so it is deliberately not written.
 
   None of this is automated, which is the argument for a CI job: both bugs were
   a first install away, and nobody will remember to do it by hand twice.
@@ -418,15 +521,26 @@ Stated plainly, because a vague gaps list is worse than none.
   owner's real transcripts (79 Claude sessions, 23 codex rollouts) was
   enumerated and classified rendered-or-dropped; the dropped-but-real buckets
   were closed (codex reasoning, MCP, web search, native `apply_patch`; Claude
-  model switches and `away_summary`/`model_refusal_fallback` notes). What
-  remains unproven is a codex tool shape that never appeared in those 23
-  rollouts — it degrades to dropped, never guessed, so the failure is silence,
-  not invention. Re-run the census (`server/lib/*-log.test.ts` document each
-  shape) when a new agent version or a new tool lands.
+  model switches and `away_summary`/`model_refusal_fallback` notes). Codex
+  0.151 then moved all four of those codex shapes into `item_completed` items,
+  and the reader dropped them silently until a second census in September
+  2026: 65 rollouts, codex 0.151 to 0.155, with 7,397 `Reasoning`, 1,258
+  `McpToolCall`, 558 `FileChange` and 8 `WebSearch` items and not one legacy
+  event. Both forms are read now. What remains unproven is a codex tool shape
+  that never appeared in those rollouts — it degrades to dropped, never
+  guessed, so the failure is silence, not invention. Re-run the census
+  (`server/lib/*-log.test.ts` document each shape) when a new agent version or
+  a new tool lands; the 0.151 change is what skipping it costs.
 - **Codex transcript reads are now indexed.** Byte ranges and matching tool
   output ranges are indexed incrementally; unchanged tail requests parse only
   their window. `codex-index.test.ts` covers append/truncate/replacement,
-  partial UTF-8 records, pagination and bounded LRU retention.
+  partial UTF-8 records, pagination and bounded LRU retention. The dashboard's
+  per-pane summaries (preview and `lastMessageAt`) are cached by transcript
+  path, inode, size and mtime, and pruned each round to the panes that exist,
+  so an unchanged transcript costs one `stat` per round and never touches the
+  readers' 64-entry index LRUs; a session with more than 64 agent panes used to
+  re-parse transcripts every 3s. The LRUs still bound the readers' own
+  indexes.
 - **The relay has no CI of its own beyond `bun test relay` under
   `wrangler dev`.** The box↔relay↔phone loop was proven by hand against the
   deployed Worker (a fake phone in `bun`, then the app on a simulator paired
@@ -483,12 +597,22 @@ Traces from a failing run are uploaded as an artifact.
 sidecar against a headless herdr: the protocol pin, snapshot shapes, the
 mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back, every key-bar name, the event
-stream, and the HTTP routes including the 426 gate. CI runs it twice per push
-— against `v0.9.0`, the minimum supported release, pinned by tag, and against
-whatever herdr's own installer hands out today — and nightly against the newest
-prerelease (`herdr-preview.yml`), which files an issue rather than failing a
-push. It writes only into a workspace it creates and closes, on a herdr you
-point it at explicitly — and that herdr must be a **named session**:
+stream, and the HTTP routes including the 426 gate. CI runs it three times per
+push — against `v0.9.0`, the minimum supported release, and `v0.9.1`, both
+pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
+against whatever herdr's own installer hands out today, read from
+`herdr.dev/latest.json` (version and checksum) and cross-checked against
+GitHub — and nightly against the newest prerelease (`herdr-preview.yml`),
+checked only against its own release's digest. Every herdr in CI is installed
+by `.github/scripts/install-herdr.sh`, which refuses a binary whose bytes do not
+match GitHub's digest for the asset (and the pinned one, when given), and never
+runs it; `install.sh` is no longer piped into `sh`. A failed nightly files an
+issue rather than failing a push, and that issue is filed by a separate
+`report` job that has only `issues: write`, no checkout, and runs nothing but
+`gh`; the job that runs the preview is `contents: read`. Every checkout in every
+workflow sets `persist-credentials: false`, which `.github/workflows.test.ts`
+enforces. The live suite writes only into a workspace it creates and closes, on
+a herdr you point it at explicitly — and that herdr must be a **named session**:
 
 A named session isolates panes, **not installed startup hooks**. Always use a
 fresh `XDG_CONFIG_HOME` as well, so no plugins are installed in the test
@@ -499,13 +623,18 @@ copy plugins into the test configuration. Use the same configuration root when
 stopping the named session.
 
 ```sh
-test_config_root=$(mktemp -d)
+test_config_root=$(mktemp -d /tmp/shahi-live.XXXXXX)
 XDG_CONFIG_HOME="$test_config_root" herdr --session shahi-ci server &
 export HERDR_SOCKET_PATH="$test_config_root/herdr/sessions/shahi-ci/herdr.sock"
 SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
 XDG_CONFIG_HOME="$test_config_root" herdr session stop shahi-ci
 unset HERDR_SOCKET_PATH
 ```
+
+The root is short on purpose. A plain `mktemp -d` on macOS lands under
+`$TMPDIR` (`/var/folders/…/T/`), which makes the session's
+`herdr-client.sock` path 105 bytes, over the 104 a macOS socket address holds,
+and herdr refuses to start.
 
 `HERDR_SOCKET_PATH=/tmp/x.sock herdr server` is not isolation, and this was
 learned the expensive way: a second server on a new socket restores the
@@ -517,6 +646,11 @@ directory under `~/.config/herdr/sessions/` and starts with nothing in it.
 
 A newer stable protocol fails the pinned job on purpose: regenerate
 (`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.
+A pinned tag needs its digest beside it in the herdr matrix's `include`:
+`gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
+
+The hosted and PWA Playwright configs hard-code ports 7472, 7572 and 7672;
+something else listening there fails those suites.
 
 ## The two clients
 
@@ -629,9 +763,16 @@ during the pending send; web preserves subsequent edits.
 share the HTTP file-work admission limit and bulk-pacing rules. Transfers are
 owned by a device/session, journal offsets before acknowledgment, reject
 conflicting retries and finalize once after SHA-256 verification. Never replay
-uncertain chat writes. One active transfer per device/two per computer, one-hour
-expiry and periodic partial cleanup bound storage; completed receipts also have
-a count cap. Keep partials outside projects. The shared helper reads bounded
+uncertain chat writes. One active transfer per device/two per computer bounds
+storage. Clients mint a fresh id for every upload and run one at a time, so
+beginning a transfer discards the same device's or session's unfinished,
+non-finalizing one — an app kill or a lost cancel used to block that phone for
+the rest of the hour — and the periodic sweep discards any unfinished transfer
+idle for 10 minutes; one hour remains the hard cap. Completed receipts also
+have a count cap. Keep partials outside projects. Multipart uploads are
+written 0600 in a 0700 directory (chmodded if older), and the multipart route
+checks authorization again after the body arrives, since revocation can land
+while a slow body is still coming. The shared helper reads bounded
 ranges on both clients and supports progress/cancellation. Process termination
 requires file reselection. Old computers retain 761 KiB relay uploads; SSH
 remains 32 MiB. Do not raise rates based on a small-message load test.
@@ -647,6 +788,18 @@ A failed refresh must keep cached conversation messages visible. Connectivity
 changes preserve the computer API identity and its drafts; recovery never sends
 a draft automatically. See `docs/mobile-recovery-2026-09-22.md`.
 
+Reader state also belongs to its transcript. A herdr pane outlives the
+conversation in it, and Codex and Cursor number messages by position, so every
+transcript has a message 0 and a merge by id showed two sessions as one
+thread. Their message ids are now `<sessionId>:codex-<row>` and
+`<sessionId>:cursor-<n>`, so ids never match across transcripts, and
+`/session`'s `sessionId` changes whenever the pane's transcript does; clients
+may compare it. Every open Codex or Cursor pane resets its cached page once
+when an updated sidecar first answers. The web reader replaces the view — not
+merges it — when a page's `sessionId` or path differs from the one on screen,
+resetting the history offset, the unseen count and the scroll place, and
+discards a late "Load earlier" page from the previous transcript.
+
 For dated evidence and remaining physical-device gaps, see
 `docs/customer-journeys-2026-09-18.md` and the reports linked there. Keep test
 counts in dated reports, not permanent development instructions.
@@ -654,9 +807,17 @@ counts in dated reports, not permanent development instructions.
 ## Review fixes, September 2026
 
 Prompts and agent starts carry client-generated operation IDs. The sidecar
-retains the in-flight promise and its outcome for ten minutes, including a
-failure whose write may already have reached herdr. Retrying an uncertain
-operation must reuse its ID; a new ID means a new action. This is process-local
+retains the in-flight promise and its outcome for ten minutes: successes, and
+failures whose write may already have reached herdr. A failure that provably
+reached nothing is not kept, so a retry under the same ID runs again
+(`server/lib/herdr-delivery.ts`): a socket that would not open (`ENOENT`,
+`ECONNREFUSED`, `EACCES`, `ENOTSOCK`), or a herdr refusal made before it acts
+(`agent_blocked`, `agent_not_ready`, `agent_not_found`, `pane_not_found`,
+`invalid_*`). Read-only herdr calls never count as delivery, so a prompt
+refused with `prompt_open` after only reading the screen can be retried once
+the menu is gone. Anything else counts as delivered: a replayed error is the
+safe mistake, a repeated write is not. Retrying an uncertain operation must
+reuse its ID; a new ID means a new action. This is process-local
 retry protection, not a claim of exactly-once execution across a server crash.
 Agent startup uses the shared 325-second client deadline and disables Bun's
 per-request idle timeout only after authentication and validation.
@@ -708,6 +869,9 @@ ID and internal name stable on uncertain retries; display labels remain separate
 Cursor CLI Read mode uses its exact reported session or the pane process's open
 `store.db` to find JSONL under `.cursor/projects/*/agent-transcripts/`. Never
 select a transcript by folder recency. Missing recorded tool outputs are explicit.
+Cursor user turns show only their `<user_query>` text; `<timestamp>`,
+`<dynamic_tools>` and other wrapped context are dropped, because every user
+bubble had shown them as something the person typed.
 
 PDFs use local PDFKit on iOS and a lazily loaded PDF.js canvas renderer on the
 web. Never upload documents to a third-party viewer. iOS shares a protected

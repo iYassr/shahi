@@ -46,20 +46,56 @@ Stable and Beta catalogs are signed with Ed25519. Public keys are pinned in
 `plugin/releases/trust.ts`; private keys belong outside the repository and in
 the GitHub `releases` environment. Channel catalogs are the only mutable release
 assets (`shahi-stable/catalog.json`, `shahi-beta/catalog.json`). Versioned service
-assets are never overwritten. Catalogs expire after 120 days and retain all
-still-supported releases; renew a catalog before expiry, even without a new
-package. Network errors, expiry or invalid signatures leave the running release
-alone and explain why update checking failed. Per-channel sequence numbers
-prevent replay after a newer catalog has been seen.
+assets are never overwritten. Catalogs expire after 120 days. Network errors,
+expiry or invalid signatures leave the running release alone and explain why
+update checking failed. Per-channel sequence numbers prevent replay after a
+newer catalog has been seen.
 
-To release: bump the definition and plugin version, run the release matrix, then
+Renewal re-signs the same approved releases with a later expiry and a higher
+sequence, and needs no version bump or test run:
+
+```sh
+bun plugin/releases/sign.ts renew stable|beta <key.pem> <out.json> <previous.json> [--retire v1,v2]
+bun plugin/releases/sign.ts due stable|beta <catalog.json> <days>   # prints true when it expires within <days>
+```
+
+`.github/workflows/catalog-expiry.yml` runs it every Monday at 05:23 UTC for
+any channel with fewer than 30 days left, and files a "Release catalog renewal
+failed" issue when it cannot. Dispatch it by hand to renew now, or to withdraw
+versions with `retire` (each must be in every channel chosen), which re-signs
+at once. GitHub pauses scheduled workflows after 60 days without repository
+activity, so keep it enabled. Nothing watched the date before the
+pre-public-release review, and the first catalogs would have lapsed on
+2027-01-18, stopping every fresh install in bootstrap.
+
+Signing keeps every release some computer could still select and drops entries
+a newer release supersedes: same data schema, all of its platforms and herdr
+profiles, no newer bun required and no higher `api.min`. `--retire` withdraws a
+version explicitly. More than 50 selectable releases fails signing with its own
+message rather than producing a catalog every computer would refuse.
+
+The messages a computer shows for a bad catalog name the problem: "Release
+catalog is invalid.", "Release catalog is older than one this computer already
+accepted.", "Release catalog is dated in the future. Check this computer's
+clock.", "Shahi's signed release catalog expired on <date> and has to be
+renewed by Shahi. An installed release keeps running.", and "Release catalog
+lists N releases, more than the 50 a computer accepts." A release that does
+not fit the machine is refused with a reason naming the platform, bun or herdr
+versions on both sides.
+
+To release: bump `plugin/releases/release.json`, `herdr-plugin.toml` and
+`server/package.json` to the same version (a test enforces it; `/api/meta`'s
+`serverVersion` and `shahi.status` report it), run the release matrix, then
 merge that tested commit to `master`, then run **Approve Shahi release** there.
 The release environment permits only the `master` branch; signing jobs also
-check that ref. Third-party build actions are pinned to full commit hashes and
-the signing jobs do not persist checkout credentials. Publish to Beta first. After
-observing successful upgrades and reconnects, promote the same immutable package
-to Stable. Never replace an existing version with a rebuilt archive. The workflow
-retains older compatible entries when the latest needs a different herdr or Bun.
+check that ref. Third-party build actions are pinned to full commit hashes, and
+every checkout in every workflow sets `persist-credentials: false`. Publish to
+Beta first, which stays a GitHub prerelease. After observing successful
+upgrades and reconnects, promote the same immutable package to Stable; a Stable
+approval also marks the GitHub release Latest (`--prerelease=false --latest`).
+Stable approvals before that change left GitHub's Latest on v0.3.1; the next
+one corrects it, or `gh release edit <tag> --latest` does by hand. Never
+replace an existing version with a rebuilt archive.
 
 ## Update and recovery
 
@@ -102,6 +138,16 @@ stop a bad one. Certificate rotation requires a new trusted binary.
 The **Signed Shahi phone update** workflow requires an Expo token, the private
 signing key, and Expo Production or Enterprise. As checked on 2026-09-09, this
 project is on Free: signed publication is unavailable until that account change.
+While it holds the key, the workflow runs eas-cli 23.2.0 from
+`.github/eas/bun.lock`, a lockfile frozen with integrity hashes and installed
+in `$RUNNER_TEMP`, and unsets the key from the environment once it has written
+it to a 0600 file, so the build eas-cli spawns does not inherit it. The lockfile
+is not a workspace dependency: in the app's tree eas-cli's older
+`@expo/config` would be hoisted over SDK 57's and change what the phone is
+built from, and inside the checkout Metro would crawl it. To move eas-cli, edit
+`.github/eas/package.json` and regenerate its lockfile with the CI bun (1.3.13)
+in a directory outside the checkout, or merge the Dependabot pull request for
+`/.github/eas`.
 The certificate is configured in new binaries; unsigned OTA is never accepted.
 See [Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/),
 [code signing](https://docs.expo.dev/eas-update/code-signing/) and
@@ -121,7 +167,9 @@ digest and exercised in an isolated named session. The live adapter suite passed
 shell-submit timeout passed on rerun with the same binary and configuration.
 Protocol 22 is unchanged. The schema adds only `pane.link.resolve` and its
 response; existing calls retain their shapes. Generated types include the new
-schema. CI pins both 0.9.0 and 0.9.1 and also tests the current stable release.
+schema. CI pins both 0.9.0 and 0.9.1, by tag and by the SHA-256 digest of
+their `herdr-linux-x86_64` asset, and also tests the current stable release,
+checked against `herdr.dev/latest.json` and GitHub's digest.
 
 These source changes need a new approved Shahi service release before managed
 installations accept herdr 0.9.1. Publishing the landing page alone does not

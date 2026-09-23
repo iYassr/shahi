@@ -26,9 +26,13 @@ native. See [CLAUDE.md](CLAUDE.md) for the supported API contract.
 
 ```sh
 bun install
-bun run test                              # unit and dependency checks
+bun run test                              # unit, workflow-policy and dependency checks
 bun run typecheck                          # every workspace, incl. the app
 ```
+
+Use `bun run test` rather than a hand-written `bun test …`: it also runs
+`./.github`, and bun skips a dot-directory unless a path names it with the
+`./`, so `.github` alone silently runs nothing.
 
 The app needs a Mac to build for iOS. See `docs/on-a-mac.md` and, for the SSH
 module, `docs/ssh.md`.
@@ -51,13 +55,18 @@ A few principles from `CLAUDE.md`, because PRs are reviewed against them:
 
 ## Tests
 
-- Unit and dependency checks: `bun run test`.
+- Unit, workflow-policy and dependency checks: `bun run test`.
 - Native component tests: `bun run test:mobile`.
-- Relay: `bun run test:relay` (set `SHAHI_TEST_RELAY_PORT` if 8787 is in use).
+- Relay: `bun run test:relay`. It starts its own `wrangler dev` on 8787 and
+  fails if the port is taken; set `SHAHI_TEST_RELAY_PORT` to use another, or
+  `SHAHI_TEST_RELAY_EXTERNAL=1` to test against a relay you already run on
+  that port.
 - Browser: `bun run build:web && bun run test:e2e`.
 - Hosted client and offline/update behavior: `bun run build:site && bun run test:hosted && bun run test:pwa`.
-- Native flows: Maestro in `.maestro/` and the creation matrix in `e2e/native/`;
-  see [local iOS development](docs/on-a-mac.md).
+- Native flows, on a Mac with a simulator: the Maestro runs in `e2e/native/`,
+  which pair the app through the encrypted hosted fixture, and the XCUITest
+  harness in `mobile/uitests/`. Neither runs in CI. See
+  [local iOS development](docs/on-a-mac.md) and `mobile/uitests/README.md`.
 
 Fixture tests must never send writes to a real user session. Real-server tests
 require both a named herdr session and a fresh `XDG_CONFIG_HOME` without installed

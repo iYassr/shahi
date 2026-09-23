@@ -55,21 +55,37 @@ testers. The website signup form records requests; it does not issue invitations
 
 ### EAS submission for this project
 
-Run from `mobile/`. The production submit profile targets App Store Connect app
-`6813370698` (`app.shahi.mobile`). Signing credentials and the App Store Connect
-upload key are managed by EAS; do not commit certificates or private keys.
+The production submit profile targets App Store Connect app `6813370698`
+(`app.shahi.mobile`). Signing credentials and the App Store Connect upload key
+are managed by EAS; do not commit certificates or private keys.
+
+Run the same locked EAS CLI the signed-update workflow runs, rather than
+`bunx eas-cli` or `npx eas-cli@latest`, which resolve the CLI's whole
+dependency tree from npm at run time while it handles signing credentials.
+Install it once, from the repository root, outside the checkout (Metro crawls
+the checkout, and in the app's tree the CLI's older `@expo/config` would be
+hoisted over SDK 57's):
 
 ```sh
-bunx eas-cli build --platform ios --profile production --non-interactive --auto-submit
+eas_dir=$(mktemp -d /tmp/shahi-eas.XXXXXX)
+cp .github/eas/package.json .github/eas/bun.lock "$eas_dir/"
+(cd "$eas_dir" && bun install --frozen-lockfile)
+EAS="$eas_dir/node_modules/.bin/eas"
 ```
 
-If signing needs renewal, run `bunx eas-cli credentials --platform ios` locally
+Then run from `mobile/`:
+
+```sh
+"$EAS" build --platform ios --profile production --non-interactive --auto-submit
+```
+
+If signing needs renewal, run `"$EAS" credentials --platform ios` locally
 and authenticate directly in the terminal. If a build already exists but its
 submission failed, submit that build ID rather than creating another build:
 
 ```sh
-bunx eas-cli submit --platform ios --profile production --id BUILD_ID --non-interactive
-bunx eas-cli submit:status --platform ios --json --non-interactive
+"$EAS" submit --platform ios --profile production --id BUILD_ID --non-interactive
+"$EAS" submit:status --platform ios --json --non-interactive
 ```
 
 A scheduled submission is not a completed upload. Check EAS submission status,
@@ -81,8 +97,8 @@ Fastlane can build with the same EAS-managed signing credentials. Run from
 `mobile/`, keeping the signed archive outside the repository:
 
 ```sh
-npx --yes eas-cli@latest build --platform ios --profile production --non-interactive --local --output /tmp/shahi-release.ipa
-npx --yes eas-cli@latest submit --platform ios --profile production --non-interactive --path /tmp/shahi-release.ipa
+"$EAS" build --platform ios --profile production --non-interactive --local --output /tmp/shahi-release.ipa
+"$EAS" submit --platform ios --profile production --non-interactive --path /tmp/shahi-release.ipa
 ```
 
 Inspect the IPA's version, privacy manifest and encryption keys before the
