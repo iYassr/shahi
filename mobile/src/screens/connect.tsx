@@ -269,7 +269,7 @@ export function Connect({
         <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
           <Text style={styles.link}>Haven't set up your server yet?</Text>
         </Pressable>
-        <PrivacyLinks />
+        <PrivacyLinks licenses />
       </ScrollView>
       {/* A sheet over the form rather than in its place, so Cancel returns to
           the same scroll position with its outcome beside the Connect button.
@@ -389,7 +389,7 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
       <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
         <Text style={styles.link}>Want to use SSH?</Text>
       </Pressable>
-      <PrivacyLinks />
+      <PrivacyLinks licenses />
     </ScrollView>
   );
 }
