@@ -87,6 +87,13 @@ describe("links to files on the computer", () => {
     expect(opened).toEqual([{ path: "/Users/me/proj/src/api.ts", name: "api.ts" }]);
     await act(async () => view.unmount());
 
+    // Named after the file, so a label like `notes` or `api.ts:42` still previews.
+    opened.length = 0;
+    await act(async () => { view = create(<Markdown text="See [notes](~/notes.md) and [api.ts:42](/Users/me/proj/src/api.ts#L42)." onOpenFile={(f) => opened.push(f)} />); });
+    for (const b of view.root.findAllByType("button")) await act(async () => b.props.onClick());
+    expect(opened).toEqual([{ path: "~/notes.md", name: "notes.md" }, { path: "/Users/me/proj/src/api.ts", name: "api.ts" }]);
+    await act(async () => view.unmount());
+
     await act(async () => { view = create(<Markdown text="Edited [api.ts](/Users/me/proj/src/api.ts) today." />); });
     expect(view.root.findAllByType("button")).toHaveLength(0);
     expect(JSON.stringify(view.toJSON())).toContain("api.ts");

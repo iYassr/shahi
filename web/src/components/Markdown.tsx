@@ -57,6 +57,11 @@ export function linkTarget(raw: string): { kind: "url"; href: string } | { kind:
  * not reliably deliver taps to non-interactive elements, and there is no URL
  * to navigate to — the viewer fetches the file through the computer's API.
  */
+/**
+ * The viewer is named after the file, not the link's words: it picks the
+ * preview from the name's extension, and agents label links `notes` or
+ * `api.ts:42`, which previewed nothing on the web while native opened them.
+ */
 function ProseLink({ label, target }: { label: string; target: string }) {
   const openFile = useContext(FileAction);
   const resolved = linkTarget(target);
@@ -66,7 +71,7 @@ function ProseLink({ label, target }: { label: string; target: string }) {
   if (resolved?.kind === "file" && openFile) {
     return (
       <button type="button" className="md__a md__file" title="Open file on your computer"
-        onClick={() => openFile({ path: resolved.path, name: label })}>
+        onClick={() => openFile({ path: resolved.path, name: resolved.path.split("/").pop() || label })}>
         {label}
       </button>
     );
