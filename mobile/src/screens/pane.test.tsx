@@ -1,8 +1,8 @@
 import { clearNativeDrafts } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { FlatList, View } from "react-native";
+import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
-import type { LogBlock, LogMessage, PromptReceipt, SessionLog } from "@shahi/shared";
+import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, connection, UnauthorizedError } from "@/lib/api";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 
@@ -774,6 +774,144 @@ describe("keeping your place", () => {
     } finally {
       scrollToEnd.mockRestore();
     }
+  });
+
+  // VoiceOver's three-finger scroll, its focus moves, a hardware keyboard and
+  // the status bar all move the list without a drag. Only a drag used to count
+  // as the person's scroll, so each of these was undone (pre-release review).
+  const at = (y: number, height = 3000) => ({ nativeEvent: { contentSize: { height }, layoutMeasurement: { height: 600 }, contentOffset: { y } } });
+
+  test("a VoiceOver scroll away from a restored paragraph is not snapped back to it", async () => {
+    const paneId = "w1:p-voiceover-anchor";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    await readToParagraph(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    try {
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      const list = again.UNSAFE_getByType(FlatList);
+      const cell = again.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m1")!;
+      act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 16, height: 1500 } } }));
+      fireEvent(list, "scroll", at(420)); // the restore lands on the paragraph
+      scrollToIndex.mockClear();
+
+      // A page down, with no drag before it, then its animation's end.
+      fireEvent(list, "scroll", at(1020));
+      fireEvent(list, "momentumScrollEnd", at(1020));
+      fireEvent(list, "contentSizeChange", 400, 3000);
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToIndex).not.toHaveBeenCalled();
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 1004 });
+      expect(again.getByText("Latest ↓")).toBeTruthy();
+      again.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // The rule that lets the person's scroll through must not let layout in: a
+  // message above the paragraph measuring taller moves the offset with it.
+  test("a layout shift under a restored paragraph is still corrected, not taken for the reader's scroll", async () => {
+    const paneId = "w1:p-layout-shift";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    await readToParagraph(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    try {
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      const list = again.UNSAFE_getByType(FlatList);
+      const cell = again.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m1")!;
+      act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 16, height: 1500 } } }));
+      fireEvent(list, "scroll", at(420));
+      scrollToIndex.mockClear();
+      fireEvent(list, "scroll", at(720, 3300));
+      expect(scrollToIndex).toHaveBeenCalled();
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 404 });
+      again.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  test("a VoiceOver scroll up from the tail stops following new output", async () => {
+    const paneId = "w1:p-voiceover-tail";
+    let transcript = thread;
+    mocked.sessionLog.mockImplementation(async () => log(transcript));
+    const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
+    const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
+    try {
+      const view = render(<Pane paneId={paneId} />);
+      await view.findByText(/Message three/);
+      const list = view.UNSAFE_getByType(FlatList);
+      const cell = view.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m3")!;
+      act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 2100, height: 500 } } }));
+      fireEvent(list, "scroll", at(2000, 2616));
+      fireEvent(list, "contentSizeChange", 400, 2616);
+      fireEvent(list, "scroll", at(2016, 2616)); // landed on the tail, following it
+      expect(view.queryByText("Latest ↓")).toBeNull();
+
+      fireEvent(list, "scroll", at(1416, 2616));
+      expect(view.getByText("Latest ↓")).toBeTruthy();
+      scrollToOffset.mockClear();
+      scrollToEnd.mockClear();
+      transcript = [...thread, said("m4", "agent", "Message four")];
+      logChanged(paneId);
+      await view.findByText(/Message four/);
+      fireEvent(list, "contentSizeChange", 400, 3200);
+      expect(scrollToOffset).not.toHaveBeenCalled();
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByText("1 new ↓")).toBeTruthy();
+      view.unmount();
+    } finally {
+      scrollToOffset.mockRestore();
+      scrollToEnd.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+});
+
+// At the largest accessibility text size a cold-opened conversation showed no
+// messages at all. On an iOS 27 simulator the list's offset ran past the end
+// of its content by ~2,300pt a frame, forever: iOS's
+// maintainVisibleContentPosition held the wrong view, because clipping had
+// detached the list's cells from the content view it searches.
+describe("the largest text sizes", () => {
+  test("a conversation keeps its off-screen messages attached, so it cannot open blank", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    const list = view.UNSAFE_getByType(FlatList);
+    expect(list.props.maintainVisibleContentPosition).toBeTruthy();
+    expect(list.props.removeClippedSubviews).toBe(false);
+  });
+
+  // A four-option question at AX5 was taller than the screen: the reader was
+  // squeezed to a sliver, the composer pushed off the bottom, and the last
+  // options were out of reach.
+  test("a prompt card scrolls inside a bounded height instead of pushing the conversation and composer off screen", async () => {
+    const prompt: ParsedPrompt = {
+      question: "Which colour do you prefer?",
+      answer: "digit",
+      options: [
+        { index: 1, label: "Red", selected: true, detail: "Warm, high-contrast." },
+        { index: 2, label: "Green", selected: false, detail: "Reads as success." },
+        { index: 3, label: "Blue", selected: false },
+        { index: 4, label: "Type something.", selected: false },
+      ],
+    } as ParsedPrompt;
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "May I?")]));
+    mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    const style = StyleSheet.flatten(card.props.style);
+    const { height } = Dimensions.get("window");
+    expect(style.maxHeight).toBeGreaterThan(0);
+    expect(style.maxHeight).toBeLessThanOrEqual(height / 2);
+    expect(style.flexGrow).toBe(0);
+    expect(view.getByText("Type something.")).toBeTruthy();
+    expect(view.getByPlaceholderText("Reply to this agent…")).toBeTruthy();
   });
 });
 

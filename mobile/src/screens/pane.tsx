@@ -77,6 +77,8 @@ const PROBE_FONT = 12;
  */
 const CHAR_ASPECT_GUESS = 0.6;
 const PROBE = "─".repeat(PROBE_CHARS);
+/** The most of the window a prompt card may take before it scrolls inside itself. */
+const PROMPT_SHARE = 0.4;
 
 /**
  * Keys a touch keyboard cannot produce but agents routinely ask for.
@@ -355,6 +357,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const scrollMetrics = useRef({ y: 0, height: 0, viewport: 0 });
   /** Navigation/layout scroll events must never replace the last finger position. */
   const userScroll = useRef(false);
+  /** What the previous scroll event reported, to tell who moved the list since. */
+  const lastScroll = useRef<{ y: number; height: number; viewport: number } | null>(null);
   /** While `Date.now()` is under this, the poll runs at the fast cadence. */
   const activeUntil = useRef(0);
   // Backing refs for the optimistic-working state, so `load` (a stable
@@ -884,11 +888,21 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           renderItem={({ item }) => (
             <Message message={item} paneId={paneId} agentColor={AGENT_COLORS[pane?.agent ?? ""] ?? theme.fg} onOpenFile={setViewing} />
           )}
-          // A long transcript is the other list RN can choke on. Detaching
-          // off-screen messages and rendering a bounded window keeps scrolling
-          // and each poll cheap; Message is already memoised and merge() keeps
-          // unchanged messages' identity, so a poll re-renders only the tail.
-          removeClippedSubviews
+          // A long transcript is the other list RN can choke on. Rendering a
+          // bounded window keeps scrolling and each poll cheap; Message is
+          // already memoised and merge() keeps unchanged messages' identity, so
+          // a poll re-renders only the tail.
+          //
+          // Off-screen cells are deliberately NOT detached (removeClippedSubviews).
+          // iOS's maintainVisibleContentPosition picks the message it holds in
+          // place from the content view's attached subviews, and with clipping
+          // those are not the list's cells: it tracked the wrong view and walked
+          // the offset past the end of the content, ~2,300pt per frame, forever.
+          // At the largest accessibility text size, where one message is taller
+          // than the screen, every cold-opened conversation came up blank: on an
+          // iOS 27 simulator, blank on every cold launch with clipping and
+          // readable on every one without.
+          removeClippedSubviews={false}
           initialNumToRender={12}
           maxToRenderPerBatch={10}
           windowSize={9}
@@ -909,13 +923,34 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             userScroll.current = true;
           }}
           onScroll={({ nativeEvent: e }) => {
+            const previous = lastScroll.current;
+            lastScroll.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
             scrollMetrics.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
             if (pendingRestore.current) {
               restoreLanded();
               return;
             }
+            // The person can move the list without dragging it: VoiceOver's
+            // three-finger scroll and its focus moves, a hardware keyboard, a
+            // tap on the status bar. None of them sends onScrollBeginDrag, so
+            // the reader took them for layout noise — snapped back to a
+            // restored paragraph, or kept following the tail and pulled them
+            // down again on the next message (pre-release review). Outside a
+            // restore nothing here moves the list except following the tail,
+            // and a layout change moves it by exactly as much as the content
+            // above it changed. An offset that moved by anything else, in an
+            // unchanged viewport, was moved by the person — except a jump
+            // straight to the very top, the shape of the settle event below;
+            // a person scrolling to the top arrives through offsets above it.
+            const theirs =
+              !userScroll.current &&
+              previous !== null &&
+              e.contentOffset.y > 0 &&
+              Math.abs(previous.viewport - e.layoutMeasurement.height) < 1 &&
+              Math.abs(e.contentOffset.y - previous.y - (e.contentSize.height - previous.height)) > 2;
+            if (theirs) anchorLock.current = false;
             // Cells preceding the anchor can finish measuring after the first
-            // landing. Keep the paragraph fixed until the next finger drag.
+            // landing. Keep the paragraph fixed until the person moves.
             if (anchorLock.current) {
               if (!restoreLanded()) {
                 pendingRestore.current = true;
@@ -925,8 +960,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             }
             // A native pop/layout settle can emit one last offset (often zero)
             // after the person's drag. That event caused the reproducible
-            // lower-paragraph → top jump on reopening.
-            if (!userScroll.current) return;
+            // lower-paragraph → top jump on reopening. (Not seen again on
+            // 2026-09-23, iOS 27 simulator: Back, the edge swipe and a fling
+            // then swipe emitted only momentum ends. Still guarded.)
+            if (!userScroll.current && !theirs) return;
             if (e.contentOffset.y < 80 && !olderError) void loadOlder();
             const fromBottom =
               e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
@@ -1106,8 +1143,18 @@ function Prompt({
   onAnswer: (option: PromptOption) => Promise<void>;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
+  const { height } = useWindowDimensions();
   return (
-    <View style={styles.promptCard}>
+    // Bounded, and scrolls inside itself. At the largest accessibility text
+    // size a four-option question grew taller than the screen: it squeezed the
+    // conversation to a sliver, pushed the composer off the bottom, and left
+    // the last options out of reach (found on a simulator at AX5).
+    <ScrollView
+      testID="prompt-card"
+      style={[styles.promptCard, { maxHeight: Math.round(height * PROMPT_SHARE) }]}
+      contentContainerStyle={styles.promptBody}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.question}>{prompt.question}</Text>
       {prompt.options.map((option) => {
         const isArmed = armed === option.index;
@@ -1134,7 +1181,7 @@ function Prompt({
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -1834,8 +1881,11 @@ const styles = StyleSheet.create({
     borderColor: theme.peach,
     borderRadius: 10, borderCurve: "continuous",
     backgroundColor: theme.surface,
-    padding: 14,
+    // A ScrollView grows to fill by default; the card is only as tall as its
+    // question and options, up to its share of the screen.
+    flexGrow: 0,
   },
+  promptBody: { padding: 14 },
   question: { color: theme.fg, fontSize: 15, lineHeight: 21, marginBottom: 8 },
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
