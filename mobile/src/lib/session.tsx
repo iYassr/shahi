@@ -73,6 +73,12 @@ interface SessionValue {
   signInRelay: (identity: RelayIdentity) => void;
   signOut: () => void;
   /**
+   * A screen's own request was refused with a 401. Screens report it rather
+   * than signing out: the computer knows whether its access really ended or
+   * the request merely raced a sign-in (`ComputerSession.unauthorized`).
+   */
+  unauthorized: () => void;
+  /**
    * Ask the server for a fresh snapshot — after creating a space or a tab.
    * Settles once the answer, or the failure, has been applied.
    */
@@ -315,6 +321,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     watch: (pane: string | null) => entry?.watch(pane),
     onPaneFrame: (pane: string, fn: () => void) => entry?.onPaneFrame(pane, fn) ?? (() => {}),
     clearPrompt: (pane: string) => entry?.clearPrompt(pane),
+    unauthorized: () => { void entry?.unauthorized(); },
   }), [entry]);
   const value: SessionValue = {
     control: entry?.control,

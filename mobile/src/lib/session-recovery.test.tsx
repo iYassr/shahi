@@ -53,7 +53,8 @@ test("sign-out cancels a pending recovery before it can authenticate or reopen t
   act(() => value.signOut());
   await act(async () => { opened.resolve("http://127.0.0.1:54322"); await work; });
   expect(api.login).not.toHaveBeenCalled();
-  expect(closeTunnel).toHaveBeenCalled();
+  // The forward that finished opening after the sign-out: nobody else holds it.
+  expect(closeTunnel).toHaveBeenCalledWith("http://127.0.0.1:54322");
   expect(value.connected).toBe(false);
   expect(mockSockets[0]!.ensureConnected).not.toHaveBeenCalled();
   ui.unmount();

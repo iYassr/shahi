@@ -89,6 +89,15 @@ function tunnelFailureMessage(error: unknown): string | null {
   return message && !/^undefined(?: reason)?$/i.test(message) ? message : null;
 }
 
+// Every forward has its own native id, and whoever opened it closes it by its
+// base URL. Ids used to be derived from the computer, so re-adding a saved
+// computer opened a forward that replaced the saved one, and disposing the
+// old session then closed the new forward it had just been handed (pre-release
+// review). The date keeps ids unique across a development reload. A sign-out
+// while a forward opens is the opener's to close (ComputerSession.connect).
+const forwards = new Map<string, string>();
+let opened = 0;
+
 /**
  * Opens a tunnel for a profile and returns the base URL to point the client at.
  *
@@ -101,20 +110,7 @@ function tunnelFailureMessage(error: unknown): string | null {
  * key before authenticating, and the fingerprint it reports back is stored the
  * first time.
  */
-// Include keychain reads in the queue: a sign-out during that read must close
-// the resulting tunnel, rather than closing first and letting it open later.
-let operations: Promise<unknown> = Promise.resolve();
-function serial<T>(operation: () => Promise<T>): Promise<T> {
-  const next = operations.then(operation, operation);
-  operations = next.catch(() => undefined);
-  return next;
-}
-
-export function openTunnel(profile: SshProfile): Promise<string> {
-  return serial(() => open(profile));
-}
-
-async function open(profile: SshProfile): Promise<string> {
+export async function openTunnel(profile: SshProfile): Promise<string> {
   if (!native) {
     throw new Error(
       "SSH isn't available in this build. It needs the native tunnel module — rebuild the app to use it.",
@@ -123,10 +119,11 @@ async function open(profile: SshProfile): Promise<string> {
   const host = profile.host.trim();
   const expectedHostKey = (await rememberedHostKey(host, profile.port)) ?? undefined;
 
-  let opened;
+  const id = `${Date.now().toString(36)}.${++opened}`;
+  let result;
   try {
-    opened = await native.open({
-      id: tunnelId(profile),
+    result = await native.open({
+      id,
       host,
       port: profile.port,
       username: profile.username.trim(),
@@ -148,28 +145,25 @@ async function open(profile: SshProfile): Promise<string> {
         : `Couldn't open the SSH tunnel to ${host}:${profile.port}. Check the host, port, username, and key or password — and that the server allows this login.`,
     );
   }
-  const { localPort, hostKey } = opened;
+  const { localPort, hostKey } = result;
 
   // First connection to this host: remember the key we just trusted, so the
   // next connection can catch a change.
   if (hostKey && !expectedHostKey) await rememberHostKey(host, profile.port, hostKey);
 
-  return `http://127.0.0.1:${localPort}`;
+  const baseUrl = `http://127.0.0.1:${localPort}`;
+  forwards.set(baseUrl, id);
+  return baseUrl;
 }
 
-export function closeTunnel(profile?: SshProfile): Promise<void> {
-  return serial(() => close(profile));
-}
-
-async function close(profile?: SshProfile): Promise<void> {
-  if (!native) return;
+/** Closes the forward `openTunnel` returned this base URL for; anything else is a no-op. */
+export async function closeTunnel(baseUrl: string): Promise<void> {
+  const id = forwards.get(baseUrl);
+  if (!native || !id) return;
+  forwards.delete(baseUrl);
   try {
-    await native.close(profile ? tunnelId(profile) : null);
+    await native.close(id);
   } catch {
     // Closing a tunnel that already died is not worth surfacing.
   }
-}
-
-function tunnelId(profile: SshProfile): string {
-  return JSON.stringify([profile.host.trim().toLowerCase(), profile.port, profile.username.trim(), profile.remotePort]);
 }

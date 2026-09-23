@@ -41,7 +41,7 @@ const mockSession = {
   },
   terminalWidth: 100,
   watch: jest.fn(),
-  signOut: jest.fn(),
+  unauthorized: jest.fn(),
   onPaneFrame: (paneId: string, cb: () => void) => {
     let set = mockFrameListeners.get(paneId);
     if (!set) {
@@ -154,7 +154,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   mockFrameListeners.clear();
   mockSession.watch.mockReset();
-  mockSession.signOut.mockReset();
+  mockSession.unauthorized.mockReset();
   for (const fn of Object.values(mocked)) fn.mockReset();
   mocked.pane.mockResolvedValue(detail());
   mocked.send.mockResolvedValue(receipt);
@@ -353,13 +353,13 @@ describe("loading", () => {
   });
 
   test.each(["sessionLog", "pane"] as const)(
-    "an UnauthorizedError from %s signs out rather than being swallowed",
+    "an UnauthorizedError from %s is reported to the computer rather than being swallowed",
     async (route) => {
       mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hello")]));
       mocked[route].mockRejectedValue(new UnauthorizedError());
 
       render(<Pane paneId={PANE} />);
-      await waitFor(() => expect(mockSession.signOut).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mockSession.unauthorized).toHaveBeenCalledTimes(1));
     },
   );
 
@@ -372,7 +372,7 @@ describe("loading", () => {
     const view = render(<Pane paneId={PANE} />);
     connection.cookie = "computer-b";
     await act(async () => { pending.reject(new UnauthorizedError()); });
-    expect(mockSession.signOut).not.toHaveBeenCalled();
+    expect(mockSession.unauthorized).not.toHaveBeenCalled();
     view.unmount(); connection.cookie = previous;
   });
 
@@ -384,7 +384,7 @@ describe("loading", () => {
 
     const view = render(<Pane paneId={PANE} />);
     await view.findByText("Nothing to read yet.");
-    expect(mockSession.signOut).not.toHaveBeenCalled();
+    expect(mockSession.unauthorized).not.toHaveBeenCalled();
     expect(mocked.sessionLog).toHaveBeenCalledTimes(1);
 
     // Nobody pushes anything: only the reader's own timer can fill this in.

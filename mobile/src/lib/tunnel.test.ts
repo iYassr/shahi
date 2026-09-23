@@ -137,37 +137,39 @@ describe("openTunnel", () => {
 describe("closeTunnel", () => {
   test("is safe when nothing is open and when the native close rejects", async () => {
     const withoutModule = load(false);
-    await expect(withoutModule.tunnel.closeTunnel()).resolves.toBeUndefined();
+    await expect(withoutModule.tunnel.closeTunnel("")).resolves.toBeUndefined();
 
     const { tunnel, native } = load();
+    await expect(tunnel.closeTunnel("http://127.0.0.1:1")).resolves.toBeUndefined();
+    expect(native.close).not.toHaveBeenCalled();
+    const url = await tunnel.openTunnel(profile());
     native.close.mockRejectedValue(new Error("already dead"));
-    await expect(tunnel.closeTunnel()).resolves.toBeUndefined();
+    await expect(tunnel.closeTunnel(url)).resolves.toBeUndefined();
   });
 });
 
-test("closing during the keychain lookup runs after the pending open", async () => {
-  const { tunnel, native, store } = load();
-  let resolve!: (value: null) => void;
-  store.getItemAsync.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
-  const opening = tunnel.openTunnel(profile());
-  await Promise.resolve();
-  const closing = tunnel.closeTunnel();
-  expect(native.close).not.toHaveBeenCalled();
-  resolve(null);
-  await opening;
-  await closing;
-  expect(native.open).toHaveBeenCalledTimes(1);
-  expect(native.close).toHaveBeenCalledTimes(1);
-  expect(native.close.mock.invocationCallOrder[0]).toBeGreaterThan(native.open.mock.invocationCallOrder[0]!);
-});
-
-test("closing one computer names only its native forwarder", async () => {
+// Modelled on SshTunnelModule.swift, which closes any forward already open
+// under the id it is asked to open. Ids used to be derived from the computer,
+// so re-adding a saved computer replaced the saved forward, and disposing the
+// old session then closed the new one; a failed re-add closed the saved one.
+test("a second tunnel to the same computer neither replaces the first nor is closed with it", async () => {
   const { tunnel, native } = load();
-  await tunnel.openTunnel(profile());
-  await tunnel.openTunnel(profile({ host: "second.example" }));
-  const [first, second] = native.open.mock.calls.map(call => call[0].id);
-  expect(first).not.toBe(second);
-  await tunnel.closeTunnel(profile());
-  expect(native.close).toHaveBeenCalledWith(first);
-  expect(native.close).not.toHaveBeenCalledWith(second);
+  const live = new Map<string, number>();
+  let port = 50000;
+  native.open.mockImplementation(async ({ id }: { id: string }) => {
+    live.delete(id);
+    live.set(id, ++port);
+    return { localPort: port };
+  });
+  native.close.mockImplementation(async (id: string) => { live.delete(id); });
+
+  const saved = await tunnel.openTunnel(profile());
+  const readd = await tunnel.openTunnel(profile());
+  expect(readd).not.toBe(saved);
+  expect(live.size).toBe(2);
+
+  await tunnel.closeTunnel(readd);
+  expect([...live.values()]).toEqual([Number(saved.split(":").at(-1))]);
+  await tunnel.closeTunnel(saved);
+  expect(live.size).toBe(0);
 });

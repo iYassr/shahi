@@ -237,7 +237,7 @@ interface Props {
 }
 
 export function Pane({ paneId, initialView = "reader" }: Props) {
-  const { api, control, watch, onPaneFrame, session, terminalWidth, signOut, link } = useSession();
+  const { api, control, watch, onPaneFrame, session, terminalWidth, unauthorized, link } = useSession();
   const savedDraft = useRef(nativeDraft(api, paneId)).current;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -541,7 +541,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       setMessages(combined);
     } catch (e) {
       if (!stillActive()) return;
-      if (e instanceof UnauthorizedError) signOut();
+      if (e instanceof UnauthorizedError) unauthorized();
       else setOlderError((e as Error).message);
     } finally {
       olderInFlight.current = false;
@@ -620,9 +620,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         // The WebSocket only authenticates at handshake, so without this a stale
         // session leaves the pane polling 401 forever while `link` still says
         // LIVE — a dead pane that never recovers. (Found by the data-fetching
-        // audit.)
+        // audit.) The computer makes the call: a poll that raced an SSH
+        // re-login is not an expired cookie (pre-release review).
         if (!stillActive()) return;
-        if (e instanceof UnauthorizedError) return signOut();
+        if (e instanceof UnauthorizedError) return unauthorized();
         // No transcript *yet*. A just-started agent has not written one, so this
         // keeps polling rather than latching — the reader fills in by itself the
         // moment the agent says something.
@@ -652,12 +653,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         }
       } catch (e) {
         if (!stillActive()) return;
-        if (e instanceof UnauthorizedError) return signOut();
+        if (e instanceof UnauthorizedError) return unauthorized();
         // Transient; the next poll will catch up.
       }
     };
     await Promise.all([readLog(), readScreen()]);
-  }, [paneId, signOut, stillActive]);
+  }, [paneId, unauthorized, stillActive]);
   // One load in flight at most. The timer, a pushed frame and a `log_changed`
   // all call this; while a terminal repaints they arrive faster than a fetch
   // returns, and un-coalesced that was several identical requests outstanding

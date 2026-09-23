@@ -175,17 +175,21 @@ export function Connect({
   async function connectSsh() {
     setBusy(true);
     setError(null);
+    let tunnel = "";
     try {
       connection.relay = null;
-      connection.baseUrl = await openTunnel(ssh);
+      tunnel = await openTunnel(ssh);
+      connection.baseUrl = tunnel;
       connection.cookie = null;
       await api.meta();
       await api.login(ssh.passcode);
       onConnectedSsh(ssh);
     } catch (e) {
       // The tunnel may be half-up (opened, then login failed); close it so the
-      // next attempt starts from nothing rather than a stale forward.
-      await closeTunnel(ssh);
+      // next attempt starts from nothing rather than a stale forward. Only
+      // this attempt's own: a saved computer's forward to the same server is
+      // separate, and keeps running.
+      await closeTunnel(tunnel);
       setError((e as Error).message);
       setBusy(false);
     }

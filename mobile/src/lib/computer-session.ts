@@ -26,6 +26,7 @@ export class ComputerSession {
   private socketLink: LinkState = "connecting";
   private received = 0;
   private frames = new Map<string, Set<() => void>>();
+  private checking: Promise<void> | null = null;
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
     this.api = createApi(this.connection);
@@ -43,8 +44,10 @@ export class ComputerSession {
   private async connect() {
     try {
       if (this.saved.connection.kind === "ssh" && !this.connection.baseUrl) {
-        this.connection.baseUrl = await openTunnel(this.saved.connection.ssh);
-        if (this.disposed) return;
+        const baseUrl = await openTunnel(this.saved.connection.ssh);
+        // Signed out while it opened: nobody else will close this forward.
+        if (this.disposed) { void closeTunnel(baseUrl); return; }
+        this.connection.baseUrl = baseUrl;
         await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
         // Recovery remains reachable across an ordinary API mismatch.
         try { this.serverId = (await this.api.meta()).serverId; } catch (e) { if (!(e instanceof IncompatibleServerError)) throw e; }
@@ -58,7 +61,7 @@ export class ComputerSession {
           const different = this.link !== state;
           this.link = state; if (different) this.changed();
           if (state === "live") void this.refresh();
-        }, () => { if (!this.disposed) this.expired(); }, () => { if (!this.disposed) void this.refresh(); }, this.connection);
+        }, () => { void this.unauthorized(); }, () => { if (!this.disposed) void this.refresh(); }, this.connection);
         this.socket.connect();
         this.socket.watch(this.watched);
       } else this.socket.ensureConnected();
@@ -74,7 +77,7 @@ export class ComputerSession {
   }
   private failure(e: unknown) {
     if (this.disposed) return;
-    if (e instanceof UnauthorizedError) { this.expired(); return; }
+    if (e instanceof UnauthorizedError) { void this.unauthorized(); return; }
     this.error = e as Error;
     this.link = "lost";
     if (e instanceof IncompatibleServerError) this.socket?.close();
@@ -109,11 +112,44 @@ export class ComputerSession {
     set.add(fn);
     return () => { set!.delete(fn); if (!set!.size) this.frames.delete(id); };
   }
+  /**
+   * A request was refused with a 401. Whether that means this computer's
+   * access has ended is decided here, where the sign-in state is known, and
+   * not by the screen that happened to see it.
+   *
+   * A relay link is its device, so a 401 there is a revocation. An SSH
+   * computer signs in again with its saved passcode after every new tunnel,
+   * and a reader poll sent during that login carries no cookie: the
+   * pre-release review reproduced such a 401 erasing the saved computer, SSH
+   * password and key included. So while a sign-in is in flight, or none has
+   * produced a cookie, a 401 says nothing about access. Otherwise the cookie
+   * held now is asked about directly, because a 401 can still belong to a
+   * request sent before that cookie existed.
+   */
+  unauthorized(): Promise<void> {
+    this.checking ??= this.checkAccess().finally(() => { this.checking = null; });
+    return this.checking;
+  }
+  private async checkAccess() {
+    if (this.disposed) return;
+    if (this.saved.connection.kind === "ssh") {
+      if (this.work || !this.connection.cookie) return;
+      const held = this.connection.cookie;
+      const status = await this.api.authStatus().catch(() => null);
+      // Unreachable or undecided is not evidence; the next request asks again.
+      if (!status || status.authenticated || this.disposed || this.connection.cookie !== held) return;
+    }
+    this.expired();
+  }
   async reconnect() {
     if (this.disposed) return;
     if (this.connection.relay) relayLink(this.connection.relay).reconnect();
-    if (this.saved.connection.kind === "ssh" && this.link !== "live") {
-      this.socket?.close(); this.socket = null; this.connection.baseUrl = ""; this.connection.cookie = null;
+    // A reconnect already under way is joined, not restarted: closing its
+    // tunnel mid-login would fail the very attempt being waited for.
+    if (this.saved.connection.kind === "ssh" && this.link !== "live" && !this.work) {
+      this.socket?.close(); this.socket = null;
+      void closeTunnel(this.connection.baseUrl);
+      this.connection.baseUrl = ""; this.connection.cookie = null;
     }
     await this.start();
   }
@@ -122,6 +158,8 @@ export class ComputerSession {
     this.disposed = true; this.socket?.close(); this.frames.clear();
     this.control.stop();
     if (this.connection.relay) closeRelay(this.connection.relay);
-    if (this.saved.connection.kind === "ssh") void closeTunnel(this.saved.connection.ssh);
+    // Only this session's own forward. A replacement session for the same
+    // computer adopted a different one, and it is that session's to close.
+    if (this.saved.connection.kind === "ssh") void closeTunnel(this.connection.baseUrl);
   }
 }
