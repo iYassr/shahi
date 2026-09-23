@@ -64,7 +64,7 @@ function serverGone(): string | null {
   }
 }
 
-export const test = base.extend<{ serverAlive: void; noStrayWrites: void }>({
+export const test = base.extend<{ serverAlive: void; freshStub: void; noStrayWrites: void }>({
   serverAlive: [
     async ({ baseURL }, use, testInfo) => {
       const url = baseURL ?? FALLBACK_URL;
@@ -99,6 +99,27 @@ export const test = base.extend<{ serverAlive: void; noStrayWrites: void }>({
           );
         }
       }
+    },
+    { auto: true },
+  ],
+  /**
+   * Every test starts from the stub's starting state, whatever ran before it.
+   *
+   * The stub keeps one scenario for the whole run, so a test that did not
+   * choose one inherited the previous test's. In the September 2026 review,
+   * leaving the stub on "empty" failed eight keyboard tests and two others at
+   * their first row: they had passed only because of what ran before them. A
+   * test that needs a situation still chooses it; this makes the order it runs
+   * in irrelevant. Choosing "busy" also clears the recorded writes, the
+   * contract range and the control handshake, so an override a failed test
+   * left behind cannot turn the next test into a 426.
+   */
+  freshStub: [
+    async ({ request, serverAlive }, use) => {
+      void serverAlive; // after the pulse check, so a dead stub is reported as one
+      const reset = await request.post("/__stub/scenario", { data: { name: "busy" } });
+      if (!reset.ok()) throw new Error(`could not reset the stub before the test: ${reset.status()}`);
+      await use();
     },
     { auto: true },
   ],
