@@ -20,6 +20,8 @@ beforeEach(() => {
 afterEach(async () => {
   if (view) await act(async () => view!.unmount());
   view = undefined;
+  // Drafts are module state shared with every other test file in the run.
+  clearWebDrafts("direct");
   for (const [key, descriptor] of originals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as any)[key];
   }

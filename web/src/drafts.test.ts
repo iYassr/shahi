@@ -1,5 +1,14 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { clearWebDrafts, draftOwner, webDraft } from "./drafts";
+
+// The store is module state, and bun runs every test file in one process: the
+// typed drafts left here made version.test.ts find pending work on CI, whose
+// file order differs from a Mac's (the first push of the pre-release fixes).
+afterEach(() => {
+  for (const [serverId, deviceId] of [["a", "device"], ["b", "device"], ["a", "new-grant"], ["eviction", "device"], ["recency", "device"]]) {
+    clearWebDrafts(draftOwner({ serverId: serverId!, deviceId: deviceId! }));
+  }
+});
 test("identical pane IDs remain isolated per computer and pairing grant", () => {
   const a = draftOwner({ serverId: "a", deviceId: "device" });
   const b = draftOwner({ serverId: "b", deviceId: "device" });
