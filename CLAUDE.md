@@ -704,7 +704,13 @@ A pinned tag needs its digest beside it in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
 The hosted and PWA Playwright configs hard-code ports 7472, 7572 and 7672;
-something else listening there fails those suites.
+something else listening there fails those suites. About one PWA run in
+twenty (measured 2026-09-23: 3 of 26, on a loaded machine) fails two or four
+tests with `page.goto: Could not connect to the server`: `wrangler dev` lost
+its local worker for a second ("Error inside ProxyWorker … Network connection
+lost" in `~/Library/Preferences/.wrangler/logs/`), which the relay's `wrangler
+dev` did too on 2026-09-01. That log line means rerun; without it, a failure
+is real.
 
 ## The two clients
 
