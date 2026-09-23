@@ -152,6 +152,43 @@ test("restored internet reconnects every saved computer once without deleting pa
   } finally { ui.unmount(); retry.mockRestore(); AppState.currentState = previousState; }
 });
 
+// iOS passes through "inactive" for Control Center, Notification Center, the
+// app switcher and system alerts. Reconnecting on the way back dropped every
+// healthy relay link and failed the sends in flight (pre-release review).
+test("a glance at Control Center keeps every relay link; only a return from the background reconnects", async () => {
+  const retry = jest.spyOn(RelayLink.prototype, "reconnect").mockImplementation(() => {});
+  const ui = await mount(); await pairBoth();
+  try {
+    const change = (AppState.addEventListener as jest.Mock).mock.calls.at(-1)![1];
+    act(() => { change("inactive"); change("active"); change("inactive"); change("active"); });
+    expect(retry).not.toHaveBeenCalled();
+    act(() => { change("inactive"); change("background"); change("active"); });
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(bank()).toHaveLength(2);
+  } finally { ui.unmount(); retry.mockRestore(); }
+});
+
+// A new network is reported with reachability unknown, then known: two keys
+// for one change, so every computer reconnected twice. And the first report
+// at launch is not a change; every computer is already connecting.
+test("joining a network reconnects every computer once, not again when its reachability is learned", async () => {
+  const retry = jest.spyOn(RelayLink.prototype, "reconnect").mockImplementation(() => {});
+  const previousState = AppState.currentState; AppState.currentState = "active";
+  const wifi = { type: "WIFI", isConnected: true, isInternetReachable: true };
+  (getNetworkStateAsync as jest.Mock).mockResolvedValueOnce(wifi);
+  const ui = await mount(); await pairBoth();
+  try {
+    const listener = (addNetworkStateListener as jest.Mock).mock.calls.at(-1)![0];
+    await act(async () => listener(wifi));
+    expect(retry).not.toHaveBeenCalled();
+    await act(async () => {
+      listener({ type: "CELLULAR", isConnected: true, isInternetReachable: null });
+      listener({ type: "CELLULAR", isConnected: true, isInternetReachable: true });
+    });
+    expect(retry).toHaveBeenCalledTimes(2);
+  } finally { ui.unmount(); retry.mockRestore(); AppState.currentState = previousState; }
+});
+
 test("a delayed failure cannot turn a freshly restored dashboard offline", async () => {
   const ui = await mount(); await pairBoth();
   const socket = mockSockets.at(-1)!;

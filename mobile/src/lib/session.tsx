@@ -250,20 +250,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!cancelled) setReady(true);
     })();
     const reconnectAll = () => { for (const entry of live.current.values()) void entry.reconnect(); };
-    let appState = AppState.currentState;
+    // Only a return from the background reconnects. iOS also passes through
+    // "inactive" for Control Center, Notification Center, the app switcher
+    // and system alerts, and reconnecting on those dropped every healthy relay
+    // link and failed the sends in flight (pre-release review). The links'
+    // own watchdogs notice anything a glance at Control Center could break.
+    let backgrounded = AppState.currentState === "background";
     const sub = AppState.addEventListener("change", state => {
-      if (state === "active" && appState !== "active") reconnectAll();
-      appState = state;
+      if (state === "background") backgrounded = true;
+      else if (state === "active" && backgrounded) { backgrounded = false; reconnectAll(); }
     });
     let network: string | undefined;
     let observedNetwork = false;
     const networkChanged = (state: NetworkState) => {
       if (cancelled) return;
+      const usable = state.isConnected === true && state.isInternetReachable !== false;
       setOnline(state.isConnected !== false && state.isInternetReachable !== false);
-      const next = `${state.type}:${state.isConnected}:${state.isInternetReachable}`;
+      // Keyed on the network and whether it is usable, not on reachability's
+      // own steps: a new network arrives with reachability unknown and then
+      // known, which reconnected everything twice. The first report is not a
+      // change at all; every computer is already connecting.
+      const next = `${state.type}:${usable}`;
       if (next === network) return;
+      const first = network === undefined;
       network = next;
-      if (state.isConnected === true && state.isInternetReachable !== false && AppState.currentState === "active") reconnectAll();
+      if (!first && usable && AppState.currentState === "active") reconnectAll();
     };
     const reachability = addNetworkStateListener(state => { observedNetwork = true; networkChanged(state); });
     void getNetworkStateAsync().then(state => { if (!observedNetwork) networkChanged(state); }).catch(() => {});
