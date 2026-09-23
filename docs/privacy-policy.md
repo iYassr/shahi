@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 19 September 2026. Published at
+_Last updated: 23 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -8,7 +8,9 @@ _Last updated: 19 September 2026. Published at
 Shahi connects to a server **you** run to read and control your terminal
 sessions. The native app and hosted web app use an encrypted relay connection. The
 native app also supports SSH. A locally served web app connects directly to
-the sidecar; use HTTPS or an SSH tunnel when accessing it across a network.
+the sidecar, which answers only requests addressed to `127.0.0.1` or
+`localhost`; reach it from another device through an SSH tunnel, or through an
+HTTPS proxy whose name you list in `SHAHI_ALLOWED_HOSTS`.
 
 ## What is stored on your device
 
@@ -82,8 +84,9 @@ Shahi's event collection for a self-hosted relay. Setting no stats API token
 only hides the stats endpoint; it does not disable event collection.
 
 The website records signup response status and duration in Analytics Engine,
-without the submitted email address or form content, and logs failed deliveries
-and a sample of other outcomes. The same retention periods below apply.
+kept for three months, without the submitted email address or form content. It
+also logs failed deliveries and a sample of other outcomes to Cloudflare Workers
+Logs, kept for seven days, recording only the status and duration.
 
 The relay also writes these structured operational fields to Cloudflare Workers
 Logs, retained for **seven days** on the paid plan. Automatic invocation logs
@@ -109,15 +112,21 @@ SDKs. Relay operational telemetry is separate from client analytics.
 
 Notifications are **off unless you enable them**. Your server stores the push
 registration and associates it with the device or signed-in session that
-registered it. Revoking a paired device or signing out through the server removes the corresponding registrations. Disabling notifications in iOS Settings stops display but does not itself delete the server registration.
+registered it. Revoking a paired device or signing out through the server
+removes the corresponding registrations. Turning notifications off in the web
+app removes that browser's registration for the current computer. Disabling
+notifications in iOS Settings stops display but does not itself delete the
+server registration.
 
 Native notifications travel through **Expo's push service** and then the
-platform push provider, such as Apple's Push Notification service. Browser
-notifications travel through the browser's push provider. Notification payloads
-include workspace names, terminal titles, and the pane identifier to open.
-These providers therefore receive notification content even though
-relay traffic is encrypted end to end. Leave notifications off if you do not
-want that content sent through push providers.
+platform push provider, such as Apple's Push Notification service. Their
+payloads include the workspace name, the terminal title, the pane identifier to
+open, and your computer's public server identifier, the same stable identifier
+the relay sees. Expo and the platform provider can read that content even
+though relay traffic is encrypted end to end. Browser notifications carry the
+same fields through the browser's push service, encrypted so that only your
+browser can read them. Leave notifications off if you do not want that content
+sent through push providers.
 
 Your server stores original agent transcripts and uploaded files under your
 control. The relay does not store those contents.
@@ -132,7 +141,7 @@ Camera access is used to scan pairing codes. Scanning happens on your device. Ph
 
 ## App updates and service providers
 
-The iPhone app checks Expo for signed app updates when it opens. Expo receives network information and update-request metadata, such as the app version, platform and runtime version, and update-related crash or launch diagnostics. Updates do not send your conversations or SSH credentials to Expo. Cloudflare hosts the website and relay. The website loads fonts from Google Fonts, which receives the network information needed to deliver them. These providers may process data outside your country under their own privacy policies. The AI assistants you run on your computer use their own providers; their handling of prompts and files is separate from Shahi.
+The iPhone app checks Expo for signed app updates when it opens. Expo receives network information and update-request metadata, such as the app version, platform and runtime version, and update-related crash or launch diagnostics. Updates do not send your conversations or SSH credentials to Expo. Cloudflare hosts the website and relay. The website serves its own fonts, so no font provider receives your visit. These providers may process data outside your country under their own privacy policies. The AI assistants you run on your computer use their own providers; their handling of prompts and files is separate from Shahi.
 
 ## TestFlight and support
 
@@ -140,7 +149,7 @@ When you use TestFlight, Apple processes beta-testing information, including ins
 
 ## Your choices and deletion
 
-To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device from that computer separately. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Disable notifications in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.
+To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device later under Settings → Devices with access on another phone or browser paired with that computer. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Disable notifications in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.
 
 ## How we use data
 
