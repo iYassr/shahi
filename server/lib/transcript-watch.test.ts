@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, appendFileSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,9 @@ import { followTranscript, watchTranscript } from "./transcript-watch";
  * same one the server runs with 40ms/1s.
  */
 const dir = mkdtempSync(join(tmpdir(), "shahi-watch-"));
+// An afterAll: the "exit" listener this used to rely on never removed it, and
+// every run left the directory in $TMPDIR until the September 2026 review.
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const stops: (() => void)[] = [];
 afterEach(() => {
   for (const stop of stops.splice(0)) stop();
@@ -153,5 +156,3 @@ describe("followTranscript", () => {
     expect(lookups).toBe(after);
   });
 });
-
-process.on("exit", () => rmSync(dir, { recursive: true, force: true }));

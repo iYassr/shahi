@@ -1,7 +1,19 @@
-import { expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// Scratch directories made below, removed when the file finishes: every run
+// left them in $TMPDIR until the September 2026 review.
+const scratches: string[] = [];
+const scratch = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 /**
  * plugin/bun.sh during `herdr plugin install` on a machine with no bun and no
@@ -11,7 +23,7 @@ import { join } from "node:path";
  * manager's.
  */
 function installWithout(tools: string[], manager: string) {
-  const dir = mkdtempSync(join(tmpdir(), "shahi-bunsh-"));
+  const dir = scratch("shahi-bunsh-");
   const bin = join(dir, "bin");
   mkdirSync(bin);
   for (const tool of ["curl", "unzip", "bash"].filter((t) => !tools.includes(t))) symlinkSync(Bun.which(tool) ?? `/usr/bin/${tool}`, join(bin, tool));

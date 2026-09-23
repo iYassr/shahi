@@ -1,8 +1,21 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { layoutFromEnv, type Layout } from "./layout";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
+// Scratch directories made below, removed when the file finishes. Some hold
+// generated secrets, and every run left them in $TMPDIR until the September
+// 2026 review.
+const scratches: string[] = [];
+const scratch = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 import { loadConfig } from "../server/lib/config";
 import { readEnvFile } from "../server/lib/secrets";
 import { unsupervised, type Service, type ServiceSpec } from "./service";
@@ -86,7 +99,7 @@ describe("bunPath, against bun's temporary node shim", () => {
   };
 
   test("never returns a bun under the temp directory, even when it is first on PATH", () => {
-    const shim = mkdtempSync(join(tmpdir(), "bun-node-"));
+    const shim = scratch("bun-node-");
     writeFileSync(join(shim, "bun"), "#!/bin/sh\nexit 7\n");
     chmodSync(join(shim, "bun"), 0o755);
 
@@ -103,7 +116,7 @@ describe("bunPath, against bun's temporary node shim", () => {
   });
 
   test("the unit's PATH does not carry the shim either, so it cannot go stale", () => {
-    const shim = mkdtempSync(join(tmpdir(), "bun-node-"));
+    const shim = scratch("bun-node-");
     const spec = withPath([shim, "/usr/bin"], () => serviceSpec(layout, new Map(), "/opt/homebrew/bin/bun"));
     expect(spec.env.PATH).not.toContain(shim);
     expect(spec.env.PATH).toContain("/usr/bin");
@@ -112,7 +125,7 @@ describe("bunPath, against bun's temporary node shim", () => {
 
 /** Everything a setup touches, under a fresh temporary directory; the herdr socket does not exist. */
 function scratchLayout(): Layout {
-  const dir = mkdtempSync(join(tmpdir(), "shahi-setup-"));
+  const dir = scratch("shahi-setup-");
   return layoutFromEnv({
     HERDR_PLUGIN_ROOT: join(dir, "root"),
     HERDR_PLUGIN_CONFIG_DIR: join(dir, "config dir"),
@@ -175,7 +188,7 @@ function withEnv(values: Record<string, string>) {
 
 /** A stand-in for herdr that writes down every call, then runs `answer`. */
 function fakeHerdr(answer = "exit 0"): { calls: () => string } {
-  const dir = mkdtempSync(join(tmpdir(), "shahi-fake-herdr-"));
+  const dir = scratch("shahi-fake-herdr-");
   const record = join(dir, "calls.txt");
   const bin = join(dir, "herdr");
   writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${record}'\n${answer}\n`);

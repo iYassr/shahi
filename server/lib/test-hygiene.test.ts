@@ -59,6 +59,12 @@ describe("the test tooling cleans up after itself", () => {
       "server/lib/herdr-live.test.ts",
       "plugin/service.test.ts",
       "plugin/bunpath.pentest.test.ts",
+      // Found by the same census once the other pre-release fixes landed; the
+      // setup and pairing ones held generated secrets too.
+      "plugin/shahi.test.ts",
+      "plugin/bun.test.ts",
+      "server/scripts/pair.test.ts",
+      "server/lib/transcript-watch.test.ts",
     ];
     const left = await leftBehind([process.execPath, "test", ...files.map((file) => `./${file}`)], {}, async (child, log) => {
       if ((await child.exited) !== 0) throw new Error(`the files failed on their own:\n${readFileSync(log, "utf8").slice(-3000)}`);

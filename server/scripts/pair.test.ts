@@ -1,9 +1,22 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parsePairingUrl } from "@shahi/shared/pairing";
 import { ensureSecrets, writeEnvFile } from "../lib/secrets";
+
+// Scratch directories made below, removed when the file finishes. Some hold
+// generated secrets, and every run left them in $TMPDIR until the September
+// 2026 review.
+const scratches: string[] = [];
+const scratch = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratches.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+});
 
 /**
  * The plugin keeps its default relay out of the .env — in the service's
@@ -31,7 +44,7 @@ afterAll(() => void sidecar.stop(true));
 
 /** pair.ts --code-only against the sidecar above, with a plugin's .env: no RELAY_URL key at all. */
 async function codeOnly() {
-  const dir = mkdtempSync(join(tmpdir(), "shahi-pair-"));
+  const dir = scratch("shahi-pair-");
   const envFile = join(dir, "shahi.env");
   const { env } = await ensureSecrets(new Map([["PORT", String(sidecar.port)]]), { passcode: "2468" });
   writeEnvFile(envFile, env);
