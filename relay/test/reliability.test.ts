@@ -8,7 +8,7 @@ import { RELAY_LIMITS, RELAY_PROTOCOL } from "../../shared/src/relay";
 import { clientSession, ephemeral, seal } from "../../shared/src/e2e";
 import { HTTP, WS, Peer, startRelay } from "./harness";
 
-let stopRelay = () => {};
+let stopRelay: () => Promise<void> = async () => {};
 beforeAll(async () => { stopRelay = await startRelay(); }, 90_000);
 afterAll(() => stopRelay());
 

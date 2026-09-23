@@ -28,7 +28,7 @@ const transcript = new TranscriptStore(join(scratch, "transcript.sqlite"));
 const peers: Peer[] = [];
 let server: ShahiServer;
 let relay: RelayClient;
-let stopRelay = () => {};
+let stopRelay: () => Promise<void> = async () => {};
 const encoder = new TextEncoder();
 
 beforeAll(async () => {
@@ -59,7 +59,7 @@ afterAll(async () => {
   for (const p of peers) p.close();
   relay?.stop(); server?.stop(true); transcript.close(); db.close();
   await Bun.sleep(50);
-  stopRelay(); rmSync(scratch, { recursive: true, force: true });
+  await stopRelay(); rmSync(scratch, { recursive: true, force: true });
 });
 
 async function hello(deviceId: string) {

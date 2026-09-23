@@ -17,7 +17,7 @@ import {
   unframe,
 } from "./harness.ts";
 
-let stop: () => void;
+let stop: () => Promise<void>;
 beforeAll(async () => {
   stop = await startRelay();
 }, 120_000);

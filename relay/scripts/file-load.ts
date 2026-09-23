@@ -44,4 +44,4 @@ try {
     baselineP95Ms:percentile(baseline,.95), uploadChatP95Ms:percentile(bulk,.95), uploadChatP99Ms:percentile(bulk,.99),
     loadGeneratorMaxRssMiB:Math.round(maxRss/1048576), elapsedMs:Date.now()-begin,
     limitations:"Generator RSS is not Worker isolate memory; excludes real encryption, disk, WAF, global routing and long soak" }));
-} finally { clearInterval(memory); for (const p of peers) { p.phone.close(); p.box.close(); } await Bun.sleep(100); stop(); }
+} finally { clearInterval(memory); for (const p of peers) { p.phone.close(); p.box.close(); } await Bun.sleep(100); await stop(); }

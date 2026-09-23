@@ -4,6 +4,9 @@
  * runs the Worker in workerd on this machine, Durable Objects, hibernation and
  * alarms included.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { BOX_AUTH_PREFIX, type BoxToRelay, type RelayToBox } from "@shahi/shared";
@@ -16,6 +19,7 @@ export const WS = `ws://127.0.0.1:${PORT}`;
 const RELAY_DIR = new URL("..", import.meta.url).pathname;
 
 let ownedRelay: ReturnType<typeof Bun.spawn> | null = null;
+let ownedState: string | null = null;
 let relayStart: Promise<"owned" | "external"> | null = null;
 let relayUsers = 0;
 
@@ -24,10 +28,15 @@ let relayUsers = 0;
  * front door to answer 404 — a listening port is not enough, wrangler binds
  * it before the Worker is built.
  *
+ * Its Durable Objects are kept in a directory of their own, deleted when it
+ * stops. Left to wrangler's default, relay/.wrangler/state kept every object
+ * every run had made (5,069 databases and 358 MB were found there), and alarms
+ * set by earlier runs fired during later ones (review 2026-09-22, P02-X2).
+ *
  * stdout is discarded rather than piped: on this Mac, Bun's test runner fails
  * any `Bun.spawn` with a piped stdio (EBADF), see `docs/on-a-mac.md`.
  */
-export async function startRelay(): Promise<() => void> {
+export async function startRelay(): Promise<() => Promise<void>> {
   // Bun runs test files concurrently in one process. A second suite can arrive
   // after the first suite has bound the port but before it has returned from
   // this function; treating that Worker as external lets the first suite kill
@@ -38,8 +47,12 @@ export async function startRelay(): Promise<() => void> {
     // A relay already on the port (a `wrangler dev` left running to iterate
     // against) is used as is, and left running.
     if (await answers()) return "external";
+    ownedState = mkdtempSync(join(tmpdir(), "shahi-relay-test-"));
     ownedRelay = Bun.spawn(
-      ["bunx", "wrangler", "dev", "--port", String(PORT), "--inspector-port", "0", "--log-level", "warn"],
+      [
+        "bunx", "wrangler", "dev", "--port", String(PORT), "--inspector-port", "0",
+        "--persist-to", ownedState, "--log-level", "warn",
+      ],
       {
         cwd: RELAY_DIR,
         stdio: ["ignore", "ignore", "inherit"],
@@ -58,25 +71,34 @@ export async function startRelay(): Promise<() => void> {
     const kind = await relayStart;
     if (kind === "external") {
       relayUsers--;
-      return () => {};
+      return async () => {};
     }
     return releaseRelay;
   } catch (error) {
-    ownedRelay?.kill();
-    ownedRelay = null;
-    relayStart = null;
-    relayUsers = 0;
+    relayUsers = 1;
+    await releaseRelay();
     throw error;
   }
 }
 
-function releaseRelay(): void {
+async function releaseRelay(): Promise<void> {
   relayUsers--;
   if (relayUsers > 0) return;
-  ownedRelay?.kill();
+  const relay = ownedRelay, state = ownedState;
   ownedRelay = null;
+  ownedState = null;
   relayStart = null;
   relayUsers = 0;
+  relay?.kill();
+  // Deleted only once workerd has let go of it, or a late write could leave
+  // part of the directory behind.
+  await relay?.exited;
+  if (state) rmSync(state, { recursive: true, force: true });
+}
+
+/** Where the relay this process started keeps its Durable Objects, or null when it started none. */
+export function relayStateDir(): string | null {
+  return ownedState;
 }
 
 async function answers(): Promise<boolean> {

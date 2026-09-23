@@ -47,4 +47,4 @@ try {
   console.log(JSON.stringify({ result: "passed", environment: "local workerd; WAF and global routing excluded", boxes: count, concurrentPhones: count,
     roundTrips: timings.length, reconnects: count, p50Ms: timings[Math.floor(timings.length * .5)], p95Ms: timings[Math.floor(timings.length * .95)],
     p99Ms: timings[Math.floor(timings.length * .99)], elapsedMs: performance.now() - started }));
-} finally { for (const { upstream, phone } of records) { upstream.close(); phone.close(); } await Bun.sleep(100); stop(); }
+} finally { for (const { upstream, phone } of records) { upstream.close(); phone.close(); } await Bun.sleep(100); await stop(); }
