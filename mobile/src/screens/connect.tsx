@@ -70,19 +70,22 @@ export function Connect({
     setHostKey({ review, answer });
   });
 
-  // A link is asking to pair. Confirm the target before a byte is sent.
+  // A link is asking to pair. Confirm the target before a byte is sent. It
+  // scrolls: at the largest text sizes the warning alone is taller than the
+  // screen, and in a plain View it pushed Pair and Cancel off the bottom, out
+  // of reach (seen on the simulator at AX5, pre-release verification).
   if (pending) {
     const host = pending.relay.replace(/^https?:\/\//, "");
     return (
-      <View style={styles.introBody}>
-        <Text style={styles.lede}>Pair this phone?</Text>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.introBody} testID="pair-review">
+        <Text style={styles.lede} accessibilityRole="header">Pair this phone?</Text>
         <Text style={styles.introText}>
-          A link is asking to connect this phone to a Shahi server. Only continue if you opened this
-          code yourself, from a server you control.
+          A link is asking to connect this phone to a Shahi computer. Only continue if you opened this
+          link yourself, from a computer you control.
         </Text>
-        <Text style={styles.label}>SERVER</Text>
+        <Text style={styles.label}>RELAY</Text>
         <Text style={styles.mono}>{host}</Text>
-        <Text style={styles.label}>IDENTITY</Text>
+        <Text style={styles.label}>COMPUTER</Text>
         <Text style={styles.mono}>{pending.server.slice(0, 16)}…</Text>
         {error && <Text style={styles.error}>{error}</Text>}
         <Pressable
@@ -99,7 +102,7 @@ export function Connect({
         <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(); setError(null); }} testID="confirm-cancel">
           <Text style={styles.link}>Cancel</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     );
   }
 
