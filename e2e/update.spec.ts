@@ -9,6 +9,18 @@ import { scenario } from "./stub/control";
  * person work they had not finished.
  */
 
+/**
+ * Types once the conversation has drawn, as a person would. Text filled in the
+ * first few milliseconds after the page loaded was occasionally gone again in
+ * WebKit before the next step.
+ */
+async function draftIn(page: Page, paneId: string, text: string) {
+  await page.goto(`/pane/${encodeURIComponent(paneId)}`);
+  await expect(page.locator(".reader .msg").first()).toBeVisible();
+  await page.locator("textarea").fill(text);
+  await expect(page.locator("textarea")).toHaveValue(text);
+}
+
 /** The shell the server now answers with names another bundle. */
 async function deploy(page: Page) {
   // Only the update check's own fetch sees it; a real reload still gets the real app.
@@ -26,8 +38,7 @@ async function deploy(page: Page) {
  */
 test("a terminal removed by a deploy offers the update instead of breaking the app", async ({ page }) => {
   await scenario(page, "busy");
-  await page.goto("/pane/w1%3Ap2");
-  await page.locator("textarea").fill("Keep this draft");
+  await draftIn(page, "w1:p2", "Keep this draft");
   await page.route("**/assets/Terminal-*", (route) => route.fulfill({ status: 404, body: "not found" }));
   await deploy(page);
   await page.getByRole("tab", { name: "Screen", exact: true }).click();
@@ -44,14 +55,18 @@ test("a terminal removed by a deploy offers the update instead of breaking the a
  * operation ID — once the person had gone back to the list.
  */
 test("an update waits for a draft in a conversation that is no longer open", async ({ page }) => {
+  // The foreground check runs at most once a minute, and the page's own first
+  // pageshow can use that turn when sign-in finishes first — which made this
+  // pass alone and fail in WebKit in the full run. Time is moved past it below.
+  await page.clock.install();
   await scenario(page, "busy");
-  await page.goto("/pane/w1%3Ap2");
-  await page.locator("textarea").fill("Keep this draft");
+  await draftIn(page, "w1:p2", "Keep this draft");
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.locator("textarea")).toHaveCount(0);
 
   await deploy(page);
   await page.evaluate(() => { (window as { unreloaded?: boolean }).unreloaded = true; });
+  await page.clock.fastForward("01:01");
   await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
 
   await expect(page.getByText(/A new version is ready/)).toBeVisible();
