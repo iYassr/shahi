@@ -68,3 +68,6 @@ credentials.json
 reviewer-access.md
 local.env
 *-device.json
+
+# Worktrees that tools create inside the checkout; never part of the project.
+/.claude/worktrees/
