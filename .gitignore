@@ -27,6 +27,10 @@ e2e/.auth/
 e2e/.server-gone
 e2e/test-results/
 test-results/
+# Playwright's HTML reports, at any depth: a failed run copies its traces and
+# error text into them, and a failed `live` run's hold the passcode login and
+# real session responses.
+playwright-report/
 
 # Incremental typecheck state, regenerated on every run.
 *.tsbuildinfo

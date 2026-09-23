@@ -30,7 +30,14 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
-  reporter: [["list"], ["html", { open: "never" }]],
+  /*
+   * The report lives beside the config, in `e2e/playwright-report/`, and is
+   * ignored by git. Left to Playwright it lands at the repository root, where
+   * nothing ignored it until the September 2026 review — and a failed `live`
+   * run copies its traces, the passcode login and real session responses
+   * among them, into that report.
+   */
+  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
 
   // Started for the run and shut down after it, unless one is already up.
   webServer: {

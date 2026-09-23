@@ -118,6 +118,7 @@ jobs:
           path: |
             test-results/
             e2e/test-results/
+            e2e/playwright-report/
             playwright-report/
           if-no-files-found: ignore
           retention-days: 7

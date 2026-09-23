@@ -3,7 +3,9 @@
  *
  * Every `bun run test` left ten directories in $TMPDIR — freshly generated
  * session secrets and VAPID keys among them — and every browser-suite run
- * left the stub's.
+ * left the stub's. And Playwright's report, which a failed run fills with
+ * traces and error text, landed where nothing stopped `git add -A` from
+ * staging it.
  *
  * Children are given a TMPDIR of their own, which must be empty when they
  * finish, and write their output to a file: a piped child under `bun test`
@@ -12,7 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
@@ -102,5 +104,25 @@ describe("the test tooling cleans up after itself", () => {
       .filter((server) => /\/(stub|hosted)\/server\.ts/.test(server.command ?? ""));
     expect(stubs).toHaveLength(4);
     for (const server of stubs) expect({ command: server.command, signal: server.gracefulShutdown?.signal }).toEqual({ command: server.command, signal: "SIGTERM" });
+  });
+
+  test("Playwright's HTML report is ignored by git wherever a suite writes it", async () => {
+    const { default: config } = await import("../../e2e/playwright.config");
+    const html = [config.reporter ?? []].flat().find((reporter) => Array.isArray(reporter) && reporter[0] === "html");
+    const folder = (html as [string, { outputFolder?: string }] | undefined)?.[1]?.outputFolder;
+    expect(folder).toBeDefined();
+    const reports = [
+      relative(ROOT, resolve(ROOT, "e2e", folder!)),
+      // The hosted configs keep Playwright's default: the directory of the
+      // nearest package.json, the repository root.
+      "playwright-report",
+    ];
+    for (const report of reports) {
+      const check = Bun.spawnSync(["git", "check-ignore", "-q", "--no-index", join(report, "index.html")], {
+        cwd: ROOT,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      expect({ report, ignored: check.exitCode === 0 }).toEqual({ report, ignored: true });
+    }
   });
 });
