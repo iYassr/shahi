@@ -7,6 +7,11 @@
  * embedded, because an app that talks to one server on a tailnet should not
  * also fetch icons from a CDN at runtime. Status marks in lists stay
  * terminal glyphs (○ ◐ ✳ ❯) — they are the terminal's own vocabulary.
+ *
+ * The sets' licenses ask for their notices to travel with the app, and the
+ * licenses screen carries them: Lucide's in screens/licenses-text.ts, the
+ * agent marks' in @shahi/shared/artwork-notices. An icon from any other set
+ * needs its notice added there too.
  */
 import { agentIdentity, agentMarks, brandMark, brandWordmark } from "@shahi/shared/brand";
 import Svg, { G, Path, Rect } from "react-native-svg";

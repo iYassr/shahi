@@ -12,6 +12,7 @@
     "./errors": "./src/errors.ts",
     "./pairing": "./src/pairing.ts",
     "./brand": "./src/brand.ts",
+    "./artwork-notices": "./src/artwork-notices.ts",
     "./file-download": "./src/file-download.ts",
     "./file-upload": "./src/file-upload.ts"
   },
