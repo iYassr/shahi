@@ -317,6 +317,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     );
   }
 
+  const placeholder = tab === "screen" ? "Send text to terminal…" : "Reply to this agent…";
+
   return (
     <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"} data-update-blocked={Boolean(draft || attachments.length || sending || attaching)}>
       {/*
@@ -501,13 +503,18 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           >
             +
           </button>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={tab === "screen" ? "Send text to terminal…" : "Reply to this agent…"}
-            rows={1}
-            aria-label="Message"
-          />
+          {/* The wrapper repeats the draft, or the placeholder, in a hidden
+              copy that sizes the box when the composer is narrow (see
+              .compose__field in session.css). */}
+          <div className="compose__field" data-value={draft || placeholder}>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={placeholder}
+              rows={1}
+              aria-label="Message"
+            />
+          </div>
           <button
             className="compose__send"
             onClick={() => void submit()}

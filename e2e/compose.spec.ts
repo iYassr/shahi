@@ -104,6 +104,68 @@ test.describe("the composer", () => {
   });
 });
 
+/**
+ * Page zoom narrows the layout viewport: a 390pt phone at 200% lays out 195
+ * CSS pixels wide, at 300% 130. The reply box was squeezed to 34px between
+ * attach and Send with its placeholder cut after two letters, and at 300% Send
+ * ran 41px past the edge (September 2026).
+ */
+test.describe("the composer at page zoom", () => {
+  /**
+   * What a person can see of the composer. The layout viewport is the root's
+   * width: Chromium's mobile emulation zooms out to fit anything wider (the
+   * tab bar is, at these sizes), which `innerWidth` reports instead. The
+   * Screen tab has xterm's own hidden textarea, so the composer's is named.
+   */
+  const measure = (page: Page) =>
+    page.evaluate(() => {
+      const box = document.querySelector<HTMLTextAreaElement>(".compose textarea")!;
+      const send = document.querySelector(".compose__send")!.getBoundingClientRect();
+      // The height the placeholder needs, found by making it the value for a
+      // moment. Nothing is typed: React never hears of it.
+      const draft = box.value;
+      box.value = box.placeholder;
+      const needs = box.scrollHeight;
+      box.value = draft;
+      return {
+        viewport: document.documentElement.clientWidth,
+        width: box.getBoundingClientRect().width,
+        height: box.clientHeight,
+        needs,
+        send: { left: send.left + window.scrollX, right: send.right + window.scrollX },
+      };
+    });
+
+  for (const zoom of [2, 3]) {
+    test(`at ${zoom * 100}% the reply box is wide enough, shows its whole placeholder and keeps Send on screen`, async ({ page }) => {
+      await page.setViewportSize({ width: Math.round(390 / zoom), height: Math.round(844 / zoom) });
+      await openPane(page);
+      for (const tab of ["Read", "Screen"]) {
+        // Dispatched rather than tapped: the tab bar is wider than the screen
+        // at these sizes, and scrolling it into view is not this test's business.
+        if (tab === "Screen") await page.getByRole("tab", { name: "Screen" }).dispatchEvent("click");
+        const seen = await measure(page);
+        expect(seen.width, `${tab}: the reply box's width`).toBeGreaterThanOrEqual(seen.viewport * 0.6);
+        expect(seen.height, `${tab}: the placeholder's height`).toBeGreaterThanOrEqual(seen.needs - 1);
+        expect(seen.send.left, `${tab}: Send's left edge`).toBeGreaterThanOrEqual(0);
+        expect(seen.send.right, `${tab}: Send's right edge`).toBeLessThanOrEqual(seen.viewport + 0.5);
+      }
+    });
+  }
+
+  test("at normal zoom the reply box stays one line between attach and Send", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPane(page);
+    const box = (await page.locator(".compose textarea").boundingBox())!;
+    const send = (await page.locator(".compose__send").boundingBox())!;
+    expect(box.height).toBe(44);
+    expect(box.x + box.width).toBeLessThan(send.x);
+    expect(Math.abs(box.y + box.height - (send.y + send.height))).toBeLessThanOrEqual(1);
+    const seen = await measure(page);
+    expect(seen.height).toBeGreaterThanOrEqual(seen.needs - 1);
+  });
+});
+
 test.describe("attachments", () => {
   test("a server file becomes a path on its own line", async ({ page }) => {
     await openPane(page);

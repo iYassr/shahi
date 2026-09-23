@@ -172,8 +172,17 @@
   align-items: flex-end;
 }
 
-.compose textarea {
+/* Holds the textarea in a one-cell grid; the narrow layout below uses it. */
+.compose__field {
   flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compose textarea {
+  grid-area: 1 / 1;
+  width: 100%;
   resize: none;
   background: var(--surface);
   border: 1px solid var(--line-bright);
@@ -199,6 +208,55 @@
 
 .compose__send:disabled {
   opacity: 0.35;
+}
+
+/*
+ * A narrow composer, which is what page zoom makes of a phone: at 200% the
+ * reply box was squeezed to 34px between attach and Send and its placeholder
+ * cut after two letters; at 300% Send ran 41px past the edge of the screen
+ * (measured in WebKit and Chromium, September 2026). Here the box takes a
+ * line of its own with the buttons under it, as the native app does at
+ * accessibility text sizes, and grows with its text up to its 140px cap: a
+ * hidden copy of the draft, or of the placeholder when there is none, shares
+ * its grid cell and sets the height. field-sizing: content would be simpler,
+ * but WebKit does not size an empty textarea by its whole placeholder. From
+ * 360px up both placeholders fit beside the buttons, so wider layouts are
+ * unchanged.
+ */
+@media (max-width: 359px) {
+  .compose__row {
+    flex-wrap: wrap;
+  }
+
+  .compose__field {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  .compose__send {
+    margin-left: auto;
+  }
+
+  /* Wraps exactly as the textarea does: same font, padding and border. */
+  .compose__field::after {
+    content: attr(data-value) " ";
+    grid-area: 1 / 1;
+    visibility: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-family: var(--ui);
+    font-size: 16px;
+    line-height: normal;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    box-sizing: border-box;
+    max-height: 140px;
+    overflow: hidden;
+  }
+
+  .detail[data-screen="true"] .compose__field::after {
+    border: none;
+  }
 }
 
 .keys {
