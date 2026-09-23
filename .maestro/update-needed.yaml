@@ -7,11 +7,12 @@
 # the phone pairs with it: the refusal must come from the handshake, before
 # the code is spent, so the same code pairs once the versions agree.
 #
-# The flow this replaces also relaunched a signed-in app after the computer
-# moved on and expected "Update needed". Over the relay that is not what
-# happens today — the pane stream is not version-gated, and its session
-# arrives before the refused request — so that half is left out until the
-# app or the box handles it (September 2026 review).
+# Then the other moment a person meets it: an app that was signed in when the
+# computer moved on. A cold start has to land on "Update needed" with a way
+# out. Over the relay the pane stream is not version-gated and its dashboard
+# can arrive before the refused request; until September 2026 that dashboard
+# wiped the notice into a live agent list, so the notice must also survive
+# the pushes that follow it.
 appId: app.shahi.mobile
 name: A computer this app cannot talk to says which side to update
 env:
@@ -69,3 +70,31 @@ env:
 - extendedWaitUntil:
     visible: "Agents"
     timeout: 30000
+
+# The computer moves on while the app is closed: a genuine cold start, not
+# Maestro's launchApp merely foregrounding an app that is still running.
+- stopApp
+- runScript:
+    file: fixture/set-meta.js
+    env:
+      MIN: "99"
+      MAX: "99"
+- launchApp
+- extendedWaitUntil:
+    visible: "Update needed"
+    timeout: 30000
+- assertVisible: ".*Update the app.*"
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertVisible: "Update needed"
+- assertNotVisible:
+    id: "row-w1:p1"
+
+# "Switch server" is the way out: the list of computers, ready to add another.
+- tapOn:
+    id: "switch-server"
+- extendedWaitUntil:
+    visible:
+      id: "add-computer"
+    timeout: 15000
+- runScript: fixture/same-version.js
