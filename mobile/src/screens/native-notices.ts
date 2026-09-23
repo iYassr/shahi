@@ -1204,6 +1204,49 @@ export const NATIVE_NOTICES: NativeNotice[] = [
 ];
 
 /**
+ * Code a package carries inside itself without the licence that came with it.
+ * expo-router ships React Navigation's bottom-tabs, core, drawer, elements,
+ * material-top-tabs, native, native-stack, routers and stack packages under
+ * build/react-navigation, and no licence file for them; the September 2026
+ * review's notices pass found it (F27). Each of those packages has the same
+ * MIT file upstream, identical at @react-navigation/native@7.4.1 and on main,
+ * and expo-router does not say which 7.x release it copied, so the version is
+ * the major one. native-notices.test.ts pins the text and fails if
+ * expo-router starts carrying a package not named here.
+ */
+export const REACT_NAVIGATION_LICENSE = `MIT License
+
+Copyright (c) 2017 React Navigation Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+`;
+
+export const VENDORED_NOTICES: NativeNotice[] = [
+  {
+    name: "React Navigation", version: "7", license: "MIT License",
+    in: "expo-router, which carries nine of its packages in build/react-navigation",
+    repository: "https://github.com/react-navigation/react-navigation", tag: "@react-navigation/native@7.4.1",
+    files: [{ path: "packages/*/LICENSE (the same file in each)", text: REACT_NAVIGATION_LICENSE }],
+  },
+];
+
+/**
  * Pods that a shipped package's podspec depends on and no node_modules
  * package provides, with what became of each. scripts/third-party-notices.test.ts
  * fails on one that is not here, so a new native dependency from outside

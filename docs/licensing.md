@@ -181,12 +181,15 @@ extensions, under `nosniff`, a browser would download it rather than show it.
   fails; the same check against the next Release build's frameworks would
   find it.
 - **Packages without a licence file** point at their repository rather than
-  reproducing a notice. expo-router in particular carries React Navigation's
-  source without React Navigation's notice. No `@react-navigation` package,
-  nor any copy of its licence, is in `node_modules` to take it from, and
-  expo-router does not say which release it copied, so the text cannot be
-  pinned to a version the way the others are. That omission is upstream's,
-  but the app redistributes it.
+  reproducing a notice. The one case where that left code without its notice
+  is closed: expo-router carries nine React Navigation packages in
+  `build/react-navigation` and no licence for them, so the screen now shows
+  React Navigation's MIT file in its own section ("Code those modules carry
+  inside them"). The nine packages have the same file upstream, identical at
+  `@react-navigation/native@7.4.1` and on main; expo-router does not say
+  which 7.x release it copied, so the notice is labelled 7 rather than a
+  point release. `native-notices.test.ts` pins the text and fails if
+  expo-router starts carrying a package not named there.
 - **Android**: the list is the iOS app's. An Android build would bundle a
   slightly different set and link different native code.
 

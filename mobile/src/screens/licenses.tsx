@@ -7,11 +7,13 @@
  * whole and selectable, never summarised or linked: the licenses ask for
  * their text.
  *
- * Four kinds, each with its own source: the SSH libraries and Lucide's icons
+ * Five kinds, each with its own source: the SSH libraries and Lucide's icons
  * are kept by hand in licenses-text.ts, the native libraries CocoaPods builds
  * in from outside node_modules in native-notices.ts, the agent marks' notices
- * in @shahi/shared (both clients draw them), and every npm package in the
- * build is generated into third-party-notices.json by scripts/app-notices.ts.
+ * in @shahi/shared (both clients draw them), every npm package in the build
+ * is generated into third-party-notices.json by scripts/app-notices.ts, and
+ * code a package carries inside itself without its licence (React Navigation,
+ * in expo-router) is kept by hand in native-notices.ts too.
  *
  * About 100 entries and 120 KB of text, so a virtualised list of short rows
  * rather than one scroll view of whole texts: iOS draws each Text into a
@@ -27,7 +29,7 @@ import { ARTWORK_NOTICES } from "@shahi/shared/artwork-notices";
 import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
 import { LUCIDE_LICENSE, NOTICES } from "./licenses-text";
-import { NATIVE_NOTICES } from "./native-notices";
+import { NATIVE_NOTICES, VENDORED_NOTICES } from "./native-notices";
 import generated from "./third-party-notices.json";
 
 /** One entry of the generated file; see scripts/third-party-notices.ts. */
@@ -118,6 +120,15 @@ export function licenseRows(): Row[] {
     ]),
     { kind: "section", key: "section:packages", testID: "licenses-packages", title: `JavaScript and native modules from npm (${PACKAGES.packages.length})` },
     ...packageRows(),
+    { kind: "section", key: "section:vendored", testID: "licenses-vendored", title: "Code those modules carry inside them" },
+    ...VENDORED_NOTICES.flatMap((notice): Row[] => [
+      { kind: "title", key: `vendored:${notice.name}`, testID: `license-${notice.name}`, title: `${notice.name} ${notice.version}`,
+        meta: [notice.license, notice.in, `${notice.repository} at ${notice.tag}`] },
+      ...notice.files.flatMap((file, index): Row[] => [
+        { kind: "text", key: `vendored-file:${notice.name}:${index}`, text: file.path, mono: false, paragraph: true },
+        ...textRows(`vendored:${notice.name}:${index}`, file.text),
+      ]),
+    ]),
   ];
 }
 

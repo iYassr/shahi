@@ -11,7 +11,7 @@
  * and the SHA-256 below.
  */
 import { licenseRows } from "./licenses";
-import { EXTERNAL_PODS, NATIVE_NOTICES } from "./native-notices";
+import { EXTERNAL_PODS, NATIVE_NOTICES, VENDORED_NOTICES } from "./native-notices";
 
 jest.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
 
@@ -102,4 +102,21 @@ test("the licenses screen shows each native library's files whole, each under it
       expect(shown).toBe(file.text.replace(/^\s*\n/, "").trimEnd().replace(/\n(?:[ \t]*\n)+/g, "\n\n"));
     });
   }
+});
+
+// expo-router ships nine React Navigation packages in build/react-navigation
+// with no licence file for them (F27, found after the npm list was generated).
+test("React Navigation's licence travels with the copy of it expo-router carries", () => {
+  const [nav] = VENDORED_NOTICES;
+  // Upstream packages/*/LICENSE, identical in all nine at @react-navigation/native@7.4.1.
+  expect(sha256(nav!.files[0]!.text)).toBe("c3bc4b85acdbcfe7b2ffe3c986dcfc0cc98980c1b98154c87fa5a894acd9ac78");
+  const carried = readdirSync(`${root}/node_modules/expo-router/build/react-navigation`).filter((name) => !name.includes(".")).sort();
+  // A package added here is code whose licence nobody has checked yet.
+  expect(carried).toEqual(["bottom-tabs", "core", "drawer", "elements", "material-top-tabs", "native", "native-stack", "routers", "stack"]);
+  const rows = licenseRows();
+  expect(rows).toContainEqual(expect.objectContaining({ kind: "section", testID: "licenses-vendored" }));
+  expect(rows).toContainEqual(expect.objectContaining({ kind: "title", testID: "license-React Navigation" }));
+  const shown = rows.flatMap((row) => row.kind === "text" && row.key.startsWith("vendored:React Navigation:0:") ? [row] : [])
+    .map((row, i) => `${i && row.paragraph ? "\n\n" : i ? "\n" : ""}${row.text}`).join("");
+  expect(shown).toBe(nav!.files[0]!.text.replace(/^\s*\n/, "").trimEnd().replace(/\n(?:[ \t]*\n)+/g, "\n\n"));
 });
