@@ -330,7 +330,7 @@ export class RelayLink {
         // session. That says this connection is stale, not that the durable
         // device credential was revoked. Only an authenticated sealed `bye`
         // below is authority to erase a saved pairing.
-        this.#drop(socket, new UnreachableError("lost", this.host, `The secure connection through ${this.host} changed. Reconnecting…`));
+        this.#drop(socket, new UnreachableError("lost", this.host, `The secure connection through ${this.host} changed. ${this.#next()}`));
         return;
       }
       this.#confirmed = true;
@@ -498,7 +498,7 @@ export class RelayLink {
         return false;
       }
       if (socket.bufferedAmount + frame.byteLength > RELAY_LIMITS.maxSocketBufferedBytes) {
-        this.#drop(socket, new UnreachableError("relay", this.host, "This connection is too slow. Reconnecting…"));
+        this.#drop(socket, new UnreachableError("relay", this.host, `This connection is too slow. ${this.#next()}`));
         return false;
       }
       this.#refillSendTokens();
@@ -544,7 +544,15 @@ export class RelayLink {
     this.#drop(this.#ws, this.#lost());
   }
 
-  #lost(): Error { return new UnreachableError("lost", this.host, `The connection through ${this.host} dropped. Reconnecting…`); }
+  #lost(): Error { return new UnreachableError("lost", this.host, `The connection through ${this.host} dropped. ${this.#next()}`); }
+
+  /**
+   * What a failed request says comes next. A pairing link lives for one claim,
+   * and whoever holds it closes it on the first failure, so it never
+   * reconnects: "Reconnecting…" under a pairing code that could not reach its
+   * relay was a promise nothing kept (pre-release review, September 2026).
+   */
+  #next(): string { return this.target.auth.kind === "pairing" ? "Try again." : "Reconnecting…"; }
 
   #discard(socket: WebSocket): void {
     clearTimeout(this.#sendTimer); this.#sendTimer = undefined;

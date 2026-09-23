@@ -257,3 +257,21 @@ test("a spent pairing code closed by the box asks for a fresh code without retry
   await Bun.sleep(600);
   expect(FakeSocket.count).toBe(count);
 });
+
+// Found by the pre-release Maestro pass: a code whose relay could not be
+// reached said "dropped. Reconnecting…" on the Connect screen, and nothing
+// ever reconnected — both clients close a pairing link on its first failure.
+test("a pairing link that drops says to try again, and a device link that it is reconnecting", async () => {
+  const { socket, response } = connect();
+  socket.onerror!();
+  const error = await response.then(() => null, (e: Error) => e);
+  expect(error?.message).toContain("Try again.");
+  expect(error?.message).not.toContain("Reconnecting");
+
+  const link = new RelayLink({ relay: "https://relay.example", serverId: server, secret, auth: { kind: "device", deviceId: "test-device" } });
+  links.push(link);
+  const request = link.request({ method: "GET", path: "/api/meta", headers: {}, body: null }, 1000);
+  FakeSocket.last.onopen!();
+  FakeSocket.last.onerror!();
+  await expect(request).rejects.toThrow("Reconnecting…");
+});
