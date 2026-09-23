@@ -38,7 +38,7 @@ public class ShahiDocumentsModule: Module {
     }.runOnQueue(.main)
   }
 }
-final class ShahiPDFView: ExpoView {
+final class ShahiPDFView: ExpoView, PDFViewDelegate {
   private let pdf = PDFView()
   let onLoadError = EventDispatcher()
   required init(appContext: AppContext? = nil) {
@@ -46,8 +46,16 @@ final class ShahiPDFView: ExpoView {
     pdf.autoScales = true
     pdf.displayMode = .singlePageContinuous
     pdf.displayDirection = .vertical
+    pdf.delegate = self
     addSubview(pdf)
   }
+  // A previewed PDF is untrusted: an agent may have downloaded it from
+  // anywhere. Without a delegate, PDFView hands every link annotation's URL
+  // to the system, so a tap opened whatever its author chose — another app's
+  // scheme, a phishing page, a pairing link (pre-release review). The web
+  // preview renders pages to a canvas and follows no links; this matches it.
+  // Links inside the document are destinations, not URLs, and still work.
+  func pdfViewWillClick(onLink sender: PDFView, with url: URL) {}
   override func layoutSubviews() { super.layoutSubviews(); pdf.frame = bounds }
   func load(_ value: String) {
     guard let data = Data(base64Encoded: value.padding(toLength: ((value.count + 3) / 4) * 4, withPad: "=", startingAt: 0)), data.count <= 25 * 1024 * 1024,
