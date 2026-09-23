@@ -41,8 +41,14 @@ describe("a space's conversation rows at accessibility text sizes", () => {
     expectTitleKept(render(<SpaceDetail space={space} session={session} />));
   });
 
+  // Jest's React Native preset starts at a font scale of 2, already over the
+  // large-text threshold, so this starts at the default size explicitly:
+  // started at 2 it never crossed it, and passed for rows that read the size
+  // once at mount.
   test("keep the conversation title when the size changes while running", () => {
+    act(() => Dimensions.set({ window: { ...window, fontScale: 1 }, screen }));
     const view = render(<SpaceDetail space={space} session={session} />);
+    expect(flat(view.getByText("Fix the login redirect loop")).flex).toBe(1);
     act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen }));
     expectTitleKept(view);
   });

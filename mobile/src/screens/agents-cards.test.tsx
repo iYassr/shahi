@@ -106,8 +106,10 @@ describe("at accessibility text sizes", () => {
   const flat = (node: { props: Record<string, any> }) => StyleSheet.flatten(node.props.style) ?? {};
 
   function expectTitleOnItsOwnLine(view: ReturnType<typeof render>) {
+    // The waiting card's title gets a third line at these sizes; the row's
+    // title a second, on a line of its own.
     const title = view.getByText("Fix the login redirect loop");
-    expect(title.props.numberOfLines).toBeGreaterThanOrEqual(2);
+    expect(title.props.numberOfLines).toBeGreaterThanOrEqual(3);
     // Metadata sits on its own line and can no longer squeeze the title out.
     expect(view.getByText("project · Claude · w1:p1")).toBeTruthy();
     expect(view.getByLabelText("Waiting on you, Fix the login redirect loop, project, Claude")).toBeTruthy();
@@ -119,8 +121,15 @@ describe("at accessibility text sizes", () => {
     expectTitleOnItsOwnLine(render(<Agents onOpenPane={jest.fn()} />));
   });
 
+  // Jest's React Native preset starts at a font scale of 2, already over the
+  // large-text threshold, so this starts at the default size explicitly:
+  // started at 2 it never crossed it, and passed for rows that read the size
+  // once at mount.
   test("a waiting card and a row keep the conversation title when the size changes while running", () => {
+    act(() => Dimensions.set({ window: { ...window, fontScale: 1 }, screen }));
     const view = render(<Agents onOpenPane={jest.fn()} />);
+    expect(view.getByText("Fix the login redirect loop").props.numberOfLines).toBe(2);
+    expect(flat(view.getByText("Convert PDF exports")).flex).toBe(1);
     act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen }));
     expectTitleOnItsOwnLine(view);
   });

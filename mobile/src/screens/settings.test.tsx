@@ -104,8 +104,14 @@ describe("at accessibility text sizes", () => {
     expectValueUnderLabel(render(<Settings />));
   });
 
+  // Jest's React Native preset starts at a font scale of 2, already over the
+  // large-text threshold, so this starts at the default size explicitly:
+  // started at 2 it never crossed it, and passed for a row that read the size
+  // once at mount.
   test("a Settings row puts its value under its label when the size changes while running", () => {
+    act(() => Dimensions.set({ window: { ...window, fontScale: 1 }, screen: screenSize }));
     const view = render(<Settings />);
+    expect(StyleSheet.flatten(hostParent(view.getByText("Computers")).props.style).flexDirection).toBe("row");
     act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen: screenSize }));
     expectValueUnderLabel(view);
   });
