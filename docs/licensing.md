@@ -57,7 +57,7 @@ Apple's distribution requirements.
 
 **The iOS app** shows every notice under **Open-source licenses**: in
 Settings, and as a link at the foot of the Connect screen, so someone who has
-never connected a computer can read them too. The screen has three parts:
+never connected a computer can read them too. The screen has four parts:
 
 - *Built into the SSH connection*: OpenSSL 3.6.3 (Apache-2.0) and libssh2
   1.11.0 (BSD-3-Clause), the two libraries compiled into the binary for SSH.
@@ -67,13 +67,65 @@ never connected a computer can read them too. The screen has three parts:
   not in the IPA. The texts are the files in
   `mobile/modules/ssh-tunnel/licenses/`, unchanged, kept in
   `mobile/src/screens/licenses-text.ts` and pinned by `licenses.test.tsx`.
+- *Native libraries React Native and Expo build in*: the native code CocoaPods
+  fetches from outside `node_modules`, so the generated list below cannot
+  see it. A Release build's `Podfile.lock`, link flags and embedded
+  frameworks show what that is:
+
+  | Library | Version | Licence | Carried by |
+  | --- | --- | --- | --- |
+  | Folly | 2024.11.18.00 | Apache-2.0 (no NOTICE at that tag) | ReactNativeDependencies.framework |
+  | glog | 0.3.5 | BSD-3-Clause | ReactNativeDependencies.framework |
+  | double-conversion | 1.1.6 | BSD-3-Clause | ReactNativeDependencies.framework |
+  | {fmt} | 12.1.0 | MIT | ReactNativeDependencies.framework |
+  | Boost | 1.84.0 | BSL-1.0 | ReactNativeDependencies.framework, headers only |
+  | fast_float | 8.0.0 | MIT, one of its three | ReactNativeDependencies.framework |
+  | SocketRocket | 0.7.1 | BSD-3-Clause | ReactNativeDependencies.framework |
+  | Hermes | 250829098.0.17 | MIT, with parts under their own licences | hermesvm.framework |
+  | ZXingObjC | 3.6.9 | Apache-2.0, with its NOTICE | ZXingObjC.framework, expo-camera's barcode scanning |
+  | Reachability.swift | 5.2.4 | MIT | linked statically for expo-updates |
+
+  Hermes is listed with what its symbols show is linked into it, each with
+  its own file: LLVM's support library (`llvh`, Apache-2.0 with LLVM
+  exceptions and the older NCSA licence, plus its System Interface Library's
+  extra copyright), the regular-expression engine derived from libc++
+  (NCSA or MIT), David Gay's dtoa and Unicode's ConvertUTF, whose notices
+  exist only as comments at the top of their source files and are carried as
+  those lines. What Hermes's repository also contains but hermesvm does not
+  link (llvh's regex, MD5, xxhash and strlcpy, the wasm sandbox, asmjit, zip,
+  Boost) is not listed. Each text is the upstream file at the tag the build
+  used, kept in `mobile/src/screens/native-notices.ts` and pinned by SHA-256
+  in `native-notices.test.ts`. That test also checks every version against
+  the pin in `node_modules` that decides what a build downloads — React
+  Native's podspecs and `helpers.rb`, `sdks/.hermesv1version`, expo-camera's
+  `spm.config.json` — and fails when React Native adds a dependency podspec.
+  ReachabilitySwift has no pin: expo-updates depends on it without a
+  version, so CocoaPods takes the newest from its trunk, and only a
+  `Podfile.lock` records which. That lock is generated with `mobile/ios` and
+  not committed, so the test checks it when a local native build has left
+  one, and is skipped otherwise. Separately,
+  `scripts/third-party-notices.test.ts` reads every podspec the app's
+  packages ship and fails on a dependency no `node_modules` package provides
+  unless `EXTERNAL_PODS` in `native-notices.ts` says what became of it.
+  Four such dependencies are not linked, for the reasons recorded there:
+  sqlite3 (only with a Podfile property Shahi does not set), React-jsc
+  (JavaScriptCore; Shahi runs Hermes), ExpoModulesTestCore (test specs) and
+  ReactAppDependencyProvider (React Native's codegen output for Shahi's own
+  app).
+
+  Nothing was skipped as debug-only: the Debug and Release configurations
+  link the same pods and embed the same frameworks. What a Release build
+  leaves out are the debug builds of those same frameworks (Hermes's,
+  React Native's and ZXingObjC's debug archives). The system's own libbz2 and
+  libc++, which expo-updates and React Native link against, are part of iOS
+  and not copied into the app.
 - *Icons and marks*: Lucide's LICENSE (with Feather's notice), Tabler's and
   Primer Octicons' MIT licences, and a statement naming Simple Icons and the
   marks' owners. Lucide's is in `licenses-text.ts`; the rest are in
   `shared/src/artwork-notices.ts`, beside the artwork, because the web client
   draws the same marks. Each file is the upstream one at a recorded tag,
   pinned by SHA-256 in `licenses.test.tsx` and `artwork-notices.test.ts`.
-- *JavaScript and native modules*: every npm package whose code is in the App
+- *JavaScript and native modules from npm*: every npm package whose code is in the App
   Store binary — 89 packages (react-is in two versions) and one library
   vendored inside expo-updates, sharing 44 distinct licence texts, so each
   text is shown once under the packages that share it.
@@ -106,7 +158,9 @@ notice differs from the installed package's file. Either failure says to run
 `bun run notices:app` and commit the result; the script takes about ten
 seconds and needs no simulator. Measured on the production iOS bundle, the
 notices and the screen add 68 KB of Hermes bytecode (4,604,757 to 4,672,792
-bytes, 1.5%), 55 KB of it the generated list.
+bytes, 1.5%), 55 KB of it the generated list; the native libraries' notices
+add another 61 KB (to 4,733,463 bytes), most of it LLVM's, Folly's and
+ZXingObjC's Apache texts.
 
 **The web client** publishes `third-party-notices.txt` beside itself, linked
 from Settings, the sign-in page and the pairing page. `web/notices-build.ts`
@@ -119,16 +173,20 @@ extensions, under `nosniff`, a browser would download it rather than show it.
 
 ### Not yet covered
 
-- **React Native's own native dependencies.** CocoaPods downloads Folly
-  (Apache-2.0), glog and double-conversion (BSD-3-Clause), boost (BSL-1.0),
-  fmt and fast_float, SocketRocket and Hermes as prebuilt frameworks while
-  the app builds. They are in the binary but not in `node_modules`, so the
-  generator cannot see them; like OpenSSL and libssh2 they would need their
-  upstream texts added by hand, at the versions React Native pins.
+- **What is inside a prebuilt framework** is read off one Release build, not
+  checked on every build. Hermes's list above comes from its symbols, and
+  React Native's prebuilt dependencies from the configuration React Native
+  builds them with. If a later Hermes links more of its repository, or a
+  prebuilt framework starts carrying a library of its own, nothing here
+  fails; the same check against the next Release build's frameworks would
+  find it.
 - **Packages without a licence file** point at their repository rather than
   reproducing a notice. expo-router in particular carries React Navigation's
-  source without React Navigation's notice; that omission is upstream's, but
-  the app redistributes it.
+  source without React Navigation's notice. No `@react-navigation` package,
+  nor any copy of its licence, is in `node_modules` to take it from, and
+  expo-router does not say which release it copied, so the text cannot be
+  pinned to a version the way the others are. That omission is upstream's,
+  but the app redistributes it.
 - **Android**: the list is the iOS app's. An Android build would bundle a
   slightly different set and link different native code.
 
