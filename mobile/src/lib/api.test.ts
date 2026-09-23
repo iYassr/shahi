@@ -552,6 +552,16 @@ test("a cold agent startup can exceed the ordinary fifteen-second request timeou
   } finally { jest.useRealTimers(); }
 });
 
+test("a sign-in refused as too many attempts says to wait, not to check the sidecar", async () => {
+  connection.baseUrl = "http://localhost:7272";
+  connection.relay = null;
+  (globalThis as { fetch: unknown }).fetch = jest.fn().mockResolvedValue({
+    ok: false, status: 429, headers: new Headers({ "retry-after": "30" }), json: async () => ({ error: "too many requests" }),
+  });
+  const e = await api.login("fake").then(() => null, (err: Error) => err);
+  expect(e?.message).toBe("Too many sign-in attempts are reaching this computer. Wait 30 seconds, then try again.");
+});
+
 test("a login response arriving after cancellation cannot restore signed-out credentials", async () => {
   connection.baseUrl = "http://localhost:7272";
   connection.relay = null;

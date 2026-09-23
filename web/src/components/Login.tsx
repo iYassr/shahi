@@ -1,6 +1,6 @@
 import { Logo, Wordmark } from "./Logo";
 import { useState } from "react";
-import { useApi } from "../api";
+import { ApiError, useApi } from "../api";
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
   const api = useApi();
@@ -15,11 +15,17 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
     try {
       await api.login(passcode);
       onSuccess();
-    } catch {
+    } catch (err) {
       // The server does not distinguish between a wrong passcode and a
-      // malformed one, and neither should this.
-      setError("That passcode did not work.");
-      setPasscode("");
+      // malformed one, and neither should this. Refusing sign-ins for a while
+      // is different: blaming the passcode would send the owner to reset one
+      // that works (pre-release review, September 2026).
+      if (err instanceof ApiError && err.status === 429) {
+        setError("Too many sign-in attempts are reaching this computer. Wait a moment, then try again.");
+      } else {
+        setError("That passcode did not work.");
+        setPasscode("");
+      }
     } finally {
       setBusy(false);
     }

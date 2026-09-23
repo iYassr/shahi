@@ -414,6 +414,14 @@ const api = {
     // hunting for the wrong problem.
     if (res.status === 401) throw new Error("That passcode did not work.");
     if (res.status === 426) throw await incompatible(res);
+    // Refusing sign-ins for a while is not a missing sidecar. Something else
+    // is making attempts (four waiting ones refuse the rest, by design), and
+    // "check that the sidecar is running" sent the owner after the wrong
+    // problem (pre-release review, September 2026).
+    if (res.status === 429) {
+      const wait = Number(res.headers.get("retry-after")) || 30;
+      throw new Error(`Too many sign-in attempts are reaching this computer. Wait ${wait} seconds, then try again.`);
+    }
     if (!res.ok)
       throw new Error(
         `Reached the address but not the server (HTTP ${res.status}). Check that the sidecar is running and that any TLS proxy points at it.`,

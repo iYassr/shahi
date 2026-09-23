@@ -248,7 +248,9 @@ gets 429 with `retry-after: 30`, and bodies over 4 KiB get 413. Thirty-two
 wrong passcodes from any local process had held every slot for thirteen
 minutes, so phones, the relay's included, were told the box was busy. A
 sign-in flood can still delay or refuse the owner's own passcode login while
-it lasts. Pairing claims have had a throttle separate from login's since the
+it lasts, including an SSH phone signing in again after a new tunnel; both
+clients now call that refusal too many sign-in attempts, where the web page
+had blamed the passcode and the app a missing sidecar. Pairing claims have had a throttle separate from login's since the
 pentest's L1.
 
 **L7. `/api/push/subscribe` makes the server POST to any `https://` endpoint.**
