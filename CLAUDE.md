@@ -246,9 +246,12 @@ server speaks, every request carries `x-shahi-api`, and a mismatch is a 426
 whose text says which side to update. Both clients map a 426 to
 `IncompatibleServerError`: the web client shows "Update needed" with the
 server's words and stops its live stream while that notice is up, as the native
-app does, and its pane view shows the words instead of retrying. Bump the
-number when a route or payload changes in a way an older client would
-misread — not for additions.
+app does, and its pane view shows the words instead of retrying. Both clients
+hold the notice until a request succeeds, ignoring pushed frames and socket
+state meanwhile: over the relay the stream is attached without a version check,
+and a dashboard pushed while `/api/session` answered 426 once wiped the notice
+into a LIVE agent list on the phone. Bump the number when a route or payload
+changes in a way an older client would misread — not for additions.
 
 **The plugin's startup hook installs a service; it is not the service.**
 herdr's `[[startup]]` commands are one-shot by contract — "not supervised
@@ -431,11 +434,16 @@ cost 154MB. Two properties of `normalise` make windowing sound and both are load
 bearing: whether a row produces a message depends on that row alone, and an
 orphaned `tool_result` already renders nothing rather than something wrong.
 
-**The reader polls the tail, not the page.** Only the last message can change, so
-a poll asks for ~12 messages and `merge` keeps the rest. With an ETag on the
-endpoint, an unchanged conversation costs 224 bytes on the wire instead of 15KB
-gzipped — and it polls every 2.5 seconds, forever, on whatever connection the
-phone is on.
+**The reader polls the tail, not the page.** A poll asks for ~12 messages and
+`merge` keeps the rest. Every fetched message is compared, not only the last: a
+tool call is written before its result, and when an agent runs two calls in
+parallel the first one's result lands after later messages exist, so a native
+merge that compared only the last left that call on "Still running." for good.
+The comparison uses a signature computed once per message object, so an
+unchanged poll still serialises nothing. With an ETag on the endpoint, an
+unchanged conversation costs 224 bytes on the wire instead of 15KB gzipped —
+and it polls every 2.5 seconds, forever, on whatever connection the phone is
+on.
 
 **Everything text-shaped is gzipped at the edge of the request handler**, in one
 place, with compressed bytes cached for immutable assets. Nothing was compressed
@@ -449,6 +457,33 @@ most of what made it feel unsteady.
 **Callbacks passed to components that poll must be stable.** `onUnavailable` was
 inline once; the pane re-renders on every frame, so the reader's polling effect
 was torn down and rebuilt every 400ms, refetching the transcript each time.
+
+**A native module rejects with an `Exception` subclass that overrides
+`reason`.** Measured on expo-modules-core 57: `promise.reject(code,
+description)` reaches JavaScript as `<code>: undefined reason (at …)`, because
+the message is built from `Exception.reason`, which only a subclass sets. Every
+SSH failure read as the app's generic fallback until `SshTunnelModule`'s
+`TunnelException` did this.
+
+**Tests for routes live in `mobile/src/screens/`, never `mobile/src/app/`.**
+Every file under `src/app/` is a route, and Metro bundles it — expo-router's
+ignore pattern spares only `+api`, `+html` and `+native-intent` — so a
+`*.test.tsx` there broke the Release build.
+
+**A screen that sees a 401 calls `useSession().unauthorized()`, never
+`signOut()`.** `ComputerSession` decides whether access really ended. A relay
+link is its device, so a 401 there does; an SSH computer ignores one while its
+sign-in is in flight or before any sign-in produced a cookie, and otherwise asks
+`/api/auth/status` about the cookie it holds now. A reader poll that raced an
+SSH re-login used to sign out on its 401, which erased the saved computer with
+its password or key. `signOut()` is for the person's own sign-out.
+
+**The native app reconnects only on background → active, or on a real network
+change.** iOS reports `inactive` for Control Center, Notification Center, the
+app switcher and system alerts; reconnecting on the way back from those
+dropped healthy relay links and failed sends that had probably reached herdr.
+A network reconnects once per change of network or of whether it is usable,
+not on each step of reachability.
 
 ## What is not done
 
@@ -741,15 +776,25 @@ inside it by hand.
 
 ## Customer-flow invariants
 
-**Large text must keep the conversation identifiable.** Native agent titles
-get a separate line at accessibility font sizes; metadata must not consume
-their entire width. Test both a cold launch at the selected size and changing
-size while running. Web sheets need a visible, labeled close control inside
-the focus boundary; symbolic terminal keys need spoken names. See the dated
-`docs/ui-ux-audit-2026-09-18.md` for fixes and verification limits. Native
-UI text uses `@/components/text` beneath `TypographyProvider`: font-scale
-changes replace only text hosts to invalidate stale iOS measurements. Never
-key the navigator or screen by font scale; doing so loses drafts and position.
+**Large text must keep the conversation identifiable.** Native agent titles get
+a separate line at accessibility font sizes; metadata must not consume their
+entire width. That holds for the Agents rows, the waiting cards and the Spaces
+rows alike, switched by one threshold, `useLargeText()` (font scale above 1.4)
+in `mobile/src/components/text.tsx`, so every list stacks at the same size;
+Settings rows put their value under the label there. Navigation-bar text does
+not grow with Dynamic Type, so the header's computer name is capped at 1.2×
+like LIVE and served full size through the iOS large content viewer. The native
+reader keeps `removeClippedSubviews` off: with clipping, iOS's
+`maintainVisibleContentPosition` held a detached view in place and walked the
+offset past the end of the content, so at AX5, where one message is taller than
+the screen, every cold-opened conversation came up blank. Test both a cold
+launch at the selected size and changing size while running. Web sheets need a
+visible, labeled close control inside the focus boundary; symbolic terminal
+keys need spoken names. See the dated `docs/ui-ux-audit-2026-09-18.md` for
+fixes and verification limits. Native UI text uses `@/components/text` beneath
+`TypographyProvider`: font-scale changes replace only text hosts to invalidate
+stale iOS measurements. Never key the navigator or screen by font scale; doing
+so loses drafts and position.
 
 **Finding and opening work should agree across clients.** Agent search matches
 conversation, space, folder and provider while preserving the selected filter.
@@ -770,11 +815,17 @@ readable agent labels separate from herdr’s restricted internal names.
 **Drafts are private, bounded, and memory-only.** Web scopes drafts by server
 and device grant; native scopes them by the stable computer API object. Pane
 IDs alone are not unique across computers. Each scope retains at most 20 panes;
-web retains at most eight scopes. Navigation and background/resume can preserve
-a draft, but reload/process termination cannot. Clear the scope on logout or
-revocation. A pending send retains its operation ID, and a late receipt must
-not clear a newer draft or change a dismissed screen. Native disables editing
-during the pending send; web preserves subsequent edits.
+web retains at most eight scopes. Both clients evict the least recently used
+draft, empty ones before typed ones, and never one whose send is running, whose
+uncertain send kept its operation ID, or whose pane is on screen: every opened
+pane creates an entry, so evicting by age discarded a typed reply after twenty
+other agents were checked, and dropping a retained ID lets a retyped message go
+out twice. Only such protected drafts can take a scope past 20, and the next
+new pane shrinks it back once they settle. Navigation and background/resume can
+preserve a draft, but reload/process termination cannot. Clear the scope on
+logout or revocation. A pending send retains its operation ID, and a late
+receipt must not clear a newer draft or change a dismissed screen. Native
+disables editing during the pending send; web preserves subsequent edits.
 
 **Uploads negotiate bounded, resumable transfer.** Updated relay clients ask
 `/api/uploads/limits` and send up to 32 MiB as sequential 64 KiB requests. Keep
@@ -805,7 +856,12 @@ cannot cover their touch targets. Apply terminal and transcript responses
 independently, and never gate Screen rendering on transcript loading.
 A failed refresh must keep cached conversation messages visible. Connectivity
 changes preserve the computer API identity and its drafts; recovery never sends
-a draft automatically. See `docs/mobile-recovery-2026-09-22.md`.
+a draft automatically. See `docs/mobile-recovery-2026-09-22.md`. The native
+reader's memory — place, conversation, terminal place and Read/Screen — is
+keyed by that `ComputerSession` API object, like drafts. It used to be cleared
+whenever the connection's credential changed, which happens on every SSH
+re-login and every switch to another computer, so both threw away every
+remembered place; now it survives both and never crosses computers.
 
 Reader state also belongs to its transcript. A herdr pane outlives the
 conversation in it, and Codex and Cursor number messages by position, so every
@@ -817,7 +873,9 @@ may compare it. Every open Codex or Cursor pane resets its cached page once
 when an updated sidecar first answers. The web reader replaces the view — not
 merges it — when a page's `sessionId` or path differs from the one on screen,
 resetting the history offset, the unseen count and the scroll place, and
-discards a late "Load earlier" page from the previous transcript.
+discards a late "Load earlier" page from the previous transcript. The native
+reader does the same, and its remembered conversation records which transcript
+(session id plus path) it came from.
 
 For dated evidence and remaining physical-device gaps, see
 `docs/customer-journeys-2026-09-18.md` and the reports linked there. Keep test

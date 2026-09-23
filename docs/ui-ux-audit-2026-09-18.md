@@ -1,5 +1,19 @@
 # Web and mobile UI/UX audit — 18 September 2026
 
+> *Note, 23 September 2026:* the large-text title fix below covered only the
+> Agents rows. The pre-release review found the waiting cards and Spaces rows
+> still losing their titles at accessibility sizes; all three now stack at one
+> threshold, `useLargeText()` (font scale above 1.4). The same simulator runs
+> found Settings drawing "Computers" one letter per line at AX5 (rows now put
+> the value under the label) and the header's computer name cut short (now
+> capped at 1.2× and served through the iOS large content viewer). They also
+> explained a blank band where Settings' large title belongs on iOS 27: UIKit
+> hosts that one screen's large title inside its scroll view, and the tab
+> stack's opaque scroll-edge background covered it; Settings now uses a
+> see-through bar at the scroll edge. And the paired-device list was read 22
+> times in one 32-second run, mostly with Settings off screen; after the fix it
+> is read 0 times while unseen and once per visit or reconnect while showing.
+
 Shahi's visual identity is consistent across the two clients: warm dark surfaces,
 amber actions, colored provider symbols, blue working states and green completed
 states. The main opportunities are reducing effort in large agent lists, making
