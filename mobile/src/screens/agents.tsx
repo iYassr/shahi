@@ -38,7 +38,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
 
   async function answer(paneId: string, option: PromptOption) {
     try {
-      await api.answerPrompt(paneId, option);
+      await api.answerPrompt(paneId, option, prompts[paneId]);
       landed();
       clearPrompt(paneId);
     } catch (e) {

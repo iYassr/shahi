@@ -1201,14 +1201,28 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // now, because the phone never learns which menu shape it showed,
           // and its copy of the screen may be seconds old (see `answer.ts`).
           if (sub === "/answer" && req.method === "POST") {
-            const body = await jsonObject<{ index: unknown; label: unknown }>(req);
+            const body = await jsonObject<{ index: unknown; label: unknown; question?: unknown; context?: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (!Number.isInteger(body.index) || typeof body.label !== "string") {
               return json({ error: "index and label are required" }, { status: 400 });
             }
+            // The question and context the card showed. Optional, because a
+            // client from before they were sent must still be answered.
+            if (
+              (body.question !== undefined && typeof body.question !== "string") ||
+              (body.context !== undefined &&
+                !(Array.isArray(body.context) && body.context.every((line) => typeof line === "string")))
+            ) {
+              return json({ error: "question must be text and context a list of text" }, { status: 400 });
+            }
             try {
-              await answerPrompt(herdrRpc, paneId, { index: body.index as number, label: body.label });
+              await answerPrompt(herdrRpc, paneId, {
+                index: body.index as number,
+                label: body.label,
+                ...(typeof body.question === "string" ? { question: body.question } : {}),
+                ...(Array.isArray(body.context) ? { context: body.context as string[] } : {}),
+              });
               return json({ ok: true });
             } catch (err) {
               if (err instanceof PromptGone || err instanceof PromptChanged) {

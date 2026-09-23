@@ -109,6 +109,26 @@ test.describe("answering a prompt", () => {
     expect(context!.height).toBeLessThanOrEqual(140);
   });
 
+  // Every Claude permission offers "1. Yes": the server can only refuse a
+  // stale card for one command on the screen of the next if the tap says what
+  // the card showed (pre-release review).
+  test("tapping an approval's answer says which question and command it was shown under", async ({ page }) => {
+    await scenario(page, "waiting");
+    await page.goto("/");
+
+    const card = page.locator(".blocked", { hasText: "Would you like to run" });
+    await card.locator(".choice", { hasText: "Yes, proceed (y)" }).click();
+
+    await expect.poll(async () => (await paneWrites(page)).length).toBe(1);
+    const [sent] = await paneWrites(page);
+    expect(sent!.body).toMatchObject({
+      index: 1,
+      label: "Yes, proceed (y)",
+      question: "Would you like to run the following command?",
+      context: expect.arrayContaining([expect.stringContaining("$ sed -n")]),
+    });
+  });
+
   test("a blocked agent is pinned above everything else", async ({ page }) => {
     await scenario(page, "busy");
     await page.goto("/");

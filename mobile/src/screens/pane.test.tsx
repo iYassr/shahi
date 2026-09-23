@@ -70,6 +70,7 @@ jest.mock("@/lib/api", () => {
       sendKeys: jest.fn(),
       readFile: jest.fn(),
       dirs: jest.fn(),
+      answerPrompt: jest.fn(),
     },
   };
 });
@@ -890,5 +891,27 @@ test("a dropped connection preserves the loaded conversation and unsent draft wi
   mocked.sessionLog.mockResolvedValue(log([said("offline-message", "agent", "Keep reading this reply.")]));
   logChanged(id); await settle();
   expect(mocked.send).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+// Every Claude Code permission offers "1. Yes", so the server can only tell a
+// stale card from the request on screen if the tap says which question the
+// card showed (pre-release review).
+test("answering from the pane says which question the card showed", async () => {
+  const bash = {
+    question: "Do you want to proceed?",
+    answer: "digit" as const,
+    options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }],
+    context: ["Bash command", "rm -rf build dist\nDelete build and dist directories"],
+  };
+  const answerPrompt = (api as unknown as { answerPrompt: jest.Mock }).answerPrompt;
+  answerPrompt.mockResolvedValue({ ok: true });
+  mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Cleaning up.")]));
+  mocked.pane.mockResolvedValue({ ...detail(), frame: { paneId: PANE, ansi: "", text: "", prompt: bash, activity: null, at: 1 } });
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText("Do you want to proceed?");
+  fireEvent.press(view.getByText("Yes"));
+  await settle();
+  expect(answerPrompt).toHaveBeenCalledWith(PANE, bash.options[0], bash);
   view.unmount();
 });

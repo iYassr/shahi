@@ -225,7 +225,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       try {
         const option = prompts[paneId]?.options.find((o) => o.index === optionIndex);
         if (!option) throw new Error("That prompt changed. Wait for the latest question.");
-        await api.answerPrompt(paneId, optionIndex, option.label);
+        await api.answerPrompt(paneId, optionIndex, option.label, prompts[paneId]);
         setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
         // The agent's next frame is what confirms it landed; clearing here keeps
         // the card from re-offering a question that is on its way out.

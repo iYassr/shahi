@@ -46,6 +46,7 @@ import type {
   AgentStatus,
   DirListing,
   PaneFrame,
+  ParsedPrompt,
   Session,
   SessionLog,
   SocketMessage,
@@ -232,8 +233,17 @@ const api = {
 
   devices: () => request<DeviceList>("/api/devices"),
   revokeDevice: (id: string) => request(`/api/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  answerPrompt: (paneId: string, index: number, label: string) =>
-    postJson(`/api/panes/${encodeURIComponent(paneId)}/answer`, { index, label }),
+  /**
+   * The card's question and context go with the option: every Claude
+   * permission offers "1. Yes", so without them a card for one command could
+   * approve the next.
+   */
+  answerPrompt: (paneId: string, index: number, label: string, shown?: Pick<ParsedPrompt, "question" | "context">) =>
+    postJson(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
+      index,
+      label,
+      ...(shown ? { question: shown.question, context: shown.context } : {}),
+    }),
   send: (paneId: string, text: string, clientMessageId: string) =>
     postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, { text, clientMessageId }),
   sendKeys: (paneId: string, keys: string[]) => postJson(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys }),

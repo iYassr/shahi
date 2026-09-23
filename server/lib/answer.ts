@@ -16,9 +16,10 @@
  * poller's frame is up to 15s old for an unwatched pane, the cursor may have
  * moved since (a person at the keyboard, an earlier key from the phone), and a
  * move computed from a stale cursor selects the wrong row. So the phone sends
- * the label it showed as well as the index, a fresh parse must agree on both,
- * and otherwise nothing is pressed: the phone is told the prompt is gone or
- * changed and shows what is actually on screen.
+ * the label it showed as well as the index — and the question and context it
+ * showed them under — a fresh parse must agree on all of them, and otherwise
+ * nothing is pressed: the phone is told the prompt is gone or changed and
+ * shows what is actually on screen.
  */
 
 import { parsePrompt, stripAnsi } from "./prompt-parser";
@@ -31,6 +32,18 @@ export type AnswerRpc = (method: string, params: Record<string, unknown>) => Pro
 export interface Choice {
   index: number;
   label: string;
+  /**
+   * The question and context the card showed the option under.
+   *
+   * Index and label alone cannot tell two permission menus apart: every
+   * Claude Code permission offers "1. Yes", so a card still showing the
+   * approval for `touch probe.txt` approved `rm -rf build dist` when that was
+   * what the screen asked by the time the tap arrived (pre-release review).
+   * A client from before this sends neither and is held to index and label,
+   * as it always was.
+   */
+  question?: string;
+  context?: string[];
 }
 
 /** The screen no longer shows a prompt at all. */
@@ -78,8 +91,16 @@ export async function answerPrompt(rpc: AnswerRpc, paneId: string, choice: Choic
   if (!prompt) throw new PromptGone(paneId);
   const target = prompt.options.find((o) => o.index === choice.index);
   if (!target || target.label !== choice.label) throw new PromptChanged(paneId);
+  if (choice.question !== undefined && !sameQuestion(prompt, choice)) throw new PromptChanged(paneId);
 
   const keys = keysFor(prompt, target);
   await rpc("pane.send_keys", { pane_id: paneId, keys });
   return keys;
+}
+
+/** Whether the screen still asks what the card showed; a prompt without context equals an empty one. */
+function sameQuestion(prompt: ParsedPrompt, choice: Choice): boolean {
+  const now = prompt.context ?? [];
+  const shown = choice.context ?? [];
+  return prompt.question === choice.question && now.length === shown.length && now.every((line, i) => line === shown[i]);
 }

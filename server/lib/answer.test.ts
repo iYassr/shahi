@@ -61,6 +61,41 @@ describe("answerPrompt", () => {
     expect(pressed).toEqual([]);
   });
 
+  // Every Claude permission menu offers "1. Yes". A card still showing the
+  // approval for one command must not approve the next one, which the screen
+  // may be asking by the time the tap arrives. Both screens are real captures.
+  describe("a card drawn from one permission request", () => {
+    const card = parsePrompt(fixture("blocked__claude-bash__text.txt"))!; // touch probe.txt
+    const yes = { index: 1, label: "Yes", question: card.question, context: card.context };
+
+    test("cannot approve a different request with the same answers", async () => {
+      const { rpc, pressed } = fakeHerdr(fixture("blocked__claude-bash-rm__text.txt")); // rm -rf build dist
+      await expect(answerPrompt(rpc, "w1:p1", yes)).rejects.toBeInstanceOf(PromptChanged);
+      expect(pressed).toEqual([]);
+    });
+
+    test("still answers the request it was drawn from", async () => {
+      const { rpc, pressed } = fakeHerdr(fixture("blocked__claude-bash__text.txt"));
+      await expect(answerPrompt(rpc, "w1:p1", yes)).resolves.toEqual(["1"]);
+      expect(pressed).toEqual([["1"]]);
+    });
+
+    test("an older client, which sends only the index and label, is answered as before", async () => {
+      const { rpc, pressed } = fakeHerdr(fixture("blocked__claude-bash-rm__text.txt"));
+      await expect(answerPrompt(rpc, "w1:p1", { index: 1, label: "Yes" })).resolves.toEqual(["1"]);
+      expect(pressed).toEqual([["1"]]);
+    });
+
+    test("a question with no context matches a card that showed none", async () => {
+      const screen = fixture("blocked__w4-p2__text.txt");
+      const plan = parsePrompt(screen)!;
+      expect(plan.context).toBeUndefined();
+      const { rpc, pressed } = fakeHerdr(screen);
+      await answerPrompt(rpc, "w4:p2", { index: 2, label: "Yes, manually approve edits", question: plan.question });
+      expect(pressed).toEqual([["2"]]);
+    });
+  });
+
   test("presses nothing when the option under that number is a different one", async () => {
     // The phone tapped "1. Yes, and bypass permissions" from a stale card; the
     // screen now asks something else whose first option reads differently.

@@ -25,6 +25,7 @@ import {
   type PairedDevice,
   RELAY_LIMITS,
   type PaneFrame,
+  type ParsedPrompt,
   type PromptOption,
   type PromptReceipt,
   type ServerInfo,
@@ -510,11 +511,19 @@ const api = {
    * cursor moves and Enter for an unnumbered one (Claude Code's folder-trust
    * question, where a digit does nothing). A 409 means the question has gone
    * or changed under the card; the next poll redraws it.
+   *
+   * The card's question and context go too. Every Claude permission offers
+   * "1. Yes", so without them a card for one command could approve the next.
    */
-  answerPrompt: (paneId: string, option: Pick<PromptOption, "index" | "label">) =>
+  answerPrompt: (
+    paneId: string,
+    option: Pick<PromptOption, "index" | "label">,
+    shown?: Pick<ParsedPrompt, "question" | "context">,
+  ) =>
     postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
       index: option.index,
       label: option.label,
+      ...(shown ? { question: shown.question, context: shown.context } : {}),
     }),
 
   /**

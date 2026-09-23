@@ -882,3 +882,39 @@ describe("a message to an agent waiting on a menu", () => {
     expect(typed(before).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
   });
 });
+
+// Every Claude permission menu offers "1. Yes"; a stale card must not approve
+// the next request just because its option reads the same.
+describe("answering from a card drawn from another question", () => {
+  const post = (body: unknown) =>
+    fetch(`${s.base}/api/panes/${encodeURIComponent(PANE)}/answer`, {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
+  const pressed = (from: number) => s.calls.slice(from).filter((c) => c.method === "pane.send_keys");
+
+  test("is a 409 prompt_changed with nothing pressed", async () => {
+    screen = fixture("blocked__claude-bash-rm__text.txt");
+    const before = s.calls.length;
+    const res = await post({
+      index: 1,
+      label: "Yes",
+      question: "Do you want to proceed?",
+      context: ["Bash command", "touch probe.txt\nCreate empty probe file"],
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("prompt_changed");
+    expect(pressed(before)).toEqual([]);
+  });
+
+  test("refuses a question or context of the wrong shape", async () => {
+    screen = fixture("blocked__claude-bash__text.txt");
+    const before = s.calls.length;
+    expect((await post({ index: 1, label: "Yes", question: 7 })).status).toBe(400);
+    expect((await post({ index: 1, label: "Yes", question: "Do you want to proceed?", context: "touch" })).status).toBe(400);
+    expect((await post({ index: 1, label: "Yes", question: "Do you want to proceed?", context: [1] })).status).toBe(400);
+    expect(pressed(before)).toEqual([]);
+  });
+});

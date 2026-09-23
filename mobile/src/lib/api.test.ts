@@ -290,6 +290,23 @@ describe("semantic requests", () => {
     expect(JSON.parse(init.body)).toEqual({ index: 2, label: "Yes, I trust this folder" });
   });
 
+  // Every Claude permission offers "1. Yes": the server needs the card's
+  // question and context to tell a stale card from the request on screen.
+  test("answering a prompt says which question the card showed", async () => {
+    ok({ ok: true });
+    await api.answerPrompt("w1:p1", { index: 1, label: "Yes" }, {
+      question: "Do you want to proceed?",
+      context: ["Bash command", "touch probe.txt\nCreate empty probe file"],
+    });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init.body)).toEqual({
+      index: 1,
+      label: "Yes",
+      question: "Do you want to proceed?",
+      context: ["Bash command", "touch probe.txt\nCreate empty probe file"],
+    });
+  });
+
   test("a new space is a workspace request", async () => {
     ok({ workspaceId: "w9" });
     await expect(api.createWorkspace({ label: "notes", cwd: "/home/y/notes" })).resolves.toEqual({

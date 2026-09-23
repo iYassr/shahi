@@ -644,6 +644,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   async function answer(option: PromptOption) {
+    // The card being answered, sent so the server can tell it from a newer one.
+    const shown = prompt ?? undefined;
     setPrompt(null);
     beginAwaiting();
     // Chase from the tap, not from the reply to the request: the agent starts
@@ -651,7 +653,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // running when it does.
     chase();
     try {
-      await api.answerPrompt(paneId, option);
+      await api.answerPrompt(paneId, option, shown);
     } catch (e) {
       endAwaiting();
       setError((e as Error).message);
