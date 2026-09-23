@@ -1,48 +1,17 @@
 import XCTest
 
-/// Start e2e/hosted/server.ts on 7572. Use a dedicated simulator: this test
-/// signs out before pairing. Writes terminate at the recording stub.
+/// Start e2e/hosted/server.ts on `Fixture.primary`. Use a dedicated simulator:
+/// this test signs out of every saved computer first, because it ends by
+/// proving that revoking the only computer returns to onboarding. Writes
+/// terminate at the recording stub.
 final class ReleaseSmokeTests: XCTestCase {
-    private func fixture(_ path: String, method: String = "POST") throws -> [String: Any] {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:7572/__hosted/" + path)!)
-        request.httpMethod = method
-        let done = expectation(description: path)
-        var result: Result<Data, Error>?
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { result = .failure(error) }
-            else if (response as? HTTPURLResponse)?.statusCode == 200, let data = data { result = .success(data) }
-            done.fulfill()
-        }.resume()
-        wait(for: [done], timeout: 10)
-        return try JSONSerialization.jsonObject(with: XCTUnwrap(result).get()) as! [String: Any]
-    }
-
     func testPairReadSendAndResume() throws {
         continueAfterFailure = false
+        let port = Fixture.primary
         let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
         app.activate()
-        if !app.buttons["intro-continue"].exists && !app.buttons["confirm-pair"].exists {
-            for _ in 0..<4 {
-                if app.tabBars.buttons["Settings"].exists { break }
-                let back = app.navigationBars.buttons.firstMatch
-                if back.exists { back.tap() }
-            }
-            app.tabBars.buttons["Settings"].tap()
-            let signOut = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sign out'")).firstMatch
-            for _ in 0..<6 {
-                if signOut.exists && signOut.isHittable { break }
-                app.swipeUp()
-            }
-            signOut.tap()
-            app.alerts.buttons["Sign out"].tap()
-            XCTAssertTrue(app.buttons["intro-continue"].waitForExistence(timeout: 60))
-        }
-        let code = try fixture("reset")["code"] as! String
-        XCUIDevice.shared.system.open(URL(string: code)!)
-        let confirm = app.buttons["confirm-pair"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 20), "open the isolated fixture pairing code first")
-        XCTAssertTrue(app.staticTexts["127.0.0.1:7572"].exists, "must only pair with the recording fixture")
-        confirm.tap()
+        app.signOutEverywhere()
+        try app.pair(port)
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'row-' AND label CONTAINS 'Convert PDF'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "pairing did not reach the dashboard")
         app.tabBars.buttons["Spaces"].tap()
@@ -57,7 +26,10 @@ final class ReleaseSmokeTests: XCTestCase {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             start.press(forDuration: 0.05, thenDragTo: end)
         }
-        let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '↓'")).firstMatch
+        // By identifier: the pill's accessibility label is "Go to latest", which
+        // replaced the "Latest ↓" this matched until the September 2026 review
+        // found the test could no longer pass.
+        let latest = app.descendants(matching: .any)["go-to-latest"]
         XCTAssertTrue(latest.waitForExistence(timeout: 10), "scrolling must leave following mode")
         app.buttons["view-screen"].tap()
         reader.tap()
@@ -75,7 +47,7 @@ final class ReleaseSmokeTests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(reader.waitForExistence(timeout: 15), "foreground resume lost the pane")
-        _ = try fixture("disconnect")
+        try Fixture.call(port, "disconnect")
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(composer.waitForExistence(timeout: 15))
@@ -87,7 +59,7 @@ final class ReleaseSmokeTests: XCTestCase {
         // writes, including absence of a duplicate after reconnect.
         var writes: [[String: Any]] = []
         for _ in 0..<20 {
-            writes = try fixture("writes", method: "GET")["writes"] as! [[String: Any]]
+            writes = try Fixture.call(port, "writes", method: "GET")["writes"] as! [[String: Any]]
             if writes.count >= 2 { break }
             Thread.sleep(forTimeInterval: 0.25)
         }
@@ -96,7 +68,7 @@ final class ReleaseSmokeTests: XCTestCase {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.lifetime = .keepAlways
         add(shot)
-        _ = try fixture("revoke")
+        try Fixture.call(port, "revoke")
         XCTAssertTrue(app.buttons["intro-continue"].waitForExistence(timeout: 15), "revocation must return to onboarding")
     }
 }
