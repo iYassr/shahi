@@ -28,5 +28,6 @@ code remains here, not Shahi's own code:
     SOFTWARE.
 
 Third-party code built into the app keeps its own license. The OpenSSL and
-libssh2 notices are in modules/ssh-tunnel/licenses/, and docs/licensing.md
-says what else the app bundles.
+libssh2 texts are in modules/ssh-tunnel/licenses/. The app shows those, and
+every other notice it carries, under Open-source licenses; docs/licensing.md
+says how that list is made.
