@@ -25,6 +25,13 @@ export class ComputerSession {
   private work: Promise<void> | null = null;
   private socketLink: LinkState = "connecting";
   private received = 0;
+  /**
+   * The server answered 426. Held until a request succeeds, because nothing
+   * else here is evidence the versions agree: the relay attaches its stream on
+   * the first sealed frame with no version check, and the pre-release review
+   * found a pushed dashboard wiping "Update needed" into a LIVE agent list.
+   */
+  private incompatible = false;
   private frames = new Map<string, Set<() => void>>();
   private checking: Promise<void> | null = null;
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
@@ -62,6 +69,7 @@ export class ComputerSession {
         this.socket = new SessionSocket(msg => this.message(msg), state => {
           if (this.disposed) return;
           this.socketLink = state;
+          if (this.incompatible) return;
           const different = this.link !== state;
           this.link = state; if (different) this.changed();
           if (state === "live") void this.refresh();
@@ -76,19 +84,25 @@ export class ComputerSession {
     const received = this.received;
     try {
       const session = await this.api.session();
-      if (!this.disposed && received === this.received) this.message({ type: "session", session });
-    } catch (e) { if (received === this.received) this.failure(e); }
+      if (this.disposed || (received !== this.received && !this.incompatible)) return;
+      this.incompatible = false;
+      this.message({ type: "session", session });
+    } catch (e) {
+      // A newer frame makes an older failure moot — but not a 426: that frame
+      // came from the server this app cannot speak with.
+      if (e instanceof IncompatibleServerError || received === this.received) this.failure(e);
+    }
   }
   private failure(e: unknown) {
     if (this.disposed) return;
     if (e instanceof UnauthorizedError) { void this.unauthorized(); return; }
     this.error = e as Error;
     this.link = "lost";
-    if (e instanceof IncompatibleServerError) this.socket?.close();
+    if (e instanceof IncompatibleServerError) { this.incompatible = true; this.socket?.close(); }
     this.changed();
   }
   private message(msg: SocketMessage) {
-    if (this.disposed) return;
+    if (this.disposed || this.incompatible) return;
     this.updatedAt = Date.now();
     if (msg.type === "session") {
       this.received++;

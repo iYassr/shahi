@@ -1,7 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import { SessionProvider, useSession } from "./session";
-import { api, connection, UnauthorizedError } from "./api";
+import { api, connection, IncompatibleServerError, UnauthorizedError } from "./api";
 import { COMPUTERS_KEY, computerId, type ComputerConnection } from "./computers";
 import { openTunnel } from "./tunnel";
 import { AppState } from "react-native";
@@ -203,6 +203,38 @@ test("a delayed failure cannot turn a freshly restored dashboard offline", async
   });
   expect(value.link).toBe("live"); expect(value.error).toBeNull();
   ui.unmount();
+});
+
+// Found by the pre-release Maestro pass: a phone relaunched after its
+// computer's API moved past the app's window showed a LIVE agent list, because
+// the relay pushed a dashboard while /api/session was answering 426, and the
+// frame both outdated the failure and cleared the error.
+test("update needed is not painted over by a dashboard the relay pushes", async () => {
+  const retry = jest.spyOn(RelayLink.prototype, "reconnect").mockImplementation(() => {});
+  const ui = await mount(); await pairBoth();
+  try {
+    const socket = mockSockets.at(-1)!;
+    await act(async () => socket.state("live"));
+    let reject!: (e: Error) => void;
+    (api.session as jest.Mock).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    let pending!: Promise<void>;
+    act(() => { pending = value.refresh(); });
+    await act(async () => {
+      socket.message({ type: "session", session: snapshot });
+      reject(new IncompatibleServerError("Update the Shahi app.", { min: 99, max: 99 })); await pending;
+    });
+    expect(value.error).toBeInstanceOf(IncompatibleServerError);
+    expect(value.link).toBe("lost");
+    expect(socket.close).toHaveBeenCalled();
+    // Frames already in flight, and a stream the relay re-attaches, change nothing.
+    await act(async () => { socket.state("live"); socket.message({ type: "session", session: snapshot }); });
+    expect(value.error).toBeInstanceOf(IncompatibleServerError);
+    expect(value.link).toBe("lost");
+    // Once the computer is updated, Try again is the way out.
+    await act(async () => { await value.reconnect(); });
+    expect(value.error).toBeNull();
+    expect(value.link).toBe("live");
+  } finally { ui.unmount(); retry.mockRestore(); }
 });
 
 test("an offline notification wins over a late initial network snapshot and preserves drafts", async () => {
