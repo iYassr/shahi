@@ -6,6 +6,7 @@ import { browserConnection, pairBrowser, readPairing } from "../connection";
 import { InstallApp } from "./InstallApp";
 import { useDialog } from "../use-dialog";
 import { SetupIcon } from "./SetupIcon";
+import { noticesUrl } from "../notices";
 
 /**
  * `initialCode` is a code that arrived in the page's `#pair=` fragment, from a
@@ -53,7 +54,7 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
         <p>Keep herdr open and your computer connected to the internet.</p>
       </section>
       <InstallApp />
-      <p className="app-help__links"><a href="https://getshahi.dev/privacy">Privacy</a><a href="mailto:support@getshahi.dev">Support</a></p>
+      <p className="app-help__links"><a href="https://getshahi.dev/privacy">Privacy</a><a href="mailto:support@getshahi.dev">Support</a><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></p>
     </div>
     <form id="pair-browser-form" className="pair-browser__form" onSubmit={(event) => {
       event.preventDefault();

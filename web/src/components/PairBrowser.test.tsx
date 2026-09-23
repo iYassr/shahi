@@ -66,3 +66,12 @@ test("a code the person enters themselves needs no link warning", async () => {
   expect(text()).not.toContain("A link is asking");
   expect(buttons()).toContain("Connect");
 });
+
+// The notices travel with the app whether or not it ever pairs; before the
+// September 2026 review (F27) no screen linked them at all.
+test("a browser that has not paired yet can open the open-source licenses", async () => {
+  await render("");
+  const link = view!.root.findAll(node => node.type === "a" && node.children.join("") === "Open-source licenses")[0]!;
+  expect(link.props.href).toBe("/third-party-notices.txt");
+  expect(link.props.target).toBe("_blank");
+});

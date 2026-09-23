@@ -2,10 +2,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { serviceWorkerRelease } from "./sw-build";
+import { thirdPartyNotices } from "./notices-build.ts";
 
 export default defineConfig(({ mode }) => ({
   base: mode === "hosted" ? "/pwa/" : "/",
-  plugins: [react(), serviceWorkerRelease()],
+  // The notices file is emitted into the bundle, so the service worker,
+  // stamped once everything is written, precaches it with the release.
+  plugins: [react(), thirdPartyNotices(), serviceWorkerRelease()],
   resolve: {
     alias: [
       { find: /^@shahi\/shared$/, replacement: fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)) },

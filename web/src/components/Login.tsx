@@ -1,6 +1,7 @@
 import { Logo, Wordmark } from "./Logo";
 import { useState } from "react";
 import { ApiError, useApi } from "../api";
+import { noticesUrl } from "../notices";
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
   const api = useApi();
@@ -58,6 +59,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         Lost it? On this computer, run <code>herdr plugin action invoke shahi.reset-passcode</code>, then read the new
         one with <code>herdr plugin log list --plugin shahi</code>.
       </p>
+      <p className="app-help__links"><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></p>
     </form>
   );
 }

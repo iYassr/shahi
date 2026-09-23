@@ -26,3 +26,12 @@ test("a sign-in refused as too many attempts says to wait, not that the passcode
   expect(text).toContain("Too many sign-in attempts");
   expect(text).not.toContain("That passcode did not work.");
 });
+
+// The notices travel with the app whether or not it signs in; before the
+// September 2026 review (F27) no screen linked them at all.
+test("the sign-in page links the open-source licenses", async () => {
+  await act(async () => { view = create(<ApiContext.Provider value={api}><Login onSuccess={() => {}} /></ApiContext.Provider>); });
+  const link = view.root.findAll(node => node.type === "a" && node.children.join("") === "Open-source licenses")[0]!;
+  expect(link.props.href).toBe("/third-party-notices.txt");
+  expect(link.props.target).toBe("_blank");
+});

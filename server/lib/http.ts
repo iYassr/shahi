@@ -1537,6 +1537,9 @@ const CONTENT_TYPES: Record<string, string> = {
   png: "image/png",
   ico: "image/x-icon",
   webmanifest: "application/manifest+json",
+  // third-party-notices.txt, which the web build writes beside the app. As
+  // octet-stream under nosniff a browser would download it, not show it.
+  txt: "text/plain; charset=utf-8",
 };
 
 /**

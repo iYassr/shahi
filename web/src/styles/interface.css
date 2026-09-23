@@ -74,7 +74,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-help p, .app-help li { color: var(--muted); }
 .app-help ul { padding-left: 20px; }
 .app-help code { display: block; padding: 12px; border-radius: 8px; background: var(--surface); font-size: 13px; overflow-wrap: anywhere; }
-.app-help__links { display: flex; gap: 24px; font-size: 13px; }
+.app-help__links { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; }
 .app-help a, .app-help__links a, .pair-browser__jump { color: var(--accent); text-underline-offset: 3px; }
 .pair-browser__setup h2 { margin: 0; font-size: 20px; }
 .pair-browser__setup ol { margin: 20px 0; padding: 0; list-style: none; }

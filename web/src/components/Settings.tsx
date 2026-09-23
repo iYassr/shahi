@@ -8,6 +8,7 @@ import type { DeviceList } from "@shahi/shared";
 import { useApi } from "../api";
 import { confirmSwitch, registerPush, unregisterPush } from "./PushPrompt";
 import { InstallApp } from "./InstallApp";
+import { noticesUrl } from "../notices";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
   const api = useApi();
@@ -66,7 +67,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
         }}>{device.id === devices.thisDeviceId ? "Sign out" : "Revoke"}</button></div>)}
       </section>
       <section className="settings__access"><h2>Sign out of this computer</h2><p>Remove this browser’s access. You will need to pair or sign in again to reconnect.</p><button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>Sign out</button></section>
-      <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">Privacy</a><a href="mailto:support@getshahi.dev">Get help</a></footer>
+      <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">Privacy</a><a href="mailto:support@getshahi.dev">Get help</a><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></footer>
     </div>
   </>;
 }
