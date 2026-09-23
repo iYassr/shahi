@@ -1,7 +1,9 @@
 # Ten minutes on the actual phone
 
-The native app has Jest component/unit coverage and simulator runs
-(`e2e/native/`, `mobile/uitests/`), but neither can prove behavior that exists
+The native app has Jest component/unit coverage and simulator runs (the
+Maestro flows in `.maestro/` and `e2e/native/`, and the XCUITests in
+`mobile/uitests/`, all run locally or by hand — nothing in CI boots a
+simulator), but neither can prove behavior that exists
 only in a signed binary on physical hardware. This checklist is the release-candidate complement to automation: it
 covers APNs, camera behavior, haptics, Keychain upgrades, radio changes,
 assistive technology, and actual touch ergonomics.

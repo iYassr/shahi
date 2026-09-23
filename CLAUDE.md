@@ -570,6 +570,14 @@ await scenario(page, "empty");     // nothing running
 await scenario(page, "crowded");   // twenty-eight agents
 ```
 
+Every test starts from the same place: an automatic fixture in
+`e2e/fixtures.ts` (`freshStub`) resets the stub to `busy` first, which also
+clears the recorded writes, the contract range and the control handshake. A
+test that needs another situation still chooses it; order no longer matters.
+Leaving the stub on `empty` once failed ten tests at their first row: they had
+passed only because of what ran before them. The reset also means a contract
+override a failed test left behind cannot turn the next one into a 426.
+
 Two engines, both required: Chromium is fast and catches logic, WebKit catches
 what the phone would. A handful of read-only checks run against the real server
 behind `--project=live`, because contract drift is the one thing a stub cannot
@@ -591,7 +599,11 @@ CI runs all of this on every push and pull request: `bun run typecheck` — whic
 includes the Expo app, the only automatic check that the two clients have not
 drifted apart — then the unit tests, the relay suite (`test:relay`) and the
 app's own (`test:mobile`), then a web build and both Playwright engines.
-Traces from a failing run are uploaded as an artifact.
+Traces from a failing run are uploaded as an artifact. The stub suite writes
+its HTML report to `e2e/playwright-report/`, the hosted configs still to
+`playwright-report/` at the root; both are ignored at any depth, because a
+failed `--project=live` run copies the passcode login and real session
+responses into it.
 
 **And a real herdr.** `server/lib/herdr-live.test.ts` runs the adapter and the
 sidecar against a headless herdr: the protocol pin, snapshot shapes, the
@@ -635,6 +647,13 @@ The root is short on purpose. A plain `mktemp -d` on macOS lands under
 `$TMPDIR` (`/var/folders/…/T/`), which makes the session's
 `herdr-client.sock` path 105 bytes, over the 104 a macOS socket address holds,
 and herdr refuses to start.
+
+`server/lib/herdr-live-guard.ts` enforces the named session: the suite refuses
+a socket that is not `…/herdr/sessions/<name>/herdr.sock`, and a session that
+holds the pane it runs in. Its guard used to be "`HERDR_SOCKET_PATH` is set",
+which proves nothing inside a herdr pane — herdr sets it in every pane, to its
+own socket — so `SHAHI_HERDR_LIVE=1` typed in the owner's pane would have
+written into the owner's session.
 
 `HERDR_SOCKET_PATH=/tmp/x.sock herdr server` is not isolation, and this was
 learned the expensive way: a second server on a new socket restores the

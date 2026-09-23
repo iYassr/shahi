@@ -387,7 +387,9 @@ The repository already has substantial unit, browser, relay, pentest, live-herdr
 and Maestro coverage. The next investments, in order, should be:
 
 1. Run Maestro automatically against an exact-commit iOS simulator build in CI;
-   today the flows exist but GitHub CI does not execute them.
+   today the flows in `.maestro/` pair with the recording fixture and pass
+   locally, but nothing in CI boots a simulator, and the EAS workflow that
+   would run them is started by hand only.
 2. Add a sanitized, versioned Claude Code/Codex transcript corpus and a nightly
    live producer probe.
 3. Test the Durable Object with Cloudflare's Workers Vitest runtime, including
@@ -403,8 +405,8 @@ and Maestro coverage. The next investments, in order, should be:
    be the load-test target.
 9. Exercise real APNs delivery, camera, haptics, Keychain upgrades, and SSH on
    physical iPhones.
-10. Update `docs/verify-on-device.md`; its opening claim that the native app has
-    no automated tests is now stale.
+10. Keep `docs/verify-on-device.md` current as native coverage grows; its
+    opening now names the component tests and simulator runs it complements.
 
 ## 7. Recommended first implementation slice
 

@@ -63,9 +63,11 @@ A few principles from `CLAUDE.md`, because PRs are reviewed against them:
   that port.
 - Browser: `bun run build:web && bun run test:e2e`.
 - Hosted client and offline/update behavior: `bun run build:site && bun run test:hosted && bun run test:pwa`.
-- Native flows, on a Mac with a simulator: the Maestro runs in `e2e/native/`,
-  which pair the app through the encrypted hosted fixture, and the XCUITest
-  harness in `mobile/uitests/`. Neither runs in CI. See
+- Native flows, on a Mac with a simulator: the Maestro flows in `.maestro/` and
+  the Maestro runs in `e2e/native/`, which pair the app through the encrypted
+  hosted fixture, and the XCUITest harness in `mobile/uitests/`. They run
+  locally or by hand only; nothing in CI boots a simulator, and the EAS
+  workflow for `.maestro/` runs only when started by hand. See
   [local iOS development](docs/on-a-mac.md) and `mobile/uitests/README.md`.
 
 Fixture tests must never send writes to a real user session. Real-server tests

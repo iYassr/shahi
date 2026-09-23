@@ -5,9 +5,9 @@ is an Xcode. This is the second one.
 
 The whole reason to bother: **a Mac makes the iOS tests free.** Simulator runs
 are gated behind a paid EAS plan in Expo's cloud, and behind nothing at all
-against a simulator on your own machine: the Maestro runs in `e2e/native/` and
-the XCUITest harness in `mobile/uitests/` both run here, and neither runs in
-CI.
+against a simulator on your own machine: the Maestro flows in `.maestro/`, the
+Maestro runs in `e2e/native/` and the XCUITest harness in `mobile/uitests/` all
+run here, and none of them runs in CI.
 
 ## Once
 
@@ -127,6 +127,37 @@ Two things the first local runs taught:
   clears it; a simulator that has stopped answering `simctl` needs a shutdown
   and boot.
 
+### The flows in `.maestro/`
+
+Eight flows, each arriving the way a phone does — it opens a `shahi://pair`
+code from the recording fixture and confirms it — so nothing real is on the
+other end: answering a cursor menu, the list's filters, pinning, a reply that
+shows at once, Settings' sign-out and back in, the permission picker's
+cautions, a computer that cannot be reached, and "Update needed". From the
+repository root, in two terminals:
+
+```sh
+HOSTED_PORT=7572 bun e2e/hosted/server.ts     # the fixture also takes 7573
+maestro test .maestro/
+```
+
+7572 is the flows' default, and the hosted Playwright config binds it too, for
+its second computer. To run beside that suite, start the fixture on another
+port and pass `-e FIXTURE_PORT=<port>`. With a Release build installed the
+flows need no Metro. `reply-shows-at-once` needs the software keyboard: turn
+off Simulator → I/O → Keyboard → Connect Hardware Keyboard, or the keyboard
+never rises.
+
+They run locally or by hand only; nothing in CI boots a simulator.
+`mobile/.eas/workflows/ios-e2e.yml` would run them on EAS against the same
+fixture, but only when started by hand, and its Maestro job needs a paid plan.
+What does run everywhere is `server/lib/native-flows.test.ts`, in `bun run
+test`: it reads every flow and XCUITest the way the runner would and fails on
+an element id the app does not set, text neither the app nor the fixture can
+show, or a script that is gone. The thirteen flows before these all signed in
+through a typed-address screen the app had lost, and nothing noticed until
+someone ran them.
+
 `maestro studio` opens an inspector against the running app, which is the
 fastest way to write the next flow: it shows you the selectors that exist rather
 than the ones you hoped for.
@@ -170,6 +201,11 @@ unset HERDR_SOCKET_PATH
 Keep the root under `/tmp`. A plain `mktemp -d` here lands under `$TMPDIR`
 (`/var/folders/…/T/`), which makes the session's `herdr-client.sock` path 105
 bytes — over the 104 a macOS socket address holds — and herdr refuses to start.
+
+The suite refuses to run otherwise (`server/lib/herdr-live-guard.ts`): a socket
+that is not a named session's, and a session holding the pane the test runs in.
+Inside a herdr pane `HERDR_SOCKET_PATH` is already set, to that pane's own
+session, so the variable alone once proved nothing.
 
 The `installedAgents` detections in `server/lib/agents.test.ts` used to fail
 here intermittently with agents resolving to nothing: under bun's test runner a

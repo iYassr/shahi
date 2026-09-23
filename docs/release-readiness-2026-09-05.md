@@ -1,5 +1,11 @@
 # Release readiness assessment — 5 September 2026
 
+> *Note, 23 September 2026:* the Maestro flows described below as still using
+> the removed typed-address login have since been ported. Each now pairs with
+> the recording fixture through a `shahi://pair` code (`0191fec`), and
+> `server/lib/native-flows.test.ts` fails on a flow that names an element or
+> text the app no longer has. They run locally; CI still boots no simulator.
+
 **Verdict: broad local validation passed; this is not yet an unconditional public-release sign-off.**
 The remaining gates are the actual signed release on a physical iPhone, native
 SSH and push validation, a longer soak, and the production browser findings
