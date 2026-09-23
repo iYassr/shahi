@@ -17,19 +17,22 @@ import { theme } from "@/lib/theme";
 
 export function PairedDevices({
   onRevokedSelf,
-  refreshKey,
+  focused,
+  live,
 }: {
   onRevokedSelf: () => void;
-  /** Retry after a restored connection moves from connecting/offline to live. */
-  refreshKey?: unknown;
+  /** Whether the screen showing the list is on screen. */
+  focused: boolean;
+  /** Whether the link is live, so a list that failed while it was down is read again once it is back. */
+  live: boolean;
 }) {
   const { api, activeComputerId } = useSession();
   // Switching computers must discard the old list and any pending confirmations.
-  return <DeviceListForComputer key={activeComputerId} api={api} onRevokedSelf={onRevokedSelf} refreshKey={refreshKey} />;
+  return <DeviceListForComputer key={activeComputerId} api={api} onRevokedSelf={onRevokedSelf} focused={focused} live={live} />;
 }
 
-function DeviceListForComputer({ api, onRevokedSelf, refreshKey }: {
-  api: Api; onRevokedSelf: () => void; refreshKey?: unknown;
+function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
+  api: Api; onRevokedSelf: () => void; focused: boolean; live: boolean;
 }) {
   const mounted = useRef(true);
   const request = useRef(0);
@@ -48,7 +51,19 @@ function DeviceListForComputer({ api, onRevokedSelf, refreshKey }: {
       if (mounted.current && generation === request.current) setError((e as Error).message);
     }
   }, [api]);
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  /*
+   * Read when the list comes on screen, and again when the link comes back
+   * while it is. Nothing else: Settings is mounted with the other tabs at
+   * launch, and keying the read on every link state change cost 22 reads of
+   * /api/devices in one 32-second simulator run, most of them for a screen
+   * nobody was looking at (September 2026 review).
+   */
+  const seen = useRef({ focused: false, live });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { focused, live };
+    if (focused && (!before.focused || (live && !before.live))) void load();
+  }, [focused, live, load]);
 
   const revoke = (device: PairedDevice) => {
     const self = device.id === list?.thisDeviceId;

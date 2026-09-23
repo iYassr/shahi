@@ -13,9 +13,9 @@ import { ConnectionHealth } from "@/components/connection-health";
  */
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Text } from "@/components/text";
+import { Text, useLargeText } from "@/components/text";
 import Constants from "expo-constants";
-import { router } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { preparePushLogout } from "@/lib/push-registration";
 import { enablePush } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
@@ -32,12 +32,17 @@ export function Settings() {
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
   const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
-  // A ticking "how stale" readout; only this screen pays for the timer.
+  // Native tabs mount every tab at launch, so this screen exists long before
+  // anyone looks at it. Work that only matters on screen waits for focus.
+  const focused = useIsFocused();
+  // A ticking "how stale" readout; only this screen pays for the timer, and
+  // only while it is showing.
   const [, tick] = useState(0);
   useEffect(() => {
+    if (!focused) return;
     const timer = setInterval(() => tick((n) => n + 1), 1_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [focused]);
 
   const age =
     lastUpdateAt === null ? null : Math.max(0, Math.round((Date.now() - lastUpdateAt) / 1000));
@@ -161,7 +166,8 @@ export function Settings() {
         </View>
         <Separator />
         <PairedDevices
-          refreshKey={link}
+          focused={focused}
+          live={link === "live"}
           onRevokedSelf={() => {
             signOut();
             router.replace("/connect");
@@ -252,12 +258,19 @@ function Row({
   disabled?: boolean;
   onPress?: () => void;
 }) {
+  // At accessibility sizes the value goes under the label. Side by side, the
+  // value kept its full width and the flexible label was left a few points:
+  // AX5 on the simulator drew "Computers" one letter per line beside "Switch
+  // or add" (September 2026 review).
+  const largeText = useLargeText();
   const body = (
     <>
       <View style={styles.rowLine}>
         <IconBadge name={icon} tint={tint} />
-        <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
-        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+        <View style={[styles.rowText, largeText && styles.rowTextStacked]}>
+          <Text style={[styles.rowLabel, largeText && { flex: 0 }, labelColor ? { color: labelColor } : null]}>{label}</Text>
+          {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+        </View>
       </View>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </>
@@ -313,6 +326,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  rowText: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  rowTextStacked: { flexDirection: "column", alignItems: "flex-start", gap: 2 },
   rowLabel: { color: theme.fg, fontSize: 15, flex: 1 },
   rowValue: { color: theme.dim, fontSize: 12 },
   hint: { color: theme.dim, fontSize: 12, paddingLeft: 38 },

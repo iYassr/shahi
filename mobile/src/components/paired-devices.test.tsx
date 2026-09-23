@@ -31,7 +31,7 @@ describe("paired devices", () => {
 
   test("lists every phone, marks this one, and says passcode logins are not here", async () => {
     api.devices.mockResolvedValue({ devices: [other, mine], thisDeviceId: "dev-me" });
-    const view = render(<PairedDevices onRevokedSelf={jest.fn()} />);
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     await waitFor(() => view.getByText(/Old iPad/));
     expect(view.getByText(/Yasser's iPhone/)).toBeTruthy();
     expect(view.getByText(/this phone/)).toBeTruthy();
@@ -44,7 +44,7 @@ describe("paired devices", () => {
 
   test("a passcode login is told it is one, with nothing to revoke", async () => {
     api.devices.mockResolvedValue({ devices: [], thisDeviceId: null });
-    const view = render(<PairedDevices onRevokedSelf={jest.fn()} />);
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     await waitFor(() => view.getByText(/This phone signed in with a passcode/));
     expect(view.getByText(/No devices have paired by code yet/)).toBeTruthy();
   });
@@ -53,12 +53,39 @@ describe("paired devices", () => {
     api.devices
       .mockRejectedValueOnce(new Error("No server address configured"))
       .mockResolvedValue({ devices: [mine], thisDeviceId: "dev-me" });
-    const view = render(<PairedDevices onRevokedSelf={jest.fn()} refreshKey="connecting" />);
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live={false} />);
     await waitFor(() => view.getByTestId("retry-devices"));
 
-    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} refreshKey="live" />);
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     await waitFor(() => view.getByText(/Yasser's iPhone/));
     expect(api.devices).toHaveBeenCalledTimes(2);
+  });
+
+  test("a pre-mounted Settings tab reads the list when shown and when the link returns, not on every link change", async () => {
+    api.devices.mockResolvedValue({ devices: [mine], thisDeviceId: "dev-me" });
+    const onRevokedSelf = jest.fn();
+    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} focused={false} live />);
+    // Native tabs mount Settings at launch; nobody is looking at it yet.
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused={false} live={false} />);
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused={false} live />);
+    expect(api.devices).not.toHaveBeenCalled();
+
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
+    await waitFor(() => view.getByText(/Yasser's iPhone/));
+    expect(api.devices).toHaveBeenCalledTimes(1);
+
+    // Losing the link, and the reconnect attempts after it, are not news about devices.
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live={false} />);
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live={false} />);
+    expect(api.devices).toHaveBeenCalledTimes(1);
+    // Coming back is: a revoke may have happened meanwhile.
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
+    await waitFor(() => expect(api.devices).toHaveBeenCalledTimes(2));
+
+    // Leaving the tab reads nothing; returning to it reads once.
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused={false} live />);
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
+    await waitFor(() => expect(api.devices).toHaveBeenCalledTimes(3));
   });
 
   // There is no undo: the server refuses the revoked phone's next request.
@@ -68,7 +95,7 @@ describe("paired devices", () => {
       .mockResolvedValueOnce({ devices: [mine], thisDeviceId: "dev-me" });
     api.revokeDevice.mockResolvedValue({ ok: true });
     const onRevokedSelf = jest.fn();
-    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
     await waitFor(() => view.getByTestId("revoke-dev-old"));
 
     fireEvent.press(view.getByTestId("revoke-dev-old"));
@@ -86,7 +113,7 @@ describe("paired devices", () => {
     api.devices.mockResolvedValue({ devices: [mine], thisDeviceId: "dev-me" });
     api.revokeDevice.mockResolvedValue({ ok: true });
     const onRevokedSelf = jest.fn();
-    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
     await waitFor(() => view.getByTestId("revoke-dev-me"));
 
     fireEvent.press(view.getByTestId("revoke-dev-me"));
@@ -100,10 +127,10 @@ describe("paired devices", () => {
   test("switching computers discards the old list and ignores its late response", async () => {
     let resolveOld!: (value: unknown) => void;
     api.devices.mockImplementation(() => new Promise(resolve => { resolveOld = resolve; }));
-    const view = render(<PairedDevices onRevokedSelf={jest.fn()} />);
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     mockCurrentApi = { devices: jest.fn().mockResolvedValue({ devices: [mine], thisDeviceId: mine.id }), revokeDevice: jest.fn() };
     mockComputerId = "second";
-    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} />);
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     await waitFor(() => view.getByTestId("device-dev-me"));
     await act(async () => resolveOld({ devices: [other], thisDeviceId: null }));
     expect(view.queryByTestId("device-dev-old")).toBeNull();
@@ -113,13 +140,13 @@ describe("paired devices", () => {
   test("a confirmation left open while switching cannot revoke the previous computer", async () => {
     api.devices.mockResolvedValue({ devices: [mine], thisDeviceId: mine.id });
     const onRevokedSelf = jest.fn();
-    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    const view = render(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
     await waitFor(() => view.getByTestId("revoke-dev-me"));
     fireEvent.press(view.getByTestId("revoke-dev-me"));
     const buttons = (Alert.alert as jest.Mock).mock.calls[0]![2];
     mockCurrentApi = { devices: jest.fn().mockResolvedValue({ devices: [], thisDeviceId: null }), revokeDevice: jest.fn() };
     mockComputerId = "second";
-    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} />);
+    view.rerender(<PairedDevices onRevokedSelf={onRevokedSelf} focused live />);
     await act(async () => buttons[1].onPress());
     expect(api.revokeDevice).not.toHaveBeenCalled();
     expect(onRevokedSelf).not.toHaveBeenCalled();

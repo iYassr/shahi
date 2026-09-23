@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert, Dimensions, StyleSheet } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Settings } from "./settings";
 
@@ -6,7 +6,7 @@ const mockSignOut = jest.fn();
 const mockLogout = jest.fn(async () => {});
 jest.mock("@/lib/api", () => ({ api: { logout: () => mockLogout() } }));
 
-jest.mock("expo-router", () => ({ router: { replace: jest.fn() } }));
+jest.mock("expo-router", () => ({ router: { replace: jest.fn(), push: jest.fn() }, useIsFocused: () => true }));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
 jest.mock("@/lib/push", () => ({ enablePush: jest.fn() }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
@@ -58,4 +58,35 @@ test("connection details stay hidden until requested without hiding device manag
   expect(view.getByText(/relay:\/\/relay.getshahi.dev/)).toBeTruthy();
   fireEvent.press(view.getByTestId("server-identity"));
   expect(view.queryByText(/relay:\/\//)).toBeNull();
+});
+
+// AX5 on the simulator drew "Computers" one letter per line beside its
+// "Switch or add" value (September 2026 review).
+describe("at accessibility text sizes", () => {
+  const window = Dimensions.get("window");
+  const screenSize = Dimensions.get("screen");
+  afterEach(() => act(() => Dimensions.set({ window, screen: screenSize })));
+  const hostParent = (node: { parent: any }) => {
+    let parent = node.parent;
+    while (parent && typeof parent.type !== "string") parent = parent.parent;
+    return parent;
+  };
+
+  function expectValueUnderLabel(view: ReturnType<typeof render>) {
+    const label = view.getByText("Computers");
+    expect(StyleSheet.flatten(label.props.style).flex ?? 0).toBe(0);
+    expect(StyleSheet.flatten(hostParent(label).props.style).flexDirection).toBe("column");
+    expect(hostParent(view.getByText("Switch or add"))).toBe(hostParent(label));
+  }
+
+  test("a Settings row puts its value under its label at a cold launch", () => {
+    act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen: screenSize }));
+    expectValueUnderLabel(render(<Settings />));
+  });
+
+  test("a Settings row puts its value under its label when the size changes while running", () => {
+    const view = render(<Settings />);
+    act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen: screenSize }));
+    expectValueUnderLabel(view);
+  });
 });

@@ -10,9 +10,24 @@ export function ComputerSwitcher() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const current = computers.find(c => c.id === activeComputerId);
+  const name = session?.serverName || current?.name || "Computers";
   return <>
-    <Pressable accessibilityRole="button" accessibilityLabel="Switch computer" testID="computer-switcher" onPress={() => setOpen(true)} style={styles.trigger}>
-      <Text numberOfLines={1} style={styles.title}>{session?.serverName || current?.name || "Computers"} ▾</Text>
+    {/* A navigation-bar item, sized like one. The bar does not grow with
+        Dynamic Type, so at AX5 the name scaled to 53pt inside a fixed
+        190pt slot and read "stub-…" beside a LIVE that stays capped
+        (September 2026 review). Capped the same way, and a long press shows
+        the name full size, which is how iOS bar items serve large text. */}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Switch computer"
+      accessibilityValue={{ text: name }}
+      accessibilityShowsLargeContentViewer
+      accessibilityLargeContentTitle={name}
+      testID="computer-switcher"
+      onPress={() => setOpen(true)}
+      style={styles.trigger}
+    >
+      <Text numberOfLines={1} style={styles.title} maxFontSizeMultiplier={1.2}>{name} ▾</Text>
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
       <View style={styles.overlay}><View style={styles.sheet}>
