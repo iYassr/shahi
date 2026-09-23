@@ -6,11 +6,31 @@ const reply = (status: number, message: string) => Response.json({ message }, {
   status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...(status === 429 ? { "Retry-After": "60" } : {}) },
 });
 
+/**
+ * The rate-limit key for a client address: an IPv6 source by its /64, any
+ * other address as given. One host's normal IPv6 allocation is a /64, so
+ * keying the full address let it take a fresh budget per address (review
+ * finding F80). The same rule as `connectLimitKey` in relay/src/limits.ts;
+ * the Workers are bundled separately, so it is repeated rather than shared.
+ */
+export function limitKey(ip: string): string {
+  if (!ip.includes(":") || ip.includes(".")) return ip;
+  const halves = ip.toLowerCase().split("::");
+  if (halves.length > 2) return ip;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves[1] ? halves[1].split(":") : [];
+  const groups = halves.length === 2
+    ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right]
+    : left;
+  if (groups.length !== 8 || !groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return ip;
+  return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
+
 export async function signup(request: Request, deps: Dependencies): Promise<Response> {
   if (request.method !== "POST") return reply(405, "Use the signup form to register.");
   if (request.headers.get("Origin") !== new URL(request.url).origin) return reply(403, "Submit the form from the Shahi website.");
   if (!request.headers.get("Content-Type")?.startsWith("application/json")) return reply(415, "Send a JSON form submission.");
-  if (!await deps.limit(request.headers.get("CF-Connecting-IP") ?? "unknown")) return reply(429, "Too many attempts. Please try again in a minute.");
+  if (!await deps.limit(limitKey(request.headers.get("CF-Connecting-IP") ?? "unknown"))) return reply(429, "Too many attempts. Please try again in a minute.");
   // Bound the stream too: Content-Length is optional and cannot enforce a limit.
   const reader = request.body?.getReader();
   if (!reader) return reply(400, "Enter your email address.");

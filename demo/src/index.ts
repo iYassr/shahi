@@ -102,7 +102,7 @@ export default {
     if (url.pathname === "/login" && request.method === "POST") {
       if (request.headers.get("origin") !== env.DEMO_ORIGIN) return reply("Invalid origin", 403);
       if (!Number(request.headers.get("content-length")) || Number(request.headers.get("content-length")) > 4096) return reply("Invalid sign-in request", 400);
-      const allowed = await env.LOGIN_LIMIT.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" });
+      const allowed = await env.LOGIN_LIMIT.limit({ key: limitKey(request.headers.get("cf-connecting-ip") ?? "unknown") });
       if (!allowed.success) return reply("Please wait a minute before trying again.", 429);
       const form = await request.formData();
       if (form.get("username") !== "reviewer" || !await same(String(form.get("password") ?? ""), env.REVIEW_PASSWORD)) return reply("Incorrect review credentials. Go back and try again.", 401);
@@ -139,3 +139,23 @@ export default {
     else ctx.waitUntil(env.DEMO.getByName("apple-review").expire());
   },
 };
+
+/**
+ * The rate-limit key for a client address: an IPv6 source by its /64, any
+ * other address as given. One host's normal IPv6 allocation is a /64, so
+ * keying the full address let it take a fresh budget per address (review
+ * finding F80). The same rule as `connectLimitKey` in relay/src/limits.ts;
+ * the Workers are bundled separately, so it is repeated rather than shared.
+ */
+export function limitKey(ip: string): string {
+  if (!ip.includes(":") || ip.includes(".")) return ip;
+  const halves = ip.toLowerCase().split("::");
+  if (halves.length > 2) return ip;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves[1] ? halves[1].split(":") : [];
+  const groups = halves.length === 2
+    ? [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right]
+    : left;
+  if (groups.length !== 8 || !groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return ip;
+  return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
