@@ -391,12 +391,22 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
   const [open, setOpen] = useState(false);
   /** The file this block named, once you have asked to see it. */
   const [viewing, setViewing] = useState(false);
+  /** A file the prose linked to, once you have opened it. */
+  const [linked, setLinked] = useState<{ path: string; name: string } | null>(null);
 
   switch (block.kind) {
     case "text":
       return (
         <div className="msg__text">
-          <Markdown text={block.text} />
+          <Markdown text={block.text} onOpenFile={setLinked} />
+          {linked && (
+            <FileView
+              name={linked.name}
+              url={api.fileUrl(linked.path)}
+              downloadUrl={api.fileUrl(linked.path, { download: true })}
+              onClose={() => setLinked(null)}
+            />
+          )}
         </div>
       );
 

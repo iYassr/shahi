@@ -247,6 +247,20 @@
   overflow-wrap: anywhere;
 }
 
+/* A file link is a button (see Markdown.tsx); WebKit draws a button through a
+   box of its own unless told not to. */
+.md__file {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* --------------------------------------------------------- agent marks -- */
 
 /*

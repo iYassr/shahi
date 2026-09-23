@@ -19,10 +19,59 @@
  * a comparison table arrives as a stack of raw pipe-delimited lines — the
  * single worst-looking thing in the reader.
  */
-import { Fragment, type ReactNode } from "react";
+import { createContext, Fragment, useContext, type ReactNode } from "react";
 
-export function Markdown({ text }: { text: string }) {
-  return <>{renderBlocks(text)}</>;
+type OpenFile = (file: { path: string; name: string }) => void;
+
+/**
+ * How a prose link to a path on the computer is opened. Absent where nothing
+ * can show a file, and then such a link stays plain text.
+ */
+const FileAction = createContext<OpenFile | undefined>(undefined);
+
+export function Markdown({ text, onOpenFile }: { text: string; onOpenFile?: OpenFile }) {
+  return <FileAction.Provider value={onOpenFile}>{renderBlocks(text)}</FileAction.Provider>;
+}
+
+/**
+ * What a markdown link points at. Agents link the files they touched as
+ * absolute or home-relative paths on the computer (`[api.ts](/Users/me/x/api.ts)`,
+ * `[notes](~/notes.md)`); those open in the authenticated file viewer, never as
+ * a `file://` URL in this browser, and the server still enforces its readable
+ * roots. `//host` is a network path, not a file, and a `#L12` line anchor is
+ * dropped as native does. Anything else is not a link.
+ */
+export function linkTarget(raw: string): { kind: "url"; href: string } | { kind: "file"; path: string } | null {
+  const destination = raw.trim().replace(/^<|>$/g, "");
+  if (/^https?:\/\//i.test(destination)) return { kind: "url", href: destination };
+  if ((destination.startsWith("/") && !destination.startsWith("//")) || destination.startsWith("~/")) {
+    let path = destination.replace(/#L\d+(?:-L?\d+)?$/, "");
+    try { path = decodeURIComponent(path); } catch { /* A literal percent in a file name. */ }
+    return { kind: "file", path };
+  }
+  return null;
+}
+
+/**
+ * A link in agent prose. A path is a button, not an anchor: WebKit on iOS does
+ * not reliably deliver taps to non-interactive elements, and there is no URL
+ * to navigate to — the viewer fetches the file through the computer's API.
+ */
+function ProseLink({ label, target }: { label: string; target: string }) {
+  const openFile = useContext(FileAction);
+  const resolved = linkTarget(target);
+  if (resolved?.kind === "url") {
+    return <a className="md__a" href={resolved.href} target="_blank" rel="noreferrer noopener">{label}</a>;
+  }
+  if (resolved?.kind === "file" && openFile) {
+    return (
+      <button type="button" className="md__a md__file" title="Open file on your computer"
+        onClick={() => openFile({ path: resolved.path, name: label })}>
+        {label}
+      </button>
+    );
+  }
+  return <>{label}</>;
 }
 
 function renderBlocks(text: string): ReactNode[] {
@@ -157,13 +206,12 @@ function splitRow(line: string): string[] {
  */
 const INLINE: { re: RegExp; render: (m: RegExpMatchArray, k: number) => ReactNode }[] = [
   { re: /`([^`]+)`/, render: (m, k) => <code className="md__c" key={k}>{m[1]}</code> },
+  // Web links, and paths on the computer that agents link to the files they
+  // touched (review finding F106: the web reader showed those as bracket text,
+  // while the native reader opened them).
   {
-    re: /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/,
-    render: (m, k) => (
-      <a className="md__a" href={m[2]} target="_blank" rel="noreferrer noopener" key={k}>
-        {m[1]}
-      </a>
-    ),
+    re: /\[([^\]]+)\]\((<?(?:https?:\/\/|\/(?!\/)|~\/)[^\s)]*>?)\)/,
+    render: (m, k) => <ProseLink label={m[1]!} target={m[2]!} key={k} />,
   },
   { re: /\*\*([^*]+)\*\*/, render: (m, k) => <strong key={k}>{m[1]}</strong> },
   { re: /(?<!\w)_([^_]+)_(?!\w)/, render: (m, k) => <em key={k}>{m[1]}</em> },
