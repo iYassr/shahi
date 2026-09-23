@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import Constants from "expo-constants";
-import { router, useIsFocused } from "expo-router";
+import { router, Stack, useIsFocused } from "expo-router";
 import { preparePushLogout } from "@/lib/push-registration";
 import { enablePush } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
@@ -66,6 +66,17 @@ export function Settings() {
       style={styles.screen}
       contentContainerStyle={styles.content}
     >
+      {/* A see-through bar at the scroll edge, so the large title shows.
+          On iOS 27 UIKit hosts this screen's large title inside the scroll
+          view rather than the bar (read from the simulator's view hierarchy;
+          Agents and Spaces keep theirs in the bar), and the tab stack's opaque
+          scroll-edge background then covered it: "Settings" was a blank band
+          until you scrolled (September 2026 review). Giving Settings the other
+          tabs' header items, or wrapping its scroll view as theirs are, did
+          not move the title. See-through at the scroll edge is also iOS's own
+          default; the screen behind is the same colour, and content scrolled
+          under the bar still gets the opaque standard bar. */}
+      <Stack.Screen options={{ headerLargeStyle: { backgroundColor: "transparent" } }} />
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />

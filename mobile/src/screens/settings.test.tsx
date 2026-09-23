@@ -6,7 +6,12 @@ const mockSignOut = jest.fn();
 const mockLogout = jest.fn(async () => {});
 jest.mock("@/lib/api", () => ({ api: { logout: () => mockLogout() } }));
 
-jest.mock("expo-router", () => ({ router: { replace: jest.fn(), push: jest.fn() }, useIsFocused: () => true }));
+const mockStackOptions = jest.fn();
+jest.mock("expo-router", () => ({
+  router: { replace: jest.fn(), push: jest.fn() },
+  useIsFocused: () => true,
+  Stack: { Screen: ({ options }: { options: unknown }) => { mockStackOptions(options); return null; } },
+}));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
 jest.mock("@/lib/push", () => ({ enablePush: jest.fn() }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
@@ -58,6 +63,15 @@ test("connection details stay hidden until requested without hiding device manag
   expect(view.getByText(/relay:\/\/relay.getshahi.dev/)).toBeTruthy();
   fireEvent.press(view.getByTestId("server-identity"));
   expect(view.queryByText(/relay:\/\//)).toBeNull();
+});
+
+// On the iOS 27 simulator "Settings" was a blank band until scrolled: UIKit
+// hosts this screen's large title in the scroll view, beneath the bar, and the
+// tab stack's opaque scroll-edge background covered it (September 2026 review).
+test("the Settings large title is not covered by an opaque bar at rest", () => {
+  mockStackOptions.mockClear();
+  render(<Settings />);
+  expect(mockStackOptions).toHaveBeenCalledWith(expect.objectContaining({ headerLargeStyle: { backgroundColor: "transparent" } }));
 });
 
 // AX5 on the simulator drew "Computers" one letter per line beside its
