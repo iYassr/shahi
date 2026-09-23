@@ -17,13 +17,14 @@ test("frame changes reach the latest observer after FlatList receives its measur
 
   layout(100);
   expect(order).toEqual(["native", "first"]);
-  expect(first).toHaveBeenLastCalledWith("message", { y: 100, height: 500 });
+  expect(first).toHaveBeenLastCalledWith("message", { y: 100, height: 500 }, undefined);
 
   hook.rerender({ observer: latest });
   expect(hook.result.current.CellRendererComponent).toBe(Cell);
   layout(430);
   expect(order.slice(-2)).toEqual(["native", "latest"]);
-  expect(latest).toHaveBeenLastCalledWith("message", { y: 430, height: 500 });
+  // The frame it had before, so an observer can tell how far the cell moved.
+  expect(latest).toHaveBeenLastCalledWith("message", { y: 430, height: 500 }, { y: 100, height: 500 });
   expect(hook.result.current.frames.current.get("message")).toEqual({ y: 430, height: 500 });
 
   layout(430);

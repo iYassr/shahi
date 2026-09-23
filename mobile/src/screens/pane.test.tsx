@@ -870,6 +870,217 @@ describe("keeping your place", () => {
       forgetPaneMemory(api, paneId);
     }
   });
+
+  /** Reports a message's measured frame, the way its cell's onLayout does. */
+  function layOut(view: ReturnType<typeof render>, id: string, y: number, height: number) {
+    const list = view.UNSAFE_getByType(FlatList);
+    const cell = view.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === id)!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y, height } } }));
+  }
+
+  // The restore re-asserts the paragraph on every content change and retries
+  // 100ms later. Every scroll event in that window used to be ignored, so a
+  // VoiceOver scroll that began in it was swallowed and the retry scrolled
+  // back to the paragraph — while the agent was writing, which is when it
+  // happens (pre-release review, second pass).
+  test("a VoiceOver scroll that begins while output arrives under a restored paragraph is not snapped back to it", async () => {
+    const paneId = "w1:p-voiceover-output";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    await readToParagraph(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    try {
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      const list = again.UNSAFE_getByType(FlatList);
+      layOut(again, "m1", 16, 1500);
+      fireEvent(list, "scroll", at(420)); // the restore lands on the paragraph
+      fireEvent(list, "contentSizeChange", 400, 3300); // the agent writes below it
+      expect(scrollToIndex).toHaveBeenCalled(); // the paragraph is held
+      scrollToIndex.mockClear();
+
+      fireEvent(list, "scroll", at(1020, 3300)); // a page down, inside the retry's window
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToIndex).not.toHaveBeenCalled();
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 1004 });
+      expect(again.getByText("Latest ↓")).toBeTruthy();
+      again.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // A jump straight to the top was never taken for the person's, because a
+  // settle event after a drag once had that shape. VoiceOver users do not drag.
+  test("a single VoiceOver step straight to the top releases a restored paragraph", async () => {
+    const paneId = "w1:p-voiceover-top";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    await readToParagraph(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    try {
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      const list = again.UNSAFE_getByType(FlatList);
+      layOut(again, "m1", 16, 1500);
+      fireEvent(list, "scroll", at(420));
+      scrollToIndex.mockClear();
+
+      fireEvent(list, "scroll", at(0));
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToIndex).not.toHaveBeenCalled();
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: -16 });
+      expect(again.getByText("Latest ↓")).toBeTruthy();
+      again.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // After a drag, a jump to the top is still not taken for the person's (the
+  // settle rule), so the status bar's own report is what counts.
+  test("a tap on the status bar releases a held paragraph and is remembered, even after a drag", async () => {
+    const paneId = "w1:p-status-bar";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    try {
+      const view = render(<Pane paneId={paneId} />);
+      await view.findByText(/Message three/);
+      const list = view.UNSAFE_getByType(FlatList);
+      layOut(view, "m1", 16, 1500);
+      act(() => list.props.onScrollBeginDrag());
+      fireEvent(list, "scroll", at(420));
+      fireEvent(list, "scrollEndDrag", at(420));
+      // Screen and back holds the paragraph again while the viewport changes.
+      fireEvent.press(view.getByTestId("view-screen"));
+      fireEvent.press(view.getByTestId("view-read"));
+      expect(scrollToIndex).toHaveBeenCalled();
+      scrollToIndex.mockClear();
+
+      fireEvent(list, "scroll", at(0));
+      fireEvent(list, "scrollToTop", at(0));
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToIndex).not.toHaveBeenCalled();
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: -16 });
+      expect(view.getByText("Latest ↓")).toBeTruthy();
+      view.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  /** Reads down to 50pt into the third message, as a finger would, and leaves. */
+  async function readIntoThirdMessage(paneId: string) {
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    const list = visit.UNSAFE_getByType(FlatList);
+    layOut(visit, "m3", 2100, 500);
+    act(() => list.props.onScrollBeginDrag());
+    fireEvent(list, "scroll", at(2150));
+    fireEvent(list, "scrollEndDrag", at(2150));
+    expect(paneScrollPlace(api, paneId)).toEqual({ id: "m3", offset: 50 });
+    visit.unmount();
+  }
+
+  /** Reopens it: the paragraph is not measured yet, so FlatList jumps by estimate. */
+  async function reopenTowardThirdMessage(paneId: string) {
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/Message three/);
+    const list = view.UNSAFE_getByType(FlatList);
+    fireEvent(list, "scroll", at(0));
+    fireEvent(list, "contentSizeChange", 400, 3000);
+    fireEvent(list, "scrollToIndexFailed", { index: 2, averageItemLength: 200, highestMeasuredFrameIndex: 0 });
+    fireEvent(list, "scroll", at(400)); // where the estimate put it
+    return { view, list };
+  }
+
+  // What the restore does to the list is not the person's scroll: taking it
+  // for one would end the restore wherever a slow measure had left it.
+  test("the restore's own jump toward a paragraph not yet measured does not end it", async () => {
+    const paneId = "w1:p-estimate";
+    await readIntoThirdMessage(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
+    try {
+      const { view, list } = await reopenTowardThirdMessage(paneId);
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m3", offset: 50 });
+      layOut(view, "m3", 2100, 500);
+      scrollToIndex.mockClear();
+      act(() => jest.advanceTimersByTime(100));
+      expect(scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 2, viewOffset: -50 }));
+      fireEvent(list, "scroll", at(2150));
+      scrollToIndex.mockClear();
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToIndex).not.toHaveBeenCalled(); // landed
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m3", offset: 50 });
+      view.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      scrollToOffset.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // maintainVisibleContentPosition moves the offset by as much as the message
+  // it holds moved. While a virtualized list fills in, messages below measure
+  // in the same pass, so the content grows by more than that.
+  test("messages measuring above and below at once do not end the restore early", async () => {
+    const paneId = "w1:p-measure-both";
+    await readIntoThirdMessage(paneId);
+    const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
+    const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
+    try {
+      const { view, list } = await reopenTowardThirdMessage(paneId);
+      layOut(view, "m2", 300, 500);
+      // The first message measures 200pt taller than estimated, pushing the
+      // second down, while 500pt more below measures too; the list holds the
+      // second message where it was.
+      layOut(view, "m2", 500, 500);
+      fireEvent(list, "scroll", at(600, 3700));
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m3", offset: 50 });
+      layOut(view, "m3", 2300, 500);
+      scrollToIndex.mockClear();
+      act(() => jest.advanceTimersByTime(100));
+      expect(scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 2, viewOffset: -50 }));
+      view.unmount();
+    } finally {
+      scrollToIndex.mockRestore();
+      scrollToOffset.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // A fling's offsets can still be arriving after Go to latest is pressed.
+  // They belong to the finger that threw it, not to a new decision to stay.
+  test("offsets still arriving from a fling after Go to latest is pressed do not cancel the jump", async () => {
+    const paneId = "w1:p-fling-latest";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
+    try {
+      const view = render(<Pane paneId={paneId} />);
+      await view.findByText(/Message three/);
+      const list = view.UNSAFE_getByType(FlatList);
+      act(() => list.props.onScrollBeginDrag());
+      fireEvent(list, "scroll", at(2000, 10000));
+      fireEvent(list, "scrollEndDrag", at(2000, 10000));
+      fireEvent(list, "momentumScrollBegin");
+      fireEvent(list, "scroll", at(2300, 10000));
+      fireEvent.press(view.getByTestId("go-to-latest"));
+      fireEvent(list, "scroll", at(2500, 10000));
+      fireEvent(list, "scroll", at(2650, 10000));
+      fireEvent(list, "momentumScrollEnd", at(2700, 10000));
+      expect(paneScrollPlace(api, paneId)).toBe("bottom");
+      const before = scrollToEnd.mock.calls.length;
+      act(() => jest.advanceTimersByTime(500));
+      expect(scrollToEnd.mock.calls.length).toBeGreaterThan(before);
+      view.unmount();
+    } finally {
+      scrollToEnd.mockRestore();
+      forgetPaneMemory(api, paneId);
+    }
+  });
 });
 
 // At the largest accessibility text size a cold-opened conversation showed no

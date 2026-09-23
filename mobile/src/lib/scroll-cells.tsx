@@ -19,7 +19,7 @@ export function anchorAt(frames: Map<string, CellFrame>, y: number): ScrollAncho
 /** Observe the actual cell container, not renderItem's child whose y is always zero. */
 export function useScrollCells<T>(
   idOf: (item: T) => string,
-  onFrameChange?: (id: string, frame: CellFrame) => void,
+  onFrameChange?: (id: string, frame: CellFrame, previous: CellFrame | undefined) => void,
 ) {
   const frames = useRef(new Map<string, CellFrame>());
   const identify = useRef(idOf);
@@ -39,7 +39,7 @@ export function useScrollCells<T>(
       // FlatList must receive its measurement before an observer corrects a
       // saved anchor using the new frame. Unchanged layouts need no correction.
       if (!previous || previous.y !== y || previous.height !== height) {
-        frameChanged.current?.(id, frame);
+        frameChanged.current?.(id, frame, previous);
       }
     }}>{children}</View>
   ); }, []);

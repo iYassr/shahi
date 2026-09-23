@@ -26,6 +26,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type NativeScrollEvent,
 } from "react-native";
 import { Text } from "@/components/text";
 import { Stack } from "expo-router";
@@ -250,7 +251,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   /** Which transcript `messages` came from (see `transcriptOf`), once one has loaded. */
   const transcript = useRef<string | null>(messageMemory.get(paneId)?.transcript ?? null);
   const anchorLock = useRef(typeof scrollMemory.get(paneId) === "object");
-  const cells = useScrollCells<LogMessage>((message) => message.id, (id) => {
+  const cells = useScrollCells<LogMessage>((message) => message.id, (id, frame, previous) => {
+    if (previous && previous.y !== frame.y && !shifted.current.has(id)) shifted.current.set(id, previous.y);
     const spot = scrollMemory.get(paneId);
     if (anchorLock.current && typeof spot === "object" && spot.id === id) {
       pendingRestore.current = true;
@@ -365,16 +367,25 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    */
   const following = useRef(typeof scrollMemory.get(paneId) !== "object");
   /**
-   * True while a remembered position is being restored. Scroll events are
-   * ignored until it clears: they are the restore's own clamped settling, and
-   * treating one as the reader's doing is how the position got overwritten.
+   * True while a remembered position is being restored. The restore's own
+   * clamped settling and the list measuring around it are ignored until it
+   * clears — treating one as the reader's doing is how the position got
+   * overwritten — and any other scroll ends it (see `movedByPerson`).
    */
   const pendingRestore = useRef(true);
   const scrollMetrics = useRef({ y: 0, height: 0, viewport: 0 });
-  /** Navigation/layout scroll events must never replace the last finger position. */
+  /** A finger drag, or the fling it threw, is moving the list. */
   const userScroll = useRef(false);
   /** What the previous scroll event reported, to tell who moved the list since. */
   const lastScroll = useRef<{ y: number; height: number; viewport: number } | null>(null);
+  /** Offsets the reader asked the list for that it has not reported yet; "any" when FlatList picks the offset. */
+  const requested = useRef<(number | "any")[]>([]);
+  /** Each measured message's y before it moved since the last scroll event. */
+  const shifted = useRef(new Map<string, number>());
+  /** A fling is decelerating: its offsets belong to the finger that threw it. */
+  const momentum = useRef(false);
+  /** The person has dragged the list during this visit (see `movedByPerson`). */
+  const dragged = useRef(false);
   /** While `Date.now()` is under this, the poll runs at the fast cadence. */
   const activeUntil = useRef(0);
   // Backing refs for the optimistic-working state, so `load` (a stable
@@ -399,7 +410,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * rendered window and there is no getItemLayout for variable heights), so
    * onScrollToIndexFailed walks closer by estimate and retries. Nothing
    * reports "the list stopped moving": keep retrying until native layout confirms
-   * the target. A finger drag cancels the operation immediately.
+   * the target. The person's own scroll cancels the operation immediately.
    */
   function scrollToTail() {
     const last = messagesRef.current.at(-1);
@@ -407,8 +418,107 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     if (last && cells.frames.current.has(last.id) && viewport > 0) {
       // FlatList.scrollToEnd omits content-container bottom padding. Once the
       // last cell is measured, use the native content extent, including padding.
-      listRef.current?.scrollToOffset({ offset: Math.max(0, height - viewport), animated: false });
-    } else listRef.current?.scrollToEnd({ animated: false });
+      const offset = Math.max(0, height - viewport);
+      expectScroll(offset);
+      listRef.current?.scrollToOffset({ offset, animated: false });
+    } else {
+      expectScroll("any");
+      listRef.current?.scrollToEnd({ animated: false });
+    }
+  }
+
+  /**
+   * Notes where the reader is about to send the list, so the scroll event that
+   * reports it is not taken for the person's (see `movedByPerson`). A request
+   * the list is already at reports nothing, so a few are kept; a stale number
+   * can only match the list landing exactly there again.
+   */
+  function expectScroll(offset: number | "any") {
+    const pending = requested.current;
+    if (pending.at(-1) !== offset) pending.push(offset);
+    if (pending.length > 4) pending.shift();
+  }
+
+  /**
+   * Whether the person moved the list, in whatever way: VoiceOver's
+   * three-finger scroll and its focus moves, a hardware keyboard, a tap on the
+   * status bar. None of those sends onScrollBeginDrag, and treating only a drag
+   * as the person's scroll snapped each of them back to a restored paragraph,
+   * or kept following the tail and pulled them down on the next message
+   * (pre-release review). Instead this names what else moves the list and
+   * takes everything left over as the person's:
+   *
+   * - the reader's own requests (`expectScroll`), however native clamps them;
+   * - a resized viewport (keyboard, the Screen key bar, rotation);
+   * - maintainVisibleContentPosition holding a message in place while others
+   *   measure: the offset moves exactly as far as the content above it grew, or
+   *   as a message that moved since the last event (both are needed: while a
+   *   virtualized list fills in, cells above and below measure in one pass);
+   * - the offset clamped to a content end that shrank under it;
+   * - a fling still decelerating, which belongs to the drag that threw it.
+   *
+   * It runs while a restore is pending too. A restore re-asserts its paragraph
+   * on every content change and retries 100ms later, and ignoring every event
+   * in that window swallowed a VoiceOver scroll that began in it — the retry
+   * then scrolled back to the paragraph (pre-release review, second pass).
+   *
+   * A native pop/layout settle once emitted one last offset, usually zero,
+   * after the person's drag, and saving it was the reproducible
+   * lower-paragraph → top jump on reopening. It has not been seen since on
+   * React Native 0.86 (whose recycled scroll view resets its offset only after
+   * its event emitter is gone), but a jump straight to the top after a drag in
+   * this visit is still not the person's. A VoiceOver user never drags, so
+   * their jump to the top counts; the status bar reports its own
+   * (onScrollToTop).
+   */
+  function movedByPerson(
+    previous: { y: number; height: number; viewport: number } | null,
+    now: { y: number; height: number; viewport: number },
+  ) {
+    const moves = shifted.current;
+    shifted.current = new Map();
+    const dy = previous ? now.y - previous.y : 0;
+    const end = Math.max(0, now.height - now.viewport);
+    const asked = requested.current.findIndex((target) =>
+      target === "any" ? !previous || Math.abs(dy) > 2 : Math.abs(now.y - Math.min(Math.max(0, target), end)) <= 2,
+    );
+    if (asked >= 0) {
+      requested.current.splice(0, asked + 1);
+      return false;
+    }
+    if (!previous || userScroll.current || momentum.current || Math.abs(dy) <= 2) return false;
+    if (Math.abs(now.viewport - previous.viewport) >= 1) return false;
+    if (Math.abs(dy - (now.height - previous.height)) <= 2) return false;
+    for (const [id, before] of moves) {
+      const frame = cells.frames.current.get(id);
+      if (frame && Math.abs(dy - (frame.y - before)) <= 2) return false;
+    }
+    if (now.height < previous.height && Math.abs(now.y - end) <= 2) return false;
+    if (now.y <= 0 && dragged.current) return false;
+    return true;
+  }
+
+  /** The person has moved the list: nothing the reader was doing to it continues. */
+  function yieldToPerson() {
+    anchorLock.current = false;
+    following.current = false;
+    requested.current = [];
+    finishRestore();
+  }
+
+  /** Where the person has put the list becomes the place, the pill and whether to follow. */
+  function rememberPlace(e: NativeScrollEvent) {
+    if (e.contentOffset.y < 80 && !olderError) void loadOlder();
+    const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+    following.current = fromBottom < 80;
+    const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
+    // Near the tail is still a distinct reading position. Only the
+    // actual tail follows future output after leaving and reopening.
+    if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
+    else if (anchor) scrollMemory.set(paneId, anchor);
+    else if (topItem.current) scrollMemory.set(paneId, { id: topItem.current, offset: 0 });
+    setAway(!following.current);
+    if (following.current) setUnseen(0);
   }
 
   function restoreLanded() {
@@ -459,6 +569,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       scheduleRestoreRetry();
       return;
     }
+    // FlatList scrolls to the message's measured offset plus the place in it;
+    // one not measured here is its estimate, or a failure handled below.
+    const frame = typeof spot === "object" ? cells.frames.current.get(spot.id) : undefined;
+    expectScroll(frame && typeof spot === "object" ? frame.y + spot.offset : "any");
     listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0, viewOffset: typeof spot === "object" ? -spot.offset : 0 });
     scheduleRestoreRetry();
   }
@@ -934,38 +1048,24 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           // from the first handled scroll event, so a drag back to the bottom
           // still re-enables following.
           onScrollBeginDrag={() => {
-            anchorLock.current = false;
-            following.current = false;
-            finishRestore();
+            yieldToPerson();
+            dragged.current = true;
+            momentum.current = false;
             userScroll.current = true;
           }}
           onScroll={({ nativeEvent: e }) => {
-            const previous = lastScroll.current;
-            lastScroll.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
-            scrollMetrics.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
+            const now = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
+            // Judged before anything else, the pending restore included: a
+            // scroll the reader and layout did not cause ends whatever the
+            // reader was doing to the list, however the person started it.
+            const theirs = movedByPerson(lastScroll.current, now);
+            lastScroll.current = now;
+            scrollMetrics.current = { ...now };
+            if (theirs) yieldToPerson();
             if (pendingRestore.current) {
               restoreLanded();
               return;
             }
-            // The person can move the list without dragging it: VoiceOver's
-            // three-finger scroll and its focus moves, a hardware keyboard, a
-            // tap on the status bar. None of them sends onScrollBeginDrag, so
-            // the reader took them for layout noise — snapped back to a
-            // restored paragraph, or kept following the tail and pulled them
-            // down again on the next message (pre-release review). Outside a
-            // restore nothing here moves the list except following the tail,
-            // and a layout change moves it by exactly as much as the content
-            // above it changed. An offset that moved by anything else, in an
-            // unchanged viewport, was moved by the person — except a jump
-            // straight to the very top, the shape of the settle event below;
-            // a person scrolling to the top arrives through offsets above it.
-            const theirs =
-              !userScroll.current &&
-              previous !== null &&
-              e.contentOffset.y > 0 &&
-              Math.abs(previous.viewport - e.layoutMeasurement.height) < 1 &&
-              Math.abs(e.contentOffset.y - previous.y - (e.contentSize.height - previous.height)) > 2;
-            if (theirs) anchorLock.current = false;
             // Cells preceding the anchor can finish measuring after the first
             // landing. Keep the paragraph fixed until the person moves.
             if (anchorLock.current) {
@@ -975,24 +1075,17 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               }
               return;
             }
-            // A native pop/layout settle can emit one last offset (often zero)
-            // after the person's drag. That event caused the reproducible
-            // lower-paragraph → top jump on reopening. (Not seen again on
-            // 2026-09-23, iOS 27 simulator: Back, the edge swipe and a fling
-            // then swipe emitted only momentum ends. Still guarded.)
             if (!userScroll.current && !theirs) return;
-            if (e.contentOffset.y < 80 && !olderError) void loadOlder();
-            const fromBottom =
-              e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
-            following.current = fromBottom < 80;
-            const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
-            // Near the tail is still a distinct reading position. Only the
-            // actual tail follows future output after leaving and reopening.
-            if (fromBottom <= 2) scrollMemory.set(paneId, "bottom");
-            else if (anchor) scrollMemory.set(paneId, anchor);
-            else if (topItem.current) scrollMemory.set(paneId, { id: topItem.current, offset: 0 });
-            setAway(!following.current);
-            if (following.current) setUnseen(0);
+            rememberPlace(e);
+          }}
+          // The status bar's scroll to the top, reported when it arrives. Its
+          // last step is a jump to the top that `movedByPerson` would not take
+          // for the person's after a drag, so the place is taken from here.
+          onScrollToTop={({ nativeEvent: e }) => {
+            lastScroll.current = { y: e.contentOffset.y, height: e.contentSize.height, viewport: e.layoutMeasurement.height };
+            scrollMetrics.current = { ...lastScroll.current };
+            yieldToPerson();
+            rememberPlace(e);
           }}
           onScrollEndDrag={({ nativeEvent: e }) => {
             if (pendingRestore.current) return;
@@ -1002,8 +1095,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             else if (anchor) scrollMemory.set(paneId, anchor);
             userScroll.current = false;
           }}
-          onMomentumScrollBegin={() => { if (!pendingRestore.current && !anchorLock.current) userScroll.current = true; }}
+          onMomentumScrollBegin={() => {
+            momentum.current = true;
+            if (!pendingRestore.current && !anchorLock.current) userScroll.current = true;
+          }}
           onMomentumScrollEnd={({ nativeEvent: e }) => {
+            momentum.current = false;
             if (pendingRestore.current || anchorLock.current) return;
             const fromBottom = e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
             const anchor = anchorAt(cells.frames.current, e.contentOffset.y);
@@ -1017,6 +1114,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           viewabilityConfig={{ itemVisiblePercentThreshold: 1 }}
           onViewableItemsChanged={trackTop}
           onScrollToIndexFailed={({ index, averageItemLength }) => {
+            expectScroll(index * averageItemLength);
             listRef.current?.scrollToOffset({
               offset: index * averageItemLength,
               animated: false,
