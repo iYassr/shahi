@@ -45,3 +45,24 @@ test("a refusal followed by a missing socket reached nothing", async () => {
   await expect(delivery.rpc("pane.send_text", {} as never)).rejects.toBe(down);
   expect(delivery.reachedNothing()).toBe(true);
 });
+
+// Found integrating the review fixes: the prompt route's screen read (F41)
+// made every refusal "delivered", so a retry got the refusal for ten minutes.
+test("an operation that only read the screen reached nothing, however the read went", async () => {
+  const ok = trackDelivery((async () => ({ read: { text: "" } })) as never);
+  await (ok.rpc as (m: string, p: never) => Promise<unknown>)("pane.read", {} as never);
+  expect(ok.reachedNothing()).toBe(true);
+
+  const failed = trackDelivery((async () => { throw new Error("timed out"); }) as never);
+  await expect((failed.rpc as (m: string, p: never) => Promise<unknown>)("agent.get", {} as never)).rejects.toThrow();
+  expect(failed.reachedNothing()).toBe(true);
+});
+
+test("a read followed by a write is delivered", async () => {
+  const t = trackDelivery((async () => ({})) as never);
+  const call = t.rpc as (m: string, p: never) => Promise<unknown>;
+  await call("pane.read", {} as never);
+  await call("pane.send_text", {} as never);
+  expect(t.reachedNothing()).toBe(false);
+});
+

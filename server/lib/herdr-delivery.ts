@@ -35,6 +35,16 @@ export function refusedBeforeDelivery(err: unknown): boolean {
   return typeof code === "string" && NOT_CONNECTED.has(code);
 }
 
+/**
+ * herdr methods that only read. Whatever they answer, they changed nothing,
+ * so they never count as delivery. The prompt route reads the screen before it
+ * types (to refuse free text into an open menu, review finding F41); counting
+ * that read made its refusal "delivered", and a retry under the same id was
+ * handed the same refusal for ten minutes after the menu had gone. Anything
+ * not listed here still counts: a replayed error is the safe mistake.
+ */
+const READ_ONLY = new Set(["pane.read", "pane.get", "pane.list", "agent.get", "agent.list", "tab.list", "workspace.list", "session.snapshot", "ping"]);
+
 type Rpc = (method: string, params: never, options?: { timeoutMs?: number }) => Promise<unknown>;
 
 /**
@@ -44,12 +54,13 @@ type Rpc = (method: string, params: never, options?: { timeoutMs?: number }) => 
 export function trackDelivery<R extends Rpc>(rpc: R): { rpc: R; reachedNothing: () => boolean } {
   let delivered = false;
   const tracked = (async (method: string, params: never, options?: { timeoutMs?: number }) => {
+    const writes = !READ_ONLY.has(method);
     try {
       const result = await rpc(method, params, options);
-      delivered = true;
+      if (writes) delivered = true;
       return result;
     } catch (err) {
-      if (!refusedBeforeDelivery(err)) delivered = true;
+      if (writes && !refusedBeforeDelivery(err)) delivered = true;
       throw err;
     }
   }) as R;
