@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import { deleteSecret, readSecret, writeSecret } from "./keychain";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { api, type Api } from "./api";
 import type { SshProfile } from "./ssh";
@@ -21,7 +21,7 @@ export function preparePushRegistration(client: Api = api): (token: string) => P
     registration = registration.catch(() => undefined).then(async () => {
       if (current !== revision) return;
       await client.registerPush(token);
-      if (savedKey && current === revision) await SecureStore.setItemAsync(savedKey, token);
+      if (savedKey && current === revision) await writeSecret(savedKey, token);
     });
     await registration;
   };
@@ -37,7 +37,7 @@ export async function restorePushRegistration(active: () => boolean, client: Api
   const current = revision;
   if (!savedKey) return;
   try {
-    const token = await SecureStore.getItemAsync(savedKey);
+    const token = await readSecret(savedKey);
     if (!token || !active() || current !== revision) return;
     registration = registration.catch(() => undefined).then(async () => {
       if (active() && current === revision) await client.registerPush(token);
@@ -53,7 +53,7 @@ export async function forgetPushRegistration(): Promise<void> {
   const savedKey = key;
   revision++;
   await registration.catch(() => undefined);
-  if (savedKey) await SecureStore.deleteItemAsync(savedKey).catch(() => undefined);
+  if (savedKey) await deleteSecret(savedKey).catch(() => undefined);
 }
 
 /** A prior reconnect may have failed to transfer the token's old session owner. */

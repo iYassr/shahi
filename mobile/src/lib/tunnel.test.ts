@@ -83,7 +83,7 @@ describe("openTunnel", () => {
     const { tunnel, native, store } = load();
     await tunnel.openTunnel(profile());
     expect(native.open.mock.calls[0]![0]).not.toHaveProperty("expectedHostKey");
-    expect(store.setItemAsync).toHaveBeenCalledWith(expect.stringContaining("knownhost"), "SHA256:first");
+    expect(store.setItemAsync).toHaveBeenCalledWith(expect.stringContaining("knownhost"), "SHA256:first", expect.anything());
   });
 
   test("a remembered key is passed down so the native side can refuse before authenticating", async () => {

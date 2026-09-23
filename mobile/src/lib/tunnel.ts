@@ -14,7 +14,7 @@
  * function — the Direct connection path keeps working regardless.
  */
 import { requireOptionalNativeModule } from "expo";
-import * as SecureStore from "expo-secure-store";
+import { readSecret, writeSecret } from "./keychain";
 import type { SshProfile } from "@/lib/ssh";
 
 interface SshTunnelModule {
@@ -64,7 +64,7 @@ function knownHostKeyName(host: string, port: number): string {
 
 async function rememberedHostKey(host: string, port: number): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(knownHostKeyName(host, port));
+    return await readSecret(knownHostKeyName(host, port));
   } catch {
     return null;
   }
@@ -72,7 +72,7 @@ async function rememberedHostKey(host: string, port: number): Promise<string | n
 
 async function rememberHostKey(host: string, port: number, fingerprint: string): Promise<void> {
   try {
-    await SecureStore.setItemAsync(knownHostKeyName(host, port), fingerprint);
+    await writeSecret(knownHostKeyName(host, port), fingerprint);
   } catch {
     // A failed write just means we re-trust on first use next time; not fatal.
   }

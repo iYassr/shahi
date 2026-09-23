@@ -17,7 +17,7 @@ import { type Reviewed, type DashboardPane } from "@shahi/shared";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import { addNetworkStateListener, getNetworkStateAsync, type NetworkState } from "expo-network";
-import * as SecureStore from "expo-secure-store";
+import { deleteSecret, readSecret, writeSecret } from "./keychain";
 import type { ParsedPrompt, Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
@@ -186,9 +186,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const saved = JSON.stringify(bank.current);
     const current = bank.current.find(c => c.id === selected.current);
     return write(async () => {
-      await SecureStore.setItemAsync(COMPUTERS_KEY, saved);
-      if (current) await SecureStore.setItemAsync(KEY, JSON.stringify(current.connection));
-      else await SecureStore.deleteItemAsync(KEY);
+      await writeSecret(COMPUTERS_KEY, saved);
+      if (current) await writeSecret(KEY, JSON.stringify(current.connection));
+      else await deleteSecret(KEY);
     });
   }, [write]);
   const paint = useCallback(() => { if (mounted.current) render(n => n + 1); }, []);
@@ -219,7 +219,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         current.saved = { ...current.saved, name };
         bank.current = bank.current.map(c => c.id === saved.id ? current.saved : c);
         const savedNames = JSON.stringify(bank.current);
-        void write(() => SecureStore.setItemAsync(COMPUTERS_KEY, savedNames));
+        void write(() => writeSecret(COMPUTERS_KEY, savedNames));
       }
       if (selected.current === saved.id) {
         lastUpdate.at = current.updatedAt; lastUpdate.listeners.forEach(fn => fn());
@@ -236,7 +236,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [raw, saved, width, oldPins] = await Promise.all([KEY, COMPUTERS_KEY, WIDTH_KEY, PINS_KEY].map(key => SecureStore.getItemAsync(key)));
+        const [raw, saved, width, oldPins] = await Promise.all([KEY, COMPUTERS_KEY, WIDTH_KEY, PINS_KEY].map(key => readSecret(key)));
         if (cancelled) return;
         bank.current = saved ? JSON.parse(saved) : [];
         const current: Stored | null = raw ? JSON.parse(raw) : null;
@@ -278,11 +278,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const target = bank.current.find(c => c.id === id);
     if (!target) throw new Error("That computer is no longer saved. Pair it again.");
     // A failed secure-store write leaves the current view and connection intact.
-    await write(() => SecureStore.setItemAsync(KEY, JSON.stringify(target.connection)));
+    await write(() => writeSecret(KEY, JSON.stringify(target.connection)));
     ensure(target); setAddingComputer(false); choose(id);
   };
   const addComputer = async () => {
-    await write(() => SecureStore.deleteItemAsync(KEY));
+    await write(() => deleteSecret(KEY));
     choose(null); setAddingComputer(true);
   };
   const signIn = (stored: Stored, adopted?: Connection) => {
@@ -336,7 +336,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     pins: new Set(entry?.saved.pins ?? []),
     togglePin: pane => updatePins(entry?.saved.pins.includes(pane) ? entry.saved.pins.filter(id => id !== pane) : [...(entry?.saved.pins ?? []), pane]),
     clearPins: () => updatePins([]), terminalWidth,
-    setTerminalWidth: columns => { setWidth(columns); void SecureStore.setItemAsync(WIDTH_KEY, String(columns)); },
+    setTerminalWidth: columns => { setWidth(columns); void writeSecret(WIDTH_KEY, String(columns)).catch(() => {}); },
     server: entry ? (entry.saved.connection.kind === "relay" ? relayLabel(entry.saved.connection) : `ssh://${entry.saved.connection.ssh.username}@${entry.saved.connection.ssh.host}`) : "",
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
