@@ -29,7 +29,7 @@
 
 <h2>What is stored on your device</h2>
 
-<p>The native app stores its connection credentials in the iOS Keychain: your relay address, server identifier and paired-device secret, or your SSH host, username, password or private key, passphrase and sidecar passcode. It also stores local preferences such as pinned conversations and terminal width.</p>
+<p>The native app stores its connection credentials in the iOS Keychain: your relay address, server identifier and paired-device secret, or your SSH host, username, password or private key, passphrase, sidecar passcode and the SSH host keys you chose to trust. It also stores local preferences such as pinned conversations and terminal width. These Keychain items are kept on this device only: they are not restored to another device from a backup, so a restored iPhone must be paired or connected again.</p>
 
 <p>The hosted web app keeps its paired-device secret in memory by default. If you select “Remember this browser”, it stores that secret and the relay, server and device identifiers in IndexedDB in your browser profile. Anyone using that profile can access the paired computer. Signing out clears the saved pairing and requests revocation on your server. Browser extensions or compromised code on the application origin may access an active or remembered connection.</p>
 

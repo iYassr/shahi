@@ -184,8 +184,15 @@ sidecar restarts.
 
 The native app can open an **SSH tunnel** to a computer you can already reach
 over SSH. The tunnel carries local Shahi traffic without using the Shahi relay.
-SSH host keys are pinned on first connection; verify the first connection’s host
-identity through a trusted source. SSH access also requires the Shahi passcode.
+Before the first login to a server, the app shows the host key's SHA256
+fingerprint — the form `ssh-keygen -lf /etc/ssh/ssh_host_<type>_key.pub` prints
+on that server — and sends no login until you tap Trust; compare the two through
+a trusted source. The trusted key is then pinned. If it later changes, the saved
+computer shows **Check this computer’s identity** and sends no login; adding the
+computer again shows the previous and the new fingerprint, and **Trust the new
+key** replaces the pin. Removing or signing out of an SSH computer forgets its
+pin, unless another saved login uses the same host and port. SSH access also
+requires the Shahi passcode.
 
 Set `RELAY_URL=` (empty) in the plugin configuration to stop your computer from
 connecting to the default relay. Alternatively, [run your own relay](relay.md)

@@ -16,8 +16,11 @@ HTTPS proxy whose name you list in `SHAHI_ALLOWED_HOSTS`.
 
 The native app stores its connection credentials in the iOS Keychain: your
 relay address, server identifier and paired-device secret, or your SSH host,
-username, password or private key, passphrase and sidecar passcode. It also
-stores local preferences such as pinned conversations and terminal width.
+username, password or private key, passphrase, sidecar passcode and the SSH
+host keys you chose to trust. It also stores local preferences such as pinned
+conversations and terminal width. These Keychain items are kept on this device
+only: they are not restored to another device from a backup, so a restored
+iPhone must be paired or connected again.
 
 The hosted web app keeps its paired-device secret in memory by default. If
 you select “Remember this browser”, it stores that secret and the relay, server

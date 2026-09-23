@@ -114,6 +114,38 @@ Check Read/Screen, Back and Live controls in light and dark appearance, larger
 text, VoiceOver and Reduce Motion. Camera, dictation and push delivery need
 physical-device evidence; simulator success is not a substitute.
 
+**12. VoiceOver can move the reader.** With VoiceOver on, open a long
+conversation, three-finger scroll away from the paragraph it restored, and
+then away from the tail while an agent is writing. The reader should stay where
+you put it rather than snap back, and the Latest pill should read its count
+("3 new messages. Go to latest"), not only "Go to latest". The reader takes an
+offset change nothing above it explains as your own scroll. That follows from
+UIKit's behaviour; the simulator could not check it with VoiceOver.
+
+**13. SSH shows the key before it sends a login.** On a real network, add an
+SSH computer. A card should show the server's SHA256 fingerprint and the
+command to print it; run that on the computer and compare. Cancel should send
+nothing (the server's log shows a connection closed before authentication),
+and Trust should connect.
+
+**14. A previewed PDF's links go nowhere.** Open a PDF containing a web link and
+tap it: nothing should open. A link to another page of the same document
+should still move there.
+
+**15. A restored backup brings no saved computers.** Restore an encrypted or
+iCloud backup of a phone that has saved computers onto a second iPhone. Shahi
+there should open with no saved computers, asking to pair, and the first
+phone should keep working.
+
+**16. The Camera app opens a second computer's code.** With one computer saved
+and open, scan another computer's pairing QR with the iPhone Camera app. Shahi
+should come forward on **Pair this phone?**, not on the open computer's list.
+
+**17. A glance at Control Center does not drop the relay.** Over the relay,
+send a message and pull down Control Center while it is sending, then dismiss
+it. The send should complete once, with no error and no reconnect; the header
+stays LIVE. Sending the app to the background and back does reconnect.
+
 ## What to write down when something fails
 
 Which of these it is, because they point at different things:

@@ -14,10 +14,47 @@ and the agent list, the reader, everything, works unchanged over the tunnel. No
 file outside `lib/tunnel.ts` and the Connect screen knows SSH is involved.
 
 Credentials — a password, or a private key with a passphrase — go straight to
-the iOS Keychain (SecureStore) and never leave the phone. An SSH connection
-remembers the whole profile, not a base URL: the local port is a throwaway that
-changes each launch, so a cold start re-opens the tunnel from the stored profile
-and signs in again with the remembered passcode.
+the iOS Keychain (SecureStore) and never leave the phone, not even in a backup:
+every Keychain item the app keeps is `WHEN_UNLOCKED_THIS_DEVICE_ONLY`
+(`src/lib/keychain.ts`). Until September 2026 they used SecureStore's default
+class, which iOS copies into encrypted and iCloud backups, so restoring one onto
+another iPhone cloned this phone's logins and paired-device secret. Items saved
+by an earlier build are moved into the device-only class on first read. The
+cost is that a backup restored onto another iPhone brings no saved computers:
+pair it, or add the SSH computer, again.
+
+An SSH connection remembers the whole profile, not a base URL: the local port is
+a throwaway that changes each launch, so a cold start re-opens the tunnel from
+the stored profile and signs in again with the remembered passcode.
+
+## Trusting the server's key
+
+Adding an SSH computer on the Connect screen first opens a handshake that sends
+no user name and no credentials, only to learn the server's host key. The app
+shows that key's SHA256 fingerprint, in the form
+`ssh-keygen -lf /etc/ssh/ssh_host_<type>_key.pub` prints on the server, with
+the command to run there, and sends the login only after **Trust and
+connect**. The key is saved to the Keychain before the login is sent, and the
+native open refuses to authenticate without an expected key or against any
+other, so the second connection cannot be swapped under the first. Until the
+September 2026 review the first key was trusted silently, in the same native
+call that sent the password, and a pin could never be changed: a reinstalled
+server was locked out for good, even across an app reinstall, because
+Keychain items outlive the app.
+
+A saved computer reconnecting has nobody to ask, so it accepts only its pinned
+key. When the server presents another, it sends no login and shows **Check
+this computer’s identity** rather than "Reconnecting…", because no retry helps.
+Adding the computer again shows the previously trusted and the new fingerprint,
+and **Trust the new key** replaces the pin — which is how a reinstalled server
+comes back. Removing or signing out of an SSH computer forgets its pin, unless
+another saved login uses the same host and port.
+
+Only the Connect screen probes. OpenSSH 9.8 and later count a connection that
+closes before authenticating as `noauth` under `PerSourcePenalties`: one
+second of penalty per probe, and the source is refused once penalties pass the
+15-second minimum. A probe on every reconnect would spend that budget for
+nothing, and a saved computer already knows which key to expect.
 
 The SSH username has no safe universal default. `root` login is commonly
 disabled and unnecessarily privileged; `ubuntu`, `ec2-user`, `debian`, and a
@@ -57,7 +94,7 @@ default port, 7171; the SSH form has no port field, so a sidecar moved with
 - `src/screens/connect.tsx` — the SSH form, behind **Want to use SSH?** under
   Scan QR code.
 - `src/lib/session.tsx` — stores the profile, re-opens the tunnel on restore,
-  and tears it down on sign-out.
+  and tears it down on sign-out, forgetting the host key it pinned.
 - `modules/ssh-tunnel/` — the native forwarder, all libssh2, no NMSSH. Swift
   (`SshTunnelModule`) marshals config; Objective-C (`SshForwarder`) connects,
   handshakes, authenticates (password or in-memory key), and runs a
@@ -100,7 +137,12 @@ Where each came from, as far as it can be established:
 To move to a newer libssh2, rebuild it the same way — the OpenSSL release as
 is, libssh2 through cmake for both SDKs, `xcodebuild -create-xcframework` —
 then commit the build script with the result, update the hashes in the pentest
-test, and replace the license files. libssh2 1.11.1 and later put
+test, and replace the license files. The app carries the same texts in
+Settings → Open-source licenses: replace `mobile/src/screens/licenses-text.ts`'s
+copy with the new release's `LICENSE.txt` or `COPYING`, verbatim, and update the
+SHA-256 pinned in `licenses.test.tsx`. That test reads the versions from the
+xcframeworks' headers and OpenSSL's copyright line from `opensslv.h`, so it
+fails until the notice matches what is linked. libssh2 1.11.1 and later put
 `chacha20-poly1305@openssh.com` first in their cipher table, a mode Terrapin
 (CVE-2023-48795) can attack where strict-kex is not negotiated, so pin method
 preferences in `SshForwarder.m` when you do; the test explains why.
@@ -111,5 +153,9 @@ Confirmed end to end on the simulator, tunnelling to a local sshd forwarding to
 the stub sidecar: SSH connect → in-memory key auth → direct-tcpip forward →
 agent list over HTTP → **and the live WebSocket** (the header shows
 `ssh://user@host LIVE` with real data). Password auth and cold-start
-tunnel-reopen share the same path. Still worth a hand-check on a real device
-against a real box before shipping.
+tunnel-reopen share the same path. The host-key review was checked the same way
+in September 2026, against a throwaway sshd: the server logged the phone's first
+connection as closed before authentication, the fingerprint matched
+`ssh-keygen -lf`, and restarting the server with a different host key produced
+the identity card and then the two-fingerprint review. Still worth a hand-check
+on a real device against a real box before shipping.

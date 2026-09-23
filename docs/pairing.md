@@ -42,6 +42,19 @@ yourself, the relay's host and the first 16 characters of the computer's
 identity; nothing is sent until you confirm, and Cancel discards the code. A
 scanned or pasted code pairs as before: scanning is already a deliberate act.
 
+In the app the link is held above the router: `app/+native-intent.tsx` sees
+every link the system hands over, on a cold launch and while running, keeps a
+pairing code in `lib/incoming-pairing.ts` and routes to Connect, which shows the
+card until you pair or cancel — whatever computers are saved or on screen.
+Only a mounted Connect screen used to read the link, and Connect redirects away
+as soon as any computer is saved, so scanning a second computer's code with the
+iPhone Camera opened Shahi and did nothing, without a word (September 2026
+review).
+
+A pairing link lives for one claim, and both clients close it on its first
+failure, so a code whose relay cannot be reached ends in "Try again." rather
+than the "Reconnecting…" a paired device's link shows.
+
 Settings → **Devices with access** lists every phone and browser that paired
 this way, with when it was last heard from. **Revoke** throws one out; its very
 next request is refused and its open connection is closed. A phone that was

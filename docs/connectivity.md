@@ -82,9 +82,10 @@ leaks, which would be fixed before any relay carried a frame again.
 
 ### 2. SSH — kept for power users
 
-Already built (the native tunnel forwards to loopback, host key pinned on first
-use). Works anywhere SSH does, nothing extra to install, no third party in the
-path. Not the default only because it assumes an SSH login the user can reach.
+Already built (the native tunnel forwards to loopback; the host key's
+fingerprint is shown before the first login and pinned once trusted — see
+`ssh.md`). Works anywhere SSH does, nothing extra to install, no third party in
+the path. Not the default only because it assumes an SSH login the user can reach.
 
 ### 3. Tailscale — kept as the maximum-privacy option *(since removed)*
 

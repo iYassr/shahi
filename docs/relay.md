@@ -531,14 +531,23 @@ behind one office/VPN address; a paid Workers plan does not remove them.
 A pairing is durable; its WebSocket is replaceable. Opening a saved computer
 after an offline launch retries automatically. Regaining or changing the
 network starts a fresh connection immediately, while repeated notifications
-share the same new attempt. Ordinary polling still respects the retry backoff,
-and each saved computer recovers independently.
+share the same new attempt. The native app reconnects once per change of
+network or of whether it is usable, not on each step of reachability: a new
+network arrives with reachability unknown and then known, which reconnected
+everything twice, and the first report at launch is not a change at all.
+Ordinary polling still respects the retry backoff, and each saved computer
+recovers independently.
 
 Returning to the foreground differs by client. The native app starts a fresh
-connection immediately. The hosted web app keeps any relay link that can show
-it is alive: a socket already closed, or silent past the shared silence limit,
-is replaced at once without backoff; a link that looks live gets one
-`/api/meta` probe, and only ten seconds of silence replaces it. Replacing every
+connection immediately, but only on a return from the background. iOS reports
+"inactive" for Control Center, Notification Center, the app switcher and
+system alerts, and reconnecting on the way back from those dropped healthy
+links and failed sends that had probably reached herdr, and an edited retry,
+under a new operation id, could run one twice. The links' own watchdogs
+notice anything a glance could break. The hosted web app keeps any relay link
+that can show it is alive: a socket already closed, or silent past the shared
+silence limit, is replaced at once without backoff; a link that looks live gets
+one `/api/meta` probe, and only ten seconds of silence replaces it. Replacing every
 link on every return dropped whatever was in flight through it — an agent
 start that takes minutes, a prompt, a file transfer — each time someone
 switched tabs or apps.

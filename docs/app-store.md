@@ -31,6 +31,15 @@ published policy in App Store Connect and the app. Keep `docs/privacy-policy.md`
 and `site/public/privacy.html` aligned; they are maintained separately.
 Verify the support and privacy contact addresses before submission.
 
+The app declares two purpose strings, camera (pairing scanner) and photo
+library (attachments). Builds before September 2026 also carried Expo's
+placeholder microphone and Face ID strings, added by the image-picker and
+secure-store plugins although nothing in the app uses either; `app.json` now
+turns both off, and `mobile/src/app-permissions.test.ts` fails if a plugin
+brings one back. Answer App Review's permission questions for the build being
+submitted and check its IPA's `Info.plist`: purpose strings change only with a
+new binary, never with an over-the-air update.
+
 ## Device verification
 
 - Pair through the default QR/relay flow; test expired codes and revoked devices.

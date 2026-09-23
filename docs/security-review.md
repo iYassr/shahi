@@ -558,7 +558,31 @@ numbers:
   confirmation card since pentest M2. The hosted web client opened a
   `#pair=` link straight onto a filled-in form, one tap from attaching the
   browser to a stranger's computer; it now shows the same card, so M2 is
-  mitigated on both clients.
+  mitigated on both clients. The native card is now held above the router
+  and shown whatever computers are saved or open; before, a link arriving
+  while any computer was saved was dropped without a word.
+- **SSH first use (pentest M3).** The pass above found SSH host-key pinning
+  sound, but the first key was trusted silently, in the same native call that
+  sent the password or key signature, and a pin could never be cleared: a
+  reinstalled server stayed locked out even across an app reinstall. A
+  handshake that sends no credentials now fetches the key, the app shows its
+  SHA256 fingerprint and sends the login only after the person trusts it, and
+  the native side refuses to authenticate without an expected key. A changed
+  key shows both fingerprints and can be re-trusted by adding the computer
+  again; removing or signing out of an SSH computer clears its pin unless
+  another saved login uses that host and port (`docs/ssh.md`).
+- **Keychain items in backups.** SecureStore's default class travels in
+  encrypted and iCloud backups, so restoring one onto another iPhone cloned
+  the paired-device secret, SSH credentials and passcode: two phones the
+  server cannot tell apart, where revoking one revokes both. Every item now
+  uses `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, and items saved by earlier builds
+  move into that class on first read, copied before the original is deleted.
+- **Links in a previewed PDF.** The native PDFKit preview had no delegate, and
+  PDFKit's default hands a tapped link's URL to the system, so a PDF an agent
+  downloaded could open another app's URL scheme, a web page or a pairing
+  link with one tap. The view now ignores link URLs; destinations inside the
+  document still move between pages. The web preview draws pages to a canvas
+  and follows nothing.
 - **Uploads.** Multipart uploads are written 0600 in a 0700 directory,
   authorization is checked again after the body arrives, and a transfer a
   device abandoned is discarded when it begins another, or after ten idle

@@ -266,7 +266,8 @@ devices**. The default relay is `relay.getshahi.dev`. You can also
 
 Prefer SSH? In the native app, choose **Want to use SSH?** and connect to a
 computer you can already reach over SSH. Shahi opens a tunnel to its loopback
-service and pins the SSH host key on first connection. Setting `RELAY_URL=`
+service. Before it sends a login, it shows the server's host-key fingerprint
+for you to compare, and it pins the key you trust. Setting `RELAY_URL=`
 (empty) in the plugin configuration disables the relay on your computer.
 
 ## Connection security
