@@ -55,7 +55,12 @@ const mockSession = {
   },
 };
 
-jest.mock("@/lib/session", () => ({ useSession: () => ({ ...mockSession, api: require("@/lib/api").api, transport: require("@/lib/api").connection, computers: [] }) }));
+/**
+ * The computer on screen. Each ComputerSession owns one API object, so a test
+ * shows another computer by handing the screen a different one.
+ */
+const mockComputer: { api?: object } = {};
+jest.mock("@/lib/session", () => ({ useSession: () => ({ ...mockSession, api: mockComputer.api ?? require("@/lib/api").api, transport: require("@/lib/api").connection, computers: [] }) }));
 
 // The real error classes are kept: `instanceof UnauthorizedError` is the
 // sign-out decision under test, and a fake class would prove nothing.
@@ -136,6 +141,10 @@ const receipt: PromptReceipt = { accepted: true, clientMessageId: "c1", accepted
 
 beforeEach(() => {
   clearNativeDrafts(api);
+  // The reader remembers each computer's conversations for the life of the
+  // process, so a test starts from a pane this computer has never shown.
+  forgetPaneMemory(api, PANE);
+  mockComputer.api = undefined;
   // Fake timers for the whole file, never switched mid-file: a run that
   // faked them in one test and not the next hung outright, as a list timer
   // scheduled under one clock was awaited under the other. RNTL's `waitFor`
@@ -396,29 +405,103 @@ describe("keeping your place", () => {
     said("m3", "agent", "Message three"),
   ];
 
-  test("a different login cannot reuse a cached transcript with the same pane id", async () => {
+  /** Reads down to a paragraph 404pt into `m1`, as a finger would, and leaves. */
+  async function readToParagraph(paneId: string) {
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    const list = visit.UNSAFE_getByType(FlatList);
+    const cell = visit.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m1")!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 16, height: 1500 } } }));
+    act(() => list.props.onScrollBeginDrag());
+    const position = { nativeEvent: { contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 420 } } };
+    fireEvent(list, "scroll", position);
+    fireEvent(list, "scrollEndDrag", position);
+    visit.unmount();
+  }
+
+  // Pane ids are only unique within one computer. The first computer's
+  // conversation must never stand in for the second's, even while the second
+  // has nothing to read yet — which is exactly when a cache would show.
+  test("another computer never shows a cached conversation for the same pane id", async () => {
     const paneId = "w1:p-cache-owner";
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const first = render(<Pane paneId={paneId} />);
+    await first.findByText(/Message three/);
+    first.unmount();
+    mockComputer.api = { ...api };
+    mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+    const second = render(<Pane paneId={paneId} />);
+    await second.findByText("Nothing to read yet.");
+    expect(second.queryByText(/Message three/)).toBeNull();
+    second.unmount();
+    forgetPaneMemory(api, paneId);
+  });
+
+  // An SSH computer signs in again after every reconnect, with a new cookie.
+  // Memory guarded by that credential was wiped on each recovery from sleep.
+  test("an SSH re-login keeps the reading place and the loaded conversation", async () => {
+    const paneId = "w1:p-relogin";
     const previousCookie = connection.cookie;
     try {
-      connection.cookie = "first-test-session";
+      connection.cookie = "shahi_session=before-sleep";
       mocked.sessionLog.mockResolvedValue(log(thread));
-      const first = render(<Pane paneId={paneId} />);
-      await first.findByText(/Message three/);
-      first.unmount();
-      connection.cookie = "second-test-session";
-      mocked.sessionLog.mockReturnValue(new Promise(() => {}));
-      const second = render(<Pane paneId={paneId} />);
-      expect(second.queryByText(/Message three/)).toBeNull();
-      second.unmount();
+      await readToParagraph(paneId);
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 404 });
+
+      connection.cookie = "shahi_session=after-sleep";
+      mocked.sessionLog.mockRejectedValue(new Error("still reconnecting"));
+      const again = render(<Pane paneId={paneId} />);
+      await again.findByText(/Message three/);
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 404 });
+      expect(again.getByText("Latest ↓")).toBeTruthy();
+      again.unmount();
     } finally {
       connection.cookie = previousCookie;
-      forgetPaneMemory(paneId);
+      forgetPaneMemory(api, paneId);
+    }
+  });
+
+  // Switching computers changes the credential on screen, which cleared every
+  // computer's memory; each computer now keeps its own.
+  test("switching to another computer and back keeps the first computer's place, view and conversation", async () => {
+    const paneId = "w1:p-switch-back";
+    const computerA = api;
+    const computerB = { ...api };
+    const previousCookie = connection.cookie;
+    try {
+      connection.cookie = "shahi_session=a";
+      mocked.sessionLog.mockResolvedValue(log(thread));
+      await readToParagraph(paneId);
+
+      connection.cookie = "shahi_session=b";
+      mockComputer.api = computerB;
+      mocked.sessionLog.mockResolvedValue(log([said("b1", "agent", "Computer B's own reply")]));
+      const onB = render(<Pane paneId={paneId} />);
+      await onB.findByText(/Computer B's own reply/);
+      expect(onB.queryByText(/Message three/)).toBeNull();
+      fireEvent.press(onB.getByTestId("view-screen"));
+      onB.unmount();
+
+      connection.cookie = "shahi_session=a";
+      mockComputer.api = computerA;
+      mocked.sessionLog.mockRejectedValue(new Error("reconnecting"));
+      const backOnA = render(<Pane paneId={paneId} />);
+      await backOnA.findByText(/Message three/);
+      expect(backOnA.queryByText(/Computer B's own reply/)).toBeNull();
+      expect(paneScrollPlace(computerA, paneId)).toEqual({ id: "m1", offset: 404 });
+      // B's Screen choice is B's; A was left reading.
+      expect(backOnA.queryByTestId("terminal-body")).toBeNull();
+      backOnA.unmount();
+    } finally {
+      connection.cookie = previousCookie;
+      forgetPaneMemory(computerA, paneId);
+      forgetPaneMemory(computerB, paneId);
     }
   });
 
   test("back and repeated re-entry preserve the paragraph inside a multi-screen message", async () => {
     const paneId = "w1:p-tall-paragraph";
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
     mocked.sessionLog.mockResolvedValue(log(thread));
     const scrollToIndex = jest.spyOn(FlatList.prototype, "scrollToIndex").mockImplementation(() => undefined);
     for (const y of [420, 730]) {
@@ -440,7 +523,7 @@ describe("keeping your place", () => {
       act(() => list.props.onScroll({ nativeEvent: {
         contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 0 },
       } }));
-      expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: y - 16 });
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: y - 16 });
       visit.unmount();
       cell.unmount();
       const again = render(<Pane paneId={paneId} />);
@@ -450,7 +533,7 @@ describe("keeping your place", () => {
       again.unmount();
     }
     scrollToIndex.mockRestore();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   test("Read and Screen resizing cannot replace the saved paragraph with a layout offset", async () => {
@@ -470,7 +553,7 @@ describe("keeping your place", () => {
       fireEvent.press(visit.getByTestId(`view-${mode}`));
       expect(scrollToIndex).toHaveBeenLastCalledWith({ index: 0, animated: false, viewPosition: 0, viewOffset: -404 });
       fireEvent(list, "scroll", { nativeEvent: { ...position.nativeEvent, contentOffset: { y: 0 } } });
-      expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: 404 });
+      expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 404 });
     }
     // Landing once is not enough: earlier virtualized cells can measure later.
     fireEvent(list, "scroll", position);
@@ -478,7 +561,7 @@ describe("keeping your place", () => {
     act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 346, height: 1500 } } }));
     act(() => jest.advanceTimersByTime(100));
     expect(scrollToIndex).toHaveBeenCalled();
-    expect(paneScrollPlace(paneId)).toEqual({ id: "m1", offset: 404 });
+    expect(paneScrollPlace(api, paneId)).toEqual({ id: "m1", offset: 404 });
     fireEvent(list, "scroll", { nativeEvent: { ...position.nativeEvent, contentOffset: { y: 750 } } });
     act(() => list.props.onScrollBeginDrag());
     scrollToIndex.mockClear();
@@ -491,12 +574,12 @@ describe("keeping your place", () => {
     act(() => jest.advanceTimersByTime(1000));
     expect(scrollToIndex).toHaveBeenCalledTimes(calls);
     scrollToIndex.mockRestore();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   test("earlier messages survive leaving before the next transcript update", async () => {
     const paneId = "w1:p-earlier-cache";
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
     mocked.sessionLog.mockResolvedValue({ ...log(thread), total: 63, offset: 60 });
     const visit = render(<Pane paneId={paneId} />);
     await visit.findByText(/Message three/);
@@ -507,7 +590,7 @@ describe("keeping your place", () => {
     const again = render(<Pane paneId={paneId} />);
     await again.findByText("Earlier paragraph");
     again.unmount();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   test("near the tail remains an exact place rather than becoming the tail", async () => {
@@ -526,15 +609,15 @@ describe("keeping your place", () => {
     act(() => list.props.onScrollBeginDrag());
     act(() => list.props.onScroll(event));
     act(() => list.props.onScrollEndDrag(event));
-    expect(paneScrollPlace(paneId)).toEqual({ id: "m3", offset: 50 });
+    expect(paneScrollPlace(api, paneId)).toEqual({ id: "m3", offset: 50 });
     view.unmount();
     cell.unmount();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   test("returning to the tail retries until the virtualized list actually reaches it", async () => {
     const paneId = "w1:p-tail-race";
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
     mocked.sessionLog.mockResolvedValue(log(thread));
     const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
 
@@ -547,7 +630,7 @@ describe("keeping your place", () => {
     act(() => firstList.props.onScrollBeginDrag());
     act(() => firstList.props.onScroll(atBottom));
     act(() => firstList.props.onScrollEndDrag(atBottom));
-    expect(paneScrollPlace(paneId)).toBe("bottom");
+    expect(paneScrollPlace(api, paneId)).toBe("bottom");
     first.unmount();
 
     scrollToEnd.mockClear();
@@ -573,7 +656,7 @@ describe("keeping your place", () => {
 
     again.unmount();
     scrollToEnd.mockRestore();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   /** Scrolls away from the tail with `m1` at the top, then leaves the pane. */
@@ -593,7 +676,7 @@ describe("keeping your place", () => {
 
   test("the measured tail includes bottom padding and stops retrying after landing", async () => {
     const paneId = "w1:p-padding";
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
     mocked.sessionLog.mockResolvedValue(log(thread));
     const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
     const visit = render(<Pane paneId={paneId} />);
@@ -614,12 +697,12 @@ describe("keeping your place", () => {
     expect(scrollToOffset).toHaveBeenCalledTimes(calls);
     visit.unmount();
     scrollToOffset.mockRestore();
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
   });
 
   test("Go to latest keeps seeking through programmatic momentum instead of saving an intermediate offset", async () => {
     const paneId = "w1:p-jump-long";
-    forgetPaneMemory(paneId);
+    forgetPaneMemory(api, paneId);
     mocked.sessionLog.mockResolvedValue(log(thread));
     const scrollToEnd = jest.spyOn(FlatList.prototype, "scrollToEnd").mockImplementation(() => undefined);
     const view = render(<Pane paneId={paneId} />);
@@ -632,7 +715,7 @@ describe("keeping your place", () => {
     fireEvent(list, "momentumScrollBegin");
     fireEvent(list, "scroll", mid);
     fireEvent(list, "momentumScrollEnd", mid);
-    expect(paneScrollPlace(paneId)).toBe("bottom");
+    expect(paneScrollPlace(api, paneId)).toBe("bottom");
     const before = scrollToEnd.mock.calls.length;
     act(() => jest.advanceTimersByTime(5000));
     expect(scrollToEnd.mock.calls.length).toBeGreaterThan(before);
@@ -640,7 +723,7 @@ describe("keeping your place", () => {
     const cancelled = scrollToEnd.mock.calls.length;
     act(() => jest.advanceTimersByTime(500));
     expect(scrollToEnd.mock.calls.length).toBe(cancelled);
-    view.unmount(); scrollToEnd.mockRestore(); forgetPaneMemory(paneId);
+    view.unmount(); scrollToEnd.mockRestore(); forgetPaneMemory(api, paneId);
   });
 
   test("restore never judges the scroll anchor before any message has arrived", async () => {
@@ -711,7 +794,7 @@ describe("keeping your terminal place", () => {
   });
 
   beforeEach(() => {
-    forgetPaneMemory(P);
+    forgetPaneMemory(api, P);
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hi")]));
     mocked.pane.mockResolvedValue(withScreen("top\nmiddle\nbottom\n"));
   });
@@ -916,6 +999,115 @@ test("answering from the pane says which question the card showed", async () => 
   await settle();
   expect(answerPrompt).toHaveBeenCalledWith(PANE, bash.options[0], bash);
   view.unmount();
+});
+
+// Message ids are only unique within one transcript file: Cursor numbers
+// messages from cursor-0, Codex numbers rows. herdr panes persist, so starting
+// a new chat in the same pane is ordinary — and the reader used to merge the
+// new transcript into the old one by those repeated ids.
+describe("a pane reused by a new session", () => {
+  const cursor = (sessionId: string, messages: LogMessage[], total = messages.length): SessionLog => ({
+    sessionId,
+    path: `/home/x/.cursor/projects/p/agent-transcripts/${sessionId}.jsonl`,
+    messages,
+    total,
+    offset: 0,
+  });
+  const oldChat = [
+    said("cursor-0", "you", "OLD secret question"),
+    said("cursor-1", "agent", "OLD answer"),
+    said("cursor-2", "you", "OLD second question"),
+    said("cursor-3", "agent", "OLD second answer"),
+  ];
+
+  test("a pane reused by a new Cursor session never shows the previous session's messages", async () => {
+    const paneId = "w1:p-reused";
+    mocked.sessionLog.mockResolvedValue(cursor("old-chat", oldChat));
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/OLD second answer/);
+    expect(view.queryByText("Load earlier messages")).toBeNull();
+
+    // The new chat's tail window starts at an id the old chat also had.
+    mocked.sessionLog.mockResolvedValue(cursor("new-chat", [said("cursor-2", "you", "NEW question"), said("cursor-3", "agent", "NEW answer")], 4));
+    logChanged(paneId);
+    await view.findByText(/NEW answer/);
+    expect(view.queryByText(/OLD/)).toBeNull();
+    // Its own history is reachable, rather than the old chat posing as it.
+    expect(view.getByText("Load earlier messages")).toBeTruthy();
+    view.unmount();
+
+    // Nor does the old chat come back from memory on the next visit.
+    mocked.sessionLog.mockRejectedValue(new Error("offline"));
+    const again = render(<Pane paneId={paneId} />);
+    await again.findByText(/NEW answer/);
+    expect(again.queryByText(/OLD/)).toBeNull();
+    again.unmount();
+    forgetPaneMemory(api, paneId);
+  });
+
+  test("a new session opens at its latest message, not at a place in the old one", async () => {
+    const paneId = "w1:p-reused-place";
+    mocked.sessionLog.mockResolvedValue(cursor("old-chat", oldChat));
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/OLD second answer/);
+    const list = view.UNSAFE_getByType(FlatList);
+    act(() => list.props.onScrollBeginDrag());
+    fireEvent(list, "scroll", { nativeEvent: { contentSize: { height: 3000 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 100 } } });
+    expect(view.getByText("Latest ↓")).toBeTruthy();
+
+    mocked.sessionLog.mockResolvedValue(cursor("new-chat", [said("cursor-0", "you", "NEW question")]));
+    logChanged(paneId);
+    await view.findByText(/NEW question/);
+    expect(view.queryByText("Latest ↓")).toBeNull();
+    expect(paneScrollPlace(api, paneId)).toBe("bottom");
+    view.unmount();
+    forgetPaneMemory(api, paneId);
+  });
+
+  test("history requested from the old session is not prepended to the new one", async () => {
+    const paneId = "w1:p-reused-history";
+    let current = cursor("old-chat", oldChat.slice(2), 4);
+    const older = deferred<SessionLog>();
+    mocked.sessionLog.mockImplementation(async (_pane: string, _limit: number, before?: number) => (before === undefined ? current : older.promise));
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText(/OLD second answer/);
+    fireEvent.press(view.getByText("Load earlier messages"));
+
+    current = cursor("new-chat", [said("cursor-0", "you", "NEW question")]);
+    logChanged(paneId);
+    await view.findByText(/NEW question/);
+    older.resolve(cursor("old-chat", oldChat.slice(0, 2), 4));
+    await settle();
+    expect(view.queryByText(/OLD/)).toBeNull();
+    view.unmount();
+    forgetPaneMemory(api, paneId);
+  });
+});
+
+// Claude writes one tool call per record and each result in a later record, so
+// a call's result fills in after other messages exist. Only the last message
+// was compared by content, so every earlier call kept its cached copy.
+test("a tool result that lands after a later message replaces 'Still running.'", async () => {
+  const bash = (id: string, summary: string, result: (LogBlock & { kind: "tool" })["result"]): LogMessage => ({
+    id, role: "agent", at: 1, blocks: [{ kind: "tool", name: "Bash", summary, result }],
+  });
+  mocked.sessionLog.mockResolvedValue(log([said("u1", "you", "run both"), bash("t1", "bun test", null), bash("t2", "bun run lint", null)]));
+  const view = render(<Pane paneId={PANE} />);
+  fireEvent.press(await view.findByText("bun test"));
+  expect(view.getByText("Still running.")).toBeTruthy();
+
+  mocked.sessionLog.mockResolvedValue(log([
+    said("u1", "you", "run both"),
+    bash("t1", "bun test", { text: "12 pass 0 fail", isError: false, truncated: false, images: [] }),
+    bash("t2", "bun run lint", { text: "lint failed", isError: true, truncated: false, images: [] }),
+    said("a2", "agent", "Both finished."),
+  ]));
+  logChanged();
+  await view.findByText(/Both finished\./);
+  expect(view.getByText(/12 pass 0 fail/)).toBeTruthy();
+  expect(view.queryByText("Still running.")).toBeNull();
+  // The second call's failure is marked, though it was not last either.
+  expect(view.getByText("failed")).toBeTruthy();
 });
 
 describe("transcript images", () => {

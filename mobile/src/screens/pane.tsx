@@ -38,7 +38,7 @@ import { useKeyboardHeight } from "@/lib/keyboard";
 import { CopyButton, CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption } from "@shahi/shared";
+import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
 import { connection, UnauthorizedError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells, type ScrollAnchor } from "@/lib/scroll-cells";
@@ -118,37 +118,84 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
  * the place; its id survives both remeasurement and window drift, while the
  * intra-message offset preserves the paragraph inside a multi-screen answer.
  */
-const scrollMemory = new Map<string, ScrollAnchor | "bottom">();
-// Pane ids are only unique within a box. Never reuse a transcript after the
-// user signs into another connection that happens to have the same pane id.
-const messageMemory = new Map<string, { owner: unknown; messages: LogMessage[] }>();
-export const paneScrollPlace = (paneId: string) => scrollMemory.get(paneId);
+interface ReaderMemory {
+  scroll: Map<string, ScrollAnchor | "bottom">;
+  /**
+   * The conversation last shown, and which transcript it came from: message
+   * ids are only unique within one transcript file (see `readLog`).
+   */
+  messages: Map<string, { transcript: string | null; messages: LogMessage[] }>;
+  /**
+   * Where you were on each pane's *terminal*, and which view you were reading.
+   *
+   * The reader's memory above is by message id, because its list is windowed
+   * and grows under you. The terminal is the opposite: one fixed block of
+   * characters — herdr's `visible` is a screen's worth of rows — laid out the
+   * same on every remount, so a pixel offset is the honest place here and the
+   * reason offsets failed for the reader does not apply. It is a place in two
+   * axes: 146 columns that do not fit across a phone scroll sideways, and a
+   * screen taller than the viewport scrolls down.
+   */
+  terminalPlace: Map<string, { x: number; y: number }>;
+  /**
+   * Read-vs-screen, so leaving a pane on the terminal and coming back opens on
+   * the terminal — before this, every return snapped to the reader and you
+   * lost both the view and your place in it.
+   */
+  terminalView: Map<string, "reader" | "screen">;
+}
 
 /**
- * Where you were on each pane's *terminal*, and which view you were reading.
- *
- * The reader's memory above is by message id, because its list is windowed and
- * grows under you. The terminal is the opposite: one fixed block of characters
- * — herdr's `visible` is a screen's worth of rows — laid out the same on every
- * remount, so a pixel offset is the honest place here and the reason offsets
- * failed for the reader does not apply. It is a place in two axes: 146 columns
- * that do not fit across a phone scroll sideways, and a screen taller than the
- * viewport scrolls down.
- *
- * `terminalView` remembers read-vs-screen so leaving a pane on the terminal and
- * coming back opens on the terminal — before this, every return snapped to the
- * reader and you lost both the view and your place in it.
+ * Reader memory belongs to a computer, the way drafts do: keyed by the
+ * ComputerSession's API object, because pane ids are only unique within one
+ * computer. It used to be one set of maps guarded by the connection's
+ * credential, cleared whenever that changed — and the credential changes on
+ * every SSH re-login (a new cookie) and on every switch to another computer (a
+ * new relay target), so recovering from sleep or looking at a second computer
+ * threw away every remembered place, view and conversation (pre-release
+ * review). The API object survives both, and a new sign-in to the same
+ * computer creates a new one, so nothing crosses computers or outlives a
+ * sign-out. A WeakMap, so a disposed computer's memory goes with it.
  */
-const terminalPlace = new Map<string, { x: number; y: number }>();
-const terminalView = new Map<string, "reader" | "screen">();
-let memoryOwner: unknown;
+const memories = new WeakMap<object, ReaderMemory>();
+function memoryOf(owner: object): ReaderMemory {
+  let memory = memories.get(owner);
+  if (!memory) {
+    memory = { scroll: new Map(), messages: new Map(), terminalPlace: new Map(), terminalView: new Map() };
+    memories.set(owner, memory);
+  }
+  return memory;
+}
+export const paneScrollPlace = (owner: object, paneId: string) => memoryOf(owner).scroll.get(paneId);
 
 /** Test seam: these maps live for the process, so a test resets them by hand. */
-export function forgetPaneMemory(paneId: string): void {
-  scrollMemory.delete(paneId);
-  messageMemory.delete(paneId);
-  terminalPlace.delete(paneId);
-  terminalView.delete(paneId);
+export function forgetPaneMemory(owner: object, paneId: string): void {
+  const memory = memoryOf(owner);
+  memory.scroll.delete(paneId);
+  memory.messages.delete(paneId);
+  memory.terminalPlace.delete(paneId);
+  memory.terminalView.delete(paneId);
+}
+
+/**
+ * Which transcript a page was read from, as the web reader names it. Message
+ * ids are only unique within one file, so this, not the ids, says whether a
+ * page continues the conversation on screen.
+ */
+function transcriptOf(log: Pick<SessionLog, "sessionId" | "path">): string {
+  return `${log.sessionId}\n${log.path}`;
+}
+
+/**
+ * A message's content, computed once per message object. Message objects are
+ * never mutated, and a poll answered 304 hands back the very objects compared
+ * last time, so an unchanged poll costs no serialisation at all.
+ */
+const signatures = new WeakMap<LogMessage, string>();
+function signature(message: LogMessage): string {
+  let text = signatures.get(message);
+  if (text === undefined) signatures.set(message, (text = JSON.stringify(message)));
+  return text;
 }
 
 /**
@@ -158,19 +205,23 @@ export function forgetPaneMemory(paneId: string): void {
  * messages older than the fetched window are kept, so scrolling back through
  * history survives the next poll; and unchanged messages keep their object
  * identity — a quiet poll returns the previous array itself — so the list
- * re-renders nothing when nothing changed. Only the last message can change
- * in place, so it is the only one compared by content.
+ * re-renders nothing when nothing changed.
+ *
+ * Every fetched message is compared by content, not only the last. This once
+ * assumed only the last message could change in place, which is false: a tool
+ * call is written before its result, and when an agent runs two calls in
+ * parallel the first one's result lands after later messages exist. Keeping
+ * the cached copy left that call on "Still running." forever (pre-release
+ * review).
  */
 function merge(prev: LogMessage[], next: LogMessage[]): LogMessage[] {
   const start = next.length ? prev.findIndex((m) => m.id === next[0]!.id) : -1;
   if (start === -1) return next;
   const head = prev.slice(0, start);
   const prevById = new Map(prev.map((m) => [m.id, m] as const));
-  const tail = next.map((m, i) => {
+  const tail = next.map((m) => {
     const old = prevById.get(m.id);
-    const last = i === next.length - 1;
-    if (old && (!last || JSON.stringify(old) === JSON.stringify(m))) return old;
-    return m;
+    return old && (old === m || signature(old) === signature(m)) ? old : m;
   });
   const out = [...head, ...tail];
   const same = out.length === prev.length && out.every((m, i) => m === prev[i]);
@@ -190,20 +241,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const owner = connection.relay ?? connection.cookie;
   const stillActive = useCallback(() => mounted.current && owner === (connection.relay ?? connection.cookie), [owner]);
-  const [messages, setMessages] = useState<LogMessage[]>(() => {
-    if (memoryOwner !== owner) {
-      scrollMemory.clear(); messageMemory.clear(); terminalPlace.clear(); terminalView.clear();
-      memoryOwner = owner;
-    }
-    const cached = messageMemory.get(paneId);
-    if (cached && cached.owner !== owner) {
-      forgetPaneMemory(paneId);
-      return [];
-    }
-    return cached?.messages ?? [];
-  });
+  const { scroll: scrollMemory, messages: messageMemory, terminalView } = memoryOf(api);
+  const [messages, setMessages] = useState<LogMessage[]>(() => messageMemory.get(paneId)?.messages ?? []);
   /** Mirror of `messages`, so merging does not need a functional setState. */
   const messagesRef = useRef<LogMessage[]>(messages);
+  /** Which transcript `messages` came from (see `transcriptOf`), once one has loaded. */
+  const transcript = useRef<string | null>(messageMemory.get(paneId)?.transcript ?? null);
   const anchorLock = useRef(typeof scrollMemory.get(paneId) === "object");
   const cells = useScrollCells<LogMessage>((message) => message.id, (id) => {
     const spot = scrollMemory.get(paneId);
@@ -456,9 +499,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     following.current = false;
     setLoadingOlder(true);
     setOlderError(null);
+    const from = transcript.current;
     try {
       const page = await api.sessionLog(paneId, 60, before);
       if (!stillActive()) return;
+      // History of another transcript — the pane moved to a new session while
+      // this page was in flight — belongs to neither conversation.
+      if (transcriptOf(page) !== from || from !== transcript.current) return;
       const known = new Set(messagesRef.current.map((m) => m.id));
       const prefix = page.messages.filter((m) => !known.has(m.id));
       const combined = [...prefix, ...messagesRef.current];
@@ -468,7 +515,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       awaitingBaselineAgents.current += prefix.filter((m) => m.role === "agent").length;
       setPending((items) => items.map((item) => ({ ...item, youBaseline: item.youBaseline + oldYou })));
       messagesRef.current = combined;
-      messageMemory.set(paneId, { owner, messages: combined });
+      messageMemory.set(paneId, { transcript: from, messages: combined });
       olderCursor.current = Math.max(0, Math.min(before, page.total) - page.messages.length);
       setHasOlder(olderCursor.current > 0);
       setMessages(combined);
@@ -492,6 +539,21 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       try {
         const log = await logRequest;
         if (!stillActive()) return;
+        // Message ids are only unique within one transcript file: Cursor numbers
+        // messages from `cursor-0` and Codex numbers rows, so a herdr pane reused
+        // by a new session repeats the old session's ids, and merging by id kept
+        // the old conversation's messages in the new one's place (pre-release
+        // review). A different transcript starts the reader over: its messages,
+        // its history cursor and its place, which is the tail of the new one.
+        const source = transcriptOf(log);
+        const switched = transcript.current !== null && source !== transcript.current;
+        transcript.current = source;
+        if (switched) {
+          messagesRef.current = [];
+          // Counts taken against the old transcript mean nothing in the new one.
+          awaitingBaselineAgents.current = 0;
+          setPending((items) => items.map((item, i) => ({ ...item, youBaseline: i })));
+        }
         const folded = merge(messagesRef.current, log.messages);
         const tailStart = log.messages.length ? folded.findIndex((m) => m.id === log.messages[0]!.id) : 0;
         olderCursor.current = Math.max(0, log.total - log.messages.length - Math.max(0, tailStart));
@@ -503,8 +565,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           if (!following.current && prevLen > 0)
             setUnseen((u) => u + Math.max(0, folded.length - prevLen));
           messagesRef.current = folded;
-          messageMemory.set(paneId, { owner, messages: folded });
+          messageMemory.set(paneId, { transcript: source, messages: folded });
           setMessages(folded);
+        }
+        if (switched) {
+          setUnseen(0);
+          setAway(false);
+          jumpToLatest();
         }
         // The reply has landed once a new agent message exists since we sent — or,
         // as a backstop against a stuck spinner, after ten minutes (an agent can
@@ -1353,6 +1420,7 @@ function Screen({
   onColumns: (columns: number) => void;
 }) {
   const width = useWindowDimensions().width;
+  const { terminalPlace } = memoryOf(useSession().api);
   const [aspect, setAspect] = useState(CHAR_ASPECT_GUESS);
   const fontSize = Math.max(6, Math.min(MAX_TERMINAL_FONT, (width - 24) / (columns * aspect)));
 
