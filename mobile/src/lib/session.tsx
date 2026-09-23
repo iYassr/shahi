@@ -230,8 +230,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const current = live.current.get(saved.id);
       if (!current || !mounted.current) return;
       const name = current.session?.serverName;
-      if (name && current.saved.name !== name) {
-        current.saved = { ...current.saved, name };
+      // An SSH computer's id is only learned once its tunnel and login are
+      // up, too late for a notification that cold-launched the app, which
+      // landed on the chooser instead of its pane (pre-release review). Saved,
+      // it is known from the first render.
+      const serverId = current.saved.connection.kind === "ssh" ? current.serverId : undefined;
+      if ((name && current.saved.name !== name) || (serverId && current.saved.serverId !== serverId)) {
+        current.saved = { ...current.saved, ...(name && { name }), ...(serverId && { serverId }) };
         bank.current = bank.current.map(c => c.id === saved.id ? current.saved : c);
         const savedNames = JSON.stringify(bank.current);
         void write(() => writeSecret(COMPUTERS_KEY, savedNames));
@@ -336,7 +341,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     control: entry?.control,
     api: entry?.api ?? api, transport: entry?.connection ?? connection,
     ready, online, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
-    computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),
+    computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),
     switchComputer, addComputer,
     revokeComputer: async id => {
       const target = live.current.get(id);

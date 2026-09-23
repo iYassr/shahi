@@ -1,6 +1,6 @@
 /**
  * A saved SSH computer, end to end in the app: restore, reconnect, re-add, a
- * changed server key and removal.
+ * changed server key, notifications and removal.
  *
  * Everything below the network is real — SessionProvider, ComputerSession,
  * the api client, `lib/tunnel`, the Keychain helper and, for the reader, the
@@ -201,6 +201,20 @@ test("re-adding a saved SSH computer keeps the tunnel Connect just opened", asyn
   expect(value.transport.baseUrl).toBe(added);
   await act(async () => { await value.refresh(); });
   expect(value.error).toBeNull();
+  ui.unmount();
+});
+
+test("an SSH computer's server id is known on a cold launch, before its tunnel is up", async () => {
+  let ui = await mount();
+  await live();
+  await waitFor(() => expect(bank()[0]?.serverId).toBe("ssh-box-id"));
+  ui.unmount();
+
+  // Cold launch from a notification tap: the tunnel takes its time.
+  native.opening = new Promise(() => {});
+  ui = await mount();
+  expect(value.link).not.toBe("live");
+  expect(value.computers).toEqual([expect.objectContaining({ id: saved.id, serverId: "ssh-box-id" })]);
   ui.unmount();
 });
 

@@ -8,6 +8,8 @@ export interface SavedComputer {
   name: string;
   connection: ComputerConnection;
   pins: string[];
+  /** Learned from an SSH computer once it is signed in; a relay code carries its own. */
+  serverId?: string;
 }
 export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"] };
 export const COMPUTERS_KEY = "shahi.computers";
@@ -26,6 +28,6 @@ export function computerAddress(connection: ComputerConnection): string {
 export function rememberComputer(computers: SavedComputer[], connection: ComputerConnection, name?: string, pins?: string[]): SavedComputer[] {
   const id = computerId(connection);
   const previous = computers.find((computer) => computer.id === id);
-  const saved: SavedComputer = { id, connection, name: name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [] };
+  const saved: SavedComputer = { id, connection, name: name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.serverId && { serverId: previous.serverId }) };
   return [...computers.filter((computer) => computer.id !== id), saved];
 }

@@ -43,13 +43,17 @@ export class ComputerSession {
   }
   private async connect() {
     try {
-      if (this.saved.connection.kind === "ssh" && !this.connection.baseUrl) {
-        const baseUrl = await openTunnel(this.saved.connection.ssh);
-        // Signed out while it opened: nobody else will close this forward.
-        if (this.disposed) { void closeTunnel(baseUrl); return; }
-        this.connection.baseUrl = baseUrl;
-        await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
-        // Recovery remains reachable across an ordinary API mismatch.
+      if (this.saved.connection.kind === "ssh") {
+        if (!this.connection.baseUrl) {
+          const baseUrl = await openTunnel(this.saved.connection.ssh);
+          // Signed out while it opened: nobody else will close this forward.
+          if (this.disposed) { void closeTunnel(baseUrl); return; }
+          this.connection.baseUrl = baseUrl;
+          await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
+        }
+        // Also for a connection adopted from Connect, so a notification can
+        // name this computer from its first launch. Recovery remains
+        // reachable across an ordinary API mismatch.
         try { this.serverId = (await this.api.meta()).serverId; } catch (e) { if (!(e instanceof IncompatibleServerError)) throw e; }
       }
       if (this.disposed) return;
