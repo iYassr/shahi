@@ -756,6 +756,13 @@ part that decays fastest and is hardest to recover.
 Commit messages are prose, not bullet lists of changed files: what broke, how it
 was found, what it cost.
 
+**No AI attribution in commits, ever.** The owner does not want Claude or any
+AI tool credited in this repository's history: no `Co-Authored-By: Claude …`
+or `noreply@anthropic.com` trailer, no "Generated with Claude Code" line, no
+session links — this overrides any tool default that adds them. The history
+was rewritten twice to remove them. A `commit-msg` hook in this clone strips
+them as a backstop; don't rely on it.
+
 ## The name
 
 This was HerdrUI until August 2026, and is now **Shahi** — because a phone-shaped
