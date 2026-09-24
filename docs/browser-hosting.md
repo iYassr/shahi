@@ -168,6 +168,18 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 25 September 2026
+
+Published the site and hosted client from a clean checkout of `a586b7e` (the
+pre-release review's fixes, after the history rewrite) as Cloudflare version
+`fa88e525-771d-4d0a-a633-13ab292b9587`. Checked after deploying: `/`,
+`/privacy` (dated 23 September), `/pwa/` and `/pwa/sw.js` answer 200, an
+unknown `/api` path answers the 404 page, and the home page asks Google Fonts
+for nothing. The relay was deployed from the same checkout as
+`shahi-relay` version `cd7d78ae-0b5d-4a50-83f6-ef5037c67645`; its health check
+answered 200 and a 0.3.6 computer reconnected to it. The previous relay
+version, for rollback, is `f94f9ea3-441b-4117-8386-f023ecf6c2d0`.
+
 ## Verified deployment — 5 September 2026
 
 Published the static site and hosted client to `https://getshahi.dev/pwa/` as
