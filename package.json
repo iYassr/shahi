@@ -29,7 +29,7 @@
   },
   "//test": "./.github keeps its ./ because bun test skips dot-directories unless a path names one. Written as .github, the workflow and herdr-installer tests would silently stop running.",
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "typescript": "7.0.2",
     "sharp": "0.35.4"
   },
