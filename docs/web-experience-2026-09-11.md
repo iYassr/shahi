@@ -1,6 +1,6 @@
 # Web experience revision — 11 September 2026
 
-The public app at https://getshahi.dev/pwa/ now carries the welcome page's visual language through the connected experience. Source: `7488d1439b7ddbc6efa3f17e98bf5decd633f58f`; computer package: 0.3.4.
+The public app at https://getshahi.dev/pwa/ now carries the welcome page's visual language through the connected experience. Source: `5b03b11fdff2fa00891da1c7ee2edd3d1a033435`; computer package: 0.3.4.
 
 ## Changes
 

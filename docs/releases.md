@@ -26,7 +26,7 @@ is operated by Shahi and SSH libraries travel inside the phone binary.
 `shared/src/compatibility.ts` defines app support. The adapter profiles live in
 `server/lib/backend.ts`; release requirements live in
 `plugin/releases/release.json`. CI checks their agreement and exercises the pinned
-pre-managed service (`393e012fc8bf3ec100cddb342f61a6dd8b2db9f2`) and the packaged
+pre-managed service (`3cd378c555e4119c450b09f83e01956678d75ac8`) and the packaged
 current service using an isolated recording socket. No real agent is used by
 the upgrade suite. The independent live-herdr matrix uses a named test session.
 
@@ -41,6 +41,14 @@ platforms, Bun minimum, herdr profiles, API range, encrypted transport, recovery
 and manager contracts, and data format. EAS separately records immutable native
 builds and update groups; they are compatible by API and native runtime rather
 than having to share the computer's release number.
+
+On 24 September 2026 the repository's history was rewritten to remove private
+screenshots and identifiers, which changed every commit hash. Releases 0.3.0 to
+0.3.6 keep the old hash in their build identifier and in their signed manifest's
+source commit (`0.3.6-fa24618fde1f`, for example); their packages, signatures
+and digests are unchanged and still verify, since nothing checks that commit
+against the repository. Each release's tag now points at the rewritten commit,
+whose files are identical to the ones that were built.
 
 Stable and Beta catalogs are signed with Ed25519. Public keys are pinned in
 `plugin/releases/trust.ts`; private keys belong outside the repository and in

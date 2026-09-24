@@ -1,9 +1,9 @@
 # Relay and public service security assessment — 5 September 2026
 
 > Historical assessment. The findings below describe code reviewed before the
-> fixes in [`81297b4`](https://github.com/iYassr/shahi/commit/81297b4).
+> fixes in [`b3ffb34`](https://github.com/iYassr/shahi/commit/b3ffb34).
 > Upgrade the sidecar and clients together. Older snapshots, including
-> `91eda62`, do not contain these fixes. See [remediation](#remediation--5-september-2026)
+> `066817b`, do not contain these fixes. See [remediation](#remediation--5-september-2026)
 > for scope and verification. This is a maintainer review, not an independent audit.
 >
 > *Note, 23 September 2026:* "Browser-origin checks guard API writes and direct
@@ -20,7 +20,7 @@ HTTP configuration. Two availability defects were reproduced during this review.
 No unauthenticated terminal-control or session-decryption bypass was found in
 the paths examined.
 
-This assessment covers the current working tree, based on commit `1ec39f5` with
+This assessment covers the current working tree, based on commit `114dc78` with
 existing uncommitted changes. It combines source review, isolated local
 reproductions, existing security tests, and low-volume public HTTP checks. It is
 not an independent cryptographic audit or an attestation that every deployed
@@ -247,7 +247,7 @@ observations should be kept distinct from those unverified properties.
 
 ## Remediation — 5 September 2026
 
-Source fixes are published in commit `81297b4`:
+Source fixes are published in commit `b3ffb34`:
 
 - Require a valid encrypted client frame within fifteen seconds before granting
   a device session or attaching a stream. Recheck revocation at proof time.

@@ -85,7 +85,7 @@ browser state is cleared or changed.
 ## Deployment record
 
 - [Release approval 34597082632](https://github.com/iYassr/shahi/actions/runs/34597082632)
-  passed for source `2fd5cbd684d1d76a1c3e2f90b88a92dd1dc4a1db`.
+  passed for source `f46b3d64d46f92f7d4b4d941ff782e8311a8b1ba`.
   CI passed 184 direct browser tests, 42 encrypted hosted tests, and 11 PWA tests
   (237 total; the documented WebKit complete-offline test is skipped). It also
   passed 614 shared/server/web/plugin unit tests, 68 relay tests, 254 native

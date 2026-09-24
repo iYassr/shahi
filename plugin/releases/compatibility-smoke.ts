@@ -56,7 +56,7 @@ async function start(entry: string, web = join(root, "web/dist")) {
 try {
   // A pinned shipped client/service baseline. No floating master reference.
   const previous = join(scratch, "previous"); mkdirSync(previous);
-  const archive = Bun.spawnSync(["git", "archive", "393e012fc8bf3ec100cddb342f61a6dd8b2db9f2"], { cwd: root });
+  const archive = Bun.spawnSync(["git", "archive", "3cd378c555e4119c450b09f83e01956678d75ac8"], { cwd: root });
   assert.equal(archive.exitCode, 0, "Fetch the supported baseline before the release matrix.");
   const extracted = Bun.spawnSync(["tar", "-x", "-C", previous], { stdin: archive.stdout }); assert.equal(extracted.exitCode, 0);
   symlinkSync(join(root, "node_modules"), join(previous, "node_modules"));

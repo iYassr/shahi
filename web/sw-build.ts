@@ -6,7 +6,7 @@
  *
  *  - unhashed files — `welcome.js`, the manifest, the icons — stayed stale in
  *    installed apps until someone remembered to bump it, which was missed twice
- *    (e38aa56, 4e936fd);
+ *    (5c1dea8, 4a7a60c);
  *  - every release's bundles and lazily loaded chunks piled up in one cache
  *    that was never cleared (the pre-release review measured 0.5–2.3 MB a
  *    release);

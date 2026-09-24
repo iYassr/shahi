@@ -110,7 +110,7 @@ different ways against this toolchain (cmake missing, cmake 4 dropping old
 policies, two corrupt build caches, an empty-clone guard, and a bundled OpenSSL
 without `opensslv.h`). Both are referenced via `vendored_frameworks` in
 `SshTunnel.podspec`. No cmake, no downloads, no clone guards at build time.
-Both were added once, in `cfd06cf` (2026-08-10), and have not changed since.
+Both were added once, in `4f99241` (2026-08-10), and have not changed since.
 Their license texts are in `modules/ssh-tunnel/licenses/`.
 
 Where each came from, as far as it can be established:

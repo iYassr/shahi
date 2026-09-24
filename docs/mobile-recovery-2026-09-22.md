@@ -39,8 +39,8 @@ a customer's computer. These checks do not replace physical-device testing.
 
 ## TestFlight delivery
 
-Build `1.0.0 (14)` contains the Screen/loading fixes from `f53ac38`.
-Build `1.0.0 (15)` adds the connection-recovery changes from `d739f3e` and is the
+Build `1.0.0 (14)` contains the Screen/loading fixes from `f56ee9c`.
+Build `1.0.0 (15)` adds the connection-recovery changes from `98be489` and is the
 build to install for both improvements. Both were built from clean checkouts
 with Xcode/iOS SDK 27; their embedded privacy manifests were checked.
 

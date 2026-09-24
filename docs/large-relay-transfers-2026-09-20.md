@@ -175,7 +175,7 @@ rather than claiming a validated faster global bandwidth allowance.
 
 ## Signed release verification
 
-Beta release workflow `35486202973` passed for commit `fa24618fde1f`:
+Beta release workflow `35486202973` passed for commit `18328bf4c667`:
 712 source checks, 328 mobile checks, 68 relay checks, 316 browser cases
 (four skipped), 50 hosted-browser cases and 11 PWA cases (one skipped).
 Real-herdr checks passed against 0.9.0, 0.9.1 and stable. Upgrade/recovery

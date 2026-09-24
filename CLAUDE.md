@@ -400,7 +400,7 @@ would show agent states that are hours old, and a stale agent list is worse than
 an honest failure. Assets are hashed, so they are cached forever; the HTML is
 network-first with a 1.5s grace, because cache-first means every deploy takes two
 launches to appear. Normal launches were in fact served cache-first from
-`dca0e80` until the pre-public-release review, contradicting this paragraph;
+`80c2a8b` until the pre-public-release review, contradicting this paragraph;
 they are network-first again. The cache is named after its release: a hash of
 every built file, which `web/sw-build.ts` stamps into `sw.js` at build time, so
 there is no hand-bumped version constant to forget. Each release precaches

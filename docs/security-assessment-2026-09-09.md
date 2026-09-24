@@ -3,7 +3,7 @@
 This maintainer review covers the relay, computer recovery endpoint, signed
 release catalog, updater and publication workflow for Shahi 0.3.2. It combines
 source review, adversarial regression tests and actual GitHub environment
-inspection. The baseline was 0.3.1 (`a80d07b4`). It is not an independent audit.
+inspection. The baseline was 0.3.1 (`eafb1af3`). It is not an independent audit.
 
 > *Note, 23 September 2026:* "Catalogs must be renewed before their 120-day
 > expiry", under *Boundaries that remain*, was a manual step with nothing
@@ -103,7 +103,7 @@ performed by these tests.
 ## Verified rollout
 
 [Shahi 0.3.2](https://github.com/iYassr/shahi/releases/tag/v0.3.2) is published
-on Stable from source `f2fbae319aefef293dab2f65bf26b81499e9bab7`.
+on Stable from source `1f39d981a031405f8a1c34e172e1055c257632cd`.
 The [release approval workflow](https://github.com/iYassr/shahi/actions/runs/34317652039)
 passed every job: four OS upgrade targets, both herdr versions, 254 native
 tests, 184 direct browser checks and 38 hosted browser checks, plus types and

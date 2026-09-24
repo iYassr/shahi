@@ -12,7 +12,7 @@ SSH and push validation, a longer soak, and the production browser findings
 below. No deployment or release was performed.
 
 Tested on macOS with Bun 1.4.0, the iOS 26.5 simulator, and five OrbStack VMs
-using Bun 1.4.1 and herdr 0.8.2. The checkout starts at `074215f` and contains
+using Bun 1.4.1 and herdr 0.8.2. The checkout starts at `569d0cf` and contains
 uncommitted work from another ongoing effort. Results describe the working
 tree, not an immutable release commit. A file-hash manifest and command logs
 are saved in `test-results/release-2026-09-05/` (ignored by Git).
