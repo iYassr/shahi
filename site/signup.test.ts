@@ -6,6 +6,8 @@ test("sends only the validated applicant address and reports delivery acceptance
   const sent: string[] = [];
   const r = await signup(request(valid), { limit: async () => true, send: async e => { sent.push(e); } });
   expect(r.status).toBe(200); expect(sent).toEqual([valid.email]); expect(r.headers.get("Cache-Control")).toBe("no-store");
+  // The page shows this as the form's result, so it names what arrives and where.
+  expect((await r.json()).message).toBe("Request sent. We’ll email a TestFlight invite to tester@example.com.");
 });
 test("rejects invalid input, header injection, missing consent, traps and cross-origin requests", async () => {
   let sent = false;

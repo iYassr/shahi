@@ -53,5 +53,5 @@ export async function signup(request: Request, deps: Dependencies): Promise<Resp
   if (body.consent !== true) return reply(400, "Please agree to receive email about the iOS beta.");
   try { await deps.send(email); }
   catch { return reply(503, "We couldn’t send your request. Please try again, or email support@getshahi.dev."); }
-  return reply(200, "Request sent. We’ll email you when a TestFlight place is available.");
+  return reply(200, `Request sent. We’ll email a TestFlight invite to ${email}.`);
 }

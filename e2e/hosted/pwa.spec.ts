@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { signup } from "../../site/src/signup";
 
 async function ready(page: Page) {
   await page.evaluate(async () => {
@@ -88,6 +89,114 @@ test("the website serves its own fonts and asks no third party for anything", as
   }
   expect(foreign).toEqual([]);
   expect(refused).toEqual([]);
+});
+
+// The homepage offers the web app and the iOS app side by side, and every
+// iOS control asks only for an email address, so the owner can send a
+// TestFlight invite. Service workers are blocked because one would bypass
+// page.route.
+test.describe("the homepage's iOS download", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("Download iOS App opens an email dialog that requests a TestFlight invite, and Esc returns focus to it", async ({ page }) => {
+    const refused: string[] = [];
+    page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
+    // The Worker's own handler answers, with the rate limit open and delivery
+    // recorded: the page's request meets the real validation, and no email
+    // can leave. The Origin is supplied because an intercepted request does
+    // not reliably show the one the browser sends, and the page is
+    // same-origin by construction.
+    const bodies: unknown[] = [];
+    const delivered: string[] = [];
+    await page.route(`${site}/api/ios-beta`, async route => {
+      const request = route.request();
+      bodies.push(request.postDataJSON());
+      const response = await signup(new Request(request.url(), {
+        method: request.method(), body: request.postData() ?? "",
+        headers: { "Content-Type": request.headers()["content-type"] ?? "", Origin: site },
+      }), { limit: async () => true, send: async email => { delivered.push(email); } });
+      await route.fulfill({ status: response.status, contentType: "application/json", body: await response.text() });
+    });
+
+    await page.goto(`${site}/`);
+    await expect(page.getByRole("banner").getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
+    const main = page.getByRole("main");
+    await expect(main.getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
+    const download = main.getByRole("link", { name: "Download iOS App (TestFlight)" });
+    await download.click();
+    const dialog = page.getByRole("dialog", { name: "Download the iOS app" });
+    await expect(dialog).toBeVisible();
+    const email = dialog.getByRole("textbox", { name: "Email address" });
+    await expect(email).toBeFocused();
+    await email.fill("tester@example.com");
+    // Consent stays required, as the privacy policy describes: without it the
+    // browser refuses the form, which the single request below also proves.
+    await dialog.getByRole("button", { name: "Email me an invite" }).click();
+    await dialog.getByRole("checkbox", { name: "Email me about the Shahi iOS beta." }).check();
+    await dialog.getByRole("button", { name: "Email me an invite" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("Request sent. We’ll email a TestFlight invite to tester@example.com.");
+    expect(bodies).toEqual([{ email: "tester@example.com", website: "", consent: true }]);
+    expect(delivered).toEqual(["tester@example.com"]);
+    await expect(email).toHaveValue("");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(download).toBeFocused();
+    // The availability line and the beta section open the same dialog, and
+    // Esc or its Close button returns focus to whichever opened it.
+    const join = main.getByRole("link", { name: "Join the iOS beta" });
+    await join.click();
+    await expect(dialog).toBeVisible();
+    await expect(email).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(join).toBeFocused();
+    const sectionButton = page.getByRole("region", { name: /Shahi for iPhone/ }).getByRole("button", { name: "Get a TestFlight invite" });
+    await sectionButton.click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(sectionButton).toBeFocused();
+    expect(refused).toEqual([]);
+  });
+
+  test("the two download choices and the email dialog fit a 320-pixel screen", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto(`${site}/`);
+    const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+    expect(await fits()).toBe(true);
+    await page.getByRole("link", { name: "Download iOS App (TestFlight)" }).click();
+    const dialog = page.getByRole("dialog", { name: "Download the iOS app" });
+    await expect(dialog).toBeVisible();
+    const box = (await dialog.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(320);
+    await expect(dialog.getByRole("button", { name: "Close" })).toBeInViewport();
+    await expect(dialog.getByRole("button", { name: "Email me an invite" })).toBeInViewport();
+    expect(await fits()).toBe(true);
+  });
+
+  test.describe("without JavaScript", () => {
+    test.use({ javaScriptEnabled: false });
+
+    test("Download iOS App still reaches the iOS beta section and an address to ask for an invite", async ({ page }) => {
+      await page.goto(`${site}/`);
+      // force: Playwright's stability check waits on animation frames, which
+      // never arrive with scripting off (measured: "element is not stable"
+      // until the timeout, in both engines). The click itself is a real one.
+      const download = page.getByRole("link", { name: "Download iOS App (TestFlight)" });
+      await expect(download).toBeVisible();
+      await download.click({ force: true });
+      await expect(page).toHaveURL(`${site}/#ios-beta`);
+      const section = page.getByRole("region", { name: /Shahi for iPhone/ });
+      const address = section.getByRole("link", { name: "support@getshahi.dev" });
+      await expect(address).toBeInViewport();
+      await expect(address).toHaveAttribute("href", "mailto:support@getshahi.dev?subject=Shahi%20iOS%20beta");
+      // Nothing is offered that could not work: the dialog's opener and the dialog stay hidden.
+      await expect(section.getByRole("button")).toHaveCount(0);
+      await expect(page.getByRole("dialog")).toBeHidden();
+    });
+  });
 });
 
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {

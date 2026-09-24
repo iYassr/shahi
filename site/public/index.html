@@ -35,7 +35,7 @@
       <img class="mark" data-brand-welcome src="/favicon.svg" alt="" width="48" height="48">
       <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
     </a>
-    <a class="quiet-link" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
+    <a class="quiet-link" href="/pwa/">Open Shahi Web App <span aria-hidden="true">↗</span></a>
   </header>
   <main>
     <section class="hero" aria-labelledby="headline">
@@ -43,10 +43,14 @@
       <h1 id="headline">Your agents,<br><span>as a chat on your phone.</span></h1>
       <p class="lede">Not a terminal squeezed onto a small screen. Shahi turns the Claude Code, Codex and Cursor sessions running in <a href="https://herdr.dev">herdr</a> into a conversation you read, answer and steer with your thumb. The work stays on your computer; you carry on from wherever you are.</p>
       <div class="hero-actions">
-        <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
+        <div class="hero-buttons">
+          <a class="button-primary" href="/pwa/">Open Shahi Web App <span aria-hidden="true">↗</span></a>
+          <!-- Links to the beta section until beta.js makes every data-beta-open control open the email dialog, so they still lead somewhere without JavaScript. -->
+          <a class="button-secondary" href="#ios-beta" data-beta-open>Download iOS App (TestFlight)</a>
+        </div>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability"><span>Two commands, one scan, about a minute.</span> <span>Works in your phone’s browser · <a href="#ios-beta">Join the iOS beta</a></span></p>
+      <p class="availability"><span>Two commands, one scan, about a minute.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
     </section>
 
     <figure class="product">
@@ -128,18 +132,32 @@ herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once 
     </section>
 
     <section class="beta" id="ios-beta" aria-labelledby="beta-title">
-      <div><p class="eyebrow">iPhone · Early access</p><h2 id="beta-title">Try Shahi on your iPhone.</h2><p>Leave your email and we’ll contact you when a place is available. You’ll install the preview through Apple’s TestFlight app.</p></div>
-      <form id="beta-form">
-        <label for="beta-email">Email address</label>
-        <div class="beta-fields"><input id="beta-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required><button class="button-primary" type="submit">Request an invite</button></div>
-        <div class="form-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
-        <label class="beta-consent"><input name="consent" type="checkbox" required> <span>Email me about the Shahi iOS beta.</span></label>
-        <p class="beta-privacy">Your request goes to our support inbox. <a href="/privacy#ios-beta">How we use your email</a></p>
-        <p id="beta-status" role="status" aria-live="polite"></p>
-        <noscript>Email <a href="mailto:support@getshahi.dev?subject=Shahi%20iOS%20beta">support@getshahi.dev</a> to request an invite.</noscript>
-      </form>
+      <div><p class="eyebrow">iOS app · Beta</p><h2 id="beta-title">Shahi for iPhone, through TestFlight.</h2><p>The iOS app is in beta. You install it with TestFlight, Apple’s app for testing beta apps, and we send each TestFlight invite by email.</p></div>
+      <div class="beta-action">
+        <button class="button-primary" type="button" data-beta-open hidden>Get a TestFlight invite</button>
+        <!-- beta.js hides this once the dialog works, so a visitor without JavaScript, or with a browser that has no <dialog>, still has a way in. -->
+        <p class="beta-fallback" data-beta-fallback>Email <a href="mailto:support@getshahi.dev?subject=Shahi%20iOS%20beta">support@getshahi.dev</a> to ask for a TestFlight invite.</p>
+      </div>
     </section>
 
+    <dialog class="beta-dialog" id="beta-dialog" closedby="any" aria-labelledby="beta-dialog-title" aria-describedby="beta-dialog-intro">
+      <div class="beta-dialog-body">
+        <div class="beta-dialog-head">
+          <h2 id="beta-dialog-title">Download the iOS app</h2>
+          <button class="dialog-close" type="button" data-beta-close>Close</button>
+        </div>
+        <p id="beta-dialog-intro">The iOS app is in beta on TestFlight, Apple’s app for testing beta apps. Enter your email and we’ll send you a TestFlight invite.</p>
+        <form id="beta-form">
+          <label for="beta-email">Email address</label>
+          <input id="beta-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
+          <div class="form-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+          <label class="beta-consent"><input name="consent" type="checkbox" required> <span>Email me about the Shahi iOS beta.</span></label>
+          <button class="button-primary" type="submit">Email me an invite</button>
+          <p class="beta-privacy">Your request goes to our support inbox. <a href="/privacy#ios-beta">How we use your email</a></p>
+          <p id="beta-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </dialog>
   </main>
   <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>
