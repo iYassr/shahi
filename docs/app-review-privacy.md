@@ -85,7 +85,7 @@ Before submitting external review:
    TestFlight link. Internal TestFlight availability is not external approval.
 
 Keep reviewer secrets out of Git and public documentation. France remains
-excluded pending the separate export-compliance process in [app-store.md](app-store.md).
+excluded pending the separate export-compliance process.
 
 App Information still shows age ratings and content rights as not configured;
 Digital Services Act account information also has a Set Up link. Resolve these

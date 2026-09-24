@@ -8,7 +8,7 @@
 - [Browser hosting and beta signup](browser-hosting.md)
 - [Relay](relay.md), [operations](operations.md), and [privacy](privacy-policy.md)
 - [Larger tunnel files: feasibility and proposed validation](large-relay-transfers-2026-09-20.md)
-- [Local iOS development](on-a-mac.md), [device verification](verify-on-device.md), and [release checklist](app-store.md)
+- [Local iOS development](on-a-mac.md) and [device verification](verify-on-device.md)
 - [Brand guidelines](brand/README.md) and [licensing](licensing.md)
 - [Reporting a vulnerability](../SECURITY.md)
 

@@ -66,6 +66,9 @@ web/dist-hosted/
 *.mobileprovision
 credentials.json
 reviewer-access.md
+# The App Store Connect log (submission IDs, rejections, export compliance)
+# is the owner's working record, not documentation for anyone else.
+/docs/app-store.md
 local.env
 *-device.json
 

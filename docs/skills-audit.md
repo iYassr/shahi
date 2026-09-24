@@ -92,7 +92,7 @@ device verification, so they were left for a deliberate pass.
   and `useCallback` stability in the poll loop are clean — no leaks, no stale
   closures.
 
-## Human / account items (unchanged from `app-store.md`)
+## Human / account items
 Apple Developer membership + App Store Connect record for `app.shahi.mobile`
 (also unblocks the empty `submit.production` profile in `eas.json`), hosted
 privacy policy, App Privacy labels, screenshots + description, on-device proof of
