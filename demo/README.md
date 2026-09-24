@@ -43,7 +43,7 @@ pairing page also wakes it. On restart, herdr restores the layout and a fresh, l
 is started if no agent is active. Do not promise uninterrupted in-flight work across a host
 failure. A controlled restart checkpoints first.
 
-Access expires on 19 October 2026. The next scheduled cleanup stops the container
+Access expires on 31 December 2026, extended from 19 October so App Store review and any resubmission fit inside it. The next scheduled cleanup stops the container
 and deletes its recovery snapshot. Extending review requires changing
 `REVIEW_EXPIRES_AT` and deploying. Delete the Worker/container and R2 bucket after
 review to remove the schedule and provisioned resources entirely.

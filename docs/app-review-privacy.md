@@ -60,7 +60,7 @@ The real Shahi server, herdr, relay encryption, file transfers and Codex client
 run in this environment. Model responses are explicitly simulated locally;
 there are no AI provider credentials or charges. Use only synthetic sample data.
 The controller checkpoints pairing, sample files, attachments and transcripts
-to private R2 storage. Access expires 19 October 2026; scheduled cleanup stops
+to private R2 storage. Access expires 31 December 2026; scheduled cleanup stops
 the container and deletes its snapshot. See [demo operations](../demo/README.md).
 
 External beta review has not been submitted. App Store Connect's previously

@@ -13,7 +13,7 @@ custom_domain = true
 [vars]
 DEMO_ORIGIN = "https://review.getshahi.dev"
 RELAY_URL = "https://relay.getshahi.dev"
-REVIEW_EXPIRES_AT = "2026-10-19T23:59:59Z"
+REVIEW_EXPIRES_AT = "2026-12-31T23:59:59Z"
 
 [[containers]]
 class_name = "ReviewContainer"
