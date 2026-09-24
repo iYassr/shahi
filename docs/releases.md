@@ -99,7 +99,9 @@ The release environment permits only the `master` branch; signing jobs also
 check that ref. Third-party build actions are pinned to full commit hashes, and
 every checkout in every workflow sets `persist-credentials: false`. Publish to
 Beta first, which stays a GitHub prerelease. After observing successful
-upgrades and reconnects, promote the same immutable package to Stable; a Stable
+upgrades and reconnects, promote the same immutable package to Stable (commits that
+landed on `master` after the Beta don't block it: the run signs the published
+bytes Beta approved, never a rebuild); a Stable
 approval also marks the GitHub release Latest (`--prerelease=false --latest`).
 Stable approvals before that change left GitHub's Latest on v0.3.1; the next
 one corrects it, or `gh release edit <tag> --latest` does by hand. Never

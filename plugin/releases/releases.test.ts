@@ -29,6 +29,18 @@ describe("approved releases", () => {
     const unapproved = { ...published, buildId: "forged-but-same-commit" };
     expect(() => verifyPublished(unapproved, release, bytes, stable, beta, trusted)).toThrow("no matching signed approval");
   });
+  test("a Stable promotion is not blocked by commits that landed on master after its Beta", () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const published = { ...release, artifact: { ...release.artifact, bytes: bytes.length, sha256: sha256(bytes) } };
+    const approvedInBeta = signed({ ...catalog, channel: "beta", releases: [published] }), stable = signed(catalog);
+    const laterMaster = { ...release, commit: "b".repeat(40), buildId: "build-2" };
+    expect(verifyPublished(published, laterMaster, bytes, stable, approvedInBeta, trusted, "stable")).toEqual(published);
+    // A Beta run with new code under the same version is a missed bump.
+    expect(() => verifyPublished(published, laterMaster, bytes, stable, approvedInBeta, trusted, "beta")).toThrow("bump the release version");
+    // And Stable still promotes only a package some signed catalog approved.
+    expect(() => verifyPublished(published, laterMaster, bytes, stable, signed({ ...catalog, channel: "beta" }), trusted, "stable")).toThrow("no matching signed approval");
+    expect(() => verifyPublished(published, { ...laterMaster, version: "0.3.1" }, bytes, stable, approvedInBeta, trusted, "stable")).toThrow("bump the release version");
+  });
   test("accepts a trusted, current, compatible catalog", () => {
     const c = verifyCatalog(signed(catalog), "stable", 10, trusted);
     expect(selectRelease(c, machine).release?.buildId).toBe("build-1");
