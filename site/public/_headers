@@ -26,6 +26,12 @@
   Cache-Control: no-store
   Service-Worker-Allowed: /pwa/
 
+/og.png
+  # The link-preview card: LinkedIn, Reddit and chat apps fetch or embed it
+  # from their own origins, which same-origin resource policy would refuse.
+  ! Cross-Origin-Resource-Policy
+  Cross-Origin-Resource-Policy: cross-origin
+
 /
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'
 

@@ -4,12 +4,12 @@
 
 # Shahi
 
-**herdr, at its best on mobile.**
+**Your herdr agents, as a chat on your phone.**
 
-A fast, easy-to-use client for the work running on your computer.<br>
-A clean interface. Agent activity made readable. The same conversation, wherever you are.
+Not a terminal squeezed onto a small screen: Shahi turns the Claude Code, Codex<br>
+and Cursor sessions running in herdr into a conversation you read, answer and steer with your thumb.
 
-Leave your desk. Keep working.
+**Two commands, one scan, about a minute.** End-to-end encrypted. No account, VPN or open port.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
@@ -42,6 +42,18 @@ flowchart LR
 
 Your computer or server must stay awake and connected. Closing Shahi on your
 phone does not stop the agents running there.
+
+## Why not just a terminal app?
+
+A terminal on a phone is a poor way to talk to an agent. SSH apps show output
+wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
+Tab. Shahi reads each agent’s own transcript instead, so messages, tool
+calls and diffs fit your screen, and supported permission prompts become buttons.
+It feels like texting. The terminal is still one tap away, on the Screen tab.
+
+Shahi is built on [herdr](https://herdr.dev), a lightweight home for your agents
+with spaces, panes and live status for each one. Shahi mirrors all of it, so you
+can browse spaces and start new agents from your phone.
 
 ## A herdr client made for your phone
 
@@ -83,6 +95,17 @@ view rather than a formatted conversation.
 <p align="center"><sub>Earlier device captures; some controls and styling have since changed.</sub></p>
 
 ## Quick start
+
+Inside [herdr](https://herdr.dev) on your Mac or Linux computer:
+
+```sh
+herdr plugin install iYassr/shahi
+herdr plugin action invoke shahi.pair
+```
+
+Then open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) or the iOS app on your
+phone and scan the code. Your agents appear. The rest of this section covers
+requirements and what to do if something does not work.
 
 ### 1. Install on the computer doing the work
 

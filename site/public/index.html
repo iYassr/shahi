@@ -3,14 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shahi — herdr, at its best on mobile.</title>
-<meta name="description" content="A fast, easy-to-use herdr client for your phone. Connect with a scan, read agent activity clearly, and continue the same work from anywhere.">
+<title>Shahi — your herdr agents, as a chat on your phone.</title>
+<meta name="description" content="Your Claude Code, Codex and Cursor sessions in herdr, as a chat on your phone. One plugin, one scan, end-to-end encrypted. Open source.">
 <meta name="color-scheme" content="dark">
-<meta property="og:title" content="Shahi — herdr, at its best on mobile.">
-<meta property="og:description" content="Your herdr agents, made for mobile. A clean interface, quick replies, and automatically formatted Claude Code and Codex activity. Same work. Same computer.">
+<meta name="theme-color" content="#0E0D0B">
+<link rel="canonical" href="https://getshahi.dev/">
+<!-- Link previews (LinkedIn, Reddit, Slack, X) read these; og.png is made by
+     site/og/render.ts from og.html so the card stays on-brand and local. -->
+<meta property="og:site_name" content="Shahi">
+<meta property="og:title" content="Shahi — your herdr agents, as a chat on your phone.">
+<meta property="og:description" content="Not a terminal squeezed onto a phone: Shahi turns your running agents into a conversation you read, answer and steer with your thumb. Two commands, one scan.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://getshahi.dev">
+<meta property="og:url" content="https://getshahi.dev/">
+<meta property="og:image" content="https://getshahi.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shahi: your agents, as a chat on your phone. A phone showing a Claude Code conversation, with a permission prompt offered as buttons.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- The headline and body faces, fetched with the CSS instead of after it. -->
+<link rel="preload" href="/fonts/IBMPlexSans-Medium-Latin1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/IBMPlexSans-Regular-Latin1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/fonts/plex.css">
 <link rel="stylesheet" href="/identity.css">
 <link rel="stylesheet" href="/site.css">
@@ -27,13 +40,13 @@
   <main>
     <section class="hero" aria-labelledby="headline">
       <p class="eyebrow">herdr, at its best on mobile</p>
-      <h1 id="headline">Leave your desk.<br><span>Keep working.</span></h1>
-      <p class="lede">A fast, easy-to-use herdr client that feels at home on your phone. Follow your agents in a clean, readable conversation and reply in a few taps. Same work. Same files. Your computer keeps going.</p>
+      <h1 id="headline">Your agents,<br><span>as a chat on your phone.</span></h1>
+      <p class="lede">Not a terminal squeezed onto a small screen. Shahi turns the Claude Code, Codex and Cursor sessions running in <a href="https://herdr.dev">herdr</a> into a conversation you read, answer and steer with your thumb. The work stays on your computer; you carry on from wherever you are.</p>
       <div class="hero-actions">
         <a class="button-primary" href="/pwa/">Open Shahi <span aria-hidden="true">↗</span></a>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability">Opens in your browser · <a href="#ios-beta">Join the iOS beta</a></p>
+      <p class="availability"><span>Two commands, one scan, about a minute.</span> <span>Works in your phone’s browser · <a href="#ios-beta">Join the iOS beta</a></span></p>
     </section>
 
     <figure class="product">
@@ -70,10 +83,23 @@
       <figcaption>Interactive example · Try “Allow once” to see what happens. This won’t change any real work.</figcaption>
     </figure>
 
-    <section class="features" aria-label="Features">
-      <article><span class="feature-number">01</span><h2>Easy from the first scan</h2><p>Scan the code on your computer and your agents are there. No Shahi account, no projects to upload, no conversation to start over.</p></article>
-      <article><span class="feature-number">02</span><h2>Agent work, made readable</h2><p>Shahi automatically formats Claude Code and Codex messages, tool activity, file changes and results for your phone. See what happened and what needs your answer. Screen mode keeps the terminal within reach.</p></article>
-      <article><span class="feature-number">03</span><h2>Quick to check. Easy to reply.</h2><p>Live updates, clear status and controls made for your thumb keep work moving. Switch conversations without losing your place or unfinished reply, then carry on at your desk.</p></article>
+    <section class="setup" id="quick-start" aria-labelledby="setup-title">
+      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>Two commands and one scan, about a minute from start to finish. Run these in a terminal inside <a href="https://herdr.dev">herdr</a> on your Mac or Linux computer, then scan the code that appears with Shahi on your phone, in the browser or the iOS app.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a></div>
+      <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
+herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
+    </section>
+
+    <section class="features" aria-labelledby="features-title">
+      <h2 class="visually-hidden" id="features-title">What Shahi does</h2>
+      <article><span class="feature-number">01</span><h3>Feels like texting</h3><p>Messages, tool calls, file changes and results arrive as a conversation made for your phone. Permission prompts from Claude Code and Codex become buttons. Reply in a few taps and watch the agent carry on.</p></article>
+      <article><span class="feature-number">02</span><h3>Connected in a minute</h3><p>Install the plugin, scan the code, and your agents are there. No Shahi account, no VPN, no open ports, no projects to upload. The connection is encrypted from your phone to your computer.</p></article>
+      <article><span class="feature-number">03</span><h3>Built on herdr</h3><p>herdr is a lightweight home for your agents, with spaces, panes and live status for every one. Shahi mirrors all of it, so you can browse your spaces and start new agents from your phone.</p></article>
+    </section>
+
+    <section class="why" aria-labelledby="why-title">
+      <p class="eyebrow">Why not a terminal app?</p>
+      <h2 id="why-title">A terminal on a phone is not a good way to talk to an agent.</h2>
+      <p>SSH apps give you a terminal wrapped for a wide screen: you pinch, scroll sideways and hunt for Esc and Tab. Shahi reads each agent’s own transcript instead, so its work fits your screen. The terminal is still one tap away, on the Screen tab, for the moments you really need it.</p>
     </section>
 
     <section class="security" id="connection-security" aria-labelledby="security-title">
@@ -97,7 +123,8 @@
         <li>Remove a device’s access in Settings to disconnect it and stop it from connecting again.</li>
       </ol><p>Keep your connection code private. Anyone who uses it can control the work running on your computer.</p></details>
       <details><summary>What information can Shahi see?</summary><p>Shahi’s connection service and its hosting provider, Cloudflare, can see connection information, such as your internet address, device identifiers, and when and how much data is sent. This helps diagnose connection problems and misuse. They cannot read the messages sent through this protected connection.</p><p>Your connected devices can read your messages, so keep them secure. The web app relies on software delivered by getshahi.dev. If you turn on notifications, notification providers receive their contents separately. Encryption cannot protect a device that someone has broken into or prevent connection outages.</p><p>Shahi has internal security reviews, but has not been independently certified. The security guide below explains the encryption in detail.</p></details>
-      <div class="security-links"><a class="quiet-link" href="https://github.com/iYassr/shahi/blob/master/docs/connection-security.md">Illustrated security guide <span aria-hidden="true">↗</span></a><a class="quiet-link" href="/privacy">Data and privacy <span aria-hidden="true">↗</span></a></div>
+      <p class="connection-note">Prefer no third party in the path? The iPhone app can connect over your own SSH instead of the relay.</p>
+      <div class="security-links"><a class="quiet-link" href="https://github.com/iYassr/shahi/blob/master/docs/connection-security.md">Illustrated security guide <span aria-hidden="true">↗</span></a><a class="quiet-link" href="https://github.com/iYassr/shahi#how-it-connects">Connection options <span aria-hidden="true">↗</span></a><a class="quiet-link" href="/privacy">Data and privacy <span aria-hidden="true">↗</span></a></div>
     </section>
 
     <section class="beta" id="ios-beta" aria-labelledby="beta-title">
@@ -113,12 +140,6 @@
       </form>
     </section>
 
-    <section class="setup" id="quick-start" aria-labelledby="setup-title">
-      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>First install herdr, the app that keeps your AI assistants running, on your Mac or Linux computer. Then paste these two lines into its terminal (the window where you type commands). Open Shahi on your phone and scan the code that appears.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a></div>
-      <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
-    </section>
-    <p class="connection-note">Advanced: already use SSH to access your computer? You can use that connection in the mobile app. <a href="https://github.com/iYassr/shahi#how-it-connects">Connection options</a></p>
   </main>
   <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
 </div>
