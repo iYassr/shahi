@@ -131,6 +131,16 @@ test("release requirements match the implemented and tested adapter contracts", 
   expect(definition.transport).toBe(RELAY_PROTOCOL);
 });
 
+// Every release before 0.3.7 went out with the same one-line boilerplate the
+// workflow hard-coded, so none said what changed. The workflow now publishes
+// plugin/releases/notes/<version>.md and fails without it; this fails first.
+test("every release ships a changelog written for it", async () => {
+  const { default: definition } = await import("./release.json");
+  const notes = join(import.meta.dir, "notes", `${definition.version}.md`);
+  expect(existsSync(notes)).toBe(true);
+  expect(readFileSync(notes, "utf8")).toMatch(/^### /m);
+});
+
 test("the version /api/meta and shahi.status report is the release being run", async () => {
   // /api/meta's serverVersion is server/package.json's version, which stopped
   // being bumped at 0.3.4 while releases went on to 0.3.6, so a computer

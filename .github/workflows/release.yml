@@ -61,7 +61,7 @@ jobs:
             bun plugin/releases/published.ts dist/published/release.json dist/release/release.json dist/published/shahi-service.tar.gz dist/channels/stable/catalog.json dist/channels/beta/catalog.json
             cp dist/published/release.json dist/release/release.json
           else
-            gh release create "$TAG" dist/release/shahi-service.tar.gz dist/release/release.json --target "$GITHUB_SHA" --title "Shahi $VERSION" --notes "Approved computer service, service manager, and web app. See the signed channel catalog for compatibility." --prerelease
+            gh release create "$TAG" dist/release/shahi-service.tar.gz dist/release/release.json --target "$GITHUB_SHA" --title "Shahi $VERSION" --notes-file "plugin/releases/notes/$VERSION.md" --prerelease
           fi
           mkdir -p dist/previous
           # A channel must already be bootstrapped. Network errors must never
