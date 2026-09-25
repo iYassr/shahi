@@ -126,7 +126,12 @@ export const trust = (): ParsedPrompt => ({
     "well-known open source project, or work from your team). If not, take a moment to review " +
     "what's in this folder first.",
   answer: "cursor",
-  context: ["Claude Code'll be able to read, edit, and execute files here.", "Security guide"],
+  context: [
+    "Accessing workspace:",
+    "/home/operator/projects/shahi",
+    "Claude Code'll be able to read, edit, and execute files here.",
+    "Security guide",
+  ],
   options: [
     { index: 1, label: "No, exit", selected: false },
     { index: 2, label: "Yes, I trust this folder", selected: true },

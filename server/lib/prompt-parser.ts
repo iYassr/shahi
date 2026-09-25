@@ -393,9 +393,16 @@ function findQuestion(
    * sits between them, the dialog's own block above the question is the
    * context: from the question up to the rule Claude draws as the dialog's top
    * border, and nothing past it.
+   *
+   * The folder-trust question needs the same, and is found by the fallback
+   * because it ends "…first." rather than "?". Its block above is
+   * "Accessing workspace:" and the folder itself, and without it the card
+   * offered "Yes, I trust this folder" without saying which folder
+   * (pre-release bug hunt, B86). Placed first, since it sits above whatever
+   * lies between the question and the options.
    */
   const context = joined.slice(0, asked).reverse();
-  if (ended === 0) context.push(...dialogAbove(lines, paragraphs[0]!.top));
+  if (ended <= 0) context.unshift(...dialogAbove(lines, paragraphs[asked]!.top));
 
   return {
     // Nearest-first while walking up, so everything before the question in that

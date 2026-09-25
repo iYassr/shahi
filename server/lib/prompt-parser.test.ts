@@ -407,14 +407,31 @@ describe("an unnumbered cursor menu", () => {
         "what's in this folder first.",
     );
     // What sits between the question and the rows is context, same as codex's
-    // command block — it is the sentence that says what trusting means.
+    // command block — it is the sentence that says what trusting means. The
+    // dialog's block above the question comes first: see the next test.
     expect(parsed!.context).toEqual([
+      "Accessing workspace:",
+      "/private/tmp/trust-probe.vt9D",
       "Claude Code'll be able to read, edit, and execute files here.",
       "Security guide",
     ]);
     expect(parsed!.options).toEqual([
       { index: 1, label: "No, exit", selected: false },
       { index: 2, label: "Yes, I trust this folder", selected: true },
+    ]);
+  });
+
+  // Pre-release bug hunt, B86: the card offered "Yes, I trust this folder"
+  // without the folder, because the dialog's block above was only read for a
+  // question ending in "?" and this one ends "…first.".
+  test("the folder-trust card names the folder being trusted", () => {
+    const parsed = parsePrompt(readFixture("blocked__trust-folder__text.txt"))!;
+    expect(parsed.context?.slice(0, 2)).toEqual(["Accessing workspace:", "/private/tmp/trust-probe.vt9D"]);
+    // No rule above the question, no dialog block: nothing past the prompt is borrowed.
+    const unbounded = readFixture("blocked__trust-folder__text.txt").replace(/^─+$/mu, "");
+    expect(parsePrompt(unbounded)!.context).toEqual([
+      "Claude Code'll be able to read, edit, and execute files here.",
+      "Security guide",
     ]);
   });
 

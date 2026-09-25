@@ -194,7 +194,10 @@ Claude Code permission dialogs put the tool and command above a generic
 question. When the question sits directly on the options, the prompt's context
 is the dialog's block between its full-width top rule (20 or more `─`) and the
 question, in screen order, one entry per paragraph, keeping line breaks and
-relative indentation; with no rule on screen there is no context.
+relative indentation; with no rule on screen there is no context. The
+folder-trust question, which ends "…first." and is found by the `?` inside
+it, gets the same block ahead of what sits under it, because that block is
+the folder being trusted.
 `AskUserQuestion` cards carry their header row (`☐ Colour`) as context.
 
 **The prompt parser requires exactly one cursor.** An agent writing a numbered
