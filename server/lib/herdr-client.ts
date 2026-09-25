@@ -150,6 +150,57 @@ class LineBuffer {
   }
 }
 
+/**
+ * Writes one request line in full, however little the socket takes at a time.
+ *
+ * Bun's `socket.write` does not queue: it hands the kernel what fits and
+ * returns how many bytes that was, and the rest is the caller's to write from
+ * `drain`. A macOS unix socket's send buffer is 8192 bytes
+ * (`net.local.stream.sendspace`), so every request line longer than that was
+ * cut short: herdr waited for a newline that never came, the call timed out
+ * after 5s, and nothing reached the pane. A pasted stack trace or 2,100 emoji
+ * was enough, and because a timeout may have delivered, a retry under the same
+ * message id was handed the same failure for ten minutes (pre-release bug
+ * hunt, B2). Linux's larger buffers are why the live suite never saw it.
+ *
+ * Returns the handler for both `open` and `drain`. Bytes, not a string, so
+ * the offset counts what the kernel took even when a multibyte character
+ * straddles the cut.
+ */
+function lineWriter(bytes: Uint8Array): (socket: Socket<undefined>) => void {
+  let sent = 0;
+  return (socket) => {
+    while (sent < bytes.length) {
+      // A view rather than `write(bytes, offset)`: Bun 1.4 checks that form's
+      // default length against the whole buffer and throws past the offset.
+      const wrote = socket.write(bytes.subarray(sent));
+      // Full (0) or closing (-1): `drain` calls again when there is room, and
+      // a closing socket is reported by `close`.
+      if (wrote <= 0) return;
+      sent += wrote;
+    }
+  };
+}
+
+/**
+ * The longest request line herdr reads. Measured on 0.9.1: a line of
+ * 1,048,563 bytes was answered, and one 64 bytes longer made herdr close the
+ * connection without a reply. That silence reads as "may have been
+ * delivered", so its failure was replayed to every retry; refused here,
+ * before a byte is written, the retry can run again.
+ */
+export const MAX_REQUEST_BYTES = 1024 * 1024;
+
+/** A request too long for herdr to read, refused before anything was written. */
+export class RequestTooLarge extends Error {
+  /** POSIX's "message too long"; `herdr-delivery.ts` reads it as nothing sent. */
+  readonly code = "EMSGSIZE";
+  constructor(method: string, bytes: number) {
+    super(`herdr ${method} was not sent: ${bytes} bytes is more than herdr reads in one request`);
+    this.name = "RequestTooLarge";
+  }
+}
+
 export interface HerdrClientOptions {
   socketPath?: string;
   /** Per-request timeout. herdr replies in single-digit ms locally. */
@@ -182,7 +233,9 @@ export class HerdrClient {
     options: { timeoutMs?: number } = {},
   ): Promise<ResultFor<M>> {
     const id = `shahi:${++this.#requestSeq}`;
-    const payload = `${JSON.stringify({ id, method, params })}\n`;
+    const line = new TextEncoder().encode(`${JSON.stringify({ id, method, params })}\n`);
+    if (line.length > MAX_REQUEST_BYTES) throw new RequestTooLarge(method, line.length);
+    const write = lineWriter(line);
     const timeoutMs = options.timeoutMs ?? this.#timeoutMs;
 
     return new Promise<ResultFor<M>>((resolve, reject) => {
@@ -210,7 +263,8 @@ export class HerdrClient {
       bunConnect({
         unix: this.socketPath,
         socket: {
-          open: (s) => void s.write(payload),
+          open: write,
+          drain: write,
           data: (_s, chunk) => {
             for (const line of lines.push(chunk)) {
               let msg: SuccessResponse | ErrorResponse;
@@ -389,6 +443,17 @@ export class HerdrSubscriber {
     const lines = new LineBuffer();
     const generation = this.#generation;
     const current = () => !this.#stopped && generation === this.#generation;
+    // Short today, but written the same way as every request: a topic list
+    // past the send buffer would otherwise subscribe to nothing, silently.
+    const write = lineWriter(
+      new TextEncoder().encode(
+        `${JSON.stringify({
+          id: "shahi:subscribe",
+          method: "events.subscribe",
+          params: { subscriptions: this.topics },
+        })}\n`,
+      ),
+    );
 
     bunConnect({
       unix: this.socketPath,
@@ -399,13 +464,10 @@ export class HerdrSubscriber {
             return;
           }
           this.#socket = s;
-          s.write(
-            `${JSON.stringify({
-              id: "shahi:subscribe",
-              method: "events.subscribe",
-              params: { subscriptions: this.topics },
-            })}\n`,
-          );
+          write(s);
+        },
+        drain: (s) => {
+          if (current()) write(s);
         },
         data: (_s, chunk) => {
           if (!current()) return;

@@ -78,6 +78,13 @@ a report from a phone.
 - **One response per connection.** The socket API closes after answering, though
   the docs describe persistent connections. Open one socket per RPC. The single
   exception is `events.subscribe`, which streams.
+- **A request is one line, written whole, and at most 1 MiB.** herdr acts on
+  nothing until the newline arrives, and Bun's `socket.write` takes only what
+  the kernel's buffer holds — 8192 bytes on a macOS unix socket — so the rest
+  must follow from `drain`. Every request over 8 KB used to time out having
+  delivered nothing, which Linux's larger buffers hid from CI. A line over
+  1 MiB (measured on 0.9.1) is closed unanswered, so the client refuses it
+  unwritten and `/prompt` answers 413 above 256 KB.
 - **`revision` cannot detect output changes.** It tracked structural changes
   only: four polls returned `revision: 0` while the text changed. Hash the text
   yourself.

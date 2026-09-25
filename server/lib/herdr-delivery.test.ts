@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { HerdrClient, HerdrError } from "./herdr-client";
+import { HerdrClient, HerdrError, RequestTooLarge } from "./herdr-client";
 import { refusedBeforeDelivery, trackDelivery } from "./herdr-delivery";
 
 /** The error a real client gives when herdr's socket is not there. */
@@ -12,6 +12,13 @@ async function noSocket(): Promise<unknown> {
 
 test("a missing herdr socket is recognised as nothing sent", async () => {
   expect(refusedBeforeDelivery(await noSocket())).toBe(true);
+});
+
+// herdr closes the connection, unanswered, on a request over 1 MiB, and that
+// silence counted as delivered: the retry got the same failure for ten
+// minutes (pre-release bug hunt, B2). The client now refuses it unwritten.
+test("a request too long for herdr to read is nothing sent", () => {
+  expect(refusedBeforeDelivery(new RequestTooLarge("pane.send_text", 2_000_000))).toBe(true);
 });
 
 test("herdr's refusals about the target are nothing sent; other answers are not", () => {

@@ -189,6 +189,23 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     expect(text.includes(`shahi-ran-${nonce}`)).toBe(true);
   });
 
+  // Past every socket buffer: a macOS unix socket takes 8192 bytes per write,
+  // a Linux one about 208 KB, and a request cut at either used to time out
+  // having delivered nothing (pre-release bug hunt, B2). `wc -c` reads the
+  // text off the terminal in short lines and says how much arrived; a
+  // heredoc at the shell's own prompt was tried first and took zsh longer
+  // than the test's timeout to echo back.
+  test("text larger than the socket's send buffer reaches the pane whole", async () => {
+    const rpc = (method: string, params: Record<string, unknown>) =>
+      client.rpc(method as never, params as never) as Promise<unknown>;
+    await submitPrompt(rpc, { paneId, isAgent: false, status: null }, `wc -c | tr -d ' ' | sed 's/^/shahi-bytes-/'`);
+    const body = `${"y".repeat(99)}\n`.repeat(2_600); // 260 KB
+    await client.rpc("pane.send_text", { pane_id: paneId, text: body });
+    await client.rpc("pane.send_keys", { pane_id: paneId, keys: ["ctrl+d"] });
+    const screen = await eventually(() => visible(paneId), (t) => t.includes(`shahi-bytes-${body.length}`), 20_000);
+    expect(screen).toContain(`shahi-bytes-${body.length}`);
+  }, 30_000);
+
   test("agent.prompt refuses a pane that is not an agent, with a code", async () => {
     let caught: unknown;
     try {

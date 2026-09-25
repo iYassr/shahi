@@ -19,8 +19,11 @@
  */
 import { HerdrError } from "./herdr-client";
 
-/** Opening the socket failed, so the request was never written to it. */
-const NOT_CONNECTED = new Set(["ENOENT", "ECONNREFUSED", "EACCES", "ENOTSOCK"]);
+/**
+ * The request was never written: opening the socket failed, or (`EMSGSIZE`)
+ * the client refused a request longer than herdr reads (`RequestTooLarge`).
+ */
+const NOT_CONNECTED = new Set(["ENOENT", "ECONNREFUSED", "EACCES", "ENOTSOCK", "EMSGSIZE"]);
 
 /**
  * Refusals about the target itself, made before herdr acts on it.

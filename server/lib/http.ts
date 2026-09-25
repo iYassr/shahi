@@ -165,6 +165,14 @@ const MAX_REQUEST_BODY_BYTES = 40 * 1024 * 1024;
 /** A phone mints these as ~20 characters; anything long is not a message id. */
 const MAX_CLIENT_MESSAGE_ID = 128;
 
+/**
+ * The longest message a pane is sent, in UTF-8 bytes. herdr reads a request
+ * of at most 1 MiB (`MAX_REQUEST_BYTES`), and JSON can double text full of
+ * quotes and backslashes; a quarter of that is about 2,600 lines of a pasted
+ * log, and says "too long" before herdr is asked rather than after.
+ */
+export const MAX_PROMPT_BYTES = 256 * 1024;
+
 /** Closing a socket because its session is no longer valid (revoked or expired). */
 export const CLOSE_SESSION_EXPIRED = 4001;
 
@@ -1165,6 +1173,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (typeof body.text !== "string" || body.text.length === 0) {
               return json({ error: "text is required" }, { status: 400 });
+            }
+            if (Buffer.byteLength(body.text) > MAX_PROMPT_BYTES) {
+              return json({ error: `This message is too long to send: the limit is ${MAX_PROMPT_BYTES / 1024} KB.` }, { status: 413 });
             }
             if (
               typeof body.clientMessageId !== "string" ||

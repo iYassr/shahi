@@ -18,7 +18,7 @@ import { Auth } from "./auth";
 import { Devices, Pairing } from "./pairing";
 import type { Config } from "./config";
 import { HerdrClient } from "./herdr-client";
-import { createServer } from "./http";
+import { createServer, MAX_PROMPT_BYTES } from "./http";
 import { Poller } from "./poller";
 import { PushService } from "./push";
 import { SessionStore } from "./state";
@@ -604,6 +604,19 @@ describe("writes and notification ownership", () => {
     expect(s.calls.slice(start).filter(c => c.method === "pane.send_text")).toHaveLength(1);
     expect(s.calls.slice(start).filter(c => c.method === "pane.send_keys")).toHaveLength(1);
     expect((await post(`/api/panes/${PANE}/prompt`, { ...body, text: "changed" })).status).toBe(409);
+  });
+
+  // B2 in the pre-release bug hunt: herdr hangs up on a request over 1 MiB,
+  // so a message has a limit, said in words before herdr is asked.
+  test("a message over the size limit is a readable 413 and reaches nothing", async () => {
+    const start = s.calls.length;
+    const tooLong = await post(`/api/panes/${PANE}/prompt`, { text: "é".repeat(MAX_PROMPT_BYTES / 2 + 1), clientMessageId: "too-long" });
+    expect(tooLong.status).toBe(413);
+    expect(((await tooLong.json()) as { error: string }).error).toContain("too long");
+    expect(s.calls.slice(start).filter(c => c.method.startsWith("pane.send"))).toHaveLength(0);
+    // A long pasted log under it is sent as usual.
+    const log = await post(`/api/panes/${PANE}/prompt`, { text: `${"at frame (file.ts:1:1)\n".repeat(400)}`, clientMessageId: "long-log" });
+    expect(log.status).toBe(200);
   });
 
   test("retrying startup creates just one tab and agent", async () => {
