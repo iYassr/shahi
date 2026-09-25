@@ -38,6 +38,7 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import { useKeyboardHeight } from "@/lib/keyboard";
 import { CopyButton, CopyOnHold } from "@/components/copy";
 import { PromptContext } from "@/components/prompt-context";
+import { paneTitle } from "@/components/conversation-label";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
@@ -566,6 +567,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
+  const title = pane ? paneTitle(pane) : paneId;
   // A later snapshot listing it means the 404 raced its creation: look again.
   const listed = !!pane;
   useEffect(() => { if (listed && goneRef.current) setGone(false); }, [listed, setGone]);
@@ -972,10 +974,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               style={styles.headTitle}
               testID="pane-title"
               accessibilityShowsLargeContentViewer
-              accessibilityLargeContentTitle={`${pane?.title ?? paneId}, ${pane?.agent ?? "shell"} · ${paneId}`}
+              accessibilityLargeContentTitle={`${title}, ${pane?.agent ?? "shell"} · ${paneId}`}
             >
               <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {pane?.title ?? paneId}
+                {title}
               </Text>
               <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{pane?.agent ?? "shell"} · {paneId}</Text>
             </View>
@@ -1020,10 +1022,14 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       >
         <ConnectionHealth />
         {/* Readable and dismissible, instead of one truncated line squeezed
-            into the old topbar. */}
+            into the old topbar. Not cut at all: at two lines the refusal for a
+            message typed while a menu is open ended, on every iPhone width,
+            before "…would press Enter on the highlighted option", which is the
+            reason (pre-release bug hunt). The area scrolls, so a long one
+            still leaves the composer on screen. */}
         {error && (
           <Pressable accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error}`} style={styles.banner} onPress={() => setError(null)}>
-            <Text style={styles.bannerText} numberOfLines={2}>{error}</Text>
+            <Text style={styles.bannerText}>{error}</Text>
             <Text style={styles.bannerClose}>✕</Text>
           </Pressable>
         )}

@@ -28,7 +28,7 @@ import { useSession } from "@/lib/session";
 import { theme, statusColor } from "@/lib/theme";
 import { agentLabel } from "@shahi/shared";
 import { Avatar } from "@/components/avatar";
-import { conversationLabel } from "@/components/conversation-label";
+import { conversationLabel, paneTitle } from "@/components/conversation-label";
 import { Icon } from "@/components/icons";
 
 export function Spaces({ session }: { session: Session | null }) {
@@ -198,7 +198,7 @@ const PaneRow = memo(function PaneRow({
       <View style={styles.rowBody}>
         <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
           <Text style={[styles.rowTitle, largeText && { flex: 0 }]} numberOfLines={largeText ? 2 : 1}>
-            {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
+            {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : "shell"}
           </Text>
           {/* Same quieting as the Agents rows: idle says nothing, and the
               second line only exists when there is something to preview. */}

@@ -130,6 +130,51 @@ test("a conversation row says each fact once, title first", () => {
   expect(label).toBe("Convert PDF exports, Claude, working, project, Reading… 12s");
 });
 
+// herdr omits a title that is nothing once stripped, and the sidecar then
+// passes the raw one on, so a program that sets a title of spaces gave a row
+// with no name, read aloud as "   , Claude, idle…" (pre-release bug hunt).
+test("a pane whose title is only spaces is named by its pane id, on screen and aloud", () => {
+  const blank: DashboardPane = { ...working, paneId: "w1:p3", status: "idle", title: "   ", activity: null, preview: null, cwd: null };
+  const panes = mockState.session!.panes;
+  mockState.session = { panes: [...panes, blank] };
+  try {
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    expect(view.getByTestId("row-w1:p3").props.accessibilityLabel).toBe("w1:p3, Claude, idle, project");
+    expect(view.getByText("w1:p3")).toBeTruthy();
+  } finally {
+    mockState.session = { panes };
+  }
+});
+
+// The waiting card said "untitled" for a pane its row calls by its id
+// (pre-release bug hunt): one conversation, two names.
+test("a waiting card with no title is named by its pane id, as its row is", () => {
+  const panes = mockState.session!.panes;
+  mockState.session = { panes: [{ ...waiting, title: null }, working] };
+  try {
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    expect(view.getByLabelText("Waiting on you, w1:p1, project, Claude")).toBeTruthy();
+    expect(view.queryByText("untitled")).toBeNull();
+  } finally {
+    mockState.session = { panes };
+  }
+});
+
+test.each([
+  ["All", [{ ...working, paneId: "w1:p9", status: "idle" as const }], "1 AGENT"],
+  ["Shells", [{ ...working, paneId: "w1:p9", status: "idle" as const, isAgent: false, agent: null, title: "zsh" }, { ...working, paneId: "w1:p8", status: "idle" as const }], "1 SHELL"],
+])("one conversation is counted in the singular (%s)", (chip, panes, heading) => {
+  const before = mockState.session;
+  mockState.session = { panes: panes as DashboardPane[] };
+  try {
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    if (chip !== "All") fireEvent.press(view.getByLabelText(chip));
+    expect(view.getByText(heading)).toBeTruthy();
+  } finally {
+    mockState.session = before;
+  }
+});
+
 describe("at accessibility text sizes", () => {
   const window = Dimensions.get("window");
   const screen = Dimensions.get("screen");

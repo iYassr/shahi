@@ -1879,6 +1879,37 @@ test("a send that failed because the computer was offline stops saying so once t
   }
 });
 
+// Capped at two lines, the refusal for a message typed while a menu is open
+// ended on every iPhone width before its point: "…would press Enter on the
+// highlighted option" (pre-release bug hunt).
+test("a refusal is shown in full, not cut before its reason", async () => {
+  const refusal = "This agent is waiting on a choice. Answer it with the option buttons or the keys; " +
+    "a message sent now would press Enter on the highlighted option.";
+  mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+  mocked.send.mockRejectedValue(new Error(refusal));
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "no");
+  fireEvent.press(view.getByText("Send"));
+  const banner = await view.findByText(refusal);
+  expect(banner.props.numberOfLines).toBeUndefined();
+});
+
+// The header named a pane by a title of spaces: a blank title (pre-release bug hunt).
+test("a pane whose title is only spaces is titled by its pane id", async () => {
+  const panes = mockSession.session.panes;
+  mockSession.session.panes = [{ ...panes[0]!, title: "   " }];
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    const header = render(mockStackOptions.current!.headerTitle!());
+    expect(header.getByText(PANE)).toBeTruthy();
+  } finally {
+    mockSession.session.panes = panes;
+  }
+});
+
 test("a refusal from the computer is not cleared by a reconnect", async () => {
   const previous = mockSession.link;
   try {

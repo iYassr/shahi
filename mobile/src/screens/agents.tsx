@@ -21,7 +21,7 @@ import { GreetingLogo } from "@/components/greeting-logo";
 import { theme, statusColor } from "@/lib/theme";
 import { AgentIcon, Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
-import { conversationLabel } from "@/components/conversation-label";
+import { conversationLabel, paneTitle } from "@/components/conversation-label";
 import { PromptContext } from "@/components/prompt-context";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
@@ -234,7 +234,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
               <Text style={styles.groupLabel}>
                 {active === "inbox" ? "UPDATES" : blocked.length > 0
                   ? "EVERYTHING ELSE"
-                  : `${rest.length} ${active === "shells" ? "SHELLS" : "AGENTS"}`}
+                  : `${rest.length} ${active === "shells" ? "SHELL" : "AGENT"}${rest.length === 1 ? "" : "S"}`}
               </Text>
             )}
           </>
@@ -251,7 +251,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             onPin={togglePin}
             onActions={setActing}
           />}
-          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${item.title ?? item.paneId} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Reviewed</Text></Pressable>}
+          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${paneTitle(item)} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Reviewed</Text></Pressable>}
           </View>
         )}
         // Virtualization tuning: RN warned this list was "slow to update"
@@ -285,7 +285,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <Pressable accessibilityRole="button" accessibilityLabel="Dismiss actions" style={styles.sheetBack} onPress={() => setActing(null)} />
           <View style={styles.sheetCard}>
               <Text style={styles.sheetTitle} numberOfLines={1}>
-                {acting.title ?? acting.paneId}
+                {paneTitle(acting)}
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -367,7 +367,7 @@ const Row = memo(function Row({
         <View style={styles.rowBody}>
           <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
             <Text style={[styles.rowTitle, largeText && { flex: 0 }]} numberOfLines={largeText ? 2 : 1}>
-              {pane.title ?? pane.paneId}
+              {paneTitle(pane)}
             </Text>
             {pinned && <Icon name="pin" color={theme.dim} size={12} />}
             {/* "idle" is the resting state of most of a real herd; saying it
@@ -490,7 +490,7 @@ function BlockedCard({
     });
   }
 
-  const title = pane.title ?? "untitled";
+  const title = paneTitle(pane);
   const kind = agentLabel(pane.agent ?? "agent");
   return (
     <View style={styles.blocked}>
