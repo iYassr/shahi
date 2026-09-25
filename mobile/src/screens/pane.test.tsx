@@ -1812,6 +1812,45 @@ describe("spoken labels", () => {
     expect(view.getByTestId("go-to-latest").props.accessibilityLabel).toBe("2 new messages. Go to latest");
   });
 
+  // The terminal is laid over the reader rather than replacing it, and the
+  // reader stayed in the accessibility tree underneath: VoiceOver could read a
+  // conversation that was not on screen, and the terminal's own label ended in
+  // "Vertical scroll bar, 1 page" (pre-release bug hunt).
+  test("in Screen view the conversation under the terminal is hidden from VoiceOver", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Hidden while the terminal is up.")]));
+    mocked.pane.mockResolvedValue({ ...detail(), frame: { paneId: PANE, ansi: "", text: "$ ls\nREADME.md", prompt: null, activity: null, at: 1 } });
+    const view = render(<Pane paneId={PANE} initialView="screen" />);
+    await settle();
+    // Still mounted, so returning to Read keeps its place, but out of reach of
+    // anything that queries as assistive technology does.
+    expect(view.getByText(/Hidden while the terminal is up\./, { includeHiddenElements: true })).toBeTruthy();
+    expect(view.queryByText(/Hidden while the terminal is up\./)).toBeNull();
+    const list = () => view.UNSAFE_getByType(FlatList);
+    expect(list().props.accessibilityElementsHidden).toBe(true);
+    expect(list().props.importantForAccessibility).toBe("no-hide-descendants");
+    // The terminal is read as its text, not as the views that scroll it.
+    let region = view.getByTestId("terminal-across").parent;
+    while (region && region.props.accessibilityHint !== "Long press to copy") region = region.parent;
+    expect(region!.props.accessibilityLabel).toBe("$ ls\nREADME.md");
+
+    fireEvent.press(view.getByRole("button", { name: "Read" }));
+    expect(list().props.accessibilityElementsHidden).toBe(false);
+    expect(list().props.importantForAccessibility).toBe("auto");
+    expect(view.getByText(/Hidden while the terminal is up\./)).toBeTruthy();
+  });
+
+  // ↑ and ↓ were about 35pt wide (pre-release bug hunt).
+  test("every key in the key bar is at least 44 points square", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} initialView="screen" />);
+    await settle();
+    for (const name of ["Escape", "Up arrow", "Down arrow", "Return"]) {
+      const style = StyleSheet.flatten(view.getByRole("button", { name }).props.style);
+      expect(style.minWidth).toBeGreaterThanOrEqual(44);
+      expect(style.minHeight).toBeGreaterThanOrEqual(44);
+    }
+  });
+
   test("a prompt's options are read as their words, and the row under the cursor is announced as selected", async () => {
     const prompt: ParsedPrompt = {
       question: "Do you want to proceed?",

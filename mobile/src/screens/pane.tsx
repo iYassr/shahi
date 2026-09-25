@@ -1011,6 +1011,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         <View style={styles.body}>
         <FlatList
           testID="conversation-list"
+          // Under the terminal the reader stays mounted (see the overlay
+          // below), and it stayed in the accessibility tree too: VoiceOver read
+          // a conversation that was not on screen (pre-release bug hunt).
+          accessibilityElementsHidden={view === "screen"}
+          importantForAccessibility={view === "screen" ? "no-hide-descendants" : "auto"}
           CellRendererComponent={cells.CellRendererComponent}
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
@@ -1354,16 +1359,23 @@ export function Block({
 
   if (block.kind === "text") return <Markdown text={block.text} onOpenFile={onOpenFile} />;
 
+  // Each toggle below says what it is in words and its state as a state. A
+  // pressable without a label is read as all of its text: the caret glyph
+  // aloud ("▸, Bash, …"), and, for an open thinking block, the whole reasoning
+  // as the toggle's name (pre-release bug hunt). The reasoning therefore sits
+  // beside the toggle, not inside it.
   if (block.kind === "thinking") {
     return (
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((o) => !o)}>
-        <Text style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</Text>
+      <View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Thinking" accessibilityState={{ expanded: open }} style={styles.thinkingHead} onPress={() => setOpen((o) => !o)}>
+          <Text style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</Text>
+        </Pressable>
         {open && (
           <Text style={styles.thinking} selectable>
             {block.text}
           </Text>
         )}
-      </Pressable>
+      </View>
     );
   }
 
@@ -1372,7 +1384,13 @@ export function Block({
   // Tool calls dominate a real transcript; collapsed, they stop drowning it.
   return (
     <View style={styles.tool}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.toolHead} onPress={() => setOpen((o) => !o)}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={[block.name, block.summary, block.result?.isError ? "failed" : null].filter(Boolean).join(", ")}
+        accessibilityState={{ expanded: open }}
+        style={styles.toolHead}
+        onPress={() => setOpen((o) => !o)}
+      >
         <Text style={styles.toolCaret}>{open ? "▾" : "▸"}</Text>
         <Text style={styles.toolName}>{block.name}</Text>
         <Text style={styles.toolSummary} numberOfLines={1}>{block.summary}</Text>
@@ -1970,7 +1988,8 @@ const styles = StyleSheet.create({
   msgSystem: { borderLeftWidth: 2, borderLeftColor: theme.lineBright, paddingHorizontal: 12, opacity: 0.85 },
   whoSystem: { color: theme.dim },
 
-  thinkingLabel: { color: theme.dim, fontSize: 11, letterSpacing: 1, paddingVertical: 6 },
+  thinkingHead: { minHeight: 44, justifyContent: "center" },
+  thinkingLabel: { color: theme.dim, fontSize: 11, letterSpacing: 1 },
   thinking: { color: theme.dim, fontSize: 13, lineHeight: 19, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: theme.lineBright },
 
   err: { color: theme.rose, fontSize: 13, padding: 16 },
@@ -1999,7 +2018,7 @@ const styles = StyleSheet.create({
   fileImage: { flex: 1, width: "100%" },
 
   tool: { marginBottom: 6 },
-  toolHead: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 7 },
+  toolHead: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 44 },
   toolCaret: { color: theme.lineBright, fontFamily: theme.mono, fontSize: 12 },
   toolName: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
   toolSummary: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, flex: 1 },
@@ -2049,7 +2068,9 @@ const styles = StyleSheet.create({
   keys: { flexGrow: 0 },
   key: {
     minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: 12,
+    alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: theme.lineBright,

@@ -26,6 +26,10 @@ export function CopyOnHold({ text, style, children }: { text: string; style?: St
       // parent has room for.
       style={style}
       accessibilityRole="button"
+      // The text itself. Left to build a label from its children, iOS added
+      // the scroll views' indicators, so the terminal read "…, Vertical
+      // scroll bar, 1 page" (pre-release bug hunt).
+      accessibilityLabel={text}
       accessibilityHint="Long press to copy"
       onLongPress={() => {
         void Clipboard.setStringAsync(text);

@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 import type { LogBlock } from "@shahi/shared";
 import { Block } from "./pane";
 
@@ -95,5 +96,37 @@ describe("the blocks a transcript is made of", () => {
   test("a tool call with no file offers nothing to open", () => {
     const view = draw({ kind: "tool", name: "Bash", summary: "ls", result: null });
     expect(view.queryByText("open")).toBeNull();
+  });
+});
+
+// VoiceOver read "▸, Bash, bun test…" and "▸ Thinking", and once a thinking
+// block was open its whole reasoning became the toggle's label. Both rows were
+// also under 44pt tall: about 30pt and 25pt (pre-release bug hunt).
+describe("how a row is spoken and touched", () => {
+  const tall = (node: { props: Record<string, any> }) =>
+    expect(StyleSheet.flatten(node.props.style).minHeight).toBeGreaterThanOrEqual(44);
+
+  test("a tool call is read as its name and command, without the caret", () => {
+    const view = draw({ kind: "tool", name: "Bash", summary: "bun test", result: { text: "1 fail", isError: true, truncated: false, images: [] } });
+    const row = view.getByRole("button", { name: "Bash, bun test, failed" });
+    expect(row.props.accessibilityState).toMatchObject({ expanded: false });
+    tall(row);
+  });
+
+  test("a thinking block is read as Thinking, open or closed, and its text is not the toggle's label", () => {
+    const view = draw({ kind: "thinking", text: "a private deliberation" });
+    const toggle = view.getByRole("button", { name: "Thinking" });
+    expect(toggle.props.accessibilityState).toMatchObject({ expanded: false });
+    tall(toggle);
+    fireEvent.press(toggle);
+    const open = view.getByRole("button", { name: "Thinking" });
+    expect(open.props.accessibilityState).toMatchObject({ expanded: true });
+    // The reasoning sits beside the toggle, where it is read and selected on
+    // its own, not folded into what the toggle says.
+    let node = view.getByText("a private deliberation").parent;
+    while (node) {
+      expect(node).not.toBe(open);
+      node = node.parent;
+    }
   });
 });

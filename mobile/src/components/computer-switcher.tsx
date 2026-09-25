@@ -38,13 +38,20 @@ export function ComputerSwitcher() {
       <View style={styles.overlay}><View style={styles.sheet}>
         <Text style={styles.title}>Computers</Text>
         <ScrollView>
-          {computers.map(c => <Pressable key={c.id} accessibilityRole="button" testID={`quick-computer-${c.id}`} style={styles.row} onPress={() => {
-            void switchComputer(c.id).then(() => { setOpen(false); showComputerHome(); }).catch(e => setError(e.message));
-          }}>
-            <Text style={styles.title}>{c.id === activeComputerId ? "✓ " : ""}{c.name}</Text>
-            <Text style={{ color: theme.dim, fontSize: 12 }}>{c.address}</Text>
-            <Text style={{ color: c.link === "live" ? theme.mint : theme.dim }}>{c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…"}</Text>
-          </Pressable>)}
+          {computers.map(c => {
+            const status = c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…";
+            // Which one is current is a state, said as one; the tick is for
+            // the eye. Read from the row's text it was "check mark, stub-box"
+            // with no selected trait (pre-release bug hunt).
+            return <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`${c.name}, ${c.address}, ${status}`}
+              accessibilityState={{ selected: c.id === activeComputerId }} testID={`quick-computer-${c.id}`} style={styles.row} onPress={() => {
+              void switchComputer(c.id).then(() => { setOpen(false); showComputerHome(); }).catch(e => setError(e.message));
+            }}>
+              <Text style={styles.title}>{c.id === activeComputerId ? "✓ " : ""}{c.name}</Text>
+              <Text style={{ color: theme.dim, fontSize: 12 }}>{c.address}</Text>
+              <Text style={{ color: c.link === "live" ? theme.mint : theme.dim }}>{status}</Text>
+            </Pressable>;
+          })}
         </ScrollView>
         {!!error && <Text style={{ color: theme.rose }}>{error}</Text>}
         <Pressable accessibilityRole="button" style={styles.row} onPress={() => { setOpen(false); router.push("/computers"); }}><Text style={styles.action}>Manage computers</Text></Pressable>
@@ -58,5 +65,5 @@ const styles = StyleSheet.create({
   title: { color: theme.fg, fontSize: 17, fontWeight: "600" },
   overlay: { flex: 1, backgroundColor: "#0009", justifyContent: "center", padding: 24 },
   sheet: { maxHeight: "80%", backgroundColor: theme.surface, borderRadius: 18, padding: 20 },
-  row: { paddingVertical: 14, gap: 5 }, action: { color: theme.peach, fontSize: 16 },
+  row: { minHeight: 44, justifyContent: "center", paddingVertical: 14, gap: 5 }, action: { color: theme.peach, fontSize: 16 },
 });
