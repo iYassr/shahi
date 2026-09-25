@@ -487,6 +487,23 @@ describe("a page that rebound its own name to this machine", () => {
     expect((await raw(s.base, request("GET", "/api/meta", "box.tailnet.ts.net"))).status).toBe(403);
   });
 
+  // September 2026 pre-release bug hunt: the port was checked for 1–5 digits,
+  // so 99999 passed, `new URL` then threw outside the handler, and the answer
+  // was Bun's bare 500: no CSP, no nosniff, and not counted in diagnostics.
+  test("a Host with a port no socket can have is refused like any other, with every hardening header", async () => {
+    for (const host of ["127.0.0.1:99999", "localhost:65536", "[::1]:70000"]) {
+      const res = await raw(s.base, request("GET", "/api/meta", host));
+      expect({ host, status: res.status }).toEqual({ host, status: 403 });
+      expect(res.text.toLowerCase()).toContain("x-content-type-options: nosniff");
+      expect(res.text.toLowerCase()).toContain("content-security-policy:");
+    }
+    const box = await boot({ allowedHosts: ["box.tailnet.ts.net"] });
+    try {
+      expect((await raw(box.base, request("GET", "/api/meta", "box.tailnet.ts.net:99999"))).status).toBe(403);
+      expect((await raw(box.base, request("GET", "/api/meta", "box.tailnet.ts.net:65535"))).status).toBe(200);
+    } finally { box.stop(); }
+  });
+
   test("and the relay, which carries no browser's Host, is not affected", async () => {
     const meta = await s.dispatch(new Request("http://relay.invalid/api/meta"), "relay-host-test");
     expect(meta.status).toBe(200);

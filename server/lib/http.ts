@@ -274,6 +274,12 @@ const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
 
 /** Whether a request's Host names this machine: loopback, or a proxy the owner listed. */
 export function addressedHere(host: string, allowed: readonly string[]): boolean {
+  // Five digits let `127.0.0.1:99999` through, and Bun builds `req.url` from
+  // Host, so `new URL(req.url)` threw before any handler could answer: a bare
+  // 500 without the hardening headers, counted nowhere (September 2026
+  // pre-release bug hunt). No socket has such a port; nothing sent it here.
+  const port = /:(\d{1,5})$/.exec(host)?.[1];
+  if (port !== undefined && Number(port) > 65_535) return false;
   return LOOPBACK_HOST.test(host) || viaOwnersProxy(host, allowed);
 }
 
@@ -551,8 +557,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     // (pentest M1). `development: false` is pinned here rather than left to
     // NODE_ENV, which the service does not set, and the handler is the floor.
     development: false,
+    // Hardened like every other answer: this is the one that escapes the
+    // edge where `harden` is applied.
     error() {
-      return new Response("internal error", { status: 500 });
+      return harden(new Response("internal error", { status: 500 }));
     },
 
     // See MAX_REQUEST_BODY_BYTES: the upload limit is only real if the body
