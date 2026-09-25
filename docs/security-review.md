@@ -114,6 +114,10 @@ reviewer caught it: a proxy appends the address it saw to whatever header the
 client already sent (Go's reverse proxy and Cloudflare both append), so the
 first entry is the client's to choose and a limiter keyed on it could be
 reset per request by rotating the header. The last entry is the proxy's.
+Once the listener was confined to loopback, "the peer is loopback" meant every
+request, so the header let any local process reset its limit the same way
+(September 2026 pre-release bug hunt); it is now believed only when `Host`
+names a proxy the owner listed in `SHAHI_ALLOWED_HOSTS`.
 Refusals are 429 with `retry-after`. `/api/auth/login` is deliberately *not*
 behind it: it has `LoginThrottle`, whose behaviour this stream was told not
 to change. See L6 — and note for the pairing owner: a pairing code is a

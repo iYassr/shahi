@@ -48,24 +48,23 @@ describe("isRateLimitedPath", () => {
 });
 
 describe("clientAddress", () => {
-  test("believes x-forwarded-for only from a loopback peer, and only its last hop", () => {
+  test("believes x-forwarded-for through the owner's proxy from a loopback peer, and only its last hop", () => {
     // The proxy appends the address it saw; anything before it was typed by
     // the client. A limiter keyed on the first entry was resettable per request.
-    expect(clientAddress("127.0.0.1", "1.2.3.4, 100.64.0.7")).toBe("100.64.0.7");
-    expect(clientAddress("127.0.0.1", "spoofed, also-spoofed, 100.64.0.7")).toBe("100.64.0.7");
-    expect(clientAddress("::1", "100.64.0.7")).toBe("100.64.0.7");
+    expect(clientAddress("127.0.0.1", "1.2.3.4, 100.64.0.7", true)).toBe("100.64.0.7");
+    expect(clientAddress("127.0.0.1", "spoofed, also-spoofed, 100.64.0.7", true)).toBe("100.64.0.7");
+    expect(clientAddress("::1", "100.64.0.7", true)).toBe("100.64.0.7");
     // A remote peer's header is just a header.
-    expect(clientAddress("100.64.0.9", "1.2.3.4")).toBe("100.64.0.9");
-    expect(clientAddress("127.0.0.1", null)).toBe("127.0.0.1");
-    expect(clientAddress(null, "1.2.3.4")).toBe("unknown");
+    expect(clientAddress("100.64.0.9", "1.2.3.4", true)).toBe("100.64.0.9");
+    expect(clientAddress("127.0.0.1", null, true)).toBe("127.0.0.1");
+    expect(clientAddress(null, "1.2.3.4", true)).toBe("unknown");
   });
-});
 
-// The documented deployment binds the tailnet IP and `tailscale serve` dials
-// it, so the peer is the box's own address rather than loopback. Without this
-// every phone and laptop behind the proxy shared one bucket (review finding).
-test("clientAddress trusts x-forwarded-for when the peer is the bind address", () => {
-  expect(clientAddress("100.64.0.5", "100.64.0.7", "100.64.0.5")).toBe("100.64.0.7");
-  expect(clientAddress("100.64.0.5", "100.64.0.7", "127.0.0.1")).toBe("100.64.0.5");
-  expect(clientAddress("100.64.0.5", "100.64.0.7")).toBe("100.64.0.5");
+  // September 2026 pre-release bug hunt: every connection is from loopback,
+  // since the listener binds nothing else, so believing the header whenever
+  // the peer was loopback let any local process pick its own bucket.
+  test("does not believe x-forwarded-for on a request that did not come through the owner's proxy", () => {
+    expect(clientAddress("127.0.0.1", "10.0.0.1", false)).toBe("127.0.0.1");
+    expect(clientAddress("::1", "10.0.0.2", false)).toBe("::1");
+  });
 });

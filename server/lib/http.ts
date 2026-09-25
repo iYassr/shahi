@@ -274,10 +274,17 @@ const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i;
 
 /** Whether a request's Host names this machine: loopback, or a proxy the owner listed. */
 export function addressedHere(host: string, allowed: readonly string[]): boolean {
-  if (LOOPBACK_HOST.test(host)) return true;
+  return LOOPBACK_HOST.test(host) || viaOwnersProxy(host, allowed);
+}
+
+/**
+ * Whether a request's Host is a reverse proxy the owner listed in
+ * SHAHI_ALLOWED_HOSTS — the only requests whose `x-forwarded-for` a proxy
+ * wrote rather than the client (see `clientAddress`).
+ */
+export function viaOwnersProxy(host: string, allowed: readonly string[]): boolean {
   if (allowed.length === 0) return false;
-  const name = host.toLowerCase().replace(/:\d{1,5}$/, "");
-  return allowed.includes(name);
+  return allowed.includes(host.toLowerCase().replace(/:\d{1,5}$/, ""));
 }
 
 /**
@@ -562,7 +569,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         ));
       }
       const response = await measuredHandle(req, {
-        rateKey: clientAddress(srv.requestIP(req)?.address ?? null, req.headers.get("x-forwarded-for"), config.host),
+        rateKey: clientAddress(
+          srv.requestIP(req)?.address ?? null,
+          req.headers.get("x-forwarded-for"),
+          viaOwnersProxy(req.headers.get("host") ?? "", config.allowedHosts ?? []),
+        ),
         viaRelay: false,
         secure: new URL(req.url).protocol === "https:" ||
           (isLoopback(srv.requestIP(req)?.address ?? "") && req.headers.get("x-forwarded-proto") === "https"),

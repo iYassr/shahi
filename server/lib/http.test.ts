@@ -315,21 +315,40 @@ describe("the gate", () => {
 });
 
 describe("the routes anyone can reach are rate limited by address", () => {
-  test("a flood from one address is refused with retry-after; another address is not", async () => {
-    // The peer is loopback, so x-forwarded-for is believed — which also keeps
-    // this flood from counting against the rest of the suite.
-    const from = (ip: string) => fetch(`${s.base}/api/meta`, { headers: { "x-forwarded-for": ip } });
-    let refused: Response | null = null;
-    for (let i = 0; i < 40 && !refused; i++) {
-      const res = await from("203.0.113.9");
-      if (res.status === 429) refused = res;
-    }
-    expect(refused?.status).toBe(429);
-    expect(Number(refused?.headers.get("retry-after"))).toBeGreaterThan(0);
-    expect((await from("203.0.113.10")).status).toBe(200);
-    // The gated routes are not behind the limiter: the flood above did not
-    // touch them.
-    expect((await fetch(`${s.base}/api/session`, { headers: { cookie: s.cookie, "x-forwarded-for": "203.0.113.9" } })).status).toBe(200);
+  test("a flood from one client behind the owner's proxy is refused with retry-after; another client is not", async () => {
+    // The proxy names itself in Host and says who it is forwarding; that is
+    // the only case in which x-forwarded-for is believed.
+    const box = await boot({ allowedHosts: ["box.tailnet.ts.net"] });
+    try {
+      const from = (ip: string, path = "/api/meta", cookie = "") => raw(box.base,
+        `GET ${path} HTTP/1.1\r\nHost: box.tailnet.ts.net\r\nX-Forwarded-For: ${ip}\r\n${cookie ? `Cookie: ${cookie}\r\n` : ""}Connection: close\r\n\r\n`);
+      let refused: { status: number; text: string } | null = null;
+      for (let i = 0; i < 40 && !refused; i++) {
+        const res = await from("203.0.113.9");
+        if (res.status === 429) refused = res;
+      }
+      expect(refused?.status).toBe(429);
+      expect(Number(refused?.text.match(/retry-after: (\d+)/i)?.[1])).toBeGreaterThan(0);
+      expect((await from("203.0.113.10")).status).toBe(200);
+      // The gated routes are not behind the limiter: the flood above did not
+      // touch them.
+      expect((await from("203.0.113.9", "/api/session", box.cookie)).status).toBe(200);
+    } finally { box.stop(); }
+  });
+
+  // September 2026 pre-release bug hunt: the listener binds only loopback, so
+  // every peer is loopback, and x-forwarded-for was believed from every one:
+  // any local process got a fresh bucket per request by rotating it.
+  test("rotating x-forwarded-for cannot reset the pre-auth limit", async () => {
+    const box = await boot();
+    try {
+      const status = (headers: Record<string, string> = {}) => fetch(`${box.base}/api/auth/status`, { headers }).then((r) => r.status);
+      for (let i = 0; i < 35; i++) await status();
+      expect(await status()).toBe(429);
+      const rotated = [];
+      for (let i = 0; i < 10; i++) rotated.push(await status({ "x-forwarded-for": `10.0.0.${i}` }));
+      expect(rotated).toEqual(Array(10).fill(429));
+    } finally { box.stop(); }
   });
 });
 
@@ -609,13 +628,15 @@ describe("what a client learns before it authenticates", () => {
   });
 
   test("and the relay's state, from this machine only", async () => {
-    const r = await boot({ relay: true });
+    const r = await boot({ relay: true, allowedHosts: ["box.tailnet.ts.net"] });
     try {
       const local = (await (await fetch(`${r.base}/api/meta`)).json()) as Record<string, unknown>;
       expect(local.relay).toEqual({ url: "https://relay.test", connected: true });
-      // The same request as a tailnet peer would make it: no relay line.
-      const peer = (await (await fetch(`${r.base}/api/meta`, { headers: { "x-forwarded-for": "100.64.0.9" } })).json()) as Record<string, unknown>;
-      expect(peer).not.toHaveProperty("relay");
+      // The same request as a tailnet peer makes it, through the owner's
+      // proxy: no relay line.
+      const peer = await raw(r.base, "GET /api/meta HTTP/1.1\r\nHost: box.tailnet.ts.net\r\nX-Forwarded-For: 100.64.0.9\r\nConnection: close\r\n\r\n");
+      expect(peer.status).toBe(200);
+      expect(peer.text).not.toContain("relay.test");
     } finally {
       r.stop();
     }

@@ -70,10 +70,15 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 /**
  * The address a request came from, as far as this process can tell.
  *
- * Behind `tailscale serve` or `cloudflared` every connection is from loopback
- * and the real peer is in `x-forwarded-for`; the header is believed only then,
- * because from anywhere else it is just a header the client typed. Direct
- * tailnet binds see the peer itself.
+ * Behind a reverse proxy the owner named in SHAHI_ALLOWED_HOSTS (`tailscale
+ * serve`, for push) every connection is from loopback and the real peer is in
+ * `x-forwarded-for`. The header is believed only then: `viaOwnersProxy` says
+ * the request named that proxy in its Host, and the peer is loopback, where
+ * the proxy connects from. The listener binds nothing but loopback, so every
+ * other connection is loopback too, and there the header is just one the
+ * client typed. Believing it whenever the peer was loopback let any local
+ * process reset the pre-auth limit on every request by rotating the header
+ * (September 2026 pre-release bug hunt).
  *
  * The *last* hop, not the first. A proxy appends the address it saw to
  * whatever `x-forwarded-for` the client already sent (Go's reverse proxy and
@@ -81,13 +86,8 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
  * last is the proxy's — and a limiter keyed on the first was a limiter the
  * client could reset per request by rotating the header. Caught in review.
  */
-export function clientAddress(peer: string | null, forwardedFor: string | null, bindHost: string | null = null): string {
-  // Loopback is the proxy's address when this server binds 127.0.0.1; when it
-  // binds the tailnet IP (as docs/operations.md configures with `tailscale
-  // serve … http://<tailnet-ip>:7171`), tailscaled dials that address, so the
-  // peer is the box's own IP and every client would have shared one bucket.
-  const viaProxy = peer !== null && (LOOPBACK.has(peer) || (bindHost !== null && peer === bindHost));
-  if (viaProxy && forwardedFor) {
+export function clientAddress(peer: string | null, forwardedFor: string | null, viaOwnersProxy: boolean): string {
+  if (viaOwnersProxy && peer !== null && LOOPBACK.has(peer) && forwardedFor) {
     const last = forwardedFor.split(",").at(-1)?.trim();
     if (last) return last;
   }
