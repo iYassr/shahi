@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { showComputerHome } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -10,6 +10,10 @@ export function ComputerSwitcher() {
   const { computers, activeComputerId, session, switchComputer } = useSession();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
+  // A Modal is presented above the whole stack, not inside this screen, so it
+  // stayed on top of a pane a notification tap had pushed, until Close was
+  // tapped (pre-release bug hunt). Whatever takes this screen's place closes it.
+  useFocusEffect(useCallback(() => () => setOpen(false), []));
   const current = computers.find(c => c.id === activeComputerId);
   const name = session?.serverName || current?.name || "Computers";
   return <>

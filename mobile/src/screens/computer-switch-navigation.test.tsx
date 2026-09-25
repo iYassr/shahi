@@ -201,3 +201,16 @@ test("a pane opened by a link without a computer is held to the computer it open
   expect(stack(view)).toEqual(["(tabs)"]);
   expect(mockCalls.filter(call => call.startsWith("B"))).toEqual([]);
 });
+
+test("a notification tap closes the computer chooser left open under it", async () => {
+  launch();
+  await settle();
+  fireEvent.press(screen.getByTestId("computer-switcher"));
+  expect(screen.getByText("Manage computers")).toBeTruthy();
+  await act(async () => { mockTap!("w1:p1", "srv-a"); });
+  await settle();
+  expect(screen.getByText("Send to w1:p1 on A")).toBeTruthy();
+  // Hidden elements included: the test renderer hides the list under the
+  // pane, but iOS presents a Modal above every screen, hidden or not.
+  expect(screen.queryByText("Manage computers", { includeHiddenElements: true })).toBeNull();
+});

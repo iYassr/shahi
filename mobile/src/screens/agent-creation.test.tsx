@@ -13,7 +13,7 @@ jest.mock("@/components/avatar", () => ({ Avatar: () => null }));
 jest.mock("@/components/connection-health", () => ({ ConnectionHealth: () => null }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));
 jest.mock("react-native-safe-area-context", () => ({ SafeAreaView: require("react-native").View }));
-jest.mock("expo-router", () => ({ router: { back: jest.fn(), push: jest.fn(), replace: jest.fn() }, Stack: { Screen: ({ options }: any) => { mockStackOptions(options); return options.headerRight?.() ?? null; } } }));
+jest.mock("expo-router", () => ({ useFocusEffect: jest.fn(), router: { back: jest.fn(), push: jest.fn(), replace: jest.fn() }, Stack: { Screen: ({ options }: any) => { mockStackOptions(options); return options.headerRight?.() ?? null; } } }));
 
 const kinds = "pi claude codex gemini cursor devin agy cline omp mastracode opencode copilot kimi kiro droid amp grok hermes kilo qodercli qwen letta maki muse".split(" ");
 const choices = kinds.flatMap<[string, string | null]>(kind => {

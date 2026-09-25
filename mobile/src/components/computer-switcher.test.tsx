@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react-native";
 import { ComputerSwitcher } from "./computer-switcher";
 
-jest.mock("expo-router", () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+jest.mock("expo-router", () => ({ router: { push: jest.fn(), replace: jest.fn() }, useFocusEffect: jest.fn() }));
 jest.mock("@/lib/session", () => ({
   useSession: () => ({ computers: [], activeComputerId: null, session: { serverName: "stub-box" }, switchComputer: jest.fn() }),
 }));
