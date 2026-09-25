@@ -92,6 +92,8 @@ function Navigation() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connect" options={{ headerShown: false }} />
         <Stack.Screen name="computers" options={{ title: "Computers" }} />
+        {/* Leaves at once (see the route), so nothing of it should show. */}
+        <Stack.Screen name="+not-found" options={{ headerShown: false, animation: "none" }} />
         {/* Titles set from inside the screens, where the pane or space is
             known. The empty defaults stop raw route names flashing first. */}
         <Stack.Screen name="pane/[paneId]" options={{ title: "" }} />
