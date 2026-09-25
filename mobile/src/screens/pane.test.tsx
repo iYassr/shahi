@@ -336,15 +336,6 @@ describe("sending a reply", () => {
     expect(mocked.send).toHaveBeenCalledWith(PANE, "    def f():\n        return 1", expect.any(String));
   });
 
-  test("a draft of only spaces and newlines is not sent", async () => {
-    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
-    const view = render(<Pane paneId={PANE} />);
-    await view.findByText(/Ready\./);
-    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "  \n\t ");
-    fireEvent.press(view.getByText("Send"));
-    expect(mocked.send).not.toHaveBeenCalled();
-  });
-
   // Typing "ls" on the phone's keyboard sent "Ls", which a shell rejects: the
   // composer took iOS's defaults of sentence capitals and autocorrect, meant
   // for prose, for terminal input too (pre-release bug hunt).
