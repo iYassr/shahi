@@ -130,7 +130,11 @@ a report from a phone.
   command. The text-field rows are `Type something.` (the question tool) and
   `Tell Claude what to change` (plan approval): typed text replaces their
   label and Enter submits it, so those are still typed. `No, and tell Claude
-  what to do differently` ignores typing. Shells are unaffected.
+  what to do differently` ignores typing. Shells are unaffected. Once typed
+  into, a field's label is its text, so `isTextField` knows the question
+  tool's by its place above `Chat about this`. While a field has the cursor
+  a digit is typed into it (measured on 2.1.282), so `/answer` sends `Up`
+  before the digit there.
 - **Claude Code's folder-trust question is an unnumbered menu, and its
   default quits.** `❯ No, exit` over `Yes, I trust this folder`, no digits,
   `Enter to confirm` beneath. Measured on a live pane: a digit does nothing

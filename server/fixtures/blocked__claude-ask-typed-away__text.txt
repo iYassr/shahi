@@ -1,0 +1,21 @@
+
+ ▐▛███▛█   Claude Code v2.1.282
+▝▜██████▀  Opus 5.5 · [redacted]
+ ▝▝   ▝▝   /private/tmp/shahi-srv-writes.Nbew/proj
+
+
+❯ Use your AskUserQuestion tool to ask me which colour I prefer: red or green. Do nothing else.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Colour
+
+Which colour do you prefer?
+
+  1. Red
+     You prefer red.
+❯ 2. Green
+     You prefer green.
+  3. 1
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

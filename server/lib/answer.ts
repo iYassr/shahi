@@ -22,7 +22,7 @@
  * shows what is actually on screen.
  */
 
-import { parsePrompt, stripAnsi } from "./prompt-parser";
+import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
 
 /** The two herdr calls this module makes, typed loosely so a test can fake them. */
@@ -67,9 +67,23 @@ export class PromptChanged extends Error {
  *
  * A cursor menu is walked from where its cursor is, not from the top: Enter
  * confirms whatever row is lit, and the parser records which one that is.
+ *
+ * A digit menu whose lit row is a text field is left by `Up` first. Claude
+ * Code's menu takes only arrows and Tab while a text field has the cursor, so
+ * the digit alone was typed into the field: the tap reported success, nothing
+ * was chosen, and the field's new text then made the composer refuse too
+ * (pre-release bug hunt, B10). `Up` then the digit, in one send, chose the
+ * right row from both an empty and a typed field (measured on 2.1.282). A tap
+ * on the text field itself, when it already has the cursor, presses nothing:
+ * the answer is what the person types next.
  */
 export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
-  if (prompt.answer === "digit") return [String(target.index), ...(prompt.confirm ? ["Enter"] : [])];
+  if (prompt.answer === "digit") {
+    const lit = prompt.options.find((o) => o.selected);
+    const inField = lit !== undefined && isTextField(prompt, lit);
+    if (inField && target === lit) return [];
+    return [...(inField ? ["Up"] : []), String(target.index), ...(prompt.confirm ? ["Enter"] : [])];
+  }
   const from = prompt.options.findIndex((o) => o.selected);
   const to = prompt.options.indexOf(target);
   const delta = to - from;
@@ -94,7 +108,7 @@ export async function answerPrompt(rpc: AnswerRpc, paneId: string, choice: Choic
   if (choice.question !== undefined && !sameQuestion(prompt, choice)) throw new PromptChanged(paneId);
 
   const keys = keysFor(prompt, target);
-  await rpc("pane.send_keys", { pane_id: paneId, keys });
+  if (keys.length > 0) await rpc("pane.send_keys", { pane_id: paneId, keys });
   return keys;
 }
 

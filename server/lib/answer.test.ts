@@ -40,6 +40,30 @@ describe("keysFor", () => {
     expect(keysFor(prompt, prompt.options[1]!)).toEqual(["Enter"]);
   });
 
+  // Pre-release bug hunt, B10: with the cursor on a text field a digit is
+  // typed into the field ("❯ 3. 1"), so the tap chose nothing. Real captures
+  // from Claude Code 2.1.282, where `Up` then the digit chose the row.
+  describe("a numbered option, while the cursor rests on a text field", () => {
+    test.each([
+      ["blocked__claude-ask-type__text.txt", 0, ["Up", "1"]],
+      ["blocked__claude-ask-typed__text.txt", 1, ["Up", "2"]],
+      ["blocked__claude-plan-change__text.txt", 1, ["Up", "2"]],
+    ])("is chosen, not typed into the field (%s)", (name, option, keys) => {
+      const prompt = parsePrompt(fixture(name))!;
+      expect(keysFor(prompt, prompt.options[option]!)).toEqual(keys);
+    });
+
+    test("the field itself, already under the cursor, presses nothing", () => {
+      const prompt = parsePrompt(fixture("blocked__claude-ask-type__text.txt"))!;
+      expect(keysFor(prompt, prompt.options[2]!)).toEqual([]);
+    });
+
+    test("a field with text in it but not the cursor leaves the digit as it was", () => {
+      const prompt = parsePrompt(fixture("blocked__claude-ask-typed-away__text.txt"))!;
+      expect(keysFor(prompt, prompt.options[0]!)).toEqual(["1"]);
+    });
+  });
+
   test("moves down as many rows as it takes", () => {
     const prompt = parsePrompt(
       ["Which one?", "", " ❯ One", "   Two", "   Three", "", " Enter to confirm · Esc to cancel"].join("\n"),
@@ -53,6 +77,12 @@ describe("answerPrompt", () => {
     const { rpc, pressed } = fakeHerdr(fixture("blocked__trust-folder__text.txt"));
     await expect(answerPrompt(rpc, "w4:p2", { index: 1, label: "No, exit" })).resolves.toEqual(["Up", "Enter"]);
     expect(pressed).toEqual([["Up", "Enter"]]);
+  });
+
+  test("answering Red from a typed text field chooses Red, and nothing is typed into the field", async () => {
+    const { rpc, pressed } = fakeHerdr(fixture("blocked__claude-ask-typed__text.txt"));
+    await answerPrompt(rpc, "w6:p2", { index: 1, label: "Red" });
+    expect(pressed).toEqual([["Up", "1"]]);
   });
 
   test("presses nothing when the prompt has gone", async () => {

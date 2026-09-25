@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { parsePrompt, stripAnsi } from "./prompt-parser";
+import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures");
 const readFixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -457,5 +457,31 @@ describe("an unnumbered cursor menu", () => {
     // the glyph alone must never make a menu (see the header comment).
     const composer = ["Done. Anything else?", "", " ❯ ", "   next step", ""].join("\n");
     expect(parsePrompt(composer)).toBeNull();
+  });
+});
+
+/**
+ * Which rows take typed text. Typed text replaces the label, so after a
+ * digit landed in one ("❯ 3. 1", pre-release bug hunt B10) matching the label
+ * no longer found it, and both the answer and the composer went wrong.
+ */
+describe("text fields", () => {
+  const fields = (name: string) => {
+    const prompt = parsePrompt(readFixture(name))!;
+    return prompt.options.filter((o) => isTextField(prompt, o)).map((o) => o.index);
+  };
+
+  test.each([
+    ["blocked__claude-ask-type__text.txt", [3]],
+    ["blocked__claude-ask-typed__text.txt", [3]],
+    ["blocked__claude-ask-typed-away__text.txt", [3]],
+    ["blocked__claude-plan-change__text.txt", [3]],
+    ["blocked__w4-p2__text.txt", [4]],
+    // Typing on "No, and tell Claude what to do differently" does nothing.
+    ["blocked__claude-webfetch-no__text.txt", []],
+    ["blocked__claude-bash__text.txt", []],
+    ["blocked__trust-folder__text.txt", []],
+  ])("%s", (name, expected) => {
+    expect(fields(name)).toEqual(expected);
   });
 });

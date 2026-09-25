@@ -30,10 +30,10 @@
  * screen is read, and if it shows a menu the text is refused with
  * `prompt_open` — unless the lit row is one that takes typed text, where the
  * text replaces the row's label and Enter submits it (measured on the same
- * version for both rows in `FREE_TEXT_ROWS`). Found in the pre-release review.
+ * version; see `isTextField`). Found in the pre-release review.
  */
 
-import { parsePrompt, stripAnsi } from "./prompt-parser";
+import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
 
 /** The herdr calls this module is allowed to make, typed loosely so a test can fake them. */
 export type PromptRpc = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -48,14 +48,6 @@ export class PromptOpen extends Error {
     );
   }
 }
-
-/**
- * Menu rows that are text fields while the cursor is on them: Claude Code's
- * question tool ("Type something.") and plan approval ("Tell Claude what to
- * change"). Not "No, and tell Claude what to do differently": typing there
- * does nothing, and Enter answers No without the text.
- */
-const FREE_TEXT_ROWS = new Set(["Type something.", "Tell Claude what to change"]);
 
 export interface PromptTarget {
   paneId: string;
@@ -107,5 +99,5 @@ async function menuWithoutTextField(rpc: PromptRpc, paneId: string): Promise<boo
   const menu = parsePrompt(stripAnsi(read.text));
   if (!menu) return false;
   const lit = menu.options.find((option) => option.selected);
-  return !lit || !FREE_TEXT_ROWS.has(lit.label);
+  return !lit || !isTextField(menu, lit);
 }

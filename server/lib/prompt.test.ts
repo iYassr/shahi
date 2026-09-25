@@ -126,6 +126,15 @@ describe("a message to an agent waiting on a menu", () => {
     },
   );
 
+  // Pre-release bug hunt, B10: once the field held text ("❯ 3. 1") its label
+  // no longer read "Type something.", and the composer was refused as well
+  // as the buttons, leaving only the key bar.
+  test("is typed into a text field that already holds text", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-ask-typed__text.txt"));
+    expect(await submitPrompt(rpc, blocked, "blue", sleep)).toBe("terminal");
+    expect(writes(calls).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
+
   // A shell is a terminal the person is driving; the text is theirs to send.
   test("is still typed into a shell whatever its screen shows", async () => {
     const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-bash__text.txt"));

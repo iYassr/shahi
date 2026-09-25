@@ -12,6 +12,7 @@ Real terminal screens captured from a live herdr session with
 | `blocked__claude-webfetch__*`, `blocked__claude-mcp__*` | the same dialog for WebFetch (the URL above the question) and an MCP tool call |
 | `blocked__claude-webfetch-no__*` | WebFetch with the cursor on "No, and tell Claude what to do differently" — typing there does nothing, so typed text would be lost |
 | `blocked__claude-ask-type__*`, `blocked__claude-plan-change__*` | the cursor on a row that takes text ("Type something.", "Tell Claude what to change") — typed text replaces the row's label and Enter submits it |
+| `blocked__claude-ask-typed__*`, `blocked__claude-ask-typed-away__*` | the question tool's text row after a `1` was typed into it ("❯ 3. 1"), with the cursor on it and then moved to row 2 — the label is the typed text, so the row is known by its place (Claude Code 2.1.282, 2026-09-25) |
 | `working__wE-p1__*` | an agent mid-turn, no prompt |
 | `idle__w4-p1__*` | an idle agent at the composer |
 | `done__wB-p1__*` | a finished turn |

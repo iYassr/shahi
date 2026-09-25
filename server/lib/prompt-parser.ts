@@ -464,6 +464,28 @@ function dedent(block: string[]): string {
   return block.map((line) => line.slice(indent)).join("\n");
 }
 
+/**
+ * Whether `option` is a text field: a row where typed text replaces the
+ * label, and where Claude Code's menu takes only arrows and Tab while the
+ * cursor is on it — a digit pressed there is typed into it, and answers
+ * nothing (measured on 2.1.282: "❯ 3. Type something." became "❯ 3. 1").
+ *
+ * Untyped, the rows read "Type something." (the question tool) and "Tell
+ * Claude what to change" (plan approval). Typed, the label is whatever was
+ * typed, so the row is known by where it is instead: the question tool's is
+ * the one directly above "Chat about this", and plan approval's carries the
+ * "shift+tab to approve with this feedback" line under it. Not "No, and tell
+ * Claude what to do differently": typing there does nothing.
+ */
+export function isTextField(prompt: ParsedPrompt, option: PromptOption): boolean {
+  if (TEXT_FIELD_LABELS.has(option.label) || option.detail === PLAN_FEEDBACK_DETAIL) return true;
+  const n = prompt.options.indexOf(option);
+  return n >= 0 && n === prompt.options.length - 2 && prompt.options.at(-1)!.label === "Chat about this";
+}
+
+const TEXT_FIELD_LABELS = new Set(["Type something.", "Tell Claude what to change"]);
+const PLAN_FEEDBACK_DETAIL = "shift+tab to approve with this feedback";
+
 /** `Reason:`, `Environment:` — codex's own labels for the context it supplies. */
 const LABELLED_RE = /^[A-Z][A-Za-z ]{1,20}:\s/;
 
