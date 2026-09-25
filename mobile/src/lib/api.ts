@@ -523,6 +523,12 @@ const api = {
     if (res.status === 401) throw new UnauthorizedError();
     if (res.status === 426) throw await incompatible(res);
     if (res.status === 304 && cached) return cached.value;
+    // The relay answers 413 for a window larger than its frame: one very long
+    // message among the last sixty is enough, and it lasts until later ones
+    // push it out. Said in words a reader can act on, like an image's.
+    if (res.status === 413) {
+      throw new ApiError("This conversation’s latest messages are too large to send through the relay. Follow it in Screen, connect over SSH, or read it on your computer.", 413);
+    }
     if (!res.ok) throw await refusal(res, path);
     const value = (await res.json()) as SessionLog;
     const etag = res.headers.get("etag");

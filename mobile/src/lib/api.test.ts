@@ -1,5 +1,5 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
-import { api, createApi, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
+import { api, ApiError, createApi, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
 import { FileDownloadError } from "@shahi/shared/file-download";
 
 /**
@@ -458,6 +458,22 @@ describe("transcript revalidation", () => {
     expect(fetchMock.mock.calls[1]![1].headers["if-none-match"]).toBe('W/"abc"');
     expect(second).toEqual(body);
     expect(json304).not.toHaveBeenCalled();
+  });
+
+  // The reader must tell "no transcript yet" from every other failure: it
+  // showed "Nothing to read yet" for a conversation the relay refused as too
+  // large, and threw the reason away (pre-release bug hunt).
+  test("a missing transcript and one too large for the relay are told apart by status", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404, headers: new Headers(), json: async () => ({ error: "no transcript for this pane" }) });
+    const missing = await api.sessionLog("w9:p8", 60).catch((e: unknown) => e);
+    expect(missing).toBeInstanceOf(ApiError);
+    expect(missing).toMatchObject({ status: 404, message: "no transcript for this pane" });
+
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 413, headers: new Headers(), json: async () => ({ error: "too large to send through the relay" }) });
+    const large = await api.sessionLog("w9:p8", 60).catch((e: unknown) => e);
+    expect(large).toBeInstanceOf(ApiError);
+    expect((large as ApiError).status).toBe(413);
+    expect((large as ApiError).message).toMatch(/too large to send through the relay\. .*Screen/);
   });
 });
 

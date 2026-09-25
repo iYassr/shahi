@@ -139,6 +139,10 @@ const detail = (activity: { verb: string } | null = null) => ({
   layout: null,
 });
 const receipt: PromptReceipt = { accepted: true, clientMessageId: "c1", acceptedAt: 1 };
+/** What the server answers for a pane whose agent has not written a transcript yet. */
+const noTranscript = () => new ApiError("no transcript for this pane", 404);
+/** What the relay answers in place of a transcript window larger than its frame. */
+const tooLarge = () => new ApiError("This conversation’s latest messages are too large to send through the relay.", 413);
 
 beforeEach(() => {
   clearNativeDrafts(api);
@@ -349,7 +353,7 @@ describe("sending a reply", () => {
       const panes = mockSession.session.panes;
       mockSession.session.panes = [{ paneId: "w1:p-shell", title: "zsh", agent: null as unknown as string, isAgent: false }];
       try {
-        mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+        mocked.sessionLog.mockRejectedValue(noTranscript());
         const view = render(<Pane paneId="w1:p-shell" />);
         await settle();
         expect(view.getByPlaceholderText("Run a command…").props).toMatchObject(literal);
@@ -458,7 +462,7 @@ describe("loading", () => {
   test("no transcript yet keeps polling rather than latching", async () => {
     // A just-started agent: the server has no file to read, then it does.
     mocked.sessionLog
-      .mockRejectedValueOnce(new Error("no transcript"))
+      .mockRejectedValueOnce(noTranscript())
       .mockResolvedValue(log([said("a1", "agent", "First words.")]));
 
     const view = render(<Pane paneId={PANE} />);
@@ -473,6 +477,74 @@ describe("loading", () => {
     await view.findByText(/First words\./);
     expect(view.queryByText("Nothing to read yet.")).toBeNull();
     expect(mocked.sessionLog.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // One ~800 KB message among the last sixty put the window over the relay's
+  // frame, and every poll came back 413. The reader treated that like "no
+  // transcript": a fresh open said "Nothing to read yet", an open one went
+  // quiet, and it asked again every poll and every frame, twelve times in 30s,
+  // each costing the computer the whole body (pre-release bug hunt).
+  describe("a conversation too large for the relay", () => {
+    test("a fresh open says why it cannot be read, instead of claiming there is nothing to read", async () => {
+      mocked.sessionLog.mockRejectedValue(tooLarge());
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/too large to send through the relay/);
+      expect(view.queryByText("Nothing to read yet.")).toBeNull();
+      expect(view.getByText("Show the screen instead")).toBeTruthy();
+      expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
+    });
+
+    test("an open conversation that grows past the limit keeps its messages and says why it stopped updating", async () => {
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Here is the summary.")]));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/Here is the summary\./);
+      mocked.sessionLog.mockRejectedValue(tooLarge());
+      logChanged();
+      await view.findByText(/too large to send through the relay/);
+      expect(view.getByText(/Here is the summary\./)).toBeTruthy();
+
+      // Readable again once the window fits: the notice goes with the failure.
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Here is the summary."), said("a2", "agent", "Short again.")]));
+      fireEvent.press(view.getByRole("button", { name: "Try again" }));
+      await view.findByText(/Short again\./);
+      expect(view.queryByText(/too large to send through the relay/)).toBeNull();
+    });
+
+    test("it is not asked for again on every poll and frame, until the wait is over or you ask", async () => {
+      mocked.sessionLog.mockRejectedValue(tooLarge());
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/too large to send through the relay/);
+      expect(mocked.sessionLog).toHaveBeenCalledTimes(1);
+
+      // The poll re-arms its timer only after each load settles, so the clock
+      // moves a poll at a time.
+      const wait = async (ms: number) => {
+        for (let t = 0; t < ms; t += 500) {
+          await act(async () => { jest.advanceTimersByTime(500); });
+          await settle();
+        }
+      };
+      // Polls and pushed frames keep the screen and prompt fresh meanwhile.
+      const panes = mocked.pane.mock.calls.length;
+      logChanged();
+      await wait(10_000);
+      expect(mocked.sessionLog).toHaveBeenCalledTimes(1);
+      expect(mocked.pane.mock.calls.length).toBeGreaterThan(panes + 2);
+
+      await wait(25_000);
+      expect(mocked.sessionLog).toHaveBeenCalledTimes(2);
+
+      fireEvent.press(view.getByRole("button", { name: "Try again" }));
+      await settle();
+      expect(mocked.sessionLog).toHaveBeenCalledTimes(3);
+    });
+
+    test("any other failure on first open is reported, not taken for an empty conversation", async () => {
+      mocked.sessionLog.mockRejectedValue(new ApiError("internal error", 500));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText(/internal error/);
+      expect(view.queryByText("Nothing to read yet.")).toBeNull();
+    });
   });
 });
 
@@ -508,7 +580,7 @@ describe("keeping your place", () => {
     await first.findByText(/Message three/);
     first.unmount();
     mockComputer.api = { ...api };
-    mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+    mocked.sessionLog.mockRejectedValue(noTranscript());
     const second = render(<Pane paneId={paneId} />);
     await second.findByText("Nothing to read yet.");
     expect(second.queryByText(/Message three/)).toBeNull();
@@ -1345,7 +1417,7 @@ describe("keeping your terminal place", () => {
     expect(visit.getByTestId("terminal-body").props.children).toBe("top\nmiddle\nbottom\n");
     fireEvent.press(visit.getByRole("button", { name: "Read" }));
     expect(visit.getByText("Reading the conversation…")).toBeTruthy();
-    transcript.reject(new Error("no transcript"));
+    transcript.reject(noTranscript());
     await settle();
     fireEvent.press(visit.getByText("Show the screen instead"));
     expect(visit.getByTestId("terminal-body").props.children).toBe("top\nmiddle\nbottom\n");
@@ -1398,7 +1470,7 @@ describe("keeping your terminal place", () => {
     // Not readable, so the reader would show its ghost — the terminal showing
     // instead is the proof the view was remembered. The way onto the screen
     // here is the ghost's own button, the one path the header toggle is not.
-    mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+    mocked.sessionLog.mockRejectedValue(noTranscript());
     const first = render(<Pane paneId={P} />);
     fireEvent.press(await first.findByText("Show the screen instead"));
     await first.findByTestId("terminal-body");

@@ -86,6 +86,13 @@ const PROBE = "─".repeat(PROBE_CHARS);
  * may take together before they scroll inside their own area.
  */
 const PROMPT_SHARE = 0.4;
+/**
+ * How long the reader waits before asking again for a transcript the relay
+ * refused as too large. Asked on every poll and pushed frame it was twelve
+ * requests in 30s, each costing the computer the whole oversized body, for an
+ * answer that changes only once more messages push the large one out.
+ */
+const TOO_LARGE_PAUSE_MS = 30_000;
 
 /**
  * Keys a touch keyboard cannot produce but agents routinely ask for.
@@ -234,6 +241,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [gone, setGoneState] = useState(false);
   const goneRef = useRef(false);
   const setGone = useCallback((value: boolean) => { goneRef.current = value; setGoneState(value); }, []);
+  /**
+   * Why the transcript could not be fetched, when it exists: anything but the
+   * server's 404 for a pane with no transcript yet. Every failure used to be
+   * taken for that 404, so a conversation the relay refused as too large
+   * opened as "Nothing to read yet", and an open one stopped updating without
+   * a word (pre-release bug hunt).
+   */
+  const [logError, setLogError] = useState<{ message: string; unreachable: boolean } | null>(null);
+  /** While `Date.now()` is under this, polls leave the transcript alone (see TOO_LARGE_PAUSE_MS). */
+  const logPausedUntil = useRef(0);
   const [draft, setDraftState] = useState(savedDraft.text);
   function setDraft(value: SetStateAction<string>) {
     savedDraft.text = typeof value === "function" ? value(savedDraft.text) : value;
@@ -618,9 +635,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     if (!stillActive()) return;
     // Start and apply both responses independently: a slow transcript must
     // never hold terminal output or permission prompts behind Read loading.
-    const logRequest = api.sessionLog(paneId, 60);
+    const logRequest = Date.now() < logPausedUntil.current ? null : api.sessionLog(paneId, 60);
     const detailRequest = api.pane(paneId);
     const readLog = async () => {
+      if (!logRequest) return;
       try {
         const log = await logRequest;
         if (!stillActive()) return;
@@ -679,6 +697,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           return kept.length === prev.length ? prev : kept;
         });
         setReadable(true);
+        setLogError(null);
         setLoading(false);
       } catch (e) {
         // An expired cookie has to sign out, not be swallowed as "no transcript".
@@ -689,11 +708,18 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         // re-login is not an expired cookie (pre-release review).
         if (!stillActive()) return;
         if (e instanceof UnauthorizedError) return unauthorized();
-        // No transcript *yet*. A just-started agent has not written one, so this
-        // keeps polling rather than latching — the reader fills in by itself the
-        // moment the agent says something.
+        // No transcript *yet* is the server's 404. A just-started agent has not
+        // written one, so this keeps polling rather than latching — the reader
+        // fills in by itself the moment the agent says something. Any other
+        // failure is said, with the server's reason.
         // A failed refresh must not replace a known conversation with an empty
         // state. Keep cached messages (and the mounted list's reading position).
+        const missing = e instanceof ApiError && e.status === 404;
+        if (e instanceof ApiError && e.status === 413) logPausedUntil.current = Date.now() + TOO_LARGE_PAUSE_MS;
+        setLogError(missing ? null : {
+          message: e instanceof Error ? e.message : "The conversation could not be loaded.",
+          unreachable: e instanceof UnreachableError,
+        });
         setReadable(messagesRef.current.length > 0);
         setLoading(false);
       }
@@ -770,6 +796,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   // poll tick — a reply appears as fast as the server sees it. The timer above
   // stays as a backstop for a dropped socket.
   useEffect(() => onPaneFrame(paneId, () => void load()), [paneId, onPaneFrame, load]);
+
+  /** The person asked: a paused transcript is fetched now, not when the pause ends. */
+  function retryLog() {
+    logPausedUntil.current = 0;
+    void load();
+  }
 
   function chase() {
     // Poll fast for a while: long enough to cover the agent's think time on a
@@ -996,19 +1028,41 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         </View>
       ) : !readable && view === "reader" ? (
         <View style={styles.centered}>
-          <Text style={styles.dim}>
-            Nothing to read yet.
-          </Text>
-          <Text style={styles.dim}>
-            A readable conversation is not available yet. You can follow this
-            agent in Screen.
-          </Text>
+          {logError ? (
+            <>
+              <Text style={styles.dim}>The conversation could not be loaded.</Text>
+              <Text style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
+              <Pressable accessibilityRole="button" style={styles.ghost} onPress={retryLog}>
+                <Text style={styles.ghostText}>Try again</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.dim}>
+                Nothing to read yet.
+              </Text>
+              <Text style={styles.dim}>
+                A readable conversation is not available yet. You can follow this
+                agent in Screen.
+              </Text>
+            </>
+          )}
           <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>
             <Text style={styles.ghostText}>Show the screen instead</Text>
           </Pressable>
         </View>
       ) : (
         <View style={styles.body}>
+        {/* The conversation stays, and says why it stopped updating. An
+            outage is already said by the connection banner above, once. */}
+        {view === "reader" && logError && !(logError.unreachable && link !== "live") && (
+          <View style={styles.logNotice}>
+            <Text style={styles.logNoticeText} accessibilityRole="alert">{logError.message}</Text>
+            <Pressable accessibilityRole="button" style={styles.logRetry} onPress={retryLog}>
+              <Text style={styles.ghostText}>Try again</Text>
+            </Pressable>
+          </View>
+        )}
         <FlatList
           testID="conversation-list"
           // Under the terminal the reader stays mounted (see the overlay
@@ -1907,6 +1961,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   bannerText: { color: theme.rose, fontSize: 13, flex: 1 },
+  logNotice: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.line,
+  },
+  logNoticeText: { color: theme.dim, fontSize: 13, flexGrow: 1, flexShrink: 1, flexBasis: 200 },
+  logRetry: { minHeight: 44, justifyContent: "center" },
   bannerClose: { color: theme.dim, fontSize: 13 },
 
   headTitle: { alignItems: "center", maxWidth: "100%" },
