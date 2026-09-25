@@ -32,7 +32,11 @@ jest.mock("expo", () => {
 const mockLogin = jest.fn(async () => "shahi_session=fake");
 jest.mock("@/lib/api", () => {
   const actual = jest.requireActual("@/lib/api");
-  return { ...actual, api: { ...actual.api, meta: jest.fn(async () => ({ serverId: "box", api: { min: 5, max: 5 } })), login: () => mockLogin() } };
+  // Connect signs in on a client of its own, so that is the one answered.
+  return { ...actual, createApi: (connection: { cookie: string | null }) => ({
+    ...actual.createApi(connection), meta: jest.fn(async () => ({ serverId: "box", api: { min: 5, max: 5 } })),
+    login: async () => { connection.cookie = await mockLogin(); return connection.cookie; },
+  }) };
 });
 jest.mock("@/components/scanner", () => ({ Scanner: () => null }));
 jest.mock("@/components/icons", () => ({ Logo: () => null, Wordmark: () => null }));
@@ -92,7 +96,10 @@ test("a changed host key shows both fingerprints and connects only after a delib
   expect(mockNative.open).not.toHaveBeenCalled();
 
   fireEvent.press(screen.getByText("Trust the new key"));
-  await waitFor(() => expect(onConnectedSsh).toHaveBeenCalledWith(expect.objectContaining<Partial<SshProfile>>({ host: "box.example" })));
+  await waitFor(() => expect(onConnectedSsh).toHaveBeenCalledWith(
+    expect.objectContaining<Partial<SshProfile>>({ host: "box.example" }),
+    { baseUrl: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), cookie: "shahi_session=fake", relay: null },
+  ));
   expect(mockNative.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "bmV3LWtleS1zaGEyNTY=" }));
   expect(pins.get("shahi.knownhost.box.example_22")).toBe("bmV3LWtleS1zaGEyNTY=");
 });

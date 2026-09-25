@@ -21,7 +21,7 @@ import { deleteSecret, readSecret, writeSecret } from "./keychain";
 import { pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type ParsedPrompt, type Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
-import { closeRelay, type RelayIdentity } from "@/lib/relay";
+import type { RelayIdentity } from "@/lib/relay";
 import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { forgetHostKey } from "@/lib/tunnel";
@@ -70,8 +70,8 @@ interface SessionValue {
    * with a failure.
    */
   error: Error | null;
-  /** Called by Connect after an SSH tunnel is open and login has succeeded. */
-  signInSsh: (profile: SshProfile) => void;
+  /** Called by Connect after an SSH tunnel is open and login has succeeded, with the connection it signed in on. */
+  signInSsh: (profile: SshProfile, connection: Connection) => void;
   /** Called by Connect once a pairing over a relay has answered with a device. */
   signInRelay: (identity: RelayIdentity) => void;
   signOut: () => void;
@@ -376,14 +376,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     },
     signOut: () => { setAccessEnded(null); if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
     accessEnded,
-    signInRelay: identity => {
-      if (connection.relay?.auth.kind === "pairing") closeRelay(connection.relay);
-      signIn({ kind: "relay", ...identity });
-    },
-    signInSsh: profile => {
+    signInRelay: identity => signIn({ kind: "relay", ...identity }),
+    signInSsh: (profile, signedIn) => {
       // Its computer carries a saved notification opt-in over to this sign-in
       // (ComputerSession), as it does on every later one.
-      signIn({ kind: "ssh", ssh: profile }, { ...connection, relay: null });
+      signIn({ kind: "ssh", ssh: profile }, { ...signedIn, relay: null });
     },
     session: entry?.session ?? null, prompts: entry?.prompts ?? {}, answered: entry?.answered ?? {}, reviewed: entry?.reviewed ?? {},
     markReviewed: pane => entry?.markReviewed(pane),

@@ -24,7 +24,7 @@ beforeEach(() => { jest.clearAllMocks(); mockSockets.length = 0; (api.session as
 test("concurrent recovery rebuilds one tunnel, authenticates its new port, and resumes the watched pane", async () => {
   const ui = render(<SessionProvider><Probe /></SessionProvider>);
   await waitFor(() => expect(value.ready).toBe(true));
-  act(() => value.signInSsh(profile));
+  act(() => value.signInSsh(profile, { ...connection }));
   await act(async () => {});
   act(() => value.watch("p1"));
   const opened = deferred<string>();
@@ -44,7 +44,7 @@ test("concurrent recovery rebuilds one tunnel, authenticates its new port, and r
 test("sign-out cancels a pending recovery before it can authenticate or reopen the socket", async () => {
   const ui = render(<SessionProvider><Probe /></SessionProvider>);
   await waitFor(() => expect(value.ready).toBe(true));
-  act(() => value.signInSsh(profile));
+  act(() => value.signInSsh(profile, { ...connection }));
   await act(async () => {});
   const opened = deferred<string>();
   (openTunnel as jest.Mock).mockReturnValue(opened.promise);

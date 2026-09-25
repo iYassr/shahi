@@ -195,8 +195,8 @@ test("re-adding a saved SSH computer keeps the tunnel Connect just opened", asyn
   // What Connect does: its own tunnel, its own login, then sign-in.
   let added!: string;
   await act(async () => { added = await openTunnel(profile); });
-  connection.baseUrl = added; connection.cookie = "shahi_session=fresh"; sidecar.cookies.add("shahi_session=fresh");
-  await act(async () => { value.signInSsh(profile); for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  sidecar.cookies.add("shahi_session=fresh");
+  await act(async () => { value.signInSsh(profile, { baseUrl: added, cookie: "shahi_session=fresh", relay: null }); for (let i = 0; i < 20; i++) await Promise.resolve(); });
 
   expect([...native.forwards.values()]).toEqual([Number(added.split(":").at(-1))]);
   expect([...native.forwards.values()]).not.toContain(first);

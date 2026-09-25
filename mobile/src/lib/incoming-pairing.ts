@@ -25,9 +25,13 @@ export function receivePairingLink(url: string): boolean {
   return payload !== null;
 }
 
-/** Paired, or cancelled: the link has been answered. */
-export function dismissPairing(): void {
-  if (pending) publish(null);
+/**
+ * Paired, or cancelled: the link has been answered. Given the code that was
+ * answered, only while it is still the one held: a link that arrived while an
+ * earlier one paired is waiting for its own answer.
+ */
+export function dismissPairing(answered?: PairingPayload): void {
+  if (pending && (!answered || pending === answered)) publish(null);
 }
 
 export function usePendingPairing(): PairingPayload | null {

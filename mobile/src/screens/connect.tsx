@@ -17,8 +17,8 @@ import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import type { PairingPayload } from "@shahi/shared";
-import { api, connection, UnauthorizedError } from "@/lib/api";
-import { closeRelay, pairingTarget, type RelayIdentity } from "@/lib/relay";
+import { createApi, UnauthorizedError, type Connection } from "@/lib/api";
+import { closeRelay, pairingTarget, type RelayIdentity, type RelayTarget } from "@/lib/relay";
 import { Wordmark } from "@/components/icons";
 import { GreetingLogo } from "@/components/greeting-logo";
 import { Scanner } from "@/components/scanner";
@@ -42,7 +42,8 @@ export function Connect({
   onConnectedSsh,
   onConnectedRelay,
 }: {
-  onConnectedSsh: (profile: SshProfile) => void;
+  /** With the connection Connect signed in on, for the saved computer to adopt. */
+  onConnectedSsh: (profile: SshProfile, connection: Connection) => void;
   onConnectedRelay: (identity: RelayIdentity) => void;
 }) {
   // Relay pairing is the default; SSH fields appear only when requested.
@@ -50,6 +51,10 @@ export function Connect({
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A link's failure belongs to that link's code. One error for the whole
+  // screen showed a spent code's "not valid" on the next link's card, for a
+  // different computer, before anything had been tried (pre-release bug hunt).
+  const [linkFailure, setLinkFailure] = useState<{ payload: PairingPayload; message: string } | null>(null);
   const [scanning, setScanning] = useState(false);
   // A code that arrived as a link, not from the camera: `shahi://pair#…`
   // tapped in a terminal or a message, opened by the iPhone Camera, or by a
@@ -76,6 +81,7 @@ export function Connect({
   // of reach (seen on the simulator at AX5, pre-release verification).
   if (pending) {
     const host = pending.relay.replace(/^https?:\/\//, "");
+    const failed = linkFailure?.payload === pending ? linkFailure.message : null;
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.introBody} testID="pair-review">
         <Text style={styles.lede} accessibilityRole="header">Pair this phone?</Text>
@@ -87,19 +93,19 @@ export function Connect({
         <Text style={styles.mono}>{host}</Text>
         <Text style={styles.label}>COMPUTER</Text>
         <Text style={styles.mono}>{pending.server.slice(0, 16)}…</Text>
-        {error && <Text style={styles.error}>{error}</Text>}
+        {failed && <Text style={styles.error}>{failed}</Text>}
         <Pressable
           accessibilityRole="button"
           style={[styles.button, busy && styles.buttonOff]}
           disabled={busy}
           testID="confirm-pair"
           onPress={() => {
-            void pair(pending);
+            void pair(pending, true);
           }}
         >
           <Text style={styles.buttonText}>{busy ? "Pairing…" : `Pair with ${host}`}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(); setError(null); }} testID="confirm-cancel">
+        <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(pending); setLinkFailure(null); }} testID="confirm-cancel">
           <Text style={styles.link}>Cancel</Text>
         </Pressable>
       </ScrollView>
@@ -115,15 +121,21 @@ export function Connect({
    * from the code's secret; the claim then answers with the device this phone
    * becomes, and the session reconnects as that device.
    */
-  async function pair(payload: PairingPayload) {
+  async function pair(payload: PairingPayload, fromLink: boolean) {
     setBusy(true);
     setError(null);
+    setLinkFailure(null);
     const where = payload.relay;
+    // A connection of its own. This used to borrow the shared one, which the
+    // session overwrites with the open computer's on every pushed message: one
+    // landing while `meta` was in flight sent the claim, with this code's
+    // one-time secret, to the open computer, and the failure then closed that
+    // computer's link and left it offline (pre-release bug hunt).
+    let target: RelayTarget | undefined;
     try {
-      connection.cookie = null;
-      connection.baseUrl = "";
-      connection.relay = pairingTarget(payload.relay, payload.server, payload.secret);
-      const info = await api.meta();
+      target = pairingTarget(payload.relay, payload.server, payload.secret);
+      const pairing = createApi({ baseUrl: "", cookie: null, relay: target });
+      const info = await pairing.meta();
       if (info.serverId !== payload.server) {
         throw new Error(`${where} is a Shahi server, but not the one that printed this code.`);
       }
@@ -134,7 +146,7 @@ export function Connect({
       // indistinguishable in Settings; the model name is always populated.
       const label =
         Device.deviceName && Device.deviceName !== "iPhone" ? Device.deviceName : (Device.modelName ?? "iPhone");
-      const claim = await api.claimRelayPairing(payload.secret, label);
+      const claim = await pairing.claimRelayPairing(payload.secret, label);
       onConnectedRelay({
         relay: payload.relay,
         serverId: payload.server,
@@ -143,19 +155,21 @@ export function Connect({
       });
       // After signing in, so the route never sees "no link, not connected"
       // in between and sends a person with saved computers to the chooser.
-      if (payload === pending) dismissPairing();
+      // Only this code's link: another may have arrived while it paired.
+      dismissPairing(payload);
     } catch (e) {
       // A box that refuses the link does not know this code — spent, expired,
       // or minted before a restart. The transport's words are about a device
       // that is no longer paired; here there was never a device, so say what
-      // is true instead. The half-open pairing link is closed either way.
-      if (connection.relay) closeRelay(connection.relay);
-      connection.relay = null;
-      setError(
-        e instanceof UnauthorizedError
-          ? "That pairing code is not valid. A code works once and for ten minutes — show a new one on your computer."
-          : (e as Error).message,
-      );
+      // is true instead.
+      const message = e instanceof UnauthorizedError
+        ? "That pairing code is not valid. A code works once and for ten minutes — show a new one on your computer."
+        : (e as Error).message;
+      if (fromLink) setLinkFailure({ payload, message });
+      else setError(message);
+    } finally {
+      // The pairing link either way: a paired phone reconnects as its device.
+      if (target) closeRelay(target);
       setBusy(false);
     }
   }
@@ -168,7 +182,7 @@ export function Connect({
           const payload = parsePairingUrl(data);
           if (!payload) return false;
           setScanning(false);
-          void pair(payload);
+          void pair(payload, false);
           return true;
         }}
       />
@@ -190,15 +204,16 @@ export function Connect({
     setError(null);
     let tunnel = "";
     try {
-      connection.relay = null;
+      // Its own connection, for the reason `pair` has one.
+      const signingIn: Connection = { baseUrl: "", cookie: null, relay: null };
+      const client = createApi(signingIn);
       // A key this phone has not trusted for that server is shown first; the
       // login is sent only if the person trusts it.
       tunnel = await openTunnel(ssh, reviewHostKey);
-      connection.baseUrl = tunnel;
-      connection.cookie = null;
-      await api.meta();
-      await api.login(ssh.passcode);
-      onConnectedSsh(ssh);
+      signingIn.baseUrl = tunnel;
+      await client.meta();
+      await client.login(ssh.passcode);
+      onConnectedSsh(ssh, signingIn);
     } catch (e) {
       // The tunnel may be half-up (opened, then login failed); close it so the
       // next attempt starts from nothing rather than a stale forward. Only
