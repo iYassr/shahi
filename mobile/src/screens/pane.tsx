@@ -37,6 +37,7 @@ import { randomUUID } from "expo-crypto";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useKeyboardHeight } from "@/lib/keyboard";
 import { CopyButton, CopyOnHold } from "@/components/copy";
+import { PromptContext } from "@/components/prompt-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
@@ -1260,6 +1261,7 @@ function Prompt({
     // Bounded by the notices area it sits in, which scrolls (see `Pane`).
     <View testID="prompt-card" style={[styles.promptCard, styles.promptBody]}>
       <Text style={styles.question}>{prompt.question}</Text>
+      <PromptContext context={prompt.context} />
       {prompt.options.map((option) => {
         const isArmed = armed === option.index;
         const current = isArmed || (armed === null && option.selected);

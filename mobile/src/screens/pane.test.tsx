@@ -1505,6 +1505,48 @@ test("answering from the pane says which question the card showed", async () => 
   view.unmount();
 });
 
+// The pane's card used to render only the question and the options, so an
+// approval opened from a notification or a list row read "Do you want to
+// proceed?" with nothing to judge it by: the command was only on the Screen
+// tab (pre-release bug hunt). The Agents card and the web pane always showed it.
+describe("an approval opened in the pane", () => {
+  const blockedOn = (prompt: ParsedPrompt) => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Working on it.")]));
+    mocked.pane.mockResolvedValue({ ...detail(), frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 } });
+    return render(<Pane paneId={PANE} />);
+  };
+
+  test("a Claude permission shows the command it would run above its options", async () => {
+    const view = blockedOn({
+      question: "Do you want to proceed?",
+      answer: "digit",
+      options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }],
+      context: ["Bash command", "rm -rf build dist\nDelete build and dist directories"],
+    } as ParsedPrompt);
+    const card = await view.findByTestId("prompt-card");
+    expect(within(card).getByText(/rm -rf build dist/)).toBeTruthy();
+    expect(within(card).getByText("Bash command")).toBeTruthy();
+  });
+
+  test("a codex approval shows its reason and command above its options", async () => {
+    const view = blockedOn({
+      question: "Would you like to run the following command?",
+      answer: "digit",
+      context: [
+        "Reason: May I inspect the failing E2E tests?",
+        "$ sed -n '1,180p' e2e/stress.spec.ts",
+      ],
+      options: [
+        { index: 1, label: "Yes, proceed (y)", selected: true },
+        { index: 2, label: "No, and tell Codex what to do differently (esc)", selected: false },
+      ],
+    } as ParsedPrompt);
+    const card = await view.findByTestId("prompt-card");
+    expect(within(card).getByText("$ sed -n '1,180p' e2e/stress.spec.ts")).toBeTruthy();
+    expect(within(card).getByText(/Reason: May I inspect/)).toBeTruthy();
+  });
+});
+
 // Message ids are only unique within one transcript file: Cursor numbers
 // messages from cursor-0, Codex numbers rows. herdr panes persist, so starting
 // a new chat in the same pane is ordinary — and the reader used to merge the

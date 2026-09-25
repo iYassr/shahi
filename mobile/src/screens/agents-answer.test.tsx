@@ -44,3 +44,11 @@ test("answering from the list says which question the card showed", async () => 
   // No occupant: this session is from a server that names none.
   expect(mockState.api.answerPrompt).toHaveBeenCalledWith("w1:p1", bash.options[0], bash, undefined);
 });
+
+// The pane's card and this one render context through one component, so the
+// pane can no longer drop what the list shows (pre-release bug hunt).
+test("a waiting card shows the command it would run above its options", () => {
+  const view = render(<Agents onOpenPane={jest.fn()} />);
+  expect(view.getByText("Bash command")).toBeTruthy();
+  expect(view.getByText(/rm -rf build dist/)).toBeTruthy();
+});

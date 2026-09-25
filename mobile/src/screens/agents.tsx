@@ -22,6 +22,7 @@ import { theme, statusColor } from "@/lib/theme";
 import { AgentIcon, Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { conversationLabel } from "@/components/conversation-label";
+import { PromptContext } from "@/components/prompt-context";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
 
@@ -511,18 +512,7 @@ function BlockedCard({
       {prompt ? (
         <>
           <Text style={styles.question}>{prompt.question}</Text>
-          {/* What the agent said above the question — the command it wants to
-              run, usually. Without it a codex approval reads as a bare "Allow?"
-              with nothing to judge. */}
-          {prompt.context && prompt.context.length > 0 && (
-            <View style={styles.context}>
-              {prompt.context.map((line, i) => (
-                <Text style={styles.contextLine} key={i}>
-                  {line}
-                </Text>
-              ))}
-            </View>
-          )}
+          <PromptContext context={prompt.context} />
           {stale && <Text style={styles.stale}>herdr isn’t running, so this question is as it was last seen and can’t be answered yet.</Text>}
           {prompt.options.map((option) => {
             const isArmed = armed === option.index;
@@ -699,8 +689,6 @@ const styles = StyleSheet.create({
   where: { color: theme.fg, fontSize: 17, fontWeight: "600", marginTop: 8 },
   task: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginTop: 2 },
   failure: { color: theme.rose, fontSize: 13, lineHeight: 18, marginTop: 8 },
-  context: { borderLeftWidth: 1, borderLeftColor: theme.line, paddingLeft: 10, marginBottom: 12, gap: 4 },
-  contextLine: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, lineHeight: 17 },
   question: {
     color: theme.fg,
     fontSize: 15,
