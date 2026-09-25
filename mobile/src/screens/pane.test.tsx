@@ -319,6 +319,55 @@ describe("sending a reply", () => {
     });
   });
 
+  // Pasted Python or YAML lost its first line's indentation relative to the
+  // rest, because the whole draft was trimmed (pre-release bug hunt).
+  test("a message keeps its first line's indentation", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Paste the function.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Paste the function\./);
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "\n  \n    def f():\n        return 1\n\n");
+    fireEvent.press(view.getByText("Send"));
+    expect(mocked.send).toHaveBeenCalledWith(PANE, "    def f():\n        return 1", expect.any(String));
+  });
+
+  test("a draft of only spaces and newlines is not sent", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "  \n\t ");
+    fireEvent.press(view.getByText("Send"));
+    expect(mocked.send).not.toHaveBeenCalled();
+  });
+
+  // Typing "ls" on the phone's keyboard sent "Ls", which a shell rejects: the
+  // composer took iOS's defaults of sentence capitals and autocorrect, meant
+  // for prose, for terminal input too (pre-release bug hunt).
+  describe("terminal input is typed literally", () => {
+    const literal = { autoCapitalize: "none", autoCorrect: false, spellCheck: false, smartInsertDelete: false };
+
+    test("in a shell pane", async () => {
+      const panes = mockSession.session.panes;
+      mockSession.session.panes = [{ paneId: "w1:p-shell", title: "zsh", agent: null as unknown as string, isAgent: false }];
+      try {
+        mocked.sessionLog.mockRejectedValue(new Error("no transcript"));
+        const view = render(<Pane paneId="w1:p-shell" />);
+        await settle();
+        expect(view.getByPlaceholderText("Run a command…").props).toMatchObject(literal);
+        view.unmount();
+      } finally {
+        mockSession.session.panes = panes;
+        forgetPaneMemory(api, "w1:p-shell");
+      }
+    });
+
+    test("on an agent's Screen", async () => {
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+      const view = render(<Pane paneId={PANE} initialView="screen" />);
+      await settle();
+      expect(view.getByPlaceholderText("Send text to terminal…").props).toMatchObject(literal);
+    });
+  });
+
   // A model switch and an away-summary reach the reader as role "system": they
   // render under a muted SYSTEM label, neither YOU nor AGENT.
   test("a system message renders under its own SYSTEM label", async () => {

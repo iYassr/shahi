@@ -107,6 +107,13 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
   { label: "Ctrl+C", spoken: "Control C", keys: ["C-c"] },
 ];
 
+/**
+ * Keyboard settings for text that goes to a terminal: no capitals, no
+ * autocorrect, no spelling marks, no spaces added around a paste. React Native
+ * 0.86 exposes no smart-quotes or smart-dashes switch; those stay iOS's.
+ */
+const LITERAL_INPUT = { autoCapitalize: "none", autoCorrect: false, spellCheck: false, smartInsertDelete: false } as const;
+
 export { forgetPaneMemory, paneScrollPlace } from "@/lib/reader-memory";
 
 /**
@@ -551,6 +558,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const keyboard = useKeyboardHeight();
   const largeText = useLargeText();
   const windowHeight = useWindowDimensions().height;
+  const literalInput = view === "screen" || (!!pane && !pane.isAgent);
 
   // Back should close the attachment sheet before it leaves the pane.
   useEffect(() => {
@@ -815,7 +823,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   async function submit() {
-    const text = draft.trim();
+    // Leading blank lines and trailing whitespace only. Trimming the whole
+    // draft took the first line's indentation and not the rest's, which broke
+    // pasted Python and YAML (pre-release bug hunt).
+    const text = draft.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
     if (!text || promptInFlight.current || savedDraft.inFlight) return;
     promptInFlight.current = true;
     const key = JSON.stringify([paneId, text]);
@@ -1224,6 +1235,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             placeholder={view === "screen" ? "Send text to terminal…" : pane && !pane.isAgent ? "Run a command…" : "Reply to this agent…"}
             placeholderTextColor={theme.dim}
             multiline
+            // A shell or the raw screen gets the keys as typed. iOS's defaults
+            // are for prose: typing "ls" sent "Ls", which a shell rejects, and
+            // autocorrect offered "Last" (pre-release bug hunt). A reply to an
+            // agent is prose, so it keeps them.
+            {...(literalInput ? LITERAL_INPUT : {})}
           />
           {largeText ? <View style={styles.composeButtons}>{attach || <View />}{send}</View> : send}
         </View>
