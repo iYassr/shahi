@@ -857,6 +857,36 @@ test("authenticated file ranges preserve bytes and detect a changing download", 
   expect(changed.status).toBe(409);
 });
 
+// September 2026 pre-release bug hunt: reading a FIFO waits for a writer for
+// ever, and each request held one of the two file-work slots, so two taps on a
+// named pipe made every later file view and upload answer 503 until restart.
+test("two requests for a named pipe leave file views and uploads answering", async () => {
+  const app = await boot();
+  try {
+    const fifo = join(scratch, "stuck.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const file = (path: string) => fetch(`${app.base}/api/file?path=${encodeURIComponent(path)}`, { headers: { cookie: app.cookie }, signal: AbortSignal.timeout(1_500) });
+    const pipes = await Promise.all([file(fifo), file(fifo)].map((p) => p.then((r) => r.status, () => "timed out")));
+    expect(pipes).toEqual([400, 400]);
+    expect((await fetch(`${app.base}/api/uploads/limits`, { headers: { cookie: app.cookie } })).status).toBe(200);
+    writeFileSync(join(scratch, "after-the-pipe.txt"), "still here");
+    expect((await file(join(scratch, "after-the-pipe.txt"))).status).toBe(200);
+  } finally { app.stop(); }
+});
+
+// September 2026 pre-release bug hunt: a folder inside home was refused as
+// "<folder> is outside the home directory", and the web viewer shows the
+// server's words as they stand.
+test("a folder, a file outside home and a missing file are each refused for what they are", async () => {
+  const refusal = async (path: string) => {
+    const res = await fetch(`${s.base}/api/file?path=${encodeURIComponent(path)}`, { headers: { cookie: s.cookie } });
+    return { status: res.status, ...(await res.json() as { error: string; code?: string }) };
+  };
+  expect(await refusal(scratch)).toEqual({ status: 400, code: "not_a_file", error: "That is a folder, not a file." });
+  expect(await refusal("/etc/hosts")).toMatchObject({ status: 403, code: "outside_roots", error: expect.stringContaining("outside your home folder") });
+  expect(await refusal(join(scratch, "never-written.txt"))).toMatchObject({ status: 404, code: "not_found" });
+});
+
 // Review finding F38: a header value above U+00FF threw while the response was
 // built, and the route answered "cannot read that file" for a file that was there.
 test("a file named in Arabic, with an emoji, or by a macOS screenshot opens and keeps its name", async () => {

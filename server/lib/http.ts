@@ -47,7 +47,7 @@ import { followTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
 import { OutsideHomeError, collapseHome, folderProblem, listDirectories } from "./dirs";
-import { FileTooLarge, readWithinHome } from "./files";
+import { FileTooLarge, NotAFileError, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
@@ -1095,9 +1095,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             },
           });
         } catch (err: unknown) {
+          // Each refusal carries a code as well as words a person can read:
+          // the web viewer shows `error` as it stands, and a client can tell
+          // the refusals apart without parsing it.
           if (err instanceof RangeError) return json({ error: "Invalid file range" }, { status: 416 });
           if (err instanceof FileTooLarge) return json({ error: err.message }, { status: 413 });
-          if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
+          if (err instanceof NotAFileError) return json({ error: err.message, code: "not_a_file" }, { status: 400 });
+          if (err instanceof OutsideHomeError) {
+            return json({ error: "That file is outside your home folder, so Shahi will not open it.", code: "outside_roots" }, { status: 403 });
+          }
+          if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT") {
+            return json({ error: "That file is not there any more. It may have moved or been deleted.", code: "not_found" }, { status: 404 });
+          }
           return json({ error: "cannot read that file" }, { status: 404 });
         }
       }

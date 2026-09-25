@@ -17,8 +17,8 @@
  * exists so that a malformed or hostile path cannot quietly walk somewhere
  * nobody intended.
  */
-import { realpathSync } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { constants, realpathSync } from "node:fs";
+import { open, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { OutsideHomeError, expandHome } from "./dirs";
@@ -79,6 +79,19 @@ export class FileTooLarge extends Error {
   }
 }
 
+/**
+ * A path that names something other than a file: a folder, or a named pipe,
+ * socket or device. Its own error so the route can say which. A folder inside
+ * the home directory used to be refused as "outside the home directory", which
+ * the web viewer showed word for word (September 2026 pre-release bug hunt).
+ */
+export class NotAFileError extends Error {
+  constructor(readonly folder: boolean) {
+    super(folder ? "That is a folder, not a file." : "That is not a regular file, so Shahi will not open it.");
+    this.name = "NotAFileError";
+  }
+}
+
 export function contentTypeFor(path: string, { download = false } = {}): string {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
   if (download) return "application/octet-stream";
@@ -107,8 +120,8 @@ const within = (real: string, root: string) => real === root || real.startsWith(
 /**
  * Resolves a path, following symlinks first so none of them can point out.
  *
- * Throws `OutsideHomeError` for anything outside the roots, and for anything
- * missing — `realpath` refuses both.
+ * Throws `OutsideHomeError` for anything outside the roots, and `realpath`'s
+ * own ENOENT for anything missing.
  */
 async function resolveReadable(input: string): Promise<string> {
   const expanded = expandHome(input || "~");
@@ -122,30 +135,54 @@ async function resolveReadable(input: string): Promise<string> {
 /**
  * Resolves and reads a file, or throws.
  *
- * `OutsideHomeError` for anything outside the roots or missing, and
- * `FileTooLarge` past the ceiling.
+ * `OutsideHomeError` for anything outside the roots, `NotAFileError` for a
+ * folder or anything else that is not a regular file, `FileTooLarge` past the
+ * ceiling, and the filesystem's own error (ENOENT for a missing file) for the
+ * rest.
+ *
+ * The file is opened without blocking, and everything after that asks the
+ * open handle rather than the path. Reading a named pipe waits for a writer
+ * for ever: in the September 2026 pre-release bug hunt two requests for a
+ * FIFO in the home directory held both file-work slots until a restart, and
+ * every later file view and upload was told the box was busy. A non-blocking
+ * open returns at once even for a pipe, `fstat` on the handle says what it
+ * really is, and the bytes come from that same handle, so the path cannot be
+ * swapped for a pipe between the check and the read.
  */
 export async function readWithinHome(
   request: FileRequest,
 ): Promise<{ path: string; bytes: Uint8Array; contentType: string; name: string; total: number; version: string; range?: { start: number; end: number } }> {
   const path = await resolveReadable(request.path);
 
-  const info = await stat(path);
-  if (info.isDirectory()) throw new OutsideHomeError(request.path);
-  if (info.size > MAX_BYTES) throw new FileTooLarge(info.size);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new NotAFileError(info.isDirectory());
+    if (info.size > MAX_BYTES) throw new FileTooLarge(info.size);
 
-  const range = request.range;
-  if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end < range.start || (info.size > 0 && range.start >= info.size))) throw new RangeError("Invalid file range");
-  const selected = range && info.size > 0 ? { start: range.start, end: Math.min(range.end, info.size - 1) } : undefined;
-  const source = Bun.file(path);
-  const bytes = new Uint8Array(await (selected ? source.slice(selected.start, selected.end + 1) : source).arrayBuffer());
-  return {
-    path,
-    bytes,
-    total: info.size,
-    version: `${info.size}-${info.mtimeMs}`,
-    range: selected,
-    contentType: contentTypeFor(path, { download: request.download }),
-    name: path.slice(path.lastIndexOf("/") + 1),
-  };
+    const range = request.range;
+    if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end < range.start || (info.size > 0 && range.start >= info.size))) throw new RangeError("Invalid file range");
+    const selected = range && info.size > 0 ? { start: range.start, end: Math.min(range.end, info.size - 1) } : undefined;
+    const start = selected?.start ?? 0;
+    const bytes = new Uint8Array(selected ? selected.end - selected.start + 1 : info.size);
+    let filled = 0;
+    while (filled < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, filled, bytes.length - filled, start + filled);
+      // Shorter than a moment ago: an agent is rewriting it. What was there is
+      // sent; a ranged download notices the change by its version.
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    return {
+      path,
+      bytes: filled === bytes.length ? bytes : bytes.subarray(0, filled),
+      total: info.size,
+      version: `${info.size}-${info.mtimeMs}`,
+      range: selected,
+      contentType: contentTypeFor(path, { download: request.download }),
+      name: path.slice(path.lastIndexOf("/") + 1),
+    };
+  } finally {
+    await handle.close();
+  }
 }

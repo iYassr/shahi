@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { OutsideHomeError } from "./dirs";
-import { contentTypeFor, readWithinHome } from "./files";
+import { NotAFileError, contentTypeFor, readWithinHome } from "./files";
 
 /** Under the home directory, which is one of the two roots a read may come from. */
 const dir = await mkdtemp(join(homedir(), ".shahi-files-test-"));
@@ -75,8 +75,28 @@ describe("readWithinHome", () => {
     );
   });
 
-  test("refuses a directory", async () => {
-    expect(readWithinHome({ path: dir })).rejects.toThrow(OutsideHomeError);
+  // A folder inside home was refused as "outside the home directory", which
+  // is not what was wrong with it (September 2026 pre-release bug hunt).
+  test("a folder inside home is refused as a folder, not as outside home", async () => {
+    const refused = await readWithinHome({ path: dir }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(NotAFileError);
+    expect((refused as NotAFileError).folder).toBe(true);
+    expect((refused as Error).message).toBe("That is a folder, not a file.");
+  });
+
+  // Reading a FIFO waits for a writer that never comes, and each such request
+  // held one of the two file-work slots until restart.
+  test("a named pipe is refused at once instead of waiting for a writer for ever", async () => {
+    const fifo = join(dir, "pipe.txt");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const started = performance.now();
+    const refused = await Promise.race([
+      readWithinHome({ path: fifo }).then(() => "read", (e: unknown) => e),
+      Bun.sleep(2_000).then(() => "still waiting"),
+    ]);
+    expect(refused).toBeInstanceOf(NotAFileError);
+    expect((refused as NotAFileError).folder).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   test("refuses a file that is not there", async () => {
