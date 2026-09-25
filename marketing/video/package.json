@@ -1,0 +1,24 @@
+{
+  "name": "shahi-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "bun run sound && remotion studio",
+    "render": "remotion render Wide out/shahi-16x9.mp4 && remotion render Square out/shahi-1x1.mp4",
+    "still": "remotion still",
+    "render:launch": "bun run sound && remotion render LaunchWide out/shahi-launch-16x9.mp4 && remotion render LaunchSquare out/shahi-launch-1x1.mp4",
+    "sound": "bun audio/generate.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.528",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.528"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}

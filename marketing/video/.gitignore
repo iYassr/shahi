@@ -1,0 +1,3 @@
+out/
+# Rendered by audio/generate.ts from code and audio/vo/; `bun run sound` rebuilds it.
+public/audio/
