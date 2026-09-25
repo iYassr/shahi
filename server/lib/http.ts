@@ -1693,7 +1693,13 @@ async function serveStatic(pathname: string, webRoot: string | null): Promise<Re
     const immutable = /^assets\/.*-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(relative);
     return new Response(candidate, {
       headers: {
-        "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
+        // Bun's own type for anything the table does not name. The table once
+        // lacked `mjs`, so the pdf.js worker went out as octet-stream under
+        // nosniff, the browser refused to run it, and no PDF could be
+        // previewed from a sidecar-served web build (September 2026
+        // pre-release bug hunt). The stub and the hosted fixture use Bun's
+        // type for every file, which is why no suite noticed.
+        "content-type": CONTENT_TYPES[ext] ?? candidate.type,
         // Names the asset for the compressed-bytes cache; the hash in the
         // filename is what makes it safe.
         ...(immutable ? { "x-asset": relative } : {}),
