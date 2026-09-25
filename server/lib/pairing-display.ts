@@ -48,8 +48,17 @@ export async function pairingDisplay(url: string, expiresAt: number, copied: boo
     // terminal wrapping or scrolling makes it impossible for the phone to scan.
     const symbol = symbols.find(qr => qr.width <= columns && qr.lines.length + 4 <= rows);
     if (!symbol) {
+      // What is missing, not a size to reach. These are the popup's own
+      // columns and rows, and herdr's popup is a good deal smaller than the
+      // terminal around it, so "Enlarge to 51 columns × 30 rows" was printed
+      // inside an 80×36 terminal, where the QR first appeared at 83×33
+      // (pre-release bug hunt). The shortfall holds whatever the popup's share.
       const smallest = symbols.at(-1)!;
-      const hints = ["More room needed for the QR", `Enlarge to ${smallest.width} columns × ${smallest.lines.length + 4} rows,`, "or reduce your terminal font size.", copied ? "Code copied. T+Enter shows it as text." : "T+Enter shows the code as text.", "Enter to close"];
+      const more = [
+        smallest.width > columns ? `${smallest.width - columns} more column${smallest.width - columns === 1 ? "" : "s"}` : "",
+        smallest.lines.length + 4 > rows ? `${smallest.lines.length + 4 - rows} more row${smallest.lines.length + 4 - rows === 1 ? "" : "s"}` : "",
+      ].filter(Boolean).join(" and ");
+      const hints = ["More room needed for the QR:", `${more} in this window.`, "Enlarge the terminal, hide herdr's", "sidebar, or reduce the font size.", copied ? "Code copied. T+Enter shows it as text." : "T+Enter shows the code as text.", "Enter to close"];
       return hints.map(line => line.slice(0, columns)).slice(0, rows).join("\n");
     }
     const pad = " ".repeat(Math.floor((columns - symbol.width) / 2));

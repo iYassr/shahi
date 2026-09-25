@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import QRCode from "qrcode";
 import { parsePairingUrl } from "@shahi/shared/pairing";
 import { browserPairingLink, pairingDisplay } from "./pairing-display";
 const url = "shahi://pair#v=1&server=" + "a".repeat(43) + "&relay=" + encodeURIComponent("https://relay.getshahi.dev") + "&secret=" + "b".repeat(43);
@@ -26,6 +27,30 @@ test("a short or narrow terminal shows a resize hint instead of a clipped code",
     for (const line of screen.split("\n")) expect(line.length).toBeLessThanOrEqual(width!);
   }
 });
+// herdr's popup is about 32 columns and 3 rows smaller than the terminal, so
+// "Enlarge to 51 columns × 30 rows" appeared inside an 80×36 terminal, which
+// already had both (pre-release bug hunt). The hint now says what is missing.
+test("a popup too narrow for the QR says how much more room it needs, not a terminal size it already has", async () => {
+  const render = await pairingDisplay(url, Date.now() + 600000, false);
+  // The smallest code the popup can show: low error correction, plus the
+  // header, expiry and close lines.
+  const symbol = strip(await QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel: "L" })).trimEnd().split("\n");
+  const width = Math.max(...symbol.map(line => line.length));
+  const height = symbol.length + 4;
+  expect(strip(render(width, height))).toContain("Scan with Shahi");
+  const narrow = strip(render(width - 3, height + 3));
+  expect(narrow).toContain("More room needed for the QR");
+  expect(narrow).toContain("3 more columns in this window.");
+  expect(narrow).not.toContain("row");
+  expect(narrow).not.toMatch(/Enlarge to \d+ columns/);
+  expect(narrow).toContain("hide herdr's");
+  const both = strip(render(width - 1, height - 2));
+  expect(both).toContain("1 more column and 2 more rows in this window.");
+  for (const [w, h] of [[width - 3, height + 3], [width - 1, height - 2]]) {
+    for (const line of strip(render(w!, h!)).split("\n")) expect(line.length).toBeLessThanOrEqual(w!);
+  }
+});
+
 test("resizing restores the full QR without creating a new pairing code", async () => {
   const render = await pairingDisplay(url, Date.now() + 600000, true);
   const original = render(80, 40);
