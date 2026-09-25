@@ -229,6 +229,22 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 25 September 2026, the launch video
+
+Published the site from a clean checkout of `c17d65e` (the launch video on the
+homepage, served from R2, and the landing-page audit's fixes) as Cloudflare
+version `64c4d420-4c5f-4b76-a411-09760780e031`. The bucket `shahi-site-media`
+was created first, and the four files named in `site/media.json` were uploaded
+after checking each against its sha256. Checked after deploying: `/`,
+`/privacy`, `/pwa/` and `/og.png` answer 200; `/`'s policy carries
+`media-src 'self'`; the wide cut answers `Range: bytes=0-1` with 206 and
+`Content-Range: bytes 0-1/4395677`, a plain GET with 200 and the immutable
+Cache-Control, a range past the end with 416, and an unknown name with 404;
+`/site.css` now arrives with `content-encoding: br` while `/` keeps
+`no-transform`. In Chromium (1440 wide) and WebKit (iPhone 14) the page chose
+the wide and the square cut, played, seeked to 0:20 and loaded all 14 caption
+cues, with no policy refusals and no request to another origin.
+
 ## Verified deployment — 25 September 2026
 
 Published the site and hosted client from a clean checkout of `a586b7e` (the
