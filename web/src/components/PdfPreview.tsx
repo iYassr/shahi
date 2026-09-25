@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "../api";
+import { FileDownloadError } from "@shahi/shared/file-download";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -20,7 +21,11 @@ export default function PdfPreview({ url }: { url: string }) {
       task = getDocument({ data: value, useSystemFonts: true });
       const pdf = await task.promise;
       if (live) setDocument(pdf);
-    }).catch(() => { if (live) setError("This PDF cannot be previewed. Download it to open in another app."); });
+    }).catch((e: unknown) => {
+      // The computer's reason when it gave one (over 25 MB, an out-of-date
+      // computer, a file that moved); otherwise the bytes did not parse.
+      if (live) setError(e instanceof FileDownloadError ? e.message : "This PDF cannot be previewed. Download it to open in another app.");
+    });
     return () => { live = false; void task?.destroy(); };
   }, [api, url]);
   useEffect(() => {

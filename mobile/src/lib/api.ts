@@ -1,5 +1,5 @@
 import { uploadCapability, uploadFile, type UploadOptions, type UploadRequest } from "@shahi/shared/file-upload";
-import { downloadFileBytes } from "@shahi/shared/file-download";
+import { downloadFileBytes, FileDownloadError, fileRefusal, overFileCeiling } from "@shahi/shared/file-download";
 /**
  * Client for the Shahi server, for React Native.
  *
@@ -556,12 +556,15 @@ const api = {
       return { pdfBase64: toBase64Url(bytes).replace(/-/g, "+").replace(/_/g, "/") };
     }
     const res = await dispatch(route, { headers: baseHeaders() });
-    if (res.status === 413) throw new Error("Preview unavailable: this file is too large to open over this connection. Open it on your computer.");
     if (res.status === 401) throw new UnauthorizedError();
     if (res.status === 426) throw await incompatible(res);
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `could not read that file (${res.status})`);
+      const body: unknown = await res.json().catch(() => null);
+      // A preview asks for the whole file, so a 413 that is not the file's own
+      // ceiling is the relay's frame limit, not an out-of-date computer.
+      throw new FileDownloadError(res.status === 413 && !overFileCeiling(body)
+        ? "Preview unavailable: this file is too large to open over this connection. Open it on your computer."
+        : fileRefusal(res.status, body));
     }
     const type = res.headers.get("content-type") ?? "";
     if (type.split(";")[0] === "application/pdf") {
@@ -577,7 +580,7 @@ const api = {
       return { imageUrl: dataUrl(type.split(";")[0]!, await res.bytes()) };
     }
     if (type && !type.startsWith("text/") && !/^application\/(json|xml)(?:;|$)/.test(type)) {
-      throw new Error("Preview unavailable for this file type. Open it on your computer. Text files and images can be viewed in Shahi.");
+      throw new FileDownloadError("Preview unavailable for this file type. Open it on your computer. Text files and images can be viewed in Shahi.");
     }
     return { text: await res.text() };
   },

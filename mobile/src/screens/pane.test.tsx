@@ -4,6 +4,7 @@ import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
+import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 
 // The first test in this file pays for loading the screen and its mocks under
@@ -287,6 +288,34 @@ describe("sending a reply", () => {
       const view = await expand(null);
       expect(view.getByText("Still running.")).toBeTruthy();
       expect(view.queryByText("(no output)")).toBeNull();
+    });
+  });
+
+  // September 2026 pre-release bug hunt: the viewer replaced every message but
+  // "Preview unavailable…" with "may have moved, or your computer may be
+  // offline", so a folder, a file outside home, a file over 25 MB and a
+  // computer that needs an update all looked like a dead connection.
+  describe("the file viewer", () => {
+    const opened = async (failure: Error) => {
+      (api as unknown as { readFile: jest.Mock }).readFile.mockRejectedValue(failure);
+      mocked.sessionLog.mockResolvedValue(log([{
+        id: "t1", role: "agent", at: 1,
+        blocks: [{ kind: "tool", name: "Read", summary: "~/project", file: { path: "/home/x/project", name: "project" }, result: null }],
+      }]));
+      const view = render(<Pane paneId={PANE} />);
+      fireEvent.press(await view.findByText("project"));
+      return view;
+    };
+
+    test("says the computer's reason for refusing a file, not that the computer may be offline", async () => {
+      const view = await opened(new FileDownloadError("That is a folder, not a file."));
+      expect(await view.findByText("That is a folder, not a file.")).toBeTruthy();
+      expect(view.queryByText(/may be offline/)).toBeNull();
+    });
+
+    test("keeps 'may be offline' for a request that got no answer", async () => {
+      const view = await opened(new UnreachableError("box", "relay.example", "Your computer is offline — its Shahi service is not connected to the relay."));
+      expect(await view.findByText(/your computer may be offline/)).toBeTruthy();
     });
   });
 

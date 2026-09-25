@@ -1,5 +1,6 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { api, createApi, connection, fetchWithTimeout, IncompatibleServerError, SessionSocket, UnreachableError } from "./api";
+import { FileDownloadError } from "@shahi/shared/file-download";
 
 /**
  * The client's own decisions, below the screens.
@@ -52,8 +53,19 @@ describe("readFile", () => {
   });
 
   test("oversized previews explain the connection limit", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 413, headers: new Headers() });
+    fetchMock.mockResolvedValue({ ok: false, status: 413, headers: new Headers(), json: async () => ({ error: "too large to send through the relay" }) });
     await expect(api.readFile("/home/y/report.pdf")).rejects.toThrow("Preview unavailable: this file is too large to open over this connection.");
+  });
+
+  // September 2026 pre-release bug hunt: the 25 MB ceiling and the relay's
+  // frame limit are both 413, and a file over the ceiling cannot be opened
+  // over any connection, so "over this connection" sent people looking for
+  // another one.
+  test("a file over the 25 MB ceiling says so, rather than blaming the connection", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 413, headers: new Headers(), json: async () => ({ error: "over", code: "file_too_large" }) });
+    const refused = await api.readFile("/home/y/huge.txt").catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(FileDownloadError);
+    expect((refused as Error).message).toContain("over 25 MB");
   });
 
   // The URL is handed back rather than the bytes: `Image` fetches it itself,
@@ -97,6 +109,8 @@ describe("readFile", () => {
       json: async () => ({ error: "outside the readable roots" }),
     });
     await expect(api.readFile("/etc/passwd")).rejects.toThrow("outside the readable roots");
+    // As a FileDownloadError, which is what the viewer shows as it stands.
+    await expect(api.readFile("/etc/passwd")).rejects.toBeInstanceOf(FileDownloadError);
   });
 });
 

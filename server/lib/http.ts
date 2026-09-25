@@ -1098,7 +1098,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (err instanceof RangeNotSatisfiable) {
             return json({ error: err.message, code: "range_not_satisfiable" }, { status: 416, headers: { "content-range": `bytes */${err.size}` } });
           }
-          if (err instanceof FileTooLarge) return json({ error: err.message }, { status: 413 });
+          if (err instanceof FileTooLarge) return json({ error: err.message, code: "file_too_large" }, { status: 413 });
           if (err instanceof NotAFileError) return json({ error: err.message, code: "not_a_file" }, { status: 400 });
           if (err instanceof OutsideHomeError) {
             return json({ error: "That file is outside your home folder, so Shahi will not open it.", code: "outside_roots" }, { status: 403 });

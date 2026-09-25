@@ -40,6 +40,7 @@ import { CopyButton, CopyOnHold } from "@/components/copy";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
+import { FileDownloadError } from "@shahi/shared/file-download";
 import { connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells } from "@/lib/scroll-cells";
@@ -1413,7 +1414,10 @@ function FileView({
     void api
       .readFile(file.path)
       .then((result) => live && setBody(result))
-      .catch((e: Error) => live && setError(e.message.startsWith("Preview unavailable") ? e.message : "This file could not be opened. It may have moved, or your computer may be offline."));
+      // The computer's reason, when it gave one: a folder, a file outside
+      // home, one over 25 MB or an out-of-date computer each say so. Only a
+      // request that got no answer is described as offline.
+      .catch((e: Error) => live && setError(e instanceof FileDownloadError ? e.message : "This file could not be opened. It may have moved, or your computer may be offline."));
     return () => {
       live = false;
     };

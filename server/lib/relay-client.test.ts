@@ -706,6 +706,68 @@ describe("a phone through the relay", () => {
     }
   });
 
+  // Found in the September 2026 pre-release bug hunt: Shahi 0.3.6 served
+  // ranges, but its relay client copied only these three headers into the
+  // sealed answer, so the phone never saw a range or a version and every PDF
+  // and Save/Share from it failed as "incomplete", even a 584-byte file. It was
+  // on Stable from 20 to 24 September, so computers not yet updated still run
+  // it. The box here answers exactly what such a computer put on the wire.
+  test("a 0.3.6 computer whose relay dropped the range headers still opens a small PDF, and asks for an update for a large one", async () => {
+    const secret = new Uint8Array(32).fill(9);
+    const identity = fromSeed(new Uint8Array(32).fill(10));
+    const files: Record<string, Uint8Array> = {
+      "small.pdf": new Uint8Array(584).map((_, i) => i & 0xff),
+      "large.pdf": new Uint8Array(900 * 1024).map((_, i) => (i * 7) & 0xff),
+    };
+    const OLD_RELAY_HEADERS = ["content-type", "etag", "cache-control"];
+    const old = new RelayClient({
+      url: relay.url,
+      identity,
+      devices: { secret: () => secret, revokedSecret: () => null },
+      pairing: { secretByHash: () => null },
+      auth: { issue: () => "old-computer" },
+      server: {
+        dispatch: async (req) => {
+          const file = files[new URL(req.url).searchParams.get("path")!]!;
+          const range = req.headers.get("range")?.match(/^bytes=(\d+)-(\d+)$/);
+          const start = range ? Number(range[1]) : 0;
+          const end = range ? Math.min(Number(range[2]), file.length - 1) : file.length - 1;
+          // What the 0.3.6 route answered, then what its relay client kept.
+          const served: Record<string, string> = {
+            "content-type": "application/pdf",
+            "cache-control": "no-store",
+            "x-shahi-file-version": "584-1",
+            ...(range ? { "content-range": `bytes ${start}-${end}/${file.length}` } : {}),
+          };
+          const kept = Object.fromEntries(Object.entries(served).filter(([name]) => OLD_RELAY_HEADERS.includes(name)));
+          return new Response(file.slice(start, end + 1), { status: range ? 206 : 200, headers: kept });
+        },
+        attach() {},
+        detach() {},
+        receive() {},
+      },
+      log: () => {},
+    });
+    old.start();
+    const link = new RelayLink(deviceTarget({ relay: relay.url, serverId: identity.serverId, deviceId: "old-computer", deviceSecret: b64(secret) }));
+    const download = (name: string) => downloadFileBytes(async (range) => link.request({
+      method: "GET",
+      path: `/api/file?path=${encodeURIComponent(name)}`,
+      headers: { "x-shahi-api": String(SHAHI_API_VERSION), ...range },
+      body: null,
+    }, 5_000));
+    try {
+      await waitFor(() => old.connected, "the 0.3.6 box to authenticate");
+      const small = await download("small.pdf");
+      expect(small.contentType).toBe("application/pdf");
+      expect(Buffer.from(small.bytes).equals(Buffer.from(files["small.pdf"]!))).toBe(true);
+      await expect(download("large.pdf")).rejects.toThrow("This computer needs an update to download larger files through the relay.");
+    } finally {
+      link.close();
+      old.stop();
+    }
+  });
+
   // Found in the September 2026 pre-release review: a link may run four
   // requests and each answer may be nearly a full frame, but the box ended the
   // link as soon as it had sent 2 MiB without an acknowledgment, which cannot

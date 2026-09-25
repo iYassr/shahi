@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -909,6 +909,12 @@ test("a folder, a file outside home and a missing file are each refused for what
   expect(await refusal(scratch)).toEqual({ status: 400, code: "not_a_file", error: "That is a folder, not a file." });
   expect(await refusal("/etc/hosts")).toMatchObject({ status: 403, code: "outside_roots", error: expect.stringContaining("outside your home folder") });
   expect(await refusal(join(scratch, "never-written.txt"))).toMatchObject({ status: 404, code: "not_found" });
+  // The relay's own 413 means "this computer needs an update"; this one is
+  // final, and says so with a code the clients can tell apart.
+  const huge = join(scratch, "huge.log");
+  writeFileSync(huge, "");
+  truncateSync(huge, 26 * 1024 * 1024);
+  expect(await refusal(huge)).toMatchObject({ status: 413, code: "file_too_large", error: expect.stringContaining("over 25 MB") });
 });
 
 // Review finding F38: a header value above U+00FF threw while the response was

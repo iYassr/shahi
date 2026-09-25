@@ -120,9 +120,16 @@ function resolveRange(range: ByteRange, size: number): { start: number; end: num
   return { start: range.start, end: Math.min(range.end ?? size - 1, size - 1) };
 }
 
+/**
+ * Past the ceiling. The route answers it as 413 `file_too_large`: the relay
+ * also answers 413, for a whole file that will not fit in one frame, and a
+ * client has to tell a final "too large" from "this computer needs an update".
+ * Clients also recognise the wording this used to have, "file is <n> bytes,
+ * over the <n> limit", for computers that send no code.
+ */
 export class FileTooLarge extends Error {
   constructor(readonly bytes: number) {
-    super(`file is ${bytes} bytes, over the ${MAX_BYTES} limit`);
+    super("This file is over 25 MB, which is too large to open or download through Shahi. Open it on your computer.");
     this.name = "FileTooLarge";
   }
 }
