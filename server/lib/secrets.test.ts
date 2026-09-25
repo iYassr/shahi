@@ -41,6 +41,33 @@ describe("readEnvFile", () => {
   test("a missing file is an empty map, not an error", () => {
     expect(readEnvFile(join(scratch(), "absent")).size).toBe(0);
   });
+
+  // A hand-written PORT="7275" was read with its quotes, became NaN, and the
+  // service crashed on every start (pre-release bug hunt).
+  test('PORT="7275" is port 7275, as dotenv loaders read it, not NaN and a crash-looping service', () => {
+    const path = join(scratch(), ".env");
+    writeFileSync(path, [
+      'PORT="7275"',
+      "HOST='127.0.0.1'",
+      'RELAY_URL="https://relay.example" # my own Worker',
+      "SHAHI_ALLOWED_HOSTS=box.tailnet.ts.net   # for tailscale serve",
+      "SPACED = kept",
+      "HASH=abc#def",
+      'EMPTY=""',
+    ].join("\n"));
+    const env = readEnvFile(path);
+    expect(env.get("PORT")).toBe("7275");
+    expect(env.get("HOST")).toBe("127.0.0.1");
+    expect(env.get("RELAY_URL")).toBe("https://relay.example");
+    expect(env.get("SHAHI_ALLOWED_HOSTS")).toBe("box.tailnet.ts.net");
+    expect(env.get("SPACED")).toBe("kept");
+    // Only ` #` starts a comment, as in dotenv; a # inside a value is the value.
+    expect(env.get("HASH")).toBe("abc#def");
+    expect(env.get("EMPTY")).toBe("");
+    const config = loadConfig({ ...Object.fromEntries(env), SESSION_SECRET: "s".repeat(32), PASSCODE_HASH_B64: Buffer.from("$2b$12$" + "a".repeat(53)).toString("base64") });
+    expect(config.port).toBe(7275);
+    expect(config.relayUrl).toBe("https://relay.example");
+  });
 });
 
 describe("ensureSecrets", () => {

@@ -305,6 +305,39 @@ console.log("QR-EXIT:" + (await qr.exited));`;
   }, 15_000);
 });
 
+/**
+ * A quoted PORT went into the unit as `PORT="7275"`, the sidecar read NaN
+ * and crashed on every start, and setup said "not answering at
+ * http://127.0.0.1:NaN" (pre-release bug hunt).
+ */
+describe("a PORT written by hand in the .env", () => {
+  test('PORT="7275" reaches the service as 7275, not NaN', async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    mkdirSync(layout.configDir, { recursive: true });
+    writeFileSync(layout.envFile, 'PORT="7275"\n');
+    let spec: ServiceSpec | undefined;
+    offline();
+    await install(layout, fakeService((s) => { spec = s; }));
+    expect(spec?.env.PORT).toBe("7275");
+    expect(out.text()).not.toContain("NaN");
+  }, 40_000);
+
+  test("a PORT that is not a port stops setup before the service, naming the file to fix", async () => {
+    captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    mkdirSync(layout.configDir, { recursive: true });
+    writeFileSync(layout.envFile, "PORT=72o5\n");
+    let installed = 0;
+    await expect(install(layout, fakeService(() => { installed++; }))).rejects.toThrow(
+      `PORT must be a whole number from 1 to 65535, not "72o5". Fix it in ${layout.envFile}`,
+    );
+    expect(installed).toBe(0);
+  });
+});
+
 describe("the first setup's passcode", () => {
   // Reproduced in the pre-release review with the catalog download failing:
   // the hash was written before the release was fetched, the passcode was

@@ -23,7 +23,17 @@ describe("loadConfig", () => {
 
   test("defaults the port to 7171", () => {
     expect(loadConfig(base).port).toBe(7171);
+    expect(loadConfig({ ...base, PORT: "" }).port).toBe(7171);
     expect(loadConfig({ ...base, PORT: "9000" }).port).toBe(9000);
+  });
+
+  // Number() of a quoted or mistyped PORT was NaN, and Bun.serve failed on
+  // every start with "options.port … Received NaN" (pre-release bug hunt).
+  test("a PORT that is not a port stops startup naming PORT, instead of NaN reaching Bun.serve", () => {
+    for (const PORT of ['"7275"', "abc", "7275.5", "0", "65536", "-1", " 7275"]) {
+      expect(() => loadConfig({ ...base, PORT })).toThrow(`PORT must be a whole number from 1 to 65535, not "${PORT}".`);
+    }
+    expect(loadConfig({ ...base, PORT: "65535" }).port).toBe(65535);
   });
 
   test("has no relay unless RELAY_URL names one, and refuses one that is not an http(s) URL", () => {

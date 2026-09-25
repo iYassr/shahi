@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { readEnvFile } from "../server/lib/secrets";
 import { Auth } from "../server/lib/auth";
+import { parsePort } from "../server/lib/config";
 import { readJson, installation } from "./releases/storage";
 import { updateInProgress, type ControlHandshake } from "@shahi/shared";
 
@@ -64,7 +65,7 @@ async function main() {
     const env = readEnvFile(join(config, ".env"));
     const host = env.get("HOST") || "127.0.0.1";
     const local = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "[::1]" : host;
-    const url = `http://${local}:${env.get("PORT") || "7171"}/api/meta`;
+    const url = `http://${local}:${parsePort(env.get("PORT"))}/api/meta`;
     const auth = new Auth({ passcodeHash: "", sessionSecret: env.get("SESSION_SECRET")!, sessionTtlMs: 60_000 });
     await finishUpdate({
       attempts: 360,

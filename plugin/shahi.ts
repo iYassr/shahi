@@ -50,6 +50,7 @@ import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
+import { parsePort } from "../server/lib/config";
 import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../server/lib/secrets";
 import { layoutFromEnv, type Layout } from "./layout";
 import { serviceFor, type Service, type ServiceSpec } from "./service";
@@ -164,7 +165,7 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
       SHAHI_ENV_FILE: layout.envFile,
       SHAHI_DATA: layout.dataPath,
       WEB_ROOT: layout.webRoot,
-      PORT: env.get("PORT") ?? "7171",
+      PORT: String(portOf(layout, env)),
       // The .env is loaded by the sidecar itself; the relay default is not in
       // it, so it rides in the service's environment (see the header).
       ...(relay ? { RELAY_URL: relay } : {}),
@@ -181,9 +182,18 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
   };
 }
 
-function address(env: Map<string, string>): { host: string; port: number; url: string } {
+/** The .env's PORT, or why it is not one and which file to fix: the unit and the address are both made from it. */
+function portOf(layout: Layout, env: Map<string, string>): number {
+  try {
+    return parsePort(env.get("PORT"));
+  } catch (err) {
+    throw new Error(`${message(err)} Fix it in ${layout.envFile}, then:  herdr plugin action invoke shahi.restart`);
+  }
+}
+
+function address(layout: Layout, env: Map<string, string>): { host: string; port: number; url: string } {
   const host = env.get("HOST") ?? "127.0.0.1";
-  const port = Number(env.get("PORT") ?? 7171);
+  const port = portOf(layout, env);
   return { host, port, url: `http://${host}:${port}` };
 }
 
@@ -291,7 +301,7 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   try { requestUpdate(managerRoot, { action: "install" }); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
 
-  const { url } = address(env);
+  const { url } = address(layout, env);
   const info = await waitForMeta(url);
   const relayUrl = relayUrlFor(env);
   const relayDefaulted = !env.has("RELAY_URL");
@@ -350,7 +360,7 @@ export async function setup(layout: Layout, service: Service, opts: { newPasscod
 
 export async function status(layout: Layout, service: Service): Promise<number> {
   const env = readEnvFile(layout.envFile);
-  const { url } = address(env);
+  const { url } = address(layout, env);
   const state = service.status();
   const info = await meta(url);
   const devices = info ? await deviceCount(url, env) : null;
@@ -477,7 +487,7 @@ function popupSteps(layout: Layout, service: Service, args: string[]): PopupStep
     // With no service manager nothing here can tell a sidecar started by hand
     // from none, so an answering API is the whole test.
     running: async () =>
-      (service.kind === "none" || service.status().running) && (await meta(address(readEnvFile(layout.envFile)).url)) !== null,
+      (service.kind === "none" || service.status().running) && (await meta(address(layout, readEnvFile(layout.envFile)).url)) !== null,
     setup: () => install(layout, service),
     // pair.ts puts on the code the relay the running sidecar reports, so only
     // the .env (for the session key and the port) needs naming.

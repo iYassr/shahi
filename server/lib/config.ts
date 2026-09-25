@@ -61,6 +61,22 @@ export function allowedHosts(raw: string | undefined): string[] {
   });
 }
 
+/**
+ * PORT, checked here rather than handed to Bun.serve: `Number()` of a value
+ * that is not a port is NaN (or 0, which listens on a random port), and the
+ * service then failed on every start with "options.port … Received NaN",
+ * which names neither PORT nor the file it came from (pre-release bug hunt).
+ * Empty means unset, as it does for the other keys.
+ */
+export function parsePort(value: string | undefined): number {
+  if (value === undefined || value === "") return DEFAULT_PORT;
+  const port = Number(value);
+  if (!/^\d+$/.test(value) || port < 1 || port > 65535) {
+    throw new Error(`PORT must be a whole number from 1 to 65535, not "${value}".`);
+  }
+  return port;
+}
+
 function required(name: string, value: string | undefined, hint: string): string {
   if (!value) {
     throw new Error(`${name} is not set. ${hint}`);
@@ -134,7 +150,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     host,
-    port: Number(env.PORT ?? DEFAULT_PORT),
+    port: parsePort(env.PORT),
     socketPath: env.HERDR_SOCKET_PATH ?? join(homedir(), ".config", "herdr", "herdr.sock"),
     dataPath: env.SHAHI_DATA ?? join(homedir(), ".local", "share", "shahi", "shahi.sqlite"),
     passcodeHash: decodePasscodeHash(env.PASSCODE_HASH_B64),

@@ -34,9 +34,24 @@ export function readEnvFile(path: string): Map<string, string> {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
-    if (eq > 0) values.set(trimmed.slice(0, eq), trimmed.slice(eq + 1));
+    if (eq > 0) values.set(trimmed.slice(0, eq).trim(), envValue(trimmed.slice(eq + 1)));
   }
   return values;
+}
+
+/**
+ * A value as the dotenv loaders people already know read it: one matching
+ * pair of surrounding quotes is removed, and an unquoted value ends where
+ * ` #` starts a comment. Taken literally, a hand-written `PORT="7275"` became
+ * `Number('"7275"')`, NaN, and a service that crashed on every start, and a
+ * quoted HOST or RELAY_URL failed with a message about something else
+ * (pre-release bug hunt). Still no expansion and no escapes, for the reason
+ * above. Every value this file writes is unquoted and has no `#` in it.
+ */
+function envValue(raw: string): string {
+  const value = raw.trim();
+  const quoted = /^(["'])(.*)\1(?:\s+#.*)?$/.exec(value);
+  return quoted ? quoted[2]! : value.replace(/\s+#.*$/, "");
 }
 
 export interface SecretsReport {
