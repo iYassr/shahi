@@ -530,7 +530,10 @@ without duplicating the file. No upload contents are stored at Cloudflare.
 
 One unfinished upload per device and two per computer reserve at most 64 MiB of
 partial file space. Sessions expire after one hour, with periodic cleanup;
-completed receipts are bounded to 128 per computer within that lifetime. Completed
+completed receipts are bounded to 128 per computer within that lifetime, and a
+computer at that bound says so and when a place opens, rather than "Another file
+is uploading". Revoking a device or signing out discards its unfinished uploads
+at once. Completed
 attachments retain the existing 14-day cleanup policy. Clients use 60-second
 per-request deadlines, a bounded reconnect retry and a 55-minute overall
 transfer deadline. Closing the picker/cancelling stops subsequent chunks;

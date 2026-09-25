@@ -15,6 +15,13 @@ const LIFETIME = 60 * 60_000;
  * The hour-long LIFETIME stays as the cap for one that keeps moving.
  */
 const IDLE = 10 * 60_000;
+/**
+ * Transfers a computer holds at once, finished ones included: each keeps its
+ * journal, so a retried final reply still finds its receipt, until it expires
+ * an hour after it began. This bounds that directory, and so how many files one
+ * hour of uploads can add.
+ */
+const MAX_RECEIPTS = 128;
 interface Transfer {
   owner: string; name: string; type: string; size: number; offset: number;
   expires: number; digest?: string; result?: StoredUpload;
@@ -109,7 +116,16 @@ export class UploadTransfers {
     for (const { id: abandoned } of stranded) await this.discard(abandoned);
     const live = active.filter(a => !stranded.includes(a)).map(({ t }) => t);
     const partial = live.filter(t => !t.result);
-    if (live.length >= 128 || partial.length >= 2 || partial.some(t => t.owner === owner)) throw new TransferError(429, "Another file is uploading. Try again shortly.");
+    // Its own message: this limit shared "Another file is uploading" with the
+    // two below, so after 128 uploads in an hour every device was told that
+    // for up to an hour while nothing was uploading (September 2026
+    // pre-release bug hunt). A receipt lasts until its transfer expires, so
+    // the oldest one's expiry is when a place opens.
+    if (live.length >= MAX_RECEIPTS) {
+      const minutes = Math.max(1, Math.ceil((Math.min(...live.map(t => t.expires)) - this.now()) / 60_000));
+      throw new TransferError(429, `This computer has received its limit of ${MAX_RECEIPTS} files this hour. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`);
+    }
+    if (partial.length >= 2 || partial.some(t => t.owner === owner)) throw new TransferError(429, "Another file is uploading. Try again shortly.");
     const t: Transfer = { owner, name: safeName(body.name), type: body.type, size: body.size as number, offset: 0, expires: this.now() + LIFETIME, updated: this.now() };
     const f = await open(this.path(id, ".part"), "w", 0o600); await f.close();
     await this.save(id, t);

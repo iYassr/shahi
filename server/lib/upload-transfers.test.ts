@@ -177,3 +177,22 @@ test("discarding a revoked owner's uploads keeps its finished files and everyone
   await fresh.discardOwner(owner);
   expect(await readdir(dir)).not.toContain("never-used");
 });
+
+// September 2026 pre-release bug hunt: after 128 uploads in an hour, every
+// device was told "Another file is uploading. Try again shortly." for up to
+// an hour, although nothing was uploading.
+test("after 128 uploads in an hour a new one is told the limit and when to try again, not that another is uploading", async () => {
+  let now = 0;
+  const { store } = await setup(() => now);
+  for (let i = 0; i < 128; i++) {
+    const upload = `receipt-${String(i).padStart(4, "0")}-transfer`;
+    await store.begin(upload, owner, { name: "note.txt", type: "text/plain", size: 0 });
+    await store.finish(upload, owner, digest(new Uint8Array()));
+    now += 10_000;
+  }
+  // The oldest receipt expires an hour after it began; 1,280 seconds have passed.
+  const refused = await store.begin("one-too-many-upload", "another-phone", { name: "a", type: "", size: 1 }).catch((e: unknown) => e);
+  expect(refused).toMatchObject({ status: 429, message: "This computer has received its limit of 128 files this hour. Try again in about 39 minutes." });
+  now = 3_600_001;
+  expect(await store.begin("one-too-many-upload", "another-phone", { name: "a", type: "", size: 1 })).toEqual({ offset: 0 });
+}, 30_000);
