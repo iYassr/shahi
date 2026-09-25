@@ -15,14 +15,14 @@ import { randomUUID } from "expo-crypto";
  * installed-agent choices and permission modes fit at every text size; the
  * smaller new-space form remains a sheet.
  */
-import { memo, useEffect, useMemo, useState, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { BackHandler, FlatList, ScrollView, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
 import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { landed, refused } from "@/lib/feel";
-import { openPane } from "@/lib/navigate";
+import { openPane, openSpace } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme, statusColor } from "@/lib/theme";
 import { agentLabel } from "@shahi/shared";
@@ -33,7 +33,7 @@ import { Icon } from "@/components/icons";
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
-  const { link } = useSession();
+  const { link, activeComputerId } = useSession();
   // Above the `!session` return below: hooks cannot be called conditionally.
   const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId);
   if (!session) return <Centered>Connecting…</Centered>;
@@ -76,12 +76,7 @@ export function Spaces({ session }: { session: Session | null }) {
               accessibilityRole="button"
               style={styles.space}
               testID={`space-${item.workspaceId}`}
-              onPress={() =>
-                router.push({
-                  pathname: "/space/[workspaceId]",
-                  params: { workspaceId: item.workspaceId },
-                })
-              }
+              onPress={() => openSpace(item.workspaceId, activeComputerId)}
             >
               <View style={styles.avatar}>
                 <Icon name="folder" size={42} color={statusColor(item.status)} />
@@ -118,6 +113,9 @@ export function Spaces({ session }: { session: Session | null }) {
 }
 
 export function SpaceDetail({ space, session }: { space: Space; session: Session }) {
+  const { activeComputerId } = useSession();
+  // Stable per computer, so the memoised rows below keep their identity.
+  const open = useCallback((paneId: string) => openPane(paneId, activeComputerId), [activeComputerId]);
   const tabs = useMemo(
     () => session.tabs.filter((t) => t.workspaceId === space.workspaceId),
     [session, space],
@@ -152,7 +150,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
               {panes.map((pane, i) => (
                 <View key={pane.paneId}>
                   {i > 0 && <View style={styles.separator} />}
-                  <PaneRow pane={pane} onPress={openPane} />
+                  <PaneRow pane={pane} onPress={open} />
                 </View>
               ))}
             </View>
@@ -166,7 +164,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
             onPress={() =>
               router.push({
                 pathname: "/new-agent",
-                params: { workspaceId: space.workspaceId },
+                params: { workspaceId: space.workspaceId, ...(activeComputerId && { computer: activeComputerId }) },
               })
             }
           >

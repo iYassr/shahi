@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
 import { router } from "expo-router";
+import { showComputerHome } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
@@ -34,7 +35,7 @@ export function ComputerSwitcher() {
         <Text style={styles.title}>Computers</Text>
         <ScrollView>
           {computers.map(c => <Pressable key={c.id} accessibilityRole="button" testID={`quick-computer-${c.id}`} style={styles.row} onPress={() => {
-            void switchComputer(c.id).then(() => { setOpen(false); router.replace("/"); }).catch(e => setError(e.message));
+            void switchComputer(c.id).then(() => { setOpen(false); showComputerHome(); }).catch(e => setError(e.message));
           }}>
             <Text style={styles.title}>{c.id === activeComputerId ? "✓ " : ""}{c.name}</Text>
             <Text style={{ color: theme.dim, fontSize: 12 }}>{c.address}</Text>

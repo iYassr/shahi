@@ -5,7 +5,7 @@ import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { agentLabel, inboxPanes, latestConversations } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
-import { memo, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
@@ -30,11 +30,12 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
-  const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect } = useSession();
+  const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, activeComputerId } = useSession();
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
+  const openScreenHere = useCallback((paneId: string) => openScreen(paneId, activeComputerId), [activeComputerId]);
 
   // Rejects on failure so the card that asked can say why and offer its
   // options again: a 409 (the question moved on) or a relay timeout is an
@@ -225,6 +226,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             pane={item}
             pinned={pins.has(item.paneId)}
             onPress={onOpenPane}
+            onScreen={openScreenHere}
             onPin={togglePin}
             onActions={setActing}
           />}
@@ -282,7 +284,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 style={styles.sheetItem}
                 onPress={() => {
                   setActing(null);
-                  openScreen(acting.paneId);
+                  openScreen(acting.paneId, activeComputerId);
                 }}
               >
                 <Icon name="terminal" color={theme.mint} size={16} />
@@ -312,6 +314,7 @@ const Row = memo(function Row({
   pane,
   pinned,
   onPress,
+  onScreen,
   onPin,
   onActions,
 }: {
@@ -320,6 +323,7 @@ const Row = memo(function Row({
   // Stable callbacks that take the pane, so memo actually holds: inline
   // closures would give every row a new identity on each list render.
   onPress: (paneId: string) => void;
+  onScreen: (paneId: string) => void;
   onPin: (paneId: string) => void;
   onActions: (pane: DashboardPane) => void;
 }) {
@@ -401,7 +405,7 @@ const Row = memo(function Row({
             style={styles.action}
             onPress={() => {
               swipeable_.close();
-              openScreen(pane.paneId);
+              onScreen(pane.paneId);
             }}
           >
             <Icon name="terminal" color={theme.mint} />

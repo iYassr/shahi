@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/text";
 import { Pane } from "@/screens/pane";
 import { useSession } from "@/lib/session";
+import { useOwnedRoute } from "@/lib/owned-route";
 import { theme } from "@/lib/theme";
 
 export default function PaneRoute() {
@@ -12,6 +13,7 @@ export default function PaneRoute() {
   // `instance` is the occupant a notification was about (see below).
   const { paneId, view, instance } = useLocalSearchParams<{ paneId: string; view?: string; instance?: string }>();
   const { session } = useSession();
+  const owned = useOwnedRoute();
 
   // A pane can vanish under us — closed from the TUI while this was open.
   // Popping beats sitting on a dead conversation forever; the space route
@@ -19,13 +21,13 @@ export default function PaneRoute() {
   // A newly created agent may open before the refreshed list arrives.
   // Only dismiss an agent we have actually seen in that list.
   const observed = useRef<string | null>(null);
-  const known = session?.panes.find((p) => p.paneId === String(paneId));
+  const known = owned ? session?.panes.find((p) => p.paneId === String(paneId)) : undefined;
   const exists = known !== undefined;
   if (exists) observed.current = String(paneId);
   const gone = session != null && observed.current === String(paneId) && !exists;
   useEffect(() => {
-    if (gone && router.canGoBack()) router.back();
-  }, [gone]);
+    if (owned && gone && router.canGoBack()) router.back();
+  }, [owned, gone]);
 
   // herdr reuses pane ids, so the id in the route can come to name another
   // program while this screen is open (see `DashboardPane.instanceId`), and an
@@ -47,6 +49,10 @@ export default function PaneRoute() {
   const [openAnyway, setOpenAnyway] = useState(false);
   const ended = Boolean(instance && occupant && instance !== occupant && !openAnyway);
 
+  // Never resolved against another computer: not even one render, because the
+  // pane polls and its composer sends from the first. After every hook, so
+  // their order holds when the computer changes under this route.
+  if (!owned) return null;
   return (
     // Bottom only: the native header owns the top inset now.
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: theme.void }}>

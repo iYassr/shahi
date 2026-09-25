@@ -6,11 +6,13 @@ let mockPanes: { paneId: string; instanceId?: string; isAgent?: boolean }[] = []
 let mockPaneId = "w1:p9";
 let mockInstance: string | undefined;
 const mockMounts: string[] = [];
+const mockNavigation = { setParams: jest.fn(), canGoBack: () => true, goBack: jest.fn() };
 jest.mock("expo-router", () => ({
   router: { back: jest.fn(), canGoBack: () => true },
-  useLocalSearchParams: () => ({ paneId: mockPaneId, ...(mockInstance ? { instance: mockInstance } : {}) }),
+  useLocalSearchParams: () => ({ paneId: mockPaneId, computer: "c1", ...(mockInstance ? { instance: mockInstance } : {}) }),
+  useNavigation: () => mockNavigation,
 }));
-jest.mock("@/lib/session", () => ({ useSession: () => ({ session: { panes: mockPanes } }) }));
+jest.mock("@/lib/session", () => ({ useSession: () => ({ ready: true, activeComputerId: "c1", session: { panes: mockPanes } }) }));
 jest.mock("@/screens/pane", () => ({
   Pane: ({ paneId }: { paneId: string }) => {
     require("react").useEffect(() => { mockMounts.push(paneId); }, []);

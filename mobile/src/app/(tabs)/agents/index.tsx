@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { router } from "expo-router";
 import { Agents } from "@/screens/agents";
@@ -7,7 +7,9 @@ import { theme } from "@/lib/theme";
 import { openPane } from "@/lib/navigate";
 
 export default function AgentsTab() {
-  const { ready, connected } = useSession();
+  const { ready, connected, activeComputerId } = useSession();
+  // Stable per computer: the memoised rows compare it by identity.
+  const open = useCallback((paneId: string) => openPane(paneId, activeComputerId), [activeComputerId]);
 
   useEffect(() => {
     if (ready && !connected) router.replace("/connect");
@@ -20,5 +22,5 @@ export default function AgentsTab() {
       </View>
     );
   }
-  return <Agents onOpenPane={openPane} />;
+  return <Agents onOpenPane={open} />;
 }

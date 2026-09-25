@@ -2,7 +2,7 @@ import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
 import { router, ThemeProvider } from "expo-router";
 import { onNotificationTapped, showNotificationsWhileOpen } from "@/lib/push";
-import { openPane } from "@/lib/navigate";
+import { openPane, showComputerHome } from "@/lib/navigate";
 import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -44,7 +44,7 @@ function Navigation() {
   const session = useSession();
   const { connectionKey, ready, activeComputerId } = session;
   const current = useRef(session); current.current = session;
-  const [pending, setPending] = useState<{ id: string; pane: string; instance?: string } | null>(null);
+  const [pending, setPending] = useState<{ id: string; pane: string; switched: boolean; instance?: string } | null>(null);
   // Above the remounting stack: a notification can select another computer.
   useEffect(() => {
     if (!ready) return;
@@ -53,15 +53,23 @@ function Navigation() {
       const target = serverId ? state.computers.find(c => c.serverId === serverId) :
         state.computers.length === 1 ? state.computers[0] : undefined;
       if (!target) { router.push("/computers"); return; }
-      setPending({ id: target.id, pane, ...(instance && { instance }) });
-      if (target.id !== state.activeComputerId) void state.switchComputer(target.id).catch(() => {
+      const switched = target.id !== state.activeComputerId;
+      setPending({ id: target.id, pane, switched, ...(instance && { instance }) });
+      if (switched) void state.switchComputer(target.id).catch(() => {
         setPending(null); router.push("/computers");
       });
     });
   }, [ready]);
   useEffect(() => {
     if (!pending || pending.id !== activeComputerId) return;
-    const frame = requestAnimationFrame(() => { if (pending.instance) openPane(pending.pane, pending.instance); else openPane(pending.pane); setPending(null); });
+    const frame = requestAnimationFrame(() => {
+      // The other computer's screens go first: pushed on top of them, its
+      // pane was one Back away from a pane of the same id on this computer.
+      if (pending.switched) showComputerHome();
+      if (pending.instance) openPane(pending.pane, pending.id, pending.instance);
+      else openPane(pending.pane, pending.id);
+      setPending(null);
+    });
     return () => cancelAnimationFrame(frame);
   }, [pending, activeComputerId, connectionKey]);
   return <>

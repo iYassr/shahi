@@ -34,6 +34,7 @@ import { NewAgent } from "./components/NewAgent";
 import { Sheet } from "./components/Sheet";
 import { PushPrompt } from "./components/PushPrompt";
 import { SpaceDetail, Spaces } from "./components/Spaces";
+import { OwnedRoute } from "./components/OwnedRoute";
 
 export function App(props: { initialPairingCode?: string }) {
   const [epoch, setEpoch] = useState(0);
@@ -47,7 +48,10 @@ export function App(props: { initialPairingCode?: string }) {
     }).finally(() => setRestored(true));
     return listenForNotifications((pane, computer, instance) => {
       void restoreBrowser()
-        .then(() => openNotification(pane, computer, (path) => navigate(path), instance))
+        // In place of the entry on screen when it switched computers: that
+        // entry is the other computer's, and one Back away it could only be
+        // refused (see OwnedRoute).
+        .then(() => openNotification(pane, computer, (path, switched) => navigate(path, { replace: switched }), instance))
         .catch(() => navigate("/computers"));
     });
   }, []);
@@ -433,6 +437,8 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
     }} />;
   }
 
+  // Only the hosted app keeps more than one computer; see OwnedRoute.
+  const computer = hosted ? browserConnection().identity?.serverId ?? null : null;
   const conversationLayout = routeLocation.pathname === "/" || routeLocation.pathname.startsWith("/pane/");
   const conversationOpen = routeLocation.pathname.startsWith("/pane/");
   const blockedCount = session?.panes.filter((p) => p.status === "blocked").length ?? 0;
@@ -483,19 +489,21 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         />
         <Route
           path="/space/:workspaceId"
-          element={<SpaceDetail session={session} onToast={showToast} onChanged={refresh} />}
+          element={<OwnedRoute computer={computer}><SpaceDetail session={session} onToast={showToast} onChanged={refresh} /></OwnedRoute>}
         />
         <Route
           path="/pane/:paneId"
           element={
-            <PaneView key={routeLocation.pathname}
-              session={session}
-              frames={frames}
-              prompts={prompts}
-              onWatch={watch}
-              onAnswer={answer}
-              onToast={showToast}
-            />
+            <OwnedRoute computer={computer}>
+              <PaneView key={routeLocation.pathname}
+                session={session}
+                frames={frames}
+                prompts={prompts}
+                onWatch={watch}
+                onAnswer={answer}
+                onToast={showToast}
+              />
+            </OwnedRoute>
           }
         />
       </Routes>

@@ -4,11 +4,14 @@ import NewAgentRoute from "../app/new-agent";
 
 const mockRefresh = jest.fn();
 let mockParams: { workspaceId?: string } = {};
+const mockNavigation = { setParams: jest.fn(), canGoBack: () => true, goBack: jest.fn() };
 jest.mock("expo-router", () => ({
   router: { replace: jest.fn(), back: jest.fn(), push: jest.fn() },
   useLocalSearchParams: () => mockParams,
+  useNavigation: () => mockNavigation,
 }));
 jest.mock("@/lib/session", () => ({ useSession: () => ({
+  ready: true, activeComputerId: "c1",
   session: { workspaces: [{ workspaceId: "w1", label: "Project" }, { workspaceId: "w2", label: "Notes" }] },
   refresh: mockRefresh,
 }) }));
@@ -30,7 +33,7 @@ test.each([[false, "w1"], [true, "w1"], [false, "w2"], [true, "w2"]] as const)("
   fireEvent.press(screen.getByText(`Finish in ${workspaceId}`));
   expect(mockRefresh).toHaveBeenCalledTimes(1);
   expect(router.replace).toHaveBeenCalledTimes(1);
-  expect(router.replace).toHaveBeenCalledWith({ pathname: "/pane/[paneId]", params: { paneId: `${workspaceId}:p2` } });
+  expect(router.replace).toHaveBeenCalledWith({ pathname: "/pane/[paneId]", params: { paneId: `${workspaceId}:p2`, computer: "c1" } });
   expect(router.back).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();
 });

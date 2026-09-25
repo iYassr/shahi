@@ -5,6 +5,7 @@ import { Pressable} from "react-native";
 import { Text } from "@/components/text";
 import { Connect } from "@/screens/connect";
 import { useSession } from "@/lib/session";
+import { showComputerHome } from "@/lib/navigate";
 import { usePendingPairing } from "@/lib/incoming-pairing";
 import { theme } from "@/lib/theme";
 
@@ -18,7 +19,9 @@ export default function ConnectRoute() {
   // redirects used to carry it away unseen whenever a computer was saved.
   useEffect(() => {
     if (pairing) return;
-    if (connected) router.replace("/");
+    // A pairing link can arrive over another computer's open pane, and a
+    // replace of the top alone left that pane underneath (pre-release bug hunt).
+    if (connected) showComputerHome();
     else if (ready && computers.length > 0 && !addingComputer) router.replace("/computers");
   }, [pairing, ready, connected, computers.length, addingComputer]);
 

@@ -20,7 +20,7 @@ jest.mock("@/lib/push", () => ({
   showNotificationsWhileOpen: jest.fn(),
   onNotificationTapped: (open: (paneId: string, serverId?: string, instanceId?: string) => void) => { mockTap = open; return () => { mockTap = null; }; },
 }));
-jest.mock("@/lib/navigate", () => ({ openPane: jest.fn() }));
+jest.mock("@/lib/navigate", () => ({ openPane: jest.fn(), showComputerHome: jest.fn() }));
 jest.mock("expo-router", () => ({
   router: { push: jest.fn(), replace: jest.fn() },
   ThemeProvider: ({ children }: { children: unknown }) => children,
@@ -73,7 +73,7 @@ test("a notification tapped on a cold launch opens its pane on a saved SSH compu
   await act(async () => { mockTap!("w1:p1", "ssh-box-id"); for (let i = 0; i < 20; i++) await Promise.resolve(); });
 
   expect(router.push).not.toHaveBeenCalledWith("/computers");
-  expect(openPane).toHaveBeenCalledWith("w1:p1");
+  expect(openPane).toHaveBeenCalledWith("w1:p1", ssh.id);
   ui.unmount();
 });
 
@@ -84,7 +84,7 @@ test("a notification tap opens its pane with the conversation it was about", asy
   const ui = render(<RootLayout />);
   await act(async () => { for (let i = 0; i < 20 && !mockTap; i++) await Promise.resolve(); });
   await act(async () => { mockTap!("w3:p1", "relay-box-id", "term_a"); for (let i = 0; i < 20; i++) await Promise.resolve(); });
-  expect(openPane).toHaveBeenCalledWith("w3:p1", "term_a");
+  expect(openPane).toHaveBeenCalledWith("w3:p1", computerId(relay), "term_a");
   ui.unmount();
 });
 

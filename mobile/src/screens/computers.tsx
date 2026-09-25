@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, View, Pressable, ScrollView, StyleSheet} from "react-native";
 import { Text } from "@/components/text";
-import { router } from "expo-router";
+import { resetTo, showComputerHome } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
@@ -12,7 +12,7 @@ export function Computers() {
   async function choose(id: string) {
     if (busy) return;
     setBusy(id); setError(null);
-    try { await switchComputer(id); router.replace("/"); }
+    try { await switchComputer(id); showComputerHome(); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(null); }
   }
@@ -38,7 +38,7 @@ export function Computers() {
     {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     <Pressable testID="add-computer" accessibilityRole="button" disabled={!!busy} style={styles.card} onPress={() => {
       setBusy("add"); setError(null);
-      void addComputer().then(() => router.replace("/connect")).catch((e: Error) => setError(e.message)).finally(() => setBusy(null));
+      void addComputer().then(() => resetTo("/connect")).catch((e: Error) => setError(e.message)).finally(() => setBusy(null));
     }}><Text style={styles.action}>Add a computer</Text></Pressable>
     <Text style={styles.note}>Previously replaced or signed-out connections need a new pairing code once. “Devices with access” in Settings manages phones and browsers allowed into the current computer.</Text>
   </ScrollView>;

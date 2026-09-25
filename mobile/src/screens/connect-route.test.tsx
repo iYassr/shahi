@@ -6,7 +6,7 @@ import { dismissPairing } from "@/lib/incoming-pairing";
 const mockState = { ready: true, connected: false, addingComputer: false, computers: [{ id: "saved" }], signInSsh: jest.fn(), signInRelay: jest.fn() };
 jest.mock("@/lib/session", () => ({ useSession: () => mockState }));
 jest.mock("@/screens/connect", () => ({ Connect: () => null }));
-jest.mock("expo-router", () => ({ router: { replace: jest.fn(), push: jest.fn() } }));
+jest.mock("expo-router", () => ({ router: { replace: jest.fn(), push: jest.fn(), canDismiss: () => false, dismissAll: jest.fn() } }));
 const link = `shahi://pair#v=1&server=${"B".repeat(42)}A&relay=${encodeURIComponent("https://relay.example")}&secret=${"c".repeat(43)}`;
 beforeEach(() => { jest.clearAllMocks(); mockState.addingComputer = false; mockState.connected = false; dismissPairing(); });
 test("lost access opens saved computers instead of onboarding", () => {

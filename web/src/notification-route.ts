@@ -18,13 +18,14 @@ export const OPEN_NOTIFICATION = "shahi:open-notification";
  * pane's occupant now and says the conversation has ended rather than opening
  * whatever took the id (see `PaneView`).
  */
-export async function openNotification(pane: string | null, computer: string | null, go: (path: string) => void, instance: string | null = null): Promise<void> {
+export async function openNotification(pane: string | null, computer: string | null, go: (path: string, switched: boolean) => void, instance: string | null = null): Promise<void> {
   const computers = browserComputers();
   const target = computer ? computers.find(c => c.id === computer) : computers.length === 1 ? computers[0] : undefined;
-  if (hosted && !target) { go("/computers"); return; }
+  if (hosted && !target) { go("/computers", false); return; }
   // Switching remounts the session; the notification's own computer needs none.
-  if (hosted && target && target.id !== browserConnection().identity?.serverId) await selectBrowserComputer(target.id);
-  go(pane ? `/pane/${encodeURIComponent(pane)}${instance ? `?instance=${encodeURIComponent(instance)}` : ""}` : "/");
+  const switched = !!(hosted && target && target.id !== browserConnection().identity?.serverId);
+  if (switched) await selectBrowserComputer(target!.id);
+  go(pane ? `/pane/${encodeURIComponent(pane)}${instance ? `?instance=${encodeURIComponent(instance)}` : ""}` : "/", switched);
 }
 
 /** Answers the service worker, which navigates the window itself if nobody does. */
