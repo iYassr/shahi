@@ -221,9 +221,15 @@ and [Workers Logs pricing](https://developers.cloudflare.com/workers/observabili
 for current terms. Traffic is aggregated before recording.
 
 These are server-side operational metrics. The hosted client has no third-party
-analytics SDK. Static responses send `Cache-Control: public, no-transform` to
+analytics SDK. HTML responses send `Cache-Control: public, no-transform` to
 prevent Cloudflare's automatic beacon injection, alongside the PWA's
-`script-src 'self'` policy. Cloudflare documents this behavior in its
+`script-src 'self'` policy. The same directive disables Cloudflare's
+compression, so the hashed app assets and the site's own CSS, JavaScript and SVG
+omit it (`site/public/_headers`, [browser hosting](browser-hosting.md)). So does
+the 404 page for a missing file under `/pwa/assets/`, which takes that path's
+rule; the `/pwa/*` policy's `script-src 'self'` and the page's own
+`default-src 'none'` are what refuse a beacon there.
+Cloudflare documents the injection in its
 [Web Analytics setup guide](https://developers.cloudflare.com/web-analytics/get-started/).
 Verify public HTML with a browser User-Agent: a plain curl request can receive
 different injection behavior. Worker subrequests do not exercise that injection

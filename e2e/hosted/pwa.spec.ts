@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { signup } from "../../site/src/signup";
 
 async function ready(page: Page) {
@@ -56,7 +56,33 @@ test("a deploy reaches nested app routes because every one revalidates, while ha
   for (const asset of assets) {
     const response = await request.get(`${site}${asset}`);
     expect(response.status(), asset).toBe(200);
-    expect(response.headers()["cache-control"], asset).toBe("public, no-transform, max-age=31536000, immutable");
+    expect(response.headers()["cache-control"], asset).toBe("public, max-age=31536000, immutable");
+  }
+});
+
+// no-transform keeps Cloudflare from injecting its beacon into HTML, and also
+// stops it compressing anything: production sent every text file whole, the
+// app's 548 KB bundle included (measured 2026-09-25). wrangler dev compresses
+// regardless, so the header is what can be checked here, not the encoding.
+test("HTML keeps no-transform, so nothing is injected, and the rest of the site's text drops it, so the edge compresses it", async ({ request }) => {
+  for (const path of ["/", "/privacy", "/no-such-page", "/pwa/"]) {
+    expect((await request.get(`${site}${path}`)).headers()["cache-control"], path).toContain("no-transform");
+  }
+  // The one HTML response without it: a missing file under /pwa/assets/ takes
+  // that path's rule, so there the policy is what refuses an injected beacon.
+  const missingAsset = await request.get(`${site}/pwa/assets/missing.js`);
+  expect(missingAsset.headers()["content-type"]).toContain("text/html");
+  expect(missingAsset.headers()["content-security-policy"]).toContain("script-src 'self'");
+  // Every text file the build puts beside the pages, so a new one fails here
+  // until site/public/_headers names it.
+  const dist = new URL("../../site/dist/", import.meta.url);
+  const text = (readdirSync(dist, { recursive: true }) as string[])
+    .filter(path => /\.(css|js|svg)$/.test(path) && !path.startsWith("pwa/"))
+    .map(path => `/${path}`);
+  expect(text).toContain("/site.css");
+  for (const path of text) {
+    const cache = (await request.get(`${site}${path}`)).headers()["cache-control"];
+    expect(cache, path).toBe("public, max-age=0, must-revalidate");
   }
 });
 
@@ -77,7 +103,10 @@ test("an unknown address shows a Shahi page not found instead of an empty respon
 test("the website serves its own fonts and asks no third party for anything", async ({ page }) => {
   const foreign: string[] = [];
   const refused: string[] = [];
-  page.on("request", request => { if (!request.url().startsWith(`${site}/`)) foreign.push(request.url()); });
+  // WebKit's native video controls load their own UI from blob: URLs of the
+  // page's origin, which never leave the browser (measured once the launch
+  // video was on the page, with nothing played).
+  page.on("request", request => { if (!request.url().replace(/^blob:/, "").startsWith(`${site}/`)) foreign.push(request.url()); });
   page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
   const faces = () => page.evaluate(async () => {
     await document.fonts.ready;
@@ -91,6 +120,99 @@ test("the website serves its own fonts and asks no third party for anything", as
   expect(refused).toEqual([]);
 });
 
+// The launch video comes from R2 through the Worker (site/src/media.ts), not
+// from static assets, which answer Range with the whole file: Chrome then
+// cannot seek, and WebKit, which opens every video with a bytes=0-1 probe,
+// downloads all of it. The bytes here are seed-media.ts's small stand-ins,
+// stored under the names site/media.json gives the real files.
+test("the launch video is served in byte ranges from the site itself, and plays and seeks under the page's policy", async ({ page, request }) => {
+  const refused: string[] = [];
+  page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
+  const played: number[] = [];
+  page.on("response", response => { if (response.url().endsWith(".mp4")) played.push(response.status()); });
+  await page.goto(`${site}/`);
+  const video = page.locator(".launch-video video");
+  const named = await video.evaluate((v: HTMLVideoElement) => [v.poster, ...[...v.querySelectorAll("source, track")].map(e => (e as HTMLSourceElement).src)]
+    .map(url => new URL(url).pathname));
+  const { files } = JSON.parse(readFileSync(new URL("../../site/media.json", import.meta.url), "utf8")) as { files: { name: string; contentType: string }[] };
+  expect(named.sort()).toEqual(files.map(file => `/media/${file.name}`).sort());
+
+  for (const { name, contentType } of files) {
+    const url = `${site}/media/${name}`;
+    const whole = await request.get(url);
+    const body = await whole.body();
+    expect(whole.status(), name).toBe(200);
+    expect(whole.headers(), name).toMatchObject({
+      "content-type": contentType, "content-length": String(body.length), "accept-ranges": "bytes",
+      // Named after their content, so a year is safe; a Worker's response gets nothing from _headers.
+      "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff", "cross-origin-resource-policy": "same-origin",
+    });
+    const probe = await request.get(url, { headers: { Range: "bytes=0-1" } });
+    expect(probe.status(), name).toBe(206);
+    expect(probe.headers(), name).toMatchObject({ "content-type": contentType, "content-range": `bytes 0-1/${body.length}` });
+    expect(await probe.body(), name).toEqual(body.subarray(0, 2));
+    // A seek asks for everything from a point.
+    const seek = await request.get(url, { headers: { Range: `bytes=${body.length - 100}-` } });
+    expect(seek.status(), name).toBe(206);
+    expect(await seek.body(), name).toEqual(body.subarray(body.length - 100));
+    const past = await request.get(url, { headers: { Range: `bytes=${body.length}-` } });
+    expect(past.status(), name).toBe(416);
+    expect(past.headers()["content-range"], name).toBe(`bytes */${body.length}`);
+    expect((await request.get(url, { headers: { "If-None-Match": whole.headers()["etag"]! } })).status(), name).toBe(304);
+    // An entity tag the R2 binding cannot parse made it throw: a 500 without
+    // a range, and a false 416 with one.
+    for (const headers of [{ "If-None-Match": "garbage" }, { "If-None-Match": "garbage", Range: "bytes=0-1" }]) {
+      const malformed = await request.get(url, { headers });
+      expect(malformed.status(), `${name} ${JSON.stringify(headers)}`).toBe(400);
+      expect(malformed.headers()["cache-control"], name).toBe("no-store");
+    }
+  }
+  // The last is past R2's 1,024-byte key limit, where bucket.get() throws.
+  for (const path of ["/media/missing.0000000a.mp4", "/media/launch.mp4", "/media/..%2findex.html", `/media/${"a".repeat(2000)}.00000000.mp4`]) {
+    const missing = await request.get(`${site}${path}`);
+    expect(missing.status(), path).toBe(404);
+    expect(missing.headers()["cache-control"], path).toBe("no-store");
+  }
+
+  // Nothing but the poster loads until the visitor presses play.
+  expect(played).toEqual([]);
+  // Playwright's linux-arm64 Chromium has no H.264 or AAC, and a video it
+  // cannot play left the steps below waiting until the test's timeout.
+  expect(await video.evaluate((v: HTMLVideoElement) => v.canPlayType('video/mp4; codecs="avc1.640028, mp4a.40.2"')),
+    "this browser build cannot play H.264 with AAC").not.toBe("");
+  // A click in the middle of the frame plays it, with sound. Chrome's own
+  // frame does nothing on a click with preload="none"; launch.js's button does.
+  // Instant: the page scrolls smoothly, and a box read mid-scroll misses.
+  await video.evaluate((v: HTMLVideoElement) => v.scrollIntoView({ block: "center", behavior: "instant" }));
+  const frame = (await video.boundingBox())!;
+  await page.mouse.click(frame.x + frame.width / 2, frame.y + frame.height / 2);
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => ({ paused: v.paused, muted: v.muted }))).toEqual({ paused: false, muted: false });
+  await expect(page.locator(".launch-play")).toHaveCount(0);
+  // Then seek while paused, so playback cannot carry it there. Each wait is
+  // bounded and says what the element reports, rather than a bare timeout.
+  const seeked = await video.evaluate(async (v: HTMLVideoElement) => {
+    const within = <T,>(step: string, promise: Promise<T>) => Promise.race([promise, new Promise<never>((_, reject) => setTimeout(() =>
+      reject(new Error(`${step} took over 10s: networkState ${v.networkState}, error ${v.error?.code}, source ${v.currentSrc}`)), 10000))]);
+    await within("play", v.play());
+    v.pause();
+    const done = new Promise(resolve => v.addEventListener("seeked", resolve, { once: true }));
+    v.currentTime = 1.5;
+    await within("seek", done);
+    return { at: v.currentTime, seekable: v.seekable.length > 0 ? v.seekable.end(0) : 0 };
+  });
+  expect(seeked.at).toBeCloseTo(1.5, 1);
+  expect(seeked.seekable).toBeGreaterThan(1.9);
+  // The two-second stand-in is buffered whole, and then seeks even from a
+  // server without ranges, so what proves them is what the browser was sent:
+  // Chromium asks for bytes=0-, WebKit for bytes=0-1 and then the rest.
+  expect(played.length).toBeGreaterThan(0);
+  expect(played.every(status => status === 206), played.join(" ")).toBe(true);
+  // Captions are off until chosen, so nothing has fetched them yet: choose them.
+  await video.evaluate((v: HTMLVideoElement) => { v.textTracks[0]!.mode = "showing"; });
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.textTracks[0]!.cues?.length ?? 0)).toBeGreaterThan(0);
+  expect(refused).toEqual([]);
+});
+
 // The homepage offers the web app and the iOS app side by side, and every
 // iOS control asks only for an email address, so the owner can send a
 // TestFlight invite. Service workers are blocked because one would bypass
@@ -98,7 +220,7 @@ test("the website serves its own fonts and asks no third party for anything", as
 test.describe("the homepage's iOS download", () => {
   test.use({ serviceWorkers: "block" });
 
-  test("Download iOS App opens an email dialog that requests a TestFlight invite, and Esc returns focus to it", async ({ page }) => {
+  test("Download iOS App opens an email dialog that requests a TestFlight invite, keeps focus through sending, and Esc returns focus to it", async ({ page }) => {
     const refused: string[] = [];
     page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
     // The Worker's own handler answers, with the rate limit open and delivery
@@ -124,17 +246,21 @@ test.describe("the homepage's iOS download", () => {
     await expect(main.getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
     const download = main.getByRole("link", { name: "Download iOS App (TestFlight)" });
     await download.click();
-    const dialog = page.getByRole("dialog", { name: "Download the iOS app" });
+    const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await expect(dialog).toBeVisible();
     const email = dialog.getByRole("textbox", { name: "Email address" });
     await expect(email).toBeFocused();
     await email.fill("tester@example.com");
     // Consent stays required, as the privacy policy describes: without it the
     // browser refuses the form, which the single request below also proves.
-    await dialog.getByRole("button", { name: "Email me an invite" }).click();
-    await dialog.getByRole("checkbox", { name: "Email me about the Shahi iOS beta." }).check();
-    await dialog.getByRole("button", { name: "Email me an invite" }).click();
-    await expect(dialog.getByRole("status")).toHaveText("Request sent. We’ll email a TestFlight invite to tester@example.com.");
+    const submit = dialog.getByRole("button", { name: "Email me an invite" });
+    await submit.click();
+    await dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." }).check();
+    // From the keyboard: a disabled button used to hand focus to <body>, outside the modal.
+    await submit.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog.getByRole("status")).toHaveText("Request sent. We’ll email tester@example.com when your TestFlight invite is ready.");
+    await expect(submit).toBeFocused();
     expect(bodies).toEqual([{ email: "tester@example.com", website: "", consent: true }]);
     expect(delivered).toEqual(["tester@example.com"]);
     await expect(email).toHaveValue("");
@@ -151,7 +277,7 @@ test.describe("the homepage's iOS download", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(join).toBeFocused();
-    const sectionButton = page.getByRole("region", { name: /Shahi for iPhone/ }).getByRole("button", { name: "Get a TestFlight invite" });
+    const sectionButton = page.getByRole("region", { name: /Shahi for iPhone/ }).getByRole("button", { name: "Request a TestFlight invite" });
     await sectionButton.click();
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Close" }).click();
@@ -166,7 +292,7 @@ test.describe("the homepage's iOS download", () => {
     const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     expect(await fits()).toBe(true);
     await page.getByRole("link", { name: "Download iOS App (TestFlight)" }).click();
-    const dialog = page.getByRole("dialog", { name: "Download the iOS app" });
+    const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await expect(dialog).toBeVisible();
     const box = (await dialog.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -174,6 +300,22 @@ test.describe("the homepage's iOS download", () => {
     await expect(dialog.getByRole("button", { name: "Close" })).toBeInViewport();
     await expect(dialog.getByRole("button", { name: "Email me an invite" })).toBeInViewport();
     expect(await fits()).toBe(true);
+  });
+
+  test("on a 320 by 568 screen the answer to a TestFlight request scrolls into the dialog's view", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.route(`${site}/api/ios-beta`, route => route.fulfill({ json: { message: "Request sent. We’ll email tester@example.com when your TestFlight invite is ready." } }));
+    await page.goto(`${site}/`);
+    await page.getByRole("link", { name: "Download iOS App (TestFlight)" }).click();
+    const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
+    await dialog.getByRole("textbox", { name: "Email address" }).fill("tester@example.com");
+    await dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." }).check();
+    await dialog.getByRole("button", { name: "Email me an invite" }).click();
+    const status = dialog.getByRole("status");
+    await expect(status).toHaveText(/^Request sent\./);
+    // It used to land below the dialog's fold, so nothing visible said the request went through.
+    const below = () => page.evaluate(() => document.querySelector("#beta-status")!.getBoundingClientRect().bottom - document.querySelector("#beta-dialog")!.getBoundingClientRect().bottom);
+    await expect.poll(below).toBeLessThanOrEqual(0);
   });
 
   test.describe("without JavaScript", () => {
@@ -197,6 +339,20 @@ test.describe("the homepage's iOS download", () => {
       await expect(page.getByRole("dialog")).toBeHidden();
     });
   });
+});
+
+// The iPhone 14's viewport, which the WebKit project already has. A line added
+// to the lede once pushed the primary button to 619-669 here.
+test("on a 390 by 664 phone screen both of the hero's buttons are on the first screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 664 });
+  await page.goto(`${site}/`);
+  await page.evaluate(() => document.fonts.ready);
+  const hero = page.locator(".hero");
+  for (const name of ["Open Shahi Web App", "Download iOS App (TestFlight)"]) {
+    // Polled: the hero settles 6px upward as it arrives.
+    const bottom = () => hero.getByRole("link", { name }).evaluate(link => link.getBoundingClientRect().bottom - innerHeight);
+    await expect.poll(bottom, { message: name }).toBeLessThanOrEqual(0);
+  }
 });
 
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {

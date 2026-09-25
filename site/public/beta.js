@@ -34,7 +34,9 @@
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
-    busy = true; button.disabled = true; button.textContent = 'Sending…';
+    // aria-disabled, not disabled: disabling the focused button moved focus to
+    // <body>, outside the modal, in both engines; busy already refuses a second submit.
+    busy = true; button.setAttribute('aria-disabled', 'true'); button.textContent = 'Sending…';
     status.textContent = ''; status.dataset.success = 'false';
     const fields = new FormData(form);
     try {
@@ -46,6 +48,12 @@
       status.textContent = result.message;
       if (response.ok) { status.dataset.success = 'true'; form.reset(); }
     } catch { status.textContent = 'Couldn’t reach Shahi. Please try again, or email support@getshahi.dev.'; }
-    finally { busy = false; button.disabled = false; button.textContent = label; }
+    finally {
+      busy = false; button.removeAttribute('aria-disabled'); button.textContent = label;
+      // On a small or zoomed screen the answer lands below the dialog's fold,
+      // so a sighted visitor saw no sign the request went through. "nearest"
+      // scrolls only the dialog's own box, and focus stays on the button.
+      if (status.textContent) status.scrollIntoView({ block: 'nearest' });
+    }
   });
 })();

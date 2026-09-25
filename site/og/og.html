@@ -42,6 +42,8 @@
   .ask strong { display: block; font-weight: 500; margin-bottom: 8px; }
   .opt { padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--raised); margin-top: 6px; font-size: 14px; }
   .opt.on { background: var(--accent); border-color: var(--accent); color: var(--void); font-weight: 500; }
+  /* "Cursor CLI" pushed the line break into "end-to-/end". */
+  .nowrap { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -49,7 +51,7 @@
 <div class="copy">
   <div class="brand"><img src="/public/favicon.svg" alt=""><img src="/public/wordmark.svg" alt=""></div>
   <h1>Your agents,<br><span>as a chat on your phone.</span></h1>
-  <p>Claude Code, Codex and Cursor sessions in herdr, made for your thumb. Two commands, one scan, end-to-end encrypted.</p>
+  <p>Claude Code, Codex and Cursor CLI sessions in herdr, made for your thumb. Two commands, one scan, <span class="nowrap">end-to-end</span> encrypted.</p>
   <div class="cmd"><b>$</b> herdr plugin install iYassr/shahi</div>
 </div>
 <div class="foot"><b>getshahi.dev</b> · open source, MIT</div>

@@ -7,10 +7,10 @@
  * @ibm/plex-sans@1.1.0 and @ibm/plex-mono@2.5.0 (fonts/split/woff2), with the
  * unicode ranges IBM publishes beside them. Latin1 carries the English copy and
  * its punctuation; Pi carries the arrows and check mark the pages use. Only the
- * faces the pages set are here: Sans 400/500/600 and Mono 400 for <code> on
- * the privacy page. A browser downloads a file only when a page renders a
- * character in its range at that weight. Licensed under the SIL Open Font
- * License 1.1 — LICENSE.txt in this directory.
+ * faces the pages set are here: Sans 400/500/600, and Mono 400 for <code> on
+ * the privacy page and the homepage's setup commands. A browser downloads a
+ * file only when a page renders a character in its range at that weight.
+ * Licensed under the SIL Open Font License 1.1 — LICENSE.txt in this directory.
  */
 @font-face {
   font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap;

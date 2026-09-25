@@ -1,7 +1,9 @@
 import { EmailMessage } from "cloudflare:email";
+import { media } from "./media";
 import { signup } from "./signup";
 interface Env {
   ASSETS: Fetcher;
+  MEDIA: R2Bucket;
   SITE_TELEMETRY?: AnalyticsEngineDataset;
   BETA_EMAIL: SendEmail;
   BETA_DELIVERY_TO: string;
@@ -9,7 +11,9 @@ interface Env {
 }
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (new URL(request.url).pathname !== "/api/ios-beta") return env.ASSETS.fetch(request);
+    const { pathname } = new URL(request.url);
+    if (pathname.startsWith("/media/")) return media(request, env.MEDIA);
+    if (pathname !== "/api/ios-beta") return env.ASSETS.fetch(request);
     const started = Date.now();
     const response = await signup(request, {
       limit: async (key) => (await env.BETA_LIMIT.limit({ key })).success,

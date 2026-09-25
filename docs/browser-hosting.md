@@ -57,11 +57,72 @@ API proxy.
 Caching, from `site/public/_headers`: every unhashed file under `/pwa/`,
 including each app route rewritten to the shell, is `no-cache`, so a browser
 revalidates it; `/pwa/assets/*` is
-`public, no-transform, max-age=31536000, immutable`; `/pwa/sw.js` is
+`public, max-age=31536000, immutable`; `/pwa/sw.js` is
 `no-store`. The rule once named `/pwa/` alone, and since header rules match
 the requested path rather than the rewrite behind it, `/pwa/pane/*` and every
 other app route were served the same HTML with nothing telling a cache to
 revalidate it.
+
+HTML, the 404 page included, is `public, no-transform`, which keeps Cloudflare
+from injecting its analytics beacon ([operations](operations.md)). That same
+directive turns off Cloudflare's compression, and until 2026-09-25 every file
+had it, so production sent all text uncompressed, the app's 548 KB bundle
+included. `/pwa/assets/*` and the site's own CSS, JavaScript and SVG files, each
+named by its exact path in `_headers`, now go without it and are compressed at
+the edge. `bun run test:pwa` fails for a CSS, JavaScript or SVG file in
+`site/dist` that `_headers` does not name. One HTML response goes without
+`no-transform`: the 404 page for a missing file under `/pwa/assets/`, which
+takes that path's rule. There its policies are what refuse an injected beacon:
+`/pwa/*`'s `script-src 'self'`, which `test:pwa` checks on that response, and
+the 404 page's own `default-src 'none'`. `wrangler dev` compresses regardless, so check a
+release with a browser's headers:
+
+```sh
+curl -s -D - -o /dev/null -A 'Mozilla/5.0 (Macintosh) Chrome/140' -H 'Accept-Encoding: br, gzip' https://getshahi.dev/site.css | grep -i -e content-encoding -e cache-control
+curl -s -D - -o /dev/null -A 'Mozilla/5.0 (Macintosh) Chrome/140' https://getshahi.dev/ | grep -i cache-control   # still no-transform
+```
+
+## Media
+
+The homepage's launch video, its poster and captions are served at
+`/media/<name>` by the site Worker (`site/src/media.ts`) from the R2 bucket
+`shahi-site-media`, bound as `MEDIA`. Not static assets: they answer a `Range`
+request with the whole file as a 200 and no `Accept-Ranges` (measured
+2026-09-25 in wrangler 4.129 and on getshahi.dev), and Chrome then cannot seek.
+Not git: the repository is what every `herdr plugin install` clones, and the
+video would double it. Not a Cloudflare Stream embed: its player is a
+third-party script, and this origin runs none. `_headers` does not apply to a
+Worker's response, so `media.ts` sets every header itself.
+
+Each name carries the first eight hex digits of its file's SHA-256, so a hit
+is cached as `immutable` for a year and a new cut is a new URL.
+`site/media.json` lists the published files, and `bun run test` holds the
+homepage to it. To publish a new cut:
+
+```sh
+cd marketing/video && bun run render:launch && cd ../..   # the masters and the captions
+bun marketing/video/scripts/publish-media.ts --remote
+```
+
+The script encodes the masters for the web (H.264 and stereo AAC, index
+first), renders the poster, names each file after its content, rewrites
+`site/media.json` and the page's four `/media/` URLs, and uploads the files.
+Then commit those two files and build and deploy as above: upload first, so the
+page never names a file the bucket lacks. Rerunning it on an unchanged cut
+gives the same names. `--local` fills the local R2 that
+`bunx wrangler dev --config site/wrangler.toml` reads (`site/.wrangler/state`)
+instead. The bucket is created once, before the first deploy that binds it,
+with `bunx wrangler r2 bucket create shahi-site-media`. Delete a previous cut's
+objects a day after the deploy that replaced it, not before: a page opened
+earlier still names them.
+
+After deploying, `curl -s -D - -o /dev/null -H 'Range: bytes=0-1'
+https://getshahi.dev/media/<file>` must answer 206 with
+`Content-Range: bytes 0-1/<size>`. Use GET, as that does: `curl -I` sends
+HEAD, which the Worker answers without a range, as HTTP defines ranges for GET
+alone. `bun run test:pwa` checks the same in both
+engines against small stand-ins that `e2e/hosted/seed-media.ts` stores under
+the manifest's names in a local R2 of its own, so it needs no rendered video.
 
 ## Browser boundaries
 

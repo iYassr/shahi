@@ -7,7 +7,7 @@
 **Your herdr agents, as a chat on your phone.**
 
 Not a terminal squeezed onto a small screen: Shahi turns the Claude Code, Codex<br>
-and Cursor sessions running in herdr into a conversation you read, answer and steer with your thumb.
+and Cursor CLI sessions running in herdr into a conversation you read, answer and steer with your thumb.
 
 **Two commands, one scan, about a minute.** End-to-end encrypted. No account, VPN or open port.
 
@@ -47,8 +47,8 @@ phone does not stop the agents running there.
 
 A terminal on a phone is a poor way to talk to an agent. SSH apps show output
 wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
-Tab. Shahi reads each agent’s own transcript instead, so messages, tool
-calls and diffs fit your screen, and supported permission prompts become buttons.
+Tab. Shahi reads the transcripts that Claude Code, Codex and Cursor keep for
+themselves instead, so messages, tool calls and diffs fit your screen, and supported permission prompts become buttons.
 It feels like texting. The terminal is still one tap away, on the Screen tab.
 
 Shahi is built on [herdr](https://herdr.dev), a lightweight home for your agents

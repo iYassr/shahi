@@ -15,9 +15,17 @@ preview_urls = false
 
 [assets]
 binding = "ASSETS"
-run_worker_first = ["/api/ios-beta"]
+run_worker_first = ["/api/ios-beta", "/media/*"]
 directory = "./dist"
 not_found_handling = "404-page"
+
+# The launch video, its poster and captions, served by src/media.ts. R2 rather
+# than static assets, which cannot answer a byte range (Chrome then cannot seek);
+# and rather than git, which every `herdr plugin install` clones.
+# marketing/video/scripts/publish-media.ts fills it; site/media.json lists it.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "shahi-site-media"
 
 [[routes]]
 pattern = "getshahi.dev"

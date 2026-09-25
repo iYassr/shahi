@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shahi — your herdr agents, as a chat on your phone.</title>
-<meta name="description" content="Your Claude Code, Codex and Cursor sessions in herdr, as a chat on your phone. One plugin, one scan, end-to-end encrypted. Open source.">
+<meta name="description" content="Your Claude Code, Codex and Cursor CLI sessions in herdr, as a chat on your phone. One plugin, one scan, end-to-end encrypted. Open source.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E0D0B">
 <link rel="canonical" href="https://getshahi.dev/">
@@ -39,9 +39,10 @@
   </header>
   <main>
     <section class="hero" aria-labelledby="headline">
-      <p class="eyebrow">herdr, at its best on mobile</p>
+      <p class="eyebrow">A plugin for herdr, the terminal workspace for coding agents</p>
       <h1 id="headline">Your agents,<br><span>as a chat on your phone.</span></h1>
-      <p class="lede">Not a terminal squeezed onto a small screen. Shahi turns the Claude Code, Codex and Cursor sessions running in <a href="https://herdr.dev">herdr</a> into a conversation you read, answer and steer with your thumb. The work stays on your computer; you carry on from wherever you are.</p>
+      <!-- The one place "about a minute" is claimed up top; the setup section says what it assumes. -->
+      <p class="lede">Shahi turns the Claude Code, Codex and Cursor CLI sessions in <a href="https://herdr.dev">herdr</a> into a conversation you answer with your thumb, not a terminal squeezed onto a phone. Add one plugin, scan a QR code: connected in about a minute, <span class="nowrap">end-to-end</span> encrypted through a relay that can’t read your messages.</p>
       <div class="hero-actions">
         <div class="hero-buttons">
           <a class="button-primary" href="/pwa/">Open Shahi Web App <span aria-hidden="true">↗</span></a>
@@ -50,12 +51,34 @@
         </div>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability"><span>Two commands, one scan, about a minute.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
+      <p class="availability"><span>No account, VPN or open ports.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
     </section>
+
+    <div class="launch">
+      <figure class="launch-video" id="video">
+        <!-- Square on phones, wide elsewhere: <source media> is read once, when the page loads.
+             Nothing is fetched but the poster until the visitor presses play. The files are
+             served from R2 by site/src/media.ts; marketing/video/scripts/publish-media.ts
+             writes their names here. Captions stay off until chosen: the frames carry their
+             own large on-screen text. -->
+        <video controls playsinline preload="none" poster="/media/launch-poster.95cf6dff.jpg" aria-label="Shahi launch video" aria-describedby="launch-video-caption">
+          <source src="/media/launch-1x1.a0499c6a.mp4" type="video/mp4" media="(max-width: 760px)">
+          <source src="/media/launch-16x9.5dcc72a4.mp4" type="video/mp4">
+          <track kind="captions" srclang="en" label="English" src="/media/launch.eaadcd70.en.vtt">
+        </video>
+        <figcaption id="launch-video-caption">Shahi in 32 seconds, with sound. Captions are in the player’s menu.</figcaption>
+      </figure>
+      <!-- The voice-over's words are LINES in marketing/video/audio/voiceover.ts; keep this beside them. -->
+      <details class="transcript">
+        <summary>Read the transcript</summary>
+        <p><span class="transcript-label">Voice-over</span> You left your desk. Your agents didn’t. A terminal on a phone? Pinch, scroll, squint. Shahi connects your phone to herdr in about a minute. Two commands. One scan. Your agents become a chat. Read what they did, answer with a tap, and keep them moving. Every space. Every pane. Live. Shahi. Your agents, as a chat on your phone.</p>
+        <p><span class="transcript-label">On screen</span> A desktop terminal squeezed onto a phone. Then the setup: <code>herdr plugin install iYassr/shahi</code> and <code>herdr plugin action invoke shahi.pair</code> in herdr on the computer, the pairing code scanned with Shahi, and the phone connected, end-to-end encrypted. In the chat, Claude Code asks to run a Bash command, one tap answers “Yes”, the agent reports that all 214 tests pass and staging is live, and a typed reply, “Great. Open the PR.”, sets it working again. Then every space and agent in herdr, updating live on the phone. Last, the Shahi logo and tagline with “End-to-end encrypted”, “No account · no open ports” and “Open source · MIT”, the install command and getshahi.dev.</p>
+      </details>
+    </div>
 
     <figure class="product">
       <div class="product-frame">
-        <section class="inbox" aria-label="Example agent list">
+        <div class="inbox" role="group" aria-label="Example agent list">
           <div class="panel-heading"><span>Agents</span><span class="subtle">3 conversations</span></div>
           <div class="agent-row selected">
             <span class="avatar claude"><img src="/agents/claude.svg" alt="Claude Code" width="20" height="20"></span>
@@ -70,51 +93,61 @@
             <div><strong>Update the setup guide</strong><span class="meta">docs</span><span class="state done">Done</span></div>
           </div>
           <div class="preview-nav" aria-hidden="true"><span>Agents</span><span>Spaces</span><span>Settings</span></div>
-        </section>
-        <section class="reader" aria-label="Example conversation">
+        </div>
+        <div class="reader" role="group" aria-label="Example conversation">
           <div class="panel-heading"><span>Improve the sign-up form</span><span class="meta">~/api-gateway</span></div>
           <div class="reader-tabs" aria-hidden="true"><span class="active">Read</span><span>Screen</span></div>
           <div class="conversation">
             <div class="message you"><span class="speaker">You</span><p>Show a helpful message if someone tries to sign up without an email address.</p></div>
-            <div class="message"><span class="speaker">Claude Code</span><p>I’ll update the sign-up form and check that the message appears when the email is missing.</p></div>
-            <div class="change"><div class="file-label">Sign-up form</div><p>When the email is missing, show: “Enter your email address to continue.”</p></div>
-            <div class="approval"><p class="demo-before">Allow this change to the sign-up form?</p><p class="demo-after sent">✓ Response sent</p>
-              <details class="answer-demo"><summary><span class="demo-before">Allow once</span><span class="demo-after">Reset example</span></summary><p>Claude is applying the change.</p></details>
+            <div class="message"><span class="speaker speaker-claude">Claude Code</span><p>I’ll update the sign-up form and check that the message appears when the email is missing.</p></div>
+            <div class="change"><div class="file-label">SignupForm.tsx</div><p>When the email is missing, show: “Enter your email address to continue.”</p></div>
+            <!-- The answer replaces the question on the same line, so answering moves nothing below it.
+                 A screen reader hears the result inside the details, straight after the control. -->
+            <div class="approval"><p class="demo-before">Do you want to make this edit to SignupForm.tsx?</p><p class="demo-after sent" aria-hidden="true">✓ Response sent · <span class="working">Claude is applying the change.</span></p>
+              <details class="answer-demo"><summary><span class="demo-before">Yes</span><span class="demo-after">Reset example</span></summary><p class="visually-hidden">Response sent. The agent list now shows this conversation as Working, and Claude is applying the change.</p></details>
             </div>
           </div>
-        </section>
+        </div>
       </div>
-      <figcaption>Interactive example · Try “Allow once” to see what happens. This won’t change any real work.</figcaption>
+      <figcaption>Interactive example · Tap “Yes” to see what happens. This won’t change any real work.</figcaption>
     </figure>
 
     <section class="setup" id="quick-start" aria-labelledby="setup-title">
-      <div><p class="eyebrow">Setup</p><h2 id="setup-title">Install. Scan. Connect.</h2><p>Two commands and one scan, about a minute from start to finish. Run these in a terminal inside <a href="https://herdr.dev">herdr</a> on your Mac or Linux computer, then scan the code that appears with Shahi on your phone, in the browser or the iOS app.</p><a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a></div>
-      <div class="command"><div class="file-label">On your computer</div><pre><code>herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once and expires after 10 minutes.</p></div>
+      <div>
+        <p class="eyebrow">Setup</p>
+        <h2 id="setup-title">Install. Scan. Connect.</h2>
+        <p>Two commands in herdr on your Mac or Linux computer, then one scan on your phone: about a minute once herdr is running.</p>
+        <!-- The code is a shahi:// link, which a phone's camera cannot hand to a browser. -->
+        <p>On your phone, open <a href="/pwa/">getshahi.dev/pwa</a> and tap <strong>Scan QR code</strong>, or scan it with the iOS app. Your camera app can’t pass this code to the browser, so scan it from inside Shahi.</p>
+        <p><strong>New to herdr?</strong> Shahi shows the agents you run inside it. <a href="https://herdr.dev">Install herdr first</a>, then start your agents there.</p>
+        <a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a>
+      </div>
+      <div class="command"><div class="file-label">On your computer, in herdr</div><pre><code>herdr plugin install iYassr/shahi
+herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer, git, and bun 1.3.13 or newer (if bun is missing, the install adds it), on macOS or on Linux with systemd. Each code can be used once and expires after 10 minutes.</p></div>
     </section>
 
     <section class="features" aria-labelledby="features-title">
       <h2 class="visually-hidden" id="features-title">What Shahi does</h2>
-      <article><span class="feature-number">01</span><h3>Feels like texting</h3><p>Messages, tool calls, file changes and results arrive as a conversation made for your phone. Permission prompts from Claude Code and Codex become buttons. Reply in a few taps and watch the agent carry on.</p></article>
-      <article><span class="feature-number">02</span><h3>Connected in a minute</h3><p>Install the plugin, scan the code, and your agents are there. No Shahi account, no VPN, no open ports, no projects to upload. The connection is encrypted from your phone to your computer.</p></article>
+      <article><span class="feature-number">01</span><h3>Encrypted end to end, and live</h3><p>Your phone and computer encrypt every message they send each other. Shahi’s relay passes them along without being able to read them, so there is no Shahi account, no VPN and no open port. Conversations update as the agent writes.</p></article>
+      <article><span class="feature-number">02</span><h3>Like WhatsApp, for your agents</h3><p>Messages, tool calls, file changes and results arrive as a conversation made for your phone. Permission prompts Shahi recognises from Claude Code and Codex become buttons. Reply in a few taps and watch the agent carry on.</p></article>
       <article><span class="feature-number">03</span><h3>Built on herdr</h3><p>herdr is a lightweight home for your agents, with spaces, panes and live status for every one. Shahi mirrors all of it, so you can browse your spaces and start new agents from your phone.</p></article>
     </section>
 
     <section class="why" aria-labelledby="why-title">
       <p class="eyebrow">Why not a terminal app?</p>
       <h2 id="why-title">A terminal on a phone is not a good way to talk to an agent.</h2>
-      <p>SSH apps give you a terminal wrapped for a wide screen: you pinch, scroll sideways and hunt for Esc and Tab. Shahi reads each agent’s own transcript instead, so its work fits your screen. The terminal is still one tap away, on the Screen tab, for the moments you really need it.</p>
+      <p>SSH apps give you a terminal wrapped for a wide screen: you pinch, scroll sideways and hunt for Esc and Tab. Shahi reads the transcripts that Claude Code, Codex and Cursor keep for themselves, so their work fits your screen. The terminal is still one tap away, on the Screen tab, for the moments you need it and for any other agent herdr runs.</p>
     </section>
 
     <section class="security" id="connection-security" aria-labelledby="security-title">
       <p class="eyebrow">Connection security</p>
       <h2 id="security-title">How your connection is protected.</h2>
-      <p class="security-intro">Your phone and computer lock the messages they send to each other using encryption. Shahi’s connection service passes those messages along without being able to read them.</p>
+      <p class="security-intro">Your phone and computer lock the messages they send to each other using encryption. Shahi’s relay, a connection service on Cloudflare, passes those messages along without being able to read them.</p>
       <figure class="connection-map" aria-label="Protected connection between your phone and computer">
         <ol>
           <li class="connection-node"><strong>Your phone</strong><span>Read, reply, and approve.<br>Locks messages before sending them.</span></li>
           <li class="connection-arrow" aria-hidden="true">↔</li>
-          <li class="connection-node"><strong>Connection service</strong><span>Passes along locked messages.<br>Cannot read their contents.</span></li>
+          <li class="connection-node"><strong>Shahi relay</strong><span>Passes along locked messages.<br>Cannot read their contents.</span></li>
           <li class="connection-arrow" aria-hidden="true">↔</li>
           <li class="connection-node"><strong>Your computer</strong><span>Keeps your work running.<br>Unlocks messages from your phone.</span></li>
         </ol>
@@ -122,46 +155,57 @@ herdr plugin action invoke shahi.pair</code></pre><p>Each code can be used once 
       </figure>
       <details><summary>What happens when I scan the code?</summary><ol>
         <li>The code lets your phone connect to your computer. It works once and expires after ten minutes.</li>
-        <li>Your devices set up a protected connection. The connection service cannot read the secret in your code.</li>
+        <li>Your devices set up a protected connection. The relay cannot read the secret in your code.</li>
         <li>Your computer remembers the connected device so it can recognize it next time.</li>
         <li>Remove a device’s access in Settings to disconnect it and stop it from connecting again.</li>
       </ol><p>Keep your connection code private. Anyone who uses it can control the work running on your computer.</p></details>
-      <details><summary>What information can Shahi see?</summary><p>Shahi’s connection service and its hosting provider, Cloudflare, can see connection information, such as your internet address, device identifiers, and when and how much data is sent. This helps diagnose connection problems and misuse. They cannot read the messages sent through this protected connection.</p><p>Your connected devices can read your messages, so keep them secure. The web app relies on software delivered by getshahi.dev. If you turn on notifications, notification providers receive their contents separately. Encryption cannot protect a device that someone has broken into or prevent connection outages.</p><p>Shahi has internal security reviews, but has not been independently certified. The security guide below explains the encryption in detail.</p></details>
-      <p class="connection-note">Prefer no third party in the path? The iPhone app can connect over your own SSH instead of the relay.</p>
+      <details><summary>What information can Shahi see?</summary><p>Shahi’s relay and its hosting provider, Cloudflare, can see connection information, such as your internet address, device identifiers, and when and how much data is sent. This helps diagnose connection problems and misuse. They cannot read the messages sent through this protected connection.</p><p>Your connected devices can read your messages, so keep them secure. The web app runs code from getshahi.dev, published by the same developer who runs the relay. A malicious release or a compromised website could read an open session or a remembered pairing, because encryption shields your messages from the relay, not from the app’s own code. The iPhone app comes through TestFlight and signed updates instead, and it can skip the relay by using your own SSH.</p><p>If you turn on iPhone notifications, Expo and Apple can read each one: the space name, the terminal title, the pane to open and your computer’s public identifier. Browser notifications are encrypted for your browser alone. Encryption cannot protect a device that someone has broken into or prevent connection outages.</p><p>Shahi’s security has been reviewed internally but has not had an independent audit. The security guide explains the encryption in detail.</p></details>
+      <p class="connection-note">Prefer no third party in the path? The iPhone app (beta) can connect over your own SSH instead. To stop your computer using the relay at all, add <code>RELAY_URL=</code> to the plugin’s .env and restart Shahi. QR pairing and the web app then stop working, and you connect over SSH.</p>
       <div class="security-links"><a class="quiet-link" href="https://github.com/iYassr/shahi/blob/master/docs/connection-security.md">Illustrated security guide <span aria-hidden="true">↗</span></a><a class="quiet-link" href="https://github.com/iYassr/shahi#how-it-connects">Connection options <span aria-hidden="true">↗</span></a><a class="quiet-link" href="/privacy">Data and privacy <span aria-hidden="true">↗</span></a></div>
     </section>
 
     <section class="beta" id="ios-beta" aria-labelledby="beta-title">
-      <div><p class="eyebrow">iOS app · Beta</p><h2 id="beta-title">Shahi for iPhone, through TestFlight.</h2><p>The iOS app is in beta. You install it with TestFlight, Apple’s app for testing beta apps, and we send each TestFlight invite by email.</p></div>
+      <div><p class="eyebrow">iOS app · Beta</p><h2 id="beta-title">Shahi for iPhone, through TestFlight.</h2><p>The iOS app is in a private beta on TestFlight, Apple’s app for testing beta apps. Leave your email and we’ll send your invite as soon as we can add you. The web app works on any phone today.</p></div>
       <div class="beta-action">
-        <button class="button-primary" type="button" data-beta-open hidden>Get a TestFlight invite</button>
+        <button class="button-primary" type="button" data-beta-open hidden>Request a TestFlight invite</button>
         <!-- beta.js hides this once the dialog works, so a visitor without JavaScript, or with a browser that has no <dialog>, still has a way in. -->
         <p class="beta-fallback" data-beta-fallback>Email <a href="mailto:support@getshahi.dev?subject=Shahi%20iOS%20beta">support@getshahi.dev</a> to ask for a TestFlight invite.</p>
       </div>
     </section>
 
+    <!-- The hero's button keeps the label the owner chose; this dialog says plainly what it does. -->
     <dialog class="beta-dialog" id="beta-dialog" closedby="any" aria-labelledby="beta-dialog-title" aria-describedby="beta-dialog-intro">
       <div class="beta-dialog-body">
         <div class="beta-dialog-head">
-          <h2 id="beta-dialog-title">Download the iOS app</h2>
+          <h2 id="beta-dialog-title">Request a TestFlight invite</h2>
           <button class="dialog-close" type="button" data-beta-close>Close</button>
         </div>
-        <p id="beta-dialog-intro">The iOS app is in beta on TestFlight, Apple’s app for testing beta apps. Enter your email and we’ll send you a TestFlight invite.</p>
+        <p id="beta-dialog-intro">The iPhone app is in a private beta on TestFlight, Apple’s app for testing beta apps. Leave your email to request an invite: we email each one by hand, as soon as we can add you (not yet in France).</p>
         <form id="beta-form">
           <label for="beta-email">Email address</label>
           <input id="beta-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
           <div class="form-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
-          <label class="beta-consent"><input name="consent" type="checkbox" required> <span>Email me about the Shahi iOS beta.</span></label>
+          <label class="beta-consent"><input name="consent" type="checkbox" required> <span>Email me my TestFlight invite and beta updates.</span></label>
           <button class="button-primary" type="submit">Email me an invite</button>
           <p class="beta-privacy">Your request goes to our support inbox. <a href="/privacy#ios-beta">How we use your email</a></p>
           <p id="beta-status" role="status" aria-live="polite"></p>
+          <!-- After the status, so on a small phone the confirmation stays in view under the button. -->
+          <p class="beta-privacy">Want to try it now? The web app works in your iPhone’s browser today. <a href="/pwa/">Use the web app now</a></p>
         </form>
       </div>
     </dialog>
+
+    <section class="closing" aria-labelledby="closing-title">
+      <h2 id="closing-title">Two commands, one scan.</h2>
+      <p>Install the Shahi plugin in herdr, scan the code in Shahi on your phone, and your agents are there as a chat. Shahi is open source under the MIT license.</p>
+      <div class="hero-buttons"><a class="button-primary" href="/pwa/">Open the web app <span aria-hidden="true">↗</span></a><a class="button-secondary" href="https://github.com/iYassr/shahi">View the source on GitHub <span aria-hidden="true">↗</span></a></div>
+      <a class="quiet-link" href="#quick-start">See the two setup commands <span aria-hidden="true">↑</span></a>
+    </section>
   </main>
-  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav></footer>
+  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav><p class="disclaimer">Shahi is an independent open-source project, not affiliated with herdr, Anthropic, OpenAI or Cursor.</p></footer>
 </div>
 <script defer src="/welcome.js"></script>
 <script defer src="/beta.js"></script>
+<script defer src="/launch.js"></script>
 </body>
 </html>

@@ -1,4 +1,9 @@
 /*
+  # no-transform stops Cloudflare injecting its analytics beacon into HTML
+  # (docs/operations.md), and it also turns off Cloudflare's compression: every
+  # text file went out uncompressed, the PWA's 548 KB bundle included (measured
+  # on getshahi.dev, 2026-09-25). Injection only touches HTML, so HTML keeps it
+  # here, and the non-HTML text below replaces it so the edge can compress it.
   Cache-Control: public, no-transform
   X-Content-Type-Options: nosniff
   Cross-Origin-Opener-Policy: same-origin
@@ -19,12 +24,64 @@
 /pwa/assets/*
   # Hashed names are the only files whose content never changes. The rule
   # above would otherwise be joined into this header, and no-cache would win.
+  # A missing file's 404 page (HTML) takes this rule too, so it goes without
+  # no-transform: there the /pwa/* policy's script-src 'self' and 404.html's
+  # own default-src 'none' are what refuse an injected beacon, and
+  # e2e/hosted/pwa.spec.ts checks the first.
   ! Cache-Control
-  Cache-Control: public, no-transform, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000, immutable
 
 /pwa/sw.js
   Cache-Control: no-store
   Service-Worker-Allowed: /pwa/
+
+# The site's other text, by exact path so no 404 page (HTML) matches: revalidated,
+# as their names carry no hash, and without no-transform, so they are compressed.
+# e2e/hosted/pwa.spec.ts fails for a CSS, JavaScript or SVG file here that is missing
+# from this list.
+/site.css
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/identity.css
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/privacy.css
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/beta.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/launch.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/welcome.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/favicon.svg
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/wordmark.svg
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/fonts/plex.css
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/agents/claude.svg
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/agents/codex.svg
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
 
 /og.png
   # The link-preview card: LinkedIn, Reddit and chat apps fetch or embed it
@@ -33,7 +90,10 @@
   Cross-Origin-Resource-Policy: cross-origin
 
 /
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'
+  # media-src: the launch video and its captions, from /media/ on this origin
+  # (site/src/media.ts). Without it both engines refused the video, even with
+  # preload="none", since the policy is checked when a source is chosen.
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'
 
 /privacy
   Content-Security-Policy: default-src 'none'; script-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

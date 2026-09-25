@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 23 September 2026. Published at
+_Last updated: 25 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -170,7 +170,7 @@ to an AI provider. Unlike a user's own computer, this demo is operated by us: it
 sample conversations, selected uploads, files, and pairing records are stored in
 the container and private recovery snapshots. Use sample information only. The
 review website uses an essential, seven-day sign-in cookie, with no advertising
-or cross-site tracking. Demo access expires on 19 October 2026; the next scheduled
+or cross-site tracking. Demo access expires on 31 December 2026; the next scheduled
 cleanup stops the computer and deletes the recovery snapshot. Contact
 support@getshahi.dev to request earlier removal of review data.
 
