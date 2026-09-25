@@ -536,15 +536,16 @@ test("a new codex session in the same pane shares no message ids with the previo
   const noClient = { rpc: () => { throw new Error("the session id should have answered"); } } as never;
   try {
     process.env.CODEX_HOME = home;
-    const { readCodexLog } = (await import(`./codex-log?codex-switch=${encodeURIComponent(home)}`)) as typeof import("./codex-log");
-    const before = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[0] }))!;
-    const after = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[1] }))!;
+    const { findCodexRollout, readCodexLog } = (await import(`./codex-log?codex-switch=${encodeURIComponent(home)}`)) as typeof import("./codex-log");
+    const read = async (id: string | undefined) => readCodexLog((await findCodexRollout(noClient, "w1:p1", null, id))!);
+    const before = (await read(ids[0]))!;
+    const after = (await read(ids[1]))!;
     expect(before.messages).toHaveLength(3);
     expect(after.sessionId).not.toBe(before.sessionId);
     const old = new Set(before.messages.map((m) => m.id));
     expect(after.messages.filter((m) => old.has(m.id))).toEqual([]);
     // Stable within a session, which is what the clients' merge relies on.
-    const again = (await readCodexLog(noClient, "w1:p1", null, { sessionId: ids[1] }))!;
+    const again = (await read(ids[1]))!;
     expect(again.messages.map((m) => m.id)).toEqual(after.messages.map((m) => m.id));
   } finally {
     if (saved === undefined) delete process.env.CODEX_HOME;

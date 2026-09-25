@@ -1,5 +1,4 @@
-import { conversationSummary, retainSummaries } from "./conversation-summary";
-import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
+import { conversationSummary, retainSummaries, transcriptPage, transcriptPathFor } from "./conversation-summary";
 import { buildId } from "./build";
 /**
  * HTTP and WebSocket surface.
@@ -32,8 +31,7 @@ import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor
 import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
-import { findCodexRollout, readCodexLog } from "./codex-log";
-import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
+import { readSessionImage } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
@@ -1378,19 +1376,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               ? intParam(url.searchParams.get("before"), 0, 0, Number.MAX_SAFE_INTEGER)
               : undefined;
 
-            // Each agent keeps its transcript its own way, so the reader dispatches
-            // on kind rather than assuming one format.
-            const sessionId = agentSessionOf(pane);
-            const log =
-              pane?.agent === "cursor"
-                ? await (async () => { const path = await cursorTranscriptFor(client, paneId, sessionId); return path ? readCursorLog(path, { limit, before }) : null; })()
-                : pane?.agent === "codex"
-                ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before, sessionId })
-                : sessionId
-                  ? await readSessionLog(sessionId, { limit, before })
-                  : null;
+            // Each agent keeps its transcript its own way; `transcriptPage`
+            // reads it by kind, and not at all while the file is unchanged.
+            const path = pane ? await transcriptPathFor(pane, client) : null;
+            const page = path ? await transcriptPage(paneId, path, pane!.agent, { limit, before }) : null;
 
-            if (!log) {
+            if (!page) {
               return json(
                 { error: "no transcript for this pane", messages: [] },
                 { status: 404 },
@@ -1406,16 +1397,17 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
              * has not moved, which is most polls.
              *
              * The tag is derived from the content rather than the file, since a
-             * transcript can be assembled from more than one place.
+             * transcript can be assembled from more than one place. It was
+             * computed when the page was read, so an unchanged transcript is
+             * answered here without being read again.
              */
-            const etag = `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"`;
-            if (req.headers.get("if-none-match") === etag) {
+            if (req.headers.get("if-none-match") === page.etag) {
               return new Response(null, {
                 status: 304,
-                headers: { etag, "cache-control": "no-cache" },
+                headers: { etag: page.etag, "cache-control": "no-cache" },
               });
             }
-            return json(log, { headers: { etag, "cache-control": "no-cache" } });
+            return json(page.log, { headers: { etag: page.etag, "cache-control": "no-cache" } });
           }
 
           if (sub === "/transcript") {
@@ -1514,7 +1506,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
    * transcript while watched, which `followTranscript` notices.
    */
   function watchLog(ws: StreamClient, paneId: string): () => void {
-    const follow = followTranscript(() => transcriptPathFor(paneId), (offset) => {
+    const follow = followTranscript(async () => {
+      const pane = store.pane(paneId);
+      return pane ? transcriptPathFor(pane, client) : null;
+    }, (offset) => {
       if (ws.data.watchedPaneId !== paneId) return;
       ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));
     });
@@ -1528,16 +1523,6 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
       poller.off("frame", onFrame);
       follow.stop();
     };
-  }
-
-  /** The file the reader for this pane reads, if it has one yet. */
-  async function transcriptPathFor(paneId: string): Promise<string | null> {
-    const pane = store.pane(paneId);
-    if (!pane) return null;
-    const sessionId = agentSessionOf(pane);
-    if (pane.agent === "cursor") return cursorTranscriptFor(client, paneId, sessionId);
-    if (pane.agent === "codex") return findCodexRollout(client, paneId, pane.cwd ?? null, sessionId);
-    return sessionId ? findTranscript(sessionId) : null;
   }
 
   return {

@@ -509,7 +509,10 @@ The comparison uses a signature computed once per message object, so an
 unchanged poll still serialises nothing. With an ETag on the endpoint, an
 unchanged conversation costs 224 bytes on the wire instead of 15KB gzipped —
 and it polls every 2.5 seconds, forever, on whatever connection the phone is
-on.
+on. On the box it costs a stat: each pane keeps its last few pages and their
+ETags while the transcript's inode, size and mtime are unchanged
+(`transcriptPage`), because re-reading a page of screenshots on every poll
+held hundreds of megabytes.
 
 **Everything text-shaped is gzipped at the edge of the request handler**, in one
 place, with compressed bytes cached for immutable assets. Nothing was compressed

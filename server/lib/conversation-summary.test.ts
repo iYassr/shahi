@@ -3,7 +3,7 @@ import { appendFile, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readWindow } from "./session-log";
-import { retainSummaries, summaryOf, transcriptSummary } from "./conversation-summary";
+import { retainSummaries, summaryOf, transcriptPage, transcriptSummary } from "./conversation-summary";
 test("message time survives rereads and changes when a new chat message is appended", async () => {
   const dir = await mkdtemp(join(tmpdir(), "shahi-chat-order-"));
   const path = join(dir, "messages.jsonl");
@@ -78,5 +78,48 @@ test("a Cursor summary, which has no message times, is dated by its transcript",
     await writeFile(path, JSON.stringify({ role: "assistant", message: { content: [{ type: "text", text: "done" }] } }) + "\n");
     await utimes(path, settled, settled);
     expect(await transcriptSummary("w1:p9", path, "cursor")).toEqual({ preview: "done", lastMessageAt: settled.getTime() });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// The reader polls its page every 2.5s. Each poll read the page's byte range
+// and parsed it again, large rows and all, and only then compared ETags: the
+// pre-release bug hunt watched memory climb from 38 to 138MB over 12 polls of
+// a page holding 20 screenshots, and to ~415MB with one 30MB tool result.
+test("an unchanged transcript's page is answered without reading it again", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shahi-page-"));
+  const path = join(dir, "11111111-2222-4333-8444-555555555555.jsonl");
+  const settled = new Date("2026-09-20T03:00:00Z");
+  const reply = (uuid: string, text: string) =>
+    JSON.stringify({ type: "assistant", uuid, timestamp: "2026-09-20T02:00:00Z", message: { content: [{ type: "text", text }] } }) + "\n";
+  const texts = (page: Awaited<ReturnType<typeof transcriptPage>>) => page!.log.messages.map((m) => (m.blocks[0] as { text: string }).text);
+  try {
+    await writeFile(path, reply("a", "reply A") + reply("b", "reply B"));
+    await utimes(path, settled, settled);
+    const first = await transcriptPage("w1:p1", path, "claude", { limit: 60 });
+    expect(texts(first)).toEqual(["reply A", "reply B"]);
+    expect(first!.log.sessionId).toBe("11111111-2222-4333-8444-555555555555");
+
+    // Different bytes behind the same inode, size and modification time: a
+    // poll that read the file would show them.
+    await writeFile(path, reply("a", "reply X") + reply("b", "reply Y"));
+    await utimes(path, settled, settled);
+    const again = await transcriptPage("w1:p1", path, "claude", { limit: 60 });
+    expect(again).toBe(first);
+    // Another window of the same transcript is a page of its own.
+    expect(texts(await transcriptPage("w1:p1", path, "claude", { limit: 1, before: 1 }))).toEqual(["reply X"]);
+    expect(await transcriptPage("w1:p1", path, "claude", { limit: 60 })).toBe(first);
+
+    await appendFile(path, reply("c", "reply C"));
+    const grown = await transcriptPage("w1:p1", path, "claude", { limit: 60 });
+    expect(texts(grown)).toEqual(["reply X", "reply Y", "reply C"]);
+    expect(grown!.etag).not.toBe(first!.etag);
+
+    // Kept only for panes that exist.
+    retainSummaries([]);
+    await writeFile(path, reply("a", "reply 1") + reply("b", "reply 2") + reply("c", "reply 3"));
+    await utimes(path, settled, settled);
+    expect(texts(await transcriptPage("w1:p1", path, "claude", { limit: 60 }))).toEqual(["reply 1", "reply 2", "reply 3"]);
+    // A transcript that is not there is no page, not an error.
+    expect(await transcriptPage("w1:p1", join(dir, "gone.jsonl"), "claude", { limit: 60 })).toBeNull();
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

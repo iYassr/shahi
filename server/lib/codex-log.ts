@@ -589,19 +589,14 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
   return messages;
 }
 
-/** Reads and normalises a codex rollout into the reader's shape. */
+/** Reads and normalises a window of a codex rollout into the reader's shape, or null if it cannot be read. */
 export async function readCodexLog(
-  client: HerdrClient,
-  paneId: string,
-  cwd: string | null,
-  options: { limit?: number; before?: number; sessionId?: string | null } = {},
+  path: string,
+  options: { limit?: number; before?: number } = {},
 ): Promise<SessionLog | null> {
-  const path = await findCodexRollout(client, paneId, cwd, options.sessionId);
-  if (!path) return null;
-
   try {
     const log = await readCodexWindow(path, options);
-    return inTranscript(log, basename(path).replace(/\.jsonl$/, "") || paneId);
+    return inTranscript(log, basename(path, ".jsonl"));
   } catch {
     return null;
   }

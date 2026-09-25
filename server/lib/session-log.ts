@@ -325,16 +325,6 @@ export function previewOf(messages: LogMessage[]): string | null {
 }
 
 /**
- * The preview alone, cheaply enough for a dashboard that refreshes every few
- * seconds: the index already caches by file size, so an unchanged transcript
- * costs one stat, and a grown one costs a tail read of a few messages.
- */
-export async function previewFor(sessionId: string): Promise<string | null> {
-  const log = await readSessionLog(sessionId, { limit: 3 });
-  return log ? previewOf(log.messages) : null;
-}
-
-/**
  * Messages beyond the window, read so the last tool call in it can still find
  * its result. Its `tool_result` is in a later row, and without a few rows of
  * slack the newest call in a page would render without its output.
@@ -342,17 +332,6 @@ export async function previewFor(sessionId: string): Promise<string | null> {
 const PAIRING_SLACK = 4;
 
 /** Reads and normalises a window of a transcript, newest messages last. */
-export async function readSessionLog(
-  sessionId: string,
-  options: { limit?: number; before?: number } = {},
-): Promise<SessionLog | null> {
-  const path = await findTranscript(sessionId);
-  if (!path) return null;
-  const log = await readWindow(path, options);
-  return log && { ...log, sessionId };
-}
-
-/** The same, by path — which is what the tests can reach. */
 export async function readWindow(
   path: string,
   options: { limit?: number; before?: number } = {},
