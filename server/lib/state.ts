@@ -21,10 +21,8 @@
  * replay, so anything missed while disconnected can only be recovered by asking
  * again.
  */
-import type { StatusChange } from "@shahi/shared";
+import type { StatusChange as WireStatusChange } from "@shahi/shared";
 import { EventEmitter } from "node:events";
-
-export type { StatusChange };
 import type { HerdrClient } from "./herdr-client";
 import type { AnyEvent } from "./herdr-client";
 import { PaneInstances } from "./herdr-pane";
@@ -37,6 +35,25 @@ import type {
   TabInfo,
   WorkspaceInfo,
 } from "./herdr-schema";
+
+/**
+ * A status change as the store observed it: the wire shape, plus whether it
+ * came from the first snapshot this process took.
+ *
+ * `from: undefined` used to stand for that baseline, but it also means "a pane
+ * this store has not seen before" — a new agent that blocks within one
+ * snapshot, or a pane that left `agents` and came back — and push dropped
+ * those questions as baseline noise (pre-release bug hunt: 4 of 6 agents that
+ * went from unknown to blocked within a second were never notified). Only the
+ * baseline is `initial`.
+ *
+ * `from === to === "blocked"` is a re-block the store cannot see directly:
+ * herdr's state counter proves the pane left `blocked` and came back between
+ * two snapshots. See `#noteStatus`.
+ */
+export interface StatusChange extends WireStatusChange {
+  initial?: boolean;
+}
 
 /** Ordering for the dashboard: what needs a human first. */
 export const STATUS_PRIORITY: Record<AgentStatus, number> = {
@@ -84,6 +101,10 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
   lastSyncOk = false;
   #state: SessionState = emptyState();
   #statuses = new Map<string, AgentStatus>();
+  /** herdr's `state_change_seq` per pane, as of the last snapshot that carried it. */
+  #seqs = new Map<string, number>();
+  /** Set once the first snapshot has been reconciled; see `StatusChange.initial`. */
+  #baselined = false;
   #resyncing: Promise<void> | undefined;
   #syncTimer: ReturnType<typeof setInterval> | undefined;
   #signature = "";
@@ -213,6 +234,7 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
         this.#state.panes = this.#state.panes.filter((p) => p.pane_id !== pane_id);
         this.#state.agents = this.#state.agents.filter((a) => a.pane_id !== pane_id);
         this.#statuses.delete(pane_id);
+        this.#seqs.delete(pane_id);
         break;
       }
 
@@ -338,12 +360,37 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     upsert(this.#state.layouts, layout, (l) => l.tab_id === layout.tab_id);
   }
 
-  /** Emits a `status` event when a pane's agent_status actually transitions. */
-  #noteStatus(paneId: string, workspaceId: string, to: AgentStatus): void {
+  /**
+   * Emits a `status` event when a pane's agent_status actually transitions.
+   *
+   * `seq` is herdr's `state_change_seq`, which only snapshots carry. Status is
+   * sampled — every 3s, or when a title change happens to send `pane.updated`
+   * — so an agent answered and blocked again inside one sample reads as
+   * blocked → blocked, and its second question was never notified however
+   * long it waited (pre-release bug hunt). The counter closes that gap:
+   * measured on herdr 0.9.1 it is session-wide and advances on every status
+   * change and on nothing else (not a repeated report of the same state, a
+   * title, a label or metadata), so a pane still blocked with a higher number
+   * than last time has left `blocked` and come back.
+   *
+   * An event's change carries no number, and the next snapshot's number
+   * already counts it, so an event forgets the pane's number rather than let
+   * that snapshot read it as a second block.
+   */
+  #noteStatus(paneId: string, workspaceId: string, to: AgentStatus, seq?: number): void {
     const from = this.#statuses.get(paneId);
-    if (from === to) return;
+    const lastSeq = this.#seqs.get(paneId);
+    if (seq === undefined) {
+      if (from === to) return;
+      this.#seqs.delete(paneId);
+    } else {
+      this.#seqs.set(paneId, seq);
+      // A lower number is a restarted herdr's fresh counter, not a new block.
+      const reblocked = to === "blocked" && from === to && lastSeq !== undefined && seq > lastSeq;
+      if (from === to && !reblocked) return;
+    }
     this.#statuses.set(paneId, to);
-    this.emit("status", { paneId, workspaceId, from, to });
+    this.emit("status", { paneId, workspaceId, from, to, ...(this.#baselined ? {} : { initial: true }) });
   }
 
   /**
@@ -357,11 +404,17 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     const seen = new Set<string>();
     for (const agent of this.#state.agents) {
       seen.add(agent.pane_id);
-      this.#noteStatus(agent.pane_id, agent.workspace_id, agent.agent_status);
+      this.#noteStatus(agent.pane_id, agent.workspace_id, agent.agent_status, agent.state_change_seq);
     }
     for (const paneId of [...this.#statuses.keys()]) {
-      if (!seen.has(paneId)) this.#statuses.delete(paneId);
+      if (!seen.has(paneId)) {
+        this.#statuses.delete(paneId);
+        this.#seqs.delete(paneId);
+      }
     }
+    // Everything before this point was already true when the process started.
+    // A herdr restart does not re-arm it: a restored pane that blocks is news.
+    this.#baselined = true;
   }
 }
 

@@ -22,7 +22,7 @@ import webpush, { type PushSubscription } from "web-push";
 import type { Config } from "./config";
 import type { SessionStore, StatusChange } from "./state";
 
-/** How long to suppress repeat notifications for the same pane. */
+/** How long a repeat notification for the same pane is held back. */
 const DEBOUNCE_MS = 5_000;
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
@@ -47,6 +47,7 @@ export class PushService {
   readonly #serverId: string;
   readonly #enabled: boolean;
   readonly #lastNotifiedAt = new Map<string, number>();
+  readonly #trailing = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     db: Database,
@@ -158,15 +159,29 @@ export class PushService {
   async notifyStatusChange(change: StatusChange, store: SessionStore): Promise<void> {
     if (change.to !== "blocked") return;
 
-    // The initial baseline reports every pane's status with `from: undefined`.
-    // Waking a phone for agents that were already blocked before this process
-    // started is noise, not news.
-    if (change.from === undefined) return;
+    // The first snapshot reports every pane's status. Waking a phone for
+    // agents that were already blocked before this process started is noise,
+    // not news. A pane first seen after that, already blocked, is news.
+    if (change.initial) return;
 
-    const now = Date.now();
-    const last = this.#lastNotifiedAt.get(change.paneId) ?? 0;
-    if (now - last < DEBOUNCE_MS) return;
-    this.#lastNotifiedAt.set(change.paneId, now);
+    // A second question inside the window used to be dropped outright: answer
+    // one, block again a second later, and nothing ever arrived (pre-release
+    // bug hunt). It is checked again when the window ends instead, and still
+    // notified if the pane is still waiting then. One timer per pane: however
+    // many changes land in the window, the answer is one notification or none.
+    const wait = (this.#lastNotifiedAt.get(change.paneId) ?? -Infinity) + DEBOUNCE_MS - Date.now();
+    if (wait > 0) {
+      if (this.#trailing.has(change.paneId)) return;
+      const timer = setTimeout(() => {
+        this.#trailing.delete(change.paneId);
+        if (store.pane(change.paneId)?.agent_status !== "blocked") return;
+        void this.notifyStatusChange(change, store);
+      }, wait);
+      timer.unref?.();
+      this.#trailing.set(change.paneId, timer);
+      return;
+    }
+    this.#lastNotifiedAt.set(change.paneId, Date.now());
 
     const pane = store.pane(change.paneId);
     const workspaceLabel = store.workspace(change.workspaceId)?.label ?? change.workspaceId;

@@ -66,12 +66,21 @@ computer's key.
 
 ## What fires one
 
-Only a transition **into** `blocked`, debounced 5 seconds per pane. `done` was
-tempting and rejected: a finished turn is not urgent, and firing on both trains
-you to ignore the notification. The baseline snapshot at startup reports every
-pane's status with no previous value, and those are deliberately not notified —
-waking a phone for agents that were already waiting before the process started is
-noise.
+Only a transition **into** `blocked`, at most one per pane every 5 seconds.
+`done` was tempting and rejected: a finished turn is not urgent, and firing on
+both trains you to ignore the notification. The first snapshot after the
+sidecar starts reports every pane's status, and those are deliberately not
+notified — waking a phone for agents that were already waiting before the
+process started is noise. A pane first seen later, already blocked (a new agent
+that blocks within one snapshot, a pane restored by a herdr restart), is
+notified: only that first snapshot is the baseline.
+
+A block inside the 5-second window is not dropped: when the window ends the
+pane is checked again and notified if it is still waiting. And a pane that was
+answered and blocked again between two 3-second snapshots, with nothing in
+between to say so, is caught by herdr's `state_change_seq`: measured on 0.9.1
+it is a session-wide counter that advances on every status change and on
+nothing else, so a pane still blocked with a higher number has a new question.
 
 The payload carries the pane id and the computer's `serverId`, so tapping the
 notification opens that pane rather than the list. In a browser whose app is

@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { PushService } from "./push";
 import type { Config } from "./config";
-import type { SessionStore } from "./state";
+import type { HerdrClient } from "./herdr-client";
+import type { AgentInfo, PaneInfo, SessionSnapshot } from "./herdr-schema";
+import { SessionStore, type StatusChange } from "./state";
 
 /** In memory, so a test run never touches the real subscription store. */
 const service = (vapid: Config["vapid"] = null) =>
@@ -11,6 +13,126 @@ const service = (vapid: Config["vapid"] = null) =>
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  jest.useRealTimers();
+});
+
+/** Counts Expo requests, answering every message with an ok ticket. */
+function expoRequests(): unknown[][] {
+  const requests: unknown[][] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const messages = JSON.parse(String(init.body)) as unknown[];
+    requests.push(messages);
+    return Response.json({ data: messages.map(() => ({ status: "ok" })) });
+  }) as unknown as typeof fetch;
+  return requests;
+}
+
+/** Lets a fire-and-forget send reach `fetch` while timers are faked. */
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+};
+
+const paneInfo = (over: Partial<PaneInfo> = {}): PaneInfo => ({
+  pane_id: "w1:p1",
+  terminal_id: "term_1",
+  workspace_id: "w1",
+  tab_id: "w1:t1",
+  focused: false,
+  agent_status: "blocked",
+  revision: 0,
+  ...over,
+});
+
+/** The two reads a notification makes of the mirror, and nothing else. */
+function storeWith(pane: PaneInfo | undefined, label = "project"): SessionStore {
+  return {
+    pane: () => pane,
+    workspace: () => ({ label }),
+  } as unknown as SessionStore;
+}
+
+const blocked = (over: Partial<StatusChange> = {}): StatusChange => ({ paneId: "w1:p1", workspaceId: "w1", from: "working", to: "blocked", ...over });
+
+describe("when a notification fires", () => {
+  // Pre-release bug hunt: answered, working for a second, blocked again — the
+  // second question landed inside the 5s window, was dropped, and nothing
+  // re-checked it, so the pane waited with no notification at all.
+  test("a second question within 5 s is notified once the window ends", async () => {
+    jest.useFakeTimers();
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    const pane = paneInfo();
+    const store = storeWith(pane);
+
+    await push.notifyStatusChange(blocked(), store);
+    expect(requests).toHaveLength(1);
+
+    jest.advanceTimersByTime(1_300);
+    await push.notifyStatusChange(blocked(), store);
+    await push.notifyStatusChange(blocked({ from: "blocked" }), store);
+    await settle();
+    expect(requests).toHaveLength(1);
+
+    jest.advanceTimersByTime(3_700);
+    await settle();
+    expect(requests).toHaveLength(2);
+
+    // Several changes inside one window add up to one notification, not more.
+    jest.advanceTimersByTime(20_000);
+    await settle();
+    expect(requests).toHaveLength(2);
+  });
+
+  test("a second question answered before the window ends is not notified late", async () => {
+    jest.useFakeTimers();
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    const pane = paneInfo();
+    const store = storeWith(pane);
+
+    await push.notifyStatusChange(blocked(), store);
+    jest.advanceTimersByTime(1_000);
+    await push.notifyStatusChange(blocked(), store);
+    pane.agent_status = "working";
+    jest.advanceTimersByTime(4_000);
+    await settle();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("the startup baseline is not news", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    await push.notifyStatusChange(blocked({ from: undefined, initial: true }), storeWith(paneInfo()));
+    expect(requests).toHaveLength(0);
+  });
+
+  // Pre-release bug hunt: a new agent that blocked within one snapshot, or a
+  // pane restored after a herdr restart, was first seen already blocked, read
+  // as the startup baseline, and never notified.
+  test("a pane first seen already blocked after startup is notified once", async () => {
+    const agent = (over: Partial<AgentInfo>): AgentInfo => ({ ...paneInfo(), state_change_seq: 1, ...over });
+    const snapshot = (agents: AgentInfo[]): SessionSnapshot => ({
+      version: "0.9.1", protocol: 22, workspaces: [{ workspace_id: "w1", number: 1, label: "project", focused: false, pane_count: 1, tab_count: 1, active_tab_id: "w1:t1", agent_status: "idle" }],
+      tabs: [], panes: agents.map(({ state_change_seq: _, ...pane }) => pane), agents, layouts: [],
+    });
+    const queue = [snapshot([]), snapshot([agent({})]), snapshot([agent({})])];
+    const client = { rpc: async () => ({ snapshot: queue.shift() }) } as unknown as HerdrClient;
+    const store = new SessionStore(client);
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    const sends: Promise<void>[] = [];
+    store.on("status", (change) => sends.push(push.notifyStatusChange(change, store)));
+
+    await store.resync();
+    await store.resync();
+    await store.resync();
+    await Promise.all(sends);
+    expect(requests).toHaveLength(1);
+  });
 });
 
 describe("expo tokens", () => {

@@ -216,7 +216,7 @@ describe("SessionStore", () => {
       await store.resync();
       // The initial snapshot establishes a baseline: idle, reported once.
       expect(changes).toEqual([
-        { paneId: "w1:p1", workspaceId: "w1", from: undefined, to: "idle" },
+        { paneId: "w1:p1", workspaceId: "w1", from: undefined, to: "idle", initial: true },
       ]);
 
       changes.length = 0;
@@ -275,6 +275,89 @@ describe("SessionStore", () => {
       expect(changes).toEqual([
         { paneId: "w1:p1", workspaceId: "w1", from: undefined, to: "idle" },
       ]);
+    });
+
+    // Pre-release bug hunt: push read every `from: undefined` as the startup
+    // baseline, so an agent that was blocked the first time the store saw it
+    // was never notified. Only the first snapshot is the baseline.
+    test("a pane first seen already blocked after startup is not the baseline", async () => {
+      const { client } = fakeClient([
+        snapshot({ panes: [], agents: [] }),
+        snapshot({ panes: [pane("w1:p1", "w1", { agent_status: "blocked" })], agents: [agent("w1:p1", "w1", { agent_status: "blocked", state_change_seq: 3 })] }),
+      ]);
+      const store = new SessionStore(client);
+      await store.resync();
+      const changes: StatusChange[] = [];
+      store.on("status", (c) => changes.push(c));
+      await store.resync();
+      expect(changes).toEqual([{ paneId: "w1:p1", workspaceId: "w1", from: undefined, to: "blocked" }]);
+    });
+
+    test("a new agent reported blocked by an event after startup is not the baseline", async () => {
+      const { client } = fakeClient([snapshot({ panes: [], agents: [] })]);
+      const store = new SessionStore(client);
+      await store.resync();
+      const changes: StatusChange[] = [];
+      store.on("status", (c) => changes.push(c));
+      store.apply({
+        event: "pane_updated",
+        data: { type: "pane_updated", pane: pane("w1:p2", "w1", { agent_status: "blocked" }) },
+      } as never);
+      expect(changes).toEqual([{ paneId: "w1:p2", workspaceId: "w1", from: undefined, to: "blocked" }]);
+    });
+
+    // Pre-release bug hunt: answered and blocked again inside one 3s sample,
+    // with no title change to send an event, a pane read as blocked → blocked
+    // and its second question was never reported. herdr's state counter,
+    // measured on 0.9.1, advances on every status change and nothing else.
+    test("a re-block between two snapshots is reported", async () => {
+      const blocked = (seq: number) => snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "blocked", state_change_seq: seq })] });
+      const { client } = fakeClient([blocked(4), blocked(4), blocked(6)]);
+      const store = new SessionStore(client);
+      await store.resync();
+      const changes: StatusChange[] = [];
+      store.on("status", (c) => changes.push(c));
+
+      // The same number is the same question.
+      await store.resync();
+      expect(changes).toEqual([]);
+
+      await store.resync();
+      expect(changes).toEqual([{ paneId: "w1:p1", workspaceId: "w1", from: "blocked", to: "blocked" }]);
+    });
+
+    test("a block an event already reported is not counted again by the next snapshot", async () => {
+      const { client } = fakeClient([
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "working", state_change_seq: 5 })] }),
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "blocked", state_change_seq: 6 })] }),
+      ]);
+      const store = new SessionStore(client);
+      await store.resync();
+      const changes: StatusChange[] = [];
+      store.on("status", (c) => changes.push(c));
+      store.apply({
+        event: "pane_updated",
+        data: { type: "pane_updated", pane: pane("w1:p1", "w1", { agent_status: "blocked" }) },
+      } as never);
+      await store.resync();
+      expect(changes).toEqual([{ paneId: "w1:p1", workspaceId: "w1", from: "working", to: "blocked" }]);
+    });
+
+    test("a restarted herdr's lower counter is not a new block, and other states' churn is not reported", async () => {
+      const { client } = fakeClient([
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "blocked", state_change_seq: 40 })] }),
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "blocked", state_change_seq: 2 })] }),
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "working", state_change_seq: 3 })] }),
+        snapshot({ agents: [agent("w1:p1", "w1", { agent_status: "working", state_change_seq: 9 })] }),
+      ]);
+      const store = new SessionStore(client);
+      await store.resync();
+      const changes: StatusChange[] = [];
+      store.on("status", (c) => changes.push(c));
+      await store.resync();
+      await store.resync();
+      await store.resync();
+      expect(changes).toEqual([{ paneId: "w1:p1", workspaceId: "w1", from: "blocked", to: "working" }]);
     });
   });
 
