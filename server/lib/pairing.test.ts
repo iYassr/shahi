@@ -93,6 +93,24 @@ describe("devices", () => {
     expect(devices.create("x".repeat(200)).device.name).toHaveLength(64);
   });
 
+  // September 2026 pre-release bug hunt: the cut counted UTF-16 units, so a
+  // name of "a" and forty emoji ended in half of one, the database stored the
+  // bytes ED A0 BD, and Settings showed "���", unlike the name the claim had
+  // just answered with.
+  test("a long name is cut between characters, and Settings shows the name the claim answered", () => {
+    const devices = fresh();
+    for (const raw of [`a${"😀".repeat(40)}`, "🇸🇦".repeat(40), `${"x".repeat(62)}👨‍👩‍👧`, "lone \ud83d surrogate"]) {
+      const { device } = devices.create(raw);
+      expect(device.name.length).toBeLessThanOrEqual(64);
+      expect(device.name.isWellFormed()).toBe(true);
+      expect(devices.list().find((d) => d.id === device.id)?.name).toBe(device.name);
+    }
+    expect(devices.create(`a${"😀".repeat(40)}`).device.name).toBe(`a${"😀".repeat(31)}`);
+    // A flag is two code points; half of one is a different letter, not a flag.
+    expect(devices.create("🇸🇦".repeat(40)).device.name).toBe("🇸🇦".repeat(16));
+    expect(devices.create(`${"x".repeat(62)}👨‍👩‍👧`).device.name).toBe("x".repeat(62));
+  });
+
   // The secret is the phone's half of the relay key: handed over once, never
   // listed, and gone from the box's answers the moment the device is revoked.
   test("each device gets its own 32-byte secret, readable while it is active and never listed", () => {

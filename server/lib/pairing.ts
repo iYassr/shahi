@@ -25,6 +25,24 @@ export const PAIRING_TTL_MS = 10 * 60 * 1000;
 const DEVICE_NAME_MAX = 64;
 
 /**
+ * A device name trimmed and cut to DEVICE_NAME_MAX UTF-16 units between
+ * characters. `slice` counts units, so a cut through an emoji kept half a
+ * surrogate pair, which SQLite stored as invalid UTF-8 (ED A0 BD) and Settings
+ * showed as "���", unlike the name the claim had just answered with
+ * (September 2026 pre-release bug hunt). The cut is by grapheme, so a flag or
+ * a family emoji is kept whole or left out whole, and a lone surrogate the
+ * client sent itself becomes U+FFFD before it reaches the database.
+ */
+function deviceName(raw: string): string {
+  let name = "";
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(raw.trim().toWellFormed())) {
+    if (name.length + segment.length > DEVICE_NAME_MAX) break;
+    name += segment;
+  }
+  return name;
+}
+
+/**
  * How often `last_seen_at` is allowed to change. The phone polls every few
  * seconds forever; writing a row per request would turn "last seen" into a
  * write per poll for no more information than "recently".
@@ -155,7 +173,7 @@ export class Devices {
   }
 
   create(name: string, now = Date.now()): CreatedDevice {
-    const cleaned = name.trim().slice(0, DEVICE_NAME_MAX) || "Phone";
+    const cleaned = deviceName(name) || "Phone";
     const device: PairedDevice = { id: randomUUID(), name: cleaned, createdAt: now, lastSeenAt: now };
     const secret = new Uint8Array(randomBytes(32));
     this.db
