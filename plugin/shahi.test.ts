@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { layoutFromEnv, type Layout } from "./layout";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 // Scratch directories made below, removed when the file finishes. Some hold
@@ -402,6 +402,38 @@ test("a setup that fails says so in herdr's tray, and where the rest is", async 
 });
 
 /**
+ * Every hint said a bare `herdr`, which outside a named session's panes
+ * reaches the default session: the printed commands failed with
+ * server_not_running, and "Run `herdr` to attach" started the default
+ * session, whose startup hook moved Shahi to it (pre-release bug hunt).
+ */
+describe("hints for someone running herdr as a named session", () => {
+  const qa = join(homedir(), ".config", "herdr", "sessions", "qa", "herdr.sock");
+
+  test("the setup failure toast names the session in every command", async () => {
+    captured();
+    offline();
+    withEnv({ HERDR_SOCKET_PATH: qa });
+    const herdr = fakeHerdr();
+    await expect(setup(scratchLayout(), fakeService())).rejects.toThrow(/approved release/);
+    const toast = herdr.calls();
+    expect(toast).toContain("herdr --session qa plugin log list --plugin shahi");
+    expect(toast).toContain("herdr --session qa plugin action invoke shahi.pair");
+    expect(toast).not.toMatch(/(^|[^-\w])herdr plugin/);
+  });
+
+  test("the popup's failure text and the attach advice name it too", async () => {
+    const out = captured();
+    withEnv({ HERDR_SOCKET_PATH: qa });
+    await pairPopup(() => { throw new Error("offline"); }, async () => {});
+    expect(out.text()).toContain("herdr --session qa plugin action invoke shahi.pair");
+    expect(out.text()).toContain("herdr --session qa plugin action invoke shahi.status");
+    const said = openPairFailure('{"error":{"code":"plugin_pane_open_failed","message":"no active workspace"}}', null);
+    expect(said).toContain("Run `herdr --session qa` in a terminal to attach");
+  });
+});
+
+/**
  * The Alpine guidance was a dead end (pre-release review): every verb threw
  * before a secret existed, `status` included, and the command offered could
  * not start. Now everything but supervision happens.
@@ -446,6 +478,7 @@ describe("a pairing popup that cannot open", () => {
   const noWorkspace = '{"error":{"code":"plugin_pane_open_failed","message":"no active workspace"},"id":"cli:plugin"}';
 
   test("says why in plain words, and how to pair without a window", () => {
+    withEnv({ HERDR_SOCKET_PATH: join(homedir(), ".config", "herdr", "herdr.sock") });
     const said = openPairFailure(noWorkspace, layout);
     expect(said).toContain("Could not open the pairing popup: no active workspace.");
     expect(said).toContain("Run `herdr` in a terminal to attach");

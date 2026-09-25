@@ -131,6 +131,15 @@ is the one herdr injected, so a named session (`herdr --session work`)
 takes the sidecar with it. There is one sidecar per user, not one per
 session.
 
+**With a named session, add `--session <name>` to every `herdr` command on
+this page** when you type it outside that session's panes (inside them, herdr
+already points at it): a bare `herdr` in an ordinary shell talks to the default
+session, fails with `server_not_running` when that one is not running, and
+started by hand it runs this plugin's startup hook and takes Shahi with it.
+Every command the plugin prints already names the session — `herdr --session
+work plugin action invoke shahi.pair` — and, when herdr runs under an
+`XDG_CONFIG_HOME` other than `~/.config`, that as well.
+
 ## The passcode
 
 The first setup prints a four-digit passcode, once. Where it lands depends on

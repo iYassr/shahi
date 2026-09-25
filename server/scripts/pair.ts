@@ -26,6 +26,7 @@ import { showPairingPopup } from "../lib/pairing-display";
 import { SHAHI_API_VERSION, type PairingCode, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../lib/auth";
 import { loadConfig } from "../lib/config";
+import { herdrCli } from "../lib/herdr-session";
 import { pairingUrl } from "../lib/pairing";
 import { envFilePath, readEnvFile } from "../lib/secrets";
 import { copyToClipboard } from "../lib/clipboard";
@@ -57,7 +58,7 @@ async function serverInfo(base: string): Promise<ServerInfo | null> {
 
 const here = await serverInfo(local);
 if (!here) {
-  console.error(`Shahi is not answering at ${local}. Is it running?  herdr plugin action invoke shahi.status`);
+  console.error(`Shahi is not answering at ${local}. Is it running?  ${herdrCli(process.env.HERDR_SOCKET_PATH)} plugin action invoke shahi.status`);
   process.exit(1);
 }
 const relay = here.relay?.url;

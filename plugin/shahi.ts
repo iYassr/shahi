@@ -51,6 +51,7 @@ import { dirname, join } from "node:path";
 import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
 import { parsePort } from "../server/lib/config";
+import { herdrCli } from "../server/lib/herdr-session";
 import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../server/lib/secrets";
 import { layoutFromEnv, type Layout } from "./layout";
 import { serviceFor, type Service, type ServiceSpec } from "./service";
@@ -58,8 +59,15 @@ import { serviceFor, type Service, type ServiceSpec } from "./service";
 export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "reset-passcode", "uninstall"] as const;
 type Verb = (typeof VERBS)[number];
 
+/**
+ * `herdr` for every command this prints: `herdr --session <name>` when the
+ * herdr that runs this plugin is a named session, since a bare `herdr` typed
+ * outside that session's panes reaches another one (server/lib/herdr-session.ts).
+ */
+export const herdr = () => herdrCli(process.env.HERDR_SOCKET_PATH);
+
 /** herdr 0.8.2 has no menu for plugin actions: the CLI, or a key the person binds. */
-const PAIR_HINT = "Pair a phone or browser:  herdr plugin action invoke shahi.pair";
+const pairHint = () => `Pair a phone or browser:  ${herdr()} plugin action invoke shahi.pair`;
 const KEY_HINT = 'or bind a key in herdr\'s config.toml:  [[keys.command]] key = "prefix+P", type = "plugin_action", command = "shahi.pair"';
 
 /** Shahi's relay: a blind pipe (docs/relay.md). The plugin's default; any Worker deployed from `relay/` works the same. */
@@ -76,9 +84,9 @@ export function relayUrlFor(env: Map<string, string>): string | null {
 
 /** A line in herdr's tray, for what would otherwise only reach the plugin log. Best effort. */
 function notify(title: string, body: string): void {
-  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
+  const bin = process.env.HERDR_BIN_PATH ?? "herdr";
   try {
-    Bun.spawnSync([herdr, "notification", "show", title, "--body", body, "--sound", "none"], {
+    Bun.spawnSync([bin, "notification", "show", title, "--body", body, "--sound", "none"], {
       stdout: "ignore",
       stderr: "ignore",
     });
@@ -187,7 +195,7 @@ function portOf(layout: Layout, env: Map<string, string>): number {
   try {
     return parsePort(env.get("PORT"));
   } catch (err) {
-    throw new Error(`${message(err)} Fix it in ${layout.envFile}, then:  herdr plugin action invoke shahi.restart`);
+    throw new Error(`${message(err)} Fix it in ${layout.envFile}, then:  ${herdr()} plugin action invoke shahi.restart`);
   }
 }
 
@@ -321,7 +329,7 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));
-  console.log(`\n  ${PAIR_HINT}\n  ${KEY_HINT}`);
+  console.log(`\n  ${pairHint()}\n  ${KEY_HINT}`);
   return { answering: info !== null, relayUrl, relayDefaulted, passcode: passcode !== null, linger };
 }
 
@@ -338,7 +346,7 @@ export async function setup(layout: Layout, service: Service, opts: { newPasscod
   } catch (err) {
     notify(
       "Shahi is not set up",
-      `${message(err).split("\n")[0]} The rest is in: herdr plugin log list --plugin shahi. To set up in front of you: herdr plugin action invoke shahi.pair`,
+      `${message(err).split("\n")[0]} The rest is in: ${herdr()} plugin log list --plugin shahi. To set up in front of you: ${herdr()} plugin action invoke shahi.pair`,
     );
     throw err;
   }
@@ -349,9 +357,9 @@ export async function setup(layout: Layout, service: Service, opts: { newPasscod
   notify(
     "Shahi is running",
     [
-      `${PAIR_HINT}.`,
+      `${pairHint()}.`,
       ...(done.relayUrl ? [done.relayDefaulted ? "Reachable from anywhere through Shahi's relay (RELAY_URL= in the plugin's .env turns that off)." : "Reachable through your relay."] : []),
-      ...(done.passcode ? ["The passcode is in the plugin log: herdr plugin log list --plugin shahi (a scanned code never needs it)."] : []),
+      ...(done.passcode ? [`The passcode is in the plugin log: ${herdr()} plugin log list --plugin shahi (a scanned code never needs it).`] : []),
       ...(done.linger ? [done.linger] : []),
     ].join(" "),
   );
@@ -366,9 +374,9 @@ export async function status(layout: Layout, service: Service): Promise<number> 
   const devices = info ? await deviceCount(url, env) : null;
 
   const serviceLine = service.kind === "none"
-    ? "none (no systemd): you run it — herdr plugin action invoke shahi.restart prints the command"
+    ? `none (no systemd): you run it — ${herdr()} plugin action invoke shahi.restart prints the command`
     : !state.installed
-    ? "not installed — restart herdr, or: herdr plugin action invoke shahi.restart"
+    ? `not installed — restart herdr, or: ${herdr()} plugin action invoke shahi.restart`
     : state.running
       ? `running${state.pid ? ` (pid ${state.pid})` : ""}`
       : "installed, not running";
@@ -442,9 +450,9 @@ export interface PopupSteps {
   showCode(): Promise<number>;
 }
 
-const POPUP_FAILED = [
-  "Pairing did not start. Fix what is said above, then open this again:  herdr plugin action invoke shahi.pair",
-  "Service state and paths:  herdr plugin action invoke shahi.status, then  herdr plugin log list --plugin shahi",
+const popupFailed = () => [
+  `Pairing did not start. Fix what is said above, then open this again:  ${herdr()} plugin action invoke shahi.pair`,
+  `Service state and paths:  ${herdr()} plugin action invoke shahi.status, then  ${herdr()} plugin log list --plugin shahi`,
 ].join("\n  ");
 
 /**
@@ -477,7 +485,7 @@ export async function pairPopup(prepare: () => PopupSteps, waitForEnter: () => P
   } catch (err) {
     console.log(`\n${message(err)}`);
   }
-  console.log(`\n  ${POPUP_FAILED}\n  Press Enter to close.`);
+  console.log(`\n  ${popupFailed()}\n  Press Enter to close.`);
   await waitForEnter();
   return 1;
 }
@@ -520,7 +528,7 @@ export function openPairFailure(stderr: string, layout: Layout | null): string {
   return [
     `Could not open the pairing popup: ${reason || "herdr gave no reason"}.`,
     ...(/no active workspace/.test(reason)
-      ? ["The popup needs a herdr window, and no client is attached to this herdr. Run `herdr` in a terminal to attach, then invoke shahi.pair again from there."]
+      ? [`The popup needs a herdr window, and no client is attached to this herdr. Run \`${herdr()}\` in a terminal to attach, then invoke shahi.pair again from there.`]
       : []),
     ...(layout
       ? [
@@ -532,8 +540,8 @@ export function openPairFailure(stderr: string, layout: Layout | null): string {
 }
 
 export function openPair(): number {
-  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
-  const proc = Bun.spawnSync([herdr, "plugin", "pane", "open", "--plugin", pluginId(), "--entrypoint", "pair"], {
+  const bin = process.env.HERDR_BIN_PATH ?? "herdr";
+  const proc = Bun.spawnSync([bin, "plugin", "pane", "open", "--plugin", pluginId(), "--entrypoint", "pair"], {
     stdout: "inherit",
     stderr: "pipe",
   });
@@ -568,11 +576,11 @@ function uninstall(layout: Layout, service: Service): number {
   // message the person needs — where their passcode and phones still are.
   const kept = `Kept, because they hold your passcode, your paired phones and your transcripts: ${layout.configDir} and ${layout.stateDir}. Delete those by hand if you mean it.`;
   console.log(`\n${kept}`);
-  notify("Shahi removed", `${kept} If it is still listed: herdr plugin uninstall ${pluginId()}`);
-  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
-  const proc = Bun.spawnSync([herdr, "plugin", "uninstall", pluginId()], { stdout: "inherit", stderr: "inherit" });
+  notify("Shahi removed", `${kept} If it is still listed: ${herdr()} plugin uninstall ${pluginId()}`);
+  const bin = process.env.HERDR_BIN_PATH ?? "herdr";
+  const proc = Bun.spawnSync([bin, "plugin", "uninstall", pluginId()], { stdout: "inherit", stderr: "inherit" });
   const gone = proc.exitCode === 0;
-  if (!gone) console.log(`The service is gone, but herdr did not uninstall the plugin; run:  herdr plugin uninstall ${pluginId()}`);
+  if (!gone) console.log(`The service is gone, but herdr did not uninstall the plugin; run:  ${herdr()} plugin uninstall ${pluginId()}`);
   return gone ? 0 : 1;
 }
 
@@ -614,7 +622,7 @@ export async function main(argv: string[]): Promise<number> {
       return status(layout, service);
     case "stop":
       service.stop();
-      console.log("Stopped. It comes back on the next herdr start, or:  herdr plugin action invoke shahi.restart");
+      console.log(`Stopped. It comes back on the next herdr start, or:  ${herdr()} plugin action invoke shahi.restart`);
       return 0;
     case "logs":
       logs(layout, args);

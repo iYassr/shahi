@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
+import { herdrCli } from "../server/lib/herdr-session";
 
 export const LAUNCHD_LABEL = "app.shahi.sidecar";
 export const SYSTEMD_UNIT = "shahi.service";
@@ -231,7 +232,7 @@ export function userBusHelp(out: string, user: string, uid: number): string | nu
     `Start herdr from a real login as ${user} (SSH or a console), or keep ${user}'s systemd running with, once:`,
     `  sudo loginctl enable-linger ${user}`,
     `If this shell has no XDG_RUNTIME_DIR, start herdr with:  export XDG_RUNTIME_DIR=/run/user/${uid}`,
-    "Then:  herdr plugin action invoke shahi.restart",
+    `Then:  ${herdrCli(process.env.HERDR_SOCKET_PATH)} plugin action invoke shahi.restart`,
   ].join("\n");
 }
 
@@ -306,7 +307,7 @@ export function unsupervised(): Service {
           "\n" +
           `  ${renderCommand(spec)}\n` +
           "\n" +
-          "Once it answers, pair a phone:  herdr plugin action invoke shahi.pair",
+          `Once it answers, pair a phone:  ${herdrCli(spec.env.HERDR_SOCKET_PATH)} plugin action invoke shahi.pair`,
       );
     },
     stop() {

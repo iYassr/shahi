@@ -19,7 +19,7 @@
  *   this process's environment.
  */
 
-const NAMED_SESSION_SOCKET = /\/herdr\/sessions\/[^/]+\/herdr\.sock$/;
+import { herdrSession } from "./herdr-session";
 
 /** Why the live suite must not run against the configured socket, or null. */
 export function liveSocketRefusal(env: Record<string, string | undefined>): string | null {
@@ -27,7 +27,7 @@ export function liveSocketRefusal(env: Record<string, string | undefined>): stri
   if (!socket) {
     return "SHAHI_HERDR_LIVE=1 needs HERDR_SOCKET_PATH naming the socket of a named herdr session started for this test";
   }
-  if (!NAMED_SESSION_SOCKET.test(socket)) {
+  if (!herdrSession(socket)?.name) {
     return (
       `SHAHI_HERDR_LIVE=1 refuses ${socket}: it is not a named session's socket (…/herdr/sessions/<name>/herdr.sock). ` +
       "Inside a herdr pane this variable is the pane's own session. Start a named session under a fresh " +
