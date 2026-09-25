@@ -117,6 +117,21 @@ test("truncation, same-sized rewrite and file replacement discard old offsets", 
   expect((await readCodexWindow(path)).messages).toEqual(normaliseCodex(replacement));
 });
 
+// Same inode, bigger file: the size and times said "appended", and the old
+// offsets were extended into bytes that had moved (pre-release bug hunt).
+test("a rewrite that grows the rollout in place is re-indexed", async () => {
+  const path = rollout(Array.from({ length: 20 }, (_, n) => event("agent_message", { message: `old ${n}` })));
+  expect((await readCodexWindow(path, { limit: 3 })).total).toBe(20);
+  const rows = Array.from({ length: 25 }, (_, n) => event("agent_message", { message: `new ${n} ${"y".repeat(n % 7)}` }));
+  writeFileSync(path, lines(rows));
+  const expected = normaliseCodex(rows);
+  for (const limit of [1, 12, 200]) {
+    const log = await readCodexWindow(path, { limit });
+    expect(log.total).toBe(25);
+    expect(log.messages).toEqual(expected.slice(-limit));
+  }
+});
+
 test("concurrent reads index an append exactly once and malformed lines preserve IDs", async () => {
   const row = event("user_message", { message: "first" });
   const path = rollout([row]);

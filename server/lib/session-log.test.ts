@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -597,6 +597,63 @@ describe("reading a window instead of the whole file", () => {
 
     writeFileSync(path, `${assistantRow("c", "only")}\n`);
     expect((await indexTranscript(path)).offsets.length).toBe(1);
+  });
+
+  // The index used to be kept whenever the file had not shrunk, so a rewrite
+  // that grew it kept offsets into bytes that were no longer there: the bug
+  // hunt saw 22 of 25 messages, and pages that ended before the newest.
+  test("a rewrite that grows the file is re-indexed, in place or renamed over it", async () => {
+    // Few long rows, then more short ones in more bytes: no old offset lines
+    // up with a new row by accident.
+    const rows = (prefix: string, count: number, length: number) =>
+      Array.from({ length: count }, (_, i) => assistantRow(`${prefix}${i}`, `${prefix} ${i} `.padEnd(length, "x")));
+    for (const how of ["in place", "renamed over"] as const) {
+      const path = join(dir, `rewritten-${how.replace(" ", "-")}.jsonl`);
+      writeFileSync(path, `${rows("old", 10, 300).join("\n")}\n`);
+      expect((await readWindow(path, { limit: 12 }))!.total).toBe(10);
+
+      const { whole } = transcript(`rewritten-source-${how.replace(" ", "-")}`, rows("new", 40, 20));
+      const text = `${rows("new", 40, 20).join("\n")}\n`;
+      if (how === "in place") writeFileSync(path, text);
+      else { writeFileSync(`${path}.next`, text); renameSync(`${path}.next`, path); }
+
+      for (const limit of [1, 12, 60]) {
+        const page = await readWindow(path, { limit });
+        expect(page!.total).toBe(40);
+        expect(page!.messages).toEqual(whole.slice(-limit));
+      }
+    }
+  });
+
+  // The dashboard's broadcast, its 3s refresh and the reader's own poll do
+  // overlap. Two reads extending the same index at once each appended the new
+  // rows: 30 offsets for 25 messages, and a 12-message tail that showed 7.
+  test("concurrent polls do not index an append twice", async () => {
+    const lines = Array.from({ length: 20 }, (_, i) => assistantRow(`c${i}`, `message ${i}`));
+    const path = join(dir, "concurrent.jsonl");
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    const held = await indexTranscript(path);
+
+    const more = Array.from({ length: 5 }, (_, i) => assistantRow(`c${20 + i}`, `message ${20 + i}`));
+    appendFileSync(path, `${more.join("\n")}\n`);
+    const whole = normalise(parseLines(readFileSync(path, "utf8")));
+    // The index normalises one row at a time with no start; a page passes one.
+    let indexedRows = 0;
+    const counting = (rows: Record<string, unknown>[], start?: number) => {
+      if (start === undefined) indexedRows += rows.length;
+      return normalise(rows);
+    };
+    const pages = await Promise.all(Array.from({ length: 8 }, () => readWindow(path, { limit: 12 }, counting)));
+    for (const page of pages) {
+      expect(page!.total).toBe(25);
+      expect(page!.messages).toEqual(whole.slice(-12));
+    }
+    // One of them extended the index it had by the five new rows; none of the
+    // others read the transcript again from the start.
+    expect(indexedRows).toBe(5);
+    const after = await indexTranscript(path);
+    expect(after).toBe(held);
+    expect(after.offsets.length).toBe(25);
   });
 });
 

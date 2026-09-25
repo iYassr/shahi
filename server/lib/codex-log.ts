@@ -38,7 +38,10 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
-import { inTranscript, isRecord, renderUserText, stringOr, type Block, type LogMessage, type SessionLog } from "./session-log";
+import {
+  anchorAfter, emptyIndex, indexStillHolds, inTranscript, isRecord, renderUserText, stringOr,
+  type Block, type IndexedFile, type LogMessage, type SessionLog,
+} from "./session-log";
 
 /** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
 const MAX_RESULT_CHARS = 2_000;
@@ -606,12 +609,7 @@ export async function readCodexLog(
 
 interface RowRange { start: number; end: number; ordinal: number }
 interface MessageRange { rows: RowRange[]; thinking: boolean; callId?: string }
-interface CodexIndex {
-  size: number;
-  fileSize: number;
-  ino: number;
-  mtime: number;
-  ctime: number;
+interface CodexIndex extends IndexedFile {
   rows: number;
   messages: MessageRange[];
   outputs: Map<string, RowRange>;
@@ -643,13 +641,18 @@ async function readIndexedCodexWindow(
   try {
     const stat = await file.stat();
     const held = codexIndexes.get(path);
-    // An inode replacement, shrink, or same-sized rewrite invalidates offsets.
-    const index: CodexIndex = held && held.ino === stat.ino && stat.size >= held.fileSize &&
-      (stat.size !== held.fileSize || (held.mtime === stat.mtimeMs && held.ctime === stat.ctimeMs))
-      ? held
-      : { size: 0, fileSize: 0, ino: stat.ino, mtime: 0, ctime: 0, rows: 0, messages: [], outputs: new Map() };
     // Do not retain a partly updated index if reading fails.
     codexIndexes.delete(path);
+    // An inode replacement, shrink, or rewrite invalidates offsets. A rewrite
+    // that grew the file used to pass as an append, as in the Claude reader.
+    const verdict = held
+      ? await indexStillHolds(held, stat, async (from, to) => {
+          const bytes = Buffer.alloc(to - from);
+          const { bytesRead } = await file.read(bytes, 0, bytes.length, from);
+          return bytes.subarray(0, bytesRead);
+        })
+      : "other";
+    const index: CodexIndex = held && verdict !== "other" ? held : { ...emptyIndex(stat), rows: 0, messages: [], outputs: new Map() };
     const stats = options.stats;
     let cursor = index.size;
     let pending = Buffer.alloc(0);
@@ -683,6 +686,7 @@ async function readIndexedCodexWindow(
         if (thinking && last?.thinking) last.rows.push(range);
         else index.messages.push({ rows: [range], thinking, callId });
       }
+      if (start > 0) index.anchor = anchorAfter(index.anchor, buffer.subarray(0, start));
       pending = buffer.subarray(start);
     }
     index.fileSize = stat.size;

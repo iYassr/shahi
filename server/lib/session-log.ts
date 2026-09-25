@@ -113,14 +113,72 @@ export async function findTranscript(sessionId: string): Promise<string | null> 
  *    without rendering half a tool call.
  *
  * The index extends rather than rebuilds: a live transcript grows by a few lines
- * between polls, and only those bytes are read. A file that shrank was replaced
- * rather than appended to, so that one starts over.
+ * between polls, and only those bytes are read. Anything else means a different
+ * file wearing the same name, and that one starts over; `indexStillHolds` says
+ * which is which.
  */
-interface TranscriptIndex {
-  /** Bytes indexed so far — always the end of the last complete line. */
-  size: number;
+interface TranscriptIndex extends IndexedFile {
   /** Byte offset of the line that produced each message, in order. */
   offsets: number[];
+}
+
+/** What an index remembers of the file it read, to tell an append from a rewrite next time. */
+export interface IndexedFile {
+  /** Bytes indexed so far — always the end of the last complete line. */
+  size: number;
+  /** The file's inode, size and times when it was last read. */
+  ino: number;
+  fileSize: number;
+  mtime: number;
+  ctime: number;
+  /** The last bytes indexed, up to `ANCHOR_BYTES`, ending at `size`. */
+  anchor: Uint8Array;
+}
+
+/** The parts of a stat an index is checked against. */
+type FileState = { ino: number; size: number; mtimeMs: number; ctimeMs: number };
+
+/**
+ * Enough to identify where an indexed line ends: a transcript line's last
+ * fields are ids, a timestamp or the message's own words, which a rewrite does
+ * not put back at the same offset.
+ */
+const ANCHOR_BYTES = 64;
+
+/** An index of nothing yet, for the file as `now` describes it. */
+export function emptyIndex(now: FileState): IndexedFile {
+  return { size: 0, ino: now.ino, fileSize: now.size, mtime: now.mtimeMs, ctime: now.ctimeMs, anchor: new Uint8Array(0) };
+}
+
+/**
+ * Whether an index still describes the file now at its path: `"same"` when
+ * nothing has changed, `"grown"` when it can be extended from where it
+ * stopped, `"other"` when it must be rebuilt.
+ *
+ * Offsets hold only while every byte they were read from is unchanged. A file
+ * renamed over this one has another inode, and one shorter than what was
+ * indexed was rewritten. The Claude index checked only the second, so a
+ * rewrite that grew the file kept offsets into bytes that had moved: wrong
+ * totals and the newest messages hidden (pre-release bug hunt, September
+ * 2026). So a file whose size or times changed has its last indexed bytes read
+ * again and compared: an append leaves them where they were. Unchanged size
+ * and times cost no read at all, which is the common case of a quiet pane.
+ */
+export async function indexStillHolds(
+  held: IndexedFile,
+  now: FileState,
+  read: (from: number, to: number) => Promise<Uint8Array>,
+): Promise<"same" | "grown" | "other"> {
+  if (now.ino !== held.ino || now.size < held.size) return "other";
+  if (now.size === held.fileSize && now.mtimeMs === held.mtime && now.ctimeMs === held.ctime) return "same";
+  const bytes = await read(held.size - held.anchor.length, held.size);
+  return Buffer.compare(bytes, held.anchor) === 0 ? "grown" : "other";
+}
+
+/** The last `ANCHOR_BYTES` of `before` followed by `after`, copied so no read buffer is retained. */
+export function anchorAfter(before: Uint8Array, after: Uint8Array): Uint8Array {
+  if (after.length >= ANCHOR_BYTES) return after.slice(after.length - ANCHOR_BYTES);
+  return concat(before, after).slice(-ANCHOR_BYTES);
 }
 
 /** Indexes are small; this bound is a backstop, not a working constraint. */
@@ -130,7 +188,7 @@ const indexes = new Map<string, TranscriptIndex>();
 
 /**
  * Reads whole lines from `from`, returning the offset after the last complete
- * one.
+ * one and the anchor that ends there (`anchor` is the one ending at `from`).
  *
  * The last line of a live transcript is often half-written, so anything after
  * the final newline is left unconsumed and picked up on the next pass. Splitting
@@ -144,7 +202,8 @@ async function scanLines(
   path: string,
   from: number,
   onRow: (offset: number, row: Record<string, unknown>) => void,
-): Promise<number> {
+  anchor: Uint8Array = new Uint8Array(0),
+): Promise<{ end: number; anchor: Uint8Array }> {
   const decoder = new TextDecoder();
   let pending: Uint8Array<ArrayBuffer> = new Uint8Array(0);
   let consumed = from;
@@ -167,10 +226,13 @@ async function scanLines(
       }
       start = i + 1;
     }
+    // Taken from the bytes just scanned rather than read again afterwards, so
+    // it can only ever describe the file these offsets came from.
+    if (start > 0) anchor = anchorAfter(anchor, buffer.subarray(0, start));
     consumed += start;
     pending = buffer.subarray(start);
   }
-  return consumed;
+  return { end: consumed, anchor };
 }
 
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -180,23 +242,53 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-/** Builds the index, or extends the one already held, up to the file's end. */
-export async function indexTranscript(path: string, normalizer = normalise): Promise<TranscriptIndex> {
-  const size = Bun.file(path).size;
+/** The index being built or extended for each path, so reads of one file take turns. */
+const indexing = new Map<string, Promise<TranscriptIndex>>();
+
+/**
+ * Builds the index, or extends the one already held, up to the file's end.
+ *
+ * One at a time per file. The dashboard's broadcast, its 3s refresh and the
+ * reader's poll overlap, and two extending the same index at once each
+ * appended the same new rows: the bug hunt saw 30 offsets for 25 messages and
+ * a 12-message tail that showed 7. Setting the index aside while it is
+ * extended would only turn the others into full re-reads of the transcript.
+ * The Codex reader already took turns.
+ */
+export function indexTranscript(path: string, normalizer = normalise): Promise<TranscriptIndex> {
+  const next = (indexing.get(path) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => extendIndex(path, normalizer));
+  indexing.set(path, next);
+  const done = () => { if (indexing.get(path) === next) indexing.delete(path); };
+  next.then(done, done);
+  return next;
+}
+
+async function extendIndex(path: string, normalizer: (rows: Record<string, unknown>[]) => LogMessage[]): Promise<TranscriptIndex> {
+  const now = await stat(path);
   const held = indexes.get(path);
+  // Not kept half-extended if the read below fails; the next one starts over.
+  indexes.delete(path);
 
-  // Only ever appended to in normal use; anything else means a different file
-  // wearing the same name.
-  const index: TranscriptIndex =
-    held && size >= held.size ? held : { size: 0, offsets: [] };
+  const verdict = held
+    ? await indexStillHolds(held, now, (from, to) => Bun.file(path).slice(from, to).bytes())
+    : "other";
+  const index: TranscriptIndex = held && verdict !== "other" ? held : { ...emptyIndex(now), offsets: [] };
 
-  if (index.size !== size) {
-    index.size = await scanLines(path, index.size, (offset, row) => {
+  if (verdict !== "same") {
+    const scanned = await scanLines(path, index.size, (offset, row) => {
       if (normalizer([row]).length > 0) index.offsets.push(offset);
-    });
+    }, index.anchor);
+    index.size = scanned.end;
+    index.anchor = scanned.anchor;
+    // As stated before the scan: bytes appended during it only make the next
+    // read compare the anchor, which is the safe direction.
+    index.fileSize = now.size;
+    index.mtime = now.mtimeMs;
+    index.ctime = now.ctimeMs;
   }
 
-  indexes.delete(path);
   indexes.set(path, index);
   for (const key of [...indexes.keys()].slice(0, Math.max(0, indexes.size - MAX_INDEXES))) {
     indexes.delete(key);

@@ -12,7 +12,8 @@
  * can miss events (and on some filesystems never fires), so a size check on an
  * interval backs it up. Bursts of writes collapse into one report per debounce
  * window. A file that shrinks or is replaced is reported too — the reader's
- * index keys on size and rebuilds from a smaller one.
+ * index checks the file's inode and its last indexed bytes, and rebuilds for
+ * anything that is not an append.
  */
 import { watch as fsWatch, type FSWatcher } from "node:fs";
 import { stat } from "node:fs/promises";
