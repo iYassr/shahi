@@ -83,8 +83,10 @@ jest.mock("@/lib/api", () => {
 });
 
 // Neither the native header nor the keyboard exists here, and the screen
-// options are set on a navigator this test does not mount.
-jest.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
+// options are set on a navigator this test does not mount. The last options
+// are kept, so a test can draw the header's title on its own.
+const mockStackOptions: { current: { headerTitle?: () => React.ReactElement } | null } = { current: null };
+jest.mock("expo-router", () => ({ Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
@@ -1312,6 +1314,36 @@ describe("the largest text sizes", () => {
       mockSession.link = link;
       act(() => Dimensions.set({ window, screen: screenSize }));
     }
+  });
+
+  // The navigation bar does not grow with Dynamic Type, and the pane's title
+  // and subtitle did: at AX5 the title started under the status bar and the
+  // subtitle lay 16pt over the Read/Screen toggle. The card's "❯" sat in a
+  // fixed 12pt box and was cut to a sliver (pre-release bug hunt).
+  test("the header's title and subtitle are capped like the navigation bar's, and served full size on a long press", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    const header = render(mockStackOptions.current!.headerTitle!());
+    const title = header.getByText("A task");
+    const subtitle = header.getByText("claude · w1:p1");
+    expect(title.props.maxFontSizeMultiplier).toBe(1.2);
+    expect(subtitle.props.maxFontSizeMultiplier).toBe(1.2);
+    expect(subtitle.props.numberOfLines).toBe(1);
+    const titled = header.getByTestId("pane-title");
+    expect(titled.props.accessibilityShowsLargeContentViewer).toBe(true);
+    expect(titled.props.accessibilityLargeContentTitle).toBe("A task, claude · w1:p1");
+  });
+
+  test("a prompt card's cursor grows with the text instead of being cut", async () => {
+    const prompt = { question: "Proceed?", answer: "digit", options: [{ index: 1, label: "Yes", selected: true }] } as ParsedPrompt;
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "May I?")]));
+    mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    const style = StyleSheet.flatten(within(card).getByText("❯").props.style);
+    expect(style.width).toBeUndefined();
+    expect(style.minWidth).toBeGreaterThan(0);
   });
 
   // At AX5 the reply box sat between attach and Send, a few characters wide,

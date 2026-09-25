@@ -962,12 +962,22 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           pane is known. */}
       <Stack.Screen
         options={{
+          // The bar does not grow with Dynamic Type, so its two lines are
+          // capped like the other headers' and served full size by the large
+          // content viewer. Uncapped, at AX5 the title started under the
+          // status bar and the subtitle lay over the Read/Screen toggle
+          // (pre-release bug hunt).
           headerTitle: () => (
-            <View style={styles.headTitle}>
-              <Text style={styles.title} numberOfLines={1}>
+            <View
+              style={styles.headTitle}
+              testID="pane-title"
+              accessibilityShowsLargeContentViewer
+              accessibilityLargeContentTitle={`${pane?.title ?? paneId}, ${pane?.agent ?? "shell"} · ${paneId}`}
+            >
+              <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
                 {pane?.title ?? paneId}
               </Text>
-              <Text style={styles.subtitle}>{pane?.agent ?? "shell"} · {paneId}</Text>
+              <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{pane?.agent ?? "shell"} · {paneId}</Text>
             </View>
           ),
         }}
@@ -2141,7 +2151,9 @@ const styles = StyleSheet.create({
   question: { color: theme.fg, fontSize: 15, lineHeight: 21, marginBottom: 8 },
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
-  cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
+  // A minimum, not a width: the glyph grows with the text, and a fixed 12pt
+  // box cut it to a sliver at AX5.
+  cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, minWidth: 12 },
   choiceIndex: { color: theme.dim, fontSize: 14 },
   choiceBody: { flex: 1 },
   choiceLabel: { color: theme.fg, fontSize: 14, lineHeight: 19 },

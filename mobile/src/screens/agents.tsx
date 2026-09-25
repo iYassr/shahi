@@ -703,7 +703,9 @@ const styles = StyleSheet.create({
   choiceArmed: { backgroundColor: theme.raised },
   choiceStale: { opacity: 0.45 },
   stale: { color: theme.dim, fontSize: 13, lineHeight: 18, marginBottom: 6 },
-  cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
+  // A minimum, not a width, as on the pane's card: a fixed 12pt box cut the
+  // glyph to a sliver at AX5.
+  cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, minWidth: 12 },
   choiceIndex: { color: theme.dim, fontSize: 14 },
   choiceBody: { flex: 1 },
   choiceLabel: { color: theme.fg, fontSize: 16, lineHeight: 22 },
