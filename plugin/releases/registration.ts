@@ -18,6 +18,7 @@
  * must not take a working install down.
  */
 import { existsSync, realpathSync } from "node:fs";
+import { herdrCli } from "../../server/lib/herdr-session";
 
 export type Registration = "enabled" | "removed" | "unknown";
 export type Command = (argv: string[]) => { ok: boolean; out: string };
@@ -58,6 +59,20 @@ export function registration(options: { herdr: string | null; pluginId: string; 
 export function herdrBinary(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.HERDR_BIN_PATH && existsSync(env.HERDR_BIN_PATH)) return env.HERDR_BIN_PATH;
   return Bun.which("herdr", { PATH: env.PATH ?? "" });
+}
+
+/**
+ * What the manager logs as it removes its own service. herdr 0.9.1 runs
+ * startup hooks only when its server starts and has no hook for `plugin
+ * enable`, so after `disable` then `enable` nothing brings the service back:
+ * the phone showed the computer offline and nothing said why (pre-release bug
+ * hunt). The way back is in this line and in docs/plugin.md.
+ */
+export function removalNotice(socket: string | undefined): string {
+  const herdr = herdrCli(socket);
+  return "herdr no longer has the Shahi plugin installed and enabled; stopping and removing Shahi's service. " +
+    "The passcode, paired devices and data stay on disk. " +
+    `If you enable the plugin again, bring Shahi back with:  ${herdr} plugin action invoke shahi.restart  (or shahi.pair, or restart herdr); herdr has no hook that runs on enable.`;
 }
 
 /**

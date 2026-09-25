@@ -7,7 +7,7 @@ import { HerdrClient } from "../../server/lib/herdr-client";
 import { type ComputerUpdate, type ControlHandshake } from "@shahi/shared";
 import { serviceFor } from "../service";
 import { CATALOG_URL, download, selectRelease, verifyCatalog, sha256, type Catalog, type Release } from "./catalog";
-import { confirmedRemoved, herdrBinary, registration } from "./registration";
+import { confirmedRemoved, herdrBinary, registration, removalNotice } from "./registration";
 import { atomicJson, installation, readJson, releaseDirectory, type UpdateRequest } from "./storage";
 import { stage } from "./stage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
@@ -88,7 +88,7 @@ export async function manage(root: string) {
   async function retireIfRemoved() {
     if (!await confirmedRemoved(registered)) return;
     closing = true;
-    console.log(`${new Date().toISOString()} herdr no longer has the Shahi plugin installed and enabled; stopping and removing Shahi's service. The passcode, paired devices and data stay on disk.`);
+    console.log(`${new Date().toISOString()} ${removalNotice(process.env.HERDR_SOCKET_PATH)}`);
     await stop();
     try { serviceFor(process.platform, homedir(), process.getuid?.() ?? 0).remove(); }
     catch (e) { console.error(`Could not remove Shahi's service: ${e instanceof Error ? e.message : e}`); }

@@ -231,7 +231,9 @@ runs `herdr plugin uninstall shahi`. A plain `herdr plugin uninstall shahi` or
 `herdr plugin disable shahi` also stops Shahi and removes its service, within
 about 40 seconds: the service asks herdr every 30 seconds whether the plugin is
 still installed and enabled, and confirms a “no” five seconds later before it
-removes itself.
+removes itself. `herdr plugin enable shahi` afterwards does not start it again
+(herdr has no hook for that): run `herdr plugin action invoke shahi.restart`,
+or restart herdr.
 
 Either way, your passcode, paired devices and data stay in the plugin’s config
 and state directories. Deleting them as well ends every pairing:

@@ -85,7 +85,9 @@ command = ["sh", "plugin/bun.sh", "run", "plugin/shahi.ts", "reset-passcode"]
 # knows nothing about), then runs `herdr plugin uninstall shahi`. A plain
 # `herdr plugin uninstall` or `disable` also ends it, once the service's
 # manager next asks herdr (within about a minute). Your passcode, paired
-# phones and transcripts stay in the config and state dirs.
+# phones and transcripts stay in the config and state dirs. herdr has no
+# hook for `plugin enable`, so after re-enabling, `shahi.restart` (or a
+# herdr restart) brings the service back.
 [[actions]]
 id = "uninstall"
 title = "Uninstall Shahi"

@@ -167,6 +167,11 @@ describe("the manager, after herdr no longer has the plugin", () => {
     const stops = c.calls().filter(l => l.includes(" bootout ") || l.includes(" stop "));
     expect(stops.length).toBe(1);
     expect(stops[0]!.endsWith(" absent")).toBe(true);
+    // herdr has no hook on `plugin enable`, so after disable then enable
+    // nothing brought Shahi back and nothing said how (pre-release bug hunt).
+    const said = await new Response(c.manager.stdout as ReadableStream).text();
+    expect(said).toContain("If you enable the plugin again, bring Shahi back with:");
+    expect(said).toContain(`HERDR_SOCKET_PATH=${join(c.dir, "no-herdr.sock")} herdr plugin action invoke shahi.restart`);
   }, 30_000);
 
   test("while the plugin is enabled it starts Shahi and removes nothing", async () => {

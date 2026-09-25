@@ -348,6 +348,13 @@ a clear "no" — herdr missing, a registry being rewritten, a different
 configuration root — leaves the service running. If herdr is gone altogether,
 remove the service by hand (the README has the commands).
 
+**`herdr plugin enable shahi` does not bring Shahi back by itself.** herdr runs
+a plugin's startup hook only when its server starts, and has no hook for
+`enable`, so after `disable` and then `enable` the service stays removed and
+a phone shows the computer offline. Bring it back with
+`herdr plugin action invoke shahi.restart` (or `shahi.pair`), or by restarting
+herdr; the line the manager logs as it removes itself says the same.
+
 What stays is the config and state directories — the passcode hash, the
 paired phones, the transcripts — for you to delete by hand if you mean it:
 
