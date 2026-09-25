@@ -1,5 +1,5 @@
 import { UploadTransfers, TRANSFER_CHUNK, TransferError } from "../../server/lib/upload-transfers";
-import { readWithinHome } from "../../server/lib/files";
+import { parseRange, readWithinHome } from "../../server/lib/files";
 import { samplePdf } from "./sample-pdf";
 import type { ControlHandshake } from "@shahi/shared";
 /**
@@ -291,8 +291,7 @@ Bun.serve({
       const file = Bun.file(path);
       if (!(await file.exists())) return json({ error: "not found" }, { status: 404 });
       const download = url.searchParams.get("download") === "1";
-      const match = req.headers.get("range")?.match(/^bytes=(\d+)-(\d+)$/);
-      const result = await readWithinHome({ path, download, range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined });
+      const result = await readWithinHome({ path, download, range: parseRange(req.headers.get("range")) });
       return new Response(result.bytes, {
         status: result.range ? 206 : 200,
         headers: {

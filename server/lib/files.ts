@@ -65,11 +65,59 @@ const NEVER_INLINE = new Set(["html", "htm", "svg", "xhtml"]);
 /** Reading a whole file into memory has to stop somewhere. */
 const MAX_BYTES = 25 * 1024 * 1024;
 
+/**
+ * One byte range as a `Range` header asks for it (RFC 9110 §14.1.2): from a
+ * first byte, to a last one or to the end, or the final `suffix` bytes. Only
+ * the file's size turns it into positions, so it is resolved once the file is
+ * open.
+ */
+export type ByteRange = { start: number; end?: number } | { suffix: number };
+
 export interface FileRequest {
   path: string;
   /** Force a download rather than letting the browser display it. */
   download?: boolean;
-  range?: { start: number; end: number };
+  range?: ByteRange;
+}
+
+/**
+ * The single range a `Range` header asks for, or undefined for any header this
+ * route does not serve: another unit, several ranges, or a malformed one.
+ * RFC 9110 lets a server ignore a Range it does not handle and send the whole
+ * file, and that is what this route does. It used to accept only
+ * `bytes=<first>-<last>` and answer 416 to everything else, so a standard
+ * resume (`bytes=<n>-`, as `curl -C -` sends), a suffix range or an upper-case
+ * unit failed while the route advertised `Accept-Ranges: bytes` (September
+ * 2026 pre-release bug hunt). Shahi's own clients send only closed ranges.
+ */
+export function parseRange(header: string | null | undefined): ByteRange | undefined {
+  const match = header?.trim().match(/^bytes=(\d*)-(\d*)$/i);
+  if (!match) return undefined;
+  const [, first = "", last = ""] = match;
+  if (first === "") return last === "" ? undefined : { suffix: Number(last) };
+  const start = Number(first);
+  if (last === "") return { start };
+  const end = Number(last);
+  // A last byte before the first is an invalid range, not an unsatisfiable
+  // one, and is ignored like any other malformed header.
+  return end < start ? undefined : { start, end };
+}
+
+/** A range that names no byte of the file. Carries the size, which the 416's Content-Range must state. */
+export class RangeNotSatisfiable extends Error {
+  constructor(readonly size: number) {
+    super("That part of the file does not exist.");
+    this.name = "RangeNotSatisfiable";
+  }
+}
+
+function resolveRange(range: ByteRange, size: number): { start: number; end: number } {
+  if ("suffix" in range) {
+    if (range.suffix === 0) throw new RangeNotSatisfiable(size);
+    return { start: Math.max(0, size - range.suffix), end: size - 1 };
+  }
+  if (range.start >= size) throw new RangeNotSatisfiable(size);
+  return { start: range.start, end: Math.min(range.end ?? size - 1, size - 1) };
 }
 
 export class FileTooLarge extends Error {
@@ -160,9 +208,10 @@ export async function readWithinHome(
     if (!info.isFile()) throw new NotAFileError(info.isDirectory());
     if (info.size > MAX_BYTES) throw new FileTooLarge(info.size);
 
-    const range = request.range;
-    if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end < range.start || (info.size > 0 && range.start >= info.size))) throw new RangeError("Invalid file range");
-    const selected = range && info.size > 0 ? { start: range.start, end: Math.min(range.end, info.size - 1) } : undefined;
+    // No range of an empty file can be satisfied, but the clients' first
+    // request for any file is `bytes=0-524287`, and an empty file has always
+    // come back whole with a 200. Ignoring the range is what the RFC allows.
+    const selected = request.range && info.size > 0 ? resolveRange(request.range, info.size) : undefined;
     const start = selected?.start ?? 0;
     const bytes = new Uint8Array(selected ? selected.end - selected.start + 1 : info.size);
     let filled = 0;

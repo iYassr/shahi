@@ -857,6 +857,30 @@ test("authenticated file ranges preserve bytes and detect a changing download", 
   expect(changed.status).toBe(409);
 });
 
+// September 2026 pre-release bug hunt: only `bytes=<first>-<last>` was served,
+// and every other form answered 416 without the file's size while the route
+// advertised Accept-Ranges, so `curl -C -` could not resume a download.
+test("open-ended, suffix and upper-case byte ranges are served, and ranges it does not handle get the whole file", async () => {
+  const path = join(scratch, "ranges.txt");
+  writeFileSync(path, "0123456789");
+  const get = async (range: string) => {
+    const res = await fetch(`${s.base}/api/file?path=${encodeURIComponent(path)}`, { headers: { cookie: s.cookie, range } });
+    return { range, status: res.status, contentRange: res.headers.get("content-range"), body: await res.text() };
+  };
+  expect(await get("bytes=4-")).toEqual({ range: "bytes=4-", status: 206, contentRange: "bytes 4-9/10", body: "456789" });
+  expect(await get("bytes=-2")).toEqual({ range: "bytes=-2", status: 206, contentRange: "bytes 8-9/10", body: "89" });
+  expect(await get("bytes=-50")).toEqual({ range: "bytes=-50", status: 206, contentRange: "bytes 0-9/10", body: "0123456789" });
+  expect(await get("BYTES=0-1")).toEqual({ range: "BYTES=0-1", status: 206, contentRange: "bytes 0-1/10", body: "01" });
+  // Another unit, several ranges, or a malformed one: ignored, as RFC 9110 allows.
+  for (const range of ["items=0-1", "bytes=0-1,3-4", "bytes=5-2", "bytes=x-y"]) {
+    expect(await get(range)).toEqual({ range, status: 200, contentRange: null, body: "0123456789" });
+  }
+  // Past the end, or an empty suffix: 416, saying how long the file is.
+  for (const range of ["bytes=10-", "bytes=50-60", "bytes=-0"]) {
+    expect(await get(range)).toMatchObject({ range, status: 416, contentRange: "bytes */10" });
+  }
+});
+
 // September 2026 pre-release bug hunt: reading a FIFO waits for a writer for
 // ever, and each request held one of the two file-work slots, so two taps on a
 // named pipe made every later file view and upload answer 503 until restart.

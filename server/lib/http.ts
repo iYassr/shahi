@@ -47,7 +47,7 @@ import { followTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
 import { OutsideHomeError, collapseHome, folderProblem, listDirectories } from "./dirs";
-import { FileTooLarge, NotAFileError, readWithinHome } from "./files";
+import { FileTooLarge, NotAFileError, RangeNotSatisfiable, parseRange, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
@@ -1076,10 +1076,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
         const download = url.searchParams.get("download") === "1";
         try {
-          const rangeHeader = req.headers.get("range");
-          const match = rangeHeader?.match(/^bytes=(\d+)-(\d+)$/);
-          if (rangeHeader && !match) return json({ error: "Unsupported file range" }, { status: 416 });
-          const file = await readWithinHome({ path, download, range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined });
+          const file = await readWithinHome({ path, download, range: parseRange(req.headers.get("range")) });
           if (req.headers.get("x-shahi-file-version") && req.headers.get("x-shahi-file-version") !== file.version) return json({ error: "The file changed while downloading. Try again." }, { status: 409 });
           return new Response(file.bytes, {
             status: file.range ? 206 : 200,
@@ -1098,7 +1095,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // Each refusal carries a code as well as words a person can read:
           // the web viewer shows `error` as it stands, and a client can tell
           // the refusals apart without parsing it.
-          if (err instanceof RangeError) return json({ error: "Invalid file range" }, { status: 416 });
+          if (err instanceof RangeNotSatisfiable) {
+            return json({ error: err.message, code: "range_not_satisfiable" }, { status: 416, headers: { "content-range": `bytes */${err.size}` } });
+          }
           if (err instanceof FileTooLarge) return json({ error: err.message }, { status: 413 });
           if (err instanceof NotAFileError) return json({ error: err.message, code: "not_a_file" }, { status: 400 });
           if (err instanceof OutsideHomeError) {
