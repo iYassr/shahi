@@ -4,8 +4,10 @@ const BUCKETS = [10, 50, 100, 250, 500, 1000, 2500, 5000, 15000, 60000, 330000];
 const METHODS = new Set(["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS", "HEAD"]);
 const ROUTES = new Set(["meta", "diagnostics", "session", "dirs", "agents", "agents/start", "workspaces", "file", "uploads", "rpc", "pair", "pair/claim", "devices", "auth/status", "auth/login", "auth/logout", "push/key", "push/subscribe", "push/unsubscribe", "push/expo", "push/expo/unsubscribe", "push/test"]);
 const ACTIONS = new Set(["screen", "log", "transcript", "prompt", "keys", "answer", "stop", "close", "resize", "image"]);
-const EVENTS = new Set(["runtime.started", "runtime.stopped", "runtime.summary", "state.error", "poller.error", "subscriber.error", "relay.protocol_mismatch", "relay.auth_timeout", "relay.retry", "relay.connected", "relay.silent", "relay.link_refused", "relay.link_open", "relay.link_closed", "relay.request_rejected", "relay.response_oversized", "alert.firing", "alert.recovered"]);
-const REASONS = new Set(["a request without a path", "device revoked", "backpressure", "frame too large", "send failed", "response failed", "authentication timeout", "a frame did not open", "a frame was not JSON", "a malformed message", "unknown device", "unknown pairing code", "a hello did not derive", "a malformed hello", "an oversized hello", "invalid acknowledgement", "session expired", "server stopping"]);
+const EVENTS = new Set(["runtime.started", "runtime.stopped", "runtime.summary", "state.error", "poller.error", "subscriber.error", "relay.protocol_mismatch", "relay.auth_timeout", "relay.retry", "relay.connected", "relay.silent", "relay.link_refused", "relay.link_open", "relay.link_closed", "relay.request_rejected", "relay.response_oversized", "alert.firing", "alert.recovered", "push.sent", "push.failed"]);
+const REASONS = new Set(["a request without a path", "device revoked", "backpressure", "frame too large", "send failed", "response failed", "authentication timeout", "a frame did not open", "a frame was not JSON", "a malformed message", "unknown device", "unknown pairing code", "a hello did not derive", "a malformed hello", "an oversized hello", "invalid acknowledgement", "session expired", "server stopping",
+  "push timeout", "push unreachable", "push refused", "push malformed response", "subscription gone",
+  "DeviceNotRegistered", "MessageTooBig", "MessageRateExceeded", "MismatchSenderId", "InvalidCredentials"]);
 
 /** Fixed route labels. IDs, filenames, queries and unknown URLs never enter a log or metric key. */
 export function routeLabel(path: string): string {
@@ -78,6 +80,7 @@ export class Observability {
     }
     if (typeof fields.connected === "boolean") safe.connected = fields.connected;
     if (fields.transport === "http" || fields.transport === "relay") safe.transport = fields.transport;
+    if (fields.channel === "expo" || fields.channel === "web") safe.channel = fields.channel;
     if (typeof fields.method === "string") safe.method = METHODS.has(fields.method) ? fields.method : "OTHER";
     if (typeof fields.route === "string") safe.route = fields.route === "static" || fields.route === "ws" ? fields.route : routeLabel(`/api/${fields.route}`);
     if (typeof fields.reason === "string") safe.reason = REASONS.has(fields.reason) ? fields.reason : "other";

@@ -18,9 +18,10 @@
  */
 import { serverIdentity } from "./identity";
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import webpush, { type PushSubscription } from "web-push";
 import type { Config } from "./config";
-import type { SessionStore, StatusChange } from "./state";
+import { paneTitle, type SessionStore, type StatusChange } from "./state";
 
 /** How long a repeat notification for the same pane is held back. */
 const DEBOUNCE_MS = 5_000;
@@ -37,6 +38,39 @@ const EXPO_BATCH = 100;
 const MAX_ENDPOINT_LENGTH = 2048;
 const MAX_KEY_LENGTH = 256;
 
+/**
+ * Both push services refuse a payload over 4 KB, and a workspace label has no
+ * length limit: a 1,900-character one made every notification from its
+ * workspace fail, silently (pre-release bug hunt). These leave room for JSON
+ * escaping and the platform's own fields; a phone shows far less anyway.
+ */
+const MAX_TITLE_BYTES = 160;
+const MAX_BODY_BYTES = 512;
+
+/**
+ * An hour, and urgent. The defaults (four weeks, normal urgency) delivered a
+ * "needs you" to a phone that came back online weeks after the question was
+ * answered. A question still open after an hour is on the dashboard.
+ */
+const TTL_SECONDS = 3_600;
+
+/**
+ * A request that has not answered in 15 seconds has failed. Bun's default
+ * held a hung Expo request for about five minutes.
+ */
+const TIMEOUT_MS = 15_000;
+
+/**
+ * Waits before retrying a send the push service refused for now (429, 5xx)
+ * or never received (no connection). A send that timed out is not retried:
+ * it may have been delivered, and a repeated notification is worse than one
+ * that arrives late.
+ */
+const RETRY_DELAYS_MS = [2_000, 10_000];
+
+/** Expo's own ticket error codes, which are safe to log: they name no one. */
+const EXPO_ERRORS = new Set(["DeviceNotRegistered", "MessageTooBig", "MessageRateExceeded", "MismatchSenderId", "InvalidCredentials"]);
+
 export interface PushPayload {
   title: string;
   body: string;
@@ -48,8 +82,33 @@ export interface PushPayload {
    * does not read it routes by pane id as before.
    */
   instanceId?: string;
-  workspaceLabel: string;
   serverId?: string;
+}
+
+/** Where delivery outcomes go: `Observability.event`, which keeps only allowlisted fields. */
+export type PushLog = (event: "push.sent" | "push.failed", fields: { channel: "expo" | "web"; count: number; status?: number; reason?: string }) => void;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Printable text of at most `maxBytes` of UTF-8, cut between graphemes so an
+ * emoji or a combining mark is never split. Control characters become spaces:
+ * they mean nothing in a notification and JSON escapes each into six bytes.
+ */
+export function fitText(text: string, maxBytes: number): string {
+  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  const encoder = new TextEncoder();
+  if (encoder.encode(clean).length <= maxBytes) return clean;
+  const budget = maxBytes - encoder.encode("…").length;
+  let out = "";
+  let used = 0;
+  for (const { segment } of new Intl.Segmenter().segment(clean)) {
+    const size = encoder.encode(segment).length;
+    if (used + size > budget) break;
+    out += segment;
+    used += size;
+  }
+  return `${out}…`;
 }
 
 export class PushService {
@@ -59,10 +118,21 @@ export class PushService {
   readonly #lastNotifiedAt = new Map<string, number>();
   readonly #trailing = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /**
+   * Every failure used to collapse into a quiet 0 — a push service answering
+   * 500, a MessageTooBig ticket, a hung request — so nothing in the log or the
+   * diagnostics said notifications had stopped (pre-release bug hunt). Only
+   * the channel, a count, an HTTP status and a fixed reason are logged; never
+   * a token, an endpoint or a payload.
+   */
+  readonly #log: PushLog;
+
   constructor(
     db: Database,
     private readonly config: Config,
+    log: PushLog = () => {},
   ) {
+    this.#log = log;
     this.#db = db;
     this.#serverId = serverIdentity(db).serverId;
     // Unowned registrations cannot be revoked safely. Require a fresh opt-in.
@@ -241,15 +311,16 @@ export class PushService {
 
     const pane = store.pane(change.paneId);
     const workspaceLabel = store.workspace(change.workspaceId)?.label ?? change.workspaceId;
-    const title = pane?.terminal_title_stripped ?? pane?.terminal_title ?? change.paneId;
+    const suffix = " needs you";
 
     const instanceId = store.instance(change.paneId);
     await this.send({
-      title: `${workspaceLabel} needs you`,
-      body: title,
+      title: fitText(workspaceLabel, MAX_TITLE_BYTES - suffix.length) + suffix,
+      // The dashboard's title for the pane, so the notification names what the
+      // list does: a labelled pane with no terminal title read as its raw id.
+      body: fitText((pane && paneTitle(pane)) ?? change.paneId, MAX_BODY_BYTES),
       paneId: change.paneId,
       ...(instanceId ? { instanceId } : {}),
-      workspaceLabel,
     });
   }
 
@@ -258,7 +329,6 @@ export class PushService {
       title: "Shahi",
       body: "Notifications are working.",
       paneId: "",
-      workspaceLabel: "",
     });
   }
 
@@ -293,32 +363,56 @@ export class PushService {
       to,
       title: payload.title,
       body: payload.body,
-      data: { paneId: payload.paneId, instanceId: payload.instanceId, workspaceLabel: payload.workspaceLabel, serverId: payload.serverId },
+      data: { paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId },
       sound: "default",
+      ttl: TTL_SECONDS,
+      priority: "high",
       // Android needs a channel to make any sound at all; the app creates it.
       channelId: "blocked",
     }));
 
-    try {
-      const res = await fetch(EXPO_PUSH_ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify(messages),
-      });
-      const body = (await res.json()) as {
-        data?: { status: string; details?: { error?: string } }[];
-      };
-      let delivered = 0;
-      body.data?.forEach((ticket, i) => {
-        if (ticket.status === "ok") delivered++;
-        else if (ticket.details?.error === "DeviceNotRegistered") {
-          this.unsubscribeExpo(tokens[i]!);
-        }
-      });
-      return delivered;
-    } catch {
-      // A push service that is unreachable is not worth crashing a poll over.
+    const failed = (fields: { status?: number; reason: string }) => {
+      this.#log("push.failed", { channel: "expo", count: tokens.length, ...fields });
       return 0;
+    };
+    for (let attempt = 0; ; attempt++) {
+      const retry = RETRY_DELAYS_MS[attempt];
+      let res: Response;
+      try {
+        res = await fetch(EXPO_PUSH_ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify(messages),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+      } catch (err) {
+        if ((err as Error)?.name === "TimeoutError") return failed({ reason: "push timeout" });
+        if (retry === undefined) return failed({ reason: "push unreachable" });
+        await sleep(retry);
+        continue;
+      }
+      if (!res.ok) {
+        if ((res.status === 429 || res.status >= 500) && retry !== undefined) {
+          await sleep(retry);
+          continue;
+        }
+        return failed({ status: res.status, reason: "push refused" });
+      }
+      const body = (await res.json().catch(() => null)) as { data?: { status: string; details?: { error?: string } }[] } | null;
+      if (!Array.isArray(body?.data)) return failed({ status: res.status, reason: "push malformed response" });
+
+      let delivered = 0;
+      const errors = new Map<string, number>();
+      body.data.forEach((ticket, i) => {
+        if (ticket.status === "ok") return void delivered++;
+        const error = ticket.details?.error ?? "";
+        const reason = EXPO_ERRORS.has(error) ? error : "other";
+        errors.set(reason, (errors.get(reason) ?? 0) + 1);
+        if (error === "DeviceNotRegistered") this.unsubscribeExpo(tokens[i]!);
+      });
+      if (delivered) this.#log("push.sent", { channel: "expo", count: delivered });
+      for (const [reason, count] of errors) this.#log("push.failed", { channel: "expo", count, reason });
+      return delivered;
     }
   }
 
@@ -331,25 +425,56 @@ export class PushService {
       )
       .all();
 
+    // Exactly what the service worker reads, and nothing it does not. An
+    // undefined instanceId (an older herdr, a pane with no occupant yet) is
+    // left out by JSON itself.
+    const body = JSON.stringify({ title: payload.title, body: payload.body, paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId });
+    const options = {
+      TTL: TTL_SECONDS,
+      urgency: "high" as const,
+      // A newer notification for the same pane replaces one still queued for
+      // an offline browser, rather than both arriving when it reconnects.
+      // Hashed: a topic is at most 32 URL-safe characters, and is readable by
+      // the push service.
+      topic: createHash("sha256").update(`${payload.serverId}:${payload.paneId}`).digest("base64url").slice(0, 32),
+      timeout: TIMEOUT_MS,
+    };
+
     const results = await Promise.all(
       rows.map(async (row) => {
         const subscription: PushSubscription = {
           endpoint: row.endpoint,
           keys: { p256dh: row.p256dh, auth: row.auth },
         };
-        try {
-          await webpush.sendNotification(subscription, JSON.stringify(payload));
-          return true;
-        } catch (err) {
-          // 404/410 mean the browser dropped this subscription for good; keeping
-          // it would mean failing on every future notification.
-          const status = (err as { statusCode?: number }).statusCode;
-          if (status === 404 || status === 410) this.unsubscribe(row.endpoint);
-          return false;
+        for (let attempt = 0; ; attempt++) {
+          const retry = RETRY_DELAYS_MS[attempt];
+          try {
+            await webpush.sendNotification(subscription, body, options);
+            return { ok: true } as const;
+          } catch (err) {
+            const status = (err as { statusCode?: number }).statusCode;
+            // 404/410 mean the browser dropped this subscription for good; keeping
+            // it would mean failing on every future notification.
+            if (status === 404 || status === 410) {
+              this.unsubscribe(row.endpoint);
+              return { ok: false, status, reason: "subscription gone" } as const;
+            }
+            // web-push's own words for its `timeout` firing.
+            if (status === undefined && (err as Error)?.message === "Socket timeout") return { ok: false, reason: "push timeout" } as const;
+            const transient = status === undefined || status === 429 || status >= 500;
+            if (transient && retry !== undefined) {
+              await sleep(retry);
+              continue;
+            }
+            return { ok: false, status, reason: status === undefined ? "push unreachable" : "push refused" } as const;
+          }
         }
       }),
     );
 
-    return results.filter(Boolean).length;
+    const delivered = results.filter((r) => r.ok).length;
+    if (delivered) this.#log("push.sent", { channel: "web", count: delivered });
+    for (const r of results) if (!r.ok) this.#log("push.failed", { channel: "web", count: 1, reason: r.reason, ...(r.status ? { status: r.status } : {}) });
+    return delivered;
   }
 }

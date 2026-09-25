@@ -124,13 +124,16 @@ server registration.
 
 Native notifications travel through **Expo's push service** and then the
 platform push provider, such as Apple's Push Notification service. Their
-payloads include the workspace name, the terminal title, the pane identifier to
-open, and your computer's public server identifier, the same stable identifier
-the relay sees. Expo and the platform provider can read that content even
-though relay traffic is encrypted end to end. Browser notifications carry the
-same fields through the browser's push service, encrypted so that only your
-browser can read them. Leave notifications off if you do not want that content
-sent through push providers.
+payloads include the workspace name, the terminal title or pane name, the pane
+identifier to open, and your computer's public server identifier, the same
+stable identifier the relay sees. Expo and the platform provider can read that
+content even though relay traffic is encrypted end to end. Browser
+notifications carry the same fields through the browser's push service,
+encrypted so that only your browser can read them; that service also sees a
+short hash of the computer and pane, used to replace an undelivered
+notification for the same pane. Notifications ask push providers to discard
+them if they cannot be delivered within an hour. Leave notifications off if you
+do not want that content sent through push providers.
 
 Your server stores original agent transcripts and uploaded files under your
 control. The relay does not store those contents.

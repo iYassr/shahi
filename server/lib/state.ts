@@ -55,6 +55,16 @@ export interface StatusChange extends WireStatusChange {
   initial?: boolean;
 }
 
+/**
+ * What a person calls a pane: the dashboard row's title and the notification's
+ * body, from one place so the two cannot name the same pane differently.
+ * `terminal_title_stripped` is already a good human summary of what an agent
+ * is doing ("Convert PDF to verbatim markdown").
+ */
+export function paneTitle(pane: PaneInfo): string | null {
+  return pane.terminal_title_stripped ?? pane.terminal_title ?? pane.label ?? null;
+}
+
 /** Ordering for the dashboard: what needs a human first. */
 export const STATUS_PRIORITY: Record<AgentStatus, number> = {
   blocked: 0,

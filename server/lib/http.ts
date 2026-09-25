@@ -52,7 +52,7 @@ import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
-import { type SessionState, type SessionStore } from "./state";
+import { paneTitle, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 import type { ComputerControl } from "./control";
 
@@ -1573,10 +1573,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     tabId: pane.tab_id,
     status: pane.agent_status,
     agent: pane.display_agent ?? pane.agent ?? null,
-    // `terminal_title_stripped` is already a good human summary of what an agent
-    // is doing ("Convert PDF to verbatim markdown"), which is exactly what a
-    // dashboard card and a notification both want.
-    title: pane.terminal_title_stripped ?? pane.terminal_title ?? pane.label ?? null,
+    title: paneTitle(pane),
     cwd: pane.cwd ?? null,
     focused: pane.focused,
     hasPrompt: poller.frame(pane.pane_id)?.prompt != null,

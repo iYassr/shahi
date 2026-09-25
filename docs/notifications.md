@@ -128,6 +128,15 @@ Two independent channels, either usable without the other:
 - **Expo push** needs no keys. Tokens live in SQLite; a token Expo reports as
   `DeviceNotRegistered` is dropped for the same reason.
 
+Both channels send with a one-hour time-to-live and high priority, so a phone
+that was offline is not told about a question answered long ago; Web Push also
+sets a topic (a hash of the computer and pane) so a newer notification for a
+pane replaces one still queued for an offline browser. The title is the
+workspace label and the body the pane's dashboard title, each cut on a
+character boundary to stay well inside the 4 KB both services allow. Failures
+are logged without content and counted in `/api/diagnostics`; see
+`docs/operations.md`.
+
 Losing the VAPID keypair makes every existing subscription undeliverable and
 requires each device to grant permission again. It is the one thing in `.env`
 worth backing up.

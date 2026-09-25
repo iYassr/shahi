@@ -202,6 +202,15 @@ histogram exposes bucket boundaries so a client can derive approximate
 percentiles. It records handler time, not tap-to-render or complete file-transfer
 time. Metrics reset at process restart and never contain terminal or file data.
 
+Push delivery is recorded as `push.sent` and `push.failed` events carrying the
+channel (`expo` or `web`), a count, an HTTP status and a fixed reason: Expo's
+own ticket error code (`DeviceNotRegistered`, `MessageTooBig`, …), `push
+refused`, `push timeout`, `push unreachable`, `push malformed response` or
+`subscription gone`. Never a token, an endpoint or notification text. A send the
+push service refuses for now (429 or 5xx) or never received is tried twice
+more, after 2 and 10 seconds; one that timed out (15 seconds) is not, because
+it may have been delivered.
+
 A local summary is written every minute. Local alert transitions cover relay
 outage after three minutes, at least ten 5xx responses and a 5% error rate in a
 minute, RSS over 768 MiB, and timer lag over one second. They recover in the next

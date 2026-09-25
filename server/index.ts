@@ -43,10 +43,11 @@ const db = new Database(config.dataPath, { create: true });
 chmodSync(config.dataPath, 0o600);
 db.exec("PRAGMA journal_mode = WAL");
 
+const observability = new Observability(rotatingLog(join(dataDir, "operations.jsonl")));
 const store = new SessionStore(client, new PaneInstances(db));
 const transcript = new TranscriptStore(config.dataPath);
 const poller = new Poller(client, store, transcript);
-const push = new PushService(db, config);
+const push = new PushService(db, config, observability.event);
 const devices = new Devices(db);
 const pairing = new Pairing();
 const auth = new Auth({
@@ -58,7 +59,6 @@ const auth = new Auth({
   deviceActive: (id) => devices.isActive(id),
 }, db);
 
-const observability = new Observability(rotatingLog(join(dataDir, "operations.jsonl")));
 store.on("error", () => observability.event("state.error"));
 poller.on("error", () => observability.event("poller.error"));
 

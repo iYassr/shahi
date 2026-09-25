@@ -129,7 +129,7 @@ format is in the [relay specification](relay.md).
 | Your phone or browser | Decrypted conversations, files, commands, and the credentials needed for its session. |
 | Your computer and Shahi service | Decrypted requests and results; local files, agent transcripts, and device credentials needed to authorize access. |
 | Relay and Cloudflare infrastructure | Connection metadata such as IP addresses, public server/device identifiers, public handshake values, connection times, and traffic sizes and timing. Application payloads remain encrypted. |
-| Optional push providers | Native push goes through Expo and the platform provider, which can read the notification: workspace name, terminal title, the pane to open and your computer’s public server identifier. Web push carries the same fields through the browser’s push service, encrypted so only your browser can read them. |
+| Optional push providers | Native push goes through Expo and the platform provider, which can read the notification: workspace name, terminal title or pane name, the pane to open and your computer’s public server identifier. Web push carries the same fields through the browser’s push service, encrypted so only your browser can read them. |
 | Your agent’s model provider | Whatever the agent itself sends under its own configuration. Shahi’s relay encryption does not change that separate connection. |
 
 The relay is not a conversation-history service. It forwards frames and does

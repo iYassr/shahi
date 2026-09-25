@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { PushService } from "./push";
+import webpush from "web-push";
+import { Observability } from "./observability";
+import { PushService, type PushLog } from "./push";
 import type { Config } from "./config";
 import type { HerdrClient } from "./herdr-client";
 import type { AgentInfo, PaneInfo, SessionSnapshot } from "./herdr-schema";
@@ -269,12 +271,22 @@ describe("delivery", () => {
   });
 
   test("a push service that is down is not an error worth raising", async () => {
+    jest.useFakeTimers();
     const push = service();
     push.subscribeExpo("ExpoPushToken[abc]");
+    let attempts = 0;
     globalThis.fetch = (async () => {
+      attempts++;
       throw new Error("network down");
     }) as unknown as typeof fetch;
-    expect(await push.sendTest()).toBe(0);
+    const sending = push.sendTest();
+    for (const wait of [2_000, 10_000]) {
+      await settle();
+      jest.advanceTimersByTime(wait);
+    }
+    expect(await sending).toBe(0);
+    // Tried again twice, then given up on: bounded, not forever.
+    expect(attempts).toBe(3);
   });
 
   // Pre-release bug hunt: Expo refuses a request of more than 100 messages
@@ -341,4 +353,162 @@ test("a notification names the conversation that was waiting, not only its pane 
   } as unknown as SessionStore;
   await push.notifyStatusChange({ paneId: "w3:p1", workspaceId: "w3", from: "working", to: "blocked" } as never, store);
   expect(sent[0]?.data).toMatchObject({ paneId: "w3:p1", instanceId: "term_a" });
+});
+
+/** A PushService with real VAPID keys and web-push's send replaced. */
+function webService(log?: PushLog) {
+  const keys = webpush.generateVAPIDKeys();
+  const push = new PushService(new Database(":memory:"), { vapid: { subject: "mailto:test@example.com", ...keys } } as Config, log);
+  const sends: { payload: string; options: Record<string, unknown> }[] = [];
+  const outcomes: unknown[] = [];
+  webpush.sendNotification = (async (_subscription: unknown, payload: string, options: Record<string, unknown>) => {
+    sends.push({ payload, options });
+    const outcome = outcomes.shift();
+    if (outcome) throw outcome;
+    return { statusCode: 201, body: "", headers: {} };
+  }) as unknown as typeof webpush.sendNotification;
+  push.subscribe({ endpoint: "https://push.example/browser", keys: { p256dh: "x", auth: "y" } }, "browser");
+  return { push, sends, outcomes };
+}
+
+const realSendNotification = webpush.sendNotification;
+afterEach(() => {
+  webpush.sendNotification = realSendNotification;
+});
+
+describe("what a notification carries", () => {
+  // Pre-release bug hunt: a 1,900-character workspace label, sent twice,
+  // took every notification from that workspace over the 4 KB both push
+  // services allow, and they were refused silently.
+  test("a long workspace label still fits in a notification", async () => {
+    const label = "👩🏽‍💻مرحبا".repeat(400);
+    const expo = service();
+    expo.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    await expo.notifyStatusChange(blocked(), storeWith(paneInfo({ terminal_title_stripped: "ش".repeat(2_400) }), label));
+    const message = (requests[0] as { title: string; body: string; data: object }[])[0]!;
+    expect(new TextEncoder().encode(JSON.stringify(message)).length).toBeLessThan(2_048);
+    expect(message.title.endsWith("… needs you")).toBe(true);
+    // Cut between graphemes: never inside the family-of-code-points emoji.
+    const kept = message.title.slice(0, -"… needs you".length);
+    const boundaries = new Set([0]);
+    let at = 0;
+    for (const { segment } of new Intl.Segmenter().segment(label)) boundaries.add((at += segment.length));
+    expect(label.startsWith(kept)).toBe(true);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(boundaries.has(kept.length)).toBe(true);
+    expect(message.data).toEqual({ paneId: "w1:p1", serverId: expect.any(String) });
+
+    const { push, sends } = webService();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ terminal_title_stripped: "ش".repeat(2_400) }), label));
+    expect(new TextEncoder().encode(sends[0]!.payload).length).toBeLessThan(2_048);
+    expect(Object.keys(JSON.parse(sends[0]!.payload)).sort()).toEqual(["body", "paneId", "serverId", "title"]);
+  });
+
+  // Pre-release bug hunt: the dashboard read "Refactor billing"; the
+  // notification for the same pane read "w1:p1".
+  test("a labelled pane with no terminal title is named by its label, as on the dashboard", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ label: "Refactor billing" })));
+    expect((requests[0] as { body: string }[])[0]!.body).toBe("Refactor billing");
+  });
+
+  // Pre-release bug hunt: Web Push went out with web-push's defaults, four
+  // weeks and normal urgency, and Expo with none, so a phone offline for a
+  // while was told about questions answered long ago.
+  test("a notification expires within the hour, is urgent, and replaces its pane's queued one", async () => {
+    const expo = service();
+    expo.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    await expo.notifyStatusChange(blocked(), storeWith(paneInfo()));
+    expect((requests[0] as object[])[0]).toMatchObject({ ttl: 3_600, priority: "high" });
+
+    const { push, sends } = webService();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo()));
+    await push.notifyStatusChange(blocked({ paneId: "w1:p2" }), storeWith(paneInfo({ pane_id: "w1:p2" })));
+    expect(sends[0]!.options).toMatchObject({ TTL: 3_600, urgency: "high", timeout: 15_000 });
+    const [first, second] = sends.map((s) => s.options.topic as string);
+    expect(first).toMatch(/^[A-Za-z0-9_-]{1,32}$/);
+    expect(second).not.toBe(first);
+  });
+});
+
+describe("delivery failures", () => {
+  // Pre-release bug hunt: every failure collapsed to a quiet 0, so nothing in
+  // the log or the diagnostics said notifications had stopped.
+  test("are logged and counted without a token, an endpoint or a payload", async () => {
+    const rows: Record<string, unknown>[] = [];
+    const observability = new Observability((row) => rows.push(row as Record<string, unknown>));
+    const push = new PushService(new Database(":memory:"), { vapid: null } as Config, observability.event);
+    push.subscribeExpo("ExpoPushToken[secret-token]", "a");
+    push.subscribeExpo("ExpoPushToken[too-big]", "b");
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      const messages = JSON.parse(String(init.body)) as { to: string }[];
+      return Response.json({ data: messages.map((m) => m.to.includes("too-big") ? { status: "error", message: "private detail", details: { error: "MessageTooBig" } } : { status: "ok" }) });
+    }) as unknown as typeof fetch;
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ terminal_title_stripped: "private title" }), "private space"));
+
+    globalThis.fetch = (async () => Response.json({ errors: [{ code: "PUSH_TOO_MANY_EXPERIENCE_IDS", message: "private detail" }] }, { status: 400 })) as unknown as typeof fetch;
+    expect(await push.sendTest()).toBe(0);
+
+    expect(rows.map(({ event, channel, count, reason, status }) => ({ event, channel, count, reason, status }))).toEqual([
+      { event: "push.sent", channel: "expo", count: 1, reason: undefined, status: undefined },
+      { event: "push.failed", channel: "expo", count: 1, reason: "MessageTooBig", status: undefined },
+      { event: "push.failed", channel: "expo", count: 2, reason: "push refused", status: 400 },
+    ]);
+    expect(observability.snapshot().events).toMatchObject({ "push.sent": 1, "push.failed": 2 });
+    expect(JSON.stringify(rows)).not.toMatch(/secret-token|too-big|private/);
+  });
+
+  test("a refusal for now is retried a bounded number of times; a timeout is not", async () => {
+    jest.useFakeTimers();
+    const logged: string[] = [];
+    const push = new PushService(new Database(":memory:"), { vapid: null } as Config, (event, fields) => logged.push(`${event}:${fields.reason ?? fields.count}`));
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const answers = [503, 429, 200];
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const status = answers.shift()!;
+      const messages = JSON.parse(String(init.body)) as unknown[];
+      return status === 200 ? Response.json({ data: messages.map(() => ({ status: "ok" })) }) : new Response("busy", { status });
+    }) as unknown as typeof fetch;
+    const sending = push.sendTest();
+    for (const wait of [2_000, 10_000]) {
+      await settle();
+      jest.advanceTimersByTime(wait);
+    }
+    expect(await sending).toBe(1);
+    expect(answers).toEqual([]);
+
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    }) as unknown as typeof fetch;
+    expect(await push.sendTest()).toBe(0);
+    expect(attempts).toBe(1);
+    expect(logged).toEqual(["push.sent:1", "push.failed:push timeout"]);
+  });
+
+  test("a browser that is gone is dropped and logged; one that is busy is tried again", async () => {
+    jest.useFakeTimers();
+    const logged: unknown[] = [];
+    const { push, sends, outcomes } = webService((event, fields) => logged.push({ event, ...fields }));
+    outcomes.push(Object.assign(new Error("busy"), { statusCode: 503 }));
+    const sending = push.sendTest();
+    await settle();
+    jest.advanceTimersByTime(2_000);
+    expect(await sending).toBe(1);
+    expect(sends).toHaveLength(2);
+
+    outcomes.push(Object.assign(new Error("gone"), { statusCode: 410 }));
+    expect(await push.sendTest()).toBe(0);
+    expect(push.count()).toBe(0);
+    expect(logged).toEqual([
+      { event: "push.sent", channel: "web", count: 1 },
+      { event: "push.failed", channel: "web", count: 1, reason: "subscription gone", status: 410 },
+    ]);
+  });
 });
