@@ -158,8 +158,8 @@ describe("a session bound to a device", () => {
 
   test("the token carries the device id, and a passcode token carries none", () => {
     const auth = new Auth({ passcodeHash: gated, sessionSecret: secret, sessionTtlMs: 60_000 });
-    expect(auth.identify(auth.issue(0, "dev-1"), 1)).toEqual({ deviceId: "dev-1" });
-    expect(auth.identify(auth.issue(0), 1)).toEqual({ deviceId: null });
+    expect(auth.identify(auth.issue(0, "dev-1"), 1)).toEqual({ deviceId: "dev-1", expiresAt: 60_000 });
+    expect(auth.identify(auth.issue(0), 1)).toEqual({ deviceId: null, expiresAt: 60_000 });
     expect(auth.identify(auth.issue(0, "dev-1"), 60_000)).toBeNull(); // expired
   });
 

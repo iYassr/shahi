@@ -116,7 +116,8 @@ SDKs. Relay operational telemetry is separate from client analytics.
 Notifications are **off unless you enable them**. Your server stores the push
 registration and associates it with the device or signed-in session that
 registered it. Revoking a paired device or signing out through the server
-removes the corresponding registrations. Turning notifications off in the web
+removes the corresponding registrations, and a registration made with a
+passcode sign-in is removed when that sign-in expires. Turning notifications off in the web
 app removes that browser's registration for the current computer. Disabling
 notifications in iOS Settings stops display but does not itself delete the
 server registration.

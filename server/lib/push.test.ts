@@ -158,6 +158,70 @@ describe("expo tokens", () => {
     push.unsubscribeExpo("ExpoPushToken[abc]");
     expect(push.count()).toBe(0);
   });
+
+  // Pre-release bug hunt: a 100,019-character token was stored and uploaded
+  // with every notification.
+  test("a token of any length is refused", () => {
+    const push = service();
+    expect(push.isExpoToken(`ExponentPushToken[${"x".repeat(100_000)}]`)).toBe(false);
+    expect(push.isExpoToken(`ExponentPushToken[${"x".repeat(200)}]`)).toBe(true);
+    expect(push.isSubscription({ endpoint: `https://push.example/${"x".repeat(100_000)}`, keys: { p256dh: "x", auth: "y" } })).toBe(false);
+    expect(push.isSubscription({ endpoint: "https://push.example/a", keys: { p256dh: "x".repeat(100_000), auth: "y" } })).toBe(false);
+    expect(push.isSubscription({ endpoint: "https://push.example/a", keys: { p256dh: "x", auth: "y" } })).toBe(true);
+  });
+
+  test("an owner's new registration replaces its old one rather than adding to it", () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[old]", "phone");
+    push.subscribeExpo("ExpoPushToken[new]", "phone");
+    push.subscribeExpo("ExpoPushToken[other]", "other phone");
+    push.subscribe({ endpoint: "https://push.example/old", keys: { p256dh: "x", auth: "y" } }, "browser");
+    push.subscribe({ endpoint: "https://push.example/new", keys: { p256dh: "x", auth: "y" } }, "browser");
+    expect(push.count()).toBe(3);
+    push.unsubscribeExpo("ExpoPushToken[new]", "phone");
+    push.unsubscribe("https://push.example/new", "browser");
+    expect(push.count()).toBe(1);
+  });
+});
+
+// Pre-release bug hunt: a passcode session's registrations outlived the
+// session. Its expiry was only inside the cookie, so after it ran out the
+// phone kept being notified and no logout could name the rows.
+describe("registrations that belong to a passcode session", () => {
+  test("end with the session", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[expired]", "session:a", Date.now() - 1);
+    push.subscribeExpo("ExpoPushToken[live]", "session:b", Date.now() + 60_000);
+    push.subscribeExpo("ExpoPushToken[device]", "device-1", null);
+    const requests = expoRequests();
+    expect(await push.sendTest()).toBe(2);
+    expect((requests[0] as { to: string }[]).map((m) => m.to).sort()).toEqual(["ExpoPushToken[device]", "ExpoPushToken[live]"]);
+    expect(push.count()).toBe(2);
+  });
+
+  test("renew with the session that registers them again", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[phone]", "session:old", Date.now() - 1);
+    push.subscribeExpo("ExpoPushToken[phone]", "session:new", Date.now() + 60_000);
+    const requests = expoRequests();
+    expect(await push.sendTest()).toBe(1);
+    expect(requests).toHaveLength(1);
+  });
+
+  test("from before expiry was stored end within one session lifetime, and a device's never", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE device_expo_push_token (token TEXT PRIMARY KEY, owner TEXT NOT NULL, added_at INTEGER NOT NULL)");
+    db.exec("CREATE TABLE device_push_subscription (endpoint TEXT PRIMARY KEY, owner TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, added_at INTEGER NOT NULL)");
+    db.run("INSERT INTO device_expo_push_token VALUES ('ExpoPushToken[s]', 'session:abc', 0), ('ExpoPushToken[d]', 'device-1', 0)");
+    db.run("INSERT INTO device_push_subscription VALUES ('https://push.example/s', 'session:abc', 'x', 'y', 0)");
+    const before = Date.now();
+    new PushService(db, { vapid: null, sessionTtlMs: 60_000 } as Config);
+    const rows = db.query<{ token: string; expires_at: number | null }, []>("SELECT token, expires_at FROM device_expo_push_token ORDER BY token").all();
+    expect(rows[0]).toEqual({ token: "ExpoPushToken[d]", expires_at: null });
+    expect(rows[1]!.expires_at).toBeGreaterThanOrEqual(before + 60_000);
+    expect(rows[1]!.expires_at).toBeLessThanOrEqual(Date.now() + 60_000);
+    expect(db.query<{ expires_at: number }, []>("SELECT expires_at FROM device_push_subscription").get()!.expires_at).toBeGreaterThanOrEqual(before + 60_000);
+  });
 });
 
 describe("delivery", () => {
@@ -211,6 +275,24 @@ describe("delivery", () => {
       throw new Error("network down");
     }) as unknown as typeof fetch;
     expect(await push.sendTest()).toBe(0);
+  });
+
+  // Pre-release bug hunt: Expo refuses a request of more than 100 messages
+  // whole, so with 102 tokens every send failed for every phone.
+  test("past 100 tokens, every phone is still notified", async () => {
+    const push = service();
+    for (let i = 0; i < 101; i++) push.subscribeExpo(`ExpoPushToken[t${i}]`, `owner-${i}`);
+    const requests: { to: string }[][] = [];
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const messages = JSON.parse(String(init.body)) as { to: string }[];
+      requests.push(messages);
+      if (messages.length > 100) return Response.json({ errors: [{ code: "PUSH_TOO_MANY_NOTIFICATIONS" }] }, { status: 400 });
+      // The second batch's only token is gone: its ticket maps back to it.
+      return Response.json({ data: messages.map((m) => m.to === "ExpoPushToken[t100]" ? { status: "error", details: { error: "DeviceNotRegistered" } } : { status: "ok" }) });
+    }) as unknown as typeof fetch;
+    expect(await push.sendTest()).toBe(100);
+    expect(requests.map((r) => r.length)).toEqual([100, 1]);
+    expect(push.count()).toBe(100);
   });
 
   test("no tokens means no request at all", async () => {

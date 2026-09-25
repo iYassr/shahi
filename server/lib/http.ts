@@ -443,6 +443,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   let transfersUsed = false;
   const transferSweep = setInterval(() => { if (transfersUsed) void transfers.run(() => transfers.sweep()).catch(() => {}); }, 300_000);
   const pushOwner = (req: Request) => identify(req)?.deviceId ?? `session:${createHash("sha256").update(readCookie(req.headers.get("cookie"), SESSION_COOKIE) ?? "local").digest("hex")}`;
+  // A passcode session's registrations end when it does; a device's end when
+  // it is revoked, however many sessions it is issued meanwhile.
+  const pushExpiry = (req: Request) => {
+    const who = identify(req);
+    return who && !who.deviceId ? who.expiresAt : null;
+  };
 
   // A revoked device fails here, on its next request — `Auth` asks `devices`
   // about every device token it sees. A live one is marked seen, so Settings
@@ -1179,7 +1185,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (!push.isSubscription(body)) return json({ error: "malformed subscription" }, { status: 400 });
-          push.subscribe(body, pushOwner(req));
+          push.subscribe(body, pushOwner(req), pushExpiry(req));
           return json({ ok: true });
         }
 
@@ -1201,7 +1207,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (!push.isExpoToken(body.token)) {
             return json({ error: "malformed expo push token" }, { status: 400 });
           }
-          push.subscribeExpo(body.token, pushOwner(req));
+          push.subscribeExpo(body.token, pushOwner(req), pushExpiry(req));
           return json({ ok: true });
         }
 

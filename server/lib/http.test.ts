@@ -569,6 +569,45 @@ describe("a socket does not outlive its session", () => {
       short.stop();
     }
   });
+
+  // Pre-release bug hunt: the socket closed, but the session's push
+  // registrations stayed and received every notification indefinitely.
+  test("nor do the notifications it registered for", async () => {
+    const short = await boot({ sessionTtlMs: 500 });
+    const realFetch = globalThis.fetch;
+    const sentTo: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).startsWith("https://exp.host/")) return realFetch(input, init);
+      const messages = JSON.parse(String(init?.body)) as { to: string }[];
+      sentTo.push(...messages.map((m) => m.to));
+      return Response.json({ data: messages.map(() => ({ status: "ok" })) });
+    }) as typeof fetch;
+    const post = (path: string, body: unknown, cookie: string) => realFetch(short.base + path, {
+      method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const login = async () => ((await realFetch(`${short.base}/api/auth/login`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: PASSCODE }),
+    })).headers.get("set-cookie") ?? "").split(";")[0]!;
+    try {
+      expect((await post("/api/push/expo", { token: "ExpoPushToken[expiring]" }, short.cookie)).status).toBe(200);
+      expect((await post("/api/push/subscribe", { endpoint: "https://push.example/expiring", keys: { p256dh: "x", auth: "y" } }, short.cookie)).status).toBe(200);
+      expect(short.push.count()).toBe(2);
+      await Bun.sleep(600);
+
+      const later = await login();
+      expect(await (await post("/api/push/test", {}, later)).json()).toEqual({ sent: 0 });
+      expect(sentTo).toEqual([]);
+      expect(short.push.count()).toBe(0);
+
+      // Signing in again and registering again keeps the phone notified.
+      expect((await post("/api/push/expo", { token: "ExpoPushToken[expiring]" }, later)).status).toBe(200);
+      expect(await (await post("/api/push/test", {}, later)).json()).toEqual({ sent: 1 });
+      expect(sentTo).toEqual(["ExpoPushToken[expiring]"]);
+    } finally {
+      globalThis.fetch = realFetch;
+      short.stop();
+    }
+  });
 });
 
 describe("claiming a pairing code", () => {

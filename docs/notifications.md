@@ -136,7 +136,11 @@ worth backing up.
 
 Registrations belong to the paired device or passcode session that enables
 them. Revoking a device removes its Expo and browser registrations immediately;
-server-side logout removes the signing-out owner's registrations as well.
+server-side logout removes the signing-out owner's registrations as well. A
+passcode session's registrations also end when the session expires; the app
+registers again when it signs in again. Each owner holds one registration per
+channel: a new token or subscription replaces the owner's old one. Expo
+messages go out in requests of at most 100, Expo's own limit.
 The September 2026 ownership update discards older unowned registrations:
 enable notifications again after upgrading. This does not change pairing keys
 or delete agent transcripts.

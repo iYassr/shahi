@@ -16,7 +16,8 @@ export interface AuthOptions {
   deviceActive?: (deviceId: string) => boolean;
 }
 
-export interface Identity { deviceId: string | null; }
+/** `expiresAt` is when this token stops working, in epoch milliseconds. */
+export interface Identity { deviceId: string | null; expiresAt: number; }
 
 export class Auth {
   // The default is for isolated tests and token-signing scripts. The running
@@ -61,7 +62,7 @@ export class Auth {
     if (this.db.query("SELECT 1 FROM revoked_sessions WHERE digest = ?").get(this.#digest(token))) return null;
     const deviceId = device || null;
     if (deviceId !== null && !(this.options.deviceActive?.(deviceId) ?? true)) return null;
-    return { deviceId };
+    return { deviceId, expiresAt };
   }
 
   revoke(token: string | undefined, now = Date.now()): boolean {

@@ -27,6 +27,16 @@ const DEBOUNCE_MS = 5_000;
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
 
+/**
+ * Expo refuses a whole request of more than 100 messages, so past 100 tokens
+ * every notification failed for every phone, including the ones that worked.
+ */
+const EXPO_BATCH = 100;
+
+/** Real endpoints are a few hundred characters, and keys under a hundred. */
+const MAX_ENDPOINT_LENGTH = 2048;
+const MAX_KEY_LENGTH = 256;
+
 export interface PushPayload {
   title: string;
   body: string;
@@ -63,16 +73,31 @@ export class PushService {
         owner    TEXT NOT NULL,
         p256dh   TEXT NOT NULL,
         auth     TEXT NOT NULL,
-        added_at INTEGER NOT NULL
+        added_at INTEGER NOT NULL,
+        expires_at INTEGER
       )
     `);
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS device_expo_push_token (
         token    TEXT PRIMARY KEY,
         owner    TEXT NOT NULL,
-        added_at INTEGER NOT NULL
+        added_at INTEGER NOT NULL,
+        expires_at INTEGER
       )
     `);
+    // A passcode session's registrations end with the session, as they do on
+    // its logout and on a device's revocation. Its expiry lived only inside the
+    // cookie, so a session that simply ran out kept its phone or browser
+    // notified for good, and nothing could remove the rows: logout after
+    // expiry has no cookie to name them by (pre-release bug hunt). Devices
+    // store NULL; revocation ends theirs. Rows from before this column belong
+    // to sessions that end within one session lifetime from now.
+    for (const table of ["device_push_subscription", "device_expo_push_token"]) {
+      const columns = this.#db.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all();
+      if (columns.some((c) => c.name === "expires_at")) continue;
+      this.#db.exec(`ALTER TABLE ${table} ADD COLUMN expires_at INTEGER`);
+      this.#db.run(`UPDATE ${table} SET expires_at = ? WHERE owner LIKE 'session:%'`, [Date.now() + config.sessionTtlMs]);
+    }
 
     this.#enabled = config.vapid !== null;
     if (config.vapid) {
@@ -93,23 +118,42 @@ export class PushService {
     return this.config.vapid?.publicKey ?? null;
   }
 
+  /**
+   * Bounded as well as shaped: every stored registration is sent on every
+   * notification, so a megabyte-long one costs that on each send.
+   */
   isSubscription(value: unknown): value is PushSubscription {
     if (typeof value !== "object" || value === null) return false;
     const candidate = value as PushSubscription;
     return (
       typeof candidate.endpoint === "string" &&
       candidate.endpoint.startsWith("https://") &&
+      candidate.endpoint.length <= MAX_ENDPOINT_LENGTH &&
       typeof candidate.keys?.p256dh === "string" &&
-      typeof candidate.keys?.auth === "string"
+      candidate.keys.p256dh.length <= MAX_KEY_LENGTH &&
+      typeof candidate.keys?.auth === "string" &&
+      candidate.keys.auth.length <= MAX_KEY_LENGTH
     );
   }
 
-  subscribe(subscription: PushSubscription, owner = "local"): void {
-    this.#db.run(
-      `INSERT INTO device_push_subscription (endpoint, p256dh, auth, added_at, owner) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, owner = excluded.owner`,
-      [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, Date.now(), owner],
-    );
+  /**
+   * One registration per owner. A browser holds one subscription for this
+   * app, and a phone one Expo token; a new one replaces the old rather than
+   * joining it, so no owner can grow the table — a registration that can no
+   * longer deliver otherwise fails on every notification until the push
+   * service happens to report it gone.
+   *
+   * `expiresAt` is a passcode session's expiry, and null for a paired device.
+   */
+  subscribe(subscription: PushSubscription, owner = "local", expiresAt: number | null = null): void {
+    this.#db.transaction(() => {
+      this.#db.run("DELETE FROM device_push_subscription WHERE owner = ? AND endpoint != ?", [owner, subscription.endpoint]);
+      this.#db.run(
+        `INSERT INTO device_push_subscription (endpoint, p256dh, auth, added_at, owner, expires_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, owner = excluded.owner, expires_at = excluded.expires_at`,
+        [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, Date.now(), owner, expiresAt],
+      );
+    })();
   }
 
   unsubscribe(endpoint: string, owner?: string): void {
@@ -117,6 +161,7 @@ export class PushService {
   }
 
   count(): number {
+    this.#forgetExpired();
     return (
       (this.#db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM device_push_subscription").get()?.n ??
         0) +
@@ -130,15 +175,20 @@ export class PushService {
    * should not be stored and retried on every notification.
    */
   isExpoToken(value: unknown): value is string {
-    return typeof value === "string" && /^Expo(nent)?PushToken\[[^\]]+\]$/.test(value);
+    // Real tokens are about forty characters; the bound is generous, not tight.
+    return typeof value === "string" && /^Expo(nent)?PushToken\[[^\]]{1,200}\]$/.test(value);
   }
 
-  subscribeExpo(token: string, owner = "local"): void {
-    this.#db.run(
-      `INSERT INTO device_expo_push_token (token, added_at, owner) VALUES (?, ?, ?)
-         ON CONFLICT(token) DO UPDATE SET owner = excluded.owner`,
-      [token, Date.now(), owner],
-    );
+  /** One per owner, for the reason `subscribe` gives. */
+  subscribeExpo(token: string, owner = "local", expiresAt: number | null = null): void {
+    this.#db.transaction(() => {
+      this.#db.run("DELETE FROM device_expo_push_token WHERE owner = ? AND token != ?", [owner, token]);
+      this.#db.run(
+        `INSERT INTO device_expo_push_token (token, added_at, owner, expires_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(token) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at`,
+        [token, Date.now(), owner, expiresAt],
+      );
+    })();
   }
 
   unsubscribeExpo(token: string, owner?: string): void {
@@ -148,6 +198,12 @@ export class PushService {
   unsubscribeOwner(owner: string): void {
     this.#db.run("DELETE FROM device_push_subscription WHERE owner = ?", [owner]);
     this.#db.run("DELETE FROM device_expo_push_token WHERE owner = ?", [owner]);
+  }
+
+  /** Registrations whose passcode session has ended; see the constructor. */
+  #forgetExpired(now = Date.now()): void {
+    this.#db.run("DELETE FROM device_push_subscription WHERE expires_at <= ?", [now]);
+    this.#db.run("DELETE FROM device_expo_push_token WHERE expires_at <= ?", [now]);
   }
 
   /**
@@ -208,6 +264,7 @@ export class PushService {
 
   /** Delivers over both channels, returning how many deliveries succeeded. */
   async send(payload: PushPayload): Promise<number> {
+    this.#forgetExpired();
     payload = { ...payload, serverId: this.#serverId };
     const [web, native] = await Promise.all([this.#sendWebPush(payload), this.#sendExpo(payload)]);
     return web + native;
@@ -225,8 +282,13 @@ export class PushService {
       .query<{ token: string }, []>("SELECT token FROM device_expo_push_token")
       .all()
       .map((row) => row.token);
-    if (tokens.length === 0) return 0;
+    const batches: string[][] = [];
+    for (let i = 0; i < tokens.length; i += EXPO_BATCH) batches.push(tokens.slice(i, i + EXPO_BATCH));
+    const delivered = await Promise.all(batches.map((batch) => this.#sendExpoBatch(batch, payload)));
+    return delivered.reduce((sum, n) => sum + n, 0);
+  }
 
+  async #sendExpoBatch(tokens: string[], payload: PushPayload): Promise<number> {
     const messages = tokens.map((to) => ({
       to,
       title: payload.title,
