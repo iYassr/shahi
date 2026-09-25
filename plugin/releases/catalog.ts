@@ -112,10 +112,26 @@ export function selectRelease(c: Catalog, m: Machine): { release: Release | null
   return { release, ...(reason ? { reason } : {}) };
 }
 
+/**
+ * Where catalogs and packages come from: GitHub, which redirects every
+ * release asset to a second host. Named in every download failure, because
+ * behind a proxy or a firewall allowing them is the fix, and Bun's own
+ * "Unable to connect. Is the computer able to access the url?" names no URL
+ * at all (pre-release bug hunt).
+ */
+export const RELEASE_HOSTS = ["github.com", "release-assets.githubusercontent.com"] as const;
+const reachHosts = `Shahi's releases come from ${RELEASE_HOSTS.join(" and ")}; allow both through this computer's proxy or firewall, then try again.`;
+
 /** Bound the body while streaming, including responses without Content-Length. */
 export async function download(url: string, limit: number): Promise<Uint8Array> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(120_000), headers: { "user-agent": "Shahi-Updater/1" } });
-  if (!res.ok || !res.body) throw new Error(`Approved release download failed (${res.status}).`);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(120_000), headers: { "user-agent": "Shahi-Updater/1" } });
+  } catch (err) {
+    throw new Error(`Could not download ${url}: ${err instanceof Error ? err.message : String(err)} ${reachHosts}`, { cause: err });
+  }
+  // The answer may come from the host GitHub redirected to, so name it.
+  if (!res.ok || !res.body) throw new Error(`Approved release download failed: ${new URL(res.url || url).host} answered HTTP ${res.status} for ${url}. ${reachHosts}`);
   const reader = res.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
   try {
     for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length;

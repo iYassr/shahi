@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { selectRelease, sha256, verifyCatalog, type Catalog, type Release } from "./catalog";
+import { download, RELEASE_HOSTS, selectRelease, sha256, verifyCatalog, type Catalog, type Release } from "./catalog";
 import { stage } from "./stage";
 import { atomicJson, installation } from "./storage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
@@ -80,6 +80,32 @@ describe("approved releases", () => {
     const transition = { ...release, api: { min: 5, max: 6 } };
     expect(selectRelease({ ...catalog, releases: [transition] }, { ...machine, current: release }).release).toBeTruthy();
     expect(selectRelease({ ...catalog, releases: [{ ...release, api: { min: 6, max: 6 } }] }, { ...machine, current: release }).release).toBeNull();
+  });
+});
+
+/**
+ * Offline or behind a proxy, a first install said only "Unable to connect.
+ * Is the computer able to access the url?" (Bun's words, no URL) or
+ * "download failed (403)" (pre-release bug hunt).
+ */
+describe("a download that cannot reach GitHub", () => {
+  test("names the URL and both hosts to allow when nothing answers", async () => {
+    const closed = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    const url = `http://127.0.0.1:${closed.port}/catalog.json`;
+    closed.stop(true);
+    const failure = await download(url, 1024).then(() => null, (e: Error) => e.message);
+    expect(failure).toContain(`Could not download ${url}`);
+    for (const host of RELEASE_HOSTS) expect(failure).toContain(host);
+    expect(failure).toContain("proxy or firewall");
+  });
+  test("names the URL, the host that answered and the status when a proxy refuses", async () => {
+    const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("blocked", { status: 403 }) });
+    try {
+      const url = `http://127.0.0.1:${proxy.port}/catalog.json`;
+      const failure = await download(url, 1024).then(() => null, (e: Error) => e.message);
+      expect(failure).toContain(`127.0.0.1:${proxy.port} answered HTTP 403 for ${url}`);
+      expect(failure).toContain("release-assets.githubusercontent.com");
+    } finally { proxy.stop(true); }
   });
 });
 

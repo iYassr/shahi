@@ -60,6 +60,10 @@ was measured, had no menu for plugin actions.
   fresh Debian or Ubuntu, the usual one) and asks you to run
   `herdr plugin install iYassr/shahi` again. A bun that is present but older
   than 1.3.13 is never upgraded for you; the first build step says so.
+- **HTTPS to `github.com` and `release-assets.githubusercontent.com`**, where
+  the signed release catalog and packages are downloaded from (GitHub
+  redirects every release asset to the second). Behind a proxy or a firewall,
+  allow both; a download that cannot reach them says so, naming the URL.
 - On a headless Linux box, **lingering** — see *What gets created*.
 
 Installed and verified by hand on Debian 12, Fedora 44, Arch and Ubuntu 26.04
