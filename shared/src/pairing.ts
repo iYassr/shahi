@@ -9,19 +9,31 @@
  */
 import type { PairingPayload } from "./index";
 
-const PREFIX = "shahi://pair#";
+/**
+ * What follows a code's scheme and host, or null when it has neither.
+ *
+ * A scheme and a host are case-insensitive (RFC 3986 §3.1, §3.2.2): iOS hands
+ * `SHAHI://pair#…` to the app like the lower-case link, and it was dropped
+ * without a word (pre-release bug hunt). The hosted path and the fragment are
+ * compared exactly.
+ */
+function afterPrefix(text: string, origin: string, rest: string): string | null {
+  if (text.slice(0, origin.length).toLowerCase() !== origin || !text.startsWith(rest, origin.length)) return null;
+  return text.slice(origin.length + rest.length);
+}
 
 export function parsePairingUrl(data: string): PairingPayload | null {
   let text = data.trim();
   if (text.length > 8192) return null;
-  const hosted = "https://getshahi.dev/pwa/#pair=";
-  if (text.startsWith(hosted)) {
-    try { text = decodeURIComponent(text.slice(hosted.length)); } catch { return null; }
+  const hosted = afterPrefix(text, "https://getshahi.dev", "/pwa/#pair=");
+  if (hosted !== null) {
+    try { text = decodeURIComponent(hosted); } catch { return null; }
   }
-  if (!text.startsWith(PREFIX)) return null;
+  const code = afterPrefix(text, "shahi://pair", "#");
+  if (code === null) return null;
 
   const fields = new Map<string, string>();
-  for (const pair of text.slice(PREFIX.length).split("&")) {
+  for (const pair of code.split("&")) {
     if (!pair) continue;
     const eq = pair.indexOf("=");
     if (eq <= 0) return null;
@@ -42,18 +54,32 @@ export function parsePairingUrl(data: string): PairingPayload | null {
       !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(secret)) return null;
   // The relay is the whole address now, so a code without a usable one is a
   // code with nowhere to go — null, not a partial payload to be repaired later.
-  if (!isBaseUrl(relay)) return null;
+  const origin = relayOrigin(relay);
+  if (!origin) return null;
 
-  return { v: 1, server, relay: relay.replace(/\/+$/, ""), secret };
+  return { v: 1, server, relay: origin, secret };
 }
 
-const isBaseUrl = (s: string): boolean => {
+/**
+ * The relay as it will be dialled — its origin — or null when it is not one.
+ *
+ * Only an ASCII origin is accepted, because the pairing card shows this host
+ * as the thing the person agrees to. A Unicode host can copy another letter
+ * for letter — `relаy.getshahi.dev` with a Cyrillic "а" — and the card showed
+ * exactly that while iOS dialled `xn--rely-73d.getshahi.dev` (pre-release bug
+ * hunt). A browser's `URL` turns such a host into its `xn--` form, which is
+ * then what is shown; the app's, Expo's whatwg-url-minimum, has no IDNA and
+ * leaves it Unicode, so there the code is refused. An international relay
+ * domain belongs in RELAY_URL in its `xn--` form.
+ */
+const relayOrigin = (s: string): string | null => {
   try {
-    if (/\s/.test(s)) return false;
+    if (/\s/.test(s)) return null;
     const url = new URL(s);
-    return (url.protocol === "https:" || (url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) &&
+    const allowed = (url.protocol === "https:" || (url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) &&
       !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
-  } catch { return false; }
+    return allowed && /^[\x21-\x7e]+$/.test(url.origin) ? url.origin : null;
+  } catch { return null; }
 };
 
 /** `URLSearchParams` encodes a space as `+`; `decodeURIComponent` does not know that. */
