@@ -9,18 +9,22 @@
  * free, and copying *specific* text is the point.
  */
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import { committed } from "@/lib/feel";
 import { Icon } from "@/components/icons";
 import { theme } from "@/lib/theme";
 
-export function CopyOnHold({ text, children }: { text: string; children: React.ReactNode }) {
+export function CopyOnHold({ text, style, children }: { text: string; style?: StyleProp<ViewStyle>; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   return (
     <Pressable
+      // A region that must fit a bounded space (the terminal) says so here:
+      // unstyled, the pressable takes its content's full height whatever its
+      // parent has room for.
+      style={style}
       accessibilityRole="button"
       accessibilityHint="Long press to copy"
       onLongPress={() => {

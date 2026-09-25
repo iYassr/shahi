@@ -1366,6 +1366,27 @@ describe("keeping your terminal place", () => {
     expect(again.getByTestId("terminal-down").props.contentOffset).toEqual({ x: 0, y: 512 });
   });
 
+  // A 35-row screen, or any screen under a prompt card or at a large text
+  // size, is taller than the space the Screen view has. The terminal's copy
+  // region took its content's full height, pushed the width chips below the
+  // view's edge, and iOS drew them unclipped over the key bar, where a tap on
+  // "60c" landed on Escape — which cancels a waiting Claude prompt
+  // (pre-release bug hunt). Jest has no layout engine, so this checks the two
+  // styles that keep the chips on their own row: a terminal region that
+  // shrinks to what is left and scrolls, and a view that clips what it holds.
+  test("the width chips stay on their own row when the terminal is taller than the Screen view", async () => {
+    mocked.pane.mockResolvedValue(withScreen(Array.from({ length: 36 }, (_, i) => `row ${i}`).join("\n")));
+    const view = render(<Pane paneId={P} initialView="screen" />);
+    await view.findByTestId("terminal-body");
+    let region = view.getByTestId("terminal-across").parent;
+    while (region && region.props.accessibilityHint !== "Long press to copy") region = region.parent;
+    expect(region).toBeTruthy();
+    expect(StyleSheet.flatten(region!.props.style)).toMatchObject({ flex: 1, minHeight: 0 });
+    let overlay = view.getByTestId("width-60").parent;
+    while (overlay && overlay.props.testID !== "screen-overlay") overlay = overlay.parent;
+    expect(StyleSheet.flatten(overlay!.props.style).overflow).toBe("hidden");
+  });
+
   test("a terminal never scrolled opens at the top-left, not somewhere guessed", async () => {
     const view = render(<Pane paneId={P} initialView="screen" />);
     await view.findByTestId("terminal-body");

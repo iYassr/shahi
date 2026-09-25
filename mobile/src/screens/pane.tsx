@@ -1179,7 +1179,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             terminal and back never unmounts the list — which is what used to
             lose the scroll position. */}
         {view === "screen" && (
-          <View style={styles.screenOverlay}>
+          <View style={styles.screenOverlay} testID="screen-overlay">
             <Screen paneId={paneId} text={screen} columns={columns} onColumns={setColumns} />
           </View>
         )}
@@ -1633,7 +1633,11 @@ function Screen({
       >
         {PROBE}
       </Text>
-      <CopyOnHold text={body}>
+      {/* The rows left over once the chips below have theirs, scrolled inside.
+          Sized by its content instead, a 35-row screen pushed the chips past
+          the view's edge and over the key bar, where a tap on "60c" pressed
+          Escape (pre-release bug hunt). */}
+      <CopyOnHold text={body} style={styles.terminal}>
         <ScrollView
           ref={across}
           horizontal
@@ -1682,8 +1686,14 @@ function Screen({
             testID={`width-${size}`}
             style={[styles.width, size === columns && styles.widthOn]}
             onPress={() => onColumns(size)}
+            // A toolbar's labels, capped like the navigation bar's and served
+            // full size by the large content viewer: every point this row
+            // grows at an accessibility size comes out of the terminal above
+            // it, which at AX5 under a prompt card was down to a line or two.
+            accessibilityShowsLargeContentViewer
+            accessibilityLargeContentTitle={size === WIDEST ? "fit" : `${size}c`}
           >
-            <Text style={[styles.widthText, size === columns && styles.widthTextOn]}>
+            <Text style={[styles.widthText, size === columns && styles.widthTextOn]} maxFontSizeMultiplier={1.2}>
               {size === WIDEST ? "fit" : `${size}c`}
             </Text>
           </Pressable>
@@ -1897,7 +1907,10 @@ const styles = StyleSheet.create({
   },
   jumpText: { color: theme.peach, fontSize: 12 },
 
-  screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void },
+  // Clipped: iOS draws a child past its parent's edge and, later in the tree,
+  // the composer takes the taps, so anything that overflowed here was a
+  // control you could see and not reach.
+  screenOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: theme.void, overflow: "hidden" },
   // Keep touch targets in the content layout, independent of native title sizing.
   toggle: { flexDirection: "row", paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.line },
   toggleItem: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
@@ -1906,6 +1919,7 @@ const styles = StyleSheet.create({
   toggleTextOn: { color: theme.fg, fontWeight: "700" },
 
   screenWrap: { flex: 1 },
+  terminal: { flex: 1, minHeight: 0 },
   probe: { position: "absolute", opacity: 0, left: 0, top: 0 },
   screenText: { color: theme.fg, fontFamily: theme.mono, padding: 12 },
   widths: {
