@@ -4,7 +4,7 @@ import { readdir, readlink, realpath, mkdtemp, readFile, rm } from "node:fs/prom
 import { homedir, tmpdir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
-import { inTranscript, normalise, readWindow, type LogMessage, type SessionLog } from "./session-log";
+import { inTranscript, isRecord, normalise, readWindow, type LogMessage, type SessionLog } from "./session-log";
 const ROOT = join(homedir(), ".cursor");
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -87,12 +87,15 @@ export function cursorUserText(text: string): string {
 export function normaliseCursor(rows: Record<string, unknown>[], start = 0): LogMessage[] {
   let position = start;
   return rows.flatMap((row) => {
-    if (row.role !== "user" && row.role !== "assistant") return [];
-    const content = (row.message as { content?: unknown } | undefined)?.content;
+    // A bare `null` line, or a field of a type Cursor never wrote, is dropped
+    // like any unknown shape; it used to throw and fail the page (pre-release
+    // bug hunt, September 2026). `normalise` checks the blocks' own fields.
+    if (!isRecord(row) || (row.role !== "user" && row.role !== "assistant")) return [];
+    const content = isRecord(row.message) ? row.message.content : undefined;
     if (!Array.isArray(content)) return [];
     const safe = content
-      .filter(b => b && ["text", "thinking", "tool_use"].includes(b.type))
-      .map(b => row.role === "user" && b.type === "text" ? { ...b, text: cursorUserText(String(b.text ?? "")) } : b);
+      .filter((b): b is Record<string, unknown> => isRecord(b) && ["text", "thinking", "tool_use"].includes(b.type as string))
+      .map(b => row.role === "user" && b.type === "text" ? { ...b, text: typeof b.text === "string" ? cursorUserText(b.text) : "" } : b);
     const messages = normalise([{ type: row.role, uuid: `cursor-${position}`, message: { content: safe } }]);
     position += messages.length;
     return messages.map(m => ({ ...m, blocks: m.blocks.map(b => b.kind === "tool" ? { ...b, outputUnavailable: true } : b) }));

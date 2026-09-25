@@ -158,7 +158,8 @@ async function scanLines(
       const line = decoder.decode(buffer.subarray(start, i));
       if (line.trim()) {
         try {
-          onRow(consumed + start, JSON.parse(line) as Record<string, unknown>);
+          const row: unknown = JSON.parse(line);
+          if (isRecord(row)) onRow(consumed + start, row);
         } catch {
           // A partially-written line, or one this version cannot read. Skipping
           // it costs one message; failing the read costs the whole transcript.
@@ -302,12 +303,21 @@ export function inTranscript(log: SessionLog, sessionId: string): SessionLog {
   return { ...log, sessionId, messages: log.messages.map((message) => ({ ...message, id: `${sessionId}:${message.id}` })) };
 }
 
+/**
+ * The complete lines of a transcript that are objects.
+ *
+ * Only objects: a line that is valid JSON but a bare `null`, number or list is
+ * a row of no shape any reader knows. The index already skipped one, and this
+ * handing it to the normaliser failed every page that covered it (pre-release
+ * bug hunt, September 2026).
+ */
 export function parseLines(text: string): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
-      rows.push(JSON.parse(line) as Record<string, unknown>);
+      const row: unknown = JSON.parse(line);
+      if (isRecord(row)) rows.push(row);
     } catch {
       // A partially-written final line is normal while tailing a live session.
     }
@@ -315,20 +325,24 @@ export function parseLines(text: string): Record<string, unknown>[] {
   return rows;
 }
 
+/** A JSON object, as opposed to `null`, a list or a scalar. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A field's value if it is a string, for reading a file an agent wrote. */
+export function stringOr<T>(value: unknown, fallback: T): string | T {
+  return typeof value === "string" ? value : fallback;
+}
+
 /* -------------------------------------------------------------------------- */
 
-interface RawBlock {
-  type?: string;
-  text?: string;
-  thinking?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  id?: string;
-  tool_use_id?: string;
-  content?: unknown;
-  is_error?: boolean;
-  source?: { media_type?: string; data?: string };
-}
+/**
+ * A content block as the file has it. Nothing about its fields is known until
+ * each is checked: the file is written by another program, and a field of an
+ * unexpected type is a shape this reader does not know, so it is dropped.
+ */
+type RawBlock = Record<string, unknown>;
 
 /**
  * Turns raw records into renderable messages.
@@ -338,6 +352,10 @@ interface RawBlock {
  * are merged into a single block. Doing otherwise produces a transcript that
  * alternates between the agent calling a tool and the "user" replying with its
  * output, which is both wrong and unreadable.
+ *
+ * Every field is type-checked before it is read. Thinking given as an object
+ * or a `null` content block used to throw here, and one such row failed every
+ * page that covered it (pre-release bug hunt, September 2026).
  */
 export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
   // First pass: collect every tool result so a call can carry its own output.
@@ -346,10 +364,11 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     { text: string; isError: boolean; truncated: boolean; images: string[] }
   >();
   for (const row of rows) {
+    if (!isRecord(row)) continue;
     let resultImage = 0;
     for (const block of blocksOf(row)) {
-      if (block.type === "tool_result" && block.tool_use_id) {
-        results.set(block.tool_use_id, flattenResult(block, row.uuid as string, () => resultImage++));
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string" && block.tool_use_id) {
+        results.set(block.tool_use_id, flattenResult(block, stringOr(row.uuid, null), () => resultImage++));
       }
     }
   }
@@ -357,7 +376,10 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
   const messages: LogMessage[] = [];
 
   for (const [index, row] of rows.entries()) {
+    if (!isRecord(row)) continue;
     const type = row.type;
+    const id = stringOr(row.uuid, `row-${index}`);
+    const at = Date.parse(stringOr(row.timestamp, "")) || 0;
 
     // A few `system` records carry real content the person saw, in a top-level
     // string rather than in `message.content`, so they were dropped — shown now
@@ -369,13 +391,8 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     //   - model_refusal_fallback: a safeguard flagged a message and switched
     //     models mid-session; its `content` explains the switch the user saw.
     // (measured across the real transcripts: 82 and 2.)
-    if (type === "system" && SYSTEM_NOTE_SUBTYPES.has(row.subtype as string) && typeof row.content === "string" && (row.content as string).trim()) {
-      messages.push({
-        id: (row.uuid as string) ?? `row-${index}`,
-        role: "system",
-        at: Date.parse((row.timestamp as string) ?? "") || 0,
-        blocks: [{ kind: "text", text: (row.content as string).trim() }],
-      });
+    if (type === "system" && SYSTEM_NOTE_SUBTYPES.has(row.subtype as string) && typeof row.content === "string" && row.content.trim()) {
+      messages.push({ id, role: "system", at, blocks: [{ kind: "text", text: row.content.trim() }] });
       continue;
     }
 
@@ -394,7 +411,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     // A row that produced only chrome (a model switch) reads as a system note,
     // not as the agent speaking.
     let onlyNotes = true;
-    const content = (row.message as { content?: unknown } | undefined)?.content;
+    const content = isRecord(row.message) ? row.message.content : undefined;
 
     if (typeof content === "string") {
       const rendered = renderUserText(content);
@@ -403,39 +420,44 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
       for (const block of blocksOf(row)) {
         switch (block.type) {
           case "text": {
-            const rendered = renderUserText(block.text ?? "");
+            const rendered = typeof block.text === "string" ? renderUserText(block.text) : null;
             if (rendered) { blocks.push(rendered); onlyNotes = false; }
             break;
           }
           case "thinking":
-            if (block.thinking?.trim()) { blocks.push({ kind: "thinking", text: block.thinking }); onlyNotes = false; }
+            if (typeof block.thinking === "string" && block.thinking.trim()) { blocks.push({ kind: "thinking", text: block.thinking }); onlyNotes = false; }
             break;
-          case "tool_use":
+          case "tool_use": {
+            const name = stringOr(block.name, null);
+            const input = isRecord(block.input) ? block.input : {};
             blocks.push({
               kind: "tool",
-              name: block.name ?? "tool",
-              summary: summariseToolInput(block.name ?? "", block.input ?? {}),
-              ...fileOf(block.input ?? {}),
-              ...questionsOf(block.name ?? "", block.input ?? {}),
-              result: (block.id && results.get(block.id)) || null,
+              name: name ?? "tool",
+              summary: summariseToolInput(name ?? "", input),
+              ...fileOf(input),
+              ...questionsOf(name ?? "", input),
+              result: (typeof block.id === "string" && results.get(block.id)) || null,
             });
             onlyNotes = false;
             break;
-          case "image":
+          }
+          case "image": {
             // The bytes stay on disk. A transcript here holds 3.3MB of base64
             // across 28 images, so inlining them would bloat every reader
-            // response; the block carries a reference the client fetches.
-            blocks.push({
-              kind: "image",
-              mediaType: block.source?.media_type ?? "image",
-              ref: `${row.uuid as string}:${imageIndex++}`,
-            });
+            // response; the block carries a reference the client fetches. The
+            // reference names the row, so a row without an id has no image to
+            // offer. Counted either way, as `readSessionImage` counts them.
+            const nth = imageIndex++;
+            if (typeof row.uuid !== "string") break;
+            const source = isRecord(block.source) ? block.source : {};
+            blocks.push({ kind: "image", mediaType: stringOr(source.media_type, "image"), ref: `${row.uuid}:${nth}` });
             onlyNotes = false;
             break;
+          }
           // A model switch (Fable to Opus, say): chrome worth a quiet note,
           // not silence. Real occurrences (13) carry only `to.model`.
           case "fallback": {
-            const to = (block as { to?: { model?: string } }).to?.model;
+            const to = isRecord(block.to) ? stringOr(block.to.model, "") : "";
             blocks.push({ kind: "text", text: to ? `Switched to ${to}` : "Model switched" });
             break;
           }
@@ -449,9 +471,9 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     if (blocks.length === 0) continue;
 
     messages.push({
-      id: (row.uuid as string) ?? `row-${index}`,
+      id,
       role: onlyNotes && type === "assistant" ? "system" : type === "assistant" ? "agent" : "you",
-      at: Date.parse((row.timestamp as string) ?? "") || 0,
+      at,
       blocks,
     });
   }
@@ -459,9 +481,10 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
   return messages;
 }
 
+/** The row's content blocks that are objects; a `null` or a bare string in the list is skipped. */
 function blocksOf(row: Record<string, unknown>): RawBlock[] {
-  const content = (row.message as { content?: unknown } | undefined)?.content;
-  return Array.isArray(content) ? (content as RawBlock[]) : [];
+  const content = isRecord(row.message) ? row.message.content : undefined;
+  return Array.isArray(content) ? content.filter(isRecord) : [];
 }
 
 /**
@@ -531,7 +554,7 @@ export function renderUserText(raw: string): LogBlock | null {
  */
 function flattenResult(
   block: RawBlock,
-  uuid: string,
+  uuid: string | null,
   nextImage: () => number,
 ): { text: string; isError: boolean; truncated: boolean; images: string[] } {
   const images: string[] = [];
@@ -544,10 +567,12 @@ function flattenResult(
     text = content
       .map((part) => {
         if (typeof part === "string") return part;
-        const p = part as RawBlock;
-        if (p.type === "text") return p.text ?? "";
-        if (p.type === "image") {
-          images.push(`${uuid}:r${nextImage()}`);
+        if (!isRecord(part)) return "";
+        if (part.type === "text") return stringOr(part.text, "");
+        if (part.type === "image") {
+          // Counted even when unservable, as `readSessionImage` counts them.
+          const nth = nextImage();
+          if (uuid) images.push(`${uuid}:r${nth}`);
           return "";
         }
         return "";
@@ -708,7 +733,7 @@ export async function readSessionImage(
     for (const block of blocksOf(row)) {
       const parts = inResult
         ? block.type === "tool_result" && Array.isArray(block.content)
-          ? (block.content as RawBlock[]).filter((p) => p.type === "image")
+          ? block.content.filter((p): p is RawBlock => isRecord(p) && p.type === "image")
           : []
         : block.type === "image"
           ? [block]
@@ -716,11 +741,11 @@ export async function readSessionImage(
 
       for (const part of parts) {
         if (seen++ !== index) continue;
-        const data = part.source?.data;
-        if (!data) return;
+        const source = isRecord(part.source) ? part.source : {};
+        if (typeof source.data !== "string" || !source.data) return;
         found = {
-          bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
-          mediaType: imageMediaType(part.source?.media_type),
+          bytes: Uint8Array.from(atob(source.data), (c) => c.charCodeAt(0)),
+          mediaType: imageMediaType(source.media_type),
         };
         return;
       }

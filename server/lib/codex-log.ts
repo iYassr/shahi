@@ -38,7 +38,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
-import { inTranscript, renderUserText, type Block, type LogMessage, type SessionLog } from "./session-log";
+import { inTranscript, isRecord, renderUserText, stringOr, type Block, type LogMessage, type SessionLog } from "./session-log";
 
 /** Tool output can be enormous; the phone gets a readable slice — matching the Claude reader. */
 const MAX_RESULT_CHARS = 2_000;
@@ -242,7 +242,7 @@ type ToolResult = NonNullable<(Block & { kind: "tool" })["result"]>;
 function mcpToolBlock(call: Record<string, unknown>, result: unknown, failed = false): Block & { kind: "tool" } {
   const server = typeof call.server === "string" ? call.server : "";
   const tool = typeof call.tool === "string" ? call.tool : "tool";
-  const args = call.arguments as Record<string, unknown> | undefined;
+  const args = isRecord(call.arguments) ? call.arguments : undefined;
   const title = args && typeof args.title === "string" ? args.title : undefined;
   return {
     kind: "tool",
@@ -268,8 +268,8 @@ function webSearchBlock(query: unknown): Block & { kind: "tool" } {
  * changed; the summary is that list, the result is the tool's own stdout.
  */
 function patchApplyBlock(payload: Record<string, unknown>): Block & { kind: "tool" } {
-  const changes = (payload.changes as Record<string, { type?: string }> | undefined) ?? {};
-  const parts = Object.entries(changes).map(([path, c]) => `${c?.type ?? "edit"} ${basename(path)}`);
+  const changes = isRecord(payload.changes) ? payload.changes : {};
+  const parts = Object.entries(changes).map(([path, c]) => `${isRecord(c) ? stringOr(c.type, "edit") : "edit"} ${basename(path)}`);
   const stdout = typeof payload.stdout === "string" ? payload.stdout.trim() : "";
   const stderr = typeof payload.stderr === "string" ? payload.stderr.trim() : "";
   const text = [stdout, stderr].filter(Boolean).join("\n");
@@ -373,7 +373,7 @@ function codexResult(payload: Record<string, unknown>): ToolResult {
     text = raw;
   } else if (Array.isArray(raw)) {
     text = raw
-      .map((part) => (typeof part === "string" ? part : ((part as { text?: string })?.text ?? "")))
+      .map((part) => (typeof part === "string" ? part : isRecord(part) ? stringOr(part.text, "") : ""))
       .join("");
   }
   text = text.trim();
@@ -442,8 +442,8 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
   // has not returned yet — the pending state the client already renders).
   const outputs = new Map<string, ToolResult>();
   for (const row of rows) {
-    if (row.type !== "response_item") continue;
-    const payload = row.payload as Record<string, unknown> | undefined;
+    if (!isRecord(row) || row.type !== "response_item") continue;
+    const payload = isRecord(row.payload) ? row.payload : undefined;
     if (payload && TOOL_OUTPUT_TYPES.has(payload.type as string) && typeof payload.call_id === "string") {
       outputs.set(payload.call_id, codexResult(payload));
     }
@@ -452,12 +452,16 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
   const messages: LogMessage[] = [];
 
   for (const [relativeIndex, row] of rows.entries()) {
+    // Every field is type-checked before it is read: a bare `null` line or a
+    // message given as a list threw here, and the index then gave up on the
+    // whole rollout on every read (pre-release bug hunt, September 2026).
+    if (!isRecord(row)) continue;
     const index = firstIndex + relativeIndex;
-    const at = Date.parse((row.timestamp as string) ?? "") || 0;
+    const at = Date.parse(stringOr(row.timestamp, "")) || 0;
+    const payload = isRecord(row.payload) ? row.payload : undefined;
 
     if (row.type === "event_msg") {
-      const payload = row.payload as Record<string, unknown> | undefined;
-      const kind = payload?.type as string | undefined;
+      const kind = payload?.type;
 
       // Codex 0.153 replaced the UI-level `user_message` / `agent_message`
       // events with one `item_completed` event whose item is the public
@@ -479,7 +483,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // error in its output), so the exec row and its output are the only
       // record of that failure.
       if (kind === "item_completed") {
-        const item = payload?.item as Record<string, unknown> | undefined;
+        const item = isRecord(payload?.item) ? payload.item : undefined;
         // The row, not `item.id`: item ids are not unique within a rollout
         // (315 repeated Reasoning ids in the September 2026 census), and a
         // repeated id collapses two messages in both clients' merges.
@@ -523,7 +527,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // encrypted, so this is the only place its text exists (measured: 335
       // agent_reasoning events across the real rollouts, all dropped before).
       if (kind === "agent_reasoning" || kind === "agent_reasoning_raw_content") {
-        pushThinking(messages, (payload?.text as string | undefined)?.trim() ?? "", `codex-${index}`, at);
+        pushThinking(messages, stringOr(payload?.text, "").trim(), `codex-${index}`, at);
         continue;
       }
 
@@ -532,7 +536,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // events dropped before). The `_end` event carries the full invocation
       // and result; the `_begin` is redundant and skipped.
       if (kind === "mcp_tool_call_end") {
-        const invocation = (payload!.invocation as Record<string, unknown> | undefined) ?? {};
+        const invocation = isRecord(payload!.invocation) ? payload!.invocation : {};
         messages.push({ id: `codex-${index}`, role: "agent", at, blocks: [mcpToolBlock(invocation, payload!.result)] });
         continue;
       }
@@ -551,7 +555,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
 
       // Conversation text. task_started, task_complete, token_count and
       // anything codex adds later are lifecycle, not conversation.
-      const text = (payload?.message as string | undefined)?.trim();
+      const text = stringOr(payload?.message, "").trim();
       if (!text) continue;
       const role = kind === "user_message" ? "you" : kind === "agent_message" ? "agent" : null;
       if (!role) continue;
@@ -560,7 +564,6 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
     }
 
     if (row.type === "response_item") {
-      const payload = row.payload as Record<string, unknown> | undefined;
       if (!payload || !TOOL_CALL_TYPES.has(payload.type as string)) continue;
 
       const callId = typeof payload.call_id === "string" ? payload.call_id : null;
@@ -667,16 +670,18 @@ async function readIndexedCodexWindow(
         try { row = JSON.parse(line); } catch { continue; }
         index.rows++;
         if (stats) stats.parsedRows++;
-        const payload = row?.payload as Record<string, unknown> | undefined;
-        if (row?.type === "response_item" && payload && TOOL_OUTPUT_TYPES.has(payload.type as string) && typeof payload.call_id === "string") {
-          index.outputs.set(payload.call_id, range);
-        }
-        const message = normaliseCodex([row], range.ordinal)[0];
+        // A row the normaliser cannot read costs that row, never the rollout,
+        // the same rule as the Claude reader's index.
+        let message: LogMessage | undefined;
+        try { message = normaliseCodex([row], range.ordinal)[0]; } catch { continue; }
+        const item = isRecord(row) && row.type === "response_item" && isRecord(row.payload) ? row.payload : undefined;
+        const callId = typeof item?.call_id === "string" ? item.call_id : undefined;
+        if (callId && TOOL_OUTPUT_TYPES.has(item!.type as string)) index.outputs.set(callId, range);
         if (!message) continue;
         const thinking = message.blocks[0]?.kind === "thinking";
         const last = index.messages.at(-1);
         if (thinking && last?.thinking) last.rows.push(range);
-        else index.messages.push({ rows: [range], thinking, callId: row.type === "response_item" && typeof payload?.call_id === "string" ? payload.call_id : undefined });
+        else index.messages.push({ rows: [range], thinking, callId });
       }
       pending = buffer.subarray(start);
     }
