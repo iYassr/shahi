@@ -44,13 +44,69 @@ test("folder failure offers a retry instead of looking like an empty folder", as
   expect(view.queryByText("Try again")).toBeNull();
 });
 
-test("photo permission errors are shown without leaving the picker busy", async () => {
-  (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockRejectedValue(new Error("Photos unavailable"));
+test("a photo picker that fails says why without leaving the sheet busy", async () => {
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockRejectedValue(new Error("Photos unavailable"));
   const view = render(<FilePicker onPick={jest.fn()} onClose={jest.fn()} />);
   fireEvent.press(view.getByText("Photo"));
   await waitFor(() => view.getByText("Photos unavailable"));
   expect(view.queryByText("Uploading…")).toBeNull();
   expect(mockApi.upload).not.toHaveBeenCalled();
+});
+
+// The system photo picker needs no permission. Asking for full library access
+// first put up a prompt nobody needed, and after "Don't Allow" every later tap
+// said "Photo access was declined" and never opened the picker at all
+// (pre-release bug hunt).
+test("a photo is attached without asking for access to the photo library", async () => {
+  (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false, canAskAgain: false });
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file://cache/IMG_1.jpg", fileName: "IMG_1.jpg", mimeType: "image/jpeg", fileSize: 1234 }],
+  });
+  mockApi.upload.mockResolvedValue({ path: "/home/y/.shahi/uploads/IMG_1.jpg", name: "IMG_1.jpg", size: 1234 });
+  const onPick = jest.fn();
+  const view = render(<FilePicker onPick={onPick} onClose={jest.fn()} />);
+  fireEvent.press(view.getByText("Photo"));
+  await waitFor(() => expect(onPick).toHaveBeenCalledWith("/home/y/.shahi/uploads/IMG_1.jpg"));
+  expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+  expect(view.queryByText(/declined/)).toBeNull();
+});
+
+// "Uploading…" and "Cancel upload" showed behind the picker before anything
+// was chosen; Cancel could not stop the picker, and the photo chosen after it
+// then reported "Upload cancelled." (pre-release bug hunt).
+test("choosing a photo does not show an upload in progress", async () => {
+  let choose!: (value: unknown) => void;
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockImplementation(() => new Promise(done => { choose = done; }));
+  let finish!: (value: unknown) => void;
+  mockApi.upload.mockImplementation(() => new Promise(done => { finish = done; }));
+  const onPick = jest.fn();
+  const view = render(<FilePicker onPick={onPick} onClose={jest.fn()} />);
+  fireEvent.press(view.getByText("Photo"));
+  expect(view.queryByText("Uploading…")).toBeNull();
+  expect(view.queryByText("Cancel upload")).toBeNull();
+  // Still one picker, however often the buttons are tapped while it is up.
+  fireEvent.press(view.getByText("Photo"));
+  fireEvent.press(view.getByText("File on phone"));
+  expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledTimes(1);
+  expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+
+  await act(async () => choose({ canceled: false, assets: [{ uri: "file://cache/IMG_2.jpg", fileName: "IMG_2.jpg", mimeType: "image/jpeg" }] }));
+  expect(view.getByText("Uploading…")).toBeTruthy();
+  await act(async () => finish({ path: "/home/y/.shahi/uploads/IMG_2.jpg", name: "IMG_2.jpg", size: 1 }));
+  expect(onPick).toHaveBeenCalledWith("/home/y/.shahi/uploads/IMG_2.jpg");
+  expect(view.queryByText("Upload cancelled.")).toBeNull();
+});
+
+test("a picker closed without a photo leaves the sheet as it was", async () => {
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: true, assets: null });
+  const view = render(<FilePicker onPick={jest.fn()} onClose={jest.fn()} />);
+  fireEvent.press(view.getByText("Photo"));
+  await act(async () => {});
+  expect(view.queryByText("Uploading…")).toBeNull();
+  expect(mockApi.upload).not.toHaveBeenCalled();
+  fireEvent.press(view.getByText("Photo"));
+  expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledTimes(2);
 });
 
 test("closing while choosing a file prevents a later upload", async () => {

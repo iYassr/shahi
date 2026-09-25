@@ -1813,6 +1813,14 @@ export function FilePicker({
     { name: string; path: string; display: string; isDirectory: boolean }[]
   >([]);
   const [parent, setParent] = useState<string | null>(null);
+  /**
+   * A phone file is being chosen or sent: one at a time, so the buttons are
+   * off from the tap until it ends. The ref catches a second tap in the same
+   * frame, before the state has rendered.
+   */
+  const busy = useRef(false);
+  const [choosing, setChoosing] = useState(false);
+  /** Bytes are on their way, which is the only time Cancel can mean anything. */
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const uploadAbort = useRef<AbortController | null>(null);
@@ -1823,6 +1831,8 @@ export function FilePicker({
   const owner = useRef(0);
   useEffect(() => {
     owner.current++;
+    busy.current = false;
+    setChoosing(false);
     setUploading(false);
     setError(null);
     setPath("~");
@@ -1845,22 +1855,24 @@ export function FilePicker({
   }, [api, path, directoryAttempt]);
 
   async function pickFromPhone(source: "photos" | "files") {
-    if (uploading) return;
+    if (busy.current) return;
+    busy.current = true;
     const generation = owner.current;
     const active = () => generation === owner.current;
-    setUploading(true);
-    setUploadProgress(null);
-    const controller = new AbortController(); uploadAbort.current = controller;
+    setChoosing(true);
     setError(null);
+    // Created once a file is in hand, not before the picker: an upload shown
+    // while the picker was still coming up offered a Cancel that could not
+    // stop it, and the photo chosen afterwards reported "Upload cancelled."
+    // (pre-release bug hunt).
+    let controller: AbortController | null = null;
     try {
       let file: { uri: string; name: string; type: string; size?: number };
       if (source === "photos") {
-        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!active()) return;
-        if (!permission.granted) {
-          setError("Photo access was declined. You can allow it in your phone’s Settings.");
-          return;
-        }
+        // No permission request first. The system photo picker runs outside
+        // the app and needs none; asking for library access put up a prompt
+        // nobody needed, and after "Don't Allow" the picker never opened again
+        // (pre-release bug hunt).
         const result = await ImagePicker.launchImageLibraryAsync({
           quality: 1,
           // Request JPEG rather than the HEIC that agent image readers cannot open.
@@ -1875,17 +1887,28 @@ export function FilePicker({
         if (result.canceled || !asset || !active()) return;
         file = { uri: asset.uri, name: asset.name, type: asset.mimeType ?? "application/octet-stream", size: asset.size };
       }
-      const stored = await api.upload(file, { signal: controller.signal, onProgress: (sent, total) => { if (active()) setUploadProgress(total ? Math.floor(sent / total * 100) : 100); } });
+      const upload = new AbortController();
+      controller = upload;
+      uploadAbort.current = upload;
+      setUploadProgress(null);
+      setUploading(true);
+      const stored = await api.upload(file, { signal: upload.signal, onProgress: (sent, total) => { if (active()) setUploadProgress(total ? Math.floor(sent / total * 100) : 100); } });
       // A cancelled upload is never attached, even one that finished as Cancel
       // was tapped: attaching it put a path in the composer the person had
       // just said no to, ready to be sent (pre-release review).
       if (!active()) return;
-      if (controller.signal.aborted) setError("Upload cancelled.");
+      if (upload.signal.aborted) setError("Upload cancelled.");
       else onPick(stored.path);
     } catch (e) {
-      if (active()) setError(controller.signal.aborted ? "Upload cancelled." : e instanceof Error ? e.message : "Couldn't attach this file. Please try again.");
+      if (active()) setError(controller?.signal.aborted ? "Upload cancelled." : e instanceof Error ? e.message : "Couldn't attach this file. Please try again.");
     } finally {
-      if (active()) setUploading(false);
+      // The guard belongs to this sheet: a new computer's sheet starts free
+      // (see the reset above), and a late picker must not free it mid-upload.
+      if (active()) {
+        busy.current = false;
+        setChoosing(false);
+        setUploading(false);
+      }
     }
   }
 
@@ -1899,10 +1922,10 @@ export function FilePicker({
       </View>
 
       <View style={styles.fromPhone}>
-        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void pickFromPhone("photos")}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={choosing} onPress={() => void pickFromPhone("photos")}>
           <Text style={styles.phoneButtonText}>Photo</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={uploading} onPress={() => void pickFromPhone("files")}>
+        <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={choosing} onPress={() => void pickFromPhone("files")}>
           <Text style={styles.phoneButtonText}>File on phone</Text>
         </Pressable>
       </View>
