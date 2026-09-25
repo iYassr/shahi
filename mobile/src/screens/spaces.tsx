@@ -231,6 +231,7 @@ const PaneRow = memo(function PaneRow({
 
 export function NewSpace({ session, onCreated }: { session: Session; onCreated: () => void }) {
   const { api } = useSession();
+  const largeText = useLargeText();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,10 +282,14 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
           itself inside this fit-to-contents sheet, and the chips floated up
           over the title. Existing paths are shortcuts; the editable field is
           what makes the first space on a new box possible at all. */}
+      {/* Cut at the head, where sibling folders are alike, and as wide as the
+          row allows. Cut at the end inside a fixed 200pt, two siblings read
+          as the same "/Users/alex/Documents/projects/s…", and every home path
+          as "/home/x/…" from AX2 (pre-release bug hunt). */}
       <View style={styles.kinds}>
         {suggestions.map((item) => (
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: item === cwd }} key={item} style={[styles.chip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
-            <Text style={[styles.chipText, item === cwd && styles.chipTextOn]} numberOfLines={1}>{item}</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: item === cwd }} key={item} style={[styles.chip, styles.folderChip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
+            <Text style={[styles.chipText, item === cwd && styles.chipTextOn]} numberOfLines={largeText ? 2 : 1} ellipsizeMode="head">{item}</Text>
           </Pressable>
         ))}
       </View>
@@ -558,7 +563,10 @@ const styles = StyleSheet.create({
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 44, justifyContent: "center", marginRight: 8 },
   chipOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
-  chipText: { color: theme.dim, fontSize: 12, maxWidth: 200 },
+  chipText: { color: theme.dim, fontSize: 12 },
+  // As wide as the row and no wider: no margin of its own past the row's gap,
+  // which a full-width chip would push over the edge.
+  folderChip: { maxWidth: "100%", marginRight: 0 },
   chipTextOn: { color: theme.fg },
   err: { color: theme.rose, fontSize: 13 },
   go: { backgroundColor: theme.peach, borderRadius: 10, borderCurve: "continuous", minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 4 },

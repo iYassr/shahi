@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react-native";
 import { Dimensions, StyleSheet } from "react-native";
 import type { DashboardPane, Session, Space } from "@shahi/shared";
-import { PickSpace, SpaceDetail } from "./spaces";
+import { NewSpace, PickSpace, SpaceDetail } from "./spaces";
 
 const space = { workspaceId: "w1", label: "Project", cwd: "~/project", cwdPath: "/work/project", status: "blocked" } as Space;
 const pane: DashboardPane = {
@@ -51,6 +51,37 @@ describe("a space's conversation rows at accessibility text sizes", () => {
     expect(flat(view.getByText("Fix the login redirect loop")).flex).toBe(1);
     act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen }));
     expectTitleKept(view);
+  });
+});
+
+// Sibling folders differ at the end of the path, and the chips cut the end:
+// inside a fixed 200pt, "/Users/alex/Documents/projects/shahi-mobile" and
+// "…/shahi-server" both read "/Users/alex/Documents/projects/s…" at the
+// default size, and "/home/x/…" from AX2 (pre-release bug hunt).
+describe("New space's folder suggestions", () => {
+  const window = Dimensions.get("window");
+  const screen = Dimensions.get("screen");
+  afterEach(() => act(() => Dimensions.set({ window, screen })));
+  const siblings = {
+    workspaces: [
+      { ...space, workspaceId: "w1", cwdPath: "/Users/alex/Documents/projects/shahi-mobile" },
+      { ...space, workspaceId: "w2", cwdPath: "/Users/alex/Documents/projects/shahi-server" },
+    ],
+    tabs: [],
+    panes: [],
+  } as unknown as Session;
+
+  test.each([[1, 1], [3.12, 2]])("keep the end of each path, where siblings differ (font scale %s)", (fontScale, lines) => {
+    act(() => Dimensions.set({ window: { ...window, fontScale }, screen }));
+    const view = render(<NewSpace session={siblings} onCreated={jest.fn()} />);
+    for (const path of ["/Users/alex/Documents/projects/shahi-mobile", "/Users/alex/Documents/projects/shahi-server"]) {
+      const text = view.getByText(path);
+      expect(text.props.ellipsizeMode).toBe("head");
+      expect(text.props.numberOfLines).toBe(lines);
+      // Bounded by the row, not by a fixed width that the text outgrows.
+      expect(flat(text).maxWidth).toBeUndefined();
+      expect(flat(view.getByRole("button", { name: path })).maxWidth).toBe("100%");
+    }
   });
 });
 
