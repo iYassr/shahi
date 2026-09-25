@@ -813,7 +813,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // added a ghost to the list in Settings.
           const deviceId = identify(req)?.deviceId;
           const token = readCookie(req.headers.get("cookie"), SESSION_COOKIE);
-          push.unsubscribeOwner(pushOwner(req));
+          // Named before anything is revoked: afterwards the cookie no longer
+          // says whose it was.
+          const owner = pushOwner(req);
+          push.unsubscribeOwner(owner);
           if (auth.revoke(token)) {
             for (const ws of clients) if (ws.data.token === token) ws.close(4001, "signed out");
           }
@@ -821,6 +824,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             devices.revoke(deviceId);
             for (const ws of clients) if (ws.data.deviceId === deviceId) ws.close(4001, "signed out");
           }
+          // Nobody can come back for an unfinished upload after this; see `discardOwner`.
+          await transfers.run(() => transfers.discardOwner(owner)).catch(() => {});
           return json({ ok: true }, { headers: { "set-cookie": Auth.clearCookie(arrival.secure) } });
         }
 
@@ -911,6 +916,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           for (const ws of clients) {
             if (ws.data.deviceId === id) ws.close(4001, "device revoked");
           }
+          // A revoked phone can neither finish nor cancel what it was uploading.
+          await transfers.run(() => transfers.discardOwner(id)).catch(() => {});
           return json({ ok: true });
         }
 

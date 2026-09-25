@@ -158,3 +158,22 @@ test("another phone's stranded upload gives up its place on a full computer once
   await expect(store.status("second-phone-transfer", "second")).rejects.toMatchObject({ status: 404 });
   expect((await store.status("first-phone-transfer", "first")).offset).toBe(1);
 });
+
+// A revoked or signed-out owner's unfinished uploads go at once; what it
+// finished may already be in a conversation, and other owners are untouched.
+test("discarding a revoked owner's uploads keeps its finished files and everyone else's", async () => {
+  const { store, dir } = await setup();
+  await store.begin("finished-transfer-01", owner, { name: "done", type: "", size: 0 });
+  const done = await store.finish("finished-transfer-01", owner, digest(new Uint8Array()));
+  await store.begin("unfinished-transfer1", owner, { name: "partial", type: "", size: 10 });
+  await store.begin("someone-elses-upload", "other", { name: "theirs", type: "", size: 10 });
+  await store.run(() => store.discardOwner(owner));
+  await expect(store.status("unfinished-transfer1", owner)).rejects.toMatchObject({ status: 404 });
+  expect((await readdir(join(dir, ".transfers"))).filter(x => x.startsWith("unfinished-"))).toEqual([]);
+  expect((await store.status("finished-transfer-01", owner)).result).toEqual(done.result);
+  expect((await store.status("someone-elses-upload", "other")).offset).toBe(0);
+  // A computer that never received an upload has nothing to discard, and no directory is made.
+  const fresh = new UploadTransfers(join(dir, "never-used"));
+  await fresh.discardOwner(owner);
+  expect(await readdir(dir)).not.toContain("never-used");
+});

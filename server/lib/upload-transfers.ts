@@ -171,6 +171,27 @@ export class UploadTransfers {
     if (unfinished(t)) await this.discard(id);
     return { ok: true };
   }
+  /**
+   * Discards every unfinished transfer an owner left behind, for when that
+   * owner can never come back for them: a revoked device, a session that
+   * signed out. Only its owner (by cancelling, or by beginning another) or
+   * the 10-minute idle sweep reclaimed one, so two phones revoked mid-upload
+   * held both of the computer's upload slots, and every other device was told
+   * "Another file is uploading" until the sweep (September 2026 pre-release
+   * bug hunt). Finished and finalizing transfers are left, as `cancel` leaves
+   * them: their files may already be in a conversation.
+   */
+  async discardOwner(owner: string) {
+    let entries: string[];
+    // Nothing was ever uploaded here: nothing to discard, and no directory to make.
+    try { entries = await readdir(this.root); } catch { return; }
+    for (const entry of entries.filter(x => x.endsWith(".json"))) {
+      const id = entry.slice(0, -5);
+      let t: Transfer;
+      try { t = JSON.parse(await readFile(this.path(id), "utf8")); } catch { continue; }
+      if (t.owner === owner && unfinished(t)) await this.discard(id);
+    }
+  }
   /** Removes a transfer's partial bytes and its journal; a finished file is not touched. */
   private async discard(id: string) {
     await unlink(this.path(id, ".part")).catch(() => {});

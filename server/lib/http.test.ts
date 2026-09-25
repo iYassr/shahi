@@ -992,6 +992,45 @@ test("chunk upload routes enforce authentication, body bounds and session owners
   } finally { app.stop(); }
 });
 
+// September 2026 pre-release bug hunt: only a transfer's owner or the
+// 10-minute idle sweep reclaimed an unfinished upload, and a revoked phone or
+// a dead cookie can do neither, so two such phones held both upload slots and
+// every other device was told "Another file is uploading" for ten minutes.
+test("phones revoked or signed out mid-upload leave the upload slots to everyone else", async () => {
+  const app = await boot();
+  try {
+    const post = (path: string, body: unknown, cookie = app.cookie) => fetch(`${app.base}${path}`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const pair = async (name: string) => {
+      const { secret } = await (await post("/api/pair", {})).json() as { secret: string };
+      const claimed = await post("/api/pair/claim", { secret, deviceName: name });
+      return { ...(await claimed.json() as { deviceId: string }), cookie: claimed.headers.get("set-cookie")!.split(";")[0]! };
+    };
+    const transfer = (id: string) => `${app.base}/api/uploads/transfers/${id}`;
+    const begin = (cookie: string, id: string) => fetch(transfer(id), {
+      method: "PUT", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "photo.jpg", type: "image/jpeg", size: 1024 * 1024 }),
+    }).then((r) => r.status);
+    const revoked = await pair("Revoked mid-upload");
+    const signedOut = await pair("Signed out mid-upload");
+    expect(await begin(revoked.cookie, "revoked-mid-upload-01")).toBe(200);
+    expect((await fetch(`${transfer("revoked-mid-upload-01")}/chunk`, {
+      method: "PUT", headers: { cookie: revoked.cookie, "x-upload-offset": "0" }, body: new Uint8Array(4096),
+    })).status).toBe(200);
+    expect(await begin(signedOut.cookie, "signed-out-mid-upload")).toBe(200);
+    // Two unfinished transfers fill the computer.
+    expect(await begin(app.cookie, "passcode-upload-0001")).toBe(429);
+
+    expect((await fetch(`${app.base}/api/devices/${revoked.deviceId}`, { method: "DELETE", headers: { cookie: app.cookie } })).status).toBe(200);
+    expect((await post("/api/auth/logout", {}, signedOut.cookie)).status).toBe(200);
+
+    expect(await begin(app.cookie, "passcode-upload-0001")).toBe(200);
+    const left = readdirSync(join(app.uploadDir, ".transfers"));
+    expect(left.filter((name) => name.startsWith("revoked-") || name.startsWith("signed-out-"))).toEqual([]);
+  } finally { app.stop(); }
+});
+
 // Text then Enter at a menu picks the lit row for the person: measured on
 // Claude Code's Bash permission menu, "no" + Enter ran the command. The route
 // refuses with a code and a message any client can show as it stands.
