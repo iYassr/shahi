@@ -32,8 +32,12 @@ function ProseLink({ label, target }: { label: string; target: string }) {
   if ((destination.startsWith("/") && !destination.startsWith("//")) || destination.startsWith("~/")) {
     let path = destination.replace(/#L\d+(?:-L?\d+)?$/, "");
     try { path = decodeURIComponent(path); } catch { /* Literal percent in a filename. */ }
+    // Named after the file, not the link's words: the name titles the viewer
+    // and is what a saved or shared copy is called, and "the report" with no
+    // extension could not be typed by the share sheet or Files (pre-release
+    // bug hunt; the web client's f8de7f7).
     if (openFile) return <Text accessibilityRole="link" accessibilityHint="Open file on your computer" style={styles.link}
-      onPress={() => openFile({ path, name: label })}>{label}</Text>;
+      onPress={() => openFile({ path, name: path.split("/").pop() || label })}>{label}</Text>;
   }
   return <Text>{label} (link unavailable)</Text>;
 }

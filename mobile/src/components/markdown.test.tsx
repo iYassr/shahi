@@ -105,14 +105,18 @@ describe("inline spans", () => {
   });
 });
 
-test("computer file links use the authenticated viewer action, not a phone URL", () => {
+// The name is the file's, not the link's words: it titles the viewer and is
+// the name a saved or shared copy gets. Named "the report", the share sheet
+// offered a file with no extension that neither it nor Files could type
+// (pre-release bug hunt; the web client was fixed in f8de7f7).
+test("computer file links use the authenticated viewer action, not a phone URL, under the file's own name", () => {
   const open = jest.fn();
   const external = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
   const view = render(<Markdown text="[Report](</home/user/My Report.pdf>) and [Notes](~/notes.md#L12)" onOpenFile={open} />);
   fireEvent.press(view.getByText("Report"));
-  expect(open).toHaveBeenLastCalledWith({ path: "/home/user/My Report.pdf", name: "Report" });
+  expect(open).toHaveBeenLastCalledWith({ path: "/home/user/My Report.pdf", name: "My Report.pdf" });
   fireEvent.press(view.getByText("Notes"));
-  expect(open).toHaveBeenLastCalledWith({ path: "~/notes.md", name: "Notes" });
+  expect(open).toHaveBeenLastCalledWith({ path: "~/notes.md", name: "notes.md" });
   expect(external).not.toHaveBeenCalled();
   expect(view.queryByText(/\[Report\]/)).toBeNull();
   external.mockRestore();
