@@ -9,7 +9,7 @@
  * and the OS keeps the sidecar alive through herdr restarts, crashes and
  * reboots, which is the whole point of a phone dashboard.
  */
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { herdrCli } from "../server/lib/herdr-session";
@@ -181,8 +181,11 @@ function write(path: string, body: string): void {
  * `exec` is injectable so that order is tested without touching a real
  * service.
  */
+const launchdPath = (home: string) => join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
+const systemdPath = (home: string) => join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
+
 export function launchd(home: string, uid: number, exec: Run = run): Service {
-  const path = join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
+  const path = launchdPath(home);
   const target = `gui/${uid}/${LAUNCHD_LABEL}`;
   const bootout = () => {
     exec(["launchctl", "bootout", target]);
@@ -240,8 +243,8 @@ export function systemd(
   home: string,
   { uid = process.getuid?.() ?? 0, user = userInfo().username, exec = run }: { uid?: number; user?: string; exec?: Run } = {},
 ): Service {
-  const path = join(home, ".config", "systemd", "user", SYSTEMD_UNIT);
-  const systemctl = (argv: string[]) => {
+  const path = systemdPath(home);
+  const systemctl =(argv: string[]) => {
     const { ok, out } = exec(["systemctl", "--user", ...argv]);
     if (!ok) throw new Error(userBusHelp(out, user, uid) ?? `systemctl --user ${argv.join(" ")} failed:\n${out.trim()}`);
   };
@@ -316,6 +319,43 @@ export function unsupervised(): Service {
     status: () => ({ installed: false, running: false, pid: null }),
     remove() {},
   };
+}
+
+const unxml = (value: string) =>
+  value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+
+/** The EnvironmentVariables a plist rendered by `renderLaunchd` carries. */
+export function launchdEnvironment(plist: string): Record<string, string> {
+  const dict = /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/.exec(plist)?.[1] ?? "";
+  return Object.fromEntries([...dict.matchAll(/<key>([^<]*)<\/key>\s*<string>([^<]*)<\/string>/g)].map(([, k, v]) => [unxml(k!), unxml(v!)]));
+}
+
+/** The Environment= lines a unit rendered by `renderSystemd` carries. */
+export function systemdEnvironment(unit: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [, raw] of unit.matchAll(/^Environment=(.*)$/gm)) {
+    const pair = /^"(.*)"$/.test(raw!) ? raw!.slice(1, -1).replace(/\\(["\\])/g, "$1") : raw!;
+    const eq = pair.indexOf("=");
+    if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return env;
+}
+
+/**
+ * The environment the installed service was last rendered with — above all
+ * its HERDR_SOCKET_PATH, the herdr it follows — read back from its plist or
+ * unit; null when none is installed. For whoever has to reach that herdr
+ * without being run by it: `herdr plugin install` strips HERDR_SOCKET_PATH
+ * and HERDR_BIN_PATH from build commands (herdr 0.9.1), so plugin/update.ts
+ * has no other way to know which session to restart Shahi through. Every
+ * plugin version has rendered both files the same way, pre-managed 0.2.0
+ * units included.
+ */
+export function installedEnvironment(platform: NodeJS.Platform, home: string): Record<string, string> | null {
+  const path = platform === "darwin" ? launchdPath(home) : platform === "linux" ? systemdPath(home) : null;
+  if (!path || !existsSync(path)) return null;
+  const text = readFileSync(path, "utf8");
+  return platform === "darwin" ? launchdEnvironment(text) : systemdEnvironment(text);
 }
 
 export function serviceFor(

@@ -321,6 +321,13 @@ Your `.env`, server identity, paired devices and database stay in place. The
 private `update.log` in `herdr plugin config-dir shahi` reports actual readiness;
 `shahi.logs` includes it. A failed download leaves the working service alone.
 
+herdr gives build steps neither its socket nor its own path, so the restart
+after a reinstall goes through the herdr the installed service follows, read
+from its unit or plist — a named session's too — and looks for `herdr` on PATH,
+in the service, and in `~/.local/bin`. When that herdr is not running, or no
+herdr can be found, the install still succeeds and `update.log` says so, with
+the time and the command that restarts Shahi; herdr's next start does it anyway.
+
 The current mobile and web clients require relay protocol 2. Update Shahi on
 each paired computer when installing this release; updating herdr alone does
 not update its Shahi plugin. A server still using relay protocol 1 can appear
