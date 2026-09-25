@@ -644,7 +644,11 @@ Stated plainly, because a vague gaps list is worse than none.
   so an unchanged transcript costs one `stat` per round and never touches the
   readers' 64-entry index LRUs; a session with more than 64 agent panes used to
   re-parse transcripts every 3s. The LRUs still bound the readers' own
-  indexes.
+  indexes. Finding the transcript is cached too: the dashboard reuses a pane's
+  lookup for the same agent, session and status for up to 15s, because a Codex
+  or Cursor pane without a reported session costs a herdr call and an lsof
+  each time, and builds follow every store change. The reader's route and the
+  transcript watcher always look afresh.
 - **The relay has no CI of its own beyond `bun test relay` under
   `wrangler dev`.** The box↔relay↔phone loop was proven by hand against the
   deployed Worker (a fake phone in `bun`, then the app on a simulator paired

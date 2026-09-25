@@ -18,13 +18,44 @@ import { agentSessionOf } from "./herdr-pane";
 type Summary = { preview: string | null; lastMessageAt: number | null };
 type Window = { limit?: number; before?: number };
 
+/**
+ * Where the dashboard last found each pane's transcript, and what that
+ * answer depends on.
+ *
+ * Finding a Codex or Cursor transcript without a reported session asks the
+ * pane's process which file it has open: a herdr call and an lsof per process.
+ * The dashboard did that for every such pane on every build, before its
+ * summary cache was consulted, and builds follow every store change as well as
+ * the 3s refresh. The pre-release bug hunt measured twenty such panes at twenty
+ * lsof runs every 3s, and 680 in 15s while one pane retitled itself twice a
+ * second, up to 132 at once. So the dashboard reuses an answer for the same
+ * agent, session and status for up to 15s, sharing one lookup between builds
+ * that overlap. A status change is when a first transcript appears and when a
+ * process moves on, so it looks again then; the reader and the transcript
+ * watcher always look afresh for the pane someone has open, and the dashboard
+ * reuses what they found.
+ */
+const locations = new Map<string, { key: string; at: number; path: Promise<string | null> }>();
+const LOCATION_MAX_AGE_MS = 15_000;
+
+const locationKey = (pane: PaneInfo) => JSON.stringify([pane.agent ?? null, agentSessionOf(pane), pane.agent_status]);
+
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
 export function transcriptPathFor(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
   // Never a session herdr kept after its agent left the pane (see herdr-pane.ts).
   const id = agentSessionOf(pane);
-  return pane.agent === "cursor" ? (client ? cursorTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
+  const path = pane.agent === "cursor" ? (client ? cursorTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
     : pane.agent === "codex" ? (client ? findCodexRollout(client, pane.pane_id, pane.cwd ?? null, id) : Promise.resolve(null))
     : id ? findTranscript(id) : Promise.resolve(null);
+  locations.set(pane.pane_id, { key: locationKey(pane), at: Date.now(), path: path.catch(() => null) });
+  return path;
+}
+
+/** The dashboard's lookup: see `locations`. */
+function locate(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
+  const held = locations.get(pane.pane_id);
+  if (held && held.key === locationKey(pane) && Date.now() - held.at < LOCATION_MAX_AGE_MS) return held.path;
+  return transcriptPathFor(pane, client);
 }
 
 /** Reads a window of the transcript at `path` the way its agent writes it. */
@@ -64,7 +95,7 @@ const summaries = new Map<string, { path: string; version: string; summary: Summ
 /** Reuses indexed transcript tails, never terminal repaint times or another session. */
 export async function conversationSummary(pane: PaneInfo, client?: HerdrClient): Promise<Summary> {
   try {
-    const path = await transcriptPathFor(pane, client);
+    const path = await locate(pane, client);
     return path ? await transcriptSummary(pane.pane_id, path, pane.agent) : summaryOf(null);
   } catch { return summaryOf(null); }
 }
@@ -129,10 +160,10 @@ export async function transcriptPage(paneId: string, path: string, kind: string 
   return page;
 }
 
-/** Forgets the summaries and pages of panes that no longer exist. */
+/** Forgets the summaries, pages and transcript locations of panes that no longer exist. */
 export function retainSummaries(paneIds: Iterable<string>): void {
   const live = new Set(paneIds);
-  for (const cache of [summaries, pages]) {
+  for (const cache of [summaries, pages, locations]) {
     for (const paneId of cache.keys()) if (!live.has(paneId)) cache.delete(paneId);
   }
 }

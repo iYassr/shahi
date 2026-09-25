@@ -1,9 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { appendFile, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { HerdrClient } from "./herdr-client";
+import type { PaneInfo } from "./herdr-schema";
 import { readWindow } from "./session-log";
-import { retainSummaries, summaryOf, transcriptPage, transcriptSummary } from "./conversation-summary";
+import { conversationSummary, retainSummaries, summaryOf, transcriptPage, transcriptPathFor, transcriptSummary } from "./conversation-summary";
 test("message time survives rereads and changes when a new chat message is appended", async () => {
   const dir = await mkdtemp(join(tmpdir(), "shahi-chat-order-"));
   const path = join(dir, "messages.jsonl");
@@ -122,4 +124,46 @@ test("an unchanged transcript's page is answered without reading it again", asyn
     // A transcript that is not there is no page, not an error.
     expect(await transcriptPage("w1:p1", join(dir, "gone.jsonl"), "claude", { limit: 60 })).toBeNull();
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// Each dashboard build asked every Codex and Cursor pane's process which
+// transcript it had open, a herdr call and an lsof per pane, before the summary
+// cache was consulted. Twenty such panes cost twenty lsof runs every 3s, and one
+// pane retitling itself twice a second drove 680 in 15s (pre-release bug hunt).
+test("dashboard builds do not ask a Codex or Cursor pane's process for its transcript every time", async () => {
+  for (const agent of ["codex", "cursor"]) {
+    let asked = 0;
+    const client = {
+      rpc: async (method: string) => {
+        if (method === "pane.process_info") asked++;
+        return { process_info: { foreground_processes: [] } };
+      },
+    } as unknown as HerdrClient;
+    const pane = {
+      pane_id: `w9:${agent}`, workspace_id: "w9", tab_id: "t9", terminal_id: "x", revision: 0, focused: false,
+      agent, agent_status: "idle", agent_session: null, cwd: "/tmp", terminal_title: "one",
+    } as PaneInfo;
+    try {
+      await conversationSummary(pane, client);
+      await conversationSummary({ ...pane, terminal_title: "retitled" }, client);
+      expect(asked).toBe(1);
+      // A turn starting is when a first transcript appears or a process moves on.
+      await conversationSummary({ ...pane, agent_status: "working" }, client);
+      expect(asked).toBe(2);
+      // The reader and the transcript watcher look afresh, and the dashboard
+      // reuses what they found.
+      await transcriptPathFor(pane, client);
+      expect(asked).toBe(3);
+      await conversationSummary(pane, client);
+      expect(asked).toBe(3);
+      // Nothing is trusted for long.
+      setSystemTime(new Date(Date.now() + 16_000));
+      await conversationSummary(pane, client);
+      expect(asked).toBe(4);
+      // And nothing is kept for a pane that closed.
+      retainSummaries([]);
+      await conversationSummary(pane, client);
+      expect(asked).toBe(5);
+    } finally { setSystemTime(); }
+  }
 });
