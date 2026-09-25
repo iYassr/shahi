@@ -8,7 +8,7 @@
  * methods these routes reach.
  */
 import { SHAHI_API_VERSION } from "@shahi/shared";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
@@ -48,6 +48,9 @@ let unmirroredAgent: string | null = null;
 /** Set to make the agent the fake herdr launches exit before it is ready. */
 let agentExitsWhileStarting = false;
 
+/** Set before a boot() to change who occupies the fake pane (agent, session, terminal). */
+let occupant: Record<string, unknown> = {};
+
 /** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
 let herdrDown: unknown = null;
 const WRITES = new Set(["pane.send_text", "pane.send_keys", "agent.prompt", "tab.create", "agent.start"]);
@@ -73,6 +76,7 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     cwd: "/tmp",
     focused: true,
     agent_session: null,
+    ...occupant,
   };
   const snapshot = {
     version: "0.8.2",
@@ -1229,5 +1233,53 @@ describe("answering from a card drawn from another question", () => {
     expect((await post({ index: 1, label: "Yes", question: "Do you want to proceed?", context: "touch" })).status).toBe(400);
     expect((await post({ index: 1, label: "Yes", question: "Do you want to proceed?", context: [1] })).status).toBe(400);
     expect(pressed(before)).toEqual([]);
+  });
+});
+
+// herdr keeps a pane's agent_session after its agent is gone: restarted with
+// resume off, or with the agent missing from its PATH, the pane comes back as
+// a shell still naming the old conversation. The reader showed that dead
+// conversation with "Reply to this agent…", and the reply ran in the shell
+// (pre-release bug hunt). The transcript lookup is faked for that one session
+// id only, so the finding is real and every other test reads as before.
+describe("a pane herdr restored as a shell, still naming its dead agent's session", () => {
+  const dead = "0f4d6c1e-7a52-4c1b-9d3e-5b8a2f6c9e10";
+  const dir = mkdtempSync(join(tmpdir(), "shahi-dead-agent-"));
+  const path = join(dir, `${dead}.jsonl`);
+  writeFileSync(path, JSON.stringify({ type: "assistant", uuid: "a1", timestamp: "2026-09-20T02:00:00Z", message: { role: "assistant", content: [{ type: "text", text: "Shall I roll back prod?" }] } }) + "\n");
+  let app: Booted;
+  const get = (route: string) => fetch(`${app.base}${route}`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+
+  beforeAll(async () => {
+    const real = { ...(await import("./session-log")) };
+    mock.module("./session-log", () => ({
+      ...real,
+      findTranscript: async (id: string) => (id === dead ? path : real.findTranscript(id)),
+      readSessionLog: async (id: string, options?: { limit?: number; before?: number }) =>
+        id === dead ? { ...(await real.readWindow(path, options))!, sessionId: id } : real.readSessionLog(id, options),
+    }));
+    occupant = { agent: null, agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: dead } };
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    occupant = {};
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("serves no transcript and no preview of the conversation that ended", async () => {
+    expect((await get(`/api/panes/${encodeURIComponent(PANE)}/session`)).status).toBe(404);
+    const session = (await (await get("/api/session")).json()) as { panes: { paneId: string; preview: string | null; isAgent: boolean }[] };
+    expect(session.panes.find((p) => p.paneId === PANE)).toMatchObject({ isAgent: false, preview: null });
+  });
+
+  test("while the same session is read for as long as its agent runs", async () => {
+    occupant = { agent: "claude", agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: dead } };
+    const live = await boot();
+    try {
+      const res = await fetch(`${live.base}/api/panes/${encodeURIComponent(PANE)}/session`, { headers: { cookie: live.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(await res.json())).toContain("Shall I roll back prod?");
+    } finally { live.stop(); }
   });
 });

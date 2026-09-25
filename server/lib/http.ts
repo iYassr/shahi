@@ -33,6 +33,7 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
+import { agentSessionOf } from "./herdr-pane";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, submitPrompt } from "./prompt";
@@ -1307,7 +1308,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // and tool calls already paired with their results.
           // An image out of the transcript, served rather than inlined.
           if (sub === "/image") {
-            const sessionId = store.pane(paneId)?.agent_session?.value;
+            const sessionId = agentSessionOf(store.pane(paneId));
             const ref = url.searchParams.get("ref");
             if (!sessionId || !ref) return json({ error: "not found" }, { status: 404 });
             const image = await readSessionImage(sessionId, ref);
@@ -1330,17 +1331,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
             // Each agent keeps its transcript its own way, so the reader dispatches
             // on kind rather than assuming one format.
+            const sessionId = agentSessionOf(pane);
             const log =
               pane?.agent === "cursor"
-                ? await (async () => { const path = await cursorTranscriptFor(client, paneId, pane.agent_session?.value); return path ? readCursorLog(path, { limit, before }) : null; })()
+                ? await (async () => { const path = await cursorTranscriptFor(client, paneId, sessionId); return path ? readCursorLog(path, { limit, before }) : null; })()
                 : pane?.agent === "codex"
-                ? await readCodexLog(client, paneId, pane.cwd ?? null, {
-                    limit,
-                    before,
-                    sessionId: pane.agent_session?.value ?? null,
-                  })
-                : pane?.agent_session?.value
-                  ? await readSessionLog(pane.agent_session.value, { limit, before })
+                ? await readCodexLog(client, paneId, pane.cwd ?? null, { limit, before, sessionId })
+                : sessionId
+                  ? await readSessionLog(sessionId, { limit, before })
                   : null;
 
             if (!log) {
@@ -1481,11 +1479,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   async function transcriptPathFor(paneId: string): Promise<string | null> {
     const pane = store.pane(paneId);
     if (!pane) return null;
-    if (pane.agent === "cursor") return cursorTranscriptFor(client, paneId, pane.agent_session?.value);
-    if (pane.agent === "codex") {
-      return findCodexRollout(client, paneId, pane.cwd ?? null, pane.agent_session?.value ?? null);
-    }
-    const sessionId = pane.agent_session?.value;
+    const sessionId = agentSessionOf(pane);
+    if (pane.agent === "cursor") return cursorTranscriptFor(client, paneId, sessionId);
+    if (pane.agent === "codex") return findCodexRollout(client, paneId, pane.cwd ?? null, sessionId);
     return sessionId ? findTranscript(sessionId) : null;
   }
 

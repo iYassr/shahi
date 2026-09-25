@@ -4,6 +4,7 @@ import type { PaneInfo } from "./herdr-schema";
 import { findCodexRollout, readCodexWindow } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
+import { agentSessionOf } from "./herdr-pane";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
 
@@ -26,7 +27,8 @@ const summaries = new Map<string, { path: string; version: string; summary: Summ
 export async function conversationSummary(pane: PaneInfo, client?: HerdrClient): Promise<Summary> {
   try {
     const kind = pane.agent;
-    const id = pane.agent_session?.value;
+    // Never a session herdr kept after its agent left the pane (see herdr-pane.ts).
+    const id = agentSessionOf(pane);
     const path = kind === "cursor" ? client ? await cursorTranscriptFor(client, pane.pane_id, id) : null
       : kind === "codex" ? client ? await findCodexRollout(client, pane.pane_id, pane.cwd ?? null, id) : null
       : id ? await findTranscript(id) : null;

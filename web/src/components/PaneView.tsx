@@ -317,7 +317,12 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     );
   }
 
-  const placeholder = tab === "screen" ? "Send text to terminal…" : "Reply to this agent…";
+  // Chosen by what runs in the pane, as the native app does, not by the tab
+  // alone: herdr can bring an agent's pane back as a plain shell, and "Reply to
+  // this agent…" over it had a reply typed into the shell as a command
+  // (pre-release bug hunt).
+  const shell = known ? !known.isAgent : detail ? !detail.agent : false;
+  const placeholder = tab === "screen" ? "Send text to terminal…" : shell ? "Run a command…" : "Reply to this agent…";
 
   return (
     <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"} data-update-blocked={Boolean(draft || attachments.length || sending || attaching)}>

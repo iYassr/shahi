@@ -161,3 +161,15 @@ test("a newly reported pane recovers from an early 404 without polling missing p
   await act(async () => view!.update(tree(true, "Renamed agent")));
   expect(pane).toHaveBeenCalledTimes(2);
 });
+
+// herdr can restore an agent's pane as a plain shell. The composer said "Reply
+// to this agent…" over it, and the reply ran as a shell command (pre-release
+// bug hunt); the native app already said "Run a command…".
+test("a pane that is now a shell asks for a command, not a reply to an agent", async () => {
+  const scoped = { ...api, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  const tree = (isAgent: boolean) => <ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={{ panes: [{ paneId: "w1:p1", title: "zsh", isAgent, agent: null, status: "unknown" }] } as any} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>;
+  await act(async () => { view = create(tree(false)); });
+  expect(view!.root.findByType("textarea").props.placeholder).toBe("Run a command…");
+  await act(async () => view!.update(tree(true)));
+  expect(view!.root.findByType("textarea").props.placeholder).toBe("Reply to this agent…");
+});
