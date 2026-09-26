@@ -393,9 +393,16 @@ transiently; the dataset does not).
 value (a close code, a phone count, or 1), `double2` uploaded bytes,
 `double3` downloaded bytes, `double4` uploaded frames, `double5` downloaded
 frames, `double6` duration in milliseconds, `index1` kind. The additional kinds
-are `traffic`, `box_presence`, `auth_failed` and `internal_error`. `detail` is
-one of a fixed list of close and refusal reasons (anything else is recorded
-empty); `too many pending boxes` joined it with the pending-box limit. Traffic is
+are `traffic`, `box_presence`, `auth_failed` and `internal_error`. Every box
+connection is recorded once when it ends: `box_gone` if it had authenticated,
+`auth_failed` if it never did, with the reason (`unauthorized`, `auth timeout`,
+`gone`, `control too large`, `too many pending boxes` and so on), the close
+code and how long it had been open. Only `unauthorized` was recorded before the
+pre-release bug hunt (B107), so a box that timed out was invisible; a pending
+box closed to make room for a newcomer was recorded as `refused` and now counts
+here, while a newcomer turned away for want of room is still `refused`.
+`detail` is one of a fixed list of close and refusal reasons (anything else is
+recorded empty); `too many pending boxes` joined it with the pending-box limit. Traffic is
 aggregated on socket attachments and flushed on alarms/close, not per frame.
 Authenticated synthetic probes are tagged and excluded from fleet summaries.
 Presence includes already-connected boxes, rather than counting recent

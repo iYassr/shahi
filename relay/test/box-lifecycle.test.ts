@@ -20,7 +20,7 @@ class Socket {
   send(value: unknown) { this.sent.push(value); }
   close(code: number, reason = "") { this.readyState = 2; this.closes.push(code); this.reason = reason; }
 }
-function fixture() {
+function fixture(env: object = {}) {
   const sockets: Socket[] = [];
   let alarm: number | null = null;
   const ctx = {
@@ -32,7 +32,7 @@ function fixture() {
   const global = globalThis as any, original = global.WebSocketRequestResponsePair;
   global.WebSocketRequestResponsePair = class {};
   let relay: any;
-  try { relay = new RelayBox(ctx, {}); } finally { global.WebSocketRequestResponsePair = original; }
+  try { relay = new RelayBox(ctx, env); } finally { global.WebSocketRequestResponsePair = original; }
   const identity = newBox();
   function box(ready = true, since = Date.now()) {
     const ws = new Socket({ role: "box", serverId: identity.serverId, nonce: "test-challenge", ready, since, heard: since, nextLink: 1 }, ["box"]);
@@ -399,4 +399,71 @@ test("a text frame over 4 KiB of UTF-8 is too large even when it is under 4,096 
   await f.relay.webSocketMessage(box, over);
   expect(box.closes).toEqual([4429]);
   expect(box.reason).toBe("control too large");
+});
+
+/** An Analytics Engine binding that keeps what it is given, and the kind/detail/value of each point. */
+function telemetry() {
+  const points: { blobs: string[]; doubles: number[] }[] = [];
+  const env = { TELEMETRY: { writeDataPoint: (point: { blobs: string[]; doubles: number[] }) => points.push(point) } };
+  const of = (kind: string) => points.filter((p) => p.blobs[0] === kind).map((p) => ({ detail: p.blobs[2], value: p.doubles[0] }));
+  return { env, of };
+}
+
+test("a box that never answers its challenge is recorded as an authentication failure", async () => {
+  // closeBox recorded only boxes that had become ready, and none of the three
+  // timeout paths recorded anything, so "auth timeout" was on the allowlist
+  // and never written (pre-release bug hunt, B107).
+  const t = telemetry(), f = fixture(t.env);
+  const ws = await f.connect();
+  ws.state.since = Date.now() - RELAY_LIMITS.boxAuthTimeoutMs - 1;
+  await f.relay.alarm();
+  expect(ws.closes).toEqual([4401]);
+  expect(ws.reason).toBe("auth timeout");
+  expect(t.of("auth_failed")).toEqual([{ detail: "auth timeout", value: 4401 }]);
+  expect(t.of("box_gone")).toEqual([]);
+});
+
+test("an auth that arrives after the deadline is recorded as a timeout, once", async () => {
+  const t = telemetry(), f = fixture(t.env);
+  const ws = await f.connect();
+  ws.state.since = Date.now() - RELAY_LIMITS.boxAuthTimeoutMs - 1;
+  await f.relay.webSocketMessage(ws, JSON.stringify(signAuth(f.identity, ws.state.nonce)));
+  await f.relay.alarm();
+  expect(ws.closes).toEqual([4401]);
+  expect(t.of("auth_failed")).toEqual([{ detail: "auth timeout", value: 4401 }]);
+});
+
+test("every box connection that ends before it authenticates is recorded once, with why", async () => {
+  // A wrong key was already recorded; one that left, or sent an oversized
+  // control, before proving itself was not (pre-release bug hunt, B107).
+  const t = telemetry(), f = fixture(t.env);
+  const wrong = await f.connect();
+  await f.relay.webSocketMessage(wrong, JSON.stringify(signAuth(newBox(), wrong.state.nonce, f.identity.serverId)));
+  const left = await f.connect();
+  await f.relay.webSocketClose(left);
+  const oversized = await f.connect();
+  await f.relay.webSocketMessage(oversized, "x".repeat(RELAY_LIMITS.maxControlBytes + 1));
+  expect(t.of("auth_failed")).toEqual([
+    { detail: "unauthorized", value: 4401 },
+    { detail: "gone", value: 1000 },
+    { detail: "control too large", value: 4429 },
+  ]);
+  // A box that did authenticate is still recorded as gone, not as a failure.
+  const live = await f.authenticated();
+  await f.relay.webSocketClose(live);
+  expect(t.of("auth_failed")).toHaveLength(3);
+  expect(t.of("box_gone")).toEqual([{ detail: "gone", value: 1000 }]);
+});
+
+test("a pending box closed to make room is recorded once, and a newcomer refused for want of room as a refusal", async () => {
+  const t = telemetry(), f = fixture(t.env), past = Date.now() - EVICTION_GRACE_MS - 5_000;
+  for (let i = 0; i < MAX_PENDING_BOXES; i++) f.box(false, past + i);
+  await f.connect();
+  expect(t.of("auth_failed")).toEqual([{ detail: "too many pending boxes", value: 4429 }]);
+  expect(t.of("refused")).toEqual([]);
+  const young = fixture(t.env);
+  for (let i = 0; i < MAX_PENDING_BOXES; i++) young.box(false);
+  await young.connect();
+  expect(t.of("refused")).toEqual([{ detail: "too many pending boxes", value: 4429 }]);
+  expect(t.of("auth_failed")).toHaveLength(1);
 });

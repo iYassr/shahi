@@ -142,7 +142,7 @@ export class RelayBox extends DurableObject<unknown> {
       // never pending, so the live box is not touched.
       const stale = longestWaiting(pending);
       if (!stale) return this.refuse(ws, RELAY_CLOSE.quota, "too many pending boxes", serverId);
-      this.record({ kind: "refused", serverId, detail: "too many pending boxes", value: RELAY_CLOSE.quota });
+      // Recorded by closeBox, as a box that never authenticated.
       this.closeBox(stale, stale.deserializeAttachment() as BoxState, RELAY_CLOSE.quota, "too many pending boxes");
     }
     const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -317,7 +317,6 @@ export class RelayBox extends DurableObject<unknown> {
     }
     const auth = typeof message === "string" ? parse<BoxToRelay>(message) : null;
     if (auth?.t !== "auth" || !(await proves(auth, state))) {
-      this.record({ kind: "auth_failed", serverId: state.serverId, detail: "unauthorized" });
       this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "unauthorized");
       return;
     }
@@ -379,12 +378,21 @@ export class RelayBox extends DurableObject<unknown> {
     ws.close(code, reason);
   }
 
-  /** Ends a box connection; if it was the ready one, every phone learns the box is offline. */
+  /**
+   * Ends a box connection; if it was the ready one, every phone learns the box
+   * is offline. Each connection is recorded here, once: `box_gone` if it had
+   * authenticated, `auth_failed` with the reason if it never did. Only a wrong
+   * key used to be recorded, so a box that timed out, left or sent an
+   * oversized control before proving itself was invisible (pre-release bug
+   * hunt, B107).
+   */
   private closeBox(ws: WebSocket, state: BoxState, code: number, reason: string): void {
     state = ws.deserializeAttachment() as BoxState;
     if (state.closed) return;
     ws.serializeAttachment({ ...state, ready: false, closed: true });
-    if (state.ready) {
+    if (!state.ready) {
+      this.record({ kind: "auth_failed", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
+    } else {
       this.record({ kind: "box_gone", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
       for (const phone of this.phones()) {
         // `open: false` first: the box being told about these links is the one

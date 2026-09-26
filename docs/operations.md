@@ -267,7 +267,7 @@ and fixed set of incident states. The relay's protected `/ops/status` and
 | Signup delivery errors | At least 3 signup 5xx responses in 5 minutes |
 | Relay internal errors | At least 5 in the preceding 5 minutes |
 | Connection rejections | At least 100 and at least 20% of connection attempts in 5 minutes |
-| Authentication failures | At least 50 in 5 minutes |
+| Authentication failures | At least 50 box connections in 5 minutes that ended before authenticating: a wrong key, ten seconds without `auth`, leaving or an oversized control first, or a pending box closed for a newcomer (before the pre-release bug hunt's B107, only a wrong key counted) |
 | Reconnect storm | At least 100 box disconnects in 5 minutes |
 
 Three consecutive unhealthy samples send an incident email, two healthy
