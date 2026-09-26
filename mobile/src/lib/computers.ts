@@ -20,6 +20,26 @@ export function computerId(connection: ComputerConnection): string {
   return Array.from(sha256(new TextEncoder().encode(JSON.stringify(identity))), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * The saved computers from both keychain services, as one list (see
+ * `lib/keychain.ts`): an earlier build that ran again after this one saved a
+ * computer it paired only where this build no longer looked, and it went
+ * missing on the return (pre-release bug hunt). This build's entry wins for
+ * a computer in both.
+ */
+export function mergeSavedComputers(kept: string, earlier: string): string {
+  const list = (raw: string): SavedComputer[] => {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((c): c is SavedComputer => typeof c?.id === "string" && typeof c?.connection === "object" && c.connection !== null) : [];
+    } catch { return []; }
+  };
+  const ours = list(kept);
+  const known = new Set(ours.map((c) => c.id));
+  const theirs = list(earlier).filter((c) => !known.has(c.id));
+  return theirs.length ? JSON.stringify([...ours, ...theirs]) : kept;
+}
+
 export function computerAddress(connection: ComputerConnection): string {
   return connection.kind === "relay" ? `${new URL(connection.relay).host} · ${connection.serverId.slice(0, 8)}` :
     `${connection.ssh.username}@${connection.ssh.host}:${connection.ssh.port}`;

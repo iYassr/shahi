@@ -26,9 +26,14 @@ every Keychain item the app keeps is `WHEN_UNLOCKED_THIS_DEVICE_ONLY`
 (`src/lib/keychain.ts`). Until September 2026 they used SecureStore's default
 class, which iOS copies into encrypted and iCloud backups, so restoring one onto
 another iPhone cloned this phone's logins and paired-device secret. Items saved
-by an earlier build are moved into the device-only class on first read. The
-cost is that a backup restored onto another iPhone brings no saved computers:
-pair it, or add the SSH computer, again.
+by an earlier build are moved into the device-only class when read, and every
+read and write drains the old service, not only the first: TestFlight can
+install an older build over a newer one, and a computer it pairs in between is
+saved only there. Its entry joins this build's list and its secret moves, where
+it used to go missing on the return and wait in the backed-up class to be
+adopted on a restore (September 2026 bug hunt). The cost is that a backup
+restored onto another iPhone brings no saved computers: pair it, or add the SSH
+computer, again.
 
 Nothing the computer answers is written to disk either. Expo's fetch ignores
 the app's `cache: "no-store"` and used the system's shared URL cache, so every

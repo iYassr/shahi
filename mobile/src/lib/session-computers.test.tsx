@@ -43,9 +43,11 @@ async function pairBoth() {
 beforeEach(() => {
   jest.clearAllMocks(); store.clear(); mockSockets.length = 0;
   connection.relay = null; connection.cookie = null;
-  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key) => store.get(key) ?? null);
-  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, data) => { store.set(key, data); });
-  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key) => { store.delete(key); });
+  // `store` is this build's own keychain service; the default one an earlier
+  // build used is empty here.
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key, options) => (options?.keychainService ? store.get(key) ?? null : null));
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, data, options) => { if (options?.keychainService) store.set(key, data); });
+  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key, options) => { if (options?.keychainService) store.delete(key); });
   (api.session as jest.Mock).mockResolvedValue(snapshot);
 });
 test("two computers on the same relay survive switching both ways and a cold launch", async () => {

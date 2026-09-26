@@ -25,7 +25,7 @@ import type { RelayIdentity } from "@/lib/relay";
 import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { forgetHostKey } from "@/lib/tunnel";
-import { COMPUTERS_KEY, computerAddress, computerId, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
+import { COMPUTERS_KEY, computerAddress, computerId, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
 
@@ -278,7 +278,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [raw, saved, width, oldPins] = await Promise.all([KEY, COMPUTERS_KEY, WIDTH_KEY, PINS_KEY].map(key => readSecret(key)));
+        const [raw, saved, width, oldPins] = await Promise.all([KEY, COMPUTERS_KEY, WIDTH_KEY, PINS_KEY].map(key => readSecret(key, key === COMPUTERS_KEY ? mergeSavedComputers : undefined)));
         if (cancelled) return;
         bank.current = saved ? JSON.parse(saved) : [];
         const current: Stored | null = raw ? JSON.parse(raw) : null;

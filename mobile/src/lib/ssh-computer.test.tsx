@@ -113,7 +113,9 @@ class FakeSocket {
   }
 }
 
+/** This build's own keychain service, and the default one builds up to TestFlight 15 wrote. */
 const store = new Map<string, string>();
+const earlier = new Map<string, string>();
 const bank = (): SavedComputer[] => JSON.parse(store.get(COMPUTERS_KEY) ?? "[]");
 let value: ReturnType<typeof useSession>;
 function Probe({ reader = false, health = false }: { reader?: boolean; health?: boolean }) {
@@ -144,9 +146,10 @@ beforeEach(() => {
   store.set(COMPUTERS_KEY, JSON.stringify([saved]));
   store.set("shahi.connection", JSON.stringify(saved.connection));
   store.set(PIN, "cGlubmVkLWhvc3Qta2V5");
-  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string) => store.get(key) ?? null);
-  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, data: string) => { store.set(key, data); });
-  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string) => { store.delete(key); });
+  earlier.clear();
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string, options?: object) => (options ? store : earlier).get(key) ?? null);
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, data: string, options?: object) => { (options ? store : earlier).set(key, data); });
+  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string, options?: object) => { (options ? store : earlier).delete(key); });
   (globalThis as { WebSocket: unknown }).WebSocket = FakeSocket;
   (globalThis as { fetch: unknown }).fetch = jest.fn(fakeFetch);
 });
@@ -429,5 +432,18 @@ test("an SSH computer that never turned notifications on registers nothing", asy
   await live();
   await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
   expect(sidecar.pushes).toEqual([]);
+  ui.unmount();
+});
+
+// TestFlight installs an older build over a newer one, and it saves only to
+// the default keychain service. A computer it added was missing when this
+// build returned (pre-release bug hunt).
+test("a computer an earlier build added after a downgrade is listed beside this build's own", async () => {
+  const other: SavedComputer = { ...saved, id: computerId({ kind: "ssh", ssh: { ...profile, host: "other.example" } }), name: "Other", connection: { kind: "ssh", ssh: { ...profile, host: "other.example" } } };
+  earlier.set(COMPUTERS_KEY, JSON.stringify([other]));
+  const ui = await mount();
+  expect(value.computers.map(c => c.name).sort()).toEqual(["Box", "Other"]);
+  await waitFor(() => expect(bank().map(c => c.id).sort()).toEqual([saved.id, other.id].sort()));
+  expect(earlier.has(COMPUTERS_KEY)).toBe(false);
   ui.unmount();
 });

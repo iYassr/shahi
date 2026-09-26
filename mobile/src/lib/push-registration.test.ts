@@ -7,12 +7,13 @@ jest.mock("./api", () => ({ api: { registerPush: jest.fn(async () => {}), unregi
 const profile: SshProfile = { host: "box.test", username: "test", port: 22, remotePort: 7171, passcode: "fake", auth: { kind: "password", password: "fake" } };
 const ssh = (p: SshProfile): ComputerConnection => ({ kind: "ssh", ssh: p });
 const relay = (deviceId: string): ComputerConnection => ({ kind: "relay", relay: "https://relay.test", serverId: "box-id", deviceId, deviceSecret: "c2VjcmV0" });
+/** This build's own keychain service; the default one an earlier build used is empty here. */
 const values = new Map<string, string>();
 beforeEach(() => {
   jest.clearAllMocks(); values.clear(); configurePushComputer(null);
-  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key) => values.get(key) ?? null);
-  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, value) => { values.set(key, value); });
-  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key) => { values.delete(key); });
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key, options) => (options?.keychainService ? values.get(key) ?? null : null));
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, value, options) => { if (options?.keychainService) values.set(key, value); });
+  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key, options) => { if (options?.keychainService) values.delete(key); });
 });
 test("SSH opt-in survives new cookies but is scoped to the endpoint and removed on logout", async () => {
   configurePushComputer(ssh(profile));
