@@ -14,6 +14,7 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
+import { fitPage } from "./session-window";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
 type Window = { limit?: number; before?: number };
@@ -149,8 +150,12 @@ export async function transcriptPage(paneId: string, path: string, kind: string 
     held.windows.set(key, cached);
     return cached;
   }
-  const log = await readTranscript(path, kind, window);
-  if (!log) return null;
+  const read = await readTranscript(path, kind, window);
+  if (!read) return null;
+  // Bounded in bytes as well as messages, or one huge message in the window
+  // is a 413 through the relay on every poll (`fitPage`). Before the ETag, so
+  // the tag names what is sent.
+  const log = fitPage(read);
   const page = { log, etag: `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"` };
   // Kept only if no newer version of the file replaced the entry meanwhile.
   if (pages.get(paneId) === held) {

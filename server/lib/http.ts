@@ -1442,7 +1442,6 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
                 { status: 404 },
               );
             }
-
             /*
              * An ETag, because this is the app's most expensive request by a
              * wide margin: the reader polls every 2.5 seconds, and a busy pane
