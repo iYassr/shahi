@@ -29,7 +29,20 @@ test.each([["saved", false], ["open", true]])("a pairing link stays on Connect f
   act(() => dismissPairing());
   expect(router.replace).toHaveBeenCalledWith(connected ? "/" : "/computers");
 });
-test("other links route as before", () => {
-  expect(redirectSystemPath({ path: "shahi://pane/w1%3Ap1", initial: true })).toBe("shahi://pane/w1%3Ap1");
+test("other links route as before while the app runs", () => {
+  expect(redirectSystemPath({ path: "shahi://pane/w1%3Ap1", initial: false })).toBe("shahi://pane/w1%3Ap1");
   expect(redirectSystemPath({ path: "shahi://pair#v=1&server=x", initial: false })).toBe("shahi://pair#v=1&server=x");
+});
+// A cold launch builds a stack of one: a hand-made link to a space, a sheet or
+// a pane had nothing beneath it, and Back or Close led nowhere (pre-release
+// bug hunt).
+test("a cold launch from a link to a pane, a space or a sheet starts at the list, where Back leads somewhere", () => {
+  for (const path of ["shahi://pane/does-not-exist", "shahi://pane/w1%3Ap1", "shahi://space/nope", "shahi://new-agent", "shahi://new-space", "shahi://computers", "/licenses"]) {
+    expect(redirectSystemPath({ path, initial: true })).toBe("/");
+  }
+  for (const path of ["shahi://", "shahi://agents", "shahi://spaces/", "shahi://settings", "shahi://connect"]) {
+    expect(redirectSystemPath({ path, initial: true })).toBe(path);
+  }
+  // A malformed pairing link still reaches the screen that sends it to Connect.
+  expect(redirectSystemPath({ path: "shahi://pair#v=1&server=x", initial: true })).toBe("shahi://pair#v=1&server=x");
 });
