@@ -35,7 +35,8 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
-import { PromptOpen, promptTarget, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, submitPrompt } from "./prompt";
+import { PaneWrites } from "./pane-writes";
 import { OperationError, Operations } from "./operations";
 import { trackDelivery } from "./herdr-delivery";
 import { createHash } from "node:crypto";
@@ -399,6 +400,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   // Prompts already handed to herdr, by the phone's own message id, so a retry
   // after a timeout gets the receipt back rather than a second delivery.
   const operations = new Operations();
+  // Every write to a pane — a message, an answer, a key — in arrival order,
+  // each seeing the screen the one before it left. See `pane-writes.ts`.
+  const paneWrites = new PaneWrites();
 
   // The untyped view of the client the prompt module takes: it names three
   // methods and a test wants to fake them.
@@ -1190,17 +1194,20 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const key = JSON.stringify([paneId, body.clientMessageId]);
             try {
               const delivery = trackDelivery(herdrRpc);
-              const receipt = await operations.run(key, body.text, async (): Promise<PromptReceipt> => {
+              const receipt = await operations.run(key, body.text, () => paneWrites.run(paneId, async (): Promise<PromptReceipt> => {
                 const target = await promptTarget(delivery.rpc, paneId, store.agent(paneId));
                 await submitPrompt(delivery.rpc, target, body.text!);
                 return { accepted: true, clientMessageId: body.clientMessageId!, acceptedAt: Date.now() };
-              }, delivery.reachedNothing);
+              }), delivery.reachedNothing);
               return json(receipt);
             } catch (err) {
               // Nothing was typed: a menu is open and Enter would pick for the
               // person (see `prompt.ts`). The message says what to use instead,
               // so every client, old ones included, shows it as it stands.
               if (err instanceof PromptOpen) return json({ error: err.message, code: err.code }, { status: 409 });
+              // Typed, but the screen moved under it before Enter; the message
+              // says so, and a retry under this id is handed the same answer.
+              if (err instanceof PromptMoved) return json({ error: err.message, code: err.code }, { status: 409 });
               return failure(err);
             }
           }
@@ -1226,12 +1233,12 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               return json({ error: "question must be text and context a list of text" }, { status: 400 });
             }
             try {
-              await answerPrompt(herdrRpc, paneId, {
+              await paneWrites.run(paneId, () => answerPrompt(herdrRpc, paneId, {
                 index: body.index as number,
-                label: body.label,
+                label: body.label as string,
                 ...(typeof body.question === "string" ? { question: body.question } : {}),
                 ...(Array.isArray(body.context) ? { context: body.context as string[] } : {}),
-              });
+              }));
               return json({ ok: true });
             } catch (err) {
               if (err instanceof PromptGone || err instanceof PromptChanged) {
@@ -1249,7 +1256,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];
             if (keys.length === 0) return json({ error: "keys is required" }, { status: 400 });
             try {
-              await client.rpc("pane.send_keys", { pane_id: paneId, keys });
+              await paneWrites.run(paneId, () => client.rpc("pane.send_keys", { pane_id: paneId, keys }));
               return json({ ok: true });
             } catch (err) {
               return failure(err);

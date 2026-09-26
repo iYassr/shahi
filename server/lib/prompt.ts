@@ -32,6 +32,9 @@
  * the text replaces the row's label and Enter submits it (measured on the
  * same version; see `isTextField`). Found in the pre-release review; the
  * agent path was added to it in the pre-release bug hunt (B4).
+ *
+ * The caller runs this under the pane's write lock (`PaneWrites`), so no
+ * other write from a phone lands between the read and the Enter.
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
@@ -63,6 +66,20 @@ export const SUBMIT_DELAY_MS = 200;
 
 export type PromptPath = "agent" | "terminal";
 
+/**
+ * The agent's screen changed between typing and Enter, so Enter was not
+ * pressed. The text was typed, so this is a failure a retry must not repeat.
+ */
+export class PromptMoved extends Error {
+  readonly code = "prompt_changed";
+  constructor() {
+    super(
+      "The agent's screen changed while this message was being typed, so Enter was not pressed. " +
+        "The text is typed there: check the screen, then press Enter from the keys if it is still right.",
+    );
+  }
+}
+
 export async function submitPrompt(
   rpc: PromptRpc,
   target: PromptTarget,
@@ -85,7 +102,8 @@ export async function submitPrompt(
   // confirmed a trust nobody chose (pre-release bug hunt, B4). A menu on
   // screen means the agent is waiting on it, so it takes the terminal path,
   // and only into a text field.
-  if (!(await openMenu(rpc, paneId)) && target.status !== "blocked") {
+  let menu = await openMenu(rpc, paneId);
+  if (!menu && target.status !== "blocked") {
     try {
       await rpc("agent.prompt", { target: paneId, text });
       return "agent";
@@ -95,19 +113,37 @@ export async function submitPrompt(
       // would have been chosen with fresher information.
       if (!(err instanceof Error && err.message.includes("agent_blocked"))) throw err;
     }
-    await openMenu(rpc, paneId);
+    menu = await openMenu(rpc, paneId);
   }
   await rpc("pane.send_text", { pane_id: paneId, text });
   await sleep(SUBMIT_DELAY_MS);
+  // Read again before Enter. Other phones' writes wait their turn, but a
+  // person at the terminal does not, and in these 200ms a moved cursor or a
+  // newly drawn menu turns Enter into a choice nobody made (pre-release bug
+  // hunt, B6). Labels are no test, since the typed text has just replaced the
+  // field's; the same question with the cursor on the same row is.
+  if (!sameSpot(menu, await openMenu(rpc, paneId, { refuse: false }))) throw new PromptMoved();
   await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
   return "terminal";
 }
 
+/** Where a menu's cursor is: the question, and the lit row's number. */
+interface Spot {
+  question: string;
+  row: number;
+}
+
+function sameSpot(before: Spot | null, after: Spot | null): boolean {
+  if (!before || !after) return before === after;
+  return before.question === after.question && before.row === after.row;
+}
+
 /**
- * True when the pane shows a menu, and throws `PromptOpen` when its lit row
- * would not take typed text.
+ * The menu on the pane's screen, when there is one. A menu whose lit row
+ * would not take typed text is refused with `PromptOpen`, unless `refuse` is
+ * false, when it is returned like any other.
  */
-async function openMenu(rpc: PromptRpc, paneId: string): Promise<boolean> {
+async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true } = {}): Promise<Spot | null> {
   // The same read the poller and `answer.ts` make, so the menu found here is
   // the one the phone was offered buttons for.
   const { read } = (await rpc("pane.read", {
@@ -117,10 +153,10 @@ async function openMenu(rpc: PromptRpc, paneId: string): Promise<boolean> {
     strip_ansi: false,
   })) as { read: { text: string } };
   const menu = parsePrompt(stripAnsi(read.text));
-  if (!menu) return false;
+  if (!menu) return null;
   const lit = menu.options.find((option) => option.selected);
-  if (!lit || !isTextField(menu, lit)) throw new PromptOpen();
-  return true;
+  if (refuse && (!lit || !isTextField(menu, lit))) throw new PromptOpen();
+  return { question: menu.question, row: lit?.index ?? 0 };
 }
 
 /**

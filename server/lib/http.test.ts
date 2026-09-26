@@ -905,6 +905,44 @@ describe("a message to an agent waiting on a menu", () => {
   });
 });
 
+// Pre-release bug hunt, B6: nothing ordered two phones' writes to one pane,
+// so one's input landed inside the other's read-to-Enter window. Two messages
+// were submitted as one line, and a key-bar Up moved the cursor before a
+// message's Enter, which then chose a menu row. Each phone was told 200.
+describe("writes to one pane from two phones", () => {
+  const post = (sub: string, body: unknown) =>
+    fetch(`${s.base}/api/panes/${encodeURIComponent(PANE)}${sub}`, {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const sent = (from: number) =>
+    s.calls.slice(from).filter((c) => c.method.startsWith("pane.send")).map((c) => {
+      const params = c.params as { text?: string; keys?: string[] };
+      return c.method === "pane.send_text" ? `text:${params.text}` : `keys:${params.keys!.join("+")}`;
+    });
+
+  test("two messages are each typed and submitted before the next begins", async () => {
+    const before = s.calls.length;
+    const [a, b] = await Promise.all([
+      post("/prompt", { text: "alpha", clientMessageId: "two-phones-a" }),
+      post("/prompt", { text: "bravo", clientMessageId: "two-phones-b" }),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(sent(before)).toEqual(["text:alpha", "keys:Enter", "text:bravo", "keys:Enter"]);
+  });
+
+  test("a key pressed while a message is being typed waits for its Enter", async () => {
+    const before = s.calls.length;
+    const message = post("/prompt", { text: "please use blue", clientMessageId: "key-during-message" });
+    // Well inside the message's 200ms pause between its text and its Enter.
+    await Bun.sleep(60);
+    const key = post("/keys", { keys: ["Up"] });
+    expect([(await message).status, (await key).status]).toEqual([200, 200]);
+    expect(sent(before)).toEqual(["text:please use blue", "keys:Enter", "keys:Up"]);
+  });
+});
+
 // Pre-release bug hunt, B4: a message sent in an agent's first seconds, while
 // the mirror still listed the pane as a shell, was typed onto the
 // folder-trust menu with no screen read, and its Enter chose "No, exit".

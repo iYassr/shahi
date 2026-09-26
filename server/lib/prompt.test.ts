@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PromptOpen, promptTarget, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
 
@@ -55,15 +55,15 @@ describe("submitPrompt", () => {
     const { rpc, calls } = fakeRpc();
     const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "blocked" }, "yes", sleep);
     expect(path).toBe("terminal");
-    // The screen is read first: see the next describe.
-    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.send_keys"]);
+    // The screen is read first and again before Enter: see the describes below.
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
   });
 
   test("agent_blocked from herdr falls back to the terminal path", async () => {
     const { rpc, calls } = fakeRpc({ "agent.prompt": "agent_blocked" });
     const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle" }, "yes", sleep);
     expect(path).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read", "pane.send_text", "pane.send_keys"]);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
   });
 
   test("any other agent.prompt failure is the caller's to report", async () => {
@@ -128,7 +128,7 @@ describe("a message to an agent waiting on a menu", () => {
   test("is typed into a text field while herdr still calls the agent idle", async () => {
     const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-ask-type__text.txt"));
     expect(await submitPrompt(rpc, { ...blocked, status: "idle" }, "blue", sleep)).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.send_keys"]);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
   });
 
   // codex's approval rows answer to single letters: "yes" would approve at the "y".
@@ -167,6 +167,50 @@ describe("a message to an agent waiting on a menu", () => {
     const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-bash__text.txt"));
     expect(await submitPrompt(rpc, { paneId: "w1:p3", isAgent: false, status: null }, "2", sleep)).toBe("terminal");
     expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
+});
+
+/**
+ * The screen is read again between the text and its Enter. A person at the
+ * terminal does not wait for a phone's write to finish, and a cursor moved in
+ * those 200ms turned the Enter into a choice nobody made (pre-release bug
+ * hunt, B6). Nothing is pressed then, and the text is left where it was typed.
+ */
+describe("a message whose screen changes before its Enter", () => {
+  const blocked = { paneId: "w1:p1", isAgent: true, status: "blocked" };
+  /** A pane showing `first`, then `then` from the moment the text is typed. */
+  function changing(first: string, then: string) {
+    const calls: string[] = [];
+    let screen = first;
+    const rpc = async (method: string) => {
+      calls.push(method);
+      if (method === "pane.read") return { read: { text: screen } };
+      if (method === "pane.send_text") screen = then;
+      return {};
+    };
+    return { rpc, calls };
+  }
+
+  test("a cursor moved off the text field during the submit delay: Enter is not pressed", async () => {
+    // Up from "3. Type something." lands on "2. Green"; Enter would choose it.
+    const field = fixture("blocked__claude-ask-type__text.txt");
+    const moved = field.replace("  2. Green", "❯ 2. Green").replace("❯ 3. Type something.", "  3. Type something.");
+    expect(moved).not.toBe(field);
+    const { rpc, calls } = changing(field, moved);
+    await expect(submitPrompt(rpc, blocked, "please use blue", sleep)).rejects.toBeInstanceOf(PromptMoved);
+    expect(calls).toEqual(["pane.read", "pane.send_text", "pane.read"]);
+  });
+
+  test("a menu drawn during the submit delay: Enter is not pressed", async () => {
+    const { rpc, calls } = changing("", fixture("blocked__claude-bash__text.txt"));
+    await expect(submitPrompt(rpc, blocked, "carry on", sleep)).rejects.toBeInstanceOf(PromptMoved);
+    expect(calls).not.toContain("pane.send_keys");
+  });
+
+  test("text typed into the field itself is still submitted", async () => {
+    const { rpc, calls } = changing(fixture("blocked__claude-ask-type__text.txt"), fixture("blocked__claude-ask-typed__text.txt"));
+    expect(await submitPrompt(rpc, blocked, "1", sleep)).toBe("terminal");
+    expect(calls.at(-1)).toBe("pane.send_keys");
   });
 });
 

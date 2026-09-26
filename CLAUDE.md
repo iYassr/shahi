@@ -228,6 +228,15 @@ permission offers "1. Yes". An older client that sends only index and label is
 still answered on those two. A 409 with `prompt_gone` or `prompt_changed` is
 the answer when the screen moved on; nothing is pressed.
 
+**Writes to one pane take turns.** `/prompt`, `/answer` and `/keys` run
+through one queue per pane (`pane-writes.ts`), so each sees the screen the
+one before it left: two phones' messages were typed into each other before
+either Enter, and a key-bar `Up` landed between an answer's read and its
+Enter and confirmed `No, exit`. Reads stay outside the queue; the poller never
+waits on a write. A person at the terminal does not queue, so a message to an
+agent reads the screen again before its Enter, and if the menu or its lit row
+moved it presses nothing and answers 409 `prompt_changed`, the text left typed.
+
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
 the loopback listener — the bind, and a `Host` allowlist that refuses anything
