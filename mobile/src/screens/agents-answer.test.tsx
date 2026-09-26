@@ -26,7 +26,7 @@ const mockState = {
   prompts: { "w1:p1": bash } as Record<string, ParsedPrompt>,
   reviewed: {}, link: "live", error: null, server: "relay://computer", pins: new Set(),
   api: { answerPrompt: jest.fn(async () => ({ ok: true })) },
-  markReviewed: jest.fn(), clearPrompt: jest.fn(), togglePin: jest.fn(), reconnect: jest.fn(), signOut: jest.fn(),
+  markReviewed: jest.fn(), answeredPrompt: jest.fn(), refresh: jest.fn(async () => {}), answered: {}, togglePin: jest.fn(), reconnect: jest.fn(), signOut: jest.fn(),
 };
 jest.mock("@/lib/session", () => ({ useSession: () => mockState }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));

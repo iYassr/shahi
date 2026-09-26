@@ -1,4 +1,4 @@
-import { agentLabel, inboxPanes, latestConversations, pinnedPanes, retainPins, togglePin as togglePinOf, type Reviewed } from "@shahi/shared";
+import { agentLabel, inboxPanes, latestConversations, pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
@@ -16,6 +16,8 @@ interface Props {
   onReviewed: (pane: DashboardPane) => void;
   session: Session | null;
   prompts: Record<string, ParsedPrompt>;
+  /** Questions answered here on panes still waiting (see promptsFromSession). */
+  answered?: Record<string, AnsweredPrompt>;
   onAnswer: (paneId: string, optionIndex: number) => Promise<void>;
 }
 
@@ -31,7 +33,7 @@ const GROUPINGS: { key: Grouping; label: string }[] = [
 
 const STORED = "shahi.grouping";
 
-export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: Props) {
+export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed, onReviewed }: Props) {
   const navigate = useNavigate();
   const selected = useMatch("/pane/:paneId")?.params.paneId;
   const [filter, setFilter] = useState("all");
@@ -117,6 +119,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
           key={pane.paneId}
           pane={pane}
           prompt={prompts[pane.paneId]}
+          answered={answered[pane.paneId]}
           onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
           onAnswer={(index) => onAnswer(pane.paneId, index)}
         />
@@ -148,7 +151,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
                 </h2>
               </div>
               {group.panes.map((pane) => (
-                pane.status === "blocked" && !selected ? <BlockedCard key={pane.paneId} pane={pane} prompt={prompts[pane.paneId]} onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)} onAnswer={(index) => onAnswer(pane.paneId, index)} /> : <div className={`agent-row${pins.has(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
+                pane.status === "blocked" && !selected ? <BlockedCard key={pane.paneId} pane={pane} prompt={prompts[pane.paneId]} answered={answered[pane.paneId]} onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)} onAnswer={(index) => onAnswer(pane.paneId, index)} /> : <div className={`agent-row${pins.has(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
                   className={`row row--${pane.status}${selected === pane.paneId ? " row--selected" : ""}`}
                   aria-current={selected === pane.paneId ? "page" : undefined}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
@@ -230,11 +233,13 @@ export function groupPanes(panes: DashboardPane[], grouping: Grouping): PaneGrou
 function BlockedCard({
   pane,
   prompt,
+  answered,
   onOpen,
   onAnswer,
 }: {
   pane: DashboardPane;
   prompt: ParsedPrompt | undefined;
+  answered?: AnsweredPrompt;
   onOpen: () => void;
   onAnswer: (optionIndex: number) => Promise<void>;
 }) {
@@ -263,6 +268,14 @@ function BlockedCard({
           )}
           <Prompt prompt={prompt} onAnswer={onAnswer} />
         </>
+      ) : answered ? (
+        // The pane says blocked until the next snapshot shows the agent moving
+        // on; this card used to call that "needs a typed reply".
+        <p className="blocked__question" role="status">
+          {answered.outcome === "sent"
+            ? "Answer sent — waiting for the agent…"
+            : "That question had already closed, so nothing was sent. Waiting for the agent’s next step…"}
+        </p>
       ) : (
         // The agent is blocked but the screen has no list we can act on — a
         // free-text prompt, or something the parser does not recognise. Say so

@@ -18,7 +18,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from "react-native";
 import { addNetworkStateListener, getNetworkStateAsync, type NetworkState } from "expo-network";
 import { deleteSecret, readSecret, writeSecret } from "./keychain";
-import { pinnedPanes, retainPins, togglePin as togglePinOf, type ParsedPrompt, type Session } from "@shahi/shared";
+import { pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type ParsedPrompt, type Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
 import { closeRelay, type RelayIdentity } from "@/lib/relay";
@@ -60,6 +60,8 @@ interface SessionValue {
   connected: boolean;
   session: Session | null;
   prompts: Record<string, ParsedPrompt>;
+  /** Questions this phone answered on panes still waiting, by pane. */
+  answered: Record<string, AnsweredPrompt>;
   link: LinkState;
   /**
    * Why the session could not be read, when it could not. An `UnreachableError`
@@ -100,8 +102,8 @@ interface SessionValue {
    * it, not when the terminal happens to repaint.
    */
   onPaneFrame: (paneId: string, cb: () => void) => () => void;
-  /** Drops a remembered prompt once it has been answered. */
-  clearPrompt: (paneId: string) => void;
+  /** A card's answer landed (`sent`), or its question had already gone (`closed`). */
+  answeredPrompt: (paneId: string, shown: ParsedPrompt | undefined, outcome: AnsweredPrompt["outcome"]) => void;
   /** Conversations kept on top of the list, per device: the pane ids whose pinned conversation is still there. */
   pins: Set<string>;
   togglePin: (paneId: string) => void;
@@ -338,7 +340,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     refresh: () => entry?.refresh() ?? Promise.resolve(), reconnect: () => entry?.reconnect() ?? Promise.resolve(),
     watch: (pane: string | null) => entry?.watch(pane),
     onPaneFrame: (pane: string, fn: () => void) => entry?.onPaneFrame(pane, fn) ?? (() => {}),
-    clearPrompt: (pane: string) => entry?.clearPrompt(pane),
+    answeredPrompt: (pane: string, shown: ParsedPrompt | undefined, outcome: AnsweredPrompt["outcome"]) => entry?.answeredPrompt(pane, shown, outcome),
     unauthorized: () => { void entry?.unauthorized(); },
   }), [entry]);
   const value: SessionValue = {
@@ -366,7 +368,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // (ComputerSession), as it does on every later one.
       signIn({ kind: "ssh", ssh: profile }, { ...connection, relay: null });
     },
-    session: entry?.session ?? null, prompts: entry?.prompts ?? {}, reviewed: entry?.reviewed ?? {},
+    session: entry?.session ?? null, prompts: entry?.prompts ?? {}, answered: entry?.answered ?? {}, reviewed: entry?.reviewed ?? {},
     markReviewed: pane => entry?.markReviewed(pane),
     link: entry?.link ?? "connecting", error: storageError ?? entry?.error ?? null,
     ...actions,

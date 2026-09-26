@@ -197,3 +197,45 @@ describe("launched while the computer is away", () => {
     } finally { jest.useRealTimers(); }
   });
 });
+
+const ask = (question: string) => ({
+  question, answer: "digit", options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }],
+});
+const waiting = (prompt: unknown) => ({
+  panes: [{ paneId: "w1:p1", workspaceId: "w1", workspaceLabel: "one", tabId: "t1", status: "blocked", agent: "claude", title: "task", cwd: null, focused: false, hasPrompt: !!prompt, isAgent: true, prompt, preview: null, activity: null }],
+  workspaces: [], tabs: [],
+});
+/** The live stream, open, with the session it would carry. */
+async function liveWith(session: unknown) {
+  routes["/api/auth/status"] = json({ required: false, authenticated: true });
+  routes["/api/session"] = json(session);
+  await render();
+  const stream = FakeSocket.made[0]!;
+  await act(async () => { stream.readyState = 1; stream.onopen?.(); });
+  await settle();
+  return stream;
+}
+
+// A phone slept through question B while A was answered at the laptop. The
+// snapshot said B; the card kept A, and every tap on it was refused.
+test("a waiting card follows the snapshot's question, not one pushed before a disconnect", async () => {
+  const stream = await liveWith(waiting(ask("Run the migration?")));
+  await act(async () => { stream.push({ type: "prompt", paneId: "w1:p1", prompt: ask("Run the migration?") }); });
+  await act(async () => { stream.push({ type: "session", session: waiting(ask("Delete the old table?")) }); });
+  await settle();
+  expect(text()).toContain("Delete the old table?");
+  expect(text()).not.toContain("Run the migration?");
+});
+
+// Answered elsewhere first: the server refused the stale tap with 409, the
+// toast read "w1:p1 is not asking anything now" and every option came back.
+test("a tap on a question that already closed stops offering it instead of re-arming its options", async () => {
+  await liveWith(waiting(ask("Run the migration?")));
+  routes["/api/panes/w1%3Ap1/answer"] = json({ error: "That question has already been answered or closed. Nothing was sent.", code: "prompt_gone" }, 409);
+  const yes = view!.root.findAll((node) => node.type === "button" && node.props.className === "choice")[0]!;
+  await act(async () => { yes.props.onClick(); });
+  await settle();
+  expect(view!.root.findAll((node) => node.type === "button" && node.props.className === "choice")).toHaveLength(0);
+  expect(text()).toContain("That question had already closed, so nothing was sent.");
+  expect(text()).not.toContain("needs a typed reply");
+});

@@ -148,6 +148,8 @@ export interface HttpDeps {
  * event firehose does not become the client's problem.
  */
 const SESSION_BROADCAST_INTERVAL_MS = 250;
+/** How long after an answer to look again; see `settleAfterAnswer`. */
+const ANSWER_SETTLE_MS = 250;
 
 /**
  * How often to say something even when nothing has changed.
@@ -465,6 +467,22 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   // is a serialized global backoff over its own low-entropy-or-not secret.
   const claimThrottle = new LoginThrottle();
 
+  /**
+   * After an answer, or a refusal because the question had moved on, read
+   * the pane and herdr's statuses again shortly, rather than on the next
+   * 3-second snapshot. Every other dashboard kept the answered card's options
+   * for up to three seconds while herdr already said the agent was working
+   * (measured: 33 ms), and a tap on them there was refused (pre-release bug
+   * hunt). The pause gives the agent time to repaint.
+   */
+  const settleAfterAnswer = (paneId: string) => {
+    const timer = setTimeout(() => {
+      void store.resync();
+      void poller.refresh(paneId);
+    }, ANSWER_SETTLE_MS);
+    timer.unref?.();
+  };
+
   const broadcast = (message: unknown) => {
     const payload = JSON.stringify(message);
     for (const ws of clients) ws.send(payload);
@@ -479,7 +497,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   // half-second of a connection. Nobody can read a list changing 30 times a
   // second, and on cellular it is pure cost.
   let sessionBroadcastTimer: ReturnType<typeof setTimeout> | undefined;
-  store.on("changed", () => {
+  const broadcastSession = () => {
     if (sessionBroadcastTimer) return;
     sessionBroadcastTimer = setTimeout(() => {
       sessionBroadcastTimer = undefined;
@@ -489,7 +507,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         );
       }
     }, SESSION_BROADCAST_INTERVAL_MS);
-  });
+  };
+  store.on("changed", broadcastSession);
 
   // Transcript writes need not change herdr metadata. Refresh summaries while
   // clients are connected, but send nothing when message metadata is unchanged.
@@ -528,8 +547,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
   // A prompt appearing is worth telling every client about, watching or not:
   // it is what turns a dashboard card into something actionable.
+  //
+  // So is one disappearing. Only the pane's watchers see that frame, and the
+  // mirror's signature has no prompts in it, so while herdr still said
+  // "blocked" every other dashboard kept offering options for a menu that was
+  // gone — answered at the laptop, or closed by the agent (pre-release bug
+  // hunt). A snapshot carries each pane's current prompt, null included.
+  const prompted = new Set<string>();
   poller.on("frame", (frame: PaneFrame) => {
-    if (frame.prompt) broadcast({ type: "prompt", paneId: frame.paneId, prompt: frame.prompt });
+    if (frame.prompt) {
+      prompted.add(frame.paneId);
+      broadcast({ type: "prompt", paneId: frame.paneId, prompt: frame.prompt });
+    } else if (prompted.delete(frame.paneId)) broadcastSession();
   });
 
   store.on("status", (change) => {
@@ -624,9 +653,17 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   function attach(ws: StreamClient): void {
     clients.add(ws);
     poller.setClientCount(clients.size);
-    void dashboard(store, poller, defaultGrouping, client).then((session) =>
-      ws.send(JSON.stringify({ type: "session", session })),
-    );
+    void dashboard(store, poller, defaultGrouping, client).then((session) => {
+      ws.send(JSON.stringify({ type: "session", session }));
+      // Each waiting pane's prompt again, as the message clients already
+      // obey. Apps shipped before the snapshot's prompt was trusted keep the
+      // last one pushed while they were connected, so a phone that slept
+      // through a new question offered the old one's options, refused with
+      // 409, until it was reloaded (pre-release bug hunt).
+      for (const pane of session.panes) {
+        if (pane.status === "blocked" && pane.prompt) ws.send(JSON.stringify({ type: "prompt", paneId: pane.paneId, prompt: pane.prompt }));
+      }
+    });
   }
 
   function detach(ws: StreamClient): void {
@@ -1337,11 +1374,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
                 ...(typeof body.promptId === "string" ? { promptId: body.promptId } : {}),
               }, { instances: poller.prompts }));
               // What the agent drew next, to watchers and as a new card to
-              // every client, now rather than at the next poll.
+              // every client, now rather than at the next poll; and herdr's
+              // statuses a moment later (see `settleAfterAnswer`).
               void poller.refresh(paneId);
+              settleAfterAnswer(paneId);
               return json({ ok: true });
             } catch (err) {
               if (err instanceof PromptGone || err instanceof PromptChanged) {
+                settleAfterAnswer(paneId);
                 return json({ error: err.message, code: err.code }, { status: 409 });
               }
               return failure(err);
@@ -1577,12 +1617,15 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     title: paneTitle(pane),
     cwd: pane.cwd ?? null,
     focused: pane.focused,
-    hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
-    prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
     isAgent: store.agent(pane.pane_id) !== undefined,
     // The last thing said, for chat-style rows. Summaries are cached by the
     // transcript's file state, so a quiet pane costs one stat here.
     ...await conversationSummary(pane, client),
+    // Read after the await above, not before it: clients now take the
+    // snapshot's prompt as the current one, and a frame that arrived while a
+    // summary was read is newer than one read before it.
+    hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
+    prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
     activity: poller.frame(pane.pane_id)?.activity ?? null,
   })));
 

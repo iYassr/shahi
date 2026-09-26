@@ -70,7 +70,8 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     pane_id: PANE,
     workspace_id: "w1",
     tab_id: "t1",
-    agent_status: "unknown",
+    // herdr reports an agent's status on its pane as well as in `agents`.
+    agent_status: agentStatus ?? "unknown",
     agent: null,
     display_agent: null,
     terminal_title: "zsh",
@@ -1597,5 +1598,82 @@ describe("a write meant for a pane's previous program", () => {
     const now = await occupantNow();
     expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: "term_first" })).status).toBe(409);
     expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: now })).status).toBe(200);
+  });
+});
+
+// A dashboard card offers what the pane's screen asks now. The pre-release
+// bug hunt slept a phone through a new question and came back to the old
+// one's options, and a card answered elsewhere kept its options for up to
+// three seconds; every tap on either was refused with 409.
+describe("waiting cards on every dashboard", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    agentStatus = "blocked";
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    agentStatus = null;
+  });
+  const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
+  /** A dashboard's live stream, and every message it has heard. */
+  async function dashboardStream() {
+    const ws = new WebSocket(`${app.base.replace(/^http/, "ws")}/ws`, { headers: { cookie: app.cookie } } as never);
+    const heard: { type: string; paneId?: string; prompt?: unknown; session?: { panes: { paneId: string; prompt: unknown }[] } }[] = [];
+    ws.onmessage = (event) => heard.push(JSON.parse(String(event.data)));
+    await new Promise((resolve) => { ws.onopen = resolve; });
+    return { ws, heard };
+  }
+  const until = async (check: () => boolean, ms = 2_000) => {
+    for (const end = Date.now() + ms; Date.now() < end && !check();) await Bun.sleep(20);
+    return check();
+  };
+  const read = () => fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}`, { headers: { cookie: app.cookie } });
+  const answer = (body: unknown) =>
+    fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/answer`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+
+  test("a dashboard that connects hears each waiting pane's current question, not only the snapshot", async () => {
+    screen = fixture("blocked__claude-bash__text.txt");
+    expect((await read()).status).toBe(200);
+    const { ws, heard } = await dashboardStream();
+    try {
+      expect(await until(() => heard.some((m) => m.type === "prompt"))).toBe(true);
+      const session = heard.find((m) => m.type === "session")!;
+      const prompt = heard.find((m) => m.type === "prompt")!;
+      expect(heard.indexOf(session)).toBeLessThan(heard.indexOf(prompt));
+      expect(prompt.paneId).toBe(PANE);
+      expect(prompt.prompt).toEqual(session.session!.panes[0]!.prompt);
+      expect(prompt.prompt).toMatchObject({ question: "Do you want to proceed?" });
+    } finally { ws.close(); }
+  });
+
+  test("a question answered elsewhere leaves every dashboard's card within a second", async () => {
+    screen = fixture("blocked__claude-bash__text.txt");
+    const { ws, heard } = await dashboardStream();
+    try {
+      expect(await until(() => heard.some((m) => m.type === "prompt"))).toBe(true);
+      // Answered at the laptop: the menu is gone, herdr still says blocked,
+      // and this tap from a stale card is refused.
+      screen = fixture("idle__w4-p1__text.txt");
+      const snapshots = app.calls.filter((c) => c.method === "session.snapshot").length;
+      const refused = await answer({ index: 1, label: "Yes", question: "Do you want to proceed?" });
+      expect(refused.status).toBe(409);
+      expect(await until(() => heard.some((m) => m.type === "session" && m.session!.panes[0]!.prompt === null), 1_500)).toBe(true);
+      // And herdr's statuses are read again rather than on the 3-second timer.
+      expect(app.calls.filter((c) => c.method === "session.snapshot").length).toBeGreaterThan(snapshots);
+    } finally { ws.close(); }
+  });
+
+  test("the refusal of a stale tap speaks of the question, not the pane id", async () => {
+    screen = fixture("idle__w4-p1__text.txt");
+    const res = await answer({ index: 1, label: "Yes" });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body.code).toBe("prompt_gone");
+    expect(body.error).not.toContain(PANE);
   });
 });

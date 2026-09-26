@@ -3,7 +3,7 @@ import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
-import { agentLabel, inboxPanes, latestConversations } from "@shahi/shared";
+import { agentLabel, answerRefused, inboxPanes, latestConversations, promptIdentity as identityOf, type AnsweredPrompt } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useCallback, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -30,7 +30,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
-  const { api, reviewed, markReviewed, session, prompts, link, error, clearPrompt, pins, togglePin, server, reconnect, activeComputerId } = useSession();
+  const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId } = useSession();
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
@@ -38,17 +38,25 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   const openScreenHere = useCallback((paneId: string) => openScreen(paneId, activeComputerId), [activeComputerId]);
 
   // Rejects on failure so the card that asked can say why and offer its
-  // options again: a 409 (the question moved on) or a relay timeout is an
-  // ordinary outcome, not an exception to swallow.
+  // options again: a relay timeout is an ordinary outcome, not an exception
+  // to swallow. A 409 is not a failure to retry: the question moved on and
+  // nothing was pressed. The card stops offering it and the session is read
+  // again for whatever the agent asks now; it used to show the server's
+  // "w1:p1 is not asking anything now" and re-arm the same dead options
+  // (pre-release bug hunt).
   async function answer(paneId: string, option: PromptOption) {
+    const shown = prompts[paneId];
     try {
-      await api.answerPrompt(paneId, option, prompts[paneId], session?.panes.find((pane) => pane.paneId === paneId)?.instanceId);
+      await api.answerPrompt(paneId, option, shown, session?.panes.find((pane) => pane.paneId === paneId)?.instanceId);
     } catch (e) {
       refused();
-      throw e;
+      if (!answerRefused(e)) throw e;
+      answeredPrompt(paneId, shown, "closed");
+      void refresh();
+      return;
     }
     landed();
-    clearPrompt(paneId);
+    answeredPrompt(paneId, shown, "sent");
   }
 
   // Only take over the whole screen when there is nothing to show yet. Once a
@@ -205,6 +213,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 key={`${pane.paneId}\u0000${promptIdentity(prompts[pane.paneId])}`}
                 pane={pane}
                 prompt={prompts[pane.paneId]}
+                answered={answered[pane.paneId]}
                 onAnswer={(option) => answer(pane.paneId, option)}
                 onOpen={() => onOpenPane(pane.paneId)}
               />
@@ -222,7 +231,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <View>
           {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
           {item.status === "blocked" ? <BlockedCard key={promptIdentity(prompts[item.paneId])} pane={item} prompt={prompts[item.paneId]}
-            onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
+            answered={answered[item.paneId]} onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
             pane={item}
             pinned={pins.has(item.paneId)}
             onPress={onOpenPane}
@@ -425,7 +434,7 @@ const Row = memo(function Row({
  * instead of inheriting the tapped state of the one before.
  */
 function promptIdentity(prompt: ParsedPrompt | undefined): string {
-  return prompt ? JSON.stringify([prompt.question, prompt.context, prompt.options.map((o) => [o.index, o.label])]) : "";
+  return prompt ? identityOf(prompt) : "";
 }
 
 /**
@@ -435,11 +444,14 @@ function promptIdentity(prompt: ParsedPrompt | undefined): string {
 function BlockedCard({
   pane,
   prompt,
+  answered,
   onAnswer,
   onOpen,
 }: {
   pane: DashboardPane;
   prompt: ParsedPrompt | undefined;
+  /** This phone's answer to the question the card last showed, while the pane still waits. */
+  answered?: AnsweredPrompt;
   /** Rejects when the answer did not land; the card then offers its options again. */
   onAnswer: (option: PromptOption) => Promise<void>;
   onOpen: () => void;
@@ -526,6 +538,17 @@ function BlockedCard({
           })}
           {failure && <Text style={styles.failure} accessibilityRole="alert">{failure}</Text>}
         </>
+      ) : answered ? (
+        // Between an answer and the snapshot that shows the agent moving on,
+        // the pane still says blocked. A card with only two states called it
+        // "needs a typed reply" there (pre-release bug hunt).
+        <Pressable accessibilityRole="button" onPress={onOpen}>
+          <Text style={styles.question} accessibilityLiveRegion="polite">
+            {answered.outcome === "sent"
+              ? "Answer sent — waiting for the agent…"
+              : "That question had already closed, so nothing was sent. Waiting for the agent’s next step…"}
+          </Text>
+        </Pressable>
       ) : (
         <Pressable accessibilityRole="button" onPress={onOpen}>
           <Text style={styles.question}>This one needs a typed reply. Open it →</Text>

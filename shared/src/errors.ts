@@ -23,6 +23,21 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * The server answered and refused: its words, the HTTP status, and the
+ * machine-readable code it sent with them (`prompt_gone`, `backend_unavailable`…).
+ *
+ * The native client used to keep only the words, so a screen could not tell
+ * a question that had already closed from a relay timeout, or a pane that no
+ * longer exists from one that has not written a transcript yet.
+ */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/**
  * The server and this app do not speak a common contract version.
  *
  * Distinct from unreachable and from unauthorized: the server is there and

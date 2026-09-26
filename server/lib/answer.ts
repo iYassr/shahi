@@ -52,10 +52,15 @@ export interface Choice {
 /**
  * The prompt the card showed is not on screen: there is none, it has been
  * answered already, or the one there now is a later appearance.
+ *
+ * The words are shown as they are by apps that do not know the code, so they
+ * speak of the question and the agent, never the pane id: "w1:p1 is not
+ * asking anything now" meant nothing to the person holding the phone
+ * (pre-release bug hunt).
  */
 export class PromptGone extends Error {
   readonly code = "prompt_gone";
-  constructor(paneId: string, message = `${paneId} is not asking anything now`) {
+  constructor(readonly paneId: string, message = "That question has already been answered or closed. Nothing was sent.") {
     super(message);
   }
 }
@@ -63,8 +68,8 @@ export class PromptGone extends Error {
 /** The screen shows a prompt, but not the option the phone tapped. */
 export class PromptChanged extends Error {
   readonly code = "prompt_changed";
-  constructor(paneId: string) {
-    super(`the question in ${paneId} changed before the answer arrived`);
+  constructor(readonly paneId: string) {
+    super("The agent is asking something else now. Nothing was sent; check the new question.");
   }
 }
 

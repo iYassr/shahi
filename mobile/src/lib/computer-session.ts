@@ -1,7 +1,7 @@
 import { clearNativeDrafts, forgetNativeDraft } from "./drafts";
 import { forgetPaneMemory } from "./reader-memory";
 import { reconcileSession } from "./session-reconcile";
-import { endedPanes, retainReviews, reviewKey, type Reviewed, type DashboardPane, type ParsedPrompt, type Session, type SocketMessage } from "@shahi/shared";
+import { endedPanes, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type AnsweredPrompt, type Reviewed, type DashboardPane, type ParsedPrompt, type PromptState, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
@@ -19,6 +19,8 @@ export class ComputerSession {
   private lastSnapshot: Session | null = null;
   serverId?: string;
   prompts: Record<string, ParsedPrompt> = {};
+  /** Questions answered from this phone on panes still waiting (see `promptsFromSession`). */
+  answered: Record<string, AnsweredPrompt> = {};
   reviewed: Reviewed = {};
   link: LinkState = "connecting";
   error: Error | null = null;
@@ -141,18 +143,24 @@ export class ComputerSession {
       if (msg.session.version) this.lastSnapshot = msg.session;
       this.session = reconcileSession(this.session, msg.session); this.error = null;
       this.reviewed = retainReviews(this.reviewed, msg.session.panes);
-      const next: Record<string, ParsedPrompt> = {};
-      for (const pane of msg.session.panes) if (pane.status === "blocked" && (this.prompts[pane.paneId] ?? pane.prompt)) next[pane.paneId] = (this.prompts[pane.paneId] ?? pane.prompt)!;
-      this.prompts = next;
-    } else if (msg.type === "prompt") this.prompts = { ...this.prompts, [msg.paneId]: msg.prompt };
+      this.setPrompts(promptsFromSession(msg.session.panes, this.promptState()));
+    } else if (msg.type === "prompt") this.setPrompts(promptPushed(this.promptState(), msg.paneId, msg.prompt));
     else if (msg.type === "frame") {
-      if (msg.frame.prompt) this.prompts = { ...this.prompts, [msg.frame.paneId]: msg.frame.prompt };
+      this.setPrompts(promptPushed(this.promptState(), msg.frame.paneId, msg.frame.prompt));
       this.frames.get(msg.frame.paneId)?.forEach(fn => fn());
     } else if (msg.type === "log_changed") this.frames.get(msg.paneId)?.forEach(fn => fn());
     this.changed();
   }
   markReviewed(pane: DashboardPane) { if (pane.status === "done") { this.reviewed = { ...this.reviewed, [pane.paneId]: reviewKey(pane) }; this.changed(); } }
-  clearPrompt(id: string) { const next = { ...this.prompts }; delete next[id]; this.prompts = next; this.changed(); }
+  /**
+   * The card for `id` answered `shown` (`sent`), or found the question already
+   * gone (`closed`): either way it is not offered again while the pane waits.
+   */
+  answeredPrompt(id: string, shown: ParsedPrompt | undefined, outcome: AnsweredPrompt["outcome"]) {
+    this.setPrompts(promptAnswered(this.promptState(), id, shown, outcome)); this.changed();
+  }
+  private promptState(): PromptState { return { prompts: this.prompts, answered: this.answered }; }
+  private setPrompts(state: PromptState) { this.prompts = state.prompts; this.answered = state.answered; }
   watch(id: string | null) { this.watched = id; this.socket?.watch(id); }
   onPaneFrame(id: string, fn: () => void) {
     let set = this.frames.get(id); if (!set) { set = new Set(); this.frames.set(id, set); }

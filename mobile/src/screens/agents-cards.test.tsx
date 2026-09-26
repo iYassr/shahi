@@ -1,6 +1,7 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { AccessibilityInfo, Dimensions, StyleSheet } from "react-native";
-import type { DashboardPane, ParsedPrompt } from "@shahi/shared";
+import { ApiError } from "@shahi/shared/errors";
+import type { AnsweredPrompt, DashboardPane, ParsedPrompt } from "@shahi/shared";
 import { Agents } from "./agents";
 
 /*
@@ -26,7 +27,8 @@ const mockState = {
   session: { panes: [waiting, working] } as { panes: DashboardPane[] } | null,
   prompts: { "w1:p1": question("Allow this edit?", ["Yes", "No"]) } as Record<string, ParsedPrompt>,
   reviewed: {}, link: "live", error: null, server: "relay://computer", pins: new Set<string>(),
-  markReviewed: jest.fn(), clearPrompt: jest.fn(), togglePin: jest.fn(), reconnect: jest.fn(),
+  answered: {} as Record<string, AnsweredPrompt>,
+  markReviewed: jest.fn(), answeredPrompt: jest.fn(), refresh: jest.fn(async () => {}), togglePin: jest.fn(), reconnect: jest.fn(),
 };
 jest.mock("@/lib/session", () => ({ useSession: () => mockState }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));
@@ -39,26 +41,54 @@ jest.mock("react-native-gesture-handler/ReanimatedSwipeable", () => ({ __esModul
 
 beforeEach(() => {
   mockState.api.answerPrompt.mockReset();
-  mockState.clearPrompt.mockReset();
+  mockState.answeredPrompt.mockReset();
+  mockState.refresh.mockClear();
   mockState.prompts = { "w1:p1": question("Allow this edit?", ["Yes", "No"]) };
+  mockState.answered = {};
   jest.spyOn(AccessibilityInfo, "announceForAccessibility").mockImplementation(() => {});
 });
 
-test("a refused answer on the Agents list says why and offers every option again", async () => {
-  mockState.api.answerPrompt.mockRejectedValueOnce(new Error("the question in w1:p1 changed before the answer arrived"));
+test("an answer that did not arrive on the Agents list says why and offers every option again", async () => {
+  mockState.api.answerPrompt.mockRejectedValueOnce(new Error("The computer didn't answer in time."));
   const view = render(<Agents onOpenPane={jest.fn()} />);
 
   fireEvent.press(view.getByLabelText("2. No"));
-  await waitFor(() => view.getByText(/Couldn’t answer: the question in w1:p1 changed/));
+  await waitFor(() => view.getByText(/Couldn’t answer: The computer didn't answer in time/));
   expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(expect.stringMatching(/Couldn’t answer/));
-  expect(mockState.clearPrompt).not.toHaveBeenCalled();
+  expect(mockState.answeredPrompt).not.toHaveBeenCalled();
   expect(view.getByLabelText("1. Yes").props.accessibilityState).toMatchObject({ disabled: false });
 
   mockState.api.answerPrompt.mockResolvedValueOnce({ ok: true });
   fireEvent.press(view.getByLabelText("1. Yes"));
-  await waitFor(() => expect(mockState.clearPrompt).toHaveBeenCalledWith("w1:p1"));
+  await waitFor(() => expect(mockState.answeredPrompt).toHaveBeenCalledWith("w1:p1", mockState.prompts["w1:p1"], "sent"));
   expect(mockState.api.answerPrompt).toHaveBeenCalledTimes(2);
   expect(view.queryByText(/Couldn’t answer/)).toBeNull();
+});
+
+// Another client answered first: the server refused the stale tap with 409,
+// and the card showed "w1:p1 is not asking anything now" and re-armed every
+// option of a question that no longer existed (pre-release bug hunt).
+test.each(["prompt_gone", "prompt_changed"])("a tap on a question that already closed stops offering it and reads the session again (%s)", async (code) => {
+  const shown = mockState.prompts["w1:p1"];
+  mockState.api.answerPrompt.mockRejectedValueOnce(new ApiError("That question has already been answered or closed. Nothing was sent.", 409, code));
+  const view = render(<Agents onOpenPane={jest.fn()} />);
+  fireEvent.press(view.getByLabelText("1. Yes"));
+  await waitFor(() => expect(mockState.answeredPrompt).toHaveBeenCalledWith("w1:p1", shown, "closed"));
+  expect(mockState.refresh).toHaveBeenCalled();
+  expect(view.queryByText(/Couldn’t answer/)).toBeNull();
+});
+
+// Between the answer and the snapshot that shows the agent moving on, the
+// pane still says blocked; the card said "This one needs a typed reply".
+test("after an answer, a card still waiting says the answer is on its way", () => {
+  mockState.prompts = {};
+  mockState.answered = { "w1:p1": { identity: "x", outcome: "sent" } };
+  const view = render(<Agents onOpenPane={jest.fn()} />);
+  expect(view.getByText("Answer sent — waiting for the agent…")).toBeTruthy();
+  expect(view.queryByText(/needs a typed reply/)).toBeNull();
+  mockState.answered = { "w1:p1": { identity: "x", outcome: "closed" } };
+  view.rerender(<Agents onOpenPane={jest.fn()} />);
+  expect(view.getByText(/That question had already closed, so nothing was sent/)).toBeTruthy();
 });
 
 // Both places a waiting card appears: the main list and the Inbox's header.

@@ -4,7 +4,7 @@ import { clearWebDrafts } from "./drafts";
 import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
-import { IncompatibleServerError } from "@shahi/shared/errors";
+import { ApiError, IncompatibleServerError } from "@shahi/shared/errors";
 import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PromptReceipt } from "@shahi/shared";
 /**
  * Client for the Shahi server.
@@ -88,8 +88,7 @@ export type LinkState = "connecting" | "live" | "lost";
 const SILENCE_LIMIT_MS = 50_000;
 const WATCHDOG_INTERVAL_MS = 5_000;
 
-export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
-export { IncompatibleServerError };
+export { ApiError, IncompatibleServerError };
 
 /**
  * A 426 is the computer declining this contract version, in words that say
@@ -157,8 +156,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const generation = getConnection().generation;
   const res = await dispatch(path, init);
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new ApiError(body.error ?? `${path} failed with ${res.status}`, res.status);
+    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    throw new ApiError(body.error ?? `${path} failed with ${res.status}`, res.status, body.code);
   }
   const result = (await res.json()) as T;
   if (browserConnection().generation !== generation) throw new DOMException("Connection changed", "AbortError");

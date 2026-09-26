@@ -4,7 +4,7 @@ import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
 import { UnreachableError } from "@shahi/shared/errors";
 import { ConnectionHealth } from "./components/ConnectionHealth";
-import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
+import { answerRefused, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type PromptState, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
 import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser, selectBrowserComputer, takePairingFragment } from "./connection";
@@ -20,7 +20,6 @@ import {
   ApiContext, createApi, useApi,
   type LinkState,
   type PaneFrame,
-  type ParsedPrompt,
   type Session,
   type SocketMessage,
 } from "./api";
@@ -147,7 +146,8 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
     if (pane.status === "done") setReviewed((current) => ({ ...current, [pane.paneId]: reviewKey(pane) }));
   }, []);
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
-  const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
+  const [promptState, setPromptState] = useState<PromptState>({ prompts: {}, answered: {} });
+  const prompts = promptState.prompts;
   // A New agent sheet whose space closed goes back to choosing one, rather
   // than reopening by itself for the next space herdr gives the same id
   // (pre-release bug hunt, B43).
@@ -246,31 +246,17 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       case "session":
         setHealthError((current) => current instanceof IncompatibleServerError ? current : null);
         setSession(msg.session);
-        setPrompts((current) => {
-          const next: Record<string, ParsedPrompt> = {};
-          for (const pane of msg.session.panes) {
-            // A prompt belongs to a blocked agent. Anything else is dropped, so
-            // the dashboard cannot offer answers to a question already answered.
-            if (pane.status !== "blocked") continue;
-            // The payload carries the prompt, which is what lets a cold load —
-            // opening from a notification — show answers straight away. A live
-            // frame may still be fresher, so it wins.
-            const known = current[pane.paneId] ?? pane.prompt;
-            if (known) next[pane.paneId] = known;
-          }
-          return next;
-        });
+        // The snapshot's prompt is the server's current one; see promptsFromSession.
+        setPromptState((current) => promptsFromSession(msg.session.panes, current));
         break;
 
       case "frame":
         setFrames((current) => ({ ...current, [msg.frame.paneId]: msg.frame }));
-        if (msg.frame.prompt) {
-          setPrompts((current) => ({ ...current, [msg.frame.paneId]: msg.frame.prompt! }));
-        }
+        setPromptState((current) => promptPushed(current, msg.frame.paneId, msg.frame.prompt));
         break;
 
       case "prompt":
-        setPrompts((current) => ({ ...current, [msg.paneId]: msg.prompt }));
+        setPromptState((current) => promptPushed(current, msg.paneId, msg.prompt));
         break;
 
       case "log_changed":
@@ -280,27 +266,36 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         break;
     }
   }, []);
+  // A snapshot read over HTTP carries the prompts too: setting only the
+  // session left each card on whatever question it last heard, which after
+  // a lost link could be one already answered. Unlike a push, a request that
+  // succeeded clears an update notice.
+  const applySession = useCallback((next: Session) => {
+    setHealthError(null);
+    setSession(next);
+    setPromptState((current) => promptsFromSession(next.panes, current));
+  }, []);
 
   useEffect(() => {
     if (!authenticated || incompatible) return;
     const socket = new SessionSocket(msg => { if (active()) onMessage(msg); }, (state) => {
       if (!active()) return;
       setLink(state);
-      if (state === "lost") void api.session().then((s) => { setSession(s); setHealthError(null); }).catch((e) => setHealthError(e instanceof Error ? e : new Error("Connection failed")));
+      if (state === "lost") void api.session().then(applySession).catch((e) => setHealthError(e instanceof Error ? e : new Error("Connection failed")));
     });
     socketRef.current = socket;
     socket.connect();
     if (watchedRef.current) socket.watch(watchedRef.current);
     // Authentication may open the relay before the screen subscribes. Fetch
     // a snapshot explicitly so an early push cannot leave this computer empty.
-    void api.session().then(next => { if (active()) setSession(next); }).catch(error => {
+    void api.session().then(next => { if (active()) applySession(next); }).catch(error => {
       if (active()) setHealthError(error instanceof Error ? error : new Error("Connection failed"));
     });
     return () => {
       socket.close();
       socketRef.current = null;
     };
-  }, [authenticated, onMessage, incompatible]);
+  }, [authenticated, onMessage, applySession, incompatible]);
 
   const watch = useCallback((paneId: string | null) => {
     watchedRef.current = paneId;
@@ -309,9 +304,9 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
 
   const retryConnection = useCallback(async () => {
     socketRef.current?.ensureConnected();
-    try { const next = await api.session(); setSession(next); setHealthError(null); }
+    try { applySession(await api.session()); }
     catch (e) { setHealthError(e instanceof Error ? e : new Error("Connection failed")); }
-  }, []);
+  }, [applySession]);
 
   // After creating something, pull the session straight away rather than
   // waiting up to a few seconds for the server's next snapshot to land.
@@ -324,25 +319,32 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
 
   const answer = useCallback(
     async (paneId: string, optionIndex: number) => {
+      const shown = prompts[paneId];
       try {
-        const option = prompts[paneId]?.options.find((o) => o.index === optionIndex);
+        const option = shown?.options.find((o) => o.index === optionIndex);
         if (!option) throw new Error("That prompt changed. Wait for the latest question.");
         const instanceId = sessionRef.current?.panes.find((pane) => pane.paneId === paneId)?.instanceId;
-        await api.answerPrompt(paneId, optionIndex, option.label, prompts[paneId], instanceId);
+        await api.answerPrompt(paneId, optionIndex, option.label, shown, instanceId);
         setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
-        // The agent's next frame is what confirms it landed; clearing here keeps
-        // the card from re-offering a question that is on its way out.
-        setPrompts((current) => {
-          const next = { ...current };
-          delete next[paneId];
-          return next;
-        });
+        // The agent's next frame is what confirms it landed; until then the
+        // card says the answer is on its way rather than re-offering it.
+        setPromptState((current) => promptAnswered(current, paneId, shown, "sent"));
       } catch (err) {
+        // The question moved on and nothing was pressed: stop offering it and
+        // read what is asked now. This used to toast the server's "w1:p1 is not
+        // asking anything now" and re-arm every option (pre-release bug hunt).
+        if (answerRefused(err)) {
+          setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
+          setPromptState((current) => promptAnswered(current, paneId, shown, "closed"));
+          showToast("That question had already closed, so nothing was sent.");
+          void api.session().then(applySession).catch(() => {});
+          return;
+        }
         showToast(err instanceof Error ? err.message : "Could not send that");
         throw err;
       }
     },
-    [showToast, prompts],
+    [showToast, prompts, applySession],
   );
 
   /**
@@ -391,7 +393,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         navigate("/");
       }
     };
-    const expired = () => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); };
+    const expired = () => { setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/"); };
     window.addEventListener("shahi:unauthorized", expired);
     window.addEventListener("unhandledrejection", onRejection);
     return () => { window.removeEventListener("unhandledrejection", onRejection); window.removeEventListener("shahi:unauthorized", expired); };
@@ -467,12 +469,12 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
                 <LinkState state={link} />
               </header>
               <PushPrompt onToast={showToast} />
-              <Dashboard reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} onAnswer={answer} />
+              <Dashboard reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} answered={promptState.answered} onAnswer={answer} />
         <TabBar allowPane blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
       </aside>}
       <main className="conversation-main">
       <Routes>
-        <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPrompts({}); clearReaderMemory(); navigate("/"); }} />} />
+        <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/"); }} />} />
         <Route path="/" element={<div className="conversation-welcome"><Logo size={64} /><h1>Your work, ready to continue</h1><p>Choose an agent on the left to read the conversation or send the next instruction.</p><span>Same session. Same computer.</span></div>} />
         <Route
           path="/spaces"

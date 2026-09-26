@@ -36,6 +36,7 @@ import {
 } from "@shahi/shared";
 
 import {
+  ApiError,
   IncompatibleServerError,
   UnauthorizedError,
   UnreachableError,
@@ -46,7 +47,7 @@ import { relayLink, toBase64Url, type LinkState, type LinkSubscriber, type Relay
 
 // The screens import the error classes from here; they moved to `errors.ts`
 // so the relay transport can throw them without importing this module.
-export { IncompatibleServerError, UnauthorizedError, UnreachableError, type UnreachableReason };
+export { ApiError, IncompatibleServerError, UnauthorizedError, UnreachableError, type UnreachableReason };
 
 /**
  * Turns a `fetch` rejection into an `UnreachableError`.
@@ -286,6 +287,12 @@ async function dispatch(
   };
 }
 
+/** Any other refusal, with its status and code, so a screen can tell them apart. */
+async function refusal(res: Reply, path: string): Promise<ApiError> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  return new ApiError(body.error ?? `${path} failed with ${res.status}`, res.status, body.code);
+}
+
 /** A 426 is the server declining this contract version; say so, in its words. */
 async function incompatible(res: Reply): Promise<IncompatibleServerError> {
   const body = (await res.json().catch(() => ({}))) as { error?: string; api?: { min: number; max: number } };
@@ -305,10 +312,7 @@ async function request<T>(
   const res = await dispatch(path, { ...init, headers: baseHeaders(init.headers) }, ms);
   if (res.status === 401) throw new UnauthorizedError();
   if (res.status === 426) throw await incompatible(res);
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${path} failed with ${res.status}`);
-  }
+  if (!res.ok) throw await refusal(res, path);
   return (await res.json()) as T;
 }
 
@@ -484,10 +488,7 @@ const api = {
     if (res.status === 401) throw new UnauthorizedError();
     if (res.status === 426) throw await incompatible(res);
     if (res.status === 304 && cached) return cached.value;
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `${path} failed with ${res.status}`);
-    }
+    if (!res.ok) throw await refusal(res, path);
     const value = (await res.json()) as SessionLog;
     const etag = res.headers.get("etag");
     if (etag) {

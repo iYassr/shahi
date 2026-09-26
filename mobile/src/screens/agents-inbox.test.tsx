@@ -8,7 +8,7 @@ const mockState = {
   session: { panes: [pane("Waiting task", "blocked"), pane("Completed task", "done"), pane("Busy task", "working")] } as { panes: DashboardPane[] } | null,
   prompts: {}, reviewed: {} as Reviewed, link: "live", error: null as Error | null, server: "relay://computer", pins: new Set(),
   markReviewed: jest.fn((p: DashboardPane) => { mockState.reviewed = { ...mockState.reviewed, [p.paneId]: reviewKey(p) }; }),
-  clearPrompt: jest.fn(), togglePin: jest.fn(), reconnect: jest.fn(), signOut: jest.fn(),
+  answeredPrompt: jest.fn(), refresh: jest.fn(async () => {}), answered: {}, togglePin: jest.fn(), reconnect: jest.fn(), signOut: jest.fn(),
 };
 jest.mock("@/lib/session", () => ({ useSession: () => mockState }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));
