@@ -139,7 +139,11 @@ async function dispatch(path: string, init?: RequestInit): Promise<Response> {
     res = new Response([204, 205, 304].includes(reply.status) ? null : bytes, { status: reply.status, headers: reply.headers });
   } else {
     if (hosted) throw new UnauthorizedError();
-    res = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(timeout), ...init, headers });
+    // A caller's signal joins the deadline rather than replacing it: spread
+    // over it, an upload's Cancel would have removed the 60-second limit.
+    const deadline = AbortSignal.timeout(timeout);
+    const signal = init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline;
+    res = await fetch(path, { credentials: "same-origin", ...init, signal, headers });
   }
   if (res.status === 401) {
     if (!hosted) clearWebDrafts("direct");
@@ -322,7 +326,15 @@ const api = {
     if (browserConnection().link && file.size > RELAY_LIMITS.maxBodyBytes - 4096) throw new Error("Update Shahi on your computer to send files up to 32 MB through the tunnel.");
     const body = new FormData();
     body.append("file", file);
-    const res = await dispatch("/api/uploads", { method: "POST", body });
+    // Cancel upload used to reach only the chunked path: this request ran to
+    // the end and the file was attached anyway (pre-release bug hunt). A
+    // relay request cannot be withdrawn once sent, so a cancelled one is
+    // still not attached.
+    const cancelled = () => new Error("Upload cancelled");
+    let res: Response;
+    try { res = await dispatch("/api/uploads", { method: "POST", body, signal: options.signal }); }
+    catch (error) { if (options.signal?.aborted) throw cancelled(); throw error; }
+    if (options.signal?.aborted) throw cancelled();
     if (res.status === 401) {
     if (!hosted) clearWebDrafts("direct"); window.dispatchEvent(new Event("shahi:unauthorized")); throw new UnauthorizedError(); }
     const payload = (await res.json().catch(() => ({}))) as {

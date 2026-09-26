@@ -246,6 +246,39 @@ test.describe("attachments", () => {
     await expect(source.getByRole("button", { pressed: true })).toHaveText("On your computer");
   });
 
+  // Cancel upload aborted nothing in the locally served app: the request ran
+  // to the end and the file was stored and attached anyway (pre-release bug
+  // hunt). The stub holds the upload open, so only a cancel that ends the
+  // request itself can say so before the stub lets go.
+  test("cancelling an upload ends it and attaches nothing", async ({ page, browserName }) => {
+    await openPane(page);
+    await page.request.post("/__stub/hold-uploads");
+    // Playwright's WebKit settles a request it intercepts, and the write fuse
+    // intercepts every write, only once the server answers, aborted or not
+    // (measured). Chromium ends it at once, as a browser with nothing in the
+    // way does, so that is where the request is seen to stop.
+    const aborted = browserName === "chromium"
+      ? page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname === "/api/uploads")
+      : null;
+    await tap(page, page.locator(".compose__attach"));
+    await page.locator("input[type=file]").first().setInputFiles({
+      name: "photo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("not really a png"),
+    });
+    await page.getByRole("button", { name: "Cancel upload", exact: true }).click();
+    if (aborted) {
+      await expect(page.locator(".toast")).toHaveText("Upload cancelled");
+      await aborted;
+      await page.request.post("/__stub/release-uploads");
+    } else {
+      await page.request.post("/__stub/release-uploads");
+      await expect(page.locator(".toast")).toHaveText("Upload cancelled");
+    }
+    await expect(page.getByRole("button", { name: "Choose photo or file", exact: true })).toBeEnabled();
+    await expect(page.locator(".attached__chip")).toHaveCount(0);
+  });
+
   test("an upload that fails says so", async ({ page }) => {
     await page.route("**/api/uploads", (route) =>
       route.fulfill({ status: 413, json: { error: "file is too large" } }),

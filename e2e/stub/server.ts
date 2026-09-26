@@ -63,6 +63,17 @@ let writes: { method: string; path: string; body: unknown; at: number }[] = [];
 let socketMessages: { type: string; paneId?: string; at: number }[] = [];
 const sockets = new Set<ServerWebSocket<unknown>>();
 /**
+ * Multipart uploads held open until a test lets them go, so a test can cancel
+ * one that is really in flight and see the request itself end. Only Chromium
+ * shows that: while a route intercepts a request, and the write fuse
+ * intercepts every write, Playwright's WebKit settles it only once the server
+ * answers, aborted or not (measured).
+ */
+let holdUploads = false;
+let heldUploads: (() => void)[] = [];
+const releaseUploads = () => { for (const release of heldUploads) release(); heldUploads = []; };
+
+/**
  * Files the file viewer can open, written once into a temp directory.
  *
  * Removed when the stub stops. Until the September 2026 review every start
@@ -160,6 +171,8 @@ Bun.serve({
       control = null;
       writes = [];
       socketMessages = [];
+      holdUploads = false;
+      releaseUploads();
       broadcast({ type: "session", session: scenario.session });
       return json({ ok: true });
     }
@@ -182,6 +195,8 @@ Bun.serve({
 
     if (pathname === "/__stub/writes") return json({ writes });
     if (pathname === "/__stub/socket") return json({ messages: socketMessages });
+    if (pathname === "/__stub/hold-uploads" && req.method === "POST") { holdUploads = true; return json({ ok: true }); }
+    if (pathname === "/__stub/release-uploads" && req.method === "POST") { holdUploads = false; releaseUploads(); return json({ ok: true }); }
 
     if (pathname === "/__stub/meta" && req.method === "POST") {
       // Advertise a contract range and refuse everything outside it — a
@@ -455,6 +470,7 @@ Bun.serve({
       } catch (e) { return json({ error: e instanceof Error ? e.message : "Upload failed" }, { status: e instanceof TransferError ? e.status : 500 }); }
     }
     if (pathname === "/api/uploads" && req.method === "POST") {
+      if (holdUploads) await new Promise<void>((release) => heldUploads.push(release));
       writes.push({ method: "POST", path: pathname, body: "(multipart)", at: Date.now() });
       return json({
         name: "photo.png",
