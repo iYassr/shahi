@@ -20,6 +20,7 @@ const mockCalls: string[] = [];
 const mockSession: { switchComputer?: (id: string) => Promise<void>; signInRelay?: () => void } = {};
 
 jest.mock("@/lib/push", () => ({
+  showNotificationsWhileOpen: jest.fn(),
   onNotificationTapped: (open: (paneId: string, serverId?: string) => void) => { mockTap = open; return () => { mockTap = null; }; },
 }));
 jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
