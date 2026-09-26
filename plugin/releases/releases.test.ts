@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { download, RELEASE_HOSTS, selectRelease, sha256, verifyCatalog, type Catalog, type Release } from "./catalog";
 import { stage } from "./stage";
-import { atomicJson, installation } from "./storage";
+import { atomicJson, installation, readJson, type Transaction } from "./storage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
 import { verifyPublished } from "./published";
 
@@ -153,6 +153,43 @@ describe("restart and recovery", () => {
     atomicJson(join(s.root, "installation.json"), { ...installation(s.root), active: target });
     await finishTransaction(s.root, s.runner);
     expect(installation(s.root)?.active.buildId).toBe(release.buildId); expect(s.phases.at(-1)).toBe("rolled-back");
+  });
+  // A manager stopped mid-activation had already rewritten installation.json
+  // to { active: target, previous }, and the rollback spread that record:
+  // previous came back equal to active (compatibility bug hunt).
+  test("a rollback resumed after an interruption restores the release before the target, and the one before that", async () => {
+    const older = { ...release, version: "0.2.9", buildId: "build-0" };
+    const s = setup(true);
+    atomicJson(join(s.root, "installation.json"), { active: target, previous: release, channel: "stable", sequence: {} });
+    atomicJson(join(s.root, "transaction.json"), { previous: release, target, serverId: "paired-computer", earlier: older });
+    await finishTransaction(s.root, s.runner);
+    expect(installation(s.root)?.active.buildId).toBe(release.buildId);
+    expect(installation(s.root)?.previous?.buildId).toBe(older.buildId);
+  });
+  test("a journal written before it recorded the earlier release drops previous rather than repeating active", async () => {
+    const s = setup(true);
+    atomicJson(join(s.root, "installation.json"), { active: target, previous: release, channel: "stable", sequence: {} });
+    atomicJson(join(s.root, "transaction.json"), { previous: release, target, serverId: "paired-computer" });
+    await finishTransaction(s.root, s.runner);
+    expect(installation(s.root)?.active.buildId).toBe(release.buildId);
+    expect(installation(s.root)?.previous).toBeUndefined();
+  });
+  test("the journal records the release a rollback restores as previous", async () => {
+    const older = { ...release, version: "0.2.9", buildId: "build-0" };
+    const s = setup(false);
+    atomicJson(join(s.root, "installation.json"), { active: release, previous: older, channel: "stable", sequence: {} });
+    let journal: Transaction | null = null;
+    // What a manager stopped during this activation would find.
+    await beginTransaction(s.root, target, { ...s.runner, async activate() { journal = readJson<Transaction>(join(s.root, "transaction.json")); } }, "paired-computer");
+    expect(journal!.earlier?.buildId).toBe(older.buildId);
+  });
+  // The service stops with the manager a moment later, so "ready" would
+  // describe an instance that is about to go (compatibility bug hunt).
+  test("an activation handed over to a new manager stays restarting when it succeeds", async () => {
+    const s = setup(false); await beginTransaction(s.root, target, s.runner, "paired-computer", { handoff: true });
+    expect(s.phases).toEqual(["restarting"]);
+    expect(installation(s.root)?.active.buildId).toBe(target.buildId);
+    expect(existsSync(join(s.root, "transaction.json"))).toBe(false);
   });
   test("refuses rollback across an untested data format", async () => {
     const s = setup(false); await expect(beginTransaction(s.root, { ...target, dataSchema: 2 }, s.runner)).rejects.toThrow("rollback");

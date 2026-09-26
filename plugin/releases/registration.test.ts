@@ -144,6 +144,9 @@ describe("the manager, after herdr no longer has the plugin", () => {
     mkdirSync(releaseDir, { recursive: true });
     writeFileSync(join(releaseDir, "verified.json"), JSON.stringify(release));
     writeFileSync(join(releaseDir, "service.js"), `require("node:fs").writeFileSync(${JSON.stringify(join(dir, "service-started"))}, "1"); setInterval(() => {}, 1000);`);
+    // The manager that runs here, as a release carries it, so it has no
+    // manager of its own to hand over to.
+    writeFileSync(join(releaseDir, "manager.js"), readFileSync(join(import.meta.dir, "manager.ts")));
     atomicJson(join(root, "installation.json"), { active: release, channel: "stable", sequence: {} });
     const manager = Bun.spawn([process.execPath, join(import.meta.dir, "manager.ts")], {
       cwd: dir, stdout: "pipe", stderr: "pipe",

@@ -4,7 +4,13 @@ import { updateInProgress, type ComputerUpdate, type ReleaseChannel } from "@sha
 import type { Release } from "./catalog";
 
 export interface Installation { active: Release; previous?: Release; channel: ReleaseChannel; sequence: Partial<Record<ReleaseChannel, number>> }
-export interface Transaction { previous: Release; target: Release; serverId?: string }
+export interface Transaction {
+  previous: Release;
+  target: Release;
+  serverId?: string;
+  /** installation.previous when the journal was written (null: none), which a rollback restores. Absent in journals from 0.3.7 and earlier. */
+  earlier?: Release | null;
+}
 export type UpdateRequest = { action: "check" | "install"; channel?: ReleaseChannel };
 export function readJson<T>(path: string): T | null {
   try { return JSON.parse(readFileSync(path, "utf8")) as T; }

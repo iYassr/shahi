@@ -8,8 +8,16 @@ export interface Runner {
   ready(release: Release, serverId?: string): Promise<boolean>;
   phase(phase: "restarting" | "ready" | "rolled-back" | "failed", message?: string): void;
 }
+/**
+ * `handoff`: the target brings a new manager, which replaces this one once
+ * the journal is committed and stops the service with it. The status then
+ * stays "restarting" for the new manager to finish; "ready" here described a
+ * service that was about to stop (compatibility bug hunt).
+ */
+export interface Activation { handoff?: boolean }
+
 /** The manager outlives the service. Pending activation is resumed after reboot. */
-export async function finishTransaction(root: string, runner: Runner): Promise<void> {
+export async function finishTransaction(root: string, runner: Runner, { handoff = false }: Activation = {}): Promise<void> {
   const tx = readJson<Transaction>(join(root, "transaction.json"));
   if (!tx) return;
   const record = installation(root)!;
@@ -20,10 +28,17 @@ export async function finishTransaction(root: string, runner: Runner): Promise<v
   try { await runner.activate(tx.target); healthy = await runner.ready(tx.target, tx.serverId); } catch { /* Restore below. */ }
   if (healthy) {
     rmSync(join(root, "transaction.json"));
-    runner.phase("ready");
+    if (!handoff) runner.phase("ready");
     return;
   }
-  atomicJson(join(root, "installation.json"), { ...record, active: tx.previous });
+  // A rollback restores the release before the target and the one before
+  // that. The record read above can already be this journal's own rewrite,
+  // made before a manager was stopped mid-activation, whose previous is the
+  // release being restored: spreading it left previous equal to active and
+  // the failed target on disk (compatibility bug hunt). A journal from before
+  // `earlier` existed says nothing, so previous is dropped rather than wrong.
+  const earlier = tx.earlier !== undefined ? tx.earlier : record.previous?.buildId === tx.previous.buildId ? null : record.previous ?? null;
+  atomicJson(join(root, "installation.json"), { ...record, active: tx.previous, previous: earlier ?? undefined });
   try {
     await runner.activate(tx.previous);
     if (!await runner.ready(tx.previous, tx.serverId)) throw new Error("Previous release did not become ready.");
@@ -35,11 +50,11 @@ export async function finishTransaction(root: string, runner: Runner): Promise<v
     throw new Error("Update and recovery readiness checks failed.");
   }
 }
-export async function beginTransaction(root: string, target: Release, runner: Runner, serverId?: string) {
+export async function beginTransaction(root: string, target: Release, runner: Runner, serverId?: string, activation: Activation = {}) {
   const record = installation(root);
   if (!record) throw new Error("No managed installation.");
   if (record.active.dataSchema !== target.dataSchema) throw new Error("This data upgrade has no approved rollback path.");
   if (readJson(join(root, "transaction.json"))) throw new Error("An update is already pending recovery.");
-  atomicJson(join(root, "transaction.json"), { previous: record.active, target, serverId });
-  await finishTransaction(root, runner);
+  atomicJson(join(root, "transaction.json"), { previous: record.active, target, serverId, earlier: record.previous ?? null } satisfies Transaction);
+  await finishTransaction(root, runner, activation);
 }

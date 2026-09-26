@@ -427,8 +427,14 @@ rescans when the default branch moves. Nothing in the code is involved.
   headless deployment still needs `loginctl enable-linger` as described above.
 - **No rotation of `shahi.log`.** The sidecar's stdout log grows until
   something truncates it (the private `operations.jsonl` beside it does
-  rotate); the sidecar is quiet, but a box that runs for a year should have
-  `logrotate` or `newsyslog` pointed at it.
+  rotate). A running sidecar is quiet, and one that cannot start — a taken
+  port, a bad `.env` value — writes two short lines per attempt: its own
+  reason and the manager's "starting it again in …". The manager waits 3 s
+  after the first failure, doubling to five minutes (a minute of healthy
+  running resets that), so a sidecar that never starts adds under
+  100 KB a day; it used to be restarted every four seconds with 5 KB of
+  minified source each time, about 127 MB a day. A box that runs for a year
+  should still have `logrotate` or `newsyslog` pointed at it.
 - **No Windows.** The manifest says so; there is no user-service story for
   it here and herdr's own Windows support is newer than this plugin.
 - **A compiled single binary** would remove the bun requirement and the

@@ -124,7 +124,14 @@ herdr still permits recovery-only readiness. Pairing secrets and databases stay
 outside release directories. A failed activation restores the previous release;
 an interrupted activation resumes from its journal at the next manager start.
 An approved manager update is installed atomically after service readiness and
-the OS restarts it. Only the active and immediately previous artifacts are kept.
+the OS restarts it; the status stays "restarting" until the new manager's
+service is ready, because the one the old manager started stops with it. The
+same cleanup follows an activation finished at the next manager start, so a
+stopped manager cannot leave the old manager or a failed release behind, and a
+rollback restores the release that was previous before the update. Only the
+active and immediately previous artifacts are kept. A service that exits by
+itself is started again after 3 s, doubling to five minutes while it keeps
+failing, and the status says why in the meantime.
 
 Data schema 1 currently permits same-format rollback. Different schemas are
 refused until a separately tested migration and recovery path is introduced.
