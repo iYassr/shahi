@@ -221,7 +221,11 @@ export class RelayBox extends DurableObject<unknown> {
     const state = ws.deserializeAttachment() as Attachment | null;
     if (!state) { ws.close(1002, "unexpected frame"); return; }
     if (ws.readyState !== WebSocket.OPEN || (state.role === "box" ? state.closed : !state.open)) return;
-    if (typeof message === "string" && message.length > RELAY_LIMITS.maxControlBytes) {
+    // The limit is in bytes. `length` counts UTF-16 code units, so on its own
+    // it let up to ~12 KB of three-byte characters through (pre-release bug
+    // hunt, B105). A string's UTF-8 is never shorter than its length, so
+    // `length` still refuses the largest frames without encoding them.
+    if (typeof message === "string" && (message.length > RELAY_LIMITS.maxControlBytes || encoder.encode(message).byteLength > RELAY_LIMITS.maxControlBytes)) {
       if (state.role === "phone") this.closePhone(ws, state, RELAY_CLOSE.quota, "control too large");
       else this.closeBox(ws, state, RELAY_CLOSE.quota, "control too large");
       return;

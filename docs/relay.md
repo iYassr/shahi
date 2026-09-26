@@ -482,7 +482,7 @@ ping, which lives in the sidecar, not here — a deliberate next step.
 | `4409` | `replaced`          | box   | another connection proved the same key            |
 | `4429` | `too many pending boxes` | box | a ninth unauthenticated box connection: the longest-waiting pending one (at least 1 s old) is closed, or the newcomer if all eight are younger |
 | `1000` | `silent`            | box   | five minutes without a frame or a `ping`          |
-| `4429` | `control too large` | either | a text frame over 4 KiB                          |
+| `4429` | `control too large` | either | a text frame over 4 KiB, counted in UTF-8 bytes   |
 | `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away |
 | `4429` | `too many phones`   | phone | a ninth phone: the longest-silent phone open at least 1 s is closed with this, or else, on a box that sent `"proofs":true`, the longest-waiting one it has not reported `proven`; the newcomer if neither exists |
 | `4429` | `frame too large`   | phone | a data frame over 1 MiB, sent by the phone or by the box for this link; either way the box is told `close` for the link, and the box and its other phones stay connected |

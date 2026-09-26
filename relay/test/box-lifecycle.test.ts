@@ -378,3 +378,25 @@ test("a phone's own small requests and acknowledgements are never taken for a fl
   expect(phone.closes).toHaveLength(0);
   expect(box.sent.filter((m) => typeof m !== "string").length).toBeGreaterThan(20_000);
 });
+
+test("a text frame over 4 KiB of UTF-8 is too large even when it is under 4,096 characters", async () => {
+  // The limit compared UTF-16 code units with a byte count, so 1,366 euro
+  // signs (4,098 bytes) passed, and so did anything up to ~12 KB of
+  // three-byte characters (pre-release bug hunt, B105).
+  const f = fixture(), box = await f.authenticated(), phone = await f.phone();
+  const over = "€".repeat(Math.ceil((RELAY_LIMITS.maxControlBytes + 1) / 3));
+  expect(over.length).toBeLessThan(RELAY_LIMITS.maxControlBytes);
+  expect(new TextEncoder().encode(over).byteLength).toBeGreaterThan(RELAY_LIMITS.maxControlBytes);
+  // Exactly the limit, in the same characters, is still allowed.
+  const limit = "€".repeat(Math.floor(RELAY_LIMITS.maxControlBytes / 3)) + "x".repeat(RELAY_LIMITS.maxControlBytes % 3);
+  await f.relay.webSocketMessage(phone, limit);
+  await f.relay.webSocketMessage(box, limit);
+  expect(phone.closes).toHaveLength(0);
+  expect(box.closes).toHaveLength(0);
+  await f.relay.webSocketMessage(phone, over);
+  expect(phone.closes).toEqual([4429]);
+  expect(phone.reason).toBe("control too large");
+  await f.relay.webSocketMessage(box, over);
+  expect(box.closes).toEqual([4429]);
+  expect(box.reason).toBe("control too large");
+});
