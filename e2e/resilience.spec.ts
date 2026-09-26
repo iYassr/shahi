@@ -47,6 +47,20 @@ test.describe("resilience", () => {
     await liveAgain(page);
   });
 
+  // Launched with the computer away, "Cannot reach Shahi" promised to
+  // reconnect and then made no request until someone pressed Try again
+  // (pre-release bug hunt).
+  test("launched while the computer is away, it connects by itself once it answers", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.route("**/api/auth/status", (route) => route.abort("connectionrefused"));
+    await page.goto("/");
+    await expect(page.getByText("Cannot reach Shahi")).toBeVisible();
+    await expect(page.getByText("Check that your computer is awake and Shahi is running.")).toBeVisible();
+    await page.unroute("**/api/auth/status");
+    await expect(page.locator(".row, .blocked").first()).toBeVisible();
+    await expect(page.getByText("Cannot reach Shahi")).toHaveCount(0);
+  });
+
   test("does not flood the connection while sitting idle", async ({ page }) => {
     const requests: string[] = [];
     page.on("request", (r) => requests.push(r.url()));

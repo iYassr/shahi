@@ -2,6 +2,7 @@ import { ComputerSwitcher } from "./components/ComputerSwitcher";
 import { ComputerUpdate, ComputerControlProvider } from "./components/ComputerUpdate";
 import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
+import { UnreachableError } from "@shahi/shared/errors";
 import { ConnectionHealth } from "./components/ConnectionHealth";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
@@ -140,7 +141,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   const checkAuth = useCallback(() => {
     const expected = browserConnection().generation;
     const current = () => expected === browserConnection().generation;
-    void restoreBrowser().then(() => {
+    return restoreBrowser().then(() => {
       // A saved device is still paired while its computer is offline. Open
       // its dashboard immediately; requests report availability separately.
       if (hosted) return { required: true, authenticated: !!browserConnection().identity };
@@ -163,11 +164,44 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   }, []);
 
   useEffect(() => {
-    checkAuth();
+    void checkAuth();
     // Coming back onto the network should just work, without a manual retry.
     window.addEventListener("online", checkAuth);
     return () => window.removeEventListener("online", checkAuth);
   }, [checkAuth]);
+
+  /*
+   * Launched while the computer is away, nothing else would ask again: the
+   * live socket reconnects by itself but exists only once signed in, and the
+   * wake handler below waits for that too. So "Cannot reach Shahi" said it
+   * was reconnecting and made no request at all until someone pressed Try
+   * again — 45 seconds and two wake events, zero requests (pre-release bug
+   * hunt, 2026-09). Ask again on a backoff capped at 30 seconds, one request
+   * at a time, and at once when the page is shown again.
+   */
+  useEffect(() => {
+    if (reachable) return;
+    let stopped = false;
+    let delay = 2_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timer = setTimeout(() => void checkAuth().finally(() => {
+        if (stopped) return;
+        delay = Math.min(delay * 2, 30_000);
+        schedule();
+      }), delay);
+    };
+    const wake = () => { if (document.visibilityState === "visible") void checkAuth(); };
+    schedule();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("pageshow", wake);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("pageshow", wake);
+    };
+  }, [reachable, checkAuth]);
 
   const onMessage = useCallback((msg: SocketMessage) => {
     switch (msg.type) {
@@ -337,11 +371,17 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   if (showComputers || routeLocation.pathname === "/computers") return <div className="app"><Computers onClose={() => { setShowComputers(false); navigate("/"); }} /></div>;
   const computerButton = hosted && browserComputers().length > 0 ? <ComputerSwitcher onManage={() => setShowComputers(true)} /> : null;
   if (!reachable) {
+    const health = connectionHealth({ link: "lost", error: healthError, transport: hosted ? "relay" : "direct", online: navigator.onLine });
+    // Nothing has opened yet on this screen, so the general "your
+    // conversation stays open… you don't need to pair again" was wrong here,
+    // and pairing means nothing to a passcode sign-in. A cause the connection
+    // named keeps its own words.
+    const named = !navigator.onLine || healthError instanceof IncompatibleServerError || healthError instanceof UnreachableError;
     return (
       <div className="app">
         <div className="empty">
           <span className="empty__mark">○</span>
-          Cannot reach Shahi. {connectionHealth({ link: "lost", error: healthError, transport: hosted ? "relay" : "direct", online: navigator.onLine })?.detail || connectionError}
+          Cannot reach Shahi. {(named ? health?.detail : "Check that your computer is awake and Shahi is running. Shahi will keep trying.") || connectionError}
           {computerButton}
           {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>Forget this browser and pair again</button>}
           <button className="empty__action" onClick={checkAuth}>

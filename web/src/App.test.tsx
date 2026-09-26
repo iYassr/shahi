@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "./App";
@@ -146,4 +146,54 @@ test("a pane opened by its address is watched once the live stream opens", async
   const stream = FakeSocket.made[0]!;
   await act(async () => { stream.readyState = 1; stream.onopen?.(); });
   expect(stream.sent).toContainEqual({ type: "watch", paneId: "w1:p1" });
+});
+
+describe("launched while the computer is away", () => {
+  // "Cannot reach Shahi" said Shahi was reconnecting and then asked nothing:
+  // no request in 45 seconds or after the page was shown again, until
+  // someone pressed Try again (pre-release bug hunt).
+  let away = true;
+  beforeEach(() => {
+    away = true;
+    routes["/api/auth/status"] = () => {
+      if (away) throw new TypeError("Load failed");
+      return json({ required: false, authenticated: true })();
+    };
+    routes["/api/session"] = json({ panes: [], workspaces: [], tabs: [] });
+  });
+
+  test("says what to check rather than that a conversation is reconnecting", async () => {
+    await render();
+    expect(text()).toContain("Cannot reach Shahi");
+    expect(text()).toContain("Check that your computer is awake and Shahi is running");
+    expect(text()).not.toContain("Your conversation stays open");
+    expect(text()).not.toContain("pair again");
+  });
+
+  test("asks again when the page is shown", async () => {
+    await render();
+    expect(text()).toContain("Cannot reach Shahi");
+    away = false;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle();
+    expect(text()).not.toContain("Cannot reach Shahi");
+  });
+
+  test("asks again by itself after a short wait", async () => {
+    // Fake timers stop `settle`'s sleeps too, so only promise jobs are run.
+    const flush = () => act(async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); });
+    jest.useFakeTimers();
+    try {
+      await act(async () => { view = create(<MemoryRouter><App /></MemoryRouter>); });
+      await flush();
+      expect(text()).toContain("Cannot reach Shahi");
+      away = false;
+      await act(async () => { jest.advanceTimersByTime(1_999); });
+      await flush();
+      expect(text()).toContain("Cannot reach Shahi");
+      await act(async () => { jest.advanceTimersByTime(1); });
+      await flush();
+      expect(text()).not.toContain("Cannot reach Shahi");
+    } finally { jest.useRealTimers(); }
+  });
 });
