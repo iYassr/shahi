@@ -225,7 +225,7 @@ describe("answering sooner than the mirror knows", () => {
  * goes out with an id the phone sends back.
  */
 describe("which appearance of a prompt a frame shows", () => {
-  const blocked = { pane: () => ({ agent_status: "blocked" }) } as unknown as SessionStore;
+  const blocked = { pane: () => ({ agent_status: "blocked" }), instance: () => undefined } as unknown as SessionStore;
   function pane(first: string) {
     const shown = { screen: first };
     const client = {
