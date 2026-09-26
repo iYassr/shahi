@@ -35,7 +35,7 @@ export function connectionHealth({ link, error, transport, online = true, comput
     title: "Computer disconnected", detail: "Wake your computer and check that Shahi is running. We’ll keep trying to reconnect.",
   };
   if (error instanceof UnreachableError && error.reason === "relay") return {
-    title: "Connection temporarily unavailable", detail: "Shahi cannot connect right now. We’ll keep trying; you don’t need to pair again.",
+    title: "Can’t reach Shahi’s relay", detail: "Check this device’s connection. We’ll keep trying; you don’t need to pair again.",
   };
   if (error instanceof UnreachableError && ["tls", "ats", "address"].includes(error.reason)) return {
     title: "Connection setup needs attention", detail: "Check the connection address and secure connection settings on your computer, then retry.",
@@ -48,7 +48,7 @@ export function connectionHealth({ link, error, transport, online = true, comput
   return {
     title: error || link === "lost" ? `Reconnecting to ${computer}…` : `Connecting to ${computer}…`,
     detail: transport === "ssh"
-      ? "Your conversation stays open. Check that your computer is awake. Retry connection will reconnect securely."
-      : "Your conversation stays open while Shahi reconnects. You don’t need to pair again.",
+      ? "Check that your computer is awake. Retry connection will reconnect securely."
+      : "Shahi will reconnect automatically. You don’t need to pair again.",
   };
 }

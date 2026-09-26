@@ -62,7 +62,7 @@ clear conversations, readable code, colored agent icons, and controls that are
 easy to reach. Live updates keep you close to the work; returning to a conversation
 keeps your reading position and unfinished reply.
 
-Claude Code and Codex activity is formatted automatically. Messages, tool calls,
+Claude Code, Codex and Cursor activity is formatted automatically. Messages, tool calls,
 command results, file changes and supported approval requests become readable
 conversation items, so you can understand what happened and decide what comes
 next from your phone. There is no per-tool layout to configure. Screen mode is
@@ -77,7 +77,7 @@ view rather than a formatted conversation.
   follow-up, attach a file, or use terminal keys your phone keyboard lacks.
 - **Find what needs you.** The Inbox in Agents gathers unanswered requests,
   completed work, and agents whose status needs checking. Mark completed items
-  Reviewed for the current app session. Search by conversation name, space or
+  Reviewed for the current app session. Search by conversation name, agent, space or
   folder to find earlier work quickly.
 - **Know when the connection is interrupted.** Connection guidance distinguishes
   reported network, relay, and computer-disconnection problems and offers a
@@ -92,7 +92,7 @@ view rather than a formatted conversation.
   <img src="docs/screenshots/04-reader.png" width="230" alt="An agent conversation formatted for reading on a phone" />
   <img src="docs/screenshots/03-spaces.png" width="230" alt="Workspaces and their running agents" />
 </p>
-<p align="center"><sub>Earlier device captures; some controls and styling have since changed.</sub></p>
+<p align="center"><sub>iPhone simulator captures, 26 September 2026. All conversations shown are synthetic examples.</sub></p>
 
 ## Quick start
 
@@ -116,7 +116,9 @@ for yet, Shahi still installs, in a recovery state: you can pair and update,
 but agent commands are refused until an approved Shahi or herdr arrives, and
 setup names both versions. The computer also needs `git`, which herdr uses to
 fetch the plugin, and bun 1.3.13 or newer; with no bun at all, the install
-fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`.
+fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`
+and adds `~/.bun/bin` to the shell’s rc file. Allow HTTPS access to `github.com`
+and `release-assets.githubusercontent.com`.
 Linux service installation requires systemd; see the
 [installation requirements](docs/plugin.md). Run your agents inside herdr,
 then install Shahi:
@@ -144,7 +146,8 @@ herdr plugin action invoke shahi.pair
 The code appears in a popup in herdr’s window, so a herdr window must be open;
 on a server with no herdr window attached, run `herdr` first and invoke it from
 there. The first time, the popup sets Shahi up in front of you and prints a
-four-digit passcode, shown only once and needed only for SSH, and on Linux the
+four-digit passcode, shown only once and needed for SSH or the locally served
+web app. If the startup hook ran first, read it in the plugin log. On Linux it also shows the
 lingering reminder when it applies. It waits for Enter before showing the QR,
 and keeps any failure on screen until Enter, with what to do next.
 
@@ -156,19 +159,24 @@ The code can be claimed **once** and expires after **10 minutes**. Generate a
 separate code for each phone or browser. Treat the QR code and pairing link as
 credentials: anyone who claims a valid code can gain access to your session.
 
-**If nothing appears,** check `herdr plugin action invoke shahi.status` (the
-service, the relay, and whether the API answers) and
-`herdr plugin log list --plugin shahi` (every action’s output). herdr’s CLI
+**If nothing appears,** run `herdr plugin action invoke shahi.status`, then
+read its report with `herdr plugin log list --plugin shahi`. The invoke itself
+prints a JSON action record; the plugin log contains the status report. herdr’s CLI
 exits successfully even when the popup could not open, for example with no
 herdr window attached; the plugin log then holds the reason and a command that
 prints the code as text. **Lost the passcode?**
 `herdr plugin action invoke shahi.reset-passcode` prints a new one to that same
 log; existing sessions and paired phones stay signed in.
 
+If the QR asks for more room, enlarge the window or press T then Enter for
+the link. From outside a named herdr session’s panes, add `--session <name>`
+to these commands.
+
 ### 3. Open Shahi on your phone
 
 - **Browser:** open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) and scan the
-  QR, or paste the code. Opening the `#pair=` link from the popup shows a
+  QR using **Scan QR code** inside Shahi, or paste the code. Your phone’s
+  camera app cannot hand a native pairing code to the browser. Opening the `#pair=` link from the popup shows a
   **Connect this browser?** card first, naming the relay and the computer;
   continue only if you opened that link yourself. Add Shahi to your home screen
   for a standalone app window.
@@ -191,17 +199,23 @@ The browser app is available on phones and computers. The native iOS app is in
 beta; a native Android release is not currently available. SSH tunnelling is
 built into the native app, not the hosted browser app.
 
+## Updating
+
+When Shahi shows **Update computer**, tap it to install a signed release and
+restart the service while keeping your pairings. Or run
+`herdr plugin install iYassr/shahi` again. Updating herdr does not update Shahi.
+
 ## Messages and files
 
-In the iPhone app, links to files on your computer open a labeled preview through
+In both apps, links to files on your computer open a labeled preview through
 your existing connection. Text, images and PDFs can be viewed in Shahi. Use
 Save / Share on iPhone to keep a copy in Files or open it in another app; the web
 viewer has a Download button. PDFs have native scrolling and zoom on iPhone, and
 page and zoom controls on the web. Downloads are limited to 25 MiB and travel
-through the encrypted relay in 512 KiB parts. Through the relay, that needs a
-computer release newer than 0.3.6: earlier ones withheld the response headers
-the parts depend on, so PDFs, Save / Share and web downloads failed there while
-SSH worked.
+through the encrypted relay in 512 KiB parts. Computer release 0.3.6 drops
+the range headers, so Shahi falls back to a whole-file request up to one relay
+body (783,360 bytes, about 765 KiB). Larger relay downloads require 0.3.7 or
+newer and say when an update is needed. SSH has no such fallback limit.
 
 Read mode supports Claude Code, Codex and Cursor CLI transcripts. Cursor tool
 calls appear when present in its transcript; outputs that Cursor does not store
@@ -210,7 +224,8 @@ are labeled unavailable. Screen remains available for other agents.
 Unsent messages are kept separately for each conversation and computer while
 Shahi remains open. They are not saved permanently: reloading the browser or
 closing the app process clears them. Signing out or revoking access also clears
-that connection’s drafts.
+that connection’s drafts. A draft also goes when its pane closes or its
+identifier is reassigned to another program, so it cannot reach the next agent.
 
 Files can be up to **32 MiB each** through the relay or SSH. Update both Shahi
 and the computer service to use the larger relay limit. Relay uploads show
@@ -218,7 +233,8 @@ progress, travel in small encrypted pieces, and recover from brief connection
 losses while the upload remains open. Larger files take several minutes;
 closing the app may require selecting the file again. Older computer services
 keep the previous 761 KiB relay limit. Browser batches can retry remaining files
-without adding completed attachments again.
+without adding completed attachments again. Relay uploads run one at a time,
+with at most 128 completed files an hour per computer.
 
 ## Uninstall
 
@@ -243,7 +259,7 @@ rm -r "$(herdr plugin config-dir shahi)" ~/.local/state/herdr/plugins/shahi
 ```
 
 Those are the default paths; with `XDG_*` variables set, herdr’s follow them,
-and `herdr plugin action invoke shahi.status` prints the actual ones while the
+and `shahi.status` writes the actual ones to the plugin log while the
 plugin is still installed. If herdr itself is already gone, the service cannot
 ask it and keeps running. Remove it by hand. On macOS:
 
@@ -292,8 +308,10 @@ devices**. The default relay is `relay.getshahi.dev`. You can also
 Prefer SSH? In the native app, choose **Want to use SSH?** and connect to a
 computer you can already reach over SSH. Shahi opens a tunnel to its loopback
 service. Before it sends a login, it shows the server's host-key fingerprint
-for you to compare, and it pins the key you trust. Setting `RELAY_URL=`
-(empty) in the plugin configuration disables the relay on your computer.
+for you to compare, and it pins the key you trust. To disable the relay, add
+`RELAY_URL=` to `"$(herdr plugin config-dir shahi)/.env"`, then run
+`herdr plugin action invoke shahi.restart`. QR pairing and the hosted browser
+app then stop working for that computer; use the iPhone app’s SSH connection.
 
 ## Connection security
 
@@ -308,14 +326,18 @@ connection is designed around a few concrete protections:
 | **Fresh connection keys** | Each connection uses ephemeral X25519 keys. HKDF-SHA-256 mixes the exchange with the pairing or device secret; ChaCha20-Poly1305 protects messages. |
 | **Message integrity and ordering** | Altered messages and unexpected counters are rejected rather than accepted as commands. |
 | **Device revocation** | Revoke a paired device in Settings to close its active connection and refuse further authenticated requests. A device revoked while offline is signed out the next time it connects through the relay. |
-| **Local service boundary** | The sidecar binds to loopback and answers only requests addressed to `127.0.0.1` or `localhost`. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
+| **Local service boundary** | The sidecar binds to loopback and answers only requests addressed to `127.0.0.1`, `localhost` or `[::1]`, or a proxy named in `SHAHI_ALLOWED_HOSTS`. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
 
 **Encryption has a boundary.** The relay and its infrastructure provider can
 observe connection metadata, including IP addresses, identifiers, and traffic
 sizes and timing. A compromised phone, computer, or browser application can
 access data at an endpoint. Optional notifications on iPhone pass through Expo
 and Apple, which receive their content. Your coding agent’s own model-provider
-connection is also separate from Shahi.
+connection is also separate from Shahi. Browser notification contents are
+encrypted for the browser’s push service; that service also sees a short
+computer/pane hash used to replace undelivered notifications. Hosted relay
+connection-event records, with counts, durations and region but no IP addresses
+or content, are retained for three months; see the privacy policy.
 
 The native app stores pairing credentials in the iOS Keychain. Browser pairing
 is temporary unless you explicitly choose to remember it; remembered credentials
@@ -325,7 +347,8 @@ browser app includes trusting its published code.
 **[Read the illustrated security guide →](docs/connection-security.md)**
 
 It explains pairing, encryption, credential storage, metadata, revocation, and
-what the published security reviews do—and do not—establish. For data collection
+what the published security reviews do—and do not—establish. The project has
+not had an independent security audit. For data collection
 and retention, read the [privacy policy](docs/privacy-policy.md). Report security
 issues through [SECURITY.md](SECURITY.md).
 
@@ -343,7 +366,8 @@ shared/   Types, pairing, encryption, and shared client logic
 relay/    Encrypted-traffic relay
 plugin/   Installation and service management
 site/     Public website
-e2e/     Browser tests against isolated fixtures
+operations/ Monitoring and service alerts
+e2e/      Browser tests against isolated fixtures
 ```
 
 ```sh
@@ -363,7 +387,8 @@ Browser tests use fixtures that record actions without sending them to your
 agents. Real-herdr checks require a named test session and a fresh configuration
 directory without installed startup hooks; never point write tests at your
 working session. See [CONTRIBUTING.md](CONTRIBUTING.md)
-and [CLAUDE.md](CLAUDE.md) for development and service restart instructions.
+and [CLAUDE.md](CLAUDE.md) for development. [Developing the plugin](docs/plugin.md#developing-it)
+explains linking a checkout and restarting its managed service.
 
 ## Further reading
 

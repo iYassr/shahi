@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { connectionHealth } from "@shahi/shared";
 import { useComputerControl } from "./ComputerUpdate";
+import { OtherComputers } from "./OtherComputers";
 
 export function ConnectionHealth({ link, error, relay, onRetry }: {
   link: "connecting" | "live" | "lost"; error: Error | null; relay: boolean; onRetry: () => Promise<void>;
@@ -18,6 +19,7 @@ export function ConnectionHealth({ link, error, relay, onRetry }: {
   if (!health) return null;
   return <div className="connection-health" role="status">
     <div><strong>{health.title}</strong><p>{health.detail}</p><small>Live updates resume when the connection returns.</small></div>
+    {relay && <OtherComputers />}
     <button disabled={busy || !online} onClick={() => { setBusy(true); void onRetry().finally(() => setBusy(false)); }}>{busy ? "Retrying…" : "Retry connection"}</button>
   </div>;
 }

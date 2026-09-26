@@ -195,6 +195,7 @@ describe("what a conversation is called", () => {
   // The waiting card said "untitled" for a pane its row called by its id.
   test("a waiting card with no title is named by its pane id, as its row is", async () => {
     await render([pane({ paneId: "w1:p1", status: "blocked", title: null }), pane({ paneId: "w1:p2", status: "blocked", title: "Fix the build" })]);
-    expect(text("blocked__task")).toEqual(["claude · w1:p1", "claude · w1:p2 · Fix the build"]);
+    expect(text("blocked__where")).toEqual(["w1:p1", "Fix the build"]);
+    expect(text("blocked__task").every(label => label.includes("Claude"))).toBe(true);
   });
 });

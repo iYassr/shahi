@@ -642,3 +642,8 @@ Tests model missing open/close callbacks, stale session keys, repeated network
 changes, and phone-slot cleanup. Browser and native fixtures also blackhole a
 live connection without closing it, then verify foreground recovery and an
 offline cold launch without re-pairing or duplicate prompts.
+
+Use the ASCII `xn--` form of an international relay domain in `RELAY_URL`;
+native pairing refuses a non-ASCII origin. Unfinished uploads are discarded
+after ten idle minutes or when that device starts another, with one hour as
+the hard cap. Revocation/logout discard that owner’s unfinished transfers.

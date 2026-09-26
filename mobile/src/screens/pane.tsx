@@ -1,7 +1,8 @@
+import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { backendUnavailable, supports } from "@shahi/shared";
+import { agentLabel, backendUnavailable, supports } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -179,10 +180,13 @@ interface Props {
   paneId: string;
   /** A swipe's Screen action lands straight on the terminal. */
   initialView?: "reader" | "screen";
+  focusReply?: boolean;
 }
 
-export function Pane({ paneId, initialView = "reader" }: Props) {
-  const { api, control, watch, onPaneFrame, session, terminalWidth, unauthorized, link } = useSession();
+export function Pane({ paneId, initialView = "reader", focusReply = false }: Props) {
+  const { api, control, watch, onPaneFrame, session, terminalWidth, unauthorized, link, error: connectionError, computers = [], activeComputerId } = useSession();
+  const computerName = computers.find(c => c.id === activeComputerId)?.name ?? session?.serverName;
+  const cannotWrite = link !== "live" || !!connectionError || !!control?.handshake?.backend && control.handshake.backend.state !== "connected";
   const savedDraft = useRef(nativeDraft(api, paneId)).current;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -194,6 +198,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const messagesRef = useRef<LogMessage[]>(messages);
   /** Which transcript `messages` came from (see `transcriptOf`), once one has loaded. */
   const transcript = useRef<string | null>(messageMemory.get(paneId)?.transcript ?? null);
+  const knownTotal = useRef(messageMemory.get(paneId)?.total ?? 0);
   const anchorLock = useRef(typeof scrollMemory.get(paneId) === "object");
   const cells = useScrollCells<LogMessage>((message) => message.id, (id, frame, previous) => {
     if (previous && previous.y !== frame.y && !shifted.current.has(id)) shifted.current.set(id, previous.y);
@@ -213,6 +218,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const pendingSeq = useRef(0);
   const promptAttempt = useRef(savedDraft.pending);
   const promptInFlight = useRef(false);
+  const composer = useRef<TextInput>(null);
+  useEffect(() => { if (focusReply) composer.current?.focus(); }, [focusReply]);
   /**
    * Away from the tail, as state rather than the `following` ref, because the
    * jump pill has to render when it changes. `unseen` counts what arrived
@@ -260,7 +267,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
   const [sending, setSending] = useState(savedDraft.inFlight);
   useEffect(() => {
-    const update = () => { setDraftState(savedDraft.inFlight ? "" : savedDraft.text); setSending(savedDraft.inFlight); promptAttempt.current = savedDraft.pending; };
+    const update = () => { setDraftState(savedDraft.text); setSending(savedDraft.inFlight); promptAttempt.current = savedDraft.pending; };
     savedDraft.listeners.add(update);
     return () => { savedDraft.listeners.delete(update); };
   }, [savedDraft]);
@@ -619,7 +626,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       awaitingBaselineAgents.current += prefix.filter((m) => m.role === "agent").length;
       setPending((items) => items.map((item) => ({ ...item, youBaseline: item.youBaseline + oldYou })));
       messagesRef.current = combined;
-      messageMemory.set(paneId, { transcript: from, messages: combined });
+      messageMemory.set(paneId, { transcript: from, messages: combined, total: knownTotal.current || page.total });
       olderCursor.current = Math.max(0, Math.min(before, page.total) - page.messages.length);
       setHasOlder(olderCursor.current > 0);
       setMessages(combined);
@@ -642,7 +649,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     const readLog = async () => {
       if (!logRequest) return;
       try {
-        const log = await logRequest;
+        let log = await logRequest;
         if (!stillActive()) return;
         // Message ids are only unique within one transcript file: Cursor numbers
         // messages from `cursor-0` and Codex numbers rows, so a herdr pane reused
@@ -652,6 +659,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         // its history cursor and its place, which is the tail of the new one.
         const source = transcriptOf(log);
         const switched = transcript.current !== null && source !== transcript.current;
+        const missing = log.total - knownTotal.current;
+        const overlaps = (page: SessionLog) => messagesRef.current.some(m => page.messages.some(fresh => fresh.id === m.id));
+        // A busy agent can add more than one tail while this phone is away.
+        // Bridge that gap before merging, or the loaded history and its anchor
+        // disappear. Keep the same bounded page limit as the web reader.
+        if (!switched && messagesRef.current.length && knownTotal.current > 0 && missing > 0 && missing + 60 <= 400 && !overlaps(log)) {
+          const bridged = await api.sessionLog(paneId, missing + 60);
+          if (!stillActive()) return;
+          if (transcriptOf(bridged) === source) log = bridged;
+        }
         transcript.current = source;
         if (switched) {
           messagesRef.current = [];
@@ -670,9 +687,10 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           if (!following.current && prevLen > 0)
             setUnseen((u) => u + Math.max(0, folded.length - prevLen));
           messagesRef.current = folded;
-          messageMemory.set(paneId, { transcript: source, messages: folded });
+          messageMemory.set(paneId, { transcript: source, messages: folded, total: log.total });
           setMessages(folded);
         }
+        knownTotal.current = log.total;
         if (switched) {
           setUnseen(0);
           setAway(false);
@@ -840,6 +858,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   }
 
   async function answer(option: PromptOption) {
+    if (cannotWrite) return;
     // The card being answered, sent so the server can tell it from a newer one.
     const shown = prompt ?? undefined;
     setPrompt(null);
@@ -850,9 +869,11 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     chase();
     try {
       await api.answerPrompt(paneId, option, shown, pane?.instanceId);
+      if (option.textInput && stillActive()) { endAwaiting(); composer.current?.focus(); }
     } catch (e) {
       endAwaiting();
       showError(e);
+      throw e;
     }
   }
 
@@ -861,7 +882,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     // draft took the first line's indentation and not the rest's, which broke
     // pasted Python and YAML (pre-release bug hunt).
     const text = draft.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
-    if (!text || promptInFlight.current || savedDraft.inFlight) return;
+    if (!text || cannotWrite || promptInFlight.current || savedDraft.inFlight) return;
     promptInFlight.current = true;
     const key = JSON.stringify([paneId, text]);
     // The occupant rides with the operation id, so a retry is refused (409
@@ -871,17 +892,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
     savedDraft.inFlight = true;
     setError(null);
     setSending(true);
-    // Echo the message into the thread and show "working", both before the send
-    // round-trip — the reader reacts the instant you tap, not after a poll. The
+    // Echo the message and say "Sending" before the receipt; Working begins
+    // only after acceptance — the reader reacts the instant you tap, not after a poll. The
     // baseline is the current `you` count so `load` can retire this echo once the
     // real message lands.
     const id = `pending-${(pendingSeq.current += 1)}`;
     const youNow = messagesRef.current.filter((m) => m.role === "you").length;
     const echo: LogMessage = { id, role: "you", at: Date.now(), blocks: [{ kind: "text", text }] };
     setPending((prev) => [...prev, { message: echo, youBaseline: youNow + prev.length, at: Date.now() }]);
-    setDraftState("");
     notifyNativeDraft(savedDraft);
-    beginAwaiting();
+    jumpToLatest();
     // Fast polling starts now, before the request even leaves. It used to start
     // after the send returned — which, when the send was two requests with a
     // 200ms pause between them, meant the first fast tick landed noticeably
@@ -895,8 +915,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       savedDraft.pending = null;
       if (!stillActive()) return;
       promptAttempt.current = null;
+      beginAwaiting();
       committed();
     } catch (e) {
+      if (e instanceof ApiError && e.code === "pane_replaced") {
+        savedDraft.pending = null;
+        promptAttempt.current = null;
+      }
       if (!stillActive()) return;
       // Delivery may have succeeded before the response was lost. Keep the
       // request id so retry asks for that outcome rather than sending twice.
@@ -916,7 +941,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const attach = supports(control?.handshake ?? null, "attachments") && (
     <Pressable
       style={styles.attach}
-      disabled={sending}
+      disabled={cannotWrite || sending}
+      accessibilityState={{ disabled: cannotWrite || sending }}
       onPress={() => setAttaching(true)}
       accessibilityRole="button"
       accessibilityLabel="Attach a file"
@@ -927,11 +953,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const send = (
     <Pressable
       accessibilityRole="button"
-      style={[styles.send, (sending || !draft.trim()) && styles.sendOff]}
-      disabled={sending || !draft.trim()}
+      style={[styles.send, (sending || cannotWrite || !draft.trim()) && styles.sendOff]}
+      disabled={sending || cannotWrite || !draft.trim()}
+      accessibilityState={{ disabled: sending || cannotWrite || !draft.trim(), busy: sending }}
       onPress={() => void submit()}
     >
-      <Text style={styles.sendText}>Send</Text>
+      <Text style={styles.sendText}>{sending ? "Sending…" : cannotWrite ? "Offline" : "Send"}</Text>
     </Pressable>
   );
 
@@ -974,12 +1001,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
               style={styles.headTitle}
               testID="pane-title"
               accessibilityShowsLargeContentViewer
-              accessibilityLargeContentTitle={`${title}, ${pane?.agent ?? "shell"} · ${paneId}`}
+              accessibilityLargeContentTitle={`${title}, ${agentLabel(pane?.agent ?? "shell")}${computerName ? ` · ${computerName}` : ""}`}
             >
               <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
                 {title}
               </Text>
-              <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{pane?.agent ?? "shell"} · {paneId}</Text>
+              <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{agentLabel(pane?.agent ?? "shell")}{computerName ? ` · ${computerName}` : ""}</Text>
             </View>
           ),
         }}
@@ -1020,7 +1047,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         style={[styles.notices, { maxHeight: Math.round(windowHeight * PROMPT_SHARE) }]}
         keyboardShouldPersistTaps="handled"
       >
-        <ConnectionHealth />
+        <ConnectionHealth conversation />
         {/* Readable and dismissible, instead of one truncated line squeezed
             into the old topbar. Not cut at all: at two lines the refusal for a
             message typed while a menu is open ended, on every iPhone width,
@@ -1034,7 +1061,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           </Pressable>
         )}
 
-        {prompt && <Prompt prompt={prompt} onAnswer={answer} />}
+        {prompt && view === "reader" && <Prompt key={prompt.promptId ?? prompt.question} prompt={prompt} onAnswer={answer} disabled={cannotWrite} compact={keyboard > 0} />}
       </ScrollView>
 
       {loading && view === "reader" ? (
@@ -1090,6 +1117,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
           data={pending.length ? [...messages, ...pending.map((p) => p.message)] : messages}
+          ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>Ready when you are. Tell {agentLabel(pane?.agent ?? "the agent")} what to do.</Text></View>}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
@@ -1227,7 +1255,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             if (following.current) scrollToTail();
           }}
           ListFooterComponent={
-            activity ? (
+            sending ? <Text style={styles.dim}>Sending…</Text> : prompt ? null : activity ? (
               <Working activity={activity} />
             ) : awaiting ? (
               <Working activity={AWAITING_ACTIVITY} />
@@ -1264,6 +1292,17 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       {viewing && <FileView file={viewing} onClose={() => setViewing(null)} />}
 
       <View style={styles.compose}>
+        {(savedDraft.attachments ?? []).filter(path => draft.includes(path)).map(path => (
+          <View key={path} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Icon name="file-text" size={16} color={theme.peach} />
+            <Text style={{ flex: 1, color: theme.fg, fontSize: 14 }} numberOfLines={1} ellipsizeMode="middle" accessibilityLabel={path}>{path.split("/").pop()}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Remove attachment ${path.split("/").pop()}`} disabled={sending} style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }} onPress={() => {
+              savedDraft.attachments = savedDraft.attachments?.filter(item => item !== path);
+              setDraft(text => text.replace(`${path}\n`, "").replace(path, ""));
+            }}><Text style={{ color: theme.dim }}>×</Text></Pressable>
+          </View>
+        ))}
+        {!sending && savedDraft.pending && <Text accessibilityRole="alert" style={styles.dim} testID="unconfirmed-send">Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.</Text>}
         {/* Terminal vocabulary: always there on the screen view, but in the
             reader only while the keyboard is up and you are actually
             answering — the rest of the time it was a row of noise. */}
@@ -1277,6 +1316,8 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
           {KEY_BAR.map(({ label, spoken, keys }) => (
             <Pressable
               key={label}
+              disabled={cannotWrite || sending}
+              accessibilityState={{ disabled: cannotWrite || sending }}
               style={[styles.key, label === "Ctrl+C" && styles.interruptKey]}
               accessibilityRole="button"
               accessibilityLabel={spoken}
@@ -1303,6 +1344,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         <View style={[styles.composeRow, largeText && styles.composeRowStacked]}>
           {!largeText && attach}
           <TextInput
+            ref={composer}
             style={[styles.input, largeText && styles.inputStacked]}
             value={draft}
             editable={!sending}
@@ -1327,6 +1369,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
             // Attachments become paths on their own line, the same as the web
             // client — an agent cannot receive a file over a terminal, but it
             // can read one off disk.
+            savedDraft.attachments = [...new Set([...(savedDraft.attachments ?? []).filter(item => draft.includes(item)), path])];
             setDraft((d) => (d ? `${path}\n${d}` : `${path}\n`));
             setAttaching(false);
           }}
@@ -1343,11 +1386,17 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
 function Prompt({
   prompt,
   onAnswer,
+  disabled = false,
+  compact = false,
 }: {
   prompt: ParsedPrompt;
   onAnswer: (option: PromptOption) => Promise<void>;
+  disabled?: boolean;
+  compact?: boolean;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  if (compact && !expanded) return <Pressable accessibilityRole="button" accessibilityState={{ expanded: false }} style={styles.choice} onPress={() => setExpanded(true)}><Text style={styles.question}>Waiting: {prompt.question} ▾</Text></Pressable>;
   return (
     // Bounded by the notices area it sits in, which scrolls (see `Pane`).
     <View testID="prompt-card" style={[styles.promptCard, styles.promptBody]}>
@@ -1363,10 +1412,10 @@ function Prompt({
             // and its blank placeholder were read aloud, and which row the
             // menu's cursor is on was only visible, never spoken.
             accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail].filter(Boolean).join(". ")}
-            accessibilityState={{ selected: current, disabled: armed !== null }}
+            accessibilityState={{ selected: current, disabled: armed !== null || disabled }}
             key={option.index}
             style={[styles.choice, isArmed && styles.choiceArmed]}
-            disabled={armed !== null}
+            disabled={armed !== null || disabled}
             onPress={() => {
               setArmed(option.index);
               void onAnswer(option).catch(() => setArmed(null));
@@ -1403,15 +1452,20 @@ const Message = memo(function Message({
   const system = message.role === "system";
   return (
     <View testID={`message-${message.id}`} style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
-      <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
-        {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
+            {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
+          </Text>
+          {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
+        </View>
+        {message.blocks.some((block) => block.kind === "text") && (
+          <CopyButton text={message.blocks.flatMap((block) => block.kind === "text" ? [block.text] : []).join("\n\n")} />
+        )}
+      </View>
       {message.blocks.map((block, i) => (
         <Block key={i} block={block} paneId={paneId} onOpenFile={onOpenFile} />
       ))}
-      {message.blocks.some((block) => block.kind === "text") && (
-        <CopyButton text={message.blocks.flatMap((block) => block.kind === "text" ? [block.text] : []).join("\n\n")} />
-      )}
     </View>
   );
 });
@@ -1588,7 +1642,7 @@ function FileView({
             <Text style={styles.fileClose}>Done</Text>
           </Pressable>
         </View>
-        <Text style={styles.filePath} numberOfLines={1}>
+        <Text style={styles.filePath} numberOfLines={1} ellipsizeMode="middle">
           {file.path}
         </Text>
 
@@ -1964,15 +2018,13 @@ export function FilePicker({
         keyExtractor={(e) => e.path}
         style={{ maxHeight: 320 }}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
             style={styles.fileRow}
             onPress={() => (item.isDirectory ? setPath(item.display) : onPick(item.path))}
           >
-            <Text style={styles.fileGlyph}>
-              {parent && index === 0 ? "↰" : item.isDirectory ? "/" : "·"}
-            </Text>
+            <Icon name={item.isDirectory ? "folder" : "file-text"} size={18} color={theme.dim} />
             <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
           </Pressable>
         )}
@@ -2016,7 +2068,7 @@ const styles = StyleSheet.create({
 
   headTitle: { alignItems: "center", maxWidth: "100%" },
   title: { color: theme.fg, fontSize: 14 },
-  subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 10, marginTop: 1 },
+  subtitle: { color: theme.dim, fontFamily: theme.mono, fontSize: 12, marginTop: 1 },
 
   jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 14, alignItems: "center" },
   jump: {
@@ -2025,7 +2077,7 @@ const styles = StyleSheet.create({
     borderColor: theme.lineBright,
     borderRadius: 999,
     paddingHorizontal: 14,
-    minHeight: 34,
+    minHeight: 44,
     justifyContent: "center",
   },
   jumpText: { color: theme.peach, fontSize: 12 },
@@ -2054,7 +2106,7 @@ const styles = StyleSheet.create({
     borderTopColor: theme.line,
   },
   width: {
-    minHeight: 34,
+    minHeight: 44,
     paddingHorizontal: 12,
     justifyContent: "center",
     borderWidth: 1,
@@ -2086,7 +2138,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginVertical: 8,
   },
-  who: { fontSize: 10, fontWeight: "600", letterSpacing: 0.8, marginBottom: 6 },
+  who: { fontSize: 12, fontWeight: "600", letterSpacing: 0.8, marginBottom: 6 },
   whoYou: { color: theme.working },
   // A system note (a model switch, an away-summary): quiet chrome, not the
   // agent speaking — dim, set off by a rule, never the loud "you" fill.

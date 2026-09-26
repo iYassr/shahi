@@ -368,3 +368,8 @@ Run `bun test site/signup.test.ts` and `bunx tsc --noEmit -p site` for checks.
 Use `bunx wrangler dev --config site/wrangler.toml` after building to test the
 form locally; a plain static file server cannot handle submissions. Local email
 bindings do not deliver unless explicitly configured for remote email testing.
+
+Pairing links also work in an already open tab: `hashchange` opens the
+confirmation card and removes the fragment from browser history. A failed claim
+keeps its code; only success spends it. The card displays the normalized ASCII
+relay origin that will actually be dialled.

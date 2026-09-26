@@ -6,12 +6,14 @@ export type ComputerConnection = { kind: "ssh"; ssh: SshProfile } | ({ kind: "re
 export interface SavedComputer {
   id: string;
   name: string;
+  /** A name chosen on this phone must survive the computer reporting its hostname. */
+  customName?: string;
   connection: ComputerConnection;
   pins: string[];
   /** Learned from an SSH computer once it is signed in; a relay code carries its own. */
   serverId?: string;
 }
-export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"] };
+export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"]; waiting?: number; available?: boolean; status?: string };
 export const COMPUTERS_KEY = "shahi.computers";
 
 export function computerId(connection: ComputerConnection): string {
@@ -56,6 +58,12 @@ export function computerAddress(connection: ComputerConnection): string {
 export function rememberComputer(computers: SavedComputer[], connection: ComputerConnection, name?: string, pins?: string[]): SavedComputer[] {
   const id = computerId(connection);
   const previous = computers.find((computer) => computer.id === id);
-  const saved: SavedComputer = { id, connection, name: name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.serverId && { serverId: previous.serverId }) };
+  const saved: SavedComputer = { id, connection, name: previous?.customName || name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.customName && { customName: previous.customName }), ...(previous?.serverId && { serverId: previous.serverId }) };
   return previous ? computers.map((computer) => computer.id === id ? saved : computer) : [...computers, saved];
+}
+
+/** Same hostnames are common; saved order gives their labels a stable distinction. */
+export function computerDisplayName(computer: Pick<SavedComputer, "id" | "name">, computers: Pick<SavedComputer, "id" | "name">[]): string {
+  const same = computers.filter(c => c.name === computer.name);
+  return same.length > 1 ? `${computer.name} (${same.findIndex(c => c.id === computer.id) + 1})` : computer.name;
 }

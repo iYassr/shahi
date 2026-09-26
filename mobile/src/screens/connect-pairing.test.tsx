@@ -158,5 +158,5 @@ test("a pairing that fails after a newer link arrived leaves the newer card clea
 
   expect(screen.getByText(`${fresh.serverId.slice(0, 16)}…`)).toBeTruthy();
   expect(screen.queryByText(/not valid/)).toBeNull();
-  expect(screen.getByText("Pair with relay.getshahi.dev")).toBeTruthy();
+  expect(screen.getByText("Pair with this computer")).toBeTruthy();
 });

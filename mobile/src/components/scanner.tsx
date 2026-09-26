@@ -86,7 +86,7 @@ export function Scanner({
       />
       <View style={styles.overlay} pointerEvents="box-none">
         <Text style={styles.hint}>
-          {rejected ? "That isn't a Shahi pairing code." : "Point at the code your server printed."}
+          {rejected ? "That isn't a Shahi pairing code." : "Point at the code your computer printed."}
         </Text>
         <View style={styles.frame} />
         <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">

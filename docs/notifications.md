@@ -82,8 +82,10 @@ between to say so, is caught by herdr's `state_change_seq`: measured on 0.9.1
 it is a session-wide counter that advances on every status change and on
 nothing else, so a pane still blocked with a higher number has a new question.
 
-The payload carries the pane id and the computer's `serverId`, so tapping the
-notification opens that pane rather than the list. In a browser whose app is
+The payload carries the pane id, its occupant's `instanceId`, and the computer's
+`serverId`. A tap opens that conversation on that computer. If another program
+has taken the pane, Shahi says the conversation ended and offers an explicit
+action to open what runs there now. In a browser whose app is
 already open, the service worker posts the pane and computer to the page, which
 routes in place without a reload, so drafts and session-only pairings survive;
 a page from an older release that does not answer within three seconds is

@@ -98,8 +98,9 @@ The browser link is the same code, URL-encoded, after
   opens a pairing link through the relay, reads `GET /api/meta` over it, and
   refuses to claim unless the ids match — so a code aimed at the wrong relay,
   or a stranger's box behind the right one, fails before the secret is sent.
-- **`relay`** is the blind relay the box is dialled into, an `https` URL (or
-  `http` on loopback, for tests). It is the whole address: a code without a
+- **`relay`** is the blind relay’s ASCII origin: `https`, or `http` on loopback
+  for tests. International domain names must use their `xn--` form. The scheme
+  and host of the pairing link are matched without case. It is the whole address: a code without a
   usable one is rejected as a whole.
 - **`secret`** is 32 random bytes, base64url. Single use, ten minutes, kept
   only in the server process's memory (`server/lib/pairing.ts`). A restart
@@ -167,3 +168,7 @@ something unusable.
   has asked for it yet.
 - **Revoking from the computer.** See above: a lost sole device needs a second
   one to revoke it.
+
+A failed claim keeps its code and its own error for another try. Pairing uses
+Connect’s private connection; background messages from an already open computer
+cannot redirect the new computer’s claim or its one-time secret.

@@ -54,6 +54,7 @@ const TABS: { id: Tab; label: string }[] = [
 interface Props {
   /** The dashboard's own view of this pane, so the header can paint at once. */
   session: Session | null;
+  available?: boolean;
   frames: Record<string, PaneFrame>;
   prompts: Record<string, ParsedPrompt>;
   onWatch: (paneId: string | null) => void;
@@ -107,9 +108,10 @@ function useOccupancy(instanceId: string | undefined): number {
   return seen.current.generation;
 }
 
-export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
+export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast, available: connected = true }: Props) {
   const api = useApi();
   const control = useComputerControl();
+  const available = connected && (!control?.handshake?.backend || control.handshake.backend.state === "connected");
   const { paneId = "" } = useParams();
   const navigate = useNavigate();
   /**
@@ -120,6 +122,9 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
    */
   const [searchParams] = useSearchParams();
   const notifiedFor = searchParams.get("instance");
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const wantsReply = searchParams.get("reply") === "1";
+  useEffect(() => { if (wantsReply) composer.current?.focus(); }, [wantsReply]);
   const [openAnyway, setOpenAnyway] = useState(false);
 
   const [detail, setDetail] = useState<PaneDetail | null>(null);
@@ -302,7 +307,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
 
   const send = useCallback(
     async (action: () => Promise<unknown>, failure: string) => {
-      if (actionInFlight.current || !mounted.current) return;
+      if (!available || actionInFlight.current || !mounted.current) return;
       actionInFlight.current = true;
       setSending(true);
       try {
@@ -314,7 +319,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         if (mounted.current) setSending(false);
       }
     },
-    [onToast],
+    [onToast, available],
   );
 
   async function submit() {
@@ -330,7 +335,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     // path is the least ambiguous way to point at it.
     const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
 
-    if (actionInFlight.current || savedDraft.inFlight || !mounted.current) return;
+    if (!available || actionInFlight.current || savedDraft.inFlight || !mounted.current) return;
     // The occupant rides with the operation id, so a retry is refused (409
     // pane_replaced) rather than typed into whatever took the pane id since.
     if (pending.current?.body !== body) pending.current = { body, id: requestId(), ...(instanceId ? { instanceId } : {}) };
@@ -344,6 +349,12 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         if (savedDraft.text === draft) savedDraft.text = "";
         savedDraft.attachments = savedDraft.attachments.filter(file => !attachments.some(sent => sent.path === file.path));
         if (mounted.current) setEcho({ text: body, at: Date.now() });
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "pane_replaced") {
+          savedDraft.pending = null;
+          pending.current = null;
+        }
+        throw error;
       } finally {
         savedDraft.inFlight = false;
         notifyWebDraft(savedDraft);
@@ -441,7 +452,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         {loadError}
         <button className="empty__action" onClick={() => retryPane.current()}>Try again</button>
       </div>}
-      {prompt && (
+      {prompt && tab !== "screen" && (
         <section className="blocked" style={{ marginBottom: 0 }}>
           <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
             {prompt.question}
@@ -456,9 +467,10 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
             </div>
           )}
           <Prompt
+            key={prompt.promptId ?? JSON.stringify(prompt)}
             prompt={prompt}
-            disabled={sending}
-            onAnswer={(index) => onAnswer(paneId, index)}
+            disabled={!available || sending}
+            onAnswer={async (index) => { await onAnswer(paneId, index); if (prompt.options.find(o => o.index === index)?.textInput) composer.current?.focus(); }}
           />
         </section>
       )}
@@ -488,7 +500,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       </div>
 
       <div className="detail__panel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`}>
-      {tab === "read" && readable ? (
+      {tab === "read" && shell ? <div className="empty">This is a shell. Open Screen to view the terminal.<button className="empty__action" onClick={() => chooseTab("screen")}>Open Screen</button></div> : tab === "read" && readable ? (
         <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
         <>
@@ -549,10 +561,12 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       </div>
 
       <div className="compose">
+        {!sending && savedDraft.pending && <p role="alert" className="compose__notice">Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.</p>}
         <div className="keys">
           {KEY_BAR.filter((key) => tab === "screen" || key.everywhere).map(({ label, keys }) => (
             <button
               key={label}
+              disabled={!available || sending}
               aria-label={({ esc: "Escape", "^C": "Interrupt (Control C)", "⇥": "Tab", "⇧⇥": "Shift Tab", "↑": "Up arrow", "↓": "Down arrow", "⏎": "Enter" }[label] ?? label)}
               className={tab === "screen" && label === "^C" ? "keys__interrupt" : undefined}
               title={label === "^C" ? "Interrupt the running process" : undefined}
@@ -585,6 +599,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         <div className="compose__row">
           <button
             hidden={!supports(control?.handshake ?? null, "attachments")}
+            disabled={!available || sending}
             className="compose__attach"
             onClick={() => setAttaching(true)}
             aria-label="Attach a file"
@@ -596,6 +611,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
               .compose__field in session.css). */}
           <div className="compose__field" data-value={draft || placeholder}>
             <textarea
+              ref={composer}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={placeholder}
@@ -609,9 +625,9 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           <button
             className="compose__send"
             onClick={() => void submit()}
-            disabled={sending || (draft.trim() === "" && attachments.length === 0)}
+            disabled={!available || sending || (draft.trim() === "" && attachments.length === 0)}
           >
-            Send
+            {sending ? "Sending…" : !available ? "Offline" : "Send"}
           </button>
         </div>
       </div>

@@ -622,3 +622,41 @@ numbers:
   each workflow file, and the nightly preview's issue is filed by a separate
   `report` job that has only `issues: write`, no checkout, and runs nothing but
   `gh`.
+
+## Pre-release bug hunt — 2026-09-26
+
+These implementation fixes extend the earlier review. They are internal checks,
+not an independent security audit; source changes still require the appropriate
+computer release or native binary to reach installed users.
+
+- **Cross-computer pairing (B11).** Connect now owns its connection. A background
+  snapshot cannot redirect another computer’s one-time claim to the open computer.
+- **Native HTTP cache (B12).** `ShahiHttpCache` first clears URLCache.shared, then
+  disables both capacities. Expo’s fetch ignored `cache: no-store`; old login
+  bodies, cookies and transcripts could remain in Cache.db after sign-out. API
+  responses also default to no-store. Physical upgrade verification remains due.
+- **Blocking filesystem entries (B34).** File opens are nonblocking and validated
+  with fstat on the handle read. FIFOs no longer pin file-work slots indefinitely.
+- **Legacy host keys and Keychain services (B48, B53).** Every access drains the
+  old backed-up service. Its silently accepted host keys require explicit review
+  before login; saved computers merge without silently losing older entries.
+- **Pairing-host ambiguity (B49).** Relay origins are normalized and restricted
+  to ASCII; UI review and the destination cannot disagree on a Unicode lookalike.
+- **Host parsing and proxy trust (B85).** Invalid ports are refused before URL
+  parsing. Forwarded addresses are used only for an owner-allowed proxy Host.
+- **Control-frame byte limits (B105).** The 4 KiB ceiling counts encoded bytes,
+  so multibyte text cannot exceed the envelope budget unnoticed.
+- **Listener ownership (B39).** `reusePort: false` prevents a second Bun listener
+  from quietly sharing the service port on macOS.
+
+**Production zone settings remain unverified/unfixed here (B51, B52).** The
+26 September check received HTTP 200 for `http://getshahi.dev`, including the
+static-assets path that bypasses the Worker. The existing CLI token was refused
+permission to read/change Always Use HTTPS and minimum TLS. Set Always Use HTTPS
+On and minimum TLS 1.2 in the zone, then verify as described in [relay operations](relay.md).
+The relay’s own redirect and an HSTS header do not establish those zone settings.
+
+**Terminal startup still has a race (B4).** A command already waiting in the
+terminal input queue can launch an agent’s trust menu after Shahi’s process and
+screen checks. The sidecar cannot inspect that queue; the checks narrow the race
+but do not prove it impossible.

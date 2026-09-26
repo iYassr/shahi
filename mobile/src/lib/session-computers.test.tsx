@@ -364,3 +364,43 @@ test("a pin on one conversation does not pin the next conversation to get its pa
   expect(bank().find((c: { id: string }) => c.id === computerId(a)).pins).toEqual([]);
   ui.unmount();
 });
+
+
+test("cancel adding a computer restores the previous selection, including after a cold launch", async () => {
+  let ui = await mount(); await pairBoth();
+  await act(async () => { await value.addComputer(); });
+  expect(value.addingComputer).toBe(true);
+  expect(value.connected).toBe(false);
+  await act(async () => { await value.cancelAddComputer(); });
+  expect(value.activeComputerId).toBe(computerId(b));
+  expect(value.addingComputer).toBe(false);
+  await act(async () => { await value.addComputer(); });
+  ui.unmount(); ui = await mount();
+  expect(value.activeComputerId).toBe(computerId(b));
+  ui.unmount();
+});
+
+test("duplicate names are distinguished and aliases survive snapshots and a cold launch", async () => {
+  (api.session as jest.Mock).mockResolvedValue({ ...snapshot, serverName: "Laptop" });
+  let ui = await mount(); await pairBoth();
+  expect(value.computers.map(c => c.name)).toEqual(["Laptop (1)", "Laptop (2)"]);
+  await act(async () => { await value.renameComputer(computerId(a), "Work laptop"); });
+  await act(async () => { mockSockets[0].message({ type: "session", session: { ...snapshot, serverName: "Changed hostname" } }); });
+  expect(value.computers.map(c => c.name)).toEqual(["Work laptop", "Laptop"]);
+  ui.unmount(); ui = await mount();
+  expect(value.computers.map(c => c.name)).toEqual(["Work laptop", "Laptop"]);
+  ui.unmount();
+});
+
+test("a background computer reports waiting work and becomes unavailable when its link drops", async () => {
+  const ui = await mount(); await pairBoth();
+  await act(async () => {
+    mockSockets[0].state("live");
+    mockSockets[0].message({ type: "session", session: { ...snapshot, panes: [{ paneId: "p", isAgent: true, status: "blocked" }] } });
+  });
+  expect(value.computers.find(c => c.id === computerId(a))).toMatchObject({ waiting: 1, available: true });
+  await act(async () => { mockSockets[0].state("lost"); });
+  expect(value.computers.find(c => c.id === computerId(a))).toMatchObject({ waiting: 1, available: false });
+  expect(value.activeComputerId).toBe(computerId(b));
+  ui.unmount();
+});

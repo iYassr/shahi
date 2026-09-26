@@ -153,3 +153,16 @@ test.each(["success", "failure"])("forced unmount ignores late startup %s", asyn
   expect(onStarted).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
 });
+
+
+test("a reused workspace cannot inherit an open creation form's permissions or folder", async () => {
+  const ui = render(<NewAgent space={mockSpace} onStarted={jest.fn()} />);
+  await ready();
+  fireEvent.press(screen.getByTestId("agent-kind-claude"));
+  fireEvent.press(screen.getByTestId("agent-mode-bypass"));
+  ui.rerender(<NewAgent space={{ ...mockSpace, label: "Different project", cwdPath: "/tmp/different" }} onStarted={jest.fn()} />);
+  expect(screen.getByText(/This space changed/)).toBeTruthy();
+  expect(screen.getByText("New agent in Project")).toBeTruthy();
+  fireEvent.press(screen.getByTestId("start-agent"));
+  expect(mockApi.startAgent).not.toHaveBeenCalled();
+});

@@ -10,8 +10,9 @@ reach over SSH: no sidecar port exposed, and no third party in the path at all
 The app opens an SSH session to the box and forwards a local port through it to
 the sidecar behind it — `ssh -L <localPort>:127.0.0.1:<sidecarPort>`. Then it
 points its ordinary `fetch` and `WebSocket` at `http://127.0.0.1:<localPort>`,
-and the agent list, the reader, everything, works unchanged over the tunnel. No
-file outside `lib/tunnel.ts` and the Connect screen knows SSH is involved.
+and the ordinary API works over the tunnel. `lib/tunnel.ts`, Connect and
+`lib/computer-session.ts` own transport setup and recovery; session, Keychain
+and push-registration code also track the saved SSH profile.
 
 The forward is proven before its port is handed out: right after the login,
 the forwarder opens one channel to the sidecar and closes it. A server with
@@ -139,8 +140,14 @@ default port, 7171; the SSH form has no port field, so a sidecar moved with
   relay as the way in.
 - `src/screens/connect.tsx` — the SSH form, behind **Want to use SSH?** under
   Scan QR code.
-- `src/lib/session.tsx` — stores the profile, re-opens the tunnel on restore,
-  and tears it down on sign-out, forgetting the host key it pinned.
+- `src/lib/session.tsx` — stores the profile and tears it down on sign-out,
+  forgetting an unshared host-key pin.
+- `src/lib/computer-session.ts` — opens saved tunnels, retries failures with
+  backoff, and replaces refused cookies through a fresh sign-in.
+- `src/lib/keychain.ts` and `src/components/host-key-card.tsx` — drain legacy
+  storage and obtain explicit trust for keys earlier builds accepted silently.
+- `src/lib/push-registration.ts` — carries notification opt-in to each new
+  SSH passcode session.
 - `modules/ssh-tunnel/` — the native forwarder, all libssh2, no NMSSH. Swift
   (`SshTunnelModule`) marshals config; Objective-C (`SshForwarder`) connects,
   handshakes, authenticates (password or in-memory key), and runs a
@@ -205,3 +212,8 @@ connection as closed before authentication, the fingerprint matched
 `ssh-keygen -lf`, and restarting the server with a different host key produced
 the identity card and then the two-fingerprint review. Still worth a hand-check
 on a real device against a real box before shipping.
+
+The September 26 bug-hunt recovery, legacy-key review and HTTP-cache fixes have
+Jest coverage; the native forwarder also has a macOS libssh2 harness. Those
+checks do not establish physical-device behavior. Follow the upgrade, cache,
+forwarding and reconnect checks in [device verification](verify-on-device.md).

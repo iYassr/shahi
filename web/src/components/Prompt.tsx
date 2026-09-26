@@ -52,7 +52,7 @@ export function Prompt({ prompt, onAnswer, disabled }: Props) {
             <span className="choice__cursor" aria-hidden="true">
               ❯
             </span>
-            <span className="choice__index">{option.index}.</span>
+            {prompt.answer === "digit" && <span className="choice__index">{option.index}.</span>}
             <span className="choice__label">
               {option.label}
               {option.detail && <span className="choice__detail">{option.detail}</span>}

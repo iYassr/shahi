@@ -187,7 +187,7 @@ describe("at accessibility text sizes", () => {
     const title = view.getByText("Fix the login redirect loop");
     expect(title.props.numberOfLines).toBeGreaterThanOrEqual(3);
     // Metadata sits on its own line and can no longer squeeze the title out.
-    expect(view.getByText("project · Claude · w1:p1")).toBeTruthy();
+    expect(view.getByText("project · Claude")).toBeTruthy();
     expect(view.getByLabelText("Waiting on you, Fix the login redirect loop, project, Claude")).toBeTruthy();
     expect(flat(view.getByText("Convert PDF exports")).flex ?? 0).toBe(0);
   }

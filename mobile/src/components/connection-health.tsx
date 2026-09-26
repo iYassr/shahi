@@ -5,13 +5,14 @@ import { Text } from "@/components/text";
 import { connectionHealth } from "@shahi/shared";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
+import { OtherComputers } from "./other-computers";
 
-export function ConnectionHealth() {
+export function ConnectionHealth({ conversation = false }: { conversation?: boolean }) {
   const session = useSession();
-  return <ComputerHealth key={session.activeComputerId ?? "current"} session={session} />;
+  return <ComputerHealth key={session.activeComputerId ?? "current"} session={session} conversation={conversation} />;
 }
 
-function ComputerHealth({ session }: { session: ReturnType<typeof useSession> }) {
+function ComputerHealth({ session, conversation }: { session: ReturnType<typeof useSession>; conversation: boolean }) {
   const { link, error, server, reconnect, online = true, activeComputerId, computers, control } = session;
   const computerName = computers?.find(computer => computer.id === activeComputerId)?.name;
   const [busy, setBusy] = useState(false);
@@ -21,7 +22,8 @@ function ComputerHealth({ session }: { session: ReturnType<typeof useSession> })
   return <View style={styles.card} accessibilityLiveRegion="polite">
     <Text style={styles.title}>{health.title}</Text>
     <Text style={styles.detail}>{health.detail}</Text>
-    <Text style={styles.note}>Your draft stays here. Nothing is sent automatically.</Text>
+    {conversation && <Text style={styles.note}>Your draft stays here. Nothing is sent automatically.</Text>}
+    <OtherComputers />
     <View style={styles.actions}>
     <Pressable testID="switch-computer" accessibilityRole="button" style={styles.retry} onPress={() => router.push("/computers")}>
       <Text style={styles.action}>Switch computer</Text>

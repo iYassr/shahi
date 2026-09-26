@@ -127,7 +127,8 @@ server registration.
 Native notifications travel through **Expo's push service** and then the
 platform push provider, such as Apple's Push Notification service. Their
 payloads include the workspace name, the terminal title or pane name, the pane
-identifier to open, and your computer's public server identifier, the same
+identifier to open, an opaque identifier for the program occupying that pane
+(herdr’s terminal id), and your computer's public server identifier, the same
 stable identifier the relay sees. Expo and the platform provider can read that
 content even though relay traffic is encrypted end to end. Browser
 notifications carry the same fields through the browser's push service,

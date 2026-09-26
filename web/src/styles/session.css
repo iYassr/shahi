@@ -438,3 +438,5 @@
 .detail[data-screen="true"] .compose textarea { border: none; background: transparent; }
 .detail[data-screen="true"] .compose__attach { border: none; }
 @media (max-width: 520px) { .zoombar__geometry { display: none; } }
+
+.compose__notice { color: var(--muted); font-size: 13px; line-height: 1.4; padding: 0 var(--gutter); margin: 6px 0; }

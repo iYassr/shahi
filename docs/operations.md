@@ -148,6 +148,18 @@ process has exited accepts input into nothing.
 ran the hook last. If you use named sessions, the one that started most
 recently owns it — `shahi.status` prints the socket it is attached to.
 
+**The header says HERDR OFFLINE.** The sidecar answers but herdr does not.
+Start herdr; the sidecar reattaches without a new pairing.
+
+**Status says the port is taken.** Another process owns the configured port.
+Use the actual Shahi service or put `PORT=<free port>` in the plugin config
+`.env` and restart. The native SSH form still forwards to 7171, so moving the
+sidecar port requires using the relay or a separately configured tunnel.
+
+**SSH connects but Shahi does not.** A changed host key, a server refusing
+`AllowTcpForwarding`, and nothing listening on the sidecar port produce distinct
+messages. Fix the stated cause; see [SSH](ssh.md).
+
 ## Replacing the passcode
 
 ```sh

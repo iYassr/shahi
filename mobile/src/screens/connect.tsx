@@ -12,7 +12,7 @@
  * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState, useEffect, useRef } from "react";
-import { KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
@@ -105,7 +105,7 @@ export function Connect({
             void pair(pending, true);
           }}
         >
-          <Text style={styles.buttonText}>{busy ? "Pairing…" : `Pair with ${host}`}</Text>
+          <Text style={styles.buttonText}>{busy ? "Pairing…" : "Pair with this computer"}</Text>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(pending); setLinkFailure(null); }} testID="confirm-cancel">
           <Text style={styles.link}>Cancel</Text>
@@ -242,7 +242,7 @@ export function Connect({
       <ScrollView
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator
       >
         {/* The horizontal lockup: tea glass + lowercase wordmark — and the
             intended way in beside it. It sits in the title row on purpose: as
@@ -261,7 +261,7 @@ export function Connect({
             onPress={() => { setError(null); setPhase("intro"); setScanning(true); }}
             disabled={busy}
             testID="scan-code"
-            accessibilityHint="On the server: herdr plugin action invoke shahi.pair"
+            accessibilityHint="On the computer: herdr plugin action invoke shahi.pair"
           >
             <Text style={styles.scanText}>Scan a code</Text>
           </Pressable>
@@ -288,7 +288,7 @@ export function Connect({
         )}
 
         <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
-          <Text style={styles.link}>Haven't set up your server yet?</Text>
+          <Text style={styles.link}>Haven't set up your computer yet?</Text>
         </Pressable>
         <PrivacyLinks licenses />
       </ScrollView>
@@ -322,7 +322,7 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator>
       <View style={[styles.lockup, { marginBottom: 6 }]}>
         <GreetingLogo />
         <Wordmark color={theme.fg} />
@@ -384,7 +384,7 @@ function SshForm({
 }) {
   return (
     <>
-      <Text style={styles.hint}>Enter your server’s SSH details.</Text>
+      <Text style={styles.hint}>Enter your computer’s SSH details.</Text>
 
       <View style={styles.row}>
         <View style={styles.grow}>
@@ -409,6 +409,7 @@ function SshForm({
             value={String(ssh.port)}
             onChangeText={(t) => patch({ port: Number(t.replace(/[^0-9]/g, "")) || 0 })}
             keyboardType="number-pad"
+            inputAccessoryViewID="ssh-number-keyboard"
             testID="ssh-port"
             accessibilityLabel="SSH port"
           />
@@ -423,7 +424,7 @@ function SshForm({
         autoCapitalize="none"
         autoCorrect={false}
         testID="ssh-username"
-        placeholder="Your server username"
+        placeholder="Your computer username"
         placeholderTextColor={theme.dim}
         accessibilityLabel="SSH username"
       />
@@ -505,12 +506,18 @@ function SshForm({
         onChangeText={(passcode) => patch({ passcode })}
         secureTextEntry
         keyboardType="number-pad"
+            inputAccessoryViewID="ssh-number-keyboard"
         testID="ssh-passcode"
         accessibilityLabel="Shahi passcode"
       />
       {/* Only the passcode's hash is kept, and the first run shows it in the
           pair popup, not the plugin log — so "find that message again" had
           nothing to find. Replacing it is the recovery (pre-release review). */}
+      {Platform.OS === "ios" && <InputAccessoryView nativeID="ssh-number-keyboard">
+        <View style={{ backgroundColor: theme.surface, alignItems: "flex-end" }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Done editing SSH details" onPress={Keyboard.dismiss} style={{ minHeight: 44, minWidth: 64, justifyContent: "center", paddingHorizontal: 16 }}><Text style={{ color: theme.peach }}>Done</Text></Pressable>
+        </View>
+      </InputAccessoryView>}
       <Text style={styles.fieldHelp}>
         Shown once when Shahi was set up. Lost it? On the computer, run{" "}
         <Text style={styles.mono}>herdr plugin action invoke shahi.reset-passcode</Text>, then read the new one with{" "}

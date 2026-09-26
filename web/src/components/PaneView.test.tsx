@@ -317,3 +317,22 @@ test("terminal input is typed literally, in a shell pane and on an agent's Scree
   await act(async () => view!.root.findAll((node) => node.type === "button" && node.props.role === "tab")[1]!.props.onClick());
   expect(field()).toMatchObject(literal);
 });
+
+
+test("offline controls preserve a draft without sending or replaying on recovery", async () => {
+  const send = mock().mockResolvedValue({ accepted: true });
+  const sendKeys = mock();
+  const scoped = { ...api, send, sendKeys, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  const tree = (available: boolean) => <ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView available={available} session={null} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>;
+  await act(async () => { view = create(tree(false)); });
+  await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: "offline draft" } }));
+  const submit = () => view!.root.findAllByType("button").find(b => b.props.className === "compose__send")!;
+  expect(submit().props.disabled).toBe(true);
+  await act(async () => submit().props.onClick());
+  expect(send).not.toHaveBeenCalled();
+  await act(async () => { view!.update(tree(true)); });
+  expect(send).not.toHaveBeenCalled();
+  expect(view!.root.findByType("textarea").props.value).toBe("offline draft");
+  await act(async () => submit().props.onClick());
+  expect(send).toHaveBeenCalledTimes(1);
+});

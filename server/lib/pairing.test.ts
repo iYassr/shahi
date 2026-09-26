@@ -211,3 +211,7 @@ test("the startup log names a way to pair that exists where the sidecar runs", (
   expect(pairCommand({ SHAHI_MANAGER_ROOT: "/home/me/.local/state/herdr/plugins/shahi/managed" })).toBe("herdr plugin action invoke shahi.pair");
   expect(pairCommand({})).toBe("bun run server/scripts/pair.ts");
 });
+
+test("the managed startup pairing hint names its herdr session and configuration", () => {
+  expect(pairCommand({ SHAHI_MANAGER_ROOT: "/tmp/managed", HERDR_SOCKET_PATH: "/tmp/shahi-test/herdr/sessions/review/herdr.sock" })).toBe("XDG_CONFIG_HOME=/tmp/shahi-test herdr --session review plugin action invoke shahi.pair");
+});

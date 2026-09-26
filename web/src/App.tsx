@@ -1,4 +1,5 @@
 import { ComputerSwitcher } from "./components/ComputerSwitcher";
+import { OtherComputers } from "./components/OtherComputers";
 import { ComputerUpdate, ComputerControlProvider, useComputerControl } from "./components/ComputerUpdate";
 import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
@@ -327,6 +328,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         if (!option) throw new Error("That prompt changed. Wait for the latest question.");
         const instanceId = sessionRef.current?.panes.find((pane) => pane.paneId === paneId)?.instanceId;
         await api.answerPrompt(paneId, optionIndex, option.label, shown, instanceId);
+        if (option.textInput) { navigate(`/pane/${encodeURIComponent(paneId)}?reply=1`); return; }
         setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
         // The agent's next frame is what confirms it landed; until then the
         // card says the answer is on its way rather than re-offering it.
@@ -346,7 +348,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         throw err;
       }
     },
-    [showToast, prompts, applySession],
+    [showToast, prompts, applySession, navigate],
   );
 
   /**
@@ -438,6 +440,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
           <span className="empty__mark">○</span>
           Cannot reach Shahi. {(named ? health?.detail : "Check that your computer is awake and Shahi is running. Shahi will keep trying.") || connectionError}
           {computerButton}
+          {hosted && <OtherComputers />}
           {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>Forget this browser and pair again</button>}
           <button className="empty__action" onClick={checkAuth}>
             Try again
@@ -474,7 +477,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       {conversationLayout && <aside className="agent-sidebar" aria-label="Agent conversations">
               <header className="topbar">
                 <h1 className="topbar__title"><Logo size={28} /> Agents</h1>
-                <button className="topbar__action" onClick={() => setNewAgent(true)}>+ New agent</button>
+                <button className="topbar__action" disabled={link !== "live" || !!healthError} onClick={() => setNewAgent(true)}>+ New agent</button>
                 <span className="topbar__spacer" />
                 {blockedCount > 0 && (
                   <span className="link topbar__waiting" style={{ color: "var(--accent)" }}>
@@ -484,7 +487,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
                 <LinkState state={link} />
               </header>
               <PushPrompt onToast={showToast} />
-              <Dashboard reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} answered={promptState.answered} onAnswer={answer} />
+              <Dashboard available={link === "live" && !healthError} reviewed={reviewed} onReviewed={markReviewed} session={session} prompts={prompts} answered={promptState.answered} onAnswer={answer} />
         <TabBar allowPane blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />
       </aside>}
       <main className="conversation-main">
@@ -513,6 +516,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
           element={
             <OwnedRoute computer={computer}>
               <PaneView key={routeLocation.pathname}
+                available={link === "live" && !healthError}
                 session={session}
                 frames={frames}
                 prompts={prompts}

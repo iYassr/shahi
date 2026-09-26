@@ -29,8 +29,9 @@ export function ComputerSwitcher({ onManage }: { onManage: () => void }) {
   }, []);
   const current = browserConnection().identity?.serverId;
   const name = computers.find(c => c.id === current)?.name || "Computers";
+  const waiting = computers.filter(c => c.id !== current && c.state === "live").reduce((n, c) => n + c.waiting, 0);
   return <details className="computer-switcher" ref={menu}>
-    <summary aria-label="Switch computer"><UiIcon name="computer" /><span className="computer-switcher__name">{name}</span><span className="computer-switcher__hint">Switch computer</span><UiIcon name="chevron" size={16} /></summary>
+    <summary aria-label="Switch computer" aria-description={waiting ? `${waiting} waiting on other computers` : undefined}><UiIcon name="computer" /><span className="computer-switcher__name">{name}</span>{waiting > 0 && <span>{waiting} waiting</span>}<span className="computer-switcher__hint">Switch computer</span><UiIcon name="chevron" size={16} /></summary>
     <div className="computer-switcher__menu">
       <p className="computer-switcher__caption">Your computers · {computers.length}</p>
       {computers.map(c => <button key={c.id} aria-current={current === c.id ? "true" : undefined} aria-label={`Switch to ${c.name}`} onClick={() => {
@@ -39,7 +40,7 @@ export function ComputerSwitcher({ onManage }: { onManage: () => void }) {
       }}>
         <span className="computer-switcher__row-title">{c.name}{current === c.id && <UiIcon name="check" size={16} />}</span>
         <small>{c.address}</small>
-        <small className={`computer-state computer-state--${c.state}`}>{c.state === "live" ? "Connected" : c.state === "lost" ? "Offline · retrying" : "Connecting…"}</small>
+        <small className={`computer-state computer-state--${c.state}`}>{c.state === "live" ? "Connected" : c.state === "lost" ? "Offline · retrying" : "Connecting…"}{c.waiting ? ` · ${c.waiting} waiting${c.state === "live" ? "" : " (last known)"}` : ""}</small>
       </button>)}
       {error && <p role="alert">{error}</p>}
       <button className="computer-switcher__manage" onClick={() => { close(); onManage(); }}>Manage computers</button>

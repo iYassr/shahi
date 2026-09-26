@@ -22,8 +22,8 @@ Disabling notifications in iOS stops display; it does not delete a server's push
 registration. Removing a computer while it is offline leaves its device record
 active until it is revoked from another paired phone or browser; the computer
 itself has no revocation command. Native notification payloads, which Expo and
-Apple can read, include the workspace name, terminal title or pane name, pane identifier and
-the computer's stable public server identifier (policy updated 23 September
+Apple can read, include the workspace name, terminal title or pane name, pane identifier, an opaque identifier for the program occupying that pane
+(herdr’s terminal id), and the computer's stable public server identifier (policy updated 26 September
 2026).
 
 ## Apple data categories

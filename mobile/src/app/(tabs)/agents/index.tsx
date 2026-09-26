@@ -1,15 +1,16 @@
 import { useCallback, useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { router } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { Agents } from "@/screens/agents";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { openPane } from "@/lib/navigate";
 
 export default function AgentsTab() {
+  const focused = useIsFocused();
   const { ready, connected, activeComputerId } = useSession();
   // Stable per computer: the memoised rows compare it by identity.
-  const open = useCallback((paneId: string) => openPane(paneId, activeComputerId), [activeComputerId]);
+  const open = useCallback((paneId: string, reply?: boolean) => openPane(paneId, activeComputerId, undefined, reply), [activeComputerId]);
 
   useEffect(() => {
     if (ready && !connected) router.replace("/connect");
@@ -22,5 +23,5 @@ export default function AgentsTab() {
       </View>
     );
   }
-  return <Agents onOpenPane={open} />;
+  return <Agents onOpenPane={open} focused={focused} />;
 }

@@ -89,6 +89,7 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
     );
   };
 
+  if (!live) return <Text style={styles.note}>Devices will be available when this computer reconnects.</Text>;
   if (error) {
     return (
       <View style={styles.retryBlock}>

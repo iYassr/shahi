@@ -15,8 +15,8 @@ import { router } from "expo-router";
  *
  * `instance` is the occupant a notification was about (see the pane route).
  */
-export const openPane = (paneId: string, computer: string | null, instance?: string) =>
-  router.push({ pathname: "/pane/[paneId]", params: { paneId, ...(computer && { computer }), ...(instance && { instance }) } });
+export const openPane = (paneId: string, computer: string | null, instance?: string, reply = false) =>
+  router.push({ pathname: "/pane/[paneId]", params: { paneId, ...(computer && { computer }), ...(instance && { instance }), ...(reply && { reply: "1" }) } });
 
 /** The same pane, opened on the raw terminal — what a swipe's Screen action means. */
 export const openScreen = (paneId: string, computer: string | null) =>

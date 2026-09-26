@@ -29,6 +29,9 @@ native change needs a new build with a matching runtime fingerprint
 (`docs/releases.md`). The app does not show which update it runs, so record the
 build number together with the update last published to its channel (or that
 none was), and cold-launch twice before a check that depends on a fresh fix.
+As recorded in [release policy](releases.md#mobile-and-web-rollout), signed OTA
+publication is unavailable on the project’s Free plan. Until that changes,
+every fix must reach the phone in a new binary; record its build number.
 
 ## The checks
 
@@ -72,9 +75,10 @@ open in a sheet; an image should open as an image; a PDF should render in
 PDFKit with native scrolling and zoom. **Save / Share** should open the iOS
 share sheet with the file; for a PDF, the protected temporary copy it shares
 should be gone once the sheet closes. Files up to 25 MiB arrive in 512 KiB
-ranges, and through the relay that needs a computer release newer than 0.3.6
-(earlier ones withheld the range headers, and the viewer said "The computer
-returned an incomplete file."). Check one file over the relay and one over SSH.
+ranges. A 0.3.6 computer drops the range headers, so relay downloads fall back
+to a whole-file request up to 783,360 bytes (about 765 KiB); larger ones must
+say the computer needs an update. Check relay and SSH downloads, plus that
+older-computer fallback when a test 0.3.6 installation is available.
 
 **7. It taps back.**
 Answering a prompt, sending a message, and starting an agent should each give a
@@ -170,3 +174,27 @@ to put one — the app can then show it to whoever is debugging.
   under the dev client the very first touch can be swallowed before it
   reaches the app (measured: the press handler never fired), and a second
   tap works. Confirm a release build on the phone does not do this.
+
+**18. HTTP responses leave no disk cache.** On a development-signed build,
+sign in over SSH, read a conversation, sign out, then download the app container.
+`Library/Caches/app.shahi.mobile/Cache.db` must contain no `/api` request/response
+rows. TestFlight containers cannot be downloaded, so use the development build.
+
+**19. An old SSH pin is reviewed before login.** Add an SSH computer with
+TestFlight 15, then upgrade to the candidate. “Check this computer’s identity”
+must appear once before credentials are sent; a later launch should reuse the
+explicit trust. Use a dedicated test account and host.
+
+**20. SSH recovers without repeated taps.** On a test host, restart sshd and
+confirm the app recovers within its roughly 30-second backoff ceiling once the
+host is reachable. With forwarding disabled, it must name the forwarding refusal
+and stop retrying credentials. Restore the host configuration afterwards.
+
+**21. Large text and interruptions remain usable.** At AX5, open a prompt and
+then disconnect the test computer. Retry connection, switch-computer actions,
+the prompt and the draft must remain reachable; Send and answers stay disabled.
+Restore connectivity and check that nothing sends automatically.
+
+**22. Notification opt-out survives a launch.** Enable notifications, then turn
+them off. The server’s registration disappears and Settings still says Off after
+relaunch. Physical push delivery and opt-out must be checked on the device.

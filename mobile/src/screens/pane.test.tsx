@@ -190,8 +190,8 @@ describe("sending a reply", () => {
     expect(view.getAllByText("YOU")).toHaveLength(1);
     // No occupant: this session is from a server that names none.
     expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it", expect.any(String), undefined);
-    // The composer is cleared with the tap, not with the receipt.
-    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+    // Keep the text visible and locked until the computer acknowledges it.
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("ship it");
     expect(view.getByPlaceholderText("Reply to this agent…").props.editable).toBe(false);
 
     // The real `you` message lands in the transcript, on its own — no agent
@@ -224,7 +224,7 @@ describe("sending a reply", () => {
     expect(view.queryByText("Working")).toBeNull();
   });
 
-  test("working shows the instant you send and ends when a new agent message lands", async () => {
+  test("sending is distinct from acknowledged work and ends when a new agent message lands", async () => {
     let transcript = [said("a1", "agent", "Ready when you are.")];
     let loads = 0;
     mocked.sessionLog.mockImplementation(async () => {
@@ -238,7 +238,10 @@ describe("sending a reply", () => {
 
     fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "go");
     fireEvent.press(view.getByText("Send"));
-    // Synchronously with the tap — no poll has had a chance to run.
+    // Before the receipt, this is a send rather than confirmed agent work.
+    expect(view.getAllByText("Sending…").length).toBeGreaterThan(0);
+    expect(view.queryByText("Working")).toBeNull();
+    await settle();
     expect(view.getByText("Working")).toBeTruthy();
 
     // Your own message arriving is not the agent replying: still working.
@@ -1300,7 +1303,7 @@ describe("the largest text sizes", () => {
       expect(style.maxHeight).toBeLessThanOrEqual(Dimensions.get("window").height / 2);
       // ...and the composer is not in it.
       expect(within(area).queryByText("Send")).toBeNull();
-      expect(view.getByText("Send")).toBeTruthy();
+      expect(view.getByText("Offline")).toBeTruthy();
     } finally {
       mockSession.link = link;
       act(() => Dimensions.set({ window, screen: screenSize }));
@@ -1317,13 +1320,13 @@ describe("the largest text sizes", () => {
     await view.findByText(/Ready\./);
     const header = render(mockStackOptions.current!.headerTitle!());
     const title = header.getByText("A task");
-    const subtitle = header.getByText("claude · w1:p1");
+    const subtitle = header.getByText("Claude");
     expect(title.props.maxFontSizeMultiplier).toBe(1.2);
     expect(subtitle.props.maxFontSizeMultiplier).toBe(1.2);
     expect(subtitle.props.numberOfLines).toBe(1);
     const titled = header.getByTestId("pane-title");
     expect(titled.props.accessibilityShowsLargeContentViewer).toBe(true);
-    expect(titled.props.accessibilityLargeContentTitle).toBe("A task, claude · w1:p1");
+    expect(titled.props.accessibilityLargeContentTitle).toBe("A task, Claude");
   });
 
   test("a prompt card's cursor grows with the text instead of being cut", async () => {
@@ -1580,6 +1583,7 @@ test("draft and uncertain send identity survive leaving and returning to a conve
   view = render(<Pane paneId={PANE} />);
   await view.findByText(/Ready\./);
   expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("keep my draft");
+  expect(view.getByTestId("unconfirmed-send")).toBeTruthy();
   fireEvent.press(view.getByText("Send"));
   await settle();
   expect(mocked.send.mock.calls[1]![2]).toBe(attempt);
@@ -1847,27 +1851,24 @@ describe("transcript images", () => {
 
 // Two banners stayed on screen after a failed send: "Computer disconnected",
 // which goes when the link returns, and the send's own error, which did not.
-test("a send that failed because the computer was offline stops saying so once the link is live again", async () => {
+test("an offline computer keeps the draft and never starts a send, including after recovery", async () => {
   const previous = mockSession.link;
   try {
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
-    mocked.send.mockRejectedValue(new UnreachableError("box", "relay.example", "Your computer is offline — its Shahi service is not connected to the relay."));
     mockSession.link = "lost";
     const view = render(<Pane paneId={PANE} />);
     await view.findByText(/Ready\./);
     fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "hello");
-    fireEvent.press(view.getByText("Send"));
-    await view.findByText(/Your computer is offline/);
-
+    fireEvent.press(view.getByText("Offline"));
+    expect(mocked.send).not.toHaveBeenCalled();
     mockSession.link = "live";
     view.rerender(<Pane paneId={PANE} />);
-    expect(view.queryByText(/Your computer is offline/)).toBeNull();
-    // The draft was returned to the composer and is still not sent.
     expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("hello");
+    expect(mocked.send).not.toHaveBeenCalled();
+    fireEvent.press(view.getByText("Send"));
+    await settle();
     expect(mocked.send).toHaveBeenCalledTimes(1);
-  } finally {
-    mockSession.link = previous;
-  }
+  } finally { mockSession.link = previous; }
 });
 
 // Capped at two lines, the refusal for a message typed while a menu is open
@@ -1906,12 +1907,14 @@ test("a refusal from the computer is not cleared by a reconnect", async () => {
   try {
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
     mocked.send.mockRejectedValue(new Error("herdr said no"));
-    mockSession.link = "connecting";
+    mockSession.link = "live";
     const view = render(<Pane paneId={PANE} />);
     await view.findByText(/Ready\./);
     fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "hello");
     fireEvent.press(view.getByText("Send"));
     await view.findByText("herdr said no");
+    mockSession.link = "lost";
+    view.rerender(<Pane paneId={PANE} />);
     mockSession.link = "live";
     view.rerender(<Pane paneId={PANE} />);
     expect(view.getByText("herdr said no")).toBeTruthy();
@@ -2053,4 +2056,18 @@ describe("a pane that no longer exists", () => {
     expect(view.queryByText("This pane is gone")).toBeNull();
     expect(view.getByPlaceholderText(/Reply to this/)).toBeTruthy();
   });
+});
+
+
+test("a busy agent's disjoint tail fetches the missed messages before merging", async () => {
+  const messages = Array.from({ length: 140 }, (_, i) => said(`bridge-${i}`, "agent", `Bridge message ${i}.`));
+  mocked.sessionLog.mockResolvedValueOnce({ ...log(messages.slice(0, 60)), total: 60 });
+  const view = render(<Pane paneId={PANE} />);
+  await settle();
+  mocked.sessionLog.mockResolvedValueOnce({ ...log(messages.slice(80)), total: 140 });
+  mocked.sessionLog.mockResolvedValueOnce({ ...log(messages), total: 140 });
+  await act(async () => { mockFrameListeners.get(PANE)?.forEach(fn => fn()); });
+  await settle();
+  expect(mocked.sessionLog).toHaveBeenCalledWith(PANE, 140);
+  expect(view.UNSAFE_getByType(FlatList).props.data.map((m: LogMessage) => m.id)).toEqual(messages.map(m => m.id));
 });

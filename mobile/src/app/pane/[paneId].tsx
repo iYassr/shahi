@@ -11,7 +11,7 @@ import { theme } from "@/lib/theme";
 export default function PaneRoute() {
   // Route params arrive as string | string[]; a pane id is always the former.
   // `instance` is the occupant a notification was about (see below).
-  const { paneId, view, instance } = useLocalSearchParams<{ paneId: string; view?: string; instance?: string }>();
+  const { paneId, view, instance, reply } = useLocalSearchParams<{ paneId: string; view?: string; instance?: string; reply?: string }>();
   const { session } = useSession();
   const owned = useOwnedRoute();
 
@@ -69,7 +69,7 @@ export default function PaneRoute() {
           </Pressable>
         </View>
       ) : (
-        <Pane key={`${String(paneId)}#${seen.current.generation}`} paneId={String(paneId)} initialView={view === "screen" ? "screen" : "reader"} />
+        <Pane key={`${String(paneId)}#${seen.current.generation}`} paneId={String(paneId)} focusReply={reply === "1"} initialView={view === "screen" ? "screen" : "reader"} />
       )}
     </SafeAreaView>
   );

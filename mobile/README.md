@@ -1,7 +1,7 @@
 # Shahi — mobile
 
 The native app: an Expo app over the same sidecar, importing the same wire
-contract from `@shahi/shared`. This is the product; `web/` is archived.
+contract from `@shahi/shared`. Both `mobile/` and `web/` are actively maintained.
 
 ```sh
 bun install            # from the repo root
@@ -14,9 +14,9 @@ development build. See [`docs/on-a-mac.md`](../docs/on-a-mac.md) for building
 one and running it on a simulator or a device — that document is also where the
 iOS tests are free rather than behind a paid EAS plan.
 
-On first run the app asks how to reach a server: scan a pairing code, or enter
-an address and passcode. Unlike the web client there is no origin to infer from
-and no browser cookie jar, so the app holds both.
+On first run, scan or paste a pairing code, or choose SSH and enter the computer’s
+SSH credentials plus its Shahi passcode. Saved computers have separate connections
+and device-only Keychain credentials; there is no arbitrary HTTP-address mode.
 
 ## Monorepo notes
 
@@ -49,7 +49,7 @@ transport depends on, and it runs on the phone.
   notification routes to its pane. The simulator reports
   `Device.isDevice === false` and refuses to mint a token, so this can only be
   proven on an iPhone. See [`docs/notifications.md`](../docs/notifications.md).
-- **The recorded-terminal history view**, which exists only in the archived PWA.
+- **The recorded-terminal history view**, which exists only in the web client.
 
 Everything this file used to list as unbuilt — Spaces, the pane detail view, the
 reader, attachments — shipped some time ago.

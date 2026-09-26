@@ -3,6 +3,9 @@ import { ComputerSwitcher } from "@/components/computer-switcher";
 import { LinkBadge } from "@/components/link-badge";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectionHealth } from "@/components/connection-health";
+import { Unreachable } from "@/components/unreachable";
+import { OtherComputers } from "@/components/other-computers";
+import { connectionHealth } from "@shahi/shared";
 import { randomUUID } from "expo-crypto";
 /**
  * Spaces: where things live, and where new work goes.
@@ -34,7 +37,9 @@ import { Icon } from "@/components/icons";
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
-  const { activeComputerId, api } = useSession();
+  const { activeComputerId, api, link, error, server, reconnect, computers = [], control } = useSession();
+  const computerName = computers.find(c => c.id === activeComputerId)?.name;
+  const health = connectionHealth({ link, error, computerName, transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
   // Above the `!session` return below: hooks cannot be called conditionally.
   const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId, api);
   const header = (
@@ -49,7 +54,9 @@ export function Spaces({ session }: { session: Session | null }) {
       }}
     />
   );
-  if (!session) return <>{header}<Centered>Connecting…</Centered></>;
+  if (!session) return <>{header}<Unreachable title={health?.title ?? "Connecting to your computer…"}
+    message={health?.detail ?? "Your spaces will appear once the computer connects."} server={computerName || server || ""}
+    onRetry={reconnect} onSwitch={() => router.push("/computers")} alternatives={<OtherComputers />} /></>;
 
   return (
     <View style={styles.screen}>
@@ -105,7 +112,7 @@ export function Spaces({ session }: { session: Session | null }) {
         }}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListFooterComponent={
-          <Pressable accessibilityRole="button" style={styles.action} onPress={() => router.push("/new-space")}>
+          <Pressable accessibilityRole="button" disabled={!!health} accessibilityState={{ disabled: !!health }} style={styles.action} onPress={() => router.push("/new-space")}>
             <Text style={styles.actionText}>+ New space</Text>
           </Pressable>
         }
@@ -205,7 +212,7 @@ const PaneRow = memo(function PaneRow({
           <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-                {pane.status}
+                {pane.status === "blocked" ? "waiting" : pane.status}
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
@@ -336,6 +343,9 @@ export function PickSpace({ session, onPick }: { session: Session; onPick: (spac
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
   const { api } = useSession();
   const attempt = useRef<{ key: string; id: string } | null>(null);
+  const [opened] = useState(() => ({ workspaceId: space.workspaceId, label: space.label }));
+  const replaced = space.workspaceId !== opened.workspaceId || space.label !== opened.label;
+  useEffect(() => { if (replaced) attempt.current = null; }, [replaced]);
   const starting = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -387,7 +397,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
   }, [api, loadAttempt]);
 
   async function start() {
-    if (!kind || loading || loadError || starting.current) return;
+    if (replaced || !kind || loading || loadError || starting.current) return;
     starting.current = true;
     const key = JSON.stringify([space.workspaceId, space.cwdPath, kind, mode]);
     if (attempt.current?.key !== key) attempt.current = { key, id: randomUUID() };
@@ -429,8 +439,9 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
     return () => subscription.remove();
   }, [busy]);
   return (
-    <SheetBody title={`New agent in ${space.label}`} fullScreen busy={busy}>
+    <SheetBody title={`New agent in ${opened.label}`} fullScreen busy={busy}>
       <Stack.Screen options={{ gestureEnabled: !busy }} />
+      {replaced && <Text accessibilityRole="alert" style={styles.err}>This space changed while you were choosing an agent. Close this screen and choose the space again.</Text>}
       {loading && <Text style={styles.note}>Finding your agents…</Text>}
       {loadError && <><Text style={styles.err}>{loadError}</Text><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><Text style={styles.actionText}>Try again</Text></Pressable></>}
       {!loading && !loadError && kinds.length === 0 && <Text style={styles.note}>No agents are installed on this computer yet.</Text>}
@@ -461,7 +472,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
                 disabled={busy}
               >
                 <Text style={[styles.modeLabel, option.id === mode && styles.modeLabelOn]}>
-                  {option.label}
+                  {option.id === mode ? "✓ " : ""}{option.label}
                 </Text>
                 {option.unsafe && <Text style={{ color: theme.rose, fontSize: 13, fontWeight: "600" }}>No approval before changes</Text>}
                 <Text style={styles.modeWhy}>{option.description}</Text>
@@ -470,10 +481,11 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
           </View>
         </>
       )}
+      {kind && modes.length === 0 && <Text style={styles.note}>{agentLabel(kind)} uses its own approval settings on your computer.</Text>}
       {error && <Text style={styles.err}>{error}</Text>}
-      <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={busy || !kind || loading || !!loadError} testID="start-agent" onPress={() => void start()}>
+      <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={replaced || busy || !kind || loading || !!loadError} testID="start-agent" onPress={() => void start()}>
         <Text style={styles.goText}>
-          {phase === "starting" ? `Waiting for ${kind ? agentLabel(kind) : "agent"}…` : `Start ${kind ? agentLabel(kind) : "agent"}`}
+          {phase === "starting" ? `Waiting for ${kind ? agentLabel(kind) : "agent"}…` : `Start ${kind ? agentLabel(kind) : "agent"}${modes.find(option => option.id === mode)?.unsafe ? " without approvals" : ""}`}
         </Text>
       </Pressable>
       <Text style={styles.note}>A cold start can take half a minute.</Text>
@@ -581,7 +593,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  modeOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
+  modeOn: { borderColor: theme.peach, backgroundColor: theme.raised },
   // The one that asks nothing before acting is worth reading twice.
   modeUnsafe: { borderColor: theme.rose },
   modeLabel: { color: theme.dim, fontSize: 15, fontWeight: "600" },

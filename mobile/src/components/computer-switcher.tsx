@@ -15,7 +15,8 @@ export function ComputerSwitcher() {
   // tapped (pre-release bug hunt). Whatever takes this screen's place closes it.
   useFocusEffect(useCallback(() => () => setOpen(false), []));
   const current = computers.find(c => c.id === activeComputerId);
-  const name = session?.serverName || current?.name || "Computers";
+  const name = current?.name || session?.serverName || "Computers";
+  const waitingElsewhere = computers.filter(c => c.id !== activeComputerId && (c.available ?? c.link === "live")).reduce((sum, c) => sum + (c.waiting ?? 0), 0);
   return <>
     {/* A navigation-bar item, sized like one. The bar does not grow with
         Dynamic Type, so at AX5 the name scaled to 53pt inside a fixed
@@ -25,7 +26,7 @@ export function ComputerSwitcher() {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Switch computer"
-      accessibilityValue={{ text: name }}
+      accessibilityValue={{ text: `${name}${waitingElsewhere ? `, ${waitingElsewhere} waiting on other computers` : ""}` }}
       accessibilityShowsLargeContentViewer
       accessibilityLargeContentTitle={name}
       testID="computer-switcher"
@@ -33,23 +34,25 @@ export function ComputerSwitcher() {
       style={styles.trigger}
     >
       <Text numberOfLines={1} style={styles.title} maxFontSizeMultiplier={1.2}>{name} ▾</Text>
+      {waitingElsewhere > 0 && <Text testID="other-computers-waiting" style={styles.waiting} maxFontSizeMultiplier={1.2}>{waitingElsewhere}</Text>}
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
       <View style={styles.overlay}><View style={styles.sheet}>
         <Text style={styles.title}>Computers</Text>
-        <ScrollView>
+        <ScrollView style={{ flexShrink: 1 }}>
           {computers.map(c => {
-            const status = c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…";
+            const status = c.status ?? (c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…");
+            const waiting = c.waiting ? ` · ${c.waiting} waiting${(c.available ?? c.link === "live") ? "" : " (last known)"}` : "";
             // Which one is current is a state, said as one; the tick is for
             // the eye. Read from the row's text it was "check mark, stub-box"
             // with no selected trait (pre-release bug hunt).
-            return <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`${c.name}, ${c.address}, ${status}`}
+            return <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`${c.name}, ${c.address}, ${status}${waiting}`}
               accessibilityState={{ selected: c.id === activeComputerId }} testID={`quick-computer-${c.id}`} style={styles.row} onPress={() => {
               void switchComputer(c.id).then(() => { setOpen(false); showComputerHome(); }).catch(e => setError(e.message));
             }}>
               <Text style={styles.title}>{c.id === activeComputerId ? "✓ " : ""}{c.name}</Text>
               <Text style={{ color: theme.dim, fontSize: 12 }}>{c.address}</Text>
-              <Text style={{ color: c.link === "live" ? theme.mint : theme.dim }}>{status}</Text>
+              <Text style={{ color: (c.available ?? c.link === "live") ? theme.mint : theme.peach }}>{status}{waiting}</Text>
             </Pressable>;
           })}
         </ScrollView>
@@ -61,7 +64,8 @@ export function ComputerSwitcher() {
   </>;
 }
 const styles = StyleSheet.create({
-  trigger: { minHeight: 44, justifyContent: "center", flexShrink: 1, maxWidth: 190 },
+  trigger: { minHeight: 44, alignItems: "center", flexDirection: "row", gap: 5, flexShrink: 1, maxWidth: 190 },
+  waiting: { color: theme.peach, fontSize: 12, fontWeight: "600" },
   title: { color: theme.fg, fontSize: 17, fontWeight: "600" },
   overlay: { flex: 1, backgroundColor: "#0009", justifyContent: "center", padding: 24 },
   sheet: { maxHeight: "80%", backgroundColor: theme.surface, borderRadius: 18, padding: 20 },

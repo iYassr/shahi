@@ -34,7 +34,7 @@ done
 if [ -n "${HERDR_PLUGIN_ID:-}" ]; then
   # A hook or an action, not the install: say what is missing and stop.
   echo "Shahi needs bun, and none was found on PATH, in ~/.bun/bin, /opt/homebrew/bin or /usr/local/bin." >&2
-  echo "Install it (https://bun.sh), then:  herdr plugin action invoke shahi.restart" >&2
+  echo "Install it (https://bun.sh), then return to the same herdr pane and run:  herdr plugin action invoke shahi.restart" >&2
   exit 1
 fi
 

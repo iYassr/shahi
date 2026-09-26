@@ -3,6 +3,8 @@ export interface NativeDraft {
   inFlight: boolean;
   listeners: Set<() => void>;
   text: string;
+  /** Names stay recognizable after reopening an attached-file draft. */
+  attachments?: string[];
   /** An uncertain send: its operation id, and the occupant it was meant for (see `DashboardPane.instanceId`). */
   pending: { key: string; id: string; instanceId?: string } | null;
 }
@@ -66,6 +68,7 @@ export function forgetNativeDraft(owner: object, pane: string) {
   const draft = scopes.get(owner)?.get(pane);
   if (!draft || (!draft.text && !draft.pending)) return;
   draft.text = "";
+  draft.attachments = [];
   draft.pending = null;
   notifyNativeDraft(draft);
 }

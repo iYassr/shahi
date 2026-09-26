@@ -4,14 +4,15 @@ import { ComputerSwitcher } from "@/components/computer-switcher";
 import { LinkBadge } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
+import { OtherComputers } from "@/components/other-computers";
 import { agentLabel, answerRefused, backendUnavailable, inboxPanes, latestConversations, promptIdentity as identityOf, type AnsweredPrompt } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { RectButton } from "react-native-gesture-handler";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
 import { landed, refused } from "@/lib/feel";
@@ -26,22 +27,31 @@ import { PromptContext } from "@/components/prompt-context";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
 
-export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void }) {
+export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: string, reply?: boolean) => void; focused?: boolean }) {
+  const openSwipe = useRef<SwipeableMethods | null>(null);
+  const closeSwipe = useCallback(() => { openSwipe.current?.close(); openSwipe.current = null; }, []);
+  const rememberSwipe = useCallback((swipe: SwipeableMethods) => {
+    if (openSwipe.current !== swipe) openSwipe.current?.close();
+    openSwipe.current = swipe;
+  }, []);
+  useEffect(() => { if (!focused) closeSwipe(); }, [focused, closeSwipe]);
   // Where this list was, restored when you come back from a conversation.
   // Declared here, above the early returns below, because a hook cannot be
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
-  const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId, control } = useSession();
+  const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId, control, computers = [], accessEnded } = useSession();
+  const computerName = computers.find(c => c.id === activeComputerId)?.name;
   // Nothing a card offers can be answered while herdr is not running, though
   // the socket, and so the list, stays up (pre-release bug hunt).
   const backend = control?.handshake?.backend;
-  const herdrAway = backendUnavailable(error) || !!backend && backend.state !== "connected";
+  const herdrAway = link !== "live" || !!error || backendUnavailable(error) || !!backend && backend.state !== "connected";
   // This computer's place in its own list; see scroll-memory.
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId, api);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
+  useEffect(() => { if (!focused) setActing(null); }, [focused]);
   const openScreenHere = useCallback((paneId: string) => openScreen(paneId, activeComputerId), [activeComputerId]);
 
   // Rejects on failure so the card that asked can say why and offer its
@@ -63,6 +73,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
       return;
     }
     landed();
+    if (option.textInput) { onOpenPane(paneId, true); return; }
     answeredPrompt(paneId, shown, "sent");
   }
 
@@ -86,6 +97,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   const header = (
     <Stack.Screen
       options={{
+        headerLargeTitle: false,
         headerLeft: () => <GreetingLogo size={36} />,
         ...plainHeaderRight(
           <View style={styles.status}>
@@ -99,11 +111,12 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   if (error && shouldTakeOverSession(error, session)) {
     return (
       <View style={{ flex: 1 }}>{header}<ComputerUpdate /><Unreachable
-        title={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
+        title={connectionHealth({ link, error, computerName, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
         message={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
-        server={server}
+        server={computerName || server}
         onRetry={reconnect}
         onSwitch={() => router.push("/computers")}
+        alternatives={<OtherComputers />}
       /></View>
     );
   }
@@ -162,8 +175,12 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   return (
     <View style={styles.screen}>
       {header}
+      {herdrAway && <Pressable accessibilityRole="button" accessibilityLabel="Computer unavailable. Choose another computer" style={{ minHeight: 44, paddingHorizontal: 16, justifyContent: "center", backgroundColor: theme.surface }} onPress={() => router.push("/computers")}>
+        <Text style={{ color: theme.peach, fontSize: 14 }}>{computerName || "Computer"} unavailable · Other computers ▾</Text>
+      </Pressable>}
       <FlatList
         {...agentScroll}
+        onScrollBeginDrag={closeSwipe}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -178,6 +195,8 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <>
             <ComputerUpdate />
             <ConnectionHealth />
+            {accessEnded && <Text style={styles.notice} accessibilityRole="alert">{accessEnded}</Text>}
+            {!herdrAway && <View style={{ marginHorizontal: 16 }}><OtherComputers waitingOnly /></View>}
             <View style={styles.search}>
               <TextInput accessibilityLabel="Search agents" placeholder="Search agents, spaces or folders"
                 placeholderTextColor={theme.dim} value={query} onChangeText={setQuery}
@@ -207,7 +226,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                   {chip.id.startsWith("kind:") || chip.id === "shells" ? <AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /> : chip.icon ? <Icon name={chip.icon} size={20} color={chip.id === active ? theme.fg : theme.dim} /> : null}
                   {(!chip.id.startsWith("kind:") && chip.id !== "shells") || chip.id === active ? (
                     <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
-                      {chip.id === "inbox" ? chip.count : chip.label}
+                      {chip.label}
                     </Text>
                   ) : null}
                 </Pressable>
@@ -215,7 +234,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             </ScrollView>
             {/* Where the work starts, not three taps away under Spaces: the
                 sheet asks which space, then the same form a space opens. */}
-            <Pressable accessibilityRole="button" style={styles.newAgent} onPress={() => router.push("/new-agent")} testID="new-agent">
+            <Pressable accessibilityRole="button" disabled={herdrAway} accessibilityState={{ disabled: herdrAway }} style={[styles.newAgent, herdrAway && { opacity: 0.5 }]} onPress={() => router.push("/new-agent")} testID="new-agent">
               <Text style={styles.newAgentText}>+ New agent</Text>
             </Pressable>
             {active === "inbox" && <View style={styles.inboxHeading}><Text style={styles.inboxTitle}>What needs me?</Text><Text style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</Text></View>}
@@ -250,8 +269,9 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
             onScreen={openScreenHere}
             onPin={togglePin}
             onActions={setActing}
+            onSwipe={rememberSwipe}
           />}
-          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${paneTitle(item)} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Reviewed</Text></Pressable>}
+          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${paneTitle(item)} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Mark reviewed</Text></Pressable>}
           </View>
         )}
         // Virtualization tuning: RN warned this list was "slow to update"
@@ -338,6 +358,7 @@ const Row = memo(function Row({
   onScreen,
   onPin,
   onActions,
+  onSwipe,
 }: {
   pane: DashboardPane;
   pinned: boolean;
@@ -347,8 +368,10 @@ const Row = memo(function Row({
   onScreen: (paneId: string) => void;
   onPin: (paneId: string) => void;
   onActions: (pane: DashboardPane) => void;
+  onSwipe: (swipe: SwipeableMethods) => void;
 }) {
   const largeText = useLargeText();
+  const swipe = useRef<SwipeableMethods | null>(null);
   const row = (
       <Pressable
         accessibilityRole="button"
@@ -358,7 +381,7 @@ const Row = memo(function Row({
         // flatten into one accessibility element, so a marker inside it is
         // invisible to the test driver — the row's id is not.
         testID={`row-${pane.paneId}${pinned ? "-pinned" : ""}`}
-        onPress={() => onPress(pane.paneId)}
+        onPress={() => { swipe.current?.close(); onPress(pane.paneId); }}
         // The same actions as the swipe, reachable without knowing the swipe
         // exists.
         onLongPress={() => onActions(pane)}
@@ -376,7 +399,7 @@ const Row = memo(function Row({
             <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-                {pane.status}
+                {pane.status === "blocked" ? "waiting" : pane.status}
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.workspaceLabel}</Text>
@@ -404,6 +427,8 @@ const Row = memo(function Row({
   );
   return (
     <ReanimatedSwipeable
+      ref={swipe}
+      onSwipeableWillOpen={() => { if (swipe.current) onSwipe(swipe.current); }}
       friction={2}
       rightThreshold={40}
       overshootRight={false}
@@ -495,7 +520,7 @@ function BlockedCard({
   return (
     <View style={styles.blocked}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Waiting on you, ${title}, ${pane.workspaceLabel}, ${kind}`} onPress={onOpen}>
-        <Text style={styles.badge}>● WAITING ON YOU</Text>
+        <Text style={[styles.badge, answered && { color: theme.dim }]}>{answered ? "ANSWER SENT" : "● WAITING ON YOU"}</Text>
         {/* The title gets a line of its own, first: it is what tells two
             waiting agents in one space apart. It used to come last on one
             truncated line after the agent and pane id, which at accessibility
@@ -505,7 +530,7 @@ function BlockedCard({
           {title}
         </Text>
         <Text style={styles.task} numberOfLines={largeText ? 2 : 1}>
-          {pane.workspaceLabel} · {kind} · {pane.paneId}
+          {pane.workspaceLabel} · {kind}
         </Text>
       </Pressable>
 
@@ -513,7 +538,7 @@ function BlockedCard({
         <>
           <Text style={styles.question}>{prompt.question}</Text>
           <PromptContext context={prompt.context} />
-          {stale && <Text style={styles.stale}>herdr isn’t running, so this question is as it was last seen and can’t be answered yet.</Text>}
+          {stale && <Text style={styles.stale}>This question is as it was last seen. Answers are available when the computer reconnects.</Text>}
           {prompt.options.map((option) => {
             const isArmed = armed === option.index;
             const lit = isArmed || (armed === null && !!option.selected);
@@ -609,14 +634,14 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     minHeight: 44,
     borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: theme.lineBright,
+    borderColor: theme.peach,
+    backgroundColor: theme.peach,
     borderRadius: 10,
     borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
   },
-  newAgentText: { color: theme.fg, fontSize: 14, fontWeight: "500" },
+  newAgentText: { color: theme.void, fontSize: 14, fontWeight: "500" },
   filter: {
     flexDirection: "row",
     alignItems: "center",
@@ -666,7 +691,7 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: theme.raised,
   },
-  actionText: { color: theme.dim, fontSize: 10 },
+  actionText: { color: theme.dim, fontSize: 12 },
 
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15, backgroundColor: theme.void },
   rowBody: { flex: 1, gap: 2 },
@@ -674,8 +699,8 @@ const styles = StyleSheet.create({
   rowTitle: { color: theme.fg, fontSize: 15, fontWeight: "600", flex: 1 },
   rowSaid: { color: theme.dim, fontSize: 13, flex: 1 },
   rowTyping: { color: theme.working, fontStyle: "italic" },
-  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
-  rowStatus: { fontSize: 10, letterSpacing: 0.5 },
+  rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
+  rowStatus: { fontSize: 12, letterSpacing: 0.5 },
 
   blocked: {
     margin: 16,

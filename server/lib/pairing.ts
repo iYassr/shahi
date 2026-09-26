@@ -1,3 +1,4 @@
+import { herdrCli } from "./herdr-session";
 /**
  * Pairing: how a phone is introduced to a server without typing anything.
  *
@@ -134,7 +135,7 @@ export function pairingUrl(payload: PairingPayload): string {
  * there (pre-release review). The plugin's action is the way in for that box.
  */
 export function pairCommand(env: NodeJS.ProcessEnv = process.env): string {
-  return env.SHAHI_MANAGER_ROOT ? "herdr plugin action invoke shahi.pair" : "bun run server/scripts/pair.ts";
+  return env.SHAHI_MANAGER_ROOT ? `${herdrCli(env.HERDR_SOCKET_PATH)} plugin action invoke shahi.pair` : "bun run server/scripts/pair.ts";
 }
 
 /** What a claim hands the phone: the device, and its share of the relay key. */

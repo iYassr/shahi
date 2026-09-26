@@ -26,6 +26,7 @@ describe("real captured screens", () => {
         index: 4,
         label: "Tell Claude what to change",
         selected: false,
+        textInput: true,
         // Belongs to option 4, not to the prompt: it says what pressing 4 then
         // does. It used to arrive as a free-floating hint under the whole list.
         detail: "shift+tab to approve with this feedback",
@@ -57,7 +58,7 @@ describe("real captured screens", () => {
         selected: false,
         detail: "Cool, calm — reads as informational or neutral.",
       },
-      { index: 4, label: "Type something.", selected: false },
+      { index: 4, label: "Type something.", selected: false, textInput: true },
       // Below a separator rule, which used to end the run and lose the option.
       { index: 5, label: "Chat about this", selected: false },
     ]);

@@ -3,6 +3,7 @@ import { RELAY_PROTOCOL } from "@shahi/shared";
 import { ephemeral, open, seal, serverSession, type Session } from "@shahi/shared/e2e";
 import { fromBase64Url, toBase64Url } from "@shahi/shared/relay-client";
 import { browserComputers, browserConnection, forgetBrowser, pairBrowser, resumeComputers } from "./connection";
+import { draftOwner, webDraft } from "./drafts";
 import { SessionSocket, createApi } from "./api";
 
 /*
@@ -146,7 +147,8 @@ test("returning to the tab replaces a relay link that died without closing", asy
   device.silent = true;
   const before = FakeSocket.opened.length;
   resumeComputers(20);
-  await Bun.sleep(60);
+  const deadline = Date.now() + 1000;
+  while (FakeSocket.opened.length === before && Date.now() < deadline) await settle();
   expect(FakeSocket.opened.length).toBe(before + 1);
 });
 
@@ -158,4 +160,18 @@ test("returning to the tab replaces a relay link whose socket already closed", a
   resumeComputers();
   await settle();
   expect(FakeSocket.opened.length).toBe(before + 1);
+});
+
+
+test("a computer's live snapshots forget a replaced occupant's draft without a mounted dashboard", async () => {
+  const device = await paired();
+  const identity = browserConnection().identity!;
+  const snapshot = (instanceId: string) => ({ version: "test", panes: [{ paneId: "w1:p1", instanceId, isAgent: true, status: "blocked" }], workspaces: [], tabs: [], serverName: "Laptop" });
+  device.reply({ t: "ws", data: { type: "session", session: snapshot("old") } });
+  await settle();
+  const draft = webDraft(draftOwner(identity), "w1:p1");
+  draft.text = "must not go to the replacement";
+  device.reply({ t: "ws", data: { type: "session", session: snapshot("new") } });
+  await settle();
+  expect(webDraft(draftOwner(identity), "w1:p1").text).toBe("");
 });

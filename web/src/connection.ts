@@ -1,5 +1,5 @@
-import { clearWebDrafts, draftOwner } from "./drafts";
-import { SHAHI_API_VERSION, type Session, type PairingPayload } from "@shahi/shared";
+import { clearWebDrafts, draftOwner, forgetWebDraft } from "./drafts";
+import { endedPanes, SHAHI_API_VERSION, type Session, type PairingPayload } from "@shahi/shared";
 import { RelayLink, deviceTarget, pairingTarget, type RelayIdentity } from "@shahi/shared/relay-client";
 import { UnreachableError } from "@shahi/shared/errors";
 import { parsePairingUrl } from "@shahi/shared/pairing";
@@ -7,22 +7,28 @@ import { parsePairingUrl } from "@shahi/shared/pairing";
 export const hosted = import.meta.env?.BASE_URL === "/pwa/";
 let identity: RelayIdentity | null = null;
 let link: RelayLink | null = null;
-const live = new Map<string, { link: RelayLink; identity: RelayIdentity; session: Session | null }>();
+const live = new Map<string, { link: RelayLink; identity: RelayIdentity; session: Session | null; lastSnapshot: Session | null }>();
 const notifyComputers = () => window.dispatchEvent(new Event("shahi:computers-updated"));
 let remembered = false;
 let generation = 0;
 const blobs = new Set<string>();
 const DB = "shahi-browser-device";
-interface Computer { identity: RelayIdentity; name: string; remembered: boolean }
+interface Computer { identity: RelayIdentity; name: string; customName?: string; remembered: boolean }
 let computers: Computer[] = [];
 let restoredComputers: Computer[] = [];
 export function browserComputers() {
-  return computers.map(({ identity: item, name, remembered }) => ({ id: item.serverId, name, remembered, address: new URL(item.relay).host, state: live.get(item.serverId)?.link.state ?? "lost" }));
+  return computers.map(({ identity: item, name, remembered }) => {
+    const same = computers.filter(c => c.name === name);
+    const entry = live.get(item.serverId);
+    return { id: item.serverId, name: same.length > 1 ? `${name} (${same.findIndex(c => c.identity.serverId === item.serverId) + 1})` : name,
+      remembered, address: new URL(item.relay).host, state: entry?.link.state ?? "lost",
+      waiting: entry?.session?.panes.filter(p => p.isAgent && p.status === "blocked").length ?? 0 };
+  });
 }
 function rememberComputer(next: RelayIdentity, saved: boolean) {
   const previous = computers.find(c => c.identity.serverId === next.serverId);
-  computers = [...computers.filter(c => c.identity.serverId !== next.serverId),
-    { identity: next, remembered: saved, name: previous?.name ?? `${new URL(next.relay).host} · ${next.serverId.slice(0, 8)}` }];
+  const computer = { identity: next, remembered: saved, name: previous?.name ?? `${new URL(next.relay).host} · ${next.serverId.slice(0, 8)}`, ...(previous?.customName && { customName: previous.customName }) };
+  computers = previous ? computers.map(c => c === previous ? computer : c) : [...computers, computer];
 }
 
 
@@ -64,9 +70,9 @@ function persistIdentity(value: RelayIdentity | null, expectedGeneration: number
   return operation;
 }
 
-function persistComputerNames(): void {
+function persistComputerNames(): Promise<void> {
   const saved = computers.filter(c => c.remembered).map(c => ({ ...c }));
-  credentialWrites = credentialWrites.catch(() => {}).then(async () => {
+  const operation = credentialWrites.catch(() => {}).then(async () => {
     const db = await database();
     try {
       await new Promise<void>((resolve, reject) => {
@@ -75,7 +81,9 @@ function persistComputerNames(): void {
         tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = tx.onerror;
       });
     } finally { db.close(); }
-  }).catch(() => {});
+  });
+  credentialWrites = operation.catch(() => {});
+  return operation;
 }
 
 /** The secret never belongs in history, referrers, analytics or an API URL. */
@@ -100,18 +108,23 @@ function ensureComputer(next: RelayIdentity) {
   const known = live.get(next.serverId);
   if (known && known.identity.deviceId === next.deviceId && known.identity.deviceSecret === next.deviceSecret) return known;
   known?.link.close();
-  const entry = { identity: next, link: new RelayLink(deviceTarget(next)), session: null as Session | null };
+  const entry = { identity: next, link: new RelayLink(deviceTarget(next)), session: null as Session | null, lastSnapshot: null as Session | null };
   live.set(next.serverId, entry);
   entry.link.subscribe({
     onMessage(message) {
       if (live.get(next.serverId) !== entry || message.type !== "session") return;
+      // This also runs while another computer is selected. Waiting until its
+      // screen remounts compares the new occupant with itself and keeps the
+      // previous occupant's draft (pre-release verification residual B8).
+      for (const paneId of endedPanes(entry.lastSnapshot, message.session)) forgetWebDraft(draftOwner(next), paneId);
+      if (message.session.version) entry.lastSnapshot = message.session;
       entry.session = message.session;
       const computer = computers.find(c => c.identity.serverId === next.serverId);
-      if (computer && message.session.serverName && computer.name !== message.session.serverName) {
+      if (computer && !computer.customName && message.session.serverName && computer.name !== message.session.serverName) {
         computer.name = message.session.serverName;
-        if (computer.remembered) persistComputerNames();
-        notifyComputers();
+        if (computer.remembered) void persistComputerNames().catch(() => {});
       }
+      notifyComputers();
     },
     onLink() { notifyComputers(); },
     onExpired: () => {
@@ -271,9 +284,19 @@ export async function selectBrowserComputer(id: string | null): Promise<void> {
 }
 export function nameBrowserComputer(name: string): void {
   const current = computers.find(c => c.identity === identity);
-  if (!current || !name || current.name === name) return;
+  if (!current || current.customName || !name || current.name === name) return;
   current.name = name;
-  if (current.remembered) persistComputerNames();
+  if (current.remembered) void persistComputerNames().catch(() => {});
+}
+
+export async function renameBrowserComputer(id: string, name: string): Promise<void> {
+  const customName = name.trim();
+  if (!customName || customName.length > 80) throw new Error("Use a name between 1 and 80 characters.");
+  const computer = computers.find(c => c.identity.serverId === id);
+  if (!computer) throw new Error("That computer is no longer saved.");
+  computer.name = customName; computer.customName = customName;
+  notifyComputers();
+  if (computer.remembered) await persistComputerNames();
 }
 
 export async function revokeBrowserComputer(id: string): Promise<void> {

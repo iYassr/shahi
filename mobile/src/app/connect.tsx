@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Pressable} from "react-native";
@@ -10,8 +10,9 @@ import { usePendingPairing } from "@/lib/incoming-pairing";
 import { theme } from "@/lib/theme";
 
 export default function ConnectRoute() {
-  const { ready, connected, signInSsh, signInRelay, computers, addingComputer, accessEnded } = useSession();
+  const { ready, connected, signInSsh, signInRelay, computers, addingComputer, cancelAddComputer, accessEnded } = useSession();
   const pairing = usePendingPairing();
+  const [cancelError, setCancelError] = useState("");
 
   // Leaving as soon as there is a session, rather than on the button press, so
   // a session restored from storage lands in the same place as a fresh sign-in.
@@ -35,6 +36,11 @@ export default function ConnectRoute() {
         onPress={() => router.push("/computers")} style={{ padding: 16 }}>
         <Text style={{ color: theme.peach, fontSize: 16 }}>Choose a saved computer</Text>
       </Pressable>}
+      {addingComputer && <Pressable accessibilityRole="button" testID="cancel-add-computer"
+        onPress={() => { void cancelAddComputer().catch(e => setCancelError(e.message)); }} style={{ padding: 16, minHeight: 44 }}>
+        <Text style={{ color: theme.peach, fontSize: 16 }}>Cancel adding computer</Text>
+      </Pressable>}
+      {!!cancelError && <Text accessibilityRole="alert" style={{ color: theme.rose, padding: 16 }}>{cancelError}</Text>}
       <Connect onConnectedSsh={signInSsh} onConnectedRelay={signInRelay} />
     </SafeAreaView>
   );

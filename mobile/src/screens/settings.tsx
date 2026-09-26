@@ -1,5 +1,7 @@
 import { ComputerUpdate } from "@/components/computer-update";
 import { ConnectionHealth } from "@/components/connection-health";
+import { ComputerSwitcher } from "@/components/computer-switcher";
+import { plainHeaderRight } from "@/lib/header-controls";
 /**
  * Settings, in the settings grammar everyone already knows: an identity card
  * up top, then inset-grouped sections of icon-led rows, the way out in red
@@ -27,7 +29,7 @@ import { PrivacyLinks } from "@/components/privacy-links";
 const TERMINAL_WIDTHS = [60, 100, 146];
 
 export function Settings() {
-  const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server } =
+  const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server, computers = [], activeComputerId } =
     useSession();
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
@@ -66,7 +68,7 @@ export function Settings() {
   // relay URL or ssh target — behind a tap.
   const isSsh = server.startsWith("ssh://");
   const kind = isSsh ? "ssh" : "shahi relay";
-  const name = session?.serverName ?? host;
+  const name = computers.find(c => c.id === activeComputerId)?.name ?? session?.serverName ?? host;
   const status = link === "live" ? "Connected" : link === "lost" ? "Offline" : "Connecting…";
   const [showReach, setShowReach] = useState(false);
 
@@ -86,7 +88,7 @@ export function Settings() {
           not move the title. See-through at the scroll edge is also iOS's own
           default; the screen behind is the same colour, and content scrolled
           under the bar still gets the opaque standard bar. */}
-      <Stack.Screen options={{ headerLargeStyle: { backgroundColor: "transparent" } }} />
+      <Stack.Screen options={{ headerLargeStyle: { backgroundColor: "transparent" }, ...plainHeaderRight(<ComputerSwitcher />) }} />
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />
@@ -222,8 +224,8 @@ export function Settings() {
           labelColor={theme.rose}
           onPress={() =>
             Alert.alert(
-              "Sign out of this computer?",
-              "You will need a new pairing code or your SSH details to reconnect to this computer. Other saved computers stay available.",
+              `Sign out of ${name}?`,
+              `You will need ${isSsh ? "your SSH details and Shahi passcode" : "a new pairing code"} to reconnect to ${name}. Other saved computers stay available.`,
               [
                 { text: "Cancel", style: "cancel" },
                 {

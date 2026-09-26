@@ -20,6 +20,7 @@ export function linkLabel({ link, error, backend }: {
   if (backend && backend.state !== "connected" && (link === "live" || backendUnavailable(error))) {
     return { text: backend.state === "offline" ? "HERDR OFFLINE" : "UPDATE NEEDED", live: false };
   }
+  if (error && link === "live") return { text: "NOT RESPONDING", live: false };
   return link === "live" ? { text: "LIVE", live: true } : { text: link === "lost" ? "OFFLINE" : "CONNECTING", live: false };
 }
 
@@ -35,7 +36,7 @@ export function LinkBadge() {
   const { link, error, control } = useSession();
   const { text, live } = linkLabel({ link, error, backend: control?.handshake?.backend });
   return (
-    <Text testID="link-badge" style={[styles.link, { color: live ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
+    <Text testID="link-badge" style={[styles.link, { color: live ? theme.mint : theme.peach }]} maxFontSizeMultiplier={1.2}>
       {text}
     </Text>
   );

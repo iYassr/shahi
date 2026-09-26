@@ -141,9 +141,10 @@ HOSTED_PORT=7572 bun e2e/hosted/server.ts     # the fixture also takes 7573
 maestro test .maestro/
 ```
 
-7572 is the flows' default, and the hosted Playwright config binds it too, for
-its second computer. To run beside that suite, start the fixture on another
-port and pass `-e FIXTURE_PORT=<port>`. With a Release build installed the
+7572 is the flows' default, and the hosted Playwright config also uses it by
+default for its second computer. To run both, move that suite with
+`HOSTED_SECOND_PORT=<port>`, or move the native fixture and pass
+`-e FIXTURE_PORT=<port>`. Remember that each fixture also binds its port + 1. With a Release build installed the
 flows need no Metro. `reply-shows-at-once` needs the software keyboard: turn
 off Simulator → I/O → Keyboard → Connect Hardware Keyboard, or the keyboard
 never rises.

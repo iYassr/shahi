@@ -6,7 +6,7 @@ import type { DashboardPane, ParsedPrompt } from "./index";
  * not tell one question from the next.
  */
 export function promptIdentity(prompt: ParsedPrompt): string {
-  return JSON.stringify([prompt.question, prompt.context ?? [], prompt.options.map((o) => [o.index, o.label])]);
+  return JSON.stringify([prompt.promptId ?? null, prompt.question, prompt.context ?? [], prompt.options.map((o) => [o.index, o.label])]);
 }
 
 /**

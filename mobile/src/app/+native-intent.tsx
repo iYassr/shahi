@@ -1,8 +1,8 @@
 import { receivePairingLink } from "@/lib/incoming-pairing";
 
 /**
- * Where a cold launch may begin: the tabs, Connect, and `pair`, which sends a
- * malformed pairing link on to Connect itself.
+ * Where a cold launch may begin: the tabs, Connect, and `pair`, whose malformed
+ * links are sent to the list by `+not-found`.
  */
 const LAUNCHABLE = new Set(["", "agents", "spaces", "settings", "connect", "pair"]);
 

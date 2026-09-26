@@ -65,3 +65,12 @@ test("only the codes that mean nothing was pressed count as a closed question", 
   expect(answerRefused(new Error("timed out"))).toBe(false);
   expect(answerRefused(null)).toBe(false);
 });
+
+test("an identical question asked again has a new identity even without an intervening frame", () => {
+  const first = { ...A, promptId: "first" };
+  const repeated = { ...A, promptId: "second" };
+  const answered = promptAnswered(promptPushed(empty, "w1:p1", first), "w1:p1", first, "sent");
+  expect(promptPushed(answered, "w1:p1", first).prompts).toEqual({});
+  expect(promptPushed(answered, "w1:p1", repeated).prompts["w1:p1"]).toEqual(repeated);
+  expect(promptsFromSession([pane("blocked", repeated)], answered).answered).toEqual({});
+});

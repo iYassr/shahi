@@ -19,6 +19,7 @@ export function Unreachable({
   server,
   onRetry,
   onSwitch,
+  alternatives,
 }: {
   title: string;
   message: string;
@@ -27,6 +28,7 @@ export function Unreachable({
   /** Settles when the attempt has been applied, success or not — the button stays busy until then. */
   onRetry: () => Promise<void>;
   onSwitch: () => void;
+  alternatives?: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -49,6 +51,7 @@ export function Unreachable({
         {server.replace(/^https?:\/\//, "")}
       </Text>
       <Text style={styles.message}>{message}</Text>
+      {alternatives}
       <Pressable
         accessibilityRole="button"
         style={[styles.button, busy && styles.buttonOff]}
@@ -59,7 +62,7 @@ export function Unreachable({
         <Text style={styles.buttonText}>{busy ? "Trying…" : "Try again"}</Text>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={onSwitch} hitSlop={12} testID="switch-server">
-        <Text style={styles.link}>Switch server</Text>
+        <Text style={styles.link}>Choose another computer</Text>
       </Pressable>
     </ScrollView>
   );

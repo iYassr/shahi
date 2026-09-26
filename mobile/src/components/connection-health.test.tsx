@@ -38,7 +38,7 @@ test("network loss explains phone connectivity and prevents futile manual retrie
   mockState.online = false;
   const view = render(<ConnectionHealth />);
   expect(view.getByText("You’re offline")).toBeTruthy();
-  expect(view.getByText("Your draft stays here. Nothing is sent automatically.")).toBeTruthy();
+  expect(view.queryByText("Your draft stays here. Nothing is sent automatically.")).toBeNull();
   fireEvent.press(view.getByText("Retry connection"));
   expect(mockReconnect).not.toHaveBeenCalled();
 });

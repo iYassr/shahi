@@ -177,8 +177,8 @@ test("a pairing link followed from a paired dashboard adds that computer", async
   await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Switch or add a computer", exact: true }).click();
-  await expect(page.getByRole("button", { name: connectTo(SECOND) })).toHaveText("Current computer");
-  await expect(page.getByRole("button", { name: connectTo(FIRST) })).toHaveText("Connect");
+  await expect(page.getByRole("button", { name: connectTo(SECOND) })).toHaveText("✓ Viewing");
+  await expect(page.getByRole("button", { name: connectTo(FIRST) })).toHaveText("Open agents");
 });
 // On a phone the card opened about 1000px below the setup steps, with focus
 // left on the page, so a followed link seemed to have done nothing
@@ -342,7 +342,7 @@ test("two remembered computers switch both ways, survive reload, and sign out in
   await send("computer-b-only");
   await page.reload();
   await computers();
-  await expect(page.getByRole("button", { name: connectTo(SECOND) })).toHaveText("Current computer");
+  await expect(page.getByRole("button", { name: connectTo(SECOND) })).toHaveText("✓ Viewing");
   await choose(FIRST);
   const a = await (await request.get("/__hosted/writes")).json();
   const b = await (await request.get(`${secondUrl}/__hosted/writes`)).json();

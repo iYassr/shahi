@@ -14,6 +14,10 @@ relay/     the blind relay: a Cloudflare Worker, one Durable Object per box
 mobile/    the Expo app — the product, and where new work goes
 web/       the React PWA: mobile behavior with responsive phone/laptop layouts
 e2e/       Playwright, against a stub of the server
+site/      public site Worker and hosted PWA
+operations/ monitoring Worker and service alerts
+demo/      isolated App Review computer
+scripts/   brand assets and notice tooling
 ```
 
 `herdr-plugin.toml` at the root is how the sidecar is distributed: `herdr
@@ -70,10 +74,12 @@ them.
 
 The docs are wrong in places. These were established against herdr 0.7.5,
 protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
-an afternoon. They are now also asserted by `server/lib/herdr-live.test.ts`
+an afternoon. Most are also asserted by `server/lib/herdr-live.test.ts`
 against a real herdr on every push — 0.9.0 and 0.9.1, protocol 22, and
 whatever is current (see Testing) — so the next drift is a red job rather than
-a report from a phone.
+a report from a phone. Restart/id-reuse, agent-lifetime, request-size and
+plugin-registry measurements also include manual checks; the live suite does
+not prove every observation below.
 
 - **One response per connection.** The socket API closes after answering, though
   the docs describe persistent connections. Open one socket per RPC. The single
@@ -129,32 +135,12 @@ a report from a phone.
   `pane.send_text`, 200ms, Enter — and falls back to it if herdr answers
   `agent_blocked` under a stale status. The 200ms is measured: codex's composer
   drops Enter that arrives too soon after pasted text (150ms sufficed).
-  Before any write to an agent, by either path and whatever herdr says its
-  status is, `prompt.ts` reads the visible screen: if the prompt parser finds
-  a menu whose highlighted row is not a text field, nothing is typed and
-  `/api/panes/:id/prompt` answers 409 `prompt_open`; a menu whose lit row is a
-  field is typed into. herdr reports a new agent `unknown` for about 3s with
-  its trust menu drawn, and `agent.prompt` typed into it then and pressed
-  Enter on `No, exit`. Whether a pane is an agent is asked of herdr's
-  `pane.get` too, not only the 3s mirror, which still lists a just-started
-  agent as a shell. `pane.get` lags as well: it names the agent 215–285ms
-  after the trust menu is drawn. So a pane neither calls an agent skips the
-  read only when its shell alone has the terminal — `pane.process_info`'s
-  foreground process group is the shell's pid and holds nothing else; a
-  program has a group of its own within 50ms of Enter (measured on 0.9.1).
-  Any other program holding the terminal is read like an agent. That shell's
-  Enter waits on the same question asked again after the pause, so a program
-  started as the message arrived does not receive it. Text typed ahead of a
-  command the shell has not read yet cannot be told apart, since only the
-  terminal's input queue holds it.
   Measured on Claude Code 2.1.280 / herdr 0.9.1 (2026-09-23): at the Bash
   permission menu with the cursor on `1. Yes`, typing "no" then Enter ran the
   command. The text-field rows are `Type something.` (the question tool) and
   `Tell Claude what to change` (plan approval): typed text replaces their
   label and Enter submits it, so those are still typed. `No, and tell Claude
-  what to do differently` ignores typing. Shells at their prompt are
-  unaffected. Once typed
-  into, a field's label is its text, so `isTextField` knows the question
+  what to do differently` ignores typing. Shells at their prompt are unaffected. Once typed into, a field's label is its text, so `isTextField` knows the question
   tool's by its place above `Chat about this`. While a field has the cursor
   a digit is typed into it (measured on 2.1.282), so `/answer` sends `Up`
   before the digit there.
@@ -284,6 +270,26 @@ waits on a write. A person at the terminal does not queue, so a message reads
 the screen again before its Enter, and if the menu or its lit row moved it
 presses nothing and answers 409 `prompt_changed`, the text left typed; to a
 shell at its prompt the same happens if anything else has taken the terminal.
+
+**Check who owns the terminal before typing.**
+Before any write to an agent, by either path and whatever herdr says its
+status is, `prompt.ts` reads the visible screen: if the prompt parser finds
+a menu whose highlighted row is not a text field, nothing is typed and
+`/api/panes/:id/prompt` answers 409 `prompt_open`; a menu whose lit row is a
+field is typed into. herdr reports a new agent `unknown` for about 3s with
+its trust menu drawn, and `agent.prompt` typed into it then and pressed
+Enter on `No, exit`. Whether a pane is an agent is asked of herdr's
+`pane.get` too, not only the 3s mirror, which still lists a just-started
+agent as a shell. `pane.get` lags as well: it names the agent 215–285ms
+after the trust menu is drawn. So a pane neither calls an agent skips the
+read only when its shell alone has the terminal — `pane.process_info`'s
+foreground process group is the shell's pid and holds nothing else; a
+program has a group of its own within 50ms of Enter (measured on 0.9.1).
+Any other program holding the terminal is read like an agent. That shell's
+Enter waits on the same question asked again after the pause, so a program
+started as the message arrived does not receive it. Text typed ahead of a
+command the shell has not read yet cannot be told apart, since only the
+terminal's input queue holds it.
 
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is
@@ -511,8 +517,24 @@ cost 154MB. Two properties of `normalise` make windowing sound and both are load
 bearing: whether a row produces a message depends on that row alone, and an
 orphaned `tool_result` already renders nothing rather than something wrong.
 
-**The reader polls the tail, not the page.** A poll asks for ~12 messages and
-`merge` keeps the rest. Every fetched message is compared, not only the last: a
+**Codex transcript reads are now indexed.** Byte ranges and matching tool
+output ranges are indexed incrementally; unchanged tail requests parse only
+their window. `codex-index.test.ts` covers append/truncate/replacement,
+partial UTF-8 records, pagination and bounded LRU retention. The dashboard's
+per-pane summaries (preview and `lastMessageAt`) are cached by transcript
+path, inode, size and mtime, and pruned each round to the panes that exist,
+so an unchanged transcript costs one `stat` per round and never touches the
+readers' 64-entry index LRUs; a session with more than 64 agent panes used to
+re-parse transcripts every 3s. The LRUs still bound the readers' own
+indexes. Finding the transcript is cached too: the dashboard reuses a pane's
+lookup for the same agent, session and status for up to 15s, because a Codex
+or Cursor pane without a reported session costs a herdr call and an lsof
+each time, and builds follow every store change. The reader's route and the
+transcript watcher always look afresh.
+
+**The reader polls the tail, not the page.** Web polls the last 12 messages; native polls 60. `merge` keeps loaded history.
+Both bridge a disjoint tail within a bounded larger fetch when the same
+transcript grew while the client was away. Every fetched message is compared, not only the last: a
 tool call is written before its result, and when an agent runs two calls in
 parallel the first one's result lands after later messages exist, so a native
 merge that compared only the last left that call on "Still running." for good.
@@ -520,7 +542,7 @@ The comparison uses a signature computed once per message object, so an
 unchanged poll still serialises nothing. With an ETag on the endpoint, an
 unchanged conversation costs 224 bytes on the wire instead of 15KB gzipped —
 and it polls every 2.5 seconds, forever, on whatever connection the phone is
-on. On the box it costs a stat: each pane keeps its last few pages and their
+on. On the box it costs a stat: each pane keeps its last four pages and their
 ETags while the transcript's inode, size and mtime are unchanged
 (`transcriptPage`), because re-reading a page of screenshots on every poll
 held hundreds of megabytes.
@@ -554,26 +576,42 @@ ignore pattern spares only `+api`, `+html` and `+native-intent` — so a
 `signOut()`.** `ComputerSession` decides whether access really ended. A relay
 link is its device, so a 401 there does; an SSH computer ignores one while its
 sign-in is in flight or before any sign-in produced a cookie, and otherwise asks
-`/api/auth/status` about the cookie it holds now. A reader poll that raced an
+`/api/auth/status` about the cookie it holds now. A refused cookie triggers a
+new sign-in with the saved passcode; a refused passcode keeps the computer and
+shows the error. A reader poll that raced an
 SSH re-login used to sign out on its 401, which erased the saved computer with
 its password or key. `signOut()` is for the person's own sign-out.
 
-**The native app reconnects only on background → active, or on a real network
+**The native app reconnects a healthy link on background → active, or on a real network
 change.** iOS reports `inactive` for Control Center, Notification Center, the
 app switcher and system alerts; reconnecting on the way back from those
 dropped healthy relay links and failed sends that had probably reached herdr.
 A network reconnects once per change of network or of whether it is usable,
-not on each step of reachability.
+not on each step of reachability. A failed SSH tunnel separately retries after
+one second, doubling to thirty. A refused host key, login, forwarding request,
+passcode or contract version waits for the person; retrying bad credentials
+can trigger the SSH server’s lockout.
 
 ## What is not done
+
+- **Terminal input already queued before a shell starts an agent cannot be inspected.**
+  The sidecar checks the foreground process before typing and the screen before
+  Enter. A command still waiting in the terminal input queue can pass both checks
+  and later launch a trust menu. The B4 manual recheck reproduced this race; the
+  sidecar cannot make that queue visible. Do not describe this as fully solved.
+- **Production zone settings require separate verification.** The September 26
+  check still found HTTP serving static site/PWA assets. The available CLI token
+  cannot read or change Always Use HTTPS or minimum TLS. See `docs/relay.md`;
+  neither a Worker deployment nor an HSTS header proves these settings are fixed.
 
 Stated plainly, because a vague gaps list is worse than none.
 
 - **Native push is untested end to end — but the code is complete.** The whole
   path is wired: a Settings toggle calls `enablePush()`, which registers an Expo
   token with `/api/push/expo`; the server sends on the transition to `blocked`
-  and drops `DeviceNotRegistered` tokens; the agents screen routes a tapped
-  notification to its pane. What is missing is not code but a device: the
+  and drops `DeviceNotRegistered` tokens; the root layout routes a tapped
+  notification to its computer, pane and occupant. The toggle restores its
+  saved state and can unregister notifications as well as enable them. What is missing is not code but a device: the
   simulator returns `Device.isDevice === false` and refuses to mint a token, so
   the only place this can be proven is a real iPhone. `device_expo_push_token` is still
   empty; the first token to land there is the proof. Do not go looking for
@@ -582,16 +620,15 @@ Stated plainly, because a vague gaps list is worse than none.
   not built: it is premature for a table with zero rows, and the common
   invalid-token case is already handled at ticket time. See
   `docs/notifications.md`.
-- **The native app's automated coverage is thin but no longer zero.** What
+- **Native automation complements simulator and device checks.** What
   `bun run test:mobile`, the simulator runs in `e2e/native/` (paired through
   the encrypted hosted fixture) and the XCUITest harness in `mobile/uitests/`
   cover is the answer — the counts used to be written here and rotted within
   weeks, so they are not any more. None of the simulator runs is in CI. The reader is now
   proven by `pane.test.tsx` — echo, working state, coalesced refresh,
-  concurrent fetches, sign-out on 401, the restore guard — each checked by
+  concurrent fetches, a 401 handed to `unauthorized()`, the restore guard — each checked by
   mutation: dropping the code fails exactly the test named for it. `web/` has a broader browser suite,
-  so the reader and the poller are still largely proven by hand. Closing that
-  gap is the largest remaining test debt now that this is the product. One
+  the native poller and behavior requiring hardware still need manual checks. One
   seam was moved to make the SSH and push tests possible: `push.ts` loads
   `expo-notifications` with an inline `require` rather than `import()`, which
   Metro defers identically and Jest can actually execute.
@@ -646,20 +683,6 @@ Stated plainly, because a vague gaps list is worse than none.
   guessed, so the failure is silence, not invention. Re-run the census
   (`server/lib/*-log.test.ts` document each shape) when a new agent version or
   a new tool lands; the 0.151 change is what skipping it costs.
-- **Codex transcript reads are now indexed.** Byte ranges and matching tool
-  output ranges are indexed incrementally; unchanged tail requests parse only
-  their window. `codex-index.test.ts` covers append/truncate/replacement,
-  partial UTF-8 records, pagination and bounded LRU retention. The dashboard's
-  per-pane summaries (preview and `lastMessageAt`) are cached by transcript
-  path, inode, size and mtime, and pruned each round to the panes that exist,
-  so an unchanged transcript costs one `stat` per round and never touches the
-  readers' 64-entry index LRUs; a session with more than 64 agent panes used to
-  re-parse transcripts every 3s. The LRUs still bound the readers' own
-  indexes. Finding the transcript is cached too: the dashboard reuses a pane's
-  lookup for the same agent, session and status for up to 15s, because a Codex
-  or Cursor pane without a reported session costs a herdr call and an lsof
-  each time, and builds follow every store change. The reader's route and the
-  transcript watcher always look afresh.
 - **The relay has no CI of its own beyond `bun test relay` under
   `wrangler dev`.** The box↔relay↔phone loop was proven by hand against the
   deployed Worker (a fake phone in `bun`, then the app on a simulator paired
@@ -675,7 +698,7 @@ Stated plainly, because a vague gaps list is worse than none.
 - **Request timing instrumentation is operational, not tap-to-render.** The sidecar records bounded route-template counts and latency histograms in `/api/diagnostics`; private JSON logs and local alert transitions rotate beside its database. Relay metadata and service incident alerts are documented in `docs/operations.md`. Never add terminal contents, raw paths, credentials or raw error messages to these records.
 - **WebKit is not Safari.** It is the closest thing available on a Linux box and
   it has earned its place, but the phone remains the only place some faults
-  appear. `docs/verify-on-device.md` is the five-minute list of those.
+  appear. `docs/verify-on-device.md` is the on-device checklist for those.
 
 ## Testing
 
@@ -717,7 +740,9 @@ goes with it.
 CI runs all of this on every push and pull request: `bun run typecheck` — which
 includes the Expo app, the only automatic check that the two clients have not
 drifted apart — then the unit tests, the relay suite (`test:relay`) and the
-app's own (`test:mobile`), then a web build and both Playwright engines.
+app's own (`test:mobile`), then a web build and the stub, hosted and PWA
+suites in both Playwright engines. Upgrade/recovery jobs exercise packaged
+releases on Linux and macOS, Intel and ARM.
 Traces from a failing run are uploaded as an artifact. The stub suite writes
 its HTML report to `e2e/playwright-report/`, the hosted configs still to
 `playwright-report/` at the root; both are ignored at any depth, because a
@@ -727,7 +752,8 @@ responses into it.
 **And a real herdr.** `server/lib/herdr-live.test.ts` runs the adapter and the
 sidecar against a headless herdr: the protocol pin, snapshot shapes, the
 mirror and dashboard projection, `pane.read` in every form the app uses, a
-prompt typed into a scratch shell and read back, every key-bar name, the event
+prompt typed into a scratch shell and read back (including 260 KB), occupant
+identity, `pane.process_info`, every key-bar name, the event
 stream, and the HTTP routes including the 426 gate. CI runs it three times per
 push — against `v0.9.0`, the minimum supported release, and `v0.9.1`, both
 pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
@@ -737,7 +763,7 @@ GitHub — and nightly against the newest prerelease (`herdr-preview.yml`),
 checked only against its own release's digest. Every herdr in CI is installed
 by `.github/scripts/install-herdr.sh`, which refuses a binary whose bytes do not
 match GitHub's digest for the asset (and the pinned one, when given), and never
-runs it; `install.sh` is no longer piped into `sh`. A failed nightly files an
+runs it; herdr's own `install.sh` is no longer piped into `sh`. A failed nightly files an
 issue rather than failing a push, and that issue is filed by a separate
 `report` job that has only `issues: write`, no checkout, and runs nothing but
 `gh`; the job that runs the preview is `contents: read`. Every checkout in every
@@ -787,8 +813,11 @@ A newer stable protocol fails the pinned job on purpose: regenerate
 A pinned tag needs its digest beside it in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
-The hosted and PWA Playwright configs hard-code ports 7472, 7572 and 7672;
-something else listening there fails those suites. About one PWA run in
+Hosted tests default to 7472 and 7572, configurable through `HOSTED_PORT` and
+`HOSTED_SECOND_PORT`; their stubs also bind each port + 1. PWA tests use fixed
+7472/7473 and 7672. Something else listening on a required port fails the suite.
+Video playback runs in Chromium; the bundled WebKit cannot reliably play the
+media on these runners. Range delivery is checked in both engines. About one PWA run in
 twenty (measured 2026-09-23: 3 of 26, on a loaded machine) fails two or four
 tests with `page.goto: Could not connect to the server`: `wrangler dev` lost
 its local worker for a second ("Error inside ProxyWorker … Network connection
@@ -879,8 +908,9 @@ entire width. That holds for the Agents rows, the waiting cards and the Spaces
 rows alike, switched by one threshold, `useLargeText()` (font scale above 1.4)
 in `mobile/src/components/text.tsx`, so every list stacks at the same size;
 Settings rows put their value under the label there. Navigation-bar text does
-not grow with Dynamic Type, so the header's computer name is capped at 1.2×
-like LIVE and served full size through the iOS large content viewer. The native
+not grow with Dynamic Type, so each header line is capped at 1.2×
+and served full size through the iOS large content viewer: the computer name,
+LIVE, and the pane title and subtitle. The native
 reader keeps `removeClippedSubviews` off: with clipping, iOS's
 `maintainVisibleContentPosition` held a detached view in place and walked the
 offset past the end of the content, so at AX5, where one message is taller than
@@ -908,15 +938,18 @@ request a fresh one. Otherwise the client opens a real new pane and receives
 a false 404. Web retries when a later authoritative session first reports that
 pane; do not turn genuine missing panes into an endless polling loop. Keep
 readable agent labels separate from herdr’s restricted internal names.
-herdr gives a closed space's id to the next space after a restart, and the
-retry record does not survive one, so an agent start names the space its sheet
+Space ids are reused after a restart (see the measured herdr behavior), and
+the retry record does not survive one, so an agent start names the space its sheet
 showed (`workspaceLabel`, optional): a space that is gone is a 404 and one
-with another name a 409 `workspace_changed`. The web sheet is pinned to the
+with another name a 409 `workspace_changed`. Both clients pin the creation form to the
 space it opened for and never reopens by itself for the id's next owner.
 
 **Drafts are private, bounded, and memory-only.** Web scopes drafts by server
 and device grant; native scopes them by the stable computer API object. Pane
-IDs alone are not unique across computers. Each scope retains at most 20 panes;
+IDs alone are not unique across computers or across occupants over time.
+`endedPanes` drops an ended occupant’s draft and uncertain request ID, including
+background computers. An agent exiting into the same shell drops the reader
+but can keep the same terminal’s draft. Each scope retains at most 20 panes;
 web retains at most eight scopes. Both clients evict the least recently used
 draft, empty ones before typed ones, and never one whose send is running, whose
 uncertain send kept its operation ID, or whose pane is on screen: every opened
@@ -940,11 +973,14 @@ storage. Clients mint a fresh id for every upload and run one at a time, so
 beginning a transfer discards the same device's or session's unfinished,
 non-finalizing one — an app kill or a lost cancel used to block that phone for
 the rest of the hour — and the periodic sweep discards any unfinished transfer
-idle for 10 minutes; one hour remains the hard cap. Completed receipts also
-have a count cap. Keep partials outside projects. Multipart uploads are
+idle for 10 minutes; one hour remains the hard cap. Completed receipts are capped at 128 per computer within their hour, with
+a refusal that says when a place opens. Keep partials outside projects. Multipart uploads are
 written 0600 in a 0700 directory (chmodded if older), and the multipart route
 checks authorization again after the body arrives, since revocation can land
-while a slow body is still coming. The shared helper reads bounded
+while a slow body is still coming. Revocation/logout discard unfinished
+transfers; completed or finalizing ones remain because their files may
+already appear in a conversation. Direct cancellation aborts its request;
+relay responses arriving after cancellation are ignored. The shared helper reads bounded
 ranges on both clients and supports progress/cancellation. Process termination
 requires file reselection. Old computers retain 761 KiB relay uploads; SSH
 remains 32 MiB. Do not raise rates based on a small-message load test.
@@ -990,7 +1026,8 @@ retains the in-flight promise and its outcome for ten minutes: successes, and
 failures whose write may already have reached herdr. A failure that provably
 reached nothing is not kept, so a retry under the same ID runs again
 (`server/lib/herdr-delivery.ts`): a socket that would not open (`ENOENT`,
-`ECONNREFUSED`, `EACCES`, `ENOTSOCK`), or a herdr refusal made before it acts
+`ECONNREFUSED`, `EACCES`, `ENOTSOCK`) or an oversized unwritten request
+(`EMSGSIZE`), or a herdr refusal made before it acts
 (`agent_blocked`, `agent_not_ready`, `agent_not_found`, `pane_not_found`,
 `invalid_*`). Read-only herdr calls never count as delivery, so a prompt
 refused with `prompt_open` after only reading the screen can be retried once
@@ -1074,3 +1111,108 @@ older servers remain readable without invented timestamps.
 waits on `agent.get` for that same pane, within the existing startup deadline;
 never launch again to wait for readiness. The web Read tab remains available
 when a fresh conversation has no transcript yet, so later output can be opened.
+
+
+## Boundaries established by the September 26 review
+
+**Routes and saved state belong to their computer.** Native pane, space and
+creation routes carry the computer id through `lib/navigate.ts`; `useOwnedRoute`
+refuses another computer and dismisses after commit. Unscoped links adopt the
+current computer once. A switch uses `resetTo`, which dismisses the old stack:
+keying a Stack does not clear expo-router's adopted navigation state. Cold links
+without a valid parent route start at the list; unknown paths use `+not-found`.
+The generated sitemap is disabled. Web history entries carry their computer too.
+
+**Each saved computer owns its status and name.** Availability includes transport,
+request failures and herdr's backend state. Waiting counts for unavailable computers
+are last-known counts. Duplicate names are distinguished; a custom alias survives
+hostname updates. Adding a computer keeps the previous selection for Cancel and
+cold launch. Never send drafts or answers automatically when a link recovers.
+
+**A pane id is not a conversation.** `PaneInstances` persists terminal/agent/session
+ownership in the sidecar database; a resumed conversation can retain its identity
+across restart, while a restored shell starts afresh. Terminal history has a
+`transcript_owner`. Optional `instanceId` guards writes with `pane_replaced`;
+a delivered prompt retry still returns its stored receipt. `endedPanes` ignores
+versionless startup snapshots, which are not evidence that all panes ended.
+
+**The current prompt wins.** Shared prompt state accepts the snapshot's parse,
+including null, and uses `promptId` plus content to distinguish identical questions
+asked again. A refused `prompt_gone` or `prompt_changed` closes the stale card and
+refreshes the session. The server re-pushes blocked prompts after connecting and
+rechecks 250 ms after an answer/refusal. An optional option `textInput` marks only
+measured editable rows; choosing one focuses the composer and is not an answer.
+Old clients/servers can omit additive fields. Never infer a field from words like
+“No, and tell Claude”: `isTextField` uses the measured position and shape.
+
+**Native HTTP caching must stay disabled at the native layer.** Expo SDK 57 fetch
+drops the per-request cache option. `ShahiHttpCache` empties `URLCache.shared`
+*before* setting disk and memory capacity to zero; reversing that order detached
+Cache.db while leaving old login bodies/cookies in it. The server independently
+uses `Cache-Control: no-store` for API responses without an explicit cache policy.
+
+**Keychain migration drains the old service on every read and write.** An older
+TestFlight build can be installed between newer builds. Current-service values win;
+saved computers merge by id. A failed old-service deletion is retried. Only the
+current service holds reviewed host keys; a legacy pin must be shown before login.
+Pairing and SSH login use a private connection so a background snapshot cannot
+redirect a second computer's credentials. Pair links accept scheme/host without
+case; the relay must be an ASCII origin and claim errors stay with their code.
+
+**Pages are bounded by bytes as well as message counts.** `fitPage` cuts oversized
+text/thinking blocks without splitting a surrogate pair and limits the page to
+512 KB, leaving older messages for Load earlier. Native falls back only on 404;
+other errors remain visible and a 413 backs off transcript polling for 30 seconds.
+Indexes validate the last 64 indexed bytes before append, serialize builds per
+path, normalize malformed fields defensively and fall back row by row on failure.
+A single poller listener dispatches per-pane watcher wakes.
+
+**File checks belong to the handle that is read.** `/api/file` opens nonblocking,
+then uses fstat on that same handle, refusing FIFOs and other non-files without
+holding a file-work slot forever. Refusals distinguish `not_a_file`, `outside_roots`,
+`not_found`, `file_too_large` and `range_not_satisfiable`; suffix/open-ended ranges
+are supported. A 0.3.6 relay response lacks range headers, so clients retry once
+without a range; only a file within one relay body can use that fallback.
+
+**Runtime behavior needs measurement.** Use `realPath`/`realPathSync` for user paths:
+Bun realpath treats a backslash as a separator on macOS. The listener explicitly
+sets `reusePort: false`. A process killed by signal has `signalCode` but a null
+`exitCode`. Startup failures should print one useful line, not a minified bundle.
+Trust forwarded-for only for an explicitly allowed proxy Host, at its last hop;
+validate Host ports before URL parsing. Count byte limits in encoded bytes and
+truncate names by grapheme, never half an emoji.
+
+**Push is bounded and owned.** Each device or passcode session holds one registration
+per channel; SSH renews its token after sign-in and expired sessions lose theirs.
+Both channels use high priority and a one-hour TTL. Web uses a per-pane topic;
+Expo sends batches of 100. Bounded retries exclude uncertain timeouts. Logs contain
+fixed outcomes, never tokens or text. Native installs its foreground handler at
+launch. A delivered notification is not withdrawn when the question is answered.
+`state_change_seq` is a session-wide snapshot counter measured on herdr 0.9.1;
+push uses status changes missed between samples without duplicating event notices.
+
+**Retry outcomes differ.** An unwritten request can run again, as can a certain
+agent-start failure whose tab was closed. A `prompt_changed` after typing retains
+its outcome under the same id to prevent duplicate text. Folder/workspace refusals
+precede recording. Keep optional guards additive and error sentences suitable for
+already-shipped clients. Recovery control reads let native version notices clear
+when a computer update completes.
+
+**Installation messages must name the right herdr session.** Use `herdrCli` for
+instructions outside a pane. Build hooks lack HERDR context, so reinstalls recover
+it from the service environment. Setup/status authenticate readiness with this
+install's key and allow 30 seconds. Re-enable runs no startup hook: use restart/pair
+or restart herdr. The manager backs failed starts off from 3 seconds to 5 minutes.
+An unsupervised service already answering is kept; that detection has a macOS
+harness test, not fresh Alpine verification.
+
+**UI invariants cross clients.** Use shared `paneTitle`; trim only leading blank
+lines and trailing whitespace from drafts. Shell/Screen input disables capitals
+and autocorrect. File labels use the basename. Native controls have 44-point
+minimum targets; hide the reader from accessibility under Screen and close modals
+on loss of focus. PHPicker needs no prior library permission. Web terminal output
+must not capture Tab or Escape. Mark sending before receipt, working only after it.
+
+`site/privacy.test.ts` requires all review-environment expiry disclosures to match
+`demo/wrangler.toml`. `relay/test/protocol-doc.test.ts` checks hello versions and
+close-code ownership. Keep these checks in `bun run test` and `test:relay`.

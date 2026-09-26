@@ -54,7 +54,7 @@ describe("paired devices", () => {
       .mockRejectedValueOnce(new Error("No server address configured"))
       .mockResolvedValue({ devices: [mine], thisDeviceId: "dev-me" });
     const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live={false} />);
-    await waitFor(() => view.getByTestId("retry-devices"));
+    await waitFor(() => view.getByText("Devices will be available when this computer reconnects."));
 
     view.rerender(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
     await waitFor(() => view.getByText(/Yasser's iPhone/));

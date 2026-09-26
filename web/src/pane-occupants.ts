@@ -18,4 +18,9 @@ export function forgetEndedConversations(before: Session | null, after: Session)
     forgetWebDraft(owner, paneId);
     forgetReaderMemory(paneId);
   }
+  // An agent can quit without replacing the terminal. Its remembered chat
+  // must not appear above the shell while the first transcript read fails.
+  if (before?.version && after.version) for (const pane of before.panes) {
+    if (pane.isAgent && after.panes.some(now => now.paneId === pane.paneId && !now.isAgent)) forgetReaderMemory(pane.paneId);
+  }
 }

@@ -92,8 +92,11 @@ not fit the machine is refused with a reason naming the platform, bun or herdr
 versions on both sides.
 
 To release: bump `plugin/releases/release.json`, `herdr-plugin.toml` and
-`server/package.json` to the same version (a test enforces it; `/api/meta`'s
-`serverVersion` and `shahi.status` report it), run the release matrix, then
+`server/package.json` to the same version and write
+`plugin/releases/notes/<version>.md` with user-facing changes under `###` headings
+(the workflow publishes it, and a test requires it). A test enforces version
+agreement; `/api/meta`'s
+`serverVersion` and `shahi.status` report it. Run the release matrix, then
 merge that tested commit to `master`, then run **Approve Shahi release** there.
 The release environment permits only the `master` branch; signing jobs also
 check that ref. Third-party build actions are pinned to full commit hashes, and

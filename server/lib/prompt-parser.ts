@@ -134,7 +134,7 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
   const question = findQuestion(lines, run.startLine);
   if (!question) return null;
 
-  return {
+  const prompt: ParsedPrompt = {
     question: question.text,
     answer: run.answer,
     options: run.options,
@@ -143,6 +143,8 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
       : {}),
     ...(question.context.length > 0 ? { context: question.context } : {}),
   };
+  for (const option of prompt.options) if (isTextField(prompt, option)) option.textInput = true;
+  return prompt;
 }
 
 interface OptionRun {

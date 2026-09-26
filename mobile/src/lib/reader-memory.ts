@@ -33,7 +33,7 @@ interface ReaderMemory {
    * The conversation last shown, and which transcript it came from: message
    * ids are only unique within one transcript file (see `readLog`).
    */
-  messages: Map<string, { transcript: string | null; messages: LogMessage[] }>;
+  messages: Map<string, { transcript: string | null; messages: LogMessage[]; total?: number }>;
   /**
    * Where you were on each pane's *terminal*, and which view you were reading.
    *

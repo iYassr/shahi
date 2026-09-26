@@ -1,5 +1,5 @@
 import { ComputerSession } from "./computer-session";
-import { type Reviewed, type DashboardPane } from "@shahi/shared";
+import { connectionHealth, type Reviewed, type DashboardPane } from "@shahi/shared";
 /**
  * One live connection per saved computer, shared by all of its screens.
  *
@@ -25,7 +25,7 @@ import type { RelayIdentity } from "@/lib/relay";
 import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { forgetHostKey, type HostKeyReview, type ReviewHostKey } from "@/lib/tunnel";
-import { COMPUTERS_KEY, computerAddress, computerId, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
+import { COMPUTERS_KEY, computerAddress, computerDisplayName, computerId, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
 
@@ -52,6 +52,8 @@ interface SessionValue {
   connectionKey: number;
   switchComputer: (id: string) => Promise<void>;
   addComputer: () => Promise<void>;
+  cancelAddComputer: () => Promise<void>;
+  renameComputer: (id: string, name: string) => Promise<void>;
   reviewed: Reviewed;
   markReviewed: (pane: DashboardPane) => void;
   /** Null until the keychain has been read, so nothing flashes the wrong screen. */
@@ -189,6 +191,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [addingComputer, setAddingComputer] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const selected = useRef<string | null>(null);
+  const beforeAdding = useRef<string | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
   const [terminalWidth, setWidth] = useState(100);
   const [storageError, setStorageError] = useState<Error | null>(null);
@@ -261,7 +264,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     entry = new ComputerSession(saved, (visible = true) => {
       const current = live.current.get(saved.id);
       if (!current || !mounted.current) return;
-      const name = current.session?.serverName;
+      const name = current.saved.customName || current.session?.serverName;
       // An SSH computer's id is only learned once its tunnel and login are
       // up, too late for a notification that cold-launched the app, which
       // landed on the chooser instead of its pane (pre-release review). Saved,
@@ -287,9 +290,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // computer used to vanish from the list with no word about why
       // (pre-release bug hunt).
       const lost = live.current.get(saved.id)?.saved ?? saved;
+      const lostName = computerDisplayName(lost, bank.current);
       if (mounted.current) setAccessEnded(lost.connection.kind === "relay"
-        ? `This phone is no longer paired with ${lost.name}. Show a new pairing code on that computer to connect again.`
-        : `${lost.name} signed this phone out. Add it again with its Shahi passcode to connect.`);
+        ? `This phone is no longer paired with ${lostName}. Show a new pairing code on that computer to connect again.`
+        : `${lostName} signed this phone out. Add it again with its Shahi passcode to connect.`);
       forget(saved.id);
     }, adopted, reviewSavedHostKey);
     live.current.set(saved.id, entry);
@@ -360,7 +364,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     ensure(target); setAddingComputer(false); setAccessEnded(null); choose(id);
   };
   const addComputer = async () => {
-    await write(() => deleteSecret(KEY));
+    // Adding is a temporary screen, not a sign-out. A cancelled pairing or an
+    // app restart should return to the computer the person was using.
+    beforeAdding.current = selected.current;
     choose(null); setAddingComputer(true);
   };
   const signIn = (stored: Stored, adopted?: Connection) => {
@@ -388,8 +394,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     control: entry?.control,
     api: entry?.api ?? api, transport: entry?.connection ?? connection,
     ready, online, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
-    computers: bank.current.map(c => ({ id: c.id, name: c.name, serverId: c.connection.kind === "relay" ? c.connection.serverId : live.current.get(c.id)?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link: live.current.get(c.id)?.link ?? "connecting" })),
+    computers: bank.current.map(c => {
+      const liveComputer = live.current.get(c.id);
+      const link = liveComputer?.link ?? "connecting";
+      const health = connectionHealth({ link, online, error: liveComputer?.error, transport: c.connection.kind, computerName: c.name, backend: liveComputer?.control.handshake?.backend });
+      return { id: c.id, name: computerDisplayName(c, bank.current), serverId: c.connection.kind === "relay" ? c.connection.serverId : liveComputer?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link,
+        available: !health, status: health?.title ?? "Connected",
+        waiting: liveComputer?.session?.panes.filter(p => p.isAgent && p.status === "blocked").length ?? 0 };
+    }),
     switchComputer, addComputer,
+    cancelAddComputer: async () => {
+      if (beforeAdding.current && bank.current.some(c => c.id === beforeAdding.current)) await switchComputer(beforeAdding.current);
+      else setAddingComputer(false);
+    },
+    renameComputer: async (id, name) => {
+      const customName = name.trim();
+      if (!customName || customName.length > 80) throw new Error("Use a name between 1 and 80 characters.");
+      // Apply before queuing persistence, like snapshot name updates. A
+      // response arriving during the keychain write must not be overwritten.
+      bank.current = bank.current.map(c => c.id === id ? { ...c, name: customName, customName } : c);
+      const current = live.current.get(id);
+      if (current) current.saved = bank.current.find(c => c.id === id)!;
+      const saved = JSON.stringify(bank.current);
+      paint();
+      await write(() => writeSecret(COMPUTERS_KEY, saved));
+    },
     revokeComputer: async id => {
       const target = live.current.get(id);
       if (!target) return;

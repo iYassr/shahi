@@ -66,12 +66,12 @@ test("with herdr stopped behind a live link, the header says so and waiting card
   const view = render(<Agents onOpenPane={jest.fn()} />);
   expect(header().getByText("HERDR OFFLINE")).toBeTruthy();
   expect(view.getByText("herdr isn’t running on Studio")).toBeTruthy();
-  expect(view.getByText(/can’t be answered yet/)).toBeTruthy();
+  expect(view.getByText(/Answers are available when the computer reconnects/)).toBeTruthy();
   expect(view.getByLabelText("1. Yes").props.accessibilityState).toMatchObject({ disabled: true });
   // herdr back: the options work again.
   mockState.control.handshake.backend = connected;
   view.rerender(<Agents onOpenPane={jest.fn()} />);
   expect(header().getByText("LIVE")).toBeTruthy();
-  expect(view.queryByText(/can’t be answered yet/)).toBeNull();
+  expect(view.queryByText(/Answers are available when the computer reconnects/)).toBeNull();
   expect(view.getByLabelText("1. Yes").props.accessibilityState).toMatchObject({ disabled: false });
 });

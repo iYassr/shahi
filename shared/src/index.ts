@@ -146,6 +146,8 @@ export interface PromptOption {
   label: string;
   /** True for the option currently under the cursor. */
   selected: boolean;
+  /** Selecting this row opens a text field; it does not submit an answer yet. */
+  textInput?: boolean;
   /**
    * The explanation printed under the label, where the agent wrote one.
    *
