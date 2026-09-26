@@ -125,17 +125,17 @@ text from phones (text is relay control). The box answers the same way: its
 hello is the first data frame back. Nothing else on a link is unsealed.
 
 ```json
-{"t":"hello","v":1,"pub":"<base64url X25519 ephemeral public key>",
+{"t":"hello","v":2,"pub":"<base64url X25519 ephemeral public key>",
  "auth":{"kind":"device","deviceId":"…"}}
 ```
 or, before it has paired,
 ```json
-{"t":"hello","v":1,"pub":"…","auth":{"kind":"pairing","id":"<base64url sha256(pairing secret)>"}}
+{"t":"hello","v":2,"pub":"…","auth":{"kind":"pairing","id":"<base64url sha256(pairing secret)>"}}
 ```
 
 The secret itself never travels: the box finds the shared secret by `deviceId`
 (the device secret) or by the hash of a pairing code it minted and has not yet
-seen claimed. The box answers `{"t":"hello","v":1,"pub":"<its ephemeral>"}`.
+seen claimed. The box answers `{"t":"hello","v":2,"pub":"<its ephemeral>"}`.
 Both sides then derive a session exactly as `shared/src/e2e.ts` does —
 `clientSession` on the phone, `serverSession` on the box — with the shared
 secret as the pairing secret argument. A relay, or anyone, who does not hold

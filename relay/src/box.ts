@@ -34,10 +34,10 @@ import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
  * How long a box may go without being heard from before the relay decides it
  * is dead and closes it. The Workers runtime cannot originate WebSocket ping
  * frames, so liveness runs the other way: the box sends the text frame `ping`
- * once a minute, the runtime answers `pong` without waking this object, and
- * an alarm checks the timestamp of the last such answer. Five minutes is
- * five missed pings — generous, because the cost of a false positive is every
- * phone on the box being dropped with 4404.
+ * every twenty seconds, the runtime answers `pong` without waking this
+ * object, and an alarm checks the timestamp of the last such answer. Five
+ * minutes is fifteen missed pings — generous, because the cost of a false
+ * positive is every phone on the box being dropped with 4404.
  */
 export const BOX_SILENCE_MS = 5 * 60_000;
 
