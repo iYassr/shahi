@@ -156,6 +156,8 @@ export class RelayLink {
   #sendTokens = RELAY_LIMITS.phoneBurstBytes - 4096;
   #sendRefilled = Date.now();
   #watching: string | null = null;
+  /** Why the link last went down, until it is up again; see `request`'s timer. */
+  #dropped: Error | null = null;
   #subscribers = new Set<LinkSubscriber>();
   readonly host: string;
 
@@ -248,6 +250,19 @@ export class RelayLink {
       const id = this.#nextId++;
       const timer = setTimeout(() => {
         if (!this.#pending.delete(id)) return;
+        // "Connected to the relay" only when it was. A request made while a
+        // backoff retry is scheduled (up to 30 s apart) is never sent and runs
+        // into this timer, and the pre-release bug hunt found 7 to 9 of 30
+        // such requests to a computer that was offline saying it "may be busy
+        // or asleep". Those say why the link is down.
+        if (!pending.sent && this.#state !== "live") {
+          reject(this.#dropped ?? new UnreachableError(
+            "timeout",
+            this.host,
+            `Your computer didn't answer within ${Math.round(timeoutMs / 1000)} seconds. Shahi could not reach it through the relay yet. ${this.#next()}`,
+          ));
+          return;
+        }
         reject(
           new UnreachableError(
             "timeout",
@@ -270,7 +285,7 @@ export class RelayLink {
     const url = `${this.target.relay.replace(/^http/, "ws").replace(/\/+$/, "")}/v1/phone/${encodeURIComponent(this.target.serverId)}`;
     let socket: WebSocket;
     try { socket = new WebSocket(url); }
-    catch { this.#rejectAll(this.#lost()); this.#retry(); this.#setState("lost"); return; }
+    catch { this.#dropped = this.#lost(); this.#rejectAll(this.#dropped); this.#retry(); this.#setState("lost"); return; }
     // Sealed frames are bytes. Left on the default, React Native hands each
     // one over as a Blob that has to be read back asynchronously.
     socket.binaryType = "arraybuffer";
@@ -396,6 +411,7 @@ export class RelayLink {
     this.#receivedBytes = 0;
     this.#liveSince = Date.now();
     this.#self = null;
+    this.#dropped = null;
     // A device must prove its secret even when it only wants the dashboard.
     // A hello alone must never start a session or keep a phone slot alive.
     if (this.target.auth.kind === "device" && !this.#sendSealed({ t: "ws", data: this.#watching ? { type: "watch", paneId: this.#watching } : { type: "unwatch" } })) return;
@@ -567,6 +583,7 @@ export class RelayLink {
     if (this.#liveSince && Date.now() - this.#liveSince >= 30_000) this.#backoffMs = 500;
     this.#liveSince = 0;
     this.#discard(socket);
+    this.#dropped = error;
     this.#rejectAll(error);
     // Schedule before notifying: subscribers may immediately request a refresh.
     this.#retry(immediate);

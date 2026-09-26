@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { RelayLink, fromBase64Url, pairingTarget, toBase64Url } from "./relay-client";
 import { parsePairingUrl } from "./pairing";
-import { RELAY_LIMITS, RELAY_PROTOCOL } from "./relay";
+import { RELAY_CLOSE, RELAY_LIMITS, RELAY_PROTOCOL } from "./relay";
 import { ephemeral, serverSession, open, seal, type Session } from "./e2e";
 
 const secret = new Uint8Array(32).fill(8);
@@ -274,4 +274,36 @@ test("a pairing link that drops says to try again, and a device link that it is 
   FakeSocket.last.onopen!();
   FakeSocket.last.onerror!();
   await expect(request).rejects.toThrow("Reconnecting…");
+});
+
+// A request made while a backoff retry was scheduled was never sent and ran
+// into its own timer, which said the computer "is connected to the relay, so
+// it may be busy or asleep" about a computer that was offline (pre-release
+// bug hunt: 7 to 9 of 30 requests).
+test("a request that times out while the link is down says why it is down, not that the computer is busy", async () => {
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  const link = new RelayLink({ relay: "https://relay.example", serverId: server, secret, auth: { kind: "device", deviceId: "test-device" } });
+  links.push(link);
+  const first = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 1000);
+  FakeSocket.last.onopen!();
+  FakeSocket.last.onclose!({ code: RELAY_CLOSE.boxOffline });
+  await expect(first).rejects.toMatchObject({ reason: "box" });
+  // The retry is scheduled; this one waits for it and times out first.
+  const opened = FakeSocket.count;
+  const waiting = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 20);
+  const error = await waiting.then(() => null, (e: Error & { reason?: string }) => e);
+  expect(FakeSocket.count).toBe(opened);
+  expect(error?.reason).toBe("box");
+  expect(error?.message).not.toContain("may be busy or asleep");
+});
+
+test("a request sent over a live link that goes unanswered still says the computer may be busy", async () => {
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  const link = new RelayLink({ relay: "https://relay.example", serverId: server, secret, auth: { kind: "device", deviceId: "test-device" } });
+  links.push(link);
+  link.ensureConnected();
+  FakeSocket.last.onopen!();
+  hello(FakeSocket.last);
+  const reply = link.request({ method: "GET", path: "/api/slow", headers: {}, body: null }, 20);
+  await expect(reply).rejects.toMatchObject({ reason: "timeout", message: expect.stringContaining("connected to the relay") });
 });
