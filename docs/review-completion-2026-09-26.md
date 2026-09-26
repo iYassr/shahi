@@ -29,6 +29,7 @@ agents. Dependency versions were not upgraded.
 | iPhone simulator multiple computers | 5 passed |
 | iPhone simulator reader position | 2 passed |
 | Native Screen mode, empty reader and reopening | Passed |
+| Terminal width controls, default text size and AX5 | 2 passed; resizing emitted no terminal input |
 | Web and site production builds | Passed |
 | Signed iOS production archive, build 17 | Passed; version, ATS and privacy manifests inspected |
 
@@ -132,9 +133,20 @@ text keep their platform behavior.
 - **B4, terminal input already queued:** the sidecar checks the foreground
   process and prompt before typing and again before Enter. It cannot recall
   input that reached the terminal queue before the shell starts another program.
+- GitHub alert [GHSA-rgj7-g3m4-5g8c](https://github.com/lovell/sharp/security/advisories/GHSA-rgj7-g3m4-5g8c)
+  remains open for `sharp` in the standalone `demo/package-lock.json` development
+  toolchain. The shipped workspaces already pin the fixed 0.35.4. The separate
+  demo dependency is unchanged under the current dependency-update hold.
 - Real-iPhone push delivery/withdrawal, legacy SSH trust review, iOS cache
   inspection and SSH recovery need the physical-device checklist. Automated
   tests and simulator evidence are recorded separately above.
 - Native fixes require a new binary while signed OTA publication is unavailable
   on the current Expo plan. Publication and review status belong to the owner's
   private App Store record, not this public verification report.
+
+The release gate also exposed a timing-sensitive push-expiry test: a renewed
+500 ms cookie expired between assertions on a busy Linux worker. The test now
+advances a controlled clock through expiry and keeps it fixed during renewal;
+the real-time socket-expiry check is unchanged. The actual reader-page builder
+also has a regression check for a 1.2 MB synthetic message, beyond the existing
+`fitPage` unit tests.

@@ -8,7 +8,7 @@
  * methods these routes reach.
  */
 import { SHAHI_API_VERSION } from "@shahi/shared";
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
@@ -614,7 +614,10 @@ describe("a socket does not outlive its session", () => {
   // Pre-release bug hunt: the socket closed, but the session's push
   // registrations stayed and received every notification indefinitely.
   test("nor do the notifications it registered for", async () => {
-    const short = await boot({ sessionTtlMs: 500 });
+    const short = await boot({ sessionTtlMs: 60_000 });
+    // Expiry is the behavior under test, not the speed of the CI runner.
+    // A 500ms renewal expired between requests on a loaded Linux worker.
+    setSystemTime(new Date());
     const realFetch = globalThis.fetch;
     const sentTo: string[] = [];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -633,7 +636,7 @@ describe("a socket does not outlive its session", () => {
       expect((await post("/api/push/expo", { token: "ExpoPushToken[expiring]" }, short.cookie)).status).toBe(200);
       expect((await post("/api/push/subscribe", { endpoint: "https://push.example/expiring", keys: { p256dh: "x", auth: "y" } }, short.cookie)).status).toBe(200);
       expect(short.push.count()).toBe(2);
-      await Bun.sleep(600);
+      setSystemTime(new Date(Date.now() + 60_001));
 
       const later = await login();
       expect(await (await post("/api/push/test", {}, later)).json()).toEqual({ sent: 0 });
@@ -646,6 +649,7 @@ describe("a socket does not outlive its session", () => {
       expect(sentTo).toEqual(["ExpoPushToken[expiring]"]);
     } finally {
       globalThis.fetch = realFetch;
+      setSystemTime();
       short.stop();
     }
   });

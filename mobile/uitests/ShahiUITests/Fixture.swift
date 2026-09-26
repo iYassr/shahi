@@ -18,8 +18,8 @@ enum Fixture {
 
     /// Calls a `/__hosted/*` control route and returns its JSON.
     @discardableResult
-    static func call(_ port: Int, _ path: String, method: String = "POST", body: [String: Any]? = nil) throws -> [String: Any] {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/__hosted/\(path)")!)
+    static func call(_ port: Int, _ path: String, method: String = "POST", body: [String: Any]? = nil, prefix: String = "__hosted") throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/\(prefix)/\(path)")!)
         request.httpMethod = method
         request.timeoutInterval = 10
         if let body {

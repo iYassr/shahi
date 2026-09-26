@@ -167,3 +167,17 @@ test("dashboard builds do not ask a Codex or Cursor pane's process for its trans
     } finally { setSystemTime(); }
   }
 });
+
+// The HTTP /session route returns this cached page. Checking fitPage alone
+// missed a regression in whether the route's page builder actually called it.
+test("the reader page sent over the wire fits a relay frame even with an oversized message", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "shahi-reader-wire-"));
+  const path = join(dir, "11111111-2222-4333-8444-555555555555.jsonl");
+  try {
+    await writeFile(path, JSON.stringify({ type: "assistant", uuid: "large", message: { content: [{ type: "text", text: "漢字".repeat(200_000) }] } }) + "\n");
+    const page = await transcriptPage("reader-wire-budget", path, "claude", { limit: 60 });
+    expect(page?.log.messages).toHaveLength(1);
+    expect(Buffer.byteLength(JSON.stringify(page!.log))).toBeLessThan(783_360);
+    expect(JSON.stringify(page!.log).includes("The whole message is in the transcript on your computer.")).toBe(true);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
