@@ -19,10 +19,16 @@ function fakeRpc(fail: Record<string, string> = {}, screen = "") {
     calls.push({ method, params });
     if (fail[method]) throw new Error(`herdr ${method} failed: ${fail[method]}`);
     if (method === "pane.read") return { read: { text: screen } };
+    if (method === "pane.process_info") return { process_info: atPrompt };
     return {};
   };
   return { rpc, calls };
 }
+
+/** A shell at its prompt, as measured on 0.9.1: the foreground group is the shell's, and holds only it. */
+const atPrompt = { shell_pid: 100, foreground_process_group_id: 100, foreground_processes: [{ pid: 100, name: "zsh" }] };
+/** Claude Code started from that shell, in a group of its own. */
+const claudeRunning = { shell_pid: 100, foreground_process_group_id: 200, foreground_processes: [{ pid: 200, name: "claude" }] };
 
 const noSleep = { slept: [] as number[] };
 const sleep = async (ms: number) => void noSleep.slept.push(ms);
@@ -31,7 +37,7 @@ describe("submitPrompt", () => {
   test("an agent gets one agent.prompt and no pause, once its screen shows no menu", async () => {
     const { rpc, calls } = fakeRpc();
     noSleep.slept = [];
-    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle" }, "run the tests", sleep);
+    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "run the tests", sleep);
     expect(path).toBe("agent");
     expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt"]);
     expect(calls[1]).toEqual({ method: "agent.prompt", params: { target: "w1:p1", text: "run the tests" } });
@@ -41,10 +47,11 @@ describe("submitPrompt", () => {
   test("a shell gets text, the pause, then Enter — in that order", async () => {
     const { rpc, calls } = fakeRpc();
     noSleep.slept = [];
-    const path = await submitPrompt(rpc, { paneId: "w1:p3", isAgent: false, status: null }, "ls", sleep);
+    const path = await submitPrompt(rpc, { paneId: "w1:p3", isAgent: false, status: null, shellAlone: true }, "ls", sleep);
     expect(path).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
-    expect(calls[1]!.params).toEqual({ pane_id: "w1:p3", keys: ["Enter"] });
+    // Who has the terminal is asked again before Enter: see the describes below.
+    expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.process_info", "pane.send_keys"]);
+    expect(calls[2]!.params).toEqual({ pane_id: "w1:p3", keys: ["Enter"] });
     expect(noSleep.slept).toEqual([SUBMIT_DELAY_MS]);
   });
 
@@ -53,7 +60,7 @@ describe("submitPrompt", () => {
   // agent is what the composer is for, so blocked means the terminal path.
   test("a blocked agent is typed at, not prompted", async () => {
     const { rpc, calls } = fakeRpc();
-    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "blocked" }, "yes", sleep);
+    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "blocked", shellAlone: false }, "yes", sleep);
     expect(path).toBe("terminal");
     // The screen is read first and again before Enter: see the describes below.
     expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
@@ -61,7 +68,7 @@ describe("submitPrompt", () => {
 
   test("agent_blocked from herdr falls back to the terminal path", async () => {
     const { rpc, calls } = fakeRpc({ "agent.prompt": "agent_blocked" });
-    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle" }, "yes", sleep);
+    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "yes", sleep);
     expect(path).toBe("terminal");
     expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
   });
@@ -69,7 +76,7 @@ describe("submitPrompt", () => {
   test("any other agent.prompt failure is the caller's to report", async () => {
     const { rpc } = fakeRpc({ "agent.prompt": "agent_not_found" });
     await expect(
-      submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "working" }, "x", sleep),
+      submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "working", shellAlone: false }, "x", sleep),
     ).rejects.toThrow("agent_not_found");
   });
 });
@@ -81,7 +88,7 @@ describe("submitPrompt", () => {
  * captures (see fixtures/README.md).
  */
 describe("a message to an agent waiting on a menu", () => {
-  const blocked = { paneId: "w1:p1", isAgent: true, status: "blocked" };
+  const blocked = { paneId: "w1:p1", isAgent: true, status: "blocked", shellAlone: false };
   const writes = (calls: { method: string }[]) => calls.filter((c) => c.method.startsWith("pane.send"));
 
   test("is refused rather than confirming the highlighted option, and nothing is typed", async () => {
@@ -162,11 +169,32 @@ describe("a message to an agent waiting on a menu", () => {
     expect(writes(calls).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
   });
 
-  // A shell is a terminal the person is driving; the text is theirs to send.
-  test("is still typed into a shell whatever its screen shows", async () => {
+  // A shell at its prompt is a terminal the person is driving, and a menu
+  // above the prompt is output an earlier program left behind: nothing but
+  // the shell reads the keys, so the text is theirs to send.
+  test("is still typed into a shell at its prompt whatever its screen shows", async () => {
     const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-bash__text.txt"));
-    expect(await submitPrompt(rpc, { paneId: "w1:p3", isAgent: false, status: null }, "2", sleep)).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+    const shell = { paneId: "w1:p3", isAgent: false, status: null, shellAlone: true };
+    expect(await submitPrompt(rpc, shell, "2", sleep)).toBe("terminal");
+    expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.process_info", "pane.send_keys"]);
+  });
+
+  // Pre-release bug hunt, B4, re-verified: herdr names the agent 215–285ms
+  // after Claude Code draws its trust menu. In that gap the pane was a shell
+  // to the route, the text and Enter went in unread, and Claude Code quit 6
+  // times in 6. The program holding the terminal is what is waiting.
+  test("is refused at a trust menu drawn by a program herdr has not named an agent yet", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("blocked__trust-folder__text.txt"));
+    const program = { paneId: "w1:p3", isAgent: false, status: null, shellAlone: false };
+    await expect(submitPrompt(rpc, program, "please fix the tests", sleep)).rejects.toBeInstanceOf(PromptOpen);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read"]);
+  });
+
+  test("is typed into a program that shows no menu, as into a shell", async () => {
+    const { rpc, calls } = fakeRpc();
+    const program = { paneId: "w1:p3", isAgent: false, status: null, shellAlone: false };
+    expect(await submitPrompt(rpc, program, "print(1)", sleep)).toBe("terminal");
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
   });
 });
 
@@ -177,7 +205,7 @@ describe("a message to an agent waiting on a menu", () => {
  * hunt, B6). Nothing is pressed then, and the text is left where it was typed.
  */
 describe("a message whose screen changes before its Enter", () => {
-  const blocked = { paneId: "w1:p1", isAgent: true, status: "blocked" };
+  const blocked = { paneId: "w1:p1", isAgent: true, status: "blocked", shellAlone: false };
   /** A pane showing `first`, then `then` from the moment the text is typed. */
   function changing(first: string, then: string) {
     const calls: string[] = [];
@@ -207,6 +235,33 @@ describe("a message whose screen changes before its Enter", () => {
     expect(calls).not.toContain("pane.send_keys");
   });
 
+  // A program started at the desk as the message arrived has the terminal
+  // within 50ms, after the shell was asked, and reads the typed text and the
+  // Enter as its own. Claude Code draws its trust menu inside the pause (4
+  // times in 4, B4 re-verified), where that Enter would choose "No, exit".
+  test("a program that takes a shell's terminal during the submit delay: Enter is not pressed", async () => {
+    const calls: string[] = [];
+    let info = atPrompt;
+    const rpc = async (method: string) => {
+      calls.push(method);
+      if (method === "pane.send_text") info = claudeRunning;
+      if (method === "pane.process_info") return { process_info: info };
+      return {};
+    };
+    const shell = { paneId: "w1:p3", isAgent: false, status: null, shellAlone: true };
+    await expect(submitPrompt(rpc, shell, "please fix the tests", sleep)).rejects.toBeInstanceOf(PromptMoved);
+    expect(calls).toEqual(["pane.send_text", "pane.process_info"]);
+  });
+
+  // A program started just before the message has the terminal but has not
+  // drawn its menu yet, so the first read finds nothing to refuse.
+  test("a menu drawn in a program's pane during the submit delay: Enter is not pressed", async () => {
+    const { rpc, calls } = changing("", fixture("blocked__trust-folder__text.txt"));
+    const program = { paneId: "w1:p3", isAgent: false, status: null, shellAlone: false };
+    await expect(submitPrompt(rpc, program, "please fix the tests", sleep)).rejects.toBeInstanceOf(PromptMoved);
+    expect(calls).toEqual(["pane.read", "pane.send_text", "pane.read"]);
+  });
+
   test("text typed into the field itself is still submitted", async () => {
     const { rpc, calls } = changing(fixture("blocked__claude-ask-type__text.txt"), fixture("blocked__claude-ask-typed__text.txt"));
     expect(await submitPrompt(rpc, blocked, "1", sleep)).toBe("terminal");
@@ -220,15 +275,21 @@ describe("a message whose screen changes before its Enter", () => {
  * typed onto the trust menu with no screen read (pre-release bug hunt, B4).
  */
 describe("promptTarget", () => {
-  const herdr = (pane: unknown) => async (method: string) => {
-    if (method !== "pane.get") throw new Error(`unexpected ${method}`);
-    if (pane instanceof Error) throw pane;
-    return { pane };
+  const herdr = (pane: unknown, processInfo: unknown = atPrompt) => async (method: string) => {
+    if (method === "pane.get") {
+      if (pane instanceof Error) throw pane;
+      return { pane };
+    }
+    if (method === "pane.process_info") {
+      if (processInfo instanceof Error) throw processInfo;
+      return { process_info: processInfo };
+    }
+    throw new Error(`unexpected ${method}`);
   };
 
   test("an agent herdr has started is an agent before the mirror has seen it", async () => {
     const rpc = herdr({ pane_id: "w1:p2", agent: "claude", agent_status: "unknown" });
-    expect(await promptTarget(rpc, "w1:p2", undefined)).toEqual({ paneId: "w1:p2", isAgent: true, status: "unknown" });
+    expect(await promptTarget(rpc, "w1:p2", undefined)).toEqual({ paneId: "w1:p2", isAgent: true, status: "unknown", shellAlone: false });
   });
 
   test("herdr's status is fresher than the mirror's", async () => {
@@ -240,16 +301,38 @@ describe("promptTarget", () => {
   // rather than the text running in the shell left behind.
   test("the mirror's agent is kept when herdr names none", async () => {
     const rpc = herdr({ pane_id: "w1:p2", agent: null, agent_status: "unknown" });
-    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle" });
+    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle", shellAlone: false });
   });
 
-  test("a shell is a shell to both", async () => {
+  test("a shell at its prompt is a shell to both, and has the terminal alone", async () => {
     const rpc = herdr({ pane_id: "w1:p3", agent: null, agent_status: "unknown" });
-    expect(await promptTarget(rpc, "w1:p3", undefined)).toEqual({ paneId: "w1:p3", isAgent: false, status: null });
+    expect(await promptTarget(rpc, "w1:p3", undefined)).toEqual({ paneId: "w1:p3", isAgent: false, status: null, shellAlone: true });
+  });
+
+  // B4, re-verified: in the 215–285ms before herdr names the agent it has
+  // started, the agent already has the terminal and its trust menu drawn.
+  test("a program holding the terminal before herdr names it an agent is not the shell alone", async () => {
+    const rpc = herdr({ pane_id: "w1:p3", agent: null, agent_status: "unknown" }, claudeRunning);
+    expect(await promptTarget(rpc, "w1:p3", undefined)).toMatchObject({ isAgent: false, shellAlone: false });
+  });
+
+  // Measured 20ms after Enter: the group is still the shell's, with the
+  // child it forked for the command in it.
+  test("a child the shell has forked, still in the shell's group, is not the shell alone", async () => {
+    const forked = { ...atPrompt, foreground_processes: [{ pid: 101, name: "zsh" }, { pid: 100, name: "zsh" }] };
+    const rpc = herdr({ pane_id: "w1:p3", agent: null, agent_status: "unknown" }, forked);
+    expect(await promptTarget(rpc, "w1:p3", undefined)).toMatchObject({ shellAlone: false });
+  });
+
+  test("a pane herdr cannot say the terminal of is left to its screen", async () => {
+    const rpc = herdr({ pane_id: "w1:p3", agent: null, agent_status: "unknown" }, new Error("herdr pane.process_info timed out"));
+    expect(await promptTarget(rpc, "w1:p3", undefined)).toMatchObject({ shellAlone: false });
+    const noShell = herdr({ pane_id: "w1:p3", agent: null }, { shell_pid: null, foreground_process_group_id: null, foreground_processes: [] });
+    expect(await promptTarget(noShell, "w1:p3", undefined)).toMatchObject({ shellAlone: false });
   });
 
   test("the mirror answers when herdr cannot", async () => {
     const rpc = herdr(new Error("herdr pane.get timed out"));
-    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle" });
+    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle", shellAlone: false });
   });
 });

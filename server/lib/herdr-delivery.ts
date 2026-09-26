@@ -43,10 +43,14 @@ export function refusedBeforeDelivery(err: unknown): boolean {
  * so they never count as delivery. The prompt route reads the screen before it
  * types (to refuse free text into an open menu, review finding F41); counting
  * that read made its refusal "delivered", and a retry under the same id was
- * handed the same refusal for ten minutes after the menu had gone. Anything
- * not listed here still counts: a replayed error is the safe mistake.
+ * handed the same refusal for ten minutes after the menu had gone. It asks
+ * who has a shell pane's terminal the same way (`pane.process_info`, B4).
+ * Anything not listed here still counts: a replayed error is the safe mistake.
  */
-const READ_ONLY = new Set(["pane.read", "pane.get", "pane.list", "agent.get", "agent.list", "tab.list", "workspace.list", "session.snapshot", "ping"]);
+const READ_ONLY = new Set([
+  "pane.read", "pane.get", "pane.list", "pane.process_info", "agent.get", "agent.list", "tab.list",
+  "workspace.list", "session.snapshot", "ping",
+]);
 
 type Rpc = (method: string, params: never, options?: { timeoutMs?: number }) => Promise<unknown>;
 

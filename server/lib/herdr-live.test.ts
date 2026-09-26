@@ -62,7 +62,7 @@ import { SessionStore } from "./state";
 import { Poller } from "./poller";
 import { TranscriptStore } from "./transcript";
 import { dashboard } from "./http";
-import { submitPrompt } from "./prompt";
+import { promptTarget, submitPrompt } from "./prompt";
 import { answerPrompt } from "./answer";
 import { parsePrompt } from "./prompt-parser";
 import { startAgentInTab } from "./agents";
@@ -187,7 +187,9 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
   test("a prompt to a shell is typed and submitted, and the shell ran it", async () => {
     const rpc = (method: string, params: Record<string, unknown>) =>
       client.rpc(method as never, params as never) as Promise<unknown>;
-    const path = await submitPrompt(rpc, { paneId, isAgent: false, status: null }, `printf 'shahi-ran-%s\\n' ${nonce}`);
+    const target = await promptTarget(rpc, paneId, undefined);
+    expect(target).toMatchObject({ isAgent: false, shellAlone: true });
+    const path = await submitPrompt(rpc, target, `printf 'shahi-ran-%s\\n' ${nonce}`);
     expect(path).toBe("terminal");
     const text = await eventually(() => visible(paneId), (t) => t.includes(`shahi-ran-${nonce}`));
     expect(text.includes(`shahi-ran-${nonce}`)).toBe(true);
@@ -202,13 +204,29 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
   test("text larger than the socket's send buffer reaches the pane whole", async () => {
     const rpc = (method: string, params: Record<string, unknown>) =>
       client.rpc(method as never, params as never) as Promise<unknown>;
-    await submitPrompt(rpc, { paneId, isAgent: false, status: null }, `wc -c | tr -d ' ' | sed 's/^/shahi-bytes-/'`);
+    await submitPrompt(rpc, await promptTarget(rpc, paneId, undefined), `wc -c | tr -d ' ' | sed 's/^/shahi-bytes-/'`);
     const body = `${"y".repeat(99)}\n`.repeat(2_600); // 260 KB
     await client.rpc("pane.send_text", { pane_id: paneId, text: body });
     await client.rpc("pane.send_keys", { pane_id: paneId, keys: ["ctrl+d"] });
     const screen = await eventually(() => visible(paneId), (t) => t.includes(`shahi-bytes-${body.length}`), 20_000);
     expect(screen).toContain(`shahi-bytes-${body.length}`);
   }, 30_000);
+
+  // herdr names a just-started agent 215–285ms after it draws its trust menu
+  // (B4, re-verified), so the prompt route asks who has the terminal. At the
+  // prompt the foreground group is the shell's alone; a program has its own.
+  test("pane.process_info tells a program holding the terminal from the shell at its prompt", async () => {
+    const rpc = (method: string, params: Record<string, unknown>) =>
+      client.rpc(method as never, params as never) as Promise<unknown>;
+    expect((await promptTarget(rpc, paneId, undefined)).shellAlone).toBe(true);
+    await client.rpc("pane.send_text", { pane_id: paneId, text: "sleep 30" });
+    await client.rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
+    const running = await eventually(() => promptTarget(rpc, paneId, undefined), (t) => !t.shellAlone);
+    expect(running.shellAlone).toBe(false);
+    await client.rpc("pane.send_keys", { pane_id: paneId, keys: ["ctrl+c"] });
+    const back = await eventually(() => promptTarget(rpc, paneId, undefined), (t) => t.shellAlone);
+    expect(back.shellAlone).toBe(true);
+  });
 
   test("agent.prompt refuses a pane that is not an agent, with a code", async () => {
     let caught: unknown;
@@ -280,7 +298,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
           client.rpc(method as never, params as never) as Promise<unknown>;
         const path = await submitPrompt(
           rpc,
-          { paneId: agentPane, isAgent: true, status: current },
+          { paneId: agentPane, isAgent: true, status: current, shellAlone: false },
           `Reply with exactly the word shahi-agent-${nonce} and nothing else.`,
         );
         expect(path).toBe("agent");

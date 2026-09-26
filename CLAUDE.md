@@ -137,13 +137,23 @@ a report from a phone.
   its trust menu drawn, and `agent.prompt` typed into it then and pressed
   Enter on `No, exit`. Whether a pane is an agent is asked of herdr's
   `pane.get` too, not only the 3s mirror, which still lists a just-started
-  agent as a shell.
+  agent as a shell. `pane.get` lags as well: it names the agent 215–285ms
+  after the trust menu is drawn. So a pane neither calls an agent skips the
+  read only when its shell alone has the terminal — `pane.process_info`'s
+  foreground process group is the shell's pid and holds nothing else; a
+  program has a group of its own within 50ms of Enter (measured on 0.9.1).
+  Any other program holding the terminal is read like an agent. That shell's
+  Enter waits on the same question asked again after the pause, so a program
+  started as the message arrived does not receive it. Text typed ahead of a
+  command the shell has not read yet cannot be told apart, since only the
+  terminal's input queue holds it.
   Measured on Claude Code 2.1.280 / herdr 0.9.1 (2026-09-23): at the Bash
   permission menu with the cursor on `1. Yes`, typing "no" then Enter ran the
   command. The text-field rows are `Type something.` (the question tool) and
   `Tell Claude what to change` (plan approval): typed text replaces their
   label and Enter submits it, so those are still typed. `No, and tell Claude
-  what to do differently` ignores typing. Shells are unaffected. Once typed
+  what to do differently` ignores typing. Shells at their prompt are
+  unaffected. Once typed
   into, a field's label is its text, so `isTextField` knows the question
   tool's by its place above `Chat about this`. While a field has the cursor
   a digit is typed into it (measured on 2.1.282), so `/answer` sends `Up`
@@ -270,9 +280,10 @@ through one queue per pane (`pane-writes.ts`), so each sees the screen the
 one before it left: two phones' messages were typed into each other before
 either Enter, and a key-bar `Up` landed between an answer's read and its
 Enter and confirmed `No, exit`. Reads stay outside the queue; the poller never
-waits on a write. A person at the terminal does not queue, so a message to an
-agent reads the screen again before its Enter, and if the menu or its lit row
-moved it presses nothing and answers 409 `prompt_changed`, the text left typed.
+waits on a write. A person at the terminal does not queue, so a message reads
+the screen again before its Enter, and if the menu or its lit row moved it
+presses nothing and answers 409 `prompt_changed`, the text left typed; to a
+shell at its prompt the same happens if anything else has taken the terminal.
 
 **Full control, gated by a passcode.** `pane.send_text` is arbitrary shell
 execution as you, so a method allowlist was never the boundary. The boundary is

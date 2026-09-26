@@ -65,6 +65,19 @@ test("an operation that only read the screen reached nothing, however the read w
   expect(failed.reachedNothing()).toBe(true);
 });
 
+// Pre-release bug hunt, B4 re-verification: a message to a pane herdr has not
+// named an agent asks who has its terminal before reading its screen. Were
+// that a write, a message refused at a menu there would be refused again for
+// ten minutes after the menu had gone.
+test("asking who has a pane's terminal, then reading its screen, reached nothing", async () => {
+  const t = trackDelivery((async () => ({})) as never);
+  const call = t.rpc as (m: string, p: never) => Promise<unknown>;
+  await call("pane.get", {} as never);
+  await call("pane.process_info", {} as never);
+  await call("pane.read", {} as never);
+  expect(t.reachedNothing()).toBe(true);
+});
+
 test("a read followed by a write is delivered", async () => {
   const t = trackDelivery((async () => ({})) as never);
   const call = t.rpc as (m: string, p: never) => Promise<unknown>;

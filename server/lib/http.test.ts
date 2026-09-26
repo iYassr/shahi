@@ -44,6 +44,11 @@ let agentStatus: string | null = null;
  * yet: `pane.get` reports it in this state while the snapshot lists no agent.
  */
 let unmirroredAgent: string | null = null;
+/**
+ * Set to give the fake pane's terminal to a program herdr has not named an
+ * agent: `pane.process_info` then puts it, not the shell, in the foreground.
+ */
+let programInForeground = false;
 
 /** Set to make the agent the fake herdr launches exit before it is ready. */
 let agentExitsWhileStarting = false;
@@ -111,6 +116,12 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
         case "pane.get": {
           const status = unmirroredAgent ?? agentStatus;
           return { pane: status ? { ...pane, agent: "claude", agent_status: status } : pane };
+        }
+        case "pane.process_info": {
+          const foreground = programInForeground ? { pid: 200, name: "claude" } : { pid: 100, name: "zsh" };
+          return {
+            process_info: { pane_id: PANE, shell_pid: 100, foreground_process_group_id: foreground.pid, foreground_processes: [foreground] },
+          };
         }
         case "tab.create":
           if (freshCreation) {
@@ -1460,6 +1471,46 @@ describe("a message to an agent the mirror has not recognised yet", () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe("prompt_open");
     expect(app.calls.slice(before).filter((c) => c.method.startsWith("pane.send") || c.method === "agent.prompt")).toEqual([]);
+  });
+});
+
+// B4, re-verified: herdr names the agent it has started 215–285ms after its
+// trust menu is drawn. A message in that gap went to the pane as a shell, its
+// text and Enter unread, and Claude Code quit 6 times in 6.
+describe("a message to a program herdr has not named an agent yet", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    programInForeground = true;
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    programInForeground = false;
+  });
+  const send = (clientMessageId: string) =>
+    fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/prompt`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify({ text: "please fix the tests", clientMessageId }),
+    });
+
+  test("is refused at its folder-trust menu, and nothing is typed", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    const before = app.calls.length;
+    const res = await send("program-trust");
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("prompt_open");
+    expect(app.calls.slice(before).filter((c) => WRITES.has(c.method))).toEqual([]);
+  });
+
+  // Asking who has the terminal changes nothing, so the refusal is not kept.
+  test("is typed under the same id once the menu has been answered", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    expect((await send("program-retry")).status).toBe(409);
+    screen = "";
+    const before = app.calls.length;
+    expect((await send("program-retry")).status).toBe(200);
+    expect(app.calls.slice(before).filter((c) => WRITES.has(c.method)).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
   });
 });
 
