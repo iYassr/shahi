@@ -167,6 +167,10 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     const session = await dashboard(store, poller);
     const row = session.panes.find((p) => p.paneId === paneId);
     expect(row).toMatchObject({ workspaceId, isAgent: false });
+    // Who holds the pane id is read from its terminal (`PaneInstances`), since
+    // herdr reuses pane ids; a new shell's occupant is its terminal's id.
+    expect(typeof pane!.terminal_id).toBe("string");
+    expect(row!.instanceId).toBe(pane!.terminal_id);
     expect(KNOWN_STATUSES.has(row!.status)).toBe(true);
     expect(session.protocol).toBe((await client.connect()).protocol);
   });

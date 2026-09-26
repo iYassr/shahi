@@ -159,6 +159,24 @@ a report from a phone.
   is kept, and the poller asks herdr's status again on an unchanged screen, so
   the card gains its buttons once herdr says `blocked`; a static menu never
   changes the hash that would otherwise trigger a re-parse.
+- **Pane ids are reused; terminal ids are not.** Measured on 0.9.1 in a named
+  session (2026-09-26): close the highest space (w4), restart herdr, create a
+  space, and it is w4 again, with w4:p1; every named session starts at w1:p1.
+  Every pane herdr restores comes back with a new `terminal_id` (w3:p1's
+  `term_65c5ac306c4425` as `term_65c5ac360bcd31`). A pane id is therefore not
+  a conversation. The sidecar names each pane's occupant (`PaneInstances` in
+  `herdr-pane.ts`, sent as `DashboardPane.instanceId`) from its terminal, and
+  carries it across a restart only when herdr resumes the same agent session.
+  Recorded history belongs to an occupant, writes naming another are refused
+  with 409 `pane_replaced`, and both clients forget a pane's draft, uncertain
+  send and remembered conversation when its occupant ends (`endedPanes` in
+  `shared/src/pane-instance.ts`), and keep the occupant with pins and
+  notifications.
+- **`agent_session` outlives its agent.** A pane herdr restores without its
+  agent (resume off, or the agent missing from the restarted server's PATH)
+  comes back with `agent: null` and the old `agent_session` still set. Read it
+  only through `agentSessionOf` in `herdr-pane.ts`, which counts a session
+  only while the same agent runs in the pane.
 - **The plugin CLI, measured on 0.9.1.** `herdr plugin list --json` and
   `herdr plugin config-dir <id>` read the registry and work without a server;
   `config-dir` resolves for any id, installed or not. `disable`, `enable` and
