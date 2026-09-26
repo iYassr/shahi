@@ -509,6 +509,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     finally { readingSummaries = false; }
   }, 3000);
 
+  // Transcript lookups to wake when their pane draws a frame (`watchLog`).
+  // Woken from the one listener below rather than a listener each: a poller
+  // listener per watching client put the ninth watcher past Node's default
+  // limit of ten, and the service log printed a false "Possible EventEmitter
+  // memory leak" warning (pre-release bug hunt, September 2026).
+  const logWakers = new Map<string, Set<() => void>>();
+
   // Frames go only to clients watching that pane. A screen is ~3.5KB and there
   // are 27 of them; broadcasting all of it would swamp a phone on cellular.
   poller.on("frame", (frame: PaneFrame) => {
@@ -516,6 +523,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     for (const ws of clients) {
       if (ws.data.watchedPaneId === frame.paneId) ws.send(payload);
     }
+    for (const wake of logWakers.get(frame.paneId) ?? []) wake();
   });
 
   // A prompt appearing is worth telling every client about, watching or not:
@@ -1514,13 +1522,14 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
       ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));
     });
 
-    const onFrame = (frame: PaneFrame) => {
-      if (frame.paneId === paneId) follow.wake();
-    };
-    poller.on("frame", onFrame);
+    const wake = () => follow.wake();
+    const wakers = logWakers.get(paneId) ?? new Set<() => void>();
+    wakers.add(wake);
+    logWakers.set(paneId, wakers);
 
     return () => {
-      poller.off("frame", onFrame);
+      wakers.delete(wake);
+      if (wakers.size === 0 && logWakers.get(paneId) === wakers) logWakers.delete(paneId);
       follow.stop();
     };
   }

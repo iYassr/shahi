@@ -153,6 +153,7 @@ interface Booted {
   store: SessionStore;
   transcript: TranscriptStore;
   herdr: typeof herdrSnapshot;
+  poller: Poller;
   stop: () => void;
 }
 
@@ -220,7 +221,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
-  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, store, transcript, herdr: herdrSnapshot, stop: () => server.stop(true) };
+  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, store, transcript, herdr: herdrSnapshot, poller, stop: () => server.stop(true) };
 }
 
 /**
@@ -606,6 +607,45 @@ describe("a socket does not outlive its session", () => {
     } finally {
       globalThis.fetch = realFetch;
       short.stop();
+    }
+  });
+});
+
+describe("clients watching panes", () => {
+  // Each watcher added a poller "frame" listener of its own beside the two
+  // permanent ones, so the ninth crossed Node's default limit of ten and the
+  // service log printed "MaxListenersExceededWarning: Possible EventEmitter
+  // memory leak detected" (pre-release bug hunt, September 2026).
+  test("a dozen clients watching panes add no poller listeners and leave none behind", async () => {
+    const box = await boot();
+    const warnings: string[] = [];
+    const onWarning = (warning: Error) => warnings.push(warning.name);
+    process.on("warning", onWarning);
+    const sockets: WebSocket[] = [];
+    try {
+      const baseline = box.poller.listenerCount("frame");
+      for (let n = 0; n < 12; n++) {
+        const ws = new WebSocket(`${box.base.replace(/^http/, "ws")}/ws`, { headers: { cookie: box.cookie } } as never);
+        sockets.push(ws);
+        // A watch is answered with the pane's frame, which says it was taken.
+        const watched = new Promise<void>((resolve, reject) => {
+          ws.onmessage = (event) => { if (JSON.parse(String(event.data)).type === "frame") resolve(); };
+          ws.onerror = () => reject(new Error("socket refused"));
+          setTimeout(() => reject(new Error("no frame 2s after watching")), 2_000);
+        });
+        await new Promise((resolve) => { ws.onopen = resolve; });
+        ws.send(JSON.stringify({ type: "watch", paneId: PANE }));
+        await watched;
+        expect(box.poller.listenerCount("frame")).toBe(baseline);
+      }
+      for (const ws of sockets.splice(0)) ws.close();
+      await Bun.sleep(50);
+      expect(box.poller.listenerCount("frame")).toBe(baseline);
+      expect(warnings).not.toContain("MaxListenersExceededWarning");
+    } finally {
+      for (const ws of sockets) ws.close();
+      process.off("warning", onWarning);
+      box.stop();
     }
   });
 });
