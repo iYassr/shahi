@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { MemoryRouter } from "react-router-dom";
 import type { AgentStatus, DashboardPane, Session } from "../api";
 import { Dashboard, groupPanes } from "./Dashboard";
@@ -154,5 +154,47 @@ describe("pins", () => {
     await act(async () => { view = create(tree(session(older))); });
     await act(async () => pin("Older server").props.onClick());
     expect(pin("Older server").props["aria-pressed"]).toBe(true);
+  });
+});
+
+// Pre-release bug hunt: the list said "1 AGENTS" on the phone, and this one
+// said "1 agents" beside its count.
+test("one conversation is counted in the singular, and shells as shells", () => {
+  expect(groupPanes([pane({ paneId: "a" })], "priority")[0]!.title).toBe("1 agent");
+  expect(groupPanes([pane({ paneId: "a" }), pane({ paneId: "b" })], "priority")[0]!.title).toBe("2 agents");
+  expect(groupPanes([pane({ paneId: "a", isAgent: false })], "priority", "shell")[0]!.title).toBe("1 shell");
+});
+
+describe("what a conversation is called", () => {
+  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  let view: ReactTestRenderer | undefined;
+  afterEach(async () => { if (view) await act(async () => view!.unmount()); view = undefined; });
+  async function render(panes: DashboardPane[]) {
+    const session = { panes, workspaces: [], defaultGrouping: "priority" } as unknown as Session;
+    await act(async () => { view = create(<MemoryRouter><Dashboard session={session} prompts={{}} reviewed={{}} onReviewed={mock()} onAnswer={mock()} /></MemoryRouter>); });
+  }
+  const text = (className: string) => view!.root.findAll((node) => node.props.className === className).map((node) => textOf(node));
+  const textOf = (node: ReactTestInstance): string => node.children.map((child) => typeof child === "string" ? child : textOf(child)).join("");
+
+  // A program can set a terminal title of nothing but spaces; the row had no
+  // name, and the pin button was "Pin    " (pre-release bug hunt).
+  test("a pane whose title is only spaces is named by its pane id, on the row and aloud", async () => {
+    await render([pane({ paneId: "w1:p1", title: "   " })]);
+    expect(text("row__title")[0]).toStartWith("w1:p1");
+    expect(view!.root.findAll((node) => node.props.className === "pin-button")[0]!.props["aria-label"]).toBe("Pin w1:p1");
+  });
+
+  test("the list heading counts one conversation in the singular, and shells as shells", async () => {
+    await render([pane({ paneId: "w1:p1", title: "Task" }), pane({ paneId: "w1:p2", isAgent: false, agent: null })]);
+    const heading = () => textOf(view!.root.findAll((node) => node.props.className === "group__label")[0]!);
+    expect(heading()).toBe("1 agent1");
+    await act(async () => view!.root.findAll((node) => node.type === "button" && node.props["aria-label"] === "Shells")[0]!.props.onClick());
+    expect(heading()).toBe("1 shell1");
+  });
+
+  // The waiting card said "untitled" for a pane its row called by its id.
+  test("a waiting card with no title is named by its pane id, as its row is", async () => {
+    await render([pane({ paneId: "w1:p1", status: "blocked", title: null }), pane({ paneId: "w1:p2", status: "blocked", title: "Fix the build" })]);
+    expect(text("blocked__task")).toEqual(["claude · w1:p1", "claude · w1:p2 · Fix the build"]);
   });
 });

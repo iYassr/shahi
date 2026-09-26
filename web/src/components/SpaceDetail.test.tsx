@@ -56,3 +56,16 @@ test("a New agent sheet for a space that closed does not reopen for the next spa
   await act(async () => view!.update(tree(space("projB"))));
   expect(output()).not.toContain("New agent in");
 });
+
+// A terminal title of only spaces gave an agent's row no name (pre-release bug
+// hunt). An agent is named by its pane id, as in the list; a shell is "shell".
+test("a pane whose title is only spaces is named by its pane id, or as a shell", async () => {
+  const pane = (paneId: string, isAgent: boolean) => ({ paneId, tabId: "w9:t1", workspaceId: "w9", title: "  ", isAgent, agent: isAgent ? "claude" : null, status: "idle" });
+  await render({
+    workspaces: [{ workspaceId: "w9", label: "nine", cwd: "~/nine", cwdPath: "/home/nine" }],
+    tabs: [{ tabId: "w9:t1", workspaceId: "w9", label: "1" }],
+    panes: [pane("w9:p1", true), pane("w9:p2", false)],
+  } as unknown as Session);
+  const titles = view!.root.findAll((node) => node.props.className === "row__title").map((node) => node.children.join(""));
+  expect(titles).toEqual(["w9:p1", "shell"]);
+});

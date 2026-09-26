@@ -277,3 +277,12 @@ test("the view's tabs move with the arrow keys and control one panel", async () 
   expect(selected().props.id).toEndWith("-tab-read");
   expect(focused.at(-1)).toEndWith("-tab-read");
 });
+
+// A terminal title of only spaces titled the pane with nothing (pre-release
+// bug hunt); the pane id names it, as its row in the list does.
+test("a pane whose title is only spaces is titled by its pane id", async () => {
+  const scoped = { ...api, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  const session = { panes: [{ paneId: "w1:p1", title: "   ", isAgent: true, agent: "claude", status: "idle" }] } as any;
+  await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
+  expect(view!.root.findByProps({ className: "detail__title" }).children).toEqual(["w1:p1"]);
+});

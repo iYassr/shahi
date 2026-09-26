@@ -445,3 +445,4 @@ export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch
 
 export { agentLabel } from "./agent-label";
 export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";
+export { paneTitle } from "./pane-title";

@@ -11,6 +11,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApi, type Session } from "../api";
+import { paneTitle } from "@shahi/shared";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
@@ -259,7 +260,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
                   <span className="row__title">
-                    {pane.title ?? (pane.isAgent ? pane.paneId : "shell")}
+                    {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : "shell"}
                   </span>
                   {/* Which tab, on the row, instead of a heading above it. */}
                   {!grouped && <span className="row__tab">{tab.label}</span>}

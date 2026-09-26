@@ -1,4 +1,4 @@
-import { agentLabel, inboxPanes, latestConversations, pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
+import { agentLabel, inboxPanes, latestConversations, paneTitle, pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
@@ -111,7 +111,7 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
       <div className="agent-sidebar__requests">{blocked.map((pane) => (
         <button key={pane.paneId} className={`agent-sidebar__request${selected === pane.paneId ? " row--selected" : ""}`} aria-current={selected === pane.paneId ? "page" : undefined} onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}>
           <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-          <span className="row__title">{pane.title ?? pane.paneId}<span className="row__preview">Waiting for your reply</span><span className="row__meta">{pane.workspaceLabel} · Waiting on you</span></span>
+          <span className="row__title">{paneTitle(pane)}<span className="row__preview">Waiting for your reply</span><span className="row__meta">{pane.workspaceLabel} · Waiting on you</span></span>
         </button>
       ))}</div>
       {!selected && <div className="agent-full-requests">{blocked.map((pane) => (
@@ -141,7 +141,7 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
             ))}
           </div>}
 
-          {groupPanes(rest, active === "inbox" ? "priority" : effective).map((group) => (
+          {groupPanes(rest, active === "inbox" ? "priority" : effective, active === "shells" ? "shell" : "agent").map((group) => (
             <section key={group.key}>
               <div className="group">
                 <h2 className="group__label">
@@ -157,9 +157,9 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-                  <span className="row__title">{pane.title ?? pane.paneId}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
+                  <span className="row__title">{paneTitle(pane)}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}</span>
-                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${pane.title ?? pane.paneId} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={`${pins.has(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
+                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${paneTitle(pane)} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={`${pins.has(pane.paneId) ? "Unpin" : "Pin"} ${paneTitle(pane)}`} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
             </section>
           ))}
@@ -197,10 +197,12 @@ interface PaneGroup {
 
 const STATUS_ORDER: AgentStatus[] = ["blocked", "working", "done", "idle", "unknown"];
 
-export function groupPanes(panes: DashboardPane[], grouping: Grouping): PaneGroup[] {
+export function groupPanes(panes: DashboardPane[], grouping: Grouping, noun: "agent" | "shell" = "agent"): PaneGroup[] {
   if (grouping === "priority") {
     // One chronological list, with explicitly pinned conversations first.
-    return [{ key: "all", title: `${panes.length} agents`, panes }];
+    // Counted in the singular for one, and as shells under Shells: it read
+    // "1 agents" (pre-release bug hunt, found on the phone's list).
+    return [{ key: "all", title: `${panes.length} ${noun}${panes.length === 1 ? "" : "s"}`, panes }];
   }
 
   const groups = new Map<string, PaneGroup>();
@@ -250,9 +252,12 @@ function BlockedCard({
           <span aria-hidden="true">●</span> Waiting on you
         </span>
         <h2 className="blocked__where">{pane.workspaceLabel}</h2>
+        {/* Named as its row names it: "untitled" here and the pane id there
+            was one conversation with two names (pre-release bug hunt). The
+            pane id is already on the line, so it is not said twice. */}
         <p className="blocked__task">
           <AgentIcon kind={pane.agent} />
-          {pane.agent ?? "agent"} · {pane.paneId} · {pane.title ?? "untitled"}
+          {pane.agent ?? "agent"} · {pane.paneId}{paneTitle(pane) !== pane.paneId && ` · ${paneTitle(pane)}`}
         </p>
       </button>
 

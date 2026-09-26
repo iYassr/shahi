@@ -3,7 +3,7 @@ import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
 import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
-import { supports } from "@shahi/shared";
+import { paneTitle, supports } from "@shahi/shared";
 /**
  * A single pane: its prompt, its live screen, its recorded history, and a way
  * to type into it.
@@ -420,7 +420,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
             <AgentAvatar kind={detail?.pane?.agent ?? known?.agent} status={detail?.pane?.agent_status ?? known?.status ?? "unknown"} isAgent />
           )}
           <span className="detail__title">
-            {frame?.prompt ? "Waiting on you" : (known?.title ?? paneId)}
+            {frame?.prompt ? "Waiting on you" : known ? paneTitle(known) : paneId}
           </span>
         </h1>
         <span className="detail__where">

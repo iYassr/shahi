@@ -1,16 +1,7 @@
-import { agentLabel, type DashboardPane } from "@shahi/shared";
+import { agentLabel, paneTitle, type DashboardPane } from "@shahi/shared";
 
-/**
- * What a conversation is called everywhere it appears: its terminal title, or
- * its pane id when there is none worth reading. A title can be only spaces —
- * herdr omits one that strips to nothing, and the sidecar then passes the raw
- * one on — and that gave a row with no name, read aloud as "   , Claude, idle"
- * (pre-release bug hunt). One helper, because the waiting card had its own
- * fallback, "untitled", for a pane its row called by its id.
- */
-export function paneTitle(pane: Pick<DashboardPane, "title" | "paneId">): string {
-  return pane.title?.trim() || pane.paneId;
-}
+// Shared with the web client, so the two cannot name one pane differently.
+export { paneTitle };
 
 /**
  * What VoiceOver reads for a whole conversation row.
