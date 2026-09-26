@@ -1488,9 +1488,9 @@ describe("a pane herdr restored as a shell, still naming its dead agent's sessio
     const real = { ...(await import("./session-log")) };
     mock.module("./session-log", () => ({
       ...real,
+      // The reader finds a transcript by path and reads it from there, so
+      // finding it is the one step to fake.
       findTranscript: async (id: string) => (id === dead ? path : real.findTranscript(id)),
-      readSessionLog: async (id: string, options?: { limit?: number; before?: number }) =>
-        id === dead ? { ...(await real.readWindow(path, options))!, sessionId: id } : real.readSessionLog(id, options),
     }));
     occupant = { agent: null, agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: dead } };
     app = await boot();
