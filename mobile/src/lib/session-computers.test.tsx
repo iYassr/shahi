@@ -64,6 +64,26 @@ test("two computers on the same relay survive switching both ways and a cold lau
   expect(connection.relay?.serverId).toBe(a.serverId);
   ui.unmount();
 });
+// Restoring the selected computer on launch moved it to the end of the list,
+// so a, b, c with a selected came back b, c, a (pre-release bug hunt).
+test("the saved computer list keeps its order across cold launches", async () => {
+  const c = { ...a, serverId: "computer-c", deviceId: "phone-c", deviceSecret: "secret-c" };
+  let ui = await mount(); await pairBoth();
+  await act(async () => { await value.addComputer(); });
+  act(() => value.signInRelay(c));
+  await act(async () => {});
+  await act(async () => { await value.switchComputer(computerId(a)); });
+  const order = [computerId(a), computerId(b), computerId(c)];
+  expect(value.computers.map(computer => computer.id)).toEqual(order);
+  for (let launch = 0; launch < 2; launch++) {
+    ui.unmount(); ui = await mount();
+    expect(value.activeComputerId).toBe(computerId(a));
+    expect(value.computers.map(computer => computer.id)).toEqual(order);
+    await act(async () => { await value.switchComputer(computerId(a)); });
+    expect(bank().map((computer: { id: string }) => computer.id)).toEqual(order);
+  }
+  ui.unmount();
+});
 test("pins and late socket or HTTP replies cannot cross computers", async () => {
   const ui = await mount(); await pairBoth();
   act(() => value.togglePin("same-pane-id"));

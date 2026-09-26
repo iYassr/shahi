@@ -25,9 +25,17 @@ export function computerAddress(connection: ComputerConnection): string {
     `${connection.ssh.username}@${connection.ssh.host}:${connection.ssh.port}`;
 }
 
+/**
+ * Saves a connection: in its own place if the computer is already saved, at
+ * the end if it is new.
+ *
+ * Every launch restores the selected computer through here, and moving it to
+ * the end reordered the list on each cold start: a, b, c with a selected came
+ * back b, c, a, made permanent by the next save (pre-release bug hunt).
+ */
 export function rememberComputer(computers: SavedComputer[], connection: ComputerConnection, name?: string, pins?: string[]): SavedComputer[] {
   const id = computerId(connection);
   const previous = computers.find((computer) => computer.id === id);
   const saved: SavedComputer = { id, connection, name: name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.serverId && { serverId: previous.serverId }) };
-  return [...computers.filter((computer) => computer.id !== id), saved];
+  return previous ? computers.map((computer) => computer.id === id ? saved : computer) : [...computers, saved];
 }
