@@ -48,6 +48,13 @@ export class ComputerSession {
     this.control = new ControlSession(this.api, () => {
       if (this.disposed) return;
       this.serverId = this.control.handshake?.serverId ?? this.serverId;
+      // While the computer refuses this app's contract, each control read
+      // (every 30 s, 2 s while it is away) asks again. Its build changing
+      // was the only other way out, and an unmanaged computer has no build
+      // to compare: updated, it kept "Update needed" until Try again was
+      // tapped (pre-release bug hunt). The stream stays closed until the
+      // session answers.
+      if (this.incompatible) void this.retryContract();
       this.changed();
     }, () => { void this.start(); });
   }
@@ -108,6 +115,10 @@ export class ComputerSession {
       // came from the server this app cannot speak with.
       if (e instanceof IncompatibleServerError || received === this.received) this.failure(e);
     }
+  }
+  private async retryContract() {
+    await this.refresh();
+    if (!this.incompatible) await this.start();
   }
   private failure(e: unknown) {
     if (this.disposed) return;

@@ -259,6 +259,36 @@ test("update needed is not painted over by a dashboard the relay pushes", async 
   } finally { ui.unmount(); retry.mockRestore(); }
 });
 
+// An unmanaged computer has no build for the app to watch change: updated, it
+// kept "Update needed" for as long as nobody tapped Try again (pre-release
+// bug hunt).
+test("update needed clears by itself once the computer speaks the app's contract", async () => {
+  const retry = jest.spyOn(RelayLink.prototype, "reconnect").mockImplementation(() => {});
+  const control = jest.fn(async () => null as unknown);
+  (api as unknown as { control: typeof control }).control = control;
+  const ui = await mount(); await pairBoth();
+  try {
+    const socket = mockSockets.at(-1)!;
+    await act(async () => socket.state("live"));
+    (api.session as jest.Mock).mockRejectedValue(new IncompatibleServerError("Update Shahi on this computer.", { min: 4, max: 4 }));
+    await act(async () => { await value.refresh(); });
+    expect(value.error).toBeInstanceOf(IncompatibleServerError);
+    // Still the old one: asking again keeps the notice and the stream closed.
+    socket.connect.mockClear();
+    await act(async () => { await value.control!.refresh(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(value.error).toBeInstanceOf(IncompatibleServerError);
+    expect(socket.connect).not.toHaveBeenCalled();
+    expect(socket.ensureConnected).not.toHaveBeenCalled();
+    // Updated, to a build that now answers the handshake.
+    (api.session as jest.Mock).mockResolvedValue(snapshot);
+    control.mockResolvedValue({ control: 1, serverId: b.serverId, buildId: "new", api: { min: 5, max: 5 }, capabilities: [], backend: { state: "connected" }, update: { managed: true, phase: "idle", channel: "stable" } });
+    await act(async () => { await value.control!.refresh(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(value.error).toBeNull();
+    expect(value.link).toBe("live");
+    expect(socket.ensureConnected).toHaveBeenCalled();
+  } finally { ui.unmount(); retry.mockRestore(); delete (api as unknown as { control?: unknown }).control; }
+});
+
 test("an offline notification wins over a late initial network snapshot and preserves drafts", async () => {
   const { nativeDraft } = require("./drafts");
   let finish!: (value: unknown) => void;
