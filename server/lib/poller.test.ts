@@ -257,7 +257,7 @@ describe("which appearance of a prompt a frame shows", () => {
   // The answer route saw the screen in between; the poller did not, and its
   // screen is byte for byte the one it last sent. The card must still move on.
   test("is sent again under a new id when only the answer route saw the question go", async () => {
-    const { shown, poller } = pane(MENU);
+    const { poller } = pane(MENU);
     const frames: (string | undefined)[] = [];
     poller.on("frame", (frame) => frames.push(frame.prompt?.promptId));
     const first = (await poller.refresh("w1:p1"))?.prompt?.promptId;
