@@ -185,6 +185,38 @@ test.describe("files in the reader", () => {
     }
   });
 
+  /**
+   * The PDF viewer said "This PDF cannot be previewed" whatever went wrong,
+   * and the download helper called every 413 "needs an update", the 25 MB
+   * ceiling of a current computer included (September 2026 pre-release bug
+   * hunt).
+   */
+  test("a PDF over 25 MB says it is too large, not that it cannot be previewed or needs an update", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.request.post("/__stub/scenario", {
+      data: {
+        patch: {
+          transcripts: {
+            [PANE]: [{
+              id: "big", role: "agent", at: 1,
+              blocks: [{
+                kind: "tool", name: "Read", summary: "report.pdf", file: { path: "/home/x/report.pdf", name: "report.pdf" },
+                result: { text: "", isError: false, truncated: false, images: [] },
+              }],
+            }],
+          },
+        },
+      },
+    });
+    await page.route("**/api/file**", (route) =>
+      route.fulfill({ status: 413, json: { error: "This file is over 25 MB.", code: "file_too_large" } }),
+    );
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+    await tap(page, page.locator(".tool__open").first());
+    await expect(page.locator(".viewer__body")).toContainText("over 25 MB", { timeout: 20_000 });
+    await expect(page.locator(".viewer__body")).not.toContainText(/cannot be previewed|needs an update/);
+  });
+
   test("a file that cannot be read says why, rather than showing a broken image", async ({
     page,
   }) => {
