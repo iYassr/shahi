@@ -36,6 +36,9 @@ const PAGE = 60;
  */
 const TAIL = 12;
 
+/** The largest page the server returns (`/session`'s `limit` is capped at 400). */
+const MAX_PAGE = 400;
+
 /**
  * The last conversation seen for each pane.
  *
@@ -159,24 +162,41 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
     busy.current = true;
     try {
       // A full page when there is nothing on screen, the tail when there is.
-      // If more arrived than the tail can bridge — a long silence, or a burst —
-      // fall back to a full page rather than leaving a hole in the middle.
       const held = shown.current.length;
       const limit = held === 0 ? PAGE : TAIL;
-      const log = await api.sessionLog(paneId, { limit });
+      let log = await api.sessionLog(paneId, { limit });
       if (!active()) return;
+      // Where what is on screen ends in the transcript: the total the last
+      // poll saw, or, for a conversation remembered from an earlier visit,
+      // its remembered window.
+      const end = knownTotal.current || (held ? (rememberedOffsets.get(paneId) ?? 0) + held : 0);
       // Merged, not replaced. Replacing threw away everything "Load earlier"
       // had fetched — scroll up through a long conversation and 2.5 seconds
       // later you were back at the last page, with the view yanked along with
       // it. The poll only ever knows about the newest page; what came before it
       // is the reader's to keep.
-      // A disjoint tail cannot be merged without hiding the missing interval.
-      // Reset to a contiguous window; its explicit offset keeps all history reachable.
-      const overlap = shown.current.some((message) => log.messages.some((fresh) => fresh.id === message.id));
+      const overlaps = (page: SessionLog) => shown.current.some((message) => page.messages.some((fresh) => fresh.id === message.id));
       const source = transcriptOf(log);
       // Another session in the same pane: its ids can collide with the old
       // one's, so nothing on screen — history, place, unseen count — carries over.
       const switched = transcript.current !== null && transcript.current !== source;
+      /*
+       * More arrived than the tail reaches: a burst, or a tab that was hidden
+       * while an agent worked. A disjoint tail cannot be merged without
+       * hiding the messages between, and resetting to it threw away the
+       * loaded history and the message being read (pre-release bug hunt,
+       * 2026-09). So fetch back to what is on screen, with a tail's margin
+       * for anything arriving meanwhile, and merge that. Only a gap longer
+       * than the server's largest page still resets; the offset keeps the
+       * rest reachable through Load earlier.
+       */
+      const missing = log.total - end;
+      if (held > 0 && !switched && !overlaps(log) && end > 0 && missing > 0 && missing + TAIL <= MAX_PAGE) {
+        const bridged = await api.sessionLog(paneId, { limit: missing + TAIL });
+        if (!active()) return;
+        if (transcriptOf(bridged) === source) log = bridged;
+      }
+      const overlap = overlaps(log);
       const reset = shown.current.length === 0 || !overlap || switched;
       const next = reset ? log.messages : merge(shown.current, log.messages);
       if (reset || knownTotal.current === 0) {
@@ -199,7 +219,9 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       // a timer, images and all, which is most of what made this feel unsteady
       // on a phone.
       if (next !== shown.current) {
-        const arrived = next.length - shown.current.length;
+        // Counted from the transcript, not the window: a reset window can be
+        // shorter than the one it replaced while dozens of messages arrived.
+        const arrived = end > 0 ? log.total - end : next.length - shown.current.length;
         if (arrived > 0 && !pinnedToBottom.current) setUnseen((n) => n + arrived);
         shown.current = next;
         setMessages(next);

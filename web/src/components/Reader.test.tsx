@@ -130,3 +130,74 @@ describe("a pane reused by a new session", () => {
     expect(output()).toContain("NEW follow-up");
   });
 });
+
+describe("more messages than a poll's tail", () => {
+  // Twelve or more messages between two polls — a burst, or a tab left hidden
+  // while an agent worked — used to reset the reader to the newest twelve,
+  // throwing away "Load earlier" and the message being read (pre-release bug
+  // hunt).
+  const said = (id: string, text: string): LogMessage => message(id, text);
+  const transcript: LogMessage[] = [];
+  const sessionLog = mock((_pane: string, options: { limit?: number; before?: number } = {}): Promise<SessionLog> => {
+    const end = options.before ?? transcript.length;
+    const messages = transcript.slice(Math.max(0, end - (options.limit ?? 60)), end);
+    return Promise.resolve({ sessionId: "chat", path: "/home/me/.claude/projects/p/chat.jsonl", messages, total: transcript.length, offset: 0 });
+  });
+
+  let view: ReactTestRenderer | undefined;
+  let events: EventTarget;
+  let page: EventTarget & { hidden: boolean };
+  const originals = new Map<string, PropertyDescriptor | undefined>();
+  beforeEach(() => {
+    clearReaderMemory();
+    transcript.splice(0, transcript.length, ...Array.from({ length: 200 }, (_, i) => said(`m-${i}`, `message ${i}.`)));
+    events = new EventTarget();
+    page = Object.assign(new EventTarget(), { hidden: false });
+    for (const [key, value] of Object.entries({ window: events, document: page })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    }
+  });
+  afterEach(async () => {
+    if (view) await act(async () => view!.unmount());
+    view = undefined;
+    clearReaderMemory();
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+  const output = () => JSON.stringify(view!.toJSON());
+  const open = async () => {
+    await act(async () => {
+      view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} /></ApiContext.Provider>);
+    });
+    await act(async () => view!.root.findAllByType("button").find(b => b.props.className === "reader__more")!.props.onClick());
+    expect(output()).toContain("message 80.");
+  };
+  const arrive = (count: number) => transcript.push(...Array.from({ length: count }, (_, i) => said(`n-${i}`, `new ${i}.`)));
+  const expectAllOf = (count: number) => {
+    expect(output()).toContain("message 80.");
+    expect(output()).toContain("message 199.");
+    expect(output()).toContain("new 0.");
+    expect(output()).toContain(`new ${count - 1}.`);
+    expect(output()).toContain("Load earlier (80 more)");
+  };
+
+  test("a burst of new messages keeps the loaded history", async () => {
+    await open();
+    arrive(20);
+    await act(async () => { events.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w1:p1" })); });
+    expectAllOf(20);
+  });
+
+  test("messages that arrived while the tab was hidden join the loaded history", async () => {
+    await open();
+    page.hidden = true;
+    arrive(15);
+    await act(async () => { events.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w1:p1" })); });
+    expect(output()).not.toContain("new 0.");
+    page.hidden = false;
+    await act(async () => { page.dispatchEvent(new Event("visibilitychange")); });
+    expectAllOf(15);
+  });
+});

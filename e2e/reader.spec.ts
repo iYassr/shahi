@@ -140,4 +140,39 @@ test.describe("finding your way back down", () => {
 
     await expect(page.locator(".reader__jump")).toHaveText(/2 new/, { timeout: 20_000 });
   });
+
+  // Twelve or more messages between polls reset the reader to the newest
+  // twelve: the loaded history and the message being read were gone, and the
+  // count of new messages was never raised (pre-release bug hunt).
+  test("a burst of messages keeps the loaded history and counts every new one", async ({ page }) => {
+    await openReader(page, LONG);
+    await tap(page, page.locator(".reader__more"));
+    await expect(page.locator(".reader .msg")).toHaveCount(120);
+    await page.locator(".reader").evaluate((el) => el.scrollTo(0, 0));
+    await expect(page.locator(".reader__jump")).toBeVisible();
+
+    const existing = (await (await page.request.get("/api/panes/w1%3Ap2/session?limit=400")).json()).messages;
+    const burst = Array.from({ length: 20 }, (_, i) => ({ id: `burst-${i}`, role: "agent", at: 10 + i, blocks: [{ kind: "text", text: `Burst ${i}.` }] }));
+    await page.request.post("/__stub/scenario", { data: { patch: { transcripts: { "w1:p2": [...existing, ...burst] } } } });
+
+    await expect(page.locator(".reader__jump")).toHaveText(/20 new/, { timeout: 20_000 });
+    await expect(page.locator(".reader .msg")).toHaveCount(140);
+    await expect(page.locator(".reader__more")).toHaveText("Load earlier (20 more)");
+  });
+
+  // More than one page can bridge still starts again at the newest messages,
+  // but counted from the transcript: from the window the count came out
+  // negative and was skipped, leaving a stale one (pre-release bug hunt).
+  test("a gap too long to bridge starts at the newest messages and counts them all", async ({ page }) => {
+    await openReader(page, LONG);
+    await page.locator(".reader").evaluate((el) => el.scrollTo(0, 0));
+    await expect(page.locator(".reader__jump")).toBeVisible();
+
+    const existing = (await (await page.request.get("/api/panes/w1%3Ap2/session?limit=400")).json()).messages;
+    const flood = Array.from({ length: 500 }, (_, i) => ({ id: `flood-${i}`, role: "agent", at: 10 + i, blocks: [{ kind: "text", text: `Flood ${i}.` }] }));
+    await page.request.post("/__stub/scenario", { data: { patch: { transcripts: { "w1:p2": [...existing, ...flood] } } } });
+
+    await expect(page.locator(".reader__more")).toHaveText("Load earlier (628 more)", { timeout: 20_000 });
+    await expect(page.locator(".reader__jump")).toHaveText(/500 new/);
+  });
 });
