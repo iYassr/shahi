@@ -35,6 +35,9 @@ custom_domain = true
 name = "BETA_EMAIL"
 allowed_sender_addresses = ["beta@getshahi.dev"]
 
+# Nominally five a minute per address. Counted per machine and reconciled
+# later, so a burst over fresh connections gets several times that through:
+# 17 of 30 in one minute, measured (docs/browser-hosting.md, "iOS beta requests").
 [[ratelimits]]
 name = "BETA_LIMIT"
 namespace_id = "26090501"

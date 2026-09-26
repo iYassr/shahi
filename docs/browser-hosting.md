@@ -295,10 +295,19 @@ HSTS over HTTPS), and a 405 names `Allow: POST`; until the pre-release bug hunt
 (B99) it sent `no-store` and `nosniff` alone.
 
 Requests require a same-origin JSON submission, an email address, and consent.
-A honeypot, a 2 KB body limit, and five requests per minute per IP per Cloudflare
-location limit abuse. This is a lightweight limit, not global bot protection.
-No signup database is maintained. Email acceptance is awaited before success;
-inviting the applicant to TestFlight remains a manual action.
+A honeypot, a 2 KB body limit and the `BETA_LIMIT` binding limit abuse. The
+binding is configured for five requests a minute per IP address (per /64 for
+IPv6), but that is a nominal figure, not an exact count: Cloudflare keeps the
+counter on the machine that runs the Worker, per location, and reconciles it
+in the background ([its locality and accuracy
+notes](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)).
+Measured in the pre-release bug hunt (B100): 17 of 30 requests from one address
+within a minute got through, most over fresh connections, which can land on
+other machines; `wrangler dev`, whose counter is exact, refuses the sixth. It bounds a
+sustained flood of signup mail to the support inbox, not a burst, and it is
+not bot protection. No signup database is maintained. Email acceptance is
+awaited before success; inviting the applicant to TestFlight remains a manual
+action.
 
 Run `bun test site/signup.test.ts` and `bunx tsc --noEmit -p site` for checks.
 Use `bunx wrangler dev --config site/wrangler.toml` after building to test the
