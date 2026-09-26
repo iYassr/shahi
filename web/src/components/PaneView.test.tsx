@@ -286,3 +286,34 @@ test("a pane whose title is only spaces is titled by its pane id", async () => {
   await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
   expect(view!.root.findByProps({ className: "detail__title" }).children).toEqual(["w1:p1"]);
 });
+
+async function renderWith(panes: unknown[], send = mock().mockResolvedValue({ accepted: true })) {
+  const scoped = { ...api, send, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={{ panes } as any} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
+  return send;
+}
+const agentPane = { paneId: "w1:p1", title: "Task", isAgent: true, agent: "claude", status: "idle" };
+
+// Trimming the whole draft took the first line's indentation and not the
+// second's, which broke pasted Python and YAML (pre-release bug hunt).
+test("a message keeps its first line's indentation", async () => {
+  const send = await renderWith([agentPane]);
+  await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: "\n  \n    def f():\n        return 1\n\n" } }));
+  await act(async () => view!.root.findAllByType("button").find(b => b.props.className === "compose__send")!.props.onClick());
+  expect(send.mock.calls[0]![1]).toBe("    def f():\n        return 1");
+});
+
+// A phone keyboard's prose defaults turned "ls" into "Ls" (pre-release bug
+// hunt); a reply to an agent keeps them.
+test("terminal input is typed literally, in a shell pane and on an agent's Screen", async () => {
+  const literal = { autoCapitalize: "off", autoCorrect: "off", spellCheck: false };
+  await renderWith([{ ...agentPane, isAgent: false, agent: null }]);
+  expect(view!.root.findByType("textarea").props).toMatchObject(literal);
+  await act(async () => view!.unmount());
+
+  await renderWith([agentPane]);
+  const field = () => view!.root.findByType("textarea").props;
+  expect([field().autoCapitalize, field().autoCorrect, field().spellCheck]).toEqual([undefined, undefined, undefined]);
+  await act(async () => view!.root.findAll((node) => node.type === "button" && node.props.role === "tab")[1]!.props.onClick());
+  expect(field()).toMatchObject(literal);
+});

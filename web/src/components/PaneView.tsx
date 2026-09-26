@@ -318,7 +318,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   );
 
   async function submit() {
-    const text = draft.trim();
+    // Leading blank lines and trailing whitespace only. Trimming the whole
+    // draft took the first line's indentation and not the rest's, so a pasted
+    // "    def f():" over "        return 1" broke Python and YAML (pre-release
+    // bug hunt). The phone's composer sends the same.
+    const text = draft.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
     if (!text && attachments.length === 0) return;
 
     // Attachments become paths on their own lines. An agent cannot receive a
@@ -398,6 +402,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   // (pre-release bug hunt).
   const shell = known ? !known.isAgent : detail ? !detail.agent : false;
   const placeholder = tab === "screen" ? "Send text to terminal…" : shell ? "Run a command…" : "Reply to this agent…";
+  // A shell or the raw screen gets the keys as typed. A phone's keyboard
+  // defaults are for prose: typing "ls" sent "Ls", which a shell rejects
+  // (pre-release bug hunt, on the native app; this composer had the same
+  // defaults). A reply to an agent is prose, so it keeps them.
+  const literal = tab === "screen" || shell;
 
   return (
     <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"} data-update-blocked={Boolean(draft || attachments.length || sending || attaching)}>
@@ -592,6 +601,9 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
               placeholder={placeholder}
               rows={1}
               aria-label="Message"
+              autoCapitalize={literal ? "off" : undefined}
+              autoCorrect={literal ? "off" : undefined}
+              spellCheck={literal ? false : undefined}
             />
           </div>
           <button
