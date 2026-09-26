@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GAP_MARKER, TranscriptStore, linesScrolledOff, screenAdvanced } from "./transcript";
 
@@ -247,5 +248,44 @@ describe("gap coalescing", () => {
 
     expect(s.tail("w1:p1").map((l) => l.text)).toEqual([GAP_MARKER, ...body(500, 3)]);
     s.close();
+  });
+});
+
+// Rows are stored per pane id, and pane ids repeat: every herdr session starts
+// at w1:p1, and a restart gives a closed pane's id to a new one. The
+// pre-release bug hunt read another session's 82 rows as a new shell's
+// history, and that shell's own scrollback was never seeded because rows
+// existed.
+describe("history belongs to the program that produced it", () => {
+  test("a reused pane id in another session starts with empty history", () => {
+    const s = new TranscriptStore(":memory:");
+    s.claim("w1:p3", "term_session_one");
+    s.seed("w1:p3", ["SESSION1-ROW-1", "SESSION1-ROW-2"]);
+    s.claim("w1:p3", "term_session_one");
+    expect(s.count("w1:p3")).toBe(2);
+
+    s.claim("w1:p3", "term_session_two");
+    expect(s.count("w1:p3")).toBe(0);
+    expect(s.tail("w1:p3")).toEqual([]);
+    // Its own scrollback may be laid down now.
+    expect(s.seed("w1:p3", ["SESSION2-ROW-1"])).toBe(1);
+    s.close();
+  });
+
+  test("owners are kept with the rows, so a restarted sidecar still tells them apart", () => {
+    const dir = mkdtempSync(join(tmpdir(), "shahi-transcript-owner-"));
+    try {
+      const path = join(dir, "t.sqlite");
+      const first = new TranscriptStore(path);
+      first.claim("w1:p3", "term_session_one");
+      first.seed("w1:p3", ["SESSION1-ROW-1"]);
+      first.close();
+      const restarted = new TranscriptStore(path);
+      restarted.claim("w1:p3", "term_session_one");
+      expect(restarted.count("w1:p3")).toBe(1);
+      restarted.claim("w1:p3", "term_session_two");
+      expect(restarted.count("w1:p3")).toBe(0);
+      restarted.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

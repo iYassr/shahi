@@ -23,7 +23,7 @@ function fakeHerdr(screens: { visible: string; recent?: string }) {
   return { client, asked };
 }
 
-const store = { pane: () => ({ agent_status: "idle" }) } as unknown as SessionStore;
+const store = { pane: () => ({ agent_status: "idle" }), instance: () => undefined } as unknown as SessionStore;
 
 /** A screen with a rendered menu on it: one cursor, numbered options. */
 const MENU = [
@@ -157,7 +157,7 @@ describe("answering sooner than the mirror knows", () => {
           return { read: { text: TRUST } };
         },
       } as unknown as HerdrClient;
-      const mirror = { pane: () => ({ agent_status: herdr.mirror }) } as unknown as SessionStore;
+      const mirror = { pane: () => ({ agent_status: herdr.mirror }), instance: () => undefined } as unknown as SessionStore;
       return { herdr, poller: new Poller(client, mirror, new TranscriptStore(":memory:")) };
     }
 
@@ -294,7 +294,7 @@ describe("backing off a herdr that is down", () => {
   /** A store with one watched-eligible pane, so a tick has something due every time. */
   function storeWithOnePane(): SessionStore {
     const pane = { pane_id: "w1:p1", agent_status: "idle" };
-    return { state: { panes: [pane] }, pane: () => pane } as unknown as SessionStore;
+    return { state: { panes: [pane] }, pane: () => pane, instance: () => undefined } as unknown as SessionStore;
   }
 
   test("does not hammer herdr while it is unreachable, and resumes when it answers", async () => {
@@ -363,5 +363,48 @@ describe("backing off a herdr that is down", () => {
     } finally {
       poller.stop();
     }
+  });
+});
+
+// herdr gives a closed pane's id to a new pane after a restart, and a sidecar
+// that follows another session sees the same ids again. History recorded for
+// the old program was served as the new one's, and the new pane's own
+// scrollback was never read because the pane already "had" history
+// (pre-release bug hunt).
+describe("a pane id another program has taken", () => {
+  test("starts the new program's history from its own scrollback", async () => {
+    let occupant = "term_old";
+    const occupied = { pane: () => ({ agent_status: "idle" }), instance: () => occupant } as unknown as SessionStore;
+    const transcript = new TranscriptStore(":memory:");
+    const old = fakeHerdr({ visible: lines(100, 10), recent: `${lines(0, 5)}\n${lines(100, 10)}` });
+    await new Poller(old.client, occupied, transcript).refresh("w1:p1");
+    expect(transcript.tail("w1:p1", 100).map((line) => line.text)).toEqual(lines(0, 5).split("\n"));
+
+    occupant = "term_new";
+    const fresh = fakeHerdr({ visible: lines(900, 10), recent: `${lines(800, 3)}\n${lines(900, 10)}` });
+    const poller = new Poller(fresh.client, occupied, transcript);
+    await poller.refresh("w1:p1");
+    expect(transcript.tail("w1:p1", 100).map((line) => line.text)).toEqual(lines(800, 3).split("\n"));
+  });
+
+  test("and a poller that read the old program reads the new one as a first sighting", async () => {
+    let occupant = "term_old";
+    let screens = { visible: lines(100, 10), recent: `${lines(0, 5)}\n${lines(100, 10)}` };
+    const asked: string[] = [];
+    const client = {
+      rpc: async (_method: string, params: { source: string }) => {
+        asked.push(params.source);
+        return { read: { text: params.source === "recent" ? screens.recent : screens.visible } };
+      },
+    } as unknown as HerdrClient;
+    const occupied = { pane: () => ({ agent_status: "idle" }), instance: () => occupant } as unknown as SessionStore;
+    const transcript = new TranscriptStore(":memory:");
+    const poller = new Poller(client, occupied, transcript);
+    await poller.refresh("w1:p1");
+    occupant = "term_new";
+    screens = { visible: lines(900, 10), recent: `${lines(800, 3)}\n${lines(900, 10)}` };
+    await poller.refresh("w1:p1");
+    expect(asked.filter((source) => source === "recent")).toHaveLength(2);
+    expect(transcript.tail("w1:p1", 100).map((line) => line.text)).toEqual(lines(800, 3).split("\n"));
   });
 });

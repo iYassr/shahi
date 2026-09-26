@@ -17,6 +17,14 @@
  * terminal, this is what makes a long agent answer readable at all.
  *
  * Storage is SQLite via `bun:sqlite`, so history survives a restart.
+ *
+ * Rows are kept per pane id, and a pane id is not a pane: herdr gives a closed
+ * pane's id to a new one after a restart, and every herdr session starts at
+ * w1:p1. The pre-release bug hunt pointed the sidecar at a second named
+ * session and read another session's 82 rows as a new, empty shell's history,
+ * with the new pane's own scrollback never seeded because rows existed. So the
+ * rows name the occupancy that produced them (`claim`), and a pane id held by
+ * anyone else starts empty.
  */
 import { GAP_MARKER, type TranscriptLine } from "@shahi/shared";
 import { Database } from "bun:sqlite";
@@ -47,6 +55,9 @@ export class TranscriptStore {
   /** Whether the last thing written for a pane was a gap marker, to coalesce runs. */
   #lastWasGap = new Map<string, boolean>();
 
+  /** The occupancy each pane's rows belong to, as far as this process has checked. */
+  #owners = new Map<string, string>();
+
   constructor(dbPath: string, options: TranscriptOptions = {}) {
     this.#maxLines = options.maxLinesPerPane ?? 5_000;
     this.#pruneEvery = options.pruneEvery ?? 200;
@@ -67,6 +78,32 @@ export class TranscriptStore {
       )
     `);
     this.#db.exec("CREATE INDEX IF NOT EXISTS transcript_pane_seq ON transcript (pane_id, seq DESC)");
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS transcript_owner (
+        pane_id  TEXT PRIMARY KEY,
+        instance TEXT NOT NULL
+      )
+    `);
+  }
+
+  /**
+   * Makes the pane's history that of `instance` (see `PaneInstances`),
+   * dropping rows another occupant left under the same pane id.
+   *
+   * Rows with no owner are dropped too: they were recorded before owners were,
+   * and nothing says whose they are. Checked in memory after the first time,
+   * because the poller asks on every read.
+   */
+  claim(paneId: string, instance: string): void {
+    if (this.#owners.get(paneId) === instance) return;
+    const owner = this.#db
+      .query<{ instance: string }, [string]>("SELECT instance FROM transcript_owner WHERE pane_id = ?")
+      .get(paneId)?.instance;
+    if (owner !== instance) {
+      this.forget(paneId);
+      this.#db.run("INSERT INTO transcript_owner (pane_id, instance) VALUES (?, ?)", [paneId, instance]);
+    }
+    this.#owners.set(paneId, instance);
   }
 
   /**
@@ -187,6 +224,8 @@ export class TranscriptStore {
   /** Drops everything for a pane. Called when herdr reports the pane closed. */
   forget(paneId: string): void {
     this.#db.run("DELETE FROM transcript WHERE pane_id = ?", [paneId]);
+    this.#db.run("DELETE FROM transcript_owner WHERE pane_id = ?", [paneId]);
+    this.#owners.delete(paneId);
     this.#lastScreen.delete(paneId);
     this.#lastWasGap.delete(paneId);
   }

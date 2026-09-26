@@ -1401,6 +1401,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           }
 
           if (sub === "/transcript") {
+            // Rows another program left under this pane id are not its history.
+            const instance = store.instance(paneId);
+            if (instance) transcript.claim(paneId, instance);
             const before = url.searchParams.get("before");
             const limit = intParam(url.searchParams.get("limit"), 500, 1, 2_000);
             const lines = before

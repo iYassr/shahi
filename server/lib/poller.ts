@@ -54,6 +54,8 @@ interface PaneRecord {
   frame: PaneFrame;
   /** The menu this screen shows, whether or not herdr agreed the agent was waiting when it was read. */
   parsed: ParsedPrompt | null;
+  /** Which occupancy of the pane id this was read from (see `PaneInstances`). */
+  instance: string | undefined;
 }
 
 export class Poller extends EventEmitter<PollerEvents> {
@@ -236,7 +238,13 @@ export class Poller extends EventEmitter<PollerEvents> {
       strip_ansi: false,
     });
 
-    const existing = this.#records.get(paneId);
+    // A pane id another program has taken since the last read is a new pane:
+    // the old screen is not its screen, and its own scrollback is still to be
+    // seeded. The recorder's rows follow the same occupancy.
+    const instance = this.store.instance(paneId);
+    const held = this.#records.get(paneId);
+    const existing = held?.instance === instance ? held : undefined;
+    if (instance) this.transcript.claim(paneId, instance);
     const hash = screenId(read.text);
     const now = Date.now();
 
@@ -298,7 +306,7 @@ export class Poller extends EventEmitter<PollerEvents> {
     // and before the first screen is recorded on top of it.
     if (!existing) await this.#seedHistory(paneId, text);
 
-    this.#records.set(paneId, { hash, lastPolledAt: now, frame, parsed });
+    this.#records.set(paneId, { hash, lastPolledAt: now, frame, parsed, instance });
     this.transcript.record(paneId, text);
     this.emit("frame", frame);
     return frame;
