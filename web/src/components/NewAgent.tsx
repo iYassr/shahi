@@ -33,6 +33,15 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const pending = useRef<{ fingerprint: string; id: string } | null>(null);
+  // The space this sheet was opened for. herdr gives a closed space's id to
+  // the next one after a restart, and the sheet used to follow the id: it
+  // retitled itself to the new space and started the agent there, in the old
+  // space's folder, with the permissions chosen for the old one (pre-release
+  // bug hunt, B43). A space that is no longer the one opened here cannot be
+  // started in, and its pending request id is dropped with it.
+  const [opened] = useState(() => ({ workspaceId: space.workspaceId, label: space.label }));
+  const replaced = space.workspaceId !== opened.workspaceId || space.label !== opened.label;
+  useEffect(() => { if (replaced) pending.current = null; }, [replaced]);
   const [available, setAvailable] = useState<{ kind: string; command: string }[] | null>(null);
   const [kind, setKind] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -64,7 +73,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   }, [api, onToast]);
 
   async function start() {
-    if (!kind || inFlight.current || !cwd.path.startsWith("/")) return;
+    if (!kind || inFlight.current || !cwd.path.startsWith("/") || replaced) return;
     inFlight.current = true;
     const fingerprint = JSON.stringify([space.workspaceId, cwd.path, name, kind, mode]);
     if (pending.current?.fingerprint !== fingerprint) pending.current = { fingerprint, id: requestId() };
@@ -83,6 +92,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         `${kind.slice(0, 15)}-${pending.current.id.replace(/-/g, "").slice(0, 16)}`,
         mode,
         pending.current.id,
+        opened.label,
       );
       if (mounted.current) onStarted(paneId);
     } catch (err) {
@@ -97,7 +107,13 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const busy = phase !== "idle";
 
   return (
-    <Sheet title={`New agent in ${space.label}`} onClose={() => { if (!inFlight.current) onClose(); }}>
+    <Sheet title={`New agent in ${opened.label}`} onClose={() => { if (!inFlight.current) onClose(); }}>
+      {replaced && (
+        <p className="picker__error" role="alert">
+          {opened.label} was closed on the computer, and another space has taken its place. Close this and
+          choose a space again.
+        </p>
+      )}
       <div className="field">
         <span className="field__label">Agent</span>
         {available === null ? (
@@ -181,7 +197,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       <button
         className="sheet__go"
         onClick={() => void start()}
-        disabled={busy || !kind || !cwd.path.startsWith("/") || available?.length === 0}
+        disabled={busy || replaced || !kind || !cwd.path.startsWith("/") || available?.length === 0}
       >
         {phase === "creating"
           ? "Making a tab…"

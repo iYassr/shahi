@@ -524,6 +524,12 @@ const api = {
   startAgent: (options: {
     clientRequestId: string;
     workspaceId: string;
+    /**
+     * The space's name as the sheet showed it. herdr hands a closed space's
+     * id to the next one after a restart, and a computer that sees another
+     * name there refuses the start rather than put it in the wrong space.
+     */
+    workspaceLabel?: string;
     cwd: string | null;
     label: string | null;
     kind: string;

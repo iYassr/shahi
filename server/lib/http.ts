@@ -918,6 +918,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           const body = await jsonObject<{
             clientRequestId: string;
             workspaceId: string;
+            /** The space's name as the client showed it; optional, see below. */
+            workspaceLabel?: unknown;
             cwd: string | null;
             label: string | null;
             kind: string;
@@ -928,6 +930,20 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (typeof body.workspaceId !== "string" || !body.workspaceId || typeof body.kind !== "string" || !body.kind) {
             return json({ error: "workspaceId and kind are required" }, { status: 400 });
+          }
+          // herdr gives the highest workspace id to the next space after a
+          // restart, and the retry record does not survive one, so an
+          // uncertain start retried across a restart made its tab in whichever
+          // space held the id by then, with the old space's folder (pre-release
+          // bug hunt, B43). A space that is gone is refused, and one whose name
+          // is not the name the client showed is taken to be another space.
+          const workspace = store.workspace(body.workspaceId);
+          if (!workspace) return json({ error: "That space is no longer open on this computer." }, { status: 404 });
+          if (body.workspaceLabel !== undefined && body.workspaceLabel !== workspace.label) {
+            return json({
+              error: "That space was closed on this computer, and another has taken its place. Choose the space again.",
+              code: "workspace_changed",
+            }, { status: 409 });
           }
           // herdr silently uses $HOME for `~` and for a folder that is not
           // there, which puts the agent somewhere the user did not ask for.

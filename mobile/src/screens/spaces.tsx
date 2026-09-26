@@ -395,6 +395,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       const { paneId } = await api.startAgent({
         clientRequestId: attempt.current.id,
         workspaceId: space.workspaceId,
+        workspaceLabel: space.label,
         cwd: space.cwdPath,
         label: null,
         kind,

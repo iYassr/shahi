@@ -99,6 +99,12 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   }, []);
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
   const [prompts, setPrompts] = useState<Record<string, ParsedPrompt>>({});
+  // A New agent sheet whose space closed goes back to choosing one, rather
+  // than reopening by itself for the next space herdr gives the same id
+  // (pre-release bug hunt, B43).
+  useEffect(() => {
+    if (selectedSpace && session && !session.workspaces.some((space) => space.workspaceId === selectedSpace)) setSelectedSpace(null);
+  }, [session, selectedSpace]);
   const [link, setLink] = useState<LinkState>("connecting");
   const [toast, setToast] = useState<string | null>(null);
   const socketRef = useRef<SessionSocket | null>(null);

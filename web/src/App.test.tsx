@@ -102,3 +102,35 @@ test("the update notice survives a dashboard push and stops the live stream", as
   expect(FakeSocket.made.every(socket => socket.readyState === 3)).toBe(true);
   expect(FakeSocket.made).toHaveLength(1);
 });
+
+// Pre-release bug hunt, B43: herdr gives a closed space's id to the next space
+// after a restart. A New agent sheet left open for the closed one reopened by
+// itself for the new one, ready to start there.
+test("a New agent sheet whose space closed goes back to choosing a space, not to the next space with its id", async () => {
+  const { SHAHI_API_VERSION } = await import("@shahi/shared");
+  const session = (...labels: string[]) => ({
+    panes: [],
+    tabs: [],
+    workspaces: labels.map((label) => ({ workspaceId: "w9", label, status: "idle", paneCount: 1, tabCount: 1, focused: false, cwd: `~/${label}`, cwdPath: `/home/me/${label}` })),
+  });
+  routes["/api/auth/status"] = json({ required: false, authenticated: true });
+  routes["/api/meta"] = json({ serverId: "test", api: { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION } });
+  routes["/api/session"] = json(session("projA"));
+  routes["/api/agents"] = json({ agents: [], known: 0 });
+  await render();
+  const stream = FakeSocket.made[0]!;
+  await act(async () => { stream.readyState = 1; stream.onopen?.(); });
+  await settle();
+  const button = (label: string) => view!.root.findAll((node) => node.type === "button" && node.children.join("") === label)[0]!;
+  await act(async () => button("+ New agent").props.onClick());
+  await act(async () => button("projA").props.onClick());
+  expect(text()).toContain("New agent in projA");
+
+  await act(async () => stream.push({ type: "session", session: session() }));
+  await settle();
+  expect(text()).toContain("Choose a space");
+  await act(async () => stream.push({ type: "session", session: session("projB") }));
+  await settle();
+  expect(text()).not.toContain("New agent in");
+  expect(text()).toContain("Choose a space");
+});

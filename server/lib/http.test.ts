@@ -971,6 +971,42 @@ describe("making something in a folder that is not there", () => {
   });
 });
 
+// Pre-release bug hunt, B43: herdr gives a closed space's id to the next space
+// after a restart, and the retry record does not survive one, so an uncertain
+// start retried across a restart made its agent in the new space.
+describe("starting an agent in a space that has closed", () => {
+  const post = (body: unknown) =>
+    fetch(`${s.base}/api/agents/start`, {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const tabs = (from: number) => s.calls.slice(from).filter((c) => c.method === "tab.create");
+
+  test("is a 404 when no space has its id", async () => {
+    const before = s.calls.length;
+    const res = await post({ workspaceId: "w404", kind: "claude", clientRequestId: "closed-space" });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toBe("That space is no longer open on this computer.");
+    expect(tabs(before)).toEqual([]);
+  });
+
+  test("is a 409 workspace_changed when another space now has its id", async () => {
+    const before = s.calls.length;
+    const res = await post({ workspaceId: "w1", workspaceLabel: "projA", kind: "claude", clientRequestId: "replaced-space" });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("workspace_changed");
+    expect(tabs(before)).toEqual([]);
+  });
+
+  test("goes ahead with the name the space still has, or with none from an older client", async () => {
+    const before = s.calls.length;
+    expect((await post({ workspaceId: "w1", workspaceLabel: "one", kind: "claude", clientRequestId: "same-space" })).status).toBe(200);
+    expect((await post({ workspaceId: "w1", kind: "claude", clientRequestId: "older-client" })).status).toBe(200);
+    expect(tabs(before)).toHaveLength(2);
+  });
+});
+
 // Pre-release bug hunt, B81: a failed start left an empty tab behind for
 // every attempt, surviving herdr restarts, and the phone showed herdr's raw
 // "agent.get failed [agent_not_found]".

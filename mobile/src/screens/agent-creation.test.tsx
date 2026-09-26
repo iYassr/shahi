@@ -37,7 +37,10 @@ test.each(choices)("starts %s with exactly the selected permission %s", async (k
   fireEvent.press(screen.getByTestId("start-agent"));
   await waitFor(() => expect(onStarted).toHaveBeenCalledWith("w1:p-new"));
   expect(mockApi.startAgent).toHaveBeenCalledTimes(1);
-  expect(mockApi.startAgent).toHaveBeenCalledWith({ clientRequestId: expect.any(String), workspaceId: "w1", cwd: "/tmp/project", label: null, kind, name: expect.stringMatching(new RegExp(`^${kind}-[a-zA-Z0-9]+$`)), mode });
+  // The space's name goes too: herdr hands a closed space's id to the next one
+  // after a restart, and the computer refuses a start whose name no longer
+  // matches rather than put it in the wrong space (pre-release bug hunt, B43).
+  expect(mockApi.startAgent).toHaveBeenCalledWith({ clientRequestId: expect.any(String), workspaceId: "w1", workspaceLabel: "Project", cwd: "/tmp/project", label: null, kind, name: expect.stringMatching(new RegExp(`^${kind}-[a-zA-Z0-9]+$`)), mode });
 });
 
 test("switching agent resets an unsafe mode before submission", async () => {

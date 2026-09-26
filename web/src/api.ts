@@ -270,10 +270,17 @@ const api = {
     name: string,
     mode: string | null = null,
     clientRequestId: string = requestId(),
+    /**
+     * The space's name as the sheet showed it. herdr hands a closed space's
+     * id to the next one after a restart, and a computer that sees another
+     * name there refuses the start rather than put it in the wrong space.
+     */
+    workspaceLabel?: string,
   ) =>
     postJson<{ paneId: string; tabId: string | null }>("/api/agents/start", {
       clientRequestId,
       workspaceId,
+      ...(workspaceLabel === undefined ? {} : { workspaceLabel }),
       cwd: cwdPath === null ? null : requireAbsolute(cwdPath),
       label,
       kind,

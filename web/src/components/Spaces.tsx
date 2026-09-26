@@ -8,7 +8,7 @@ import { AgentAvatar } from "./AgentAvatar";
  * view filters out, are reachable here: on the phone this is the only way to
  * get at roughly half the panes in a real session.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApi, type Session } from "../api";
 import { DirPicker, type DirChoice } from "./DirPicker";
@@ -168,6 +168,9 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
   useScrollMemory(scroller, Boolean(session));
 
   const space = session?.workspaces.find((w) => w.workspaceId === workspaceId);
+  // A sheet left open for a space that closed must not reopen by itself for
+  // the next space herdr gives the same id (pre-release bug hunt, B43).
+  useEffect(() => { if (session && !space) setCreating(null); }, [session, space]);
   const tabs = useMemo(
     () => (session?.tabs ?? []).filter((t) => t.workspaceId === workspaceId),
     [session, workspaceId],

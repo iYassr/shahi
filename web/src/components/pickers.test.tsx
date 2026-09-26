@@ -146,6 +146,35 @@ test("a start refused because the folder is gone says why and can be tried again
   expect(button("Start Codex").props.disabled).toBe(false);
 });
 
+// Pre-release bug hunt, B43: herdr gives a closed space's id to the next one
+// after a restart. The sheet followed the id, retitled itself, and started the
+// agent in the new space with the old space's folder.
+test("a sheet whose space was replaced under the same id does not start there", async () => {
+  const { NewAgent } = await import("./NewAgent");
+  const startAgent = mock();
+  const client = { ...api, agents: mock().mockResolvedValue({ agents: [{ kind: "codex", command: "codex" }] }), startAgent };
+  const sheet = (space: { workspaceId: string; label: string; cwd: string | null; cwdPath: string | null }) =>
+    <ApiContext.Provider value={client}><NewAgent space={space} onClose={mock()} onToast={mock()} onStarted={mock()} /></ApiContext.Provider>;
+  await act(async () => { view = create(sheet({ workspaceId: "w9", label: "projA", cwd: "~/projA", cwdPath: "/home/me/projA" })); });
+  expect(button("Start Codex").props.disabled).toBe(false);
+  await act(async () => view.update(sheet({ workspaceId: "w9", label: "projB", cwd: "~/projB", cwdPath: "/home/me/projB" })));
+  expect(JSON.stringify(view.toJSON())).toContain("was closed on the computer");
+  expect(JSON.stringify(view.toJSON())).toContain("New agent in projA");
+  expect(button("Start Codex").props.disabled).toBe(true);
+  await act(async () => button("Start Codex").props.onClick());
+  expect(startAgent).not.toHaveBeenCalled();
+});
+
+test("a start names the space its sheet was opened for", async () => {
+  const { NewAgent } = await import("./NewAgent");
+  const startAgent = mock().mockResolvedValue({ paneId: "w9:p2" });
+  const client = { ...api, agents: mock().mockResolvedValue({ agents: [{ kind: "codex", command: "codex" }] }), startAgent };
+  await act(async () => { view = create(<ApiContext.Provider value={client}><NewAgent space={{ workspaceId: "w9", label: "projA", cwd: "~/projA", cwdPath: "/home/me/projA" }} onClose={mock()} onToast={mock()} onStarted={mock()} /></ApiContext.Provider>); });
+  await act(async () => button("Start Codex").props.onClick());
+  expect(startAgent.mock.calls[0]![0]).toBe("w9");
+  expect(startAgent.mock.calls[0]![7]).toBe("projA");
+});
+
 test("dashboard uses accessible provider and inbox icons without changing filter identifiers", async () => {
   const { Dashboard } = await import("./Dashboard");
   const { MemoryRouter } = await import("react-router-dom");

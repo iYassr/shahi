@@ -872,6 +872,11 @@ request a fresh one. Otherwise the client opens a real new pane and receives
 a false 404. Web retries when a later authoritative session first reports that
 pane; do not turn genuine missing panes into an endless polling loop. Keep
 readable agent labels separate from herdr’s restricted internal names.
+herdr gives a closed space's id to the next space after a restart, and the
+retry record does not survive one, so an agent start names the space its sheet
+showed (`workspaceLabel`, optional): a space that is gone is a 404 and one
+with another name a 409 `workspace_changed`. The web sheet is pinned to the
+space it opened for and never reopens by itself for the id's next owner.
 
 **Drafts are private, bounded, and memory-only.** Web scopes drafts by server
 and device grant; native scopes them by the stable computer API object. Pane
