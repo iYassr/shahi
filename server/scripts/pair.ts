@@ -72,7 +72,19 @@ if (!relay) {
 
 const mintRes = await fetch(`${local}/api/pair`, { method: "POST", headers });
 if (!mintRes.ok) {
-  console.error(`The server refused to mint a code (HTTP ${mintRes.status}). Is SESSION_SECRET in .env the one it runs with?`);
+  // A refusal of the session key is usually not the key. Any Shahi answers
+  // /api/meta, so another user's sidecar or a development checkout on this
+  // port got this far, and the message that blamed SESSION_SECRET sent the
+  // person to edit a file that was right (pre-release bug hunt).
+  const refused = mintRes.status === 401 || mintRes.status === 403;
+  console.error(
+    refused
+      ? `The server at ${local} refused this install's session key (HTTP ${mintRes.status}), so it is probably not this install's Shahi: ` +
+          "another program — another user's Shahi, or a development checkout — may hold the port. " +
+          `${herdrCli(process.env.HERDR_SOCKET_PATH)} plugin action invoke shahi.status says; if the port is taken, put PORT=<a free port> in ${ENV_PATH} and restart. ` +
+          "If it is this install's, the SESSION_SECRET in that file is not the one it runs with."
+      : `The server at ${local} refused to mint a code (HTTP ${mintRes.status}).`,
+  );
   process.exit(1);
 }
 const code = (await mintRes.json()) as PairingCode;

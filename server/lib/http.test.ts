@@ -161,13 +161,13 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
-async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false, allowedHosts = [] as string[] } = {}): Promise<Booted> {
+async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false, allowedHosts = [] as string[], port = 0 } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls, freshCreation);
   const dataPath = join(scratch, `shahi-${booted++}.sqlite`);
   const config: Config = {
     host: "127.0.0.1",
-    port: 0,
+    port,
     socketPath: "",
     dataPath,
     passcodeHash,
@@ -271,6 +271,18 @@ beforeAll(async () => {
 afterAll(() => {
   s.stop();
   rmSync(scratch, { recursive: true, force: true });
+});
+
+// On macOS a second Bun listener bound a taken port and took its connections,
+// so another program's Shahi on this port replaced this one without an
+// EADDRINUSE anywhere (pre-release bug hunt).
+test("a port another Bun server already holds stops startup instead of being shared", async () => {
+  // Another sidecar, with Bun's defaults, as another user's Shahi would have.
+  const other = Bun.serve({ hostname: "127.0.0.1", port: 0, development: false, fetch: () => new Response("theirs") });
+  try {
+    await expect(boot({ port: other.port! })).rejects.toThrow(/port|in use|EADDRINUSE/i);
+    expect(await (await fetch(`http://127.0.0.1:${other.port}/`)).text()).toBe("theirs");
+  } finally { other.stop(true); }
 });
 
 describe("the gate", () => {

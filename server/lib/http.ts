@@ -540,6 +540,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   const server = Bun.serve<SocketData, never>({
     hostname: config.host,
     port: config.port,
+    // Bun 1.4's types document false as the default, and on macOS it is not:
+    // measured, a second Bun listener on a taken port bound anyway and took
+    // the connections from the first, so another user's Shahi or a
+    // development checkout on this port silently replaced this one, with no
+    // EADDRINUSE to say so (pre-release bug hunt). A port that is taken must
+    // fail startup.
+    reusePort: false,
 
     // Never Bun's dev error page: it embeds the source, the absolute
     // `/Users/<name>/…` path and a stack trace, and one trigger (a malformed

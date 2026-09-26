@@ -30,13 +30,17 @@ afterAll(() => {
 const SERVER_ID = `${"s".repeat(42)}A`;
 const SECRET = `${"k".repeat(42)}A`;
 let relay: { url: string; connected: boolean } | undefined;
+/** Another program's Shahi on this port: it answers /api/meta like any Shahi, and refuses this install's key. */
+let theirs = false;
 const sidecar = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   fetch(req) {
     const { pathname } = new URL(req.url);
     if (pathname === "/api/meta") return Response.json({ serverId: SERVER_ID, api: { min: 5, max: 5 }, ...(relay ? { relay } : {}) });
-    if (pathname === "/api/pair" && req.method === "POST") return Response.json({ secret: SECRET, expiresAt: Date.now() + 600_000 });
+    if (pathname === "/api/pair" && req.method === "POST") {
+      return theirs ? Response.json({ error: "unauthorized" }, { status: 401 }) : Response.json({ secret: SECRET, expiresAt: Date.now() + 600_000 });
+    }
     return new Response("not here", { status: 404 });
   },
 });
@@ -73,4 +77,20 @@ test("a box that dials no relay says so, without sending anyone to write the def
   expect(out).toBe("");
   expect(err).toContain("dials no relay");
   expect(err).not.toContain("Set RELAY_URL in .env");
+});
+
+// Another user's Shahi or a development checkout on the configured port
+// answered /api/meta, refused the key, and the message blamed SESSION_SECRET,
+// which was right (pre-release bug hunt).
+test("a Shahi that refuses this install's key is said to be possibly another program's, before SESSION_SECRET", async () => {
+  relay = { url: "https://relay.example.test", connected: true };
+  theirs = true;
+  try {
+    const { code, out, err } = await codeOnly();
+    expect(code).toBe(1);
+    expect(out).toBe("");
+    expect(err).toContain("another program");
+    expect(err).toContain("PORT=<a free port>");
+    expect(err.indexOf("another program")).toBeLessThan(err.indexOf("SESSION_SECRET"));
+  } finally { theirs = false; }
 });
