@@ -237,6 +237,40 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 26 September 2026, the bug-hunt fixes
+
+Published the site and hosted client from a clean checkout of `6737727` (the
+126 fixes from the pre-release bug hunt, plus the launch-video test split) as
+Cloudflare version `504b885f-122c-4c51-9241-000b639ceb2c`. It replaced
+`64c4d420-4c5f-4b76-a411-09760780e031` (below), which is the version to roll
+back to. Checks after deploying:
+
+- The live `/` is byte-identical to the build.
+- `/`, `/privacy`, `/pwa/`, `/pwa/sw.js` and `/og.png` answer 200.
+- `/404`, `/404.html` and an unknown path answer 404.
+- `/pwa/settings/`, `/pwa/computers/` and `/pwa/spaces/` answer 301 to the
+  same route without the slash, and `/pwa/notification/` keeps its query.
+- The wide cut answers `Range: bytes=0-1` with 206.
+- `GET /api/ios-beta` answers 405, with `nosniff` and HSTS.
+
+`http://getshahi.dev/` still answers 200 over cleartext. That is the zone's
+"Always Use HTTPS" setting (B51), which only the owner can change.
+
+The relay was deployed from the same checkout as `shahi-relay` version
+`d56e3bd0-db54-4e41-84a1-44d246d1878f`. It replaced
+`cd7d78ae-0b5d-4a50-83f6-ef5037c67645`, the version to roll back to. Checks
+after deploying:
+
+- `GET /health` and `HEAD /health` answer 200, and `DELETE` answers 405 with
+  `Allow: GET, HEAD`.
+- `http://relay.getshahi.dev/health` answers 301 to HTTPS from the Worker
+  itself.
+- The owner's 0.3.7 computer reported `relay.connected: true` within a minute.
+
+For about half a minute after `wrangler deploy` returned, some edges still
+served the previous version: HEAD answered 404 and cleartext answered 200.
+Check again before concluding a deploy failed.
+
 ## Verified deployment — 25 September 2026, the launch video
 
 Published the site from a clean checkout of `c17d65e` (the launch video on the
