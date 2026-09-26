@@ -119,6 +119,35 @@ describe("enablePush", () => {
   });
 });
 
+// Pre-release bug hunt: the handler that tells iOS to show a notification
+// arriving with the app open was set only by enablePush, which runs when the
+// Settings row is tapped. After a relaunch there was none, and expo-notifications
+// then answers iOS with "show nothing".
+describe("showNotificationsWhileOpen", () => {
+  test("a notification that arrives while the app is open is shown, without Settings ever running", async () => {
+    let notifications!: Record<string, jest.Mock>;
+    const push = load(({ Notifications }) => { notifications = Notifications; });
+    push.showNotificationsWhileOpen();
+    await flush();
+    expect(notifications.setNotificationHandler).toHaveBeenCalledTimes(1);
+    const [{ handleNotification }] = notifications.setNotificationHandler.mock.calls[0]!;
+    await expect(handleNotification()).resolves.toEqual(expect.objectContaining({ shouldShowBanner: true, shouldShowList: true }));
+    // Showing is not asking: nobody is prompted for permission at launch.
+    expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  test("in Expo Go it stays quiet rather than loading a module that throws", async () => {
+    let notifications!: Record<string, jest.Mock>;
+    const push = load(({ Constants, Notifications }) => {
+      Constants.executionEnvironment = "storeClient";
+      notifications = Notifications;
+    });
+    push.showNotificationsWhileOpen();
+    await flush();
+    expect(notifications.setNotificationHandler).not.toHaveBeenCalled();
+  });
+});
+
 describe("onNotificationTapped", () => {
   const response = (paneId: unknown) => ({
     notification: { request: { content: { data: { paneId } } } },

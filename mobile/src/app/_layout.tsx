@@ -1,7 +1,7 @@
 import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
 import { router, ThemeProvider } from "expo-router";
-import { onNotificationTapped } from "@/lib/push";
+import { onNotificationTapped, showNotificationsWhileOpen } from "@/lib/push";
 import { openPane } from "@/lib/navigate";
 import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
@@ -20,6 +20,9 @@ import { navigationTheme } from "@/lib/navigation-theme";
  * arrives a moment later.
  */
 export default function RootLayout() {
+  // Not behind `ready` or Settings: a notification can arrive in the first
+  // second of a launch, on any screen, for a phone that opted in long ago.
+  useEffect(() => { showNotificationsWhileOpen(); }, []);
   return (
     // Above the router, so the mirror and the socket survive navigation.
     // The gesture root is what lets a row's swipe actions receive the drag.

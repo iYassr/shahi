@@ -52,6 +52,32 @@ async function load(): Promise<Notifications | null> {
   }
 }
 
+/** Notifications arrive while the app is open too, and should be seen. */
+function showWhileOpen(notifications: Notifications): void {
+  notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
+
+/**
+ * Called once as the app starts, whether or not anyone opens Settings.
+ *
+ * iOS asks a running app what to do with a notification, and without a
+ * handler expo-notifications answers "nothing": no banner, and nothing left
+ * in Notification Center. The handler used to be set only by `enablePush`,
+ * which runs when the Settings row is tapped, so after any relaunch every
+ * notification that arrived while the app was open vanished — while the
+ * server, still holding the token, kept sending (pre-release bug hunt).
+ */
+export function showNotificationsWhileOpen(): void {
+  void load().then((notifications) => { if (notifications) showWhileOpen(notifications); });
+}
+
 export async function enablePush(client: Api = api): Promise<PushResult> {
   if (!Device.isDevice) {
     return { ok: false, reason: "Push needs a real device — an emulator has no transport for it." };
@@ -62,15 +88,7 @@ export async function enablePush(client: Api = api): Promise<PushResult> {
   if (!notifications) return { ok: false, reason: EXPO_GO_NOTE };
 
   try {
-    // Notifications arrive while the app is open too, and should be seen.
-    notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-    });
+    showWhileOpen(notifications);
 
     // Android will not make a sound without a channel, and the server names
     // this one on every message it sends.

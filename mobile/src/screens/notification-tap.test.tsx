@@ -17,6 +17,7 @@ import type { SshProfile } from "@/lib/ssh";
 
 let mockTap: ((paneId: string, serverId?: string, instanceId?: string) => void) | null = null;
 jest.mock("@/lib/push", () => ({
+  showNotificationsWhileOpen: jest.fn(),
   onNotificationTapped: (open: (paneId: string, serverId?: string, instanceId?: string) => void) => { mockTap = open; return () => { mockTap = null; }; },
 }));
 jest.mock("@/lib/navigate", () => ({ openPane: jest.fn() }));
@@ -40,6 +41,7 @@ jest.mock("expo", () => ({
 
 import { router } from "expo-router";
 import { openPane } from "@/lib/navigate";
+import { showNotificationsWhileOpen } from "@/lib/push";
 import { COMPUTERS_KEY, computerId, type SavedComputer } from "@/lib/computers";
 import RootLayout from "../app/_layout";
 
@@ -83,5 +85,19 @@ test("a notification tap opens its pane with the conversation it was about", asy
   await act(async () => { for (let i = 0; i < 20 && !mockTap; i++) await Promise.resolve(); });
   await act(async () => { mockTap!("w3:p1", "relay-box-id", "term_a"); for (let i = 0; i < 20; i++) await Promise.resolve(); });
   expect(openPane).toHaveBeenCalledWith("w3:p1", "term_a");
+  ui.unmount();
+});
+
+// Pre-release bug hunt: iOS asks a running app whether to show a notification,
+// and the handler that says yes was only set by tapping Notifications in
+// Settings. After any relaunch, every notification that arrived with the app
+// open vanished: no banner, nothing in Notification Center.
+test("a notification that arrives while the app is open is shown after a relaunch, before anything has loaded", async () => {
+  // The keychain never answers, so no computer is restored and nothing is ready.
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(() => new Promise(() => {}));
+  const ui = render(<RootLayout />);
+  await act(async () => { await Promise.resolve(); });
+  expect(mockTap).toBeNull();
+  expect(showNotificationsWhileOpen).toHaveBeenCalledTimes(1);
   ui.unmount();
 });
