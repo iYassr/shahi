@@ -178,11 +178,7 @@ test("the website serves its own fonts and asks no third party for anything", as
 // cannot seek, and WebKit, which opens every video with a bytes=0-1 probe,
 // downloads all of it. The bytes here are seed-media.ts's small stand-ins,
 // stored under the names site/media.json gives the real files.
-test("the launch video is served in byte ranges from the site itself, and plays and seeks under the page's policy", async ({ page, request }) => {
-  const refused: string[] = [];
-  page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
-  const played: number[] = [];
-  page.on("response", response => { if (response.url().endsWith(".mp4")) played.push(response.status()); });
+test("the launch video is served in byte ranges from the site itself", async ({ page, request }) => {
   await page.goto(`${site}/`);
   const video = page.locator(".launch-video video");
   const named = await video.evaluate((v: HTMLVideoElement) => [v.poster, ...[...v.querySelectorAll("source, track")].map(e => (e as HTMLSourceElement).src)]
@@ -226,7 +222,27 @@ test("the launch video is served in byte ranges from the site itself, and plays 
     expect(missing.status(), path).toBe(404);
     expect(missing.headers()["cache-control"], path).toBe("no-store");
   }
+});
 
+// Chromium only. Neither of Playwright's WebKit builds plays media the way
+// Safari does, measured on 26 September 2026:
+// - On macOS, "playing" fires but currentTime stays at 0 for five seconds
+//   with the whole clip buffered, so a seek never reaches "seeked".
+// - On Linux, the GStreamer player opens the first source when the page
+//   loads, despite preload="none", and Playwright reports that request with
+//   status 0 and no body.
+// This half failed on every push from a675787 on, which turned CI red for
+// reasons that say nothing about Safari. WebKit still runs the byte-range
+// test above, which is what its bytes=0-1 probe depends on.
+test("the launch video plays and seeks under the page's policy", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit", "Playwright's WebKit builds cannot play media (see above)");
+  const refused: string[] = [];
+  page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
+  const played: number[] = [];
+  page.on("response", response => { if (response.url().endsWith(".mp4")) played.push(response.status()); });
+  await page.goto(`${site}/`);
+  const video = page.locator(".launch-video video");
+  await expect(video).toBeVisible();
   // Nothing but the poster loads until the visitor presses play.
   expect(played).toEqual([]);
   // Playwright's linux-arm64 Chromium has no H.264 or AAC, and a video it
@@ -257,7 +273,7 @@ test("the launch video is served in byte ranges from the site itself, and plays 
   expect(seeked.seekable).toBeGreaterThan(1.9);
   // The two-second stand-in is buffered whole, and then seeks even from a
   // server without ranges, so what proves them is what the browser was sent:
-  // Chromium asks for bytes=0-, WebKit for bytes=0-1 and then the rest.
+  // Chromium asks for bytes=0-.
   expect(played.length).toBeGreaterThan(0);
   expect(played.every(status => status === 206), played.join(" ")).toBe(true);
   // Captions are off until chosen, so nothing has fetched them yet: choose them.
