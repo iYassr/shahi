@@ -14,7 +14,7 @@
     "gen:types": "bun run server/scripts/gen-types.ts",
     "dev": "bun run --watch server/index.ts",
     "start": "bun run server/index.ts",
-    "test": "bun test shared/src server web/src plugin site/signup.test.ts site/media.test.ts operations/test ./scripts ./.github && bun run test:dependencies",
+    "test": "bun test shared/src server web/src plugin site/signup.test.ts site/media.test.ts site/privacy.test.ts operations/test ./scripts ./.github && bun run test:dependencies",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p plugin && tsc --noEmit -p web && tsc --noEmit -p mobile && tsc --noEmit -p relay && tsc --noEmit -p relay/test && tsc --noEmit -p site && tsc --noEmit -p operations",
     "build:web": "bun run --cwd web build",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
