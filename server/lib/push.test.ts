@@ -527,6 +527,7 @@ test("a question from a pane whose title is only spaces names the pane", async (
   const store = {
     pane: () => ({ pane_id: "w1:p1", terminal_title: "   " }),
     workspace: () => ({ label: "one" }),
+    instance: () => undefined,
   } as unknown as SessionStore;
   await push.notifyStatusChange({ paneId: "w1:p1", workspaceId: "w1", from: "working", to: "blocked" }, store);
   expect(sent).toEqual([expect.objectContaining({ title: "one needs you", body: "w1:p1" })]);

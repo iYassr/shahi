@@ -333,7 +333,7 @@ describe("sending a reply", () => {
     await view.findByText(/Paste the function\./);
     fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "\n  \n    def f():\n        return 1\n\n");
     fireEvent.press(view.getByText("Send"));
-    expect(mocked.send).toHaveBeenCalledWith(PANE, "    def f():\n        return 1", expect.any(String));
+    expect(mocked.send).toHaveBeenCalledWith(PANE, "    def f():\n        return 1", expect.any(String), undefined);
   });
 
   // Typing "ls" on the phone's keyboard sent "Ls", which a shell rejects: the
