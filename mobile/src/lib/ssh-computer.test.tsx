@@ -304,8 +304,6 @@ test.each([
   ["a host key that does not match", { code: "ssh_host_key", message: "ssh_host_key: This computer's host key has changed since you trusted it, so your login was not sent." }],
   ["a refused SSH login", { code: "ssh_login", message: "ssh_login: Authentication failed — check the username and credentials." }],
   ["a server that will not forward a port", { code: "ssh_forwarding", message: "ssh_forwarding: Signed in to box.example, but its SSH server does not allow port forwarding, which Shahi needs." }],
-  // A build from before the code said it only in words.
-  ["a refused SSH login, from an older build", { code: "ssh_tunnel", message: "ssh_tunnel: Authentication failed — check the username and credentials." }],
 ])("%s is not retried on a timer", async (_, refusal) => {
   native.open.mockRejectedValue(Object.assign(new Error(refusal.message), { code: refusal.code }));
   const ui = await mount();

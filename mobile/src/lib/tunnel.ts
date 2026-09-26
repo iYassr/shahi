@@ -146,10 +146,10 @@ function nativeFailure(error: unknown, host: string, port: number): Error {
   // A refused login, or a server that will not forward, refuses again on
   // every retry, and a saved computer now reconnects by itself: presenting a
   // refused password every half minute is how a phone gets banned by
-  // fail2ban. A native module from before the "ssh_login" code says it only
-  // in words, and an over-the-air update can run on one.
+  // fail2ban. (The codes arrived with the native module that reports them;
+  // the fingerprint runtime policy keeps this code off older binaries.)
   const reason = tunnelFailureMessage(error);
-  if (code === "ssh_login" || code === "ssh_forwarding" || /^Authentication failed/.test(reason ?? "")) {
+  if (code === "ssh_login" || code === "ssh_forwarding") {
     return new AccessRefusedError(reason ?? `${host}:${port} refused this SSH login.`);
   }
   // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and
