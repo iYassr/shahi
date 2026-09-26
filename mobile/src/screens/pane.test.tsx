@@ -1,5 +1,5 @@
 import { clearNativeDrafts } from "@/lib/drafts";
-import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor, within } from "@testing-library/react-native";
 import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
@@ -1146,13 +1146,51 @@ describe("the largest text sizes", () => {
     mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
     const view = render(<Pane paneId={PANE} />);
     const card = await view.findByTestId("prompt-card");
-    const style = StyleSheet.flatten(card.props.style);
+    const area = view.getByTestId("pane-notices");
+    const style = StyleSheet.flatten(area.props.style);
     const { height } = Dimensions.get("window");
+    expect(within(area).getByTestId("prompt-card")).toBe(card);
     expect(style.maxHeight).toBeGreaterThan(0);
     expect(style.maxHeight).toBeLessThanOrEqual(height / 2);
     expect(style.flexGrow).toBe(0);
     expect(view.getByText("Type something.")).toBeTruthy();
     expect(view.getByPlaceholderText("Reply to this agent…")).toBeTruthy();
+  });
+
+  // Offline at AX1 to AX5, the connection banner above the prompt grew taller
+  // than the screen: the prompt collapsed to a border, then the composer and
+  // Send went below the screen, and at AX5 the banner's own buttons too, with
+  // nothing scrollable (pre-release bug hunt).
+  test("offline at the largest text size, the banner and the prompt scroll together above a composer that stays", async () => {
+    const window = Dimensions.get("window");
+    const screenSize = Dimensions.get("screen");
+    act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen: screenSize }));
+    const link = mockSession.link;
+    mockSession.link = "lost";
+    try {
+      const prompt: ParsedPrompt = {
+        question: "Allow this edit?", answer: "digit",
+        options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }],
+      } as ParsedPrompt;
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "May I?")]));
+      mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByTestId("prompt-card");
+      const area = view.getByTestId("pane-notices");
+      // One bounded, scrolling area holds the banner, its buttons and the prompt...
+      expect(within(area).getByText("Retry connection")).toBeTruthy();
+      expect(within(area).getByText("Switch computer")).toBeTruthy();
+      expect(within(area).getByTestId("prompt-card")).toBeTruthy();
+      const style = StyleSheet.flatten(area.props.style);
+      expect(style.flexGrow).toBe(0);
+      expect(style.maxHeight).toBeLessThanOrEqual(Dimensions.get("window").height / 2);
+      // ...and the composer is not in it.
+      expect(within(area).queryByText("Send")).toBeNull();
+      expect(view.getByText("Send")).toBeTruthy();
+    } finally {
+      mockSession.link = link;
+      act(() => Dimensions.set({ window, screen: screenSize }));
+    }
   });
 
   // At AX5 the reply box sat between attach and Send, a few characters wide,

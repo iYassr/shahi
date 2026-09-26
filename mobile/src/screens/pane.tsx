@@ -80,7 +80,10 @@ const PROBE_FONT = 12;
  */
 const CHAR_ASPECT_GUESS = 0.6;
 const PROBE = "─".repeat(PROBE_CHARS);
-/** The most of the window a prompt card may take before it scrolls inside itself. */
+/**
+ * The most of the window the connection banner, an error and a prompt card
+ * may take together before they scroll inside their own area.
+ */
 const PROMPT_SHARE = 0.4;
 
 /**
@@ -546,6 +549,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const headerHeight = useHeaderHeight();
   const keyboard = useKeyboardHeight();
   const largeText = useLargeText();
+  const windowHeight = useWindowDimensions().height;
 
   // Back should close the attachment sheet before it leaves the pane.
   useEffect(() => {
@@ -948,17 +952,30 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         </Pressable>
       </View>
 
-      <ConnectionHealth />
-      {/* Readable and dismissible, instead of one truncated line squeezed
-          into the old topbar. */}
-      {error && (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error}`} style={styles.banner} onPress={() => setError(null)}>
-          <Text style={styles.bannerText} numberOfLines={2}>{error}</Text>
-          <Text style={styles.bannerClose}>✕</Text>
-        </Pressable>
-      )}
+      {/* Everything that sits above the conversation, bounded together and
+          scrolling inside its own area. A four-option question at AX5 was
+          taller than the screen on its own; then the connection banner, a
+          fixed block above it, reached the same size offline, and at AX3 to
+          AX5 it pushed the prompt, the conversation, the composer and its
+          own buttons off screen with nothing scrollable (pre-release bug
+          hunt). */}
+      <ScrollView
+        testID="pane-notices"
+        style={[styles.notices, { maxHeight: Math.round(windowHeight * PROMPT_SHARE) }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ConnectionHealth />
+        {/* Readable and dismissible, instead of one truncated line squeezed
+            into the old topbar. */}
+        {error && (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error}`} style={styles.banner} onPress={() => setError(null)}>
+            <Text style={styles.bannerText} numberOfLines={2}>{error}</Text>
+            <Text style={styles.bannerClose}>✕</Text>
+          </Pressable>
+        )}
 
-      {prompt && <Prompt prompt={prompt} onAnswer={answer} />}
+        {prompt && <Prompt prompt={prompt} onAnswer={answer} />}
+      </ScrollView>
 
       {loading && view === "reader" ? (
         <View style={styles.centered}>
@@ -1239,18 +1256,9 @@ function Prompt({
   onAnswer: (option: PromptOption) => Promise<void>;
 }) {
   const [armed, setArmed] = useState<number | null>(null);
-  const { height } = useWindowDimensions();
   return (
-    // Bounded, and scrolls inside itself. At the largest accessibility text
-    // size a four-option question grew taller than the screen: it squeezed the
-    // conversation to a sliver, pushed the composer off the bottom, and left
-    // the last options out of reach (found on a simulator at AX5).
-    <ScrollView
-      testID="prompt-card"
-      style={[styles.promptCard, { maxHeight: Math.round(height * PROMPT_SHARE) }]}
-      contentContainerStyle={styles.promptBody}
-      keyboardShouldPersistTaps="handled"
-    >
+    // Bounded by the notices area it sits in, which scrolls (see `Pane`).
+    <View testID="prompt-card" style={[styles.promptCard, styles.promptBody]}>
       <Text style={styles.question}>{prompt.question}</Text>
       {prompt.options.map((option) => {
         const isArmed = armed === option.index;
@@ -1281,7 +1289,7 @@ function Prompt({
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -1985,10 +1993,10 @@ const styles = StyleSheet.create({
     borderColor: theme.peach,
     borderRadius: 10, borderCurve: "continuous",
     backgroundColor: theme.surface,
-    // A ScrollView grows to fill by default; the card is only as tall as its
-    // question and options, up to its share of the screen.
-    flexGrow: 0,
   },
+  // A ScrollView grows to fill by default; this one is only as tall as what
+  // it holds, up to its share of the window, and gives way to the keyboard.
+  notices: { flexGrow: 0 },
   promptBody: { padding: 14 },
   question: { color: theme.fg, fontSize: 15, lineHeight: 21, marginBottom: 8 },
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },
