@@ -76,6 +76,12 @@ interface SessionValue {
   signInRelay: (identity: RelayIdentity) => void;
   signOut: () => void;
   /**
+   * Why a computer was just removed without the person asking: this phone's
+   * access to it ended. Kept in memory until the next sign-in, sign-out or
+   * switch, so Computers and Connect can say what happened.
+   */
+  accessEnded: string | null;
+  /**
    * A screen's own request was refused with a 401. Screens report it rather
    * than signing out: the computer knows whether its access really ended or
    * the request merely raced a sign-in (`ComputerSession.unauthorized`).
@@ -180,6 +186,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [connectionKey, setConnectionKey] = useState(0);
   const [terminalWidth, setWidth] = useState(100);
   const [storageError, setStorageError] = useState<Error | null>(null);
+  const [accessEnded, setAccessEnded] = useState<string | null>(null);
   const [, render] = useState(0);
   const bank = useRef<SavedComputer[]>([]);
   const live = useRef(new Map<string, ComputerSession>());
@@ -252,7 +259,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         Object.assign(connection, current.connection);
       }
       if (visible) paint();
-    }, () => forget(saved.id), adopted);
+    }, () => {
+      // Revoked from another client, or signed out on the computer. The
+      // computer used to vanish from the list with no word about why
+      // (pre-release bug hunt).
+      const lost = live.current.get(saved.id)?.saved ?? saved;
+      if (mounted.current) setAccessEnded(lost.connection.kind === "relay"
+        ? `This phone is no longer paired with ${lost.name}. Show a new pairing code on that computer to connect again.`
+        : `${lost.name} signed this phone out. Add it again with its Shahi passcode to connect.`);
+      forget(saved.id);
+    }, adopted);
     live.current.set(saved.id, entry);
     void entry.start();
     return entry;
@@ -316,7 +332,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!target) throw new Error("That computer is no longer saved. Pair it again.");
     // A failed secure-store write leaves the current view and connection intact.
     await write(() => writeSecret(KEY, JSON.stringify(target.connection)));
-    ensure(target); setAddingComputer(false); choose(id);
+    ensure(target); setAddingComputer(false); setAccessEnded(null); choose(id);
   };
   const addComputer = async () => {
     await write(() => deleteSecret(KEY));
@@ -328,7 +344,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     live.current.get(id)?.dispose(); live.current.delete(id);
     bank.current = rememberComputer(bank.current, stored);
     ensure(bank.current.find(c => c.id === id)!, adopted);
-    setAddingComputer(false); choose(id); void persist();
+    setAddingComputer(false); setAccessEnded(null); choose(id); void persist();
   };
   const updatePins = (pins: string[]) => {
     if (!entry) return;
@@ -358,7 +374,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       catch (e) { if (live.current.has(id)) throw e; }
       forget(id);
     },
-    signOut: () => { if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
+    signOut: () => { setAccessEnded(null); if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
+    accessEnded,
     signInRelay: identity => {
       if (connection.relay?.auth.kind === "pairing") closeRelay(connection.relay);
       signIn({ kind: "relay", ...identity });

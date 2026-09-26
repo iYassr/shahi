@@ -112,6 +112,22 @@ test("sign out forgets only the current computer", async () => {
   await act(async () => { await value.switchComputer(computerId(a)); });
   expect(value.connected).toBe(true); ui.unmount();
 });
+// Revoked from another client, the computer vanished from the list and the
+// app returned to the chooser with nothing said about why (pre-release bug
+// hunt).
+test("a computer removed because this phone was revoked says so, naming it; signing out does not", async () => {
+  const ui = await mount(); await pairBoth();
+  const name = value.computers.find(computer => computer.id === computerId(b))!.name;
+  await act(async () => { mockSockets.at(-1).unauthorized(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  expect(value.computers.map(computer => computer.id)).toEqual([computerId(a)]);
+  expect(value.accessEnded).toBe(`This phone is no longer paired with ${name}. Show a new pairing code on that computer to connect again.`);
+  // Acting on it clears it.
+  await act(async () => { await value.switchComputer(computerId(a)); });
+  expect(value.accessEnded).toBeNull();
+  act(() => value.signOut());
+  expect(value.accessEnded).toBeNull();
+  ui.unmount();
+});
 test("a failed SSH switch retains both computers and permits returning to relay", async () => {
   const ssh: ComputerConnection = { kind: "ssh", ssh: { host: "test", port: 22, username: "test", remotePort: 7272, passcode: "stub", auth: { kind: "password", password: "stub" } } };
   (openTunnel as jest.Mock).mockRejectedValue(new Error("Box offline"));

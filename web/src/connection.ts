@@ -286,5 +286,5 @@ export async function revokeBrowserComputer(id: string): Promise<void> {
     if (!res.ok) throw new Error("Could not revoke access. Try again when the computer is online.");
   } catch (e) { if (live.has(id)) throw e; }
   await forgetBrowser(id);
-  if (wasSelected && !identity) window.dispatchEvent(new Event("shahi:unauthorized"));
+  if (wasSelected && !identity) window.dispatchEvent(new CustomEvent("shahi:unauthorized", { detail: { requested: true } }));
 }

@@ -10,7 +10,7 @@ import { usePendingPairing } from "@/lib/incoming-pairing";
 import { theme } from "@/lib/theme";
 
 export default function ConnectRoute() {
-  const { ready, connected, signInSsh, signInRelay, computers, addingComputer } = useSession();
+  const { ready, connected, signInSsh, signInRelay, computers, addingComputer, accessEnded } = useSession();
   const pairing = usePendingPairing();
 
   // Leaving as soon as there is a session, rather than on the button press, so
@@ -27,6 +27,10 @@ export default function ConnectRoute() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.void }}>
+      {accessEnded && !pairing && <Text accessibilityRole="alert" testID="access-ended"
+        style={{ color: theme.fg, fontSize: 15, lineHeight: 21, margin: 16, marginBottom: 0, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: theme.peach, backgroundColor: theme.surface }}>
+        {accessEnded}
+      </Text>}
       {computers.length > 0 && !pairing && <Pressable accessibilityRole="button" testID="saved-computers"
         onPress={() => router.push("/computers")} style={{ padding: 16 }}>
         <Text style={{ color: theme.peach, fontSize: 16 }}>Choose a saved computer</Text>

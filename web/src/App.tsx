@@ -120,6 +120,8 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
    */
   const [connectionError, setConnectionError] = useState("");
   const [healthError, setHealthError] = useState<Error | null>(null);
+  const [accessEnded, setAccessEnded] = useState<string | null>(null);
+  useEffect(() => { if (authenticated) setAccessEnded(null); }, [authenticated]);
   /*
    * A computer on another contract version is not reconnecting; it is
    * refusing. The live stream stops, as on mobile, because its pushes are in
@@ -393,7 +395,19 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         navigate("/");
       }
     };
-    const expired = () => { setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/"); };
+    const expired = (event: Event) => {
+      // Revoked from another client, or the sign-in expired: say so, naming
+      // the computer, where the browser lands. It used to return to pairing
+      // or the chooser without a word (pre-release bug hunt). Revoking this
+      // browser from its own Computers list is the person's own doing.
+      if (!(event as CustomEvent<{ requested?: boolean }>).detail?.requested) {
+        const name = sessionRef.current?.serverName || "your computer";
+        setAccessEnded(hosted
+          ? `This browser is no longer paired with ${name}. Show a new pairing code on that computer to connect again.`
+          : `Your sign-in to ${name} has ended. Sign in again with its passcode.`);
+      }
+      setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/");
+    };
     window.addEventListener("shahi:unauthorized", expired);
     window.addEventListener("unhandledrejection", onRejection);
     return () => { window.removeEventListener("unhandledrejection", onRejection); window.removeEventListener("shahi:unauthorized", expired); };
@@ -405,8 +419,9 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
   // half-open SSH tunnel, which is the "blank" refresh shape (pre-release
   // review, 2026-09). The deadline then shows "Cannot reach Shahi" and Try again.
   if (authenticated === null) return <Opening />;
+  const ended = accessEnded && !authenticated ? <p className="access-ended" role="alert">{accessEnded}</p> : null;
   if (hosted && !authenticated && !pairingRequested && browserComputers().length > 0) {
-    return <div className="app"><Computers /></div>;
+    return <div className="app">{ended}<Computers /></div>;
   }
   if (showComputers || routeLocation.pathname === "/computers") return <div className="app"><Computers onClose={() => { setShowComputers(false); navigate("/"); }} /></div>;
   const computerButton = hosted && browserComputers().length > 0 ? <ComputerSwitcher onManage={() => setShowComputers(true)} /> : null;
@@ -432,11 +447,11 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
     );
   }
   if (!authenticated) {
-    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => { setPairingCode(""); onPairingConsumed?.(); }} onSuccess={() => { window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: false } })); }} /></>;
-    return <Login onSuccess={() => {
+    if (hosted) return <>{ended}{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => { setPairingCode(""); onPairingConsumed?.(); }} onSuccess={() => { window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: false } })); }} /></>;
+    return <>{ended}<Login onSuccess={() => {
       setReachable(true);
       setAuthenticated(true);
-    }} />;
+    }} /></>;
   }
 
   // Only the hosted app keeps more than one computer; see OwnedRoute.

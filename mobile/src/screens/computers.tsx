@@ -6,7 +6,7 @@ import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
 export function Computers() {
-  const { computers, activeComputerId, connected, switchComputer, addComputer, revokeComputer } = useSession();
+  const { computers, activeComputerId, connected, switchComputer, addComputer, revokeComputer, accessEnded } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   async function choose(id: string) {
@@ -17,6 +17,7 @@ export function Computers() {
     finally { setBusy(null); }
   }
   return <ScrollView contentContainerStyle={styles.content}>
+    {accessEnded && <Text accessibilityRole="alert" testID="access-ended" style={styles.ended}>{accessEnded}</Text>}
     <Text style={styles.note}>All your computers stay connected while Shahi is open. Choose one to view its agents.</Text>
     {computers.map((computer) => {
       const selected = connected && computer.id === activeComputerId;
@@ -51,4 +52,5 @@ const styles = StyleSheet.create({
   note: { color: theme.dim, fontSize: 13, lineHeight: 19 },
   action: { color: theme.peach, fontSize: 16, fontWeight: "600" },
   error: { color: theme.rose, fontSize: 14 },
+  ended: { color: theme.fg, fontSize: 15, lineHeight: 21, backgroundColor: theme.surface, borderColor: theme.peach, borderWidth: 1, borderRadius: 14, padding: 16 },
 });

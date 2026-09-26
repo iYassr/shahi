@@ -239,3 +239,24 @@ test("a tap on a question that already closed stops offering it instead of re-ar
   expect(text()).toContain("That question had already closed, so nothing was sent.");
   expect(text()).not.toContain("needs a typed reply");
 });
+
+// Revoked from another client, the browser returned to pairing without a
+// word about why (pre-release bug hunt).
+test("a browser whose access ended is told so, naming the computer, and not after its own sign-out", async () => {
+  routes["/api/auth/status"] = json({ required: true, authenticated: true });
+  routes["/api/session"] = json({ ...waiting(null), serverName: "Studio" });
+  await render();
+  await act(async () => { window.dispatchEvent(new Event("shahi:unauthorized")); });
+  await settle();
+  expect(text()).toContain("Your sign-in to Studio has ended.");
+  expect(view!.root.findAll((node) => node.props.role === "alert" && node.props.className === "access-ended")).toHaveLength(1);
+});
+
+test("revoking this browser from its own list says nothing about access ending", async () => {
+  routes["/api/auth/status"] = json({ required: true, authenticated: true });
+  routes["/api/session"] = json({ ...waiting(null), serverName: "Studio" });
+  await render();
+  await act(async () => { window.dispatchEvent(new CustomEvent("shahi:unauthorized", { detail: { requested: true } })); });
+  await settle();
+  expect(text()).not.toContain("has ended");
+});

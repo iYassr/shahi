@@ -195,6 +195,8 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .connection-health button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; flex: none; }
 @media (max-width: 480px) { .connection-health { align-items: flex-start; flex-direction: column; gap: 6px; } }
 
+.access-ended { margin: 12px var(--gutter) 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 14px; line-height: 1.45; flex: none; }
+
 :root[data-keyboard="open"] .connection-health { flex-direction: row; align-items: center; }
 :root[data-keyboard="open"] .connection-health p,
 :root[data-keyboard="open"] .connection-health small { display: none; }
