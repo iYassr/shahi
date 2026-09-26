@@ -38,6 +38,19 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
     } catch (e) { return { host: "", identity: "", error: e instanceof Error ? e.message : "This pairing link is not valid." }; }
   }, [fromLink, code]);
   const dismissLink = () => { setFromLink(false); setCode(""); setError(""); onConsumed(); };
+  /*
+   * The card a link opens is what the person came for. On a phone the page is
+   * one column with the setup steps first, and the card opened about 1000px
+   * below the fold with focus left on the page (pre-release bug hunt,
+   * 2026-09): the link seemed to have done nothing.
+   */
+  const form = useRef<HTMLFormElement>(null);
+  const linkHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!initialCode) return;
+    form.current?.scrollIntoView({ block: "start" });
+    linkHeading.current?.focus({ preventScroll: true });
+  }, []);
   return <main className="pair-browser">
     <div className="pair-browser__intro">
       <div className="pair-browser__welcome"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><span>Welcome to Shahi</span></div>
@@ -56,15 +69,25 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
       <InstallApp />
       <p className="app-help__links"><a href="https://getshahi.dev/privacy">Privacy</a><a href="mailto:support@getshahi.dev">Support</a><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></p>
     </div>
-    <form id="pair-browser-form" className="pair-browser__form" onSubmit={(event) => {
+    <form ref={form} id="pair-browser-form" className="pair-browser__form" onSubmit={(event) => {
       event.preventDefault();
       if (linked?.error) return;
       setBusy(true); setError("");
-      const secret = code; setCode(""); setFromLink(false); onConsumed();
-      void pairBrowser(secret, name, remember).then(onSuccess).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
+      /*
+       * The code is spent only by a claim that succeeded. It was cleared
+       * before the attempt, so an offline computer or a dropped relay also
+       * emptied the field, and a linked code lost its card, although the
+       * same code would still pair (pre-release bug hunt, 2026-09). A claim
+       * that succeeded but could not be remembered has spent it all the same.
+       */
+      const spent = () => { setCode(""); setFromLink(false); onConsumed(); };
+      void pairBrowser(code, name, remember)
+        .then(() => { spent(); onSuccess(); })
+        .catch((e: Error) => { if (browserConnection().identity) spent(); setError(e.message); })
+        .finally(() => setBusy(false));
     }}>
       {linked ? <>
-        <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2>Connect this browser?</h2></div>
+        <div className="pair-browser__form-heading"><span className="pair-browser__qr-mark"><SetupIcon name="qr" size={32} /></span><h2 ref={linkHeading} tabIndex={-1}>Connect this browser?</h2></div>
         <p role="alert">A link is asking to connect this browser to a Shahi computer. Only continue if you opened this link yourself, from a computer you control.</p>
         {linked.error ? <p className="login__error">{linked.error}</p> : <dl className="pair-browser__target">
           <dt>Relay</dt><dd><code>{linked.host}</code></dd>

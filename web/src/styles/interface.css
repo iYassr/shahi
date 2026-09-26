@@ -52,6 +52,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .setup-icon { display: block; flex-shrink: 0; color: var(--accent); }
 .pair-browser__form { display: grid; gap: 12px; min-width: 0; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
 .pair-browser__form h2 { margin: 0; }
+/* Focused so a linked card is announced and in view; it is not a control. */
+.pair-browser__form h2:focus { outline: none; }
 .pair-browser__form-heading { display: flex; align-items: center; gap: 14px; }
 .pair-browser__qr-mark { display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px; background: var(--accent-soft); border: 1px solid var(--line-bright); }
 .pair-browser__form input:not([type=checkbox]), .pair-browser__form textarea { width: 100%; box-sizing: border-box; padding: 12px; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font: inherit; }

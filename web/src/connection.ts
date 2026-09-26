@@ -249,10 +249,17 @@ export async function selectBrowserComputer(id: string | null): Promise<void> {
   const target = id === null ? undefined : computers.find(c => c.identity.serverId === id);
   if (id !== null && !target) throw new Error("That computer is no longer saved. Pair it again.");
   const before = generation;
-  try { await persistIdentity(target?.remembered ? target.identity : null, before); }
-  catch (error) {
-    // Private sessions must still be switchable when IndexedDB is disabled.
-    if (computers.some(c => c.remembered)) throw error;
+  // Only a chosen computer changes which one the next launch opens. Adding
+  // one used to forget the current choice before anything was paired, so
+  // walking away from the pairing form reopened on the Computers list instead
+  // of the remembered computer (pre-release bug hunt, 2026-09); a pairing that
+  // completes records its own outcome.
+  if (target) {
+    try { await persistIdentity(target.remembered ? target.identity : null, before); }
+    catch (error) {
+      // Private sessions must still be switchable when IndexedDB is disabled.
+      if (computers.some(c => c.remembered)) throw error;
+    }
   }
   if (generation !== before) return;
   generation++;

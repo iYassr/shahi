@@ -61,6 +61,39 @@ test("a malformed pairing link says why and offers only Cancel", async () => {
   expect(buttons()).toContain("Cancel");
 });
 
+// Every failed attempt emptied the field, and a linked code lost its card,
+// before the claim had even been tried (pre-release bug hunt). This browser
+// is not a secure context here, so the attempt fails before any claim.
+test("a linked code that did not pair keeps its card for another try", async () => {
+  const onConsumed = mock();
+  await render(linkedCode, onConsumed);
+  await act(async () => view!.root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(text()).toContain("Open Shahi over HTTPS");
+  expect(text()).toContain("A link is asking to connect this browser");
+  expect(buttons()).toContain("Connect to relay.stranger.example");
+  expect(onConsumed).not.toHaveBeenCalled();
+});
+
+test("a pasted code that did not pair stays in the field", async () => {
+  await render("");
+  await act(async () => view!.root.findByProps({ id: "pairing-code" }).props.onChange({ target: { value: linkedCode } }));
+  await act(async () => view!.root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(text()).toContain("Open Shahi over HTTPS");
+  expect(view!.root.findByProps({ id: "pairing-code" }).props.value).toBe(linkedCode);
+});
+
+// On a phone the card sat about 1000px below the setup steps, with focus left
+// on the page, so following a link seemed to do nothing (pre-release bug hunt).
+test("a pairing link brings its card into view and focuses it", async () => {
+  const calls: string[] = [];
+  await act(async () => {
+    view = create(<PairBrowser initialCode={linkedCode} onConsumed={mock()} onSuccess={mock()} />, {
+      createNodeMock: (element) => ({ scrollIntoView: () => calls.push(`scroll ${element.type}`), focus: () => calls.push(`focus ${element.type}`) }),
+    });
+  });
+  expect(calls).toEqual(["scroll form", "focus h2"]);
+});
+
 test("a code the person enters themselves needs no link warning", async () => {
   await render("");
   expect(text()).not.toContain("A link is asking");

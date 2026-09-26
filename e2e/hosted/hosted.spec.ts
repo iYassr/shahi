@@ -153,6 +153,58 @@ test("fragment pairing is removed before connecting and no secret is stored in w
   expect(values.includes("deviceSecret")).toBe(false);
   expect(values.includes(new URLSearchParams(code.split("#")[1]).get("secret")!)).toBe(false);
 });
+// A pairing link followed in a tab that already showed the app changed
+// nothing: the form stayed empty, and the one-time secret stayed in the
+// address bar and the tab's history until a reload (pre-release bug hunt).
+test("a pairing link followed in an open tab opens its card and leaves the address", async ({ page }) => {
+  await page.goto("/pwa/");
+  await expect(page.getByLabel("Pairing code", { exact: true })).toBeVisible();
+  await page.evaluate((link) => { location.href = link; }, web);
+  await expect(page.getByText("A link is asking to connect this browser")).toBeVisible();
+  expect(new URL(page.url()).hash).toBe("");
+  await page.getByRole("button", { name: `Connect to ${new URL(web).host}`, exact: true }).click();
+  await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+  await page.goBack();
+  expect(new URL(page.url()).hash).toBe("");
+});
+test("a pairing link followed from a paired dashboard adds that computer", async ({ page, request }) => {
+  await pair(page, true);
+  const second = await (await request.post(`${secondUrl}/__hosted/reset`)).json();
+  await page.evaluate((code) => { location.hash = `pair=${encodeURIComponent(code)}`; }, second.code);
+  await expect(page.getByText("A link is asking to connect this browser")).toBeVisible();
+  expect(new URL(page.url()).hash).toBe("");
+  await page.getByRole("button", { name: `Connect to 127.0.0.1:${SECOND}`, exact: true }).click();
+  await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Switch or add a computer", exact: true }).click();
+  await expect(page.getByRole("button", { name: connectTo(SECOND) })).toHaveText("Current computer");
+  await expect(page.getByRole("button", { name: connectTo(FIRST) })).toHaveText("Connect");
+});
+// On a phone the card opened about 1000px below the setup steps, with focus
+// left on the page, so a followed link seemed to have done nothing
+// (pre-release bug hunt). toBeVisible passes for an element below the fold.
+for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }]) {
+  test(`a pairing link opens with its card in view at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto(web);
+    const heading = page.getByRole("heading", { name: "Connect this browser?", exact: true });
+    await expect(heading).toBeInViewport();
+    await expect(heading).toBeFocused();
+  });
+}
+// Add a computer forgot which remembered computer was current before anything
+// had been paired, so walking away from the form reopened on the Computers
+// list instead of the remembered computer (pre-release bug hunt).
+test("abandoning Add a computer still reopens the remembered computer", async ({ page }) => {
+  await pair(page, true);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Switch or add a computer", exact: true }).click();
+  await page.getByRole("button", { name: "Add a computer", exact: true }).click();
+  await expect(page.getByLabel("Pairing code", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Computers", exact: true })).toHaveCount(0);
+});
 // Opened by its address, a pane was never watched: through the relay the
 // session began with only an unwatch, and the Screen tab kept its first frame
 // (pre-release bug hunt).

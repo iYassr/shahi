@@ -7,7 +7,7 @@ import { ConnectionHealth } from "./components/ConnectionHealth";
 import { retainReviews, reviewKey, type Reviewed, type DashboardPane } from "@shahi/shared";
 import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
-import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser } from "./connection";
+import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser, selectBrowserComputer, takePairingFragment } from "./connection";
 import { listenForNotifications, openNotification } from "./notification-route";
 import { forgetEndedConversations } from "./pane-occupants";
 import { PairBrowser } from "./components/PairBrowser";
@@ -53,15 +53,49 @@ export function App(props: { initialPairingCode?: string }) {
   }, []);
   const scopedApi = useMemo(() => { const owner = browserConnection(); return createApi(() => owner); }, [epoch, restored]);
   const [openPairing, setOpenPairing] = useState(!!props.initialPairingCode);
+  /** A code from a `#pair=` link, held until it pairs, is cancelled, or another computer is chosen. */
+  const [linkCode, setLinkCode] = useState(props.initialPairingCode ?? "");
+  const followedLink = useRef("");
   useEffect(() => {
-    const changed = (event: Event) => { clearReaderMemory(); setOpenPairing(!!(event as CustomEvent).detail?.pairing); setEpoch(value => value + 1); };
+    const changed = (event: Event) => {
+      clearReaderMemory();
+      setOpenPairing(!!(event as CustomEvent).detail?.pairing);
+      // A linked code belongs to the change its link asked for; choosing
+      // some other computer leaves it behind.
+      setLinkCode(followedLink.current);
+      followedLink.current = "";
+      setEpoch(value => value + 1);
+    };
     window.addEventListener("shahi:computer-changed", changed);
     return () => window.removeEventListener("shahi:computer-changed", changed);
   }, []);
-  return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={epoch === 0 ? props.initialPairingCode : ""} /></ApiContext.Provider> : <Opening />;
+  /*
+   * A pairing link followed in a tab that already shows the app.
+   *
+   * The fragment was read once, at load. Pasted into the address bar or
+   * clicked in an open tab, a link changed nothing — the pairing form stayed
+   * empty, and the one-time secret stayed in the address bar and the tab's
+   * history (pre-release bug hunt, 2026-09). It is taken off the address the
+   * same way now, and opens the same confirmation card, from a dashboard too,
+   * by the route Add a computer takes.
+   */
+  useEffect(() => {
+    const followed = () => {
+      if (!/[#&]pair=/.test(window.location.hash)) return;
+      const code = takePairingFragment();
+      if (!code || !hosted) return;
+      void restoreBrowser().then(() => {
+        followedLink.current = code;
+        return selectBrowserComputer(null);
+      }).catch(() => { followedLink.current = ""; });
+    };
+    window.addEventListener("hashchange", followed);
+    return () => window.removeEventListener("hashchange", followed);
+  }, []);
+  return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={linkCode} onPairingConsumed={() => setLinkCode("")} /></ApiContext.Provider> : <Opening />;
 }
 function Opening() { return <div className="app" role="status">Opening Shahi…</div>; }
-function AppSession({ initialPairingCode = "", openPairing = false }: { initialPairingCode?: string; openPairing?: boolean }) {
+function AppSession({ initialPairingCode = "", openPairing = false, onPairingConsumed }: { initialPairingCode?: string; openPairing?: boolean; onPairingConsumed?: () => void }) {
   const api = useApi();
   const routeLocation = useLocation();
   const [pairingRequested] = useState(openPairing);
@@ -392,7 +426,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
     );
   }
   if (!authenticated) {
-    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => setPairingCode("")} onSuccess={() => { window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: false } })); }} /></>;
+    if (hosted) return <>{computerButton}<PairBrowser initialCode={pairingCode} onConsumed={() => { setPairingCode(""); onPairingConsumed?.(); }} onSuccess={() => { window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: false } })); }} /></>;
     return <Login onSuccess={() => {
       setReachable(true);
       setAuthenticated(true);
