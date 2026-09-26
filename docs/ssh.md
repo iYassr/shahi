@@ -27,6 +27,19 @@ An SSH connection remembers the whole profile, not a base URL: the local port is
 a throwaway that changes each launch, so a cold start re-opens the tunnel from
 the stored profile and signs in again with the remembered passcode.
 
+A saved SSH computer also comes back by itself. When its SSH session ends —
+sshd restarted, the box rebooted, a NAT forgot the connection — the native
+forwarder stops listening, and the app reopens the tunnel after a failed
+start, a lost socket or a request that never arrived, waiting one second, then
+two, up to thirty, for as long as it is open. An expired Shahi session cookie
+is not the end of access either: the saved passcode signs in again. What a
+retry cannot change is not repeated on a timer, so a phone does not present a
+refused password every half minute: a host key that does not match, an SSH
+login the server refuses, and a Shahi passcode it no longer accepts each stop
+with that said, the computer kept. Until the September 2026 bug hunt none of
+this happened: a dead session left the card on "retrying" with nothing
+reaching the server, and an expired cookie erased the saved computer.
+
 ## Trusting the server's key
 
 Adding an SSH computer on the Connect screen first opens a handshake that sends

@@ -2,12 +2,21 @@ import { clearNativeDrafts, forgetNativeDraft } from "./drafts";
 import { forgetPaneMemory } from "./reader-memory";
 import { reconcileSession } from "./session-reconcile";
 import { backendUnavailable, endedPanes, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type AnsweredPrompt, type Reviewed, type DashboardPane, type ParsedPrompt, type PromptState, type Session, type SocketMessage } from "@shahi/shared";
-import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
+import { createApi, SessionSocket, UnauthorizedError, UnreachableError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
 import { renewPushRegistration } from "./push-registration";
+import { AccessRefusedError, HostKeyError } from "./errors";
+import { sshHost } from "./ssh";
 import type { SavedComputer } from "./computers";
 import { ControlSession } from "@shahi/shared";
+
+/**
+ * How long an SSH computer waits before reconnecting by itself: doubling from
+ * the first to the longest, and back to the first once it is live.
+ */
+const SSH_RETRY_FIRST_MS = 1_000;
+const SSH_RETRY_LONGEST_MS = 30_000;
 
 /** One independently reconnecting computer. Switching views never disposes it. */
 export class ComputerSession {
@@ -42,6 +51,8 @@ export class ComputerSession {
   private incompatible = false;
   private frames = new Map<string, Set<() => void>>();
   private checking: Promise<void> | null = null;
+  private retryMs = SSH_RETRY_FIRST_MS;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
     this.api = createApi(this.connection);
@@ -71,7 +82,16 @@ export class ComputerSession {
           // Signed out while it opened: nobody else will close this forward.
           if (this.disposed) { void closeTunnel(baseUrl); return; }
           this.connection.baseUrl = baseUrl;
-          await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
+          try {
+            await this.api.login(this.saved.connection.ssh.passcode, () => !this.disposed);
+          } catch (e) {
+            // Connect's words are for the form a person just filled in. Here
+            // nobody typed anything: the saved passcode stopped working.
+            if (e instanceof AccessRefusedError) {
+              throw new AccessRefusedError(`${sshHost(this.saved.connection.ssh)} no longer accepts the Shahi passcode saved for it. If it was reset, sign out of this computer and add it again with the new one.`);
+            }
+            throw e;
+          }
         }
         // Also for a connection adopted from Connect, so a notification can
         // name this computer from its first launch. Recovery remains
@@ -92,16 +112,18 @@ export class ComputerSession {
         this.socket = new SessionSocket(msg => this.message(msg), state => {
           if (this.disposed) return;
           this.socketLink = state;
+          if (state === "live") this.retryMs = SSH_RETRY_FIRST_MS;
           if (this.incompatible) return;
           const different = this.link !== state;
           this.link = state; if (different) this.changed();
           if (state === "live") void this.refresh();
+          if (state === "lost") this.retrySsh();
         }, () => { void this.unauthorized(); }, () => { if (!this.disposed) void this.refresh(); }, this.connection);
         this.socket.connect();
         this.socket.watch(this.watched);
       } else this.socket.ensureConnected();
       await this.refresh();
-    } catch (e) { this.failure(e); }
+    } catch (e) { this.failure(e); this.retrySsh(e); }
   }
   async refresh() {
     const received = this.received;
@@ -113,7 +135,12 @@ export class ComputerSession {
     } catch (e) {
       // A newer frame makes an older failure moot — but not a 426: that frame
       // came from the server this app cannot speak with.
-      if (e instanceof IncompatibleServerError || received === this.received) this.failure(e);
+      if (e instanceof IncompatibleServerError || received === this.received) {
+        this.failure(e);
+        // Only a request that never arrived says the tunnel may be gone. A
+        // server that answered with an error is reached through a working one.
+        if (e instanceof UnreachableError) this.retrySsh(e);
+      }
     }
   }
   private async retryContract() {
@@ -129,6 +156,30 @@ export class ComputerSession {
     if (backendUnavailable(e)) void this.control.refresh();
     if (e instanceof IncompatibleServerError) { this.incompatible = true; this.socket?.close(); }
     this.changed();
+  }
+  /**
+   * An SSH computer comes back by itself.
+   *
+   * Only `reconnect` opens a new tunnel, and only Retry, a return to the
+   * foreground or a network change called it. When the SSH session died under
+   * a computer on screen — sshd restarted, the box rebooted, a NAT forgot the
+   * connection — the socket went on retrying the dead local forward and the
+   * card said "retrying" for as long as the app stayed open (pre-release bug
+   * hunt: over three minutes, with no attempt ever reaching the server).
+   *
+   * So a start that failed, a socket that was lost and a request that never
+   * arrived each schedule one, doubling from one second to thirty.
+   *
+   * A refusal a retry cannot change waits for the person instead: a host key
+   * that does not match, a login or passcode the computer no longer accepts,
+   * an incompatible server. A 401 is `unauthorized`'s to decide.
+   */
+  private retrySsh(cause?: unknown) {
+    if (this.disposed || this.saved.connection.kind !== "ssh" || this.retryTimer) return;
+    if (cause instanceof HostKeyError || cause instanceof AccessRefusedError || cause instanceof IncompatibleServerError || cause instanceof UnauthorizedError) return;
+    const delay = this.retryMs;
+    this.retryMs = Math.min(delay * 2, SSH_RETRY_LONGEST_MS);
+    this.retryTimer = setTimeout(() => { this.retryTimer = undefined; void this.reconnect(); }, delay);
   }
   private message(msg: SocketMessage) {
     if (this.disposed || this.incompatible) return;
@@ -206,15 +257,30 @@ export class ComputerSession {
       const status = await this.api.authStatus().catch(() => null);
       // Unreachable or undecided is not evidence; the next request asks again.
       if (!status || status.authenticated || this.disposed || this.connection.cookie !== held) return;
+      // The cookie has expired, or the server's session secret changed. For
+      // an SSH computer that is not the end of access: the lasting credential
+      // is the saved passcode, so sign in again with it. This used to forget
+      // the computer — its SSH login and trusted host key erased without a
+      // word, although the same passcode still worked (pre-release bug hunt).
+      // A passcode it no longer accepts stops with that said, not erased.
+      this.link = "lost";
+      this.changed();
+      await this.reconnect();
+      return;
     }
     this.expired();
   }
   async reconnect() {
     if (this.disposed) return;
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = undefined; }
     if (this.connection.relay) relayLink(this.connection.relay).reconnect();
     // A reconnect already under way is joined, not restarted: closing its
     // tunnel mid-login would fail the very attempt being waited for.
     if (this.saved.connection.kind === "ssh" && this.link !== "live" && !this.work) {
+      // Its poll too, until the new tunnel is up: left running on a cleared
+      // address, it showed '"/api/meta" isn't a full address' on the card
+      // every two seconds while the tunnel could not be reopened.
+      this.control.stop();
       this.socket?.close(); this.socket = null;
       void closeTunnel(this.connection.baseUrl);
       this.connection.baseUrl = ""; this.connection.cookie = null;
@@ -224,6 +290,7 @@ export class ComputerSession {
   dispose() {
     clearNativeDrafts(this.api);
     this.disposed = true; this.socket?.close(); this.frames.clear();
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     this.control.stop();
     if (this.connection.relay) closeRelay(this.connection.relay);
     // Only this session's own forward. A replacement session for the same

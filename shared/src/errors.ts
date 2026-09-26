@@ -120,6 +120,22 @@ export class HostKeyError extends Error {
 export const PANE_REPLACED = "pane_replaced";
 
 /**
+ * The computer was reached, and refused this phone for a reason retrying
+ * cannot change: a saved SSH login or Shahi passcode it no longer accepts, or
+ * an SSH server that does not allow port forwarding. The message says which.
+ *
+ * Distinct so an SSH computer that reconnects by itself stops there and says
+ * so, rather than presenting the same refused login every half minute — the
+ * kind of repetition that gets a phone's address banned by fail2ban.
+ */
+export class AccessRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AccessRefusedError";
+  }
+}
+
+/**
  * `host:port` of a URL, for messages. A regex rather than `URL`, because a
  * malformed address is one of the cases being described and must produce a
  * message rather than a second exception.

@@ -88,7 +88,7 @@ struct OpenConfig: Record {
   @Field var remotePort: Int
 }
 
-struct TunnelError: Error { let message: String; var hostKeyRefused = false }
+struct TunnelError: Error { let message: String; var code = "ssh_tunnel" }
 
 /**
  * A failure in SshForwarder's own words, as JavaScript receives it.
@@ -97,21 +97,22 @@ struct TunnelError: Error { let message: String; var hostKeyRefused = false }
  * undefined reason": Expo builds the message from `reason`, which only a
  * subclass sets, so every native explanation ("Authentication failed…", "host
  * key has changed…") was replaced by the app's generic fallback. Seen on a
- * simulator in the pre-release review. A refused host key has its own code, so
- * the app can say "check this computer's identity" rather than "reconnecting"
- * to a refusal no retry fixes.
+ * simulator in the pre-release review. Each refusal no retry fixes has its own
+ * code — a host key (`ssh_host_key`), a login (`ssh_login`) — so the app says
+ * what to check rather than "reconnecting", and a saved computer does not
+ * repeat it on a timer.
  */
 final class TunnelException: Exception, @unchecked Sendable {
   private let message: String
-  private let hostKeyRefused: Bool
+  private let failure: String
   init(_ error: TunnelError) {
     message = error.message
-    hostKeyRefused = error.hostKeyRefused
+    failure = error.code
     super.init()
     name = code
   }
   override var reason: String { message }
-  override var code: String { hostKeyRefused ? "ssh_host_key" : "ssh_tunnel" }
+  override var code: String { failure }
 }
 
 final class Tunnel {
@@ -142,10 +143,15 @@ final class Tunnel {
       forwarder.stop()
       self.forwarder = nil
       let failure = error as NSError
-      completion(.failure(TunnelError(
-        message: failure.localizedDescription,
-        hostKeyRefused: failure.domain == "SshForwarder" && failure.code == SshForwarderHostKeyRefused
-      )))
+      var code = "ssh_tunnel"
+      if failure.domain == "SshForwarder" {
+        switch failure.code {
+        case SshForwarderHostKeyRefused: code = "ssh_host_key"
+        case SshForwarderLoginRefused: code = "ssh_login"
+        default: break
+        }
+      }
+      completion(.failure(TunnelError(message: failure.localizedDescription, code: code)))
     }
   }
 

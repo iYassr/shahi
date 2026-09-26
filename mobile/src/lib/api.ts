@@ -36,6 +36,7 @@ import {
 } from "@shahi/shared";
 
 import {
+  AccessRefusedError,
   ApiError,
   IncompatibleServerError,
   UnauthorizedError,
@@ -47,7 +48,7 @@ import { relayLink, toBase64Url, type LinkState, type LinkSubscriber, type Relay
 
 // The screens import the error classes from here; they moved to `errors.ts`
 // so the relay transport can throw them without importing this module.
-export { ApiError, IncompatibleServerError, UnauthorizedError, UnreachableError, type UnreachableReason };
+export { AccessRefusedError, ApiError, IncompatibleServerError, UnauthorizedError, UnreachableError, type UnreachableReason };
 
 /**
  * Turns a `fetch` rejection into an `UnreachableError`.
@@ -355,6 +356,10 @@ let imageQueue: Promise<unknown> = Promise.resolve();
 
 const api = {
   control: async (): Promise<import("@shahi/shared").ControlHandshake | null> => {
+    // An SSH computer between tunnels has no address. Asked anyway, fetch
+    // was handed "/api/meta" and the card said it "isn't a full address"
+    // (pre-release bug hunt).
+    if (!configured()) throw new Error("Cannot reach this computer.");
     const meta = await dispatch("/api/meta", { headers: baseHeaders() });
     if (!meta.ok) throw new Error("Cannot reach this computer.");
     if ((await meta.json() as import("@shahi/shared").ServerInfo).control !== 1) return null;
@@ -416,7 +421,7 @@ const api = {
     // reached but the sidecar behind it is not (e.g. a `tailscale serve` proxy
     // pointing at the wrong port) — calling that "wrong passcode" sent people
     // hunting for the wrong problem.
-    if (res.status === 401) throw new Error("That passcode did not work.");
+    if (res.status === 401) throw new AccessRefusedError("That passcode did not work.");
     if (res.status === 426) throw await incompatible(res);
     // Refusing sign-ins for a while is not a missing sidecar. Something else
     // is making attempts (four waiting ones refuse the rest, by design), and

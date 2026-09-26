@@ -1,5 +1,5 @@
 import type { BackendState } from "./compatibility";
-import { HostKeyError, IncompatibleServerError, UnauthorizedError, UnreachableError } from "./errors";
+import { AccessRefusedError, HostKeyError, IncompatibleServerError, UnauthorizedError, UnreachableError } from "./errors";
 
 /** The computer answered, but herdr behind it did not (`backend_unavailable`). */
 export function backendUnavailable(error: unknown): boolean {
@@ -30,6 +30,7 @@ export function connectionHealth({ link, error, transport, online = true, comput
   if (error instanceof IncompatibleServerError) return { title: "Update needed", detail: error.message };
   // Retrying cannot help, and the refusal says what will.
   if (error instanceof HostKeyError) return { title: "Check this computer’s identity", detail: error.message };
+  if (error instanceof AccessRefusedError) return { title: "Couldn’t sign in", detail: error.message };
   if (error instanceof UnreachableError && error.reason === "box") return {
     title: "Computer disconnected", detail: "Wake your computer and check that Shahi is running. We’ll keep trying to reconnect.",
   };

@@ -15,7 +15,7 @@
  */
 import { requireOptionalNativeModule } from "expo";
 import { deleteSecret, readSecret, writeSecret } from "./keychain";
-import { HostKeyError } from "./errors";
+import { AccessRefusedError, HostKeyError } from "./errors";
 import type { SshProfile } from "@/lib/ssh";
 
 interface SshTunnelModule {
@@ -115,7 +115,7 @@ export async function forgetHostKey(removed: SshProfile, remaining: SshProfile[]
 function tunnelFailureMessage(error: unknown): string | null {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const message = raw
-    .replace(/^ssh_(?:tunnel|host_key):\s*/i, "")
+    .replace(/^ssh_(?:tunnel|host_key|login):\s*/i, "")
     .replace(/\s*\(at [^()]+\.swift:\d+\)\s*$/i, "")
     .trim();
   // Expo uses this placeholder when an Objective-C rejection has no reason.
@@ -126,14 +126,23 @@ function nativeFailure(error: unknown, host: string, port: number): Error {
   // The native side refused a key it was not told to trust. Its own words say
   // what to do, and a retry cannot help, so the screens must not say
   // "reconnecting" (see HostKeyError).
-  if ((error as { code?: unknown } | null)?.code === "ssh_host_key") {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "ssh_host_key") {
     return new HostKeyError(tunnelFailureMessage(error) ?? `${host}:${port} did not present the host key this phone trusts, so your login was not sent.`);
+  }
+  // A refused login refuses again on every retry, and a saved computer now reconnects by itself: presenting a
+  // refused password every half minute is how a phone gets banned by
+  // fail2ban. A native module from before the "ssh_login" code says it only
+  // in words, and an over-the-air update can run on one.
+  const reason = tunnelFailureMessage(error);
+  if (code === "ssh_login" || /^Authentication failed/.test(reason ?? "")) {
+    return new AccessRefusedError(reason ?? `${host}:${port} refused this SSH login.`);
   }
   // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and
   // sometimes substitutes "undefined reason". Neither is useful to someone
   // holding a phone; keep a real native reason, otherwise name what to check.
   return new Error(
-    tunnelFailureMessage(error) ??
+    reason ??
       `Couldn't open the SSH tunnel to ${host}:${port}. Check the host, port, username, and key or password — and that the server allows this login.`,
   );
 }

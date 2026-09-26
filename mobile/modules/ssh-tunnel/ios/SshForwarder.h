@@ -4,11 +4,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 /**
  * The `SshForwarder` error code for a refusal to authenticate because the
- * server did not present the trusted host key, or none was given. Every other
- * failure is code 1. A caller tells the two apart so a person is sent to
- * check the computer's identity rather than told to retry.
+ * server did not present the trusted host key, or none was given. A caller
+ * tells the refusals apart from the rest (code 1) so a person is sent to
+ * check the computer's identity, or their login, rather than told to retry —
+ * and so an app that reconnects by itself does not repeat a refused login.
  */
 static const NSInteger SshForwarderHostKeyRefused = 2;
+/** The server refused the username, password or key. */
+static const NSInteger SshForwarderLoginRefused = 3;
 
 /**
  * The whole tunnel: connect, handshake, authenticate, and forward — all
@@ -57,6 +60,9 @@ static const NSInteger SshForwarderHostKeyRefused = 2;
  * person has trusted (see +hostKeyForHost:port:error:); without one, or on a
  * mismatch, it refuses before authenticating with code
  * SshForwarderHostKeyRefused.
+ *
+ * When the SSH session later ends, the forward stops listening, so a local
+ * connection is refused rather than accepted and dropped.
  */
 - (nullable NSNumber *)start:(NSError **)error;
 

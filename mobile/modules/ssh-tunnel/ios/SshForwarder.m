@@ -35,6 +35,30 @@ static NSError *HostKeyRefused(NSString *message) {
   return [NSError errorWithDomain:@"SshForwarder" code:SshForwarderHostKeyRefused userInfo:@{NSLocalizedDescriptionKey: message}];
 }
 
+static NSError *Refused(NSInteger code, NSString *message) {
+  return [NSError errorWithDomain:@"SshForwarder" code:code userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+// Whether a libssh2 error means the session's socket is finished: the server
+// disconnected, or a read or write on it failed or timed out.
+static BOOL SessionErrorIsFatal(int rc) {
+  return rc == LIBSSH2_ERROR_SOCKET_DISCONNECT || rc == LIBSSH2_ERROR_SOCKET_RECV ||
+         rc == LIBSSH2_ERROR_SOCKET_SEND || rc == LIBSSH2_ERROR_SOCKET_TIMEOUT ||
+         rc == LIBSSH2_ERROR_TIMEOUT;
+}
+
+typedef enum { SessionQuiet, SessionPending, SessionEnded } SessionState;
+
+// What is waiting on the session socket, without consuming it: nothing, bytes
+// for libssh2, or the end of the connection (EOF or an error such as a reset).
+static SessionState PeekSession(int fd) {
+  char byte;
+  ssize_t n = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+  if (n > 0) return SessionPending;
+  if (n == 0) return SessionEnded;
+  return (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ? SessionQuiet : SessionEnded;
+}
+
 // A blocking TCP connect, resolving the host. Returns the fd or -1.
 static int ConnectSocket(NSString *host, int32_t port) {
   struct addrinfo hints = {0};
@@ -241,7 +265,11 @@ static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
     rc = libssh2_userauth_password(_ssh, user, _password ? _password.UTF8String : "");
   }
   if (rc != 0 || libssh2_userauth_authenticated(_ssh) == 0) {
-    if (error) *error = Failure(@"Authentication failed — check the username and credentials.");
+    // A dropped connection is worth retrying; a refused login is not, and
+    // repeating one is how a phone's address ends up banned (fail2ban).
+    if (error) *error = SessionErrorIsFatal(rc)
+        ? Failure([NSString stringWithFormat:@"The connection to %@:%d dropped while signing in. Try again.", _host, _port])
+        : Refused(SshForwarderLoginRefused, @"Authentication failed — check the username and credentials.");
     return nil;
   }
 
@@ -285,17 +313,35 @@ static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
 - (void)loop {
   uint8_t *buf = malloc(kBufSize);
   while (_running) {
+    // The session can end under the forward: sshd restarted, the computer
+    // rebooted, a NAT forgot the connection. Its socket then reads as ended
+    // for good, and this loop, which selected on it every time round, woke at
+    // once forever — 60–86% of a core — while accepting local connections
+    // only to drop them; nothing told the app (pre-release bug hunt).
+    SessionState session = PeekSession(_sessionFd);
+    if (session == SessionEnded) break;
+
     fd_set readable;
     FD_ZERO(&readable);
     FD_SET(_listenFd, &readable);
-    FD_SET(_sessionFd, &readable);
-    int maxFd = _listenFd > _sessionFd ? _listenFd : _sessionFd;
+    int maxFd = _listenFd;
+    // Only channel reads consume the session socket, so with no channel open,
+    // bytes waiting there (a server keepalive, a disconnect) would wake the
+    // loop at once, forever. Then the timeout paces the checks above instead;
+    // the next channel opened reads them.
+    if (_conns || session == SessionQuiet) {
+      FD_SET(_sessionFd, &readable);
+      if (_sessionFd > maxFd) maxFd = _sessionFd;
+    }
     for (Conn *c = _conns; c; c = c->next) {
       FD_SET(c->localFd, &readable);
       if (c->localFd > maxFd) maxFd = c->localFd;
     }
     struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-    if (select(maxFd + 1, &readable, NULL, NULL, &tv) < 0) break;
+    if (select(maxFd + 1, &readable, NULL, NULL, &tv) < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
 
     // A new local connection → a new direct-tcpip channel.
     if (FD_ISSET(_listenFd, &readable)) {
@@ -310,6 +356,7 @@ static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
           c->localFd = local; c->channel = ch; c->next = _conns; _conns = c;
         } else {
           close(local);
+          if (SessionErrorIsFatal(libssh2_session_last_errno(_ssh))) break;
         }
       }
     }
@@ -370,6 +417,13 @@ static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
     }
   }
   free(buf);
+  // Ended with the session rather than by stop: stop listening now, so the
+  // app's next request is refused at once and it opens a new tunnel. The
+  // rest waits for stop, which frees the session.
+  if (_running && _listenFd >= 0) {
+    close(_listenFd);
+    _listenFd = -1;
+  }
   // Tell stop the loop has let go of the session; it is now safe to free it.
   dispatch_semaphore_signal(_loopDone);
 }

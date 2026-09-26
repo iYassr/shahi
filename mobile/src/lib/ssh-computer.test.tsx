@@ -50,12 +50,15 @@ const native = requireOptionalNativeModule("SshTunnel") as unknown as {
   forwards: Map<string, number>; opening: null | Promise<void>; open: jest.Mock; close: jest.Mock;
 };
 
+/** The fake's own forward-opening, restored before each test that replaces it. */
+const openForward = native.open.getMockImplementation()!;
+
 const profile: SshProfile = { host: "box.example", port: 22, username: "me", remotePort: 7171, passcode: "2468", auth: { kind: "password", password: "fake" } };
 const saved: SavedComputer = { id: computerId({ kind: "ssh", ssh: profile }), name: "Box", connection: { kind: "ssh", ssh: profile }, pins: [] };
 const PIN = "shahi.knownhost.box.example_22";
 
 /** The sidecar behind every live forward. */
-const sidecar = { cookies: new Set<string>(), issued: 0, login: null as null | Promise<void>, pushes: [] as { cookie?: string; token: string }[] };
+const sidecar = { cookies: new Set<string>(), issued: 0, logins: 0, login: null as null | Promise<void>, passcode: "2468", control: false, pushes: [] as { cookie?: string; token: string }[] };
 function reply(status: number, body: unknown, headers: Record<string, string> = {}) {
   return {
     ok: status >= 200 && status < 300, status,
@@ -66,15 +69,21 @@ function reply(status: number, body: unknown, headers: Record<string, string> = 
 }
 const snapshot = { version: "0.9.1", protocol: 22, workspaces: [], tabs: [], panes: [{ paneId: "w1:p1", title: "A task", agent: "claude", isAgent: true }] };
 const transcript = { sessionId: "s1", path: "/home/x/s1.jsonl", total: 1, offset: 0, messages: [{ id: "a1", role: "agent", at: 1, blocks: [{ kind: "text", text: "hello from the agent" }] }] };
+const handshake = {
+  control: 1, serverId: "ssh-box-id", api: { min: 5, max: 5 }, capabilities: ["computer-updates"],
+  backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: true, channel: "stable", phase: "idle", current: "0.3.0" },
+};
 async function fakeFetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) {
   const target = new URL(url);
   if (![...native.forwards.values()].includes(Number(target.port))) throw new TypeError("Could not connect to the server.");
   const path = decodeURIComponent(target.pathname);
   const authed = !!init.headers?.cookie && sidecar.cookies.has(init.headers.cookie);
-  if (path === "/api/meta") return reply(200, { api: { min: 5, max: 5 }, serverId: "ssh-box-id" });
+  if (path === "/api/meta") return reply(200, { api: { min: 5, max: 5 }, serverId: "ssh-box-id", ...(sidecar.control && { control: 1 }) });
   if (path === "/api/auth/status") return reply(200, { required: true, authenticated: authed });
   if (path === "/api/auth/login") {
+    sidecar.logins++;
     await sidecar.login;
+    if ((JSON.parse(init.body ?? "{}") as { passcode?: string }).passcode !== sidecar.passcode) return reply(401, { error: "unauthorized" });
     const cookie = `shahi_session=c${++sidecar.issued}`;
     sidecar.cookies.add(cookie);
     return reply(200, { ok: true }, { "set-cookie": `${cookie}; Path=/; HttpOnly` });
@@ -82,6 +91,7 @@ async function fakeFetch(url: string, init: { method?: string; headers?: Record<
   if (!authed) return reply(401, { error: "unauthorized" });
   if (path === "/api/session") return reply(200, snapshot);
   if (path === "/api/push/expo") { sidecar.pushes.push({ cookie: init.headers?.cookie, token: JSON.parse(init.body ?? "{}").token }); return reply(200, { ok: true }); }
+  if (path === "/api/control/handshake" && sidecar.control) return reply(200, handshake);
   if (path === "/api/panes/w1:p1/session") return reply(200, transcript);
   if (path === "/api/panes/w1:p1") return reply(200, { frame: null, layout: null });
   return reply(404, { error: "not found" });
@@ -128,7 +138,8 @@ const realFetch = globalThis.fetch;
 beforeEach(() => {
   jest.useFakeTimers();
   store.clear(); FakeSocket.opened = []; native.forwards.clear(); native.opening = null;
-  sidecar.cookies.clear(); sidecar.issued = 0; sidecar.login = null; sidecar.pushes = [];
+  sidecar.cookies.clear(); sidecar.issued = 0; sidecar.logins = 0; sidecar.login = null; sidecar.passcode = "2468"; sidecar.control = false; sidecar.pushes = [];
+  native.open.mockReset(); native.open.mockImplementation(openForward);
   connection.baseUrl = ""; connection.cookie = null; connection.relay = null;
   store.set(COMPUTERS_KEY, JSON.stringify([saved]));
   store.set("shahi.connection", JSON.stringify(saved.connection));
@@ -177,13 +188,144 @@ test("a reader poll during an SSH re-login does not sign out or erase the saved 
   ui.unmount();
 });
 
-test("a 401 for a cookie the server really refused still signs that computer out", async () => {
+async function settle(ms = 0) {
+  await act(async () => { jest.advanceTimersByTime(ms); for (let i = 0; i < 30; i++) await Promise.resolve(); });
+}
+
+// The session cookie outlived (30 days by default, or a SESSION_SECRET
+// rotation): the heartbeat closed the socket with 4001 and the computer was
+// forgotten — SSH login, passcode and trusted host key erased without a word —
+// although the saved passcode still signed in (pre-release bug hunt).
+test("an SSH computer whose session cookie expired signs in again with its saved passcode instead of being erased", async () => {
+  const ui = await mount();
+  await live();
+  expect(sidecar.logins).toBe(1);
+
+  sidecar.cookies.clear();
+  act(() => { FakeSocket.opened.at(-1)!.close(4001); });
+  await settle();
+  await waitFor(() => expect(sidecar.logins).toBe(2));
+  await live();
+
+  expect(value.connected).toBe(true);
+  expect(value.error).toBeNull();
+  expect(bank().map(c => c.id)).toEqual([saved.id]);
+  expect(store.get(PIN)).toBe("cGlubmVkLWhvc3Qta2V5");
+  ui.unmount();
+});
+
+test("a 401 for a cookie the server really refused signs in again rather than signing out", async () => {
   const ui = await mount();
   await live();
   sidecar.cookies.clear();
-  await act(async () => { await value.refresh(); for (let i = 0; i < 20; i++) await Promise.resolve(); });
-  expect(value.connected).toBe(false);
-  expect(bank()).toEqual([]);
+  await act(async () => { await value.refresh(); });
+  await settle();
+  await waitFor(() => expect(sidecar.logins).toBe(2));
+  expect(value.connected).toBe(true);
+  expect(bank().map(c => c.id)).toEqual([saved.id]);
+  ui.unmount();
+});
+
+// The passcode was reset on the computer. The saved one is refused; the
+// computer stays, says so, and is not signed in with the same passcode again
+// on a timer.
+test("a saved SSH computer whose passcode changed is kept, says so, and is not retried on its own", async () => {
+  const ui = await mount(false, true);
+  await live();
+  sidecar.cookies.clear(); sidecar.passcode = "1357";
+  act(() => { FakeSocket.opened.at(-1)!.close(4001); });
+  expect(await screen.findByText("Couldn’t sign in")).toBeTruthy();
+  expect(screen.getByText(/box\.example no longer accepts the Shahi passcode saved for it/)).toBeTruthy();
+  const attempts = sidecar.logins;
+  await settle(120_000);
+  expect(sidecar.logins).toBe(attempts);
+  expect(bank().map(c => c.id)).toEqual([saved.id]);
+  expect(store.get(PIN)).toBe("cGlubmVkLWhvc3Qta2V5");
+  ui.unmount();
+});
+
+// sshd restarted, the box rebooted, a NAT forgot the connection: the socket
+// retried the dead local forward for over three minutes while the card said
+// "retrying", and no attempt ever reached the SSH server; only Retry, the
+// foreground or a network change reopened the tunnel (pre-release bug hunt).
+test("an SSH computer whose SSH session died reconnects by itself, backing off while the server is down", async () => {
+  const ui = await mount();
+  await live();
+  expect(native.open).toHaveBeenCalledTimes(1);
+
+  // The session is gone, and so is the server for a while.
+  native.open.mockRejectedValue(Object.assign(new Error("ssh_tunnel: Could not reach box.example:22."), { code: "ssh_tunnel" }));
+  act(() => { native.forwards.clear(); FakeSocket.opened.at(-1)!.close(); });
+  await settle();
+  expect(value.link).toBe("lost");
+
+  await settle(1_000);
+  expect(native.open).toHaveBeenCalledTimes(2);
+  await settle(1_999);
+  expect(native.open).toHaveBeenCalledTimes(2);
+  await settle(1);
+  expect(native.open).toHaveBeenCalledTimes(3);
+
+  // Back up: the next attempt, four seconds on, is live again.
+  native.open.mockImplementation(openForward);
+  await settle(4_000);
+  expect(native.open).toHaveBeenCalledTimes(4);
+  await live();
+  expect(value.error).toBeNull();
+  ui.unmount();
+});
+
+// A reopened tunnel costs an SSH login and a Shahi sign-in; an error the
+// sidecar answered with came through a tunnel that works.
+test("an error the computer answered with does not reopen a working SSH tunnel", async () => {
+  const ui = await mount();
+  await live();
+  const answered = (globalThis.fetch as jest.Mock).getMockImplementation()!;
+  (globalThis.fetch as jest.Mock).mockImplementation(async (url: string, init: never) =>
+    String(url).endsWith("/api/session") ? reply(503, { error: "herdr is not running" }) : answered(url, init));
+  await act(async () => { await value.refresh(); });
+  expect(value.error?.message).toBe("herdr is not running");
+  // Two minutes, with the server's heartbeat keeping the socket alive.
+  for (let s = 0; s < 12; s++) {
+    act(() => { FakeSocket.opened.at(-1)!.onmessage?.({ data: JSON.stringify({ type: "ping" }) }); });
+    await settle(10_000);
+  }
+  expect(native.open).toHaveBeenCalledTimes(1);
+  ui.unmount();
+});
+
+test.each([
+  ["a host key that does not match", { code: "ssh_host_key", message: "ssh_host_key: This computer's host key has changed since you trusted it, so your login was not sent." }],
+  ["a refused SSH login", { code: "ssh_login", message: "ssh_login: Authentication failed — check the username and credentials." }],
+  // A build from before the code said it only in words.
+  ["a refused SSH login, from an older build", { code: "ssh_tunnel", message: "ssh_tunnel: Authentication failed — check the username and credentials." }],
+])("%s is not retried on a timer", async (_, refusal) => {
+  native.open.mockRejectedValue(Object.assign(new Error(refusal.message), { code: refusal.code }));
+  const ui = await mount();
+  await settle();
+  expect(native.open).toHaveBeenCalledTimes(1);
+  await settle(120_000);
+  expect(native.open).toHaveBeenCalledTimes(1);
+  ui.unmount();
+});
+
+// The card that manages updates kept polling after its tunnel was cleared,
+// fetched "/api/meta" with no address, and showed that every two seconds.
+test("a tunnel that cannot be reopened never puts an internal address error on the This computer card", async () => {
+  sidecar.control = true;
+  const ui = await mount();
+  await live();
+  await waitFor(() => expect(value.control?.handshake?.serverId).toBe("ssh-box-id"));
+
+  native.open.mockRejectedValue(Object.assign(new Error("ssh_host_key: This computer's host key has changed since you trusted it, so your login was not sent."), { code: "ssh_host_key" }));
+  act(() => { native.forwards.clear(); FakeSocket.opened.at(-1)!.close(); });
+  await act(async () => { await value.reconnect(); });
+  // Past the poll's healthy interval, and several of its two-second retries.
+  for (let s = 0; s < 40; s++) await settle(1_000);
+
+  const relative = (globalThis.fetch as jest.Mock).mock.calls.filter(([url]) => !/^https?:/.test(String(url)));
+  expect(relative).toEqual([]);
+  expect(value.control?.error ?? "").not.toMatch(/full address/);
   ui.unmount();
 });
 

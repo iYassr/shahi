@@ -49,3 +49,8 @@ export function sshProfileReady(p: SshProfile): boolean {
   if (!p.host.trim() || !p.username.trim() || !p.passcode) return false;
   return p.auth.kind === "password" ? p.auth.password.length > 0 : p.auth.privateKey.trim().length > 0;
 }
+
+/** The SSH server as a person would name it in a message: `host`, or `host:port` off the default port. */
+export function sshHost(p: SshProfile): string {
+  return p.port === DEFAULT_SSH_PORT ? p.host.trim() : `${p.host.trim()}:${p.port}`;
+}
