@@ -227,6 +227,25 @@ test.describe("attachments", () => {
     await expect(page.locator(".attached__chip")).toContainText("photo.png");
   });
 
+  // Where a file comes from was drawn but not said, and "Take a photo" was a
+  // label for a hidden input: Tab skipped it and a screen reader read it as
+  // plain text (pre-release bug hunt).
+  test("the attach sheet says where from, and Take a photo is a control", async ({ page }) => {
+    await openPane(page);
+    await tap(page, page.locator(".compose__attach"));
+    const source = page.getByRole("group", { name: "Attach from", exact: true });
+    await expect(source.getByRole("button", { pressed: true })).toHaveText("From this device");
+    const photo = page.getByRole("button", { name: "Take a photo", exact: true });
+    await photo.focus();
+    await expect(photo).toBeFocused();
+    const chooser = page.waitForEvent("filechooser");
+    await page.keyboard.press("Enter");
+    expect((await chooser).element()).toBeTruthy();
+    expect(await (await chooser).element().getAttribute("capture")).toBe("environment");
+    await source.getByRole("button", { name: "On your computer", exact: true }).click();
+    await expect(source.getByRole("button", { pressed: true })).toHaveText("On your computer");
+  });
+
   test("an upload that fails says so", async ({ page }) => {
     await page.route("**/api/uploads", (route) =>
       route.fulfill({ status: 413, json: { error: "file is too large" } }),

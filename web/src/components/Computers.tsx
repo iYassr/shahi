@@ -25,7 +25,10 @@ export function Computers({ onClose }: { onClose?: () => void }) {
       <button className="empty__action" disabled={busy} onClick={() => void choose(computer.id)} aria-label={`Connect to ${computer.name}, ${computer.address}`}>
         {browserConnection().identity?.serverId === computer.id ? "Current computer" : "Connect"}
       </button>
-      <button className="settings__signout" disabled={busy} onClick={() => {
+      {/* Named for its computer: with two saved, both read "Revoke this
+          browser's access" and a screen reader could not tell which one
+          would be cut off (pre-release bug hunt). */}
+      <button className="settings__signout" disabled={busy} aria-label={`Revoke this browser’s access to ${computer.name}, ${computer.address}`} onClick={() => {
         if (!window.confirm(`Remove this browser’s access to ${computer.name}? A new pairing code will be needed. Other computers stay connected.`)) return;
         setBusy(true);
         void revokeBrowserComputer(computer.id).catch(e => setError(e.message)).finally(() => setBusy(false));

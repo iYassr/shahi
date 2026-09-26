@@ -24,6 +24,8 @@ import { CELL_WIDTH_RATIO, FONT_SIZE, LINE_HEIGHT } from "../termfit";
 
 interface Props {
   ansi: string;
+  /** The same screen without escapes, for assistive technology. */
+  text: string;
   cols: number;
   rows: number;
   /** Horizontal scale, 1 = true size. */
@@ -50,7 +52,7 @@ const THEME = {
   brightWhite: "#ffffff",
 };
 
-export function Terminal({ ansi, cols, rows, scale }: Props) {
+export function Terminal({ ansi, text, cols, rows, scale }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
   // The first size only: later sizes resize this instance (below) rather than
@@ -83,6 +85,21 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
     });
 
     term.open(host);
+    /*
+     * A picture of the screen, not a place to type.
+     *
+     * `disableStdin` only stops xterm sending input. Its hidden textarea
+     * stayed in the tab order, and its key handler still turned Tab,
+     * Shift+Tab and Escape into terminal sequences and cancelled them: focus
+     * could reach the terminal and never leave, and Escape could not close
+     * focus view (pre-release bug hunt, 2026-09). Declining every key hands
+     * it back to the browser, and to the page's own Escape handler.
+     */
+    term.attachCustomKeyEventHandler(() => false);
+    if (term.textarea) {
+      term.textarea.tabIndex = -1;
+      term.textarea.setAttribute("aria-hidden", "true");
+    }
     termRef.current = term;
 
     return () => {
@@ -116,10 +133,18 @@ export function Terminal({ ansi, cols, rows, scale }: Props) {
   // zoom factor and clip small views or add blank panning space above 100%.
   const width = cols * FONT_SIZE * CELL_WIDTH_RATIO;
   const height = rows * FONT_SIZE * LINE_HEIGHT;
+  /*
+   * xterm draws rows a screen reader is told to skip, and `role="img"` made
+   * everything inside presentational, so the Screen tab was a picture with no
+   * words (pre-release bug hunt). The screen's text sits beside it instead:
+   * readable by moving through it, and not a live region, because a whole
+   * screen repainted every 400ms would be announced without end.
+   */
   return (
     <div className="term" style={{ width: width * scale, height: height * scale }}
-      aria-label="Terminal output" role="img">
-      <div ref={hostRef} style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }} />
+      aria-label="Terminal output" role="region">
+      <pre className="visually-hidden">{text}</pre>
+      <div ref={hostRef} aria-hidden="true" style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }} />
     </div>
   );
 }

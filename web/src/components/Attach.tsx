@@ -40,6 +40,7 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
   const [path, setPath] = useState(startPath);
   const [listing, setListing] = useState<DirListing | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [remaining, setRemaining] = useState<File[]>([]);
@@ -99,13 +100,14 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
 
   return (
     <Sheet title="Attach a file" onClose={onClose}>
-      <div className="kinds" style={{ marginBottom: 16 }}>
-        <button className="kind" data-active={source === "phone"} onClick={() => setSource("phone")}>
+      <div className="kinds" role="group" aria-label="Attach from" style={{ marginBottom: 16 }}>
+        <button className="kind" data-active={source === "phone"} aria-pressed={source === "phone"} onClick={() => setSource("phone")}>
           From this device
         </button>
         <button
           className="kind"
           data-active={source === "server"}
+          aria-pressed={source === "server"}
           onClick={() => setSource("server")}
         >
           On your computer
@@ -128,7 +130,7 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             onChange={(e) => { void upload(e.target.files); e.target.value = ""; }}
           />
           <input
-            id="shahi-camera"
+            ref={cameraInput}
             type="file"
             accept="image/*"
             capture="environment"
@@ -145,9 +147,12 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             {uploading ? (progress === null ? "Uploading…" : `Uploading ${progress}%`) : "Choose photo or file"}
           </button>
 
-          <label className="bigaction" htmlFor="shahi-camera" style={{ margin: "10px 0 0" }}>
+          {/* A button, not a label for the hidden input: a label is not a
+              control, so Tab skipped it and a screen reader read it as plain
+              text (pre-release bug hunt). */}
+          <button className="bigaction" style={{ margin: "10px 0 0" }} disabled={uploading} onClick={() => cameraInput.current?.click()}>
             Take a photo
-          </label>
+          </button>
 
           {uploading && <button className="sheet__go" onClick={() => uploadAbort.current?.abort()}>Cancel upload</button>}
           {remaining.length > 0 && <button className="sheet__go" disabled={uploading} onClick={() => void upload(remaining)}>Retry remaining {remaining.length === 1 ? "file" : `${remaining.length} files`}</button>}

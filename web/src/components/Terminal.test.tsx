@@ -14,7 +14,11 @@ class FakeXterm {
   shown = "";
   queued: string[] = [];
   disposed = false;
+  keys: ((event: { key: string }) => boolean) | undefined;
+  /** xterm's hidden input, which it creates in `open`. */
+  textarea = { tabIndex: 0, attributes: {} as Record<string, string>, setAttribute(name: string, value: string) { this.attributes[name] = value; } };
   constructor(options: { cols: number; rows: number }) { this.cols = options.cols; this.rows = options.rows; FakeXterm.made.push(this); }
+  attachCustomKeyEventHandler(handler: (event: { key: string }) => boolean) { this.keys = handler; }
   open() {}
   dispose() { this.disposed = true; }
   reset() { this.shown = ""; }
@@ -55,19 +59,38 @@ test("the screen stays painted when the pane's real size arrives after its first
   // PaneView draws at 146×42 until the pane's layout arrives. An idle shell
   // or a blocked agent sends no new frame, so a terminal rebuilt for the real
   // size without the current screen stayed blank.
-  await act(async () => { view = create(<Terminal ansi="$ ready" cols={146} rows={42} scale={1} />, host); });
+  await act(async () => { view = create(<Terminal ansi="$ ready" text="$ ready" cols={146} rows={42} scale={1} />, host); });
   FakeXterm.process();
-  await act(async () => view!.update(<Terminal ansi="$ ready" cols={120} rows={36} scale={1} />));
+  await act(async () => view!.update(<Terminal ansi="$ ready" text="$ ready" cols={120} rows={36} scale={1} />));
   FakeXterm.process();
   expect(showing()).toHaveLength(1);
   expect(showing()[0]).toMatchObject({ cols: 120, rows: 36, screen: "$ ready" });
 });
 
 test("a new frame and a new size together print the frame once", async () => {
-  await act(async () => { view = create(<Terminal ansi="first" cols={146} rows={42} scale={1} />, host); });
+  await act(async () => { view = create(<Terminal ansi="first" text="first" cols={146} rows={42} scale={1} />, host); });
   FakeXterm.process();
-  await act(async () => view!.update(<Terminal ansi="second" cols={120} rows={36} scale={1} />));
+  await act(async () => view!.update(<Terminal ansi="second" text="second" cols={120} rows={36} scale={1} />));
   FakeXterm.process();
   expect(showing()).toHaveLength(1);
   expect(showing()[0]).toMatchObject({ cols: 120, rows: 36, screen: "second" });
+});
+
+test("the terminal hands Tab, Shift+Tab and Escape back to the page", async () => {
+  // Its hidden input kept focus and turned these keys into terminal input,
+  // so a keyboard could not leave the Screen tab or close focus view.
+  await act(async () => { view = create(<Terminal ansi="$ ready" text="$ ready" cols={146} rows={42} scale={1} />, host); });
+  const [term] = showing();
+  expect(term!.keys).toBeDefined();
+  for (const key of ["Tab", "Escape", "a"]) expect(term!.keys!({ key })).toBe(false);
+  expect(term!.textarea.tabIndex).toBe(-1);
+  expect(term!.textarea.attributes["aria-hidden"]).toBe("true");
+});
+
+test("the screen's words reach assistive technology", async () => {
+  // Drawn as a labelled image, the screen had no text a screen reader could read.
+  await act(async () => { view = create(<Terminal ansi={"\x1b[1m$ bun test\x1b[0m"} text="$ bun test" cols={146} rows={42} scale={1} />, host); });
+  const region = view!.root.findByProps({ "aria-label": "Terminal output" });
+  expect(region.props.role).toBe("region");
+  expect(region.findByType("pre").children.join("")).toBe("$ bun test");
 });

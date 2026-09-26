@@ -24,6 +24,14 @@
   overscroll-behavior: contain;
 }
 
+/* The tabs' panel takes the column's space, as its contents did before it. */
+.detail__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .detail__where {
   /* Whatever is left after the title has had what it needs, and gone entirely
      when there is not enough for both. */

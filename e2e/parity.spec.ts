@@ -33,6 +33,26 @@ test("new agent can be started from Agents using the shared contract", async ({ 
   expect(request?.body).toMatchObject({ clientRequestId: expect.any(String), kind: "claude" });
 });
 
+// Which agent and which permissions were chosen lived only in a styling
+// attribute: a screen reader could not tell whether "Skip all permissions" was
+// the one selected (pre-release bug hunt).
+test("new agent says which agent and which permissions are chosen", async ({ page }) => {
+  await page.request.post("/__stub/scenario", { data: { name: "busy", patch: { agents: ["claude", "codex"] } } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ New agent" }).click();
+  await page.locator(".sheet .row").first().click();
+  const agents = page.getByRole("group", { name: "Agent", exact: true });
+  const permissions = page.getByRole("group", { name: "Permissions", exact: true });
+  await expect(agents.getByRole("button", { pressed: true })).toHaveText("Claude");
+  await agents.getByRole("button", { name: "Codex", exact: true }).click();
+  await expect(agents.getByRole("button", { pressed: true })).toHaveText("Codex");
+  await expect(agents.getByRole("button", { name: "Claude", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await agents.getByRole("button", { name: "Claude", exact: true }).click();
+  await permissions.getByRole("button", { name: /^Skip all permissions/ }).click();
+  await expect(permissions.getByRole("button", { pressed: true })).toHaveCount(1);
+  await expect(permissions.getByRole("button", { pressed: true })).toContainText("Skip all permissions");
+});
+
 test("uncertain prompt retry retains its id and submitted draft", async ({ page }) => {
   await scenario(page, "busy");
   const ids: string[] = [];
@@ -80,7 +100,7 @@ test("Settings revokes the chosen paired device and signs out on the server", as
   await page.route("**/api/devices", (route) => route.fulfill({ json: { devices: [{ id: "test-phone", name: "Test phone", createdAt: 1, lastSeenAt: 2 }], thisDeviceId: null } }));
   await page.goto("/settings");
   page.on("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await page.getByRole("button", { name: "Revoke Test phone", exact: true }).click();
   await expect.poll(async () => (await writes(page)).some((w) => w.path === "/api/devices/test-phone" && w.method === "DELETE")).toBe(true);
   const logout = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/auth/logout" && request.method() === "POST");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

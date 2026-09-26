@@ -57,7 +57,9 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
         {error && <p className="settings__error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></p>}
         {!devices && !error && <p>Loading devices…</p>}
         {devices?.devices.length === 0 && <p>No paired devices.</p>}
-        {devices?.devices.map((device) => <div className="device-row" key={device.id}><div><strong>{device.name}</strong><p>Last seen {new Date(device.lastSeenAt).toLocaleString()}</p></div><button disabled={busy} onClick={() => {
+        {/* Each button names its device, as native does: every row's button
+            was just "Revoke" (pre-release bug hunt). */}
+        {devices?.devices.map((device) => <div className="device-row" key={device.id}><div><strong>{device.name}</strong><p>Last seen {new Date(device.lastSeenAt).toLocaleString()}</p></div><button disabled={busy} aria-label={device.id === devices.thisDeviceId ? `Sign out ${device.name}` : `Revoke ${device.name}`} onClick={() => {
           const self = device.id === devices.thisDeviceId;
           if (window.confirm(self ? "Sign this browser out?" : `Revoke access for ${device.name}?`)) void run(async () => {
             await api.revokeDevice(device.id);

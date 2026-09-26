@@ -20,7 +20,7 @@ for (const entry of ["agents", "spaces"]) for (const kind of kinds) {
       expect(starts[0]!.body).toMatchObject({ kind, mode: mode?.id ?? null, workspaceId: "w1", clientRequestId: expect.any(String) });
       await expect(page.getByRole("tab", { name: "Read", exact: true })).toBeVisible();
       await page.getByRole("tab", { name: "Screen", exact: true }).click();
-      await expect(page.getByRole("img", { name: "Terminal output" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Terminal output" })).toBeVisible();
       await page.getByRole("textbox", { name: "Message", exact: true }).fill("Synthetic agent compatibility check");
       await page.locator(".compose__send").click();
       await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("");

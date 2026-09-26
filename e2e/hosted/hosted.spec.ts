@@ -118,10 +118,10 @@ test("this browser's own row in the device list signs it out", async ({ page, re
   await pair(page, true);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   const row = page.locator(".device-row").filter({ hasText: "Browser test" });
-  await expect(row.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Sign out Browser test", exact: true })).toBeVisible();
   let asked = "";
   page.once("dialog", dialog => { asked = dialog.message(); void dialog.accept(); });
-  await row.getByRole("button", { name: "Sign out", exact: true }).click();
+  await row.getByRole("button", { name: "Sign out Browser test", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
   expect(asked).toBe("Sign this browser out?");
   expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(0);
@@ -488,7 +488,9 @@ test("both computers remain live through quick switches and revoking one leaves 
   await page.getByLabel("Switch computer", { exact: true }).click();
   await page.getByRole("button", { name: "Manage computers", exact: true }).click();
   page.once("dialog", dialog => dialog.accept());
-  await page.locator("section").filter({ hasText: `127.0.0.1:${SECOND}` }).getByRole("button", { name: "Revoke this browser’s access" }).click();
+  // Each revoke button names the computer it cuts off; two used to share one name.
+  await expect(page.getByRole("button", { name: /^Revoke this browser’s access/ })).toHaveCount(2);
+  await page.getByRole("button", { name: new RegExp(`^Revoke this browser’s access to .*127\\.0\\.0\\.1:${SECOND}$`) }).click();
   await expect.poll(async () => (await counts(SECOND)).live).toBe(0);
   expect(await counts(FIRST)).toEqual({ live: 1, handshakes: 1 });
   expect((await (await request.get(`${secondUrl}/__hosted/device-count`)).json()).count).toBe(0);

@@ -123,12 +123,13 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
             No agents found on this machine. Install one and reopen this sheet.
           </p>
         ) : (
-          <div className="kinds">
+          <div className="kinds" role="group" aria-label="Agent">
             {available.map((agent) => (
               <button
                 key={agent.kind}
                 className="kind"
                 data-active={agent.kind === kind}
+                aria-pressed={agent.kind === kind}
                 onClick={() => setKind(agent.kind)}
                 disabled={busy}
               >
@@ -153,12 +154,16 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       {modes.length > 0 && (
         <div className="field">
           <span className="field__label">Permissions</span>
-          <div className="modes">
+          {/* The choice is said as well as drawn: with only `data-active`, a
+              screen reader could not tell whether "Skip all permissions" was
+              the one selected (pre-release bug hunt). */}
+          <div className="modes" role="group" aria-label="Permissions">
             {modes.map((option) => (
               <button
                 key={option.id}
                 className="mode"
                 data-active={option.id === mode}
+                aria-pressed={option.id === mode}
                 data-unsafe={option.unsafe ?? false}
                 onClick={() => setMode(option.id)}
                 disabled={busy}

@@ -242,3 +242,38 @@ describe("a pane id another program has taken", () => {
     expect(view!.root.findAllByType("textarea")).toHaveLength(1);
   });
 });
+
+// role="tab" promised a screen reader the tabs pattern, and ArrowRight, Home
+// and End did nothing, every tab sat in the Tab order and no panel was named
+// (pre-release bug hunt).
+test("the view's tabs move with the arrow keys and control one panel", async () => {
+  const focused: string[] = [];
+  const scoped = { ...api, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  await act(async () => {
+    view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={null} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>,
+      { createNodeMock: (element) => element.type === "button" ? { focus: () => focused.push(String(element.props.id)) } : null });
+  });
+  const tabs = () => view!.root.findAll((node) => node.type === "button" && node.props.role === "tab");
+  const selected = () => tabs().find((tab) => tab.props["aria-selected"])!;
+  const press = (key: string) => act(async () => view!.root.findByProps({ role: "tablist" }).props.onKeyDown({ key, preventDefault() {} }));
+  const panel = view!.root.findByProps({ role: "tabpanel" });
+
+  expect(selected().props.id).toEndWith("-tab-read");
+  expect(tabs().map((tab) => tab.props.tabIndex)).toEqual([0, -1, -1]);
+  expect(tabs().every((tab) => tab.props["aria-controls"] === panel.props.id)).toBe(true);
+
+  await press("ArrowRight");
+  expect(selected().props.id).toEndWith("-tab-screen");
+  expect(focused.at(-1)).toEndWith("-tab-screen");
+  expect(tabs().map((tab) => tab.props.tabIndex)).toEqual([-1, 0, -1]);
+  expect(view!.root.findByProps({ role: "tabpanel" }).props["aria-labelledby"]).toBe(selected().props.id);
+  await press("End");
+  expect(selected().props.id).toEndWith("-tab-history");
+  await press("ArrowRight");
+  expect(selected().props.id).toEndWith("-tab-read");
+  await press("ArrowLeft");
+  expect(selected().props.id).toEndWith("-tab-history");
+  await press("Home");
+  expect(selected().props.id).toEndWith("-tab-read");
+  expect(focused.at(-1)).toEndWith("-tab-read");
+});

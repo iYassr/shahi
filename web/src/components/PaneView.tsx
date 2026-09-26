@@ -1,6 +1,6 @@
 import { browserConnection } from "../connection";
 import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
-import type { SetStateAction } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
 import { supports } from "@shahi/shared";
@@ -12,7 +12,7 @@ import { supports } from "@shahi/shared";
  * or shift+Tab, and agents ask for all four. Those go through herdr's
  * `pane.send_keys`, which names keys rather than sending bytes.
  */
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
 import { lazyChunk } from "../lazy-chunk";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -41,6 +41,12 @@ import { fitScale } from "../termfit";
 const Terminal = lazyChunk(() => import("./Terminal"));
 
 type Tab = "read" | "screen" | "history";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "read", label: "Read" },
+  { id: "screen", label: "Screen" },
+  { id: "history", label: "History" },
+];
 
 /** Gap between inserting text and pressing Enter. See `submit`. */
 
@@ -135,6 +141,21 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   // Keep Read available so a transcript created later can be opened.
   const [tab, setTab] = useState<Tab>("read");
   const [readable, setReadable] = useState(true);
+  const ids = useId();
+  const tabButtons = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
+  function chooseTab(next: Tab) {
+    if (next === "read") setReadable(true);
+    setTab(next);
+  }
+  function moveBetweenTabs(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const at = TABS.findIndex(({ id }) => id === tab);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1 + TABS.length, Home: 0, End: TABS.length - 1 }[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    const next = TABS[to % TABS.length]!.id;
+    chooseTab(next);
+    tabButtons.current[next]?.focus();
+  }
   const [history, setHistory] = useState<TranscriptLine[]>([]);
   const [fitWidth, setFitWidth] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -433,33 +454,31 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         </section>
       )}
 
-      <div className="tabs" role="tablist">
-        <button
+      {/*
+        * The ARIA tabs pattern in full: one tab in the Tab order, arrows and
+        * Home/End between them, and a panel they control. `role="tab"` alone
+        * promised a screen reader all of that while ArrowRight did nothing
+        * (pre-release bug hunt).
+        */}
+      <div className="tabs" role="tablist" aria-label="Conversation view" onKeyDown={moveBetweenTabs}>
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            ref={(node) => { tabButtons.current[id] = node; }}
+            id={`${ids}-tab-${id}`}
             className="tab"
             role="tab"
-            aria-selected={tab === "read"}
-            onClick={() => { setReadable(true); setTab("read"); }}
+            aria-selected={tab === id}
+            aria-controls={`${ids}-panel`}
+            tabIndex={tab === id ? 0 : -1}
+            onClick={() => chooseTab(id)}
           >
-            <UiIcon name="read" size={17} /> Read
+            {id === "history" ? label : <><UiIcon name={id} size={17} /> {label}</>}
           </button>
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "screen"}
-          onClick={() => setTab("screen")}
-        >
-          <UiIcon name="screen" size={17} /> Screen
-        </button>
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "history"}
-          onClick={() => setTab("history")}
-        >
-          History
-        </button>
+        ))}
       </div>
 
+      <div className="detail__panel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`}>
       {tab === "read" && readable ? (
         <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
@@ -474,7 +493,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
                   </div>
                 }
               >
-                <Terminal ansi={frame.ansi} cols={cols} rows={rows} scale={scale} />
+                <Terminal ansi={frame.ansi} text={frame.text} cols={cols} rows={rows} scale={scale} />
               </Suspense>
             ) : (
               <div className="empty">
@@ -518,6 +537,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
           )}
         </div>
       )}
+      </div>
 
       <div className="compose">
         <div className="keys">

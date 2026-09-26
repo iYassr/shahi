@@ -379,13 +379,6 @@
   font-size: 11px;
 }
 
-/* A label styled as an action, so the camera input can be triggered by tap. */
-label.bigaction {
-  text-align: center;
-  line-height: 46px;
-  cursor: pointer;
-}
-
 /* ------------------------------------------------------------- grouping -- */
 
 /*
