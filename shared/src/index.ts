@@ -231,6 +231,20 @@ export interface PaneFrame {
 
 export interface DashboardPane {
   paneId: string;
+  /**
+   * Which run of a program holds this pane id. Opaque; compare it, never
+   * parse it.
+   *
+   * A pane id is not a conversation: herdr gives a closed pane's id to a new
+   * pane after a restart, and every herdr session starts at w1:p1. Keep what
+   * belongs to one conversation — a draft, a pin, a place in the reader, a
+   * notification — under this beside the pane id (`occupantKey`), and send it
+   * back with a prompt, an answer or keys, so the server refuses a write the
+   * pane's new program was never meant to get (409 `pane_replaced`). It
+   * survives a herdr restart that resumes the same agent session. Absent on
+   * older servers, whose clients key by pane id alone as before.
+   */
+  instanceId?: string;
   workspaceId: string;
   workspaceLabel: string;
   tabId: string;

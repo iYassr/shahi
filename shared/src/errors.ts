@@ -95,6 +95,16 @@ export class HostKeyError extends Error {
 }
 
 /**
+ * The code of the 409 a prompt, an answer or key presses get when the pane now
+ * runs a different program from the one they were meant for, so the server
+ * sent nothing. herdr reuses pane ids, so a draft or a retried send can
+ * outlive the pane it was typed for; the pre-release bug hunt had one typed
+ * into a new shell. The response's message says so in words a client shows as
+ * they stand.
+ */
+export const PANE_REPLACED = "pane_replaced";
+
+/**
  * `host:port` of a URL, for messages. A regex rather than `URL`, because a
  * malformed address is one of the cases being described and must produce a
  * message rather than a second exception.

@@ -27,6 +27,7 @@ import { EventEmitter } from "node:events";
 export type { StatusChange };
 import type { HerdrClient } from "./herdr-client";
 import type { AnyEvent } from "./herdr-client";
+import { PaneInstances } from "./herdr-pane";
 import type {
   AgentInfo,
   AgentStatus,
@@ -87,7 +88,15 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
   #syncTimer: ReturnType<typeof setInterval> | undefined;
   #signature = "";
 
-  constructor(private readonly client: HerdrClient) {
+  /**
+   * `instances` names each pane's occupant (see `PaneInstances`). The server
+   * passes one backed by its database, so a restored agent keeps its identity
+   * across the sidecar restart that comes with every herdr start.
+   */
+  constructor(
+    private readonly client: HerdrClient,
+    private readonly instances = new PaneInstances(),
+  ) {
     super();
   }
 
@@ -113,6 +122,11 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
 
   pane(paneId: string): PaneInfo | undefined {
     return this.#state.panes.find((p) => p.pane_id === paneId);
+  }
+
+  /** Which occupancy holds the pane id now; changes when another program takes the id. */
+  instance(paneId: string): string | undefined {
+    return this.instances.of(paneId);
   }
 
   agent(paneId: string): AgentInfo | undefined {
@@ -154,6 +168,7 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     try {
       const { snapshot } = await this.client.rpc("session.snapshot", {});
       this.#state = fromSnapshot(snapshot);
+      this.instances.observe(this.#state.panes);
       this.lastSyncOk = true;
 
       // Status transitions are reported even when nothing else moved, because
@@ -289,6 +304,7 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     }
 
     if (changed) {
+      this.instances.observe(this.#state.panes);
       this.#signature = signatureOf(this.#state);
       this.emit("changed", this.#state);
     }
@@ -357,7 +373,10 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
  * only wakes clients when something they can actually see has changed.
  */
 function signatureOf(state: SessionState): string {
-  // Everything a rendered row or the Spaces grouping depends on. It grew to
+  // Everything a rendered row or the Spaces grouping depends on, and who
+  // occupies each pane: a new terminal under a reused id changes what clients
+  // may keep for that pane (see `PaneInstances`), even when nothing on the row
+  // looks different. It grew to
   // include a pane's tab and cwd (rows show the working folder, Spaces groups
   // panes under their tab) and a tabs section (a rename, close or move must
   // wake clients) — omitting them let the internal mirror recover while no
@@ -367,7 +386,7 @@ function signatureOf(state: SessionState): string {
   const panes = state.panes
     .map(
       (p) =>
-        `${p.pane_id}:${p.agent_status}:${p.agent ?? ""}:${p.tab_id ?? ""}:${p.cwd ?? ""}:${p.focused ? 1 : 0}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`,
+        `${p.pane_id}:${p.terminal_id ?? ""}:${p.agent_status}:${p.agent ?? ""}:${p.tab_id ?? ""}:${p.cwd ?? ""}:${p.focused ? 1 : 0}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`,
     )
     .sort()
     .join("|");

@@ -31,6 +31,13 @@ export interface PushPayload {
   title: string;
   body: string;
   paneId: string;
+  /**
+   * Which conversation in the pane sent this (`DashboardPane.instanceId`), so
+   * a tap after herdr has given the pane id to another program says the
+   * conversation ended instead of opening the new one. Additive: an app that
+   * does not read it routes by pane id as before.
+   */
+  instanceId?: string;
   workspaceLabel: string;
   serverId?: string;
 }
@@ -165,10 +172,12 @@ export class PushService {
     const workspaceLabel = store.workspace(change.workspaceId)?.label ?? change.workspaceId;
     const title = pane?.terminal_title_stripped ?? pane?.terminal_title ?? change.paneId;
 
+    const instanceId = store.instance(change.paneId);
     await this.send({
       title: `${workspaceLabel} needs you`,
       body: title,
       paneId: change.paneId,
+      ...(instanceId ? { instanceId } : {}),
       workspaceLabel,
     });
   }
@@ -207,7 +216,7 @@ export class PushService {
       to,
       title: payload.title,
       body: payload.body,
-      data: { paneId: payload.paneId, workspaceLabel: payload.workspaceLabel, serverId: payload.serverId },
+      data: { paneId: payload.paneId, instanceId: payload.instanceId, workspaceLabel: payload.workspaceLabel, serverId: payload.serverId },
       sound: "default",
       // Android needs a channel to make any sound at all; the app creates it.
       channelId: "blocked",

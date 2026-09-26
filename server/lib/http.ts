@@ -21,6 +21,7 @@ import {
   type PromptReceipt,
   type ServerInfo,
 } from "@shahi/shared";
+import { PANE_REPLACED } from "@shahi/shared/errors";
 import pkg from "../package.json" with { type: "json" };
 
 export type { DashboardPane };
@@ -54,6 +55,9 @@ import type { PushService } from "./push";
 import { type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 import type { ComputerControl } from "./control";
+
+/** Thrown inside a prompt's operation when the pane's program is not the one it was meant for. */
+class PaneReplaced extends Error {}
 
 export interface SocketData {
   /** The paired device behind this socket, so revoking it can close it. */
@@ -409,6 +413,23 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   // methods and a test wants to fake them.
   const herdrRpc = (method: string, params: Record<string, unknown>) =>
     client.rpc(method as Method, params as ParamsFor<Method>);
+
+  /**
+   * A write carries the occupant it was meant for (`DashboardPane.instanceId`)
+   * and is refused when another program holds the pane now. herdr reuses pane
+   * ids, and the pre-release bug hunt had a draft's retried send typed into the
+   * new shell that took its pane's id: the restarted sidecar had forgotten the
+   * first delivery, and nothing asked who was in the pane. Nothing is sent, so
+   * the refusal is safe to show as it stands. A client that sends no occupant,
+   * an older one, is not checked.
+   */
+  const replaced = (paneId: string, instanceId: unknown) =>
+    typeof instanceId === "string" && instanceId !== store.instance(paneId);
+  const replacedResponse = () => json(
+    { error: "The conversation this was meant for has ended: another program now runs in that pane, so nothing was sent.", code: PANE_REPLACED },
+    { status: 409 },
+  );
+  const badInstance = (instanceId: unknown) => instanceId !== undefined && typeof instanceId !== "string";
 
   /** herdr said no (400, with its code) or something else broke (500). */
   const failure = (err: unknown) =>
@@ -1203,7 +1224,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // between herdr's `agent.prompt` and the terminal sequence made here.
           // See `prompt.ts` for why a blocked agent takes the terminal path.
           if (sub === "/prompt" && req.method === "POST") {
-            const body = await jsonObject<{ text: string; clientMessageId: string }>(req);
+            const body = await jsonObject<{ text: string; clientMessageId: string; instanceId: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (typeof body.text !== "string" || body.text.length === 0) {
@@ -1219,6 +1240,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             ) {
               return json({ error: "clientMessageId is required" }, { status: 400 });
             }
+            if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
             // Pane ids contain ':' (`w4:p1`), so the two parts are framed
             // rather than joined — a bare join could make two different
             // (pane, message) pairs the same key.
@@ -1226,6 +1248,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             try {
               const delivery = trackDelivery(herdrRpc);
               const receipt = await operations.run(key, body.text, () => paneWrites.run(paneId, async (): Promise<PromptReceipt> => {
+                // Inside the operation, so a retry of a message delivered before
+                // the pane changed hands gets its receipt, not a refusal; and
+                // a refusal reached nothing, so it is not kept.
+                if (replaced(paneId, body.instanceId)) throw new PaneReplaced();
                 const target = await promptTarget(delivery.rpc, paneId, store.agent(paneId));
                 await submitPrompt(delivery.rpc, target, body.text!);
                 return { accepted: true, clientMessageId: body.clientMessageId!, acceptedAt: Date.now() };
@@ -1239,6 +1265,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               // Typed, but the screen moved under it before Enter; the message
               // says so, and a retry under this id is handed the same answer.
               if (err instanceof PromptMoved) return json({ error: err.message, code: err.code }, { status: 409 });
+              if (err instanceof PaneReplaced) return replacedResponse();
               return failure(err);
             }
           }
@@ -1248,7 +1275,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // now, because the phone never learns which menu shape it showed,
           // and its copy of the screen may be seconds old (see `answer.ts`).
           if (sub === "/answer" && req.method === "POST") {
-            const body = await jsonObject<{ index: unknown; label: unknown; question?: unknown; context?: unknown; promptId?: unknown }>(req);
+            const body = await jsonObject<{ index: unknown; label: unknown; question?: unknown; context?: unknown; promptId?: unknown; instanceId?: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (!Number.isInteger(body.index) || typeof body.label !== "string") {
@@ -1268,6 +1295,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             if (body.promptId !== undefined && (typeof body.promptId !== "string" || body.promptId.length > 64)) {
               return json({ error: "promptId must be the id the prompt was sent with" }, { status: 400 });
             }
+            if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
+            if (replaced(paneId, body.instanceId)) return replacedResponse();
             try {
               await paneWrites.run(paneId, () => answerPrompt(herdrRpc, paneId, {
                 index: body.index as number,
@@ -1290,11 +1319,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
           // Key presses: Escape, an arrow, Enter from the key bar. Not a prompt.
           if (sub === "/keys" && req.method === "POST") {
-            const body = await jsonObject<{ keys: unknown }>(req);
+            const body = await jsonObject<{ keys: unknown; instanceId?: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             const keys = Array.isArray(body.keys) ? body.keys.filter((k): k is string => typeof k === "string") : [];
             if (keys.length === 0) return json({ error: "keys is required" }, { status: 400 });
+            if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
+            if (replaced(paneId, body.instanceId)) return replacedResponse();
             try {
               await paneWrites.run(paneId, () => client.rpc("pane.send_keys", { pane_id: paneId, keys }));
               return json({ ok: true });
@@ -1384,6 +1415,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const frame = poller.frame(paneId) ?? (await poller.refresh(paneId));
             return json({
               pane: store.pane(paneId),
+              // Additive, as on `DashboardPane`: a pane opened before the list
+              // has loaded can still name its occupant.
+              instanceId: store.instance(paneId),
               agent: store.agent(paneId),
               layout: store.layoutForPane(paneId),
               frame: frame ?? null,
@@ -1512,6 +1546,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
 
   const panes: DashboardPane[] = await Promise.all(state.panes.map(async (pane) => ({
     paneId: pane.pane_id,
+    instanceId: store.instance(pane.pane_id),
     workspaceId: pane.workspace_id,
     workspaceLabel: store.workspace(pane.workspace_id)?.label ?? pane.workspace_id,
     tabId: pane.tab_id,

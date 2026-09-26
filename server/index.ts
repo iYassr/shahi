@@ -16,6 +16,7 @@ import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrSubscriber } from "./lib/herdr-client";
 import { BackendMonitor, probeHerdr } from "./lib/backend";
+import { PaneInstances } from "./lib/herdr-pane";
 import { ComputerControl } from "./lib/control";
 import { createServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
@@ -42,7 +43,7 @@ const db = new Database(config.dataPath, { create: true });
 chmodSync(config.dataPath, 0o600);
 db.exec("PRAGMA journal_mode = WAL");
 
-const store = new SessionStore(client);
+const store = new SessionStore(client, new PaneInstances(db));
 const transcript = new TranscriptStore(config.dataPath);
 const poller = new Poller(client, store, transcript);
 const push = new PushService(db, config);

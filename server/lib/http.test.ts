@@ -61,6 +61,9 @@ function noHerdrSocket(): Promise<unknown> {
   return client.rpc("ping", {}).then(() => { throw new Error("a socket answered"); }, (err) => err);
 }
 
+/** The last fake herdr's session, for a test that changes what herdr reports. */
+let herdrSnapshot: { panes: Record<string, unknown>[] };
+
 /** Enough of herdr for the routes under test; anything else is refused. */
 function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation = false): HerdrClient {
   const pane = {
@@ -89,6 +92,7 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     layouts: [],
     focused_pane_id: PANE,
   };
+  herdrSnapshot = snapshot;
   return {
     rpc: async (method: string, params: unknown) => {
       if (herdrDown && WRITES.has(method)) throw herdrDown;
@@ -146,6 +150,9 @@ interface Booted {
   push: PushService;
   dispatch: ReturnType<typeof createServer>["dispatch"];
   uploadDir: string;
+  store: SessionStore;
+  transcript: TranscriptStore;
+  herdr: typeof herdrSnapshot;
   stop: () => void;
 }
 
@@ -213,7 +220,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
-  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, stop: () => server.stop(true) };
+  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, store, transcript, herdr: herdrSnapshot, stop: () => server.stop(true) };
 }
 
 /**
@@ -1281,5 +1288,75 @@ describe("a pane herdr restored as a shell, still naming its dead agent's sessio
       expect(res.status).toBe(200);
       expect(JSON.stringify(await res.json())).toContain("Shall I roll back prod?");
     } finally { live.stop(); }
+  });
+});
+
+// herdr reuses pane ids: after a restart a new space takes the id of the
+// highest one closed before it. The pre-release bug hunt kept a draft's send
+// uncertain, closed that space, restarted herdr (which restarts the sidecar,
+// emptying its record of delivered operations) and made a new space: the
+// retry went to the new shell under the old id and ran there as a command.
+describe("a write meant for a pane's previous program", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    occupant = { terminal_id: "term_first" };
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    occupant = {};
+  });
+  const post = (sub: string, body: unknown) =>
+    fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}${sub}`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const occupantNow = async () => {
+    const session = (await (await fetch(`${app.base}/api/session`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } })).json()) as { panes: { paneId: string; instanceId?: string }[] };
+    return session.panes.find((p) => p.paneId === PANE)?.instanceId;
+  };
+  const writes = (from: number) => app.calls.slice(from).filter((c) => c.method.startsWith("pane.send") || c.method === "agent.prompt");
+
+  test("a retried send is refused, not typed into the program that took the pane id", async () => {
+    const first = await occupantNow();
+    expect(first).toBe("term_first");
+    const detail = (await (await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}`, { headers: { cookie: app.cookie } })).json()) as { instanceId?: string };
+    expect(detail.instanceId).toBe(first);
+    expect((await post("/prompt", { text: "delivered before", clientMessageId: "before-restart", instanceId: first })).status).toBe(200);
+
+    // The space closed and a new one took its ids.
+    app.herdr.panes[0]!.terminal_id = "term_second";
+    await app.store.resync();
+    expect(await occupantNow()).toBe("term_second");
+
+    const before = app.calls.length;
+    const refused = await post("/prompt", { text: "echo QA-RETRY-LANDED", clientMessageId: "lost-response", instanceId: first });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe("pane_replaced");
+    expect((await post("/keys", { keys: ["Enter"], instanceId: first })).status).toBe(409);
+    expect((await post("/answer", { index: 1, label: "Yes", instanceId: first })).status).toBe(409);
+    expect(writes(before)).toEqual([]);
+
+    // A message delivered before the pane changed hands still gets its receipt.
+    expect((await post("/prompt", { text: "delivered before", clientMessageId: "before-restart", instanceId: first })).status).toBe(200);
+    expect(writes(before)).toEqual([]);
+  });
+
+  test("while a write for the program there now, and one from an app that names no occupant, go through", async () => {
+    const now = await occupantNow();
+    let before = app.calls.length;
+    expect((await post("/prompt", { text: "for the new one", clientMessageId: "current", instanceId: now })).status).toBe(200);
+    expect(writes(before).length).toBeGreaterThan(0);
+    before = app.calls.length;
+    expect((await post("/prompt", { text: "from an older app", clientMessageId: "older-app" })).status).toBe(200);
+    expect(writes(before).length).toBeGreaterThan(0);
+    expect((await post("/prompt", { text: "x", clientMessageId: "bad", instanceId: 7 })).status).toBe(400);
+  });
+
+  test("the refusal reached nothing, so the same message id can be sent again once meant for the program there now", async () => {
+    const now = await occupantNow();
+    expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: "term_first" })).status).toBe(409);
+    expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: now })).status).toBe(200);
   });
 });

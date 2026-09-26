@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { PushService } from "./push";
 import type { Config } from "./config";
+import type { SessionStore } from "./state";
 
 /** In memory, so a test run never touches the real subscription store. */
 const service = (vapid: Config["vapid"] = null) =>
@@ -115,4 +116,25 @@ test("retiring an owner excludes their token from future deliveries", async () =
   }) as typeof fetch;
   expect(await push.sendTest()).toBe(1);
   expect(sent).toEqual([expect.objectContaining({ to: "ExpoPushToken[active]" })]);
+});
+
+// herdr gives a closed pane's id to the next new pane after a restart, and a
+// notification carried only the pane id: tapped later, it opened whichever
+// conversation had the id by then (pre-release bug hunt). It now names the
+// occupant that was waiting.
+test("a notification names the conversation that was waiting, not only its pane id", async () => {
+  const push = service();
+  push.subscribeExpo("ExpoPushToken[abc]");
+  let sent: { data: Record<string, unknown> }[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent = JSON.parse(String(init.body));
+    return Response.json({ data: [{ status: "ok" }] });
+  }) as typeof fetch;
+  const store = {
+    pane: () => ({ terminal_title: "claude" }),
+    workspace: () => ({ label: "api" }),
+    instance: (paneId: string) => (paneId === "w3:p1" ? "term_a" : undefined),
+  } as unknown as SessionStore;
+  await push.notifyStatusChange({ paneId: "w3:p1", workspaceId: "w3", from: "working", to: "blocked" } as never, store);
+  expect(sent[0]?.data).toMatchObject({ paneId: "w3:p1", instanceId: "term_a" });
 });
