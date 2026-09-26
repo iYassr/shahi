@@ -13,6 +13,15 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname.startsWith("/media/")) return media(request, env.MEDIA);
+    // The not-found page is the file 404.html, so the assets served it at
+    // /404 as an ordinary page with a 200, and sent /404.html there with a
+    // 307: a soft 404 at the one address that names it (pre-release bug hunt,
+    // B98). Both are answered with that page and a real 404. It is asked for
+    // as a plain GET, so no conditional header turns it into a 304.
+    if (pathname === "/404" || pathname === "/404.html") {
+      const page = await env.ASSETS.fetch(new URL("/404", request.url));
+      return new Response(page.body, { status: 404, headers: page.headers });
+    }
     if (pathname !== "/api/ios-beta") return env.ASSETS.fetch(request);
     const started = Date.now();
     const response = await signup(request, {

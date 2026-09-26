@@ -54,9 +54,13 @@ as its base. Hosted output is independently built in `web/dist-hosted` with
 The static host explicitly rewrites browser routes to the `/pwa/` application shell; it
 returns 404 for unknown paths, including `/api/*`. Those 404s carry the site's
 "Page not found" page (`site/public/404.html`, with its own CSP in a meta tag)
-rather than an empty body; still a 404, never a fake success. It must never
-supply a successful HTML response to an API request. The site is not an HTTP
-API proxy.
+rather than an empty body; still a 404, never a fake success. That includes
+`/404` and `/404.html`, which the Worker answers itself: the assets served the
+page at `/404` with a 200, as they serve any page at its name (pre-release bug
+hunt, B98). An exact app route typed with a trailing slash, such as
+`/pwa/settings/`, is redirected to the route without one; it was a 404. It must
+never supply a successful HTML response to an API request. The site is not an
+HTTP API proxy.
 
 Caching, from `site/public/_headers`: every unhashed file under `/pwa/`,
 including each app route rewritten to the shell, is `no-cache`, so a browser

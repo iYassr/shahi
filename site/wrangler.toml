@@ -15,7 +15,9 @@ preview_urls = false
 
 [assets]
 binding = "ASSETS"
-run_worker_first = ["/api/ios-beta", "/media/*"]
+# /404 and /404.html: the not-found page is itself a file, which the assets'
+# html handling served at /404 with a 200 (src/index.ts says more).
+run_worker_first = ["/api/ios-beta", "/media/*", "/404", "/404.html"]
 directory = "./dist"
 not_found_handling = "404-page"
 

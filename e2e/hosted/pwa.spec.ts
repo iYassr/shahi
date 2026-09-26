@@ -107,6 +107,52 @@ test("the site's HSTS covers its subdomains, as the relay's does", async ({ requ
   }
 });
 
+// The not-found page is itself a file, 404.html, and the assets' html
+// handling served it at /404 as an ordinary page, with a 200, and redirected
+// /404.html there (pre-release bug hunt, B98).
+test("the page-not-found page answers 404 at its own address too, never a soft 200", async ({ page, request }) => {
+  for (const path of ["/404", "/404.html"]) {
+    const response = await request.get(`${site}${path}`, { maxRedirects: 0 });
+    expect(response.status(), path).toBe(404);
+    expect(await response.text(), path).toContain("Page not found.");
+    // The same headers as the page served for any other unknown address.
+    expect(response.headers()["cache-control"], path).toContain("no-transform");
+    expect(response.headers()["x-frame-options"], path).toBe("DENY");
+    expect((await page.goto(`${site}${path}`))!.status(), path).toBe(404);
+    await expect(page.getByRole("heading", { name: "Page not found." })).toBeVisible();
+  }
+});
+
+test("an app route typed with a trailing slash reaches the app", async ({ request }) => {
+  // _redirects named the exact routes only, so /pwa/settings/ was a 404 (B98).
+  const exact = readFileSync(new URL("../../site/public/_redirects", import.meta.url), "utf8").split("\n")
+    .map(line => line.trim().split(/\s+/)).filter(parts => parts[1] === "/pwa/" && parts[2] === "200" && !parts[0]!.endsWith("*"))
+    .map(parts => parts[0]!);
+  expect(exact.length).toBeGreaterThan(3);
+  for (const path of exact) {
+    const response = await request.get(`${site}${path}/`, { maxRedirects: 0 });
+    expect(response.status(), path).toBe(301);
+    expect(new URL(response.headers()["location"]!, site).pathname, path).toBe(path);
+    expect(await (await request.get(`${site}${path}/`)).text(), path).toContain('id="root"');
+  }
+  // A notification link keeps the pane and computer it names.
+  const notification = await request.get(`${site}/pwa/notification/?pane=example&computer=example`, { maxRedirects: 0 });
+  expect(new URL(notification.headers()["location"]!, site).search).toBe("?pane=example&computer=example");
+});
+
+test("the homepage names the icon an iPhone puts on its home screen", async ({ request }) => {
+  // Without one, iOS used a screenshot of the page (B98).
+  const home = await request.get(`${site}/`);
+  const icon = /<link rel="apple-touch-icon" href="([^"]+)"/.exec(await home.text())?.[1];
+  expect(icon).toBeTruthy();
+  const response = await request.get(`${site}${icon}`);
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toBe("image/png");
+  // An iPhone's home-screen icon is 180 points square: the PNG header says so.
+  const png = await response.body();
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([180, 180]);
+});
+
 test("the website serves its own fonts and asks no third party for anything", async ({ page }) => {
   const foreign: string[] = [];
   const refused: string[] = [];
