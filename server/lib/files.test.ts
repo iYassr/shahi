@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { OutsideHomeError } from "./dirs";
@@ -101,6 +101,22 @@ describe("readWithinHome", () => {
 
   test("refuses a file that is not there", async () => {
     expect(readWithinHome({ path: join(dir, "absent.txt") })).rejects.toThrow();
+  });
+
+  // Bun's realpath read a backslash as a separator, so a legal name with one
+  // could not be opened, and `a\b.txt` served `a/b.txt` under the name
+  // `b.txt` (pre-release bug hunt, September 2026).
+  test("a file with a backslash in its name is served, and not the file its halves would spell", async () => {
+    await mkdir(join(dir, "a"), { recursive: true });
+    await writeFile(join(dir, "a", "b.txt"), "the slash path");
+    await writeFile(join(dir, "a\\b.txt"), "the backslash name");
+    await writeFile(join(dir, 'we"ird\\name.txt'), "quoted");
+
+    const named = await readWithinHome({ path: join(dir, "a\\b.txt") });
+    expect(new TextDecoder().decode(named.bytes)).toBe("the backslash name");
+    expect(named.name).toBe("a\\b.txt");
+    const quoted = await readWithinHome({ path: join(dir, 'we"ird\\name.txt') });
+    expect(new TextDecoder().decode(quoted.bytes)).toBe("quoted");
   });
 
   test("a download of a text file is still bytes", async () => {

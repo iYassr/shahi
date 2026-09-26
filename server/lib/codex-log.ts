@@ -36,8 +36,8 @@ import { Database } from "bun:sqlite";
 import { mkdtemp, readFile, rm, open, readdir, readlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { realpathSync } from "node:fs";
 import type { HerdrClient } from "./herdr-client";
+import { realPathSync } from "./real-path";
 import {
   anchorAfter, emptyIndex, indexStillHolds, inTranscript, isRecord, renderUserText, stringOr,
   type Block, type IndexedFile, type LogMessage, type SessionLog,
@@ -55,7 +55,7 @@ const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), ".codex");
 /** A path as the filesystem knows it, or unchanged if it does not exist yet. */
 function realpathIfExists(path: string): string {
   try {
-    return realpathSync(path);
+    return realPathSync(path);
   } catch {
     return path;
   }

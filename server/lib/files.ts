@@ -17,11 +17,12 @@
  * exists so that a malformed or hostile path cannot quietly walk somewhere
  * nobody intended.
  */
-import { constants, realpathSync } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { OutsideHomeError, expandHome } from "./dirs";
+import { realPath, realPathSync } from "./real-path";
 
 /** Enough to open in a browser without pretending to be a full file server. */
 const CONTENT_TYPES: Record<string, string> = {
@@ -190,7 +191,7 @@ export function contentTypeFor(path: string, { download = false } = {}): string 
  */
 export const ROOTS = [homedir(), tmpdir()].map((root) => {
   try {
-    return realpathSync(root);
+    return realPathSync(root);
   } catch {
     return root;
   }
@@ -208,7 +209,7 @@ async function resolveReadable(input: string): Promise<string> {
   const expanded = expandHome(input || "~");
   const absolute = isAbsolute(expanded) ? expanded : resolve(homedir(), expanded);
 
-  const real = await realpath(absolute);
+  const real = await realPath(absolute);
   if (!ROOTS.some((root) => within(real, root))) throw new OutsideHomeError(input);
   return real;
 }

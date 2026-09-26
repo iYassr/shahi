@@ -1,9 +1,10 @@
 /** Cursor CLI JSONL transcripts. Session ownership comes from herdr or the exact
  * pane process's open store.db; a shared working folder is never a match. */
-import { readdir, readlink, realpath, mkdtemp, readFile, rm } from "node:fs/promises";
+import { readdir, readlink, mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
+import { realPath } from "./real-path";
 import { inTranscript, isRecord, normalise, readWindow, type LogMessage, type SessionLog } from "./session-log";
 const ROOT = join(homedir(), ".cursor");
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -18,12 +19,12 @@ export async function findCursorTranscript(sessionId: string, root = ROOT): Prom
   if (!UUID.test(sessionId)) return null;
   const projects = join(root, "projects");
   try {
-    const realRoot = await realpath(projects);
+    const realRoot = await realPath(projects);
     const matches: string[] = [];
     for (const project of await readdir(projects)) {
       for (const tail of [join(sessionId, `${sessionId}.jsonl`), `${sessionId}.jsonl`]) {
         try {
-          const path = await realpath(join(projects, project, "agent-transcripts", tail));
+          const path = await realPath(join(projects, project, "agent-transcripts", tail));
           if (path.startsWith(realRoot + "/")) matches.push(path);
         } catch { /* This project does not own that session. */ }
       }

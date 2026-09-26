@@ -12,9 +12,9 @@
  * that leaks directory structure is still worth not having.
  */
 import type { DirEntry, DirListing } from "@shahi/shared";
-import { realpathSync } from "node:fs";
-import { access, readdir, realpath, stat } from "node:fs/promises";
+import { access, readdir, stat } from "node:fs/promises";
 import { constants } from "node:fs";
+import { realPath, realPathSync } from "./real-path";
 
 export type { DirEntry, DirListing };
 import { homedir } from "node:os";
@@ -33,7 +33,7 @@ const HOME = homedir();
  */
 const REAL_HOME = (() => {
   try {
-    return realpathSync(HOME);
+    return realPathSync(HOME);
   } catch {
     return HOME;
   }
@@ -77,7 +77,7 @@ export async function resolveWithinHome(input: string): Promise<string> {
   const absolute = isAbsolute(expanded) ? expanded : resolve(HOME, expanded);
 
   // realpath throws on a missing path, which is the right answer for a picker.
-  const real = await realpath(absolute);
+  const real = await realPath(absolute);
   if (real !== REAL_HOME && !real.startsWith(`${REAL_HOME}/`)) throw new OutsideHomeError(input);
   return real;
 }

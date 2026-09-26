@@ -72,6 +72,21 @@ describe("listDirectories", () => {
     expect(names).toEqual(sorted);
   });
 
+  // Bun's realpath read a backslash as a separator, so a folder the listing
+  // showed could not itself be opened (pre-release bug hunt, September 2026).
+  test("a folder with a backslash in its name can be listed", async () => {
+    const fixture = mkdtempSync(join(HOME, "shahi-dirs-test-"));
+    try {
+      mkdirSync(join(fixture, "proj\\one", "inside"), { recursive: true });
+      const parent = await listDirectories(collapseHome(fixture));
+      const entry = parent.entries.find((e) => e.name === "proj\\one");
+      expect(entry).toBeDefined();
+      const listing = await listDirectories(entry!.display);
+      expect(listing.display).toBe(collapseHome(join(fixture, "proj\\one")));
+      expect(listing.entries.map((e) => e.name)).toEqual(["inside"]);
+    } finally { rmSync(fixture, { recursive: true, force: true }); }
+  });
+
   test("offers a parent below home", async () => {
     const home = await listDirectories("~");
     const first = home.entries[0];

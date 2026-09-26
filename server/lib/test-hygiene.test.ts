@@ -55,6 +55,7 @@ describe("the test tooling cleans up after itself", () => {
       "server/lib/codex-log.test.ts",
       "server/lib/session-log.test.ts",
       "server/lib/odd-rows.test.ts",
+      "server/lib/real-path.test.ts",
       // Skipped without SHAHI_HERDR_LIVE=1 — and a skipped describe's body
       // still runs, while its afterAll does not.
       "server/lib/herdr-live.test.ts",
