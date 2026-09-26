@@ -513,3 +513,21 @@ describe("delivery failures", () => {
     ]);
   });
 });
+
+// A terminal title of only spaces reached the phone as a notification with an
+// empty body (pre-release bug hunt): the body names the pane by its id instead.
+test("a question from a pane whose title is only spaces names the pane", async () => {
+  const push = service();
+  push.subscribeExpo("ExpoPushToken[abc]");
+  let sent: { title: string; body: string }[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent = JSON.parse(String(init.body));
+    return Response.json({ data: [{ status: "ok" }] });
+  }) as typeof fetch;
+  const store = {
+    pane: () => ({ pane_id: "w1:p1", terminal_title: "   " }),
+    workspace: () => ({ label: "one" }),
+  } as unknown as SessionStore;
+  await push.notifyStatusChange({ paneId: "w1:p1", workspaceId: "w1", from: "working", to: "blocked" }, store);
+  expect(sent).toEqual([expect.objectContaining({ title: "one needs you", body: "w1:p1" })]);
+});

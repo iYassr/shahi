@@ -60,9 +60,20 @@ export interface StatusChange extends WireStatusChange {
  * body, from one place so the two cannot name the same pane differently.
  * `terminal_title_stripped` is already a good human summary of what an agent
  * is doing ("Convert PDF to verbatim markdown").
+ *
+ * Trimmed, and a title of only spaces is no title. herdr omits the stripped
+ * title when stripping leaves nothing, and falling back to the raw one then
+ * passed a program's title of spaces through: a row with no name, read aloud
+ * as "   , Claude, idle", and a notification with an empty body (pre-release
+ * bug hunt). Null lets every client fall back to the pane id, including app
+ * builds already installed that only fall back on null.
  */
 export function paneTitle(pane: PaneInfo): string | null {
-  return pane.terminal_title_stripped ?? pane.terminal_title ?? pane.label ?? null;
+  for (const title of [pane.terminal_title_stripped, pane.terminal_title, pane.label]) {
+    const trimmed = title?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
 }
 
 /** Ordering for the dashboard: what needs a human first. */

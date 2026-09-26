@@ -18,7 +18,7 @@ import { Auth } from "./auth";
 import { Devices, Pairing } from "./pairing";
 import type { Config } from "./config";
 import { HerdrClient, HerdrError } from "./herdr-client";
-import { createServer, MAX_PROMPT_BYTES } from "./http";
+import { createServer, dashboard, MAX_PROMPT_BYTES } from "./http";
 import { Poller } from "./poller";
 import { PushService } from "./push";
 import { SessionStore } from "./state";
@@ -1692,4 +1692,21 @@ describe("waiting cards on every dashboard", () => {
     expect(body.code).toBe("prompt_gone");
     expect(body.error).not.toContain(PANE);
   });
+});
+
+// herdr omits the stripped title when a program's title strips to nothing, and
+// the raw title of spaces was passed on: an Agents row with no name, read
+// aloud as "   , Claude, idle", on app builds that fall back only on null
+// (pre-release bug hunt).
+test("a pane whose title is only spaces reaches the phone with no title", async () => {
+  const pane = { pane_id: PANE, workspace_id: "w1", tab_id: "t1", agent_status: "idle", terminal_title: "   ", focused: false, revision: 0 };
+  const snapshot = {
+    version: "0.9.1", protocol: 22, layouts: [], panes: [pane], agents: [{ ...pane, agent: "claude" }],
+    workspaces: [{ workspace_id: "w1", label: "one", agent_status: "idle", pane_count: 1, tab_count: 1, focused: true }],
+    tabs: [{ tab_id: "t1", workspace_id: "w1", label: "1", number: 1, agent_status: "idle", pane_count: 1, focused: true }],
+  };
+  const store = new SessionStore({ rpc: async () => ({ snapshot }) } as unknown as HerdrClient);
+  await store.resync();
+  const session = await dashboard(store, { frame: () => undefined } as unknown as Poller);
+  expect(session.panes.map((p) => [p.paneId, p.title])).toEqual([[PANE, null]]);
 });

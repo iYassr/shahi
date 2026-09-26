@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { HerdrClient } from "./herdr-client";
 import type { AgentInfo, PaneInfo, SessionSnapshot, TabInfo, WorkspaceInfo } from "./herdr-schema";
-import { SessionStore, type StatusChange } from "./state";
+import { SessionStore, paneTitle, type StatusChange } from "./state";
 
 const workspace = (id: string, over: Partial<WorkspaceInfo> = {}): WorkspaceInfo => ({
   workspace_id: id,
@@ -384,4 +384,14 @@ describe("SessionStore", () => {
     expect(layout?.area).toEqual({ x: 26, y: 1, width: 146, height: 42 });
     expect(store.layoutForPane("nope:p9")).toBeUndefined();
   });
+});
+
+// A program can set a terminal title of only spaces. herdr then omits the
+// stripped title, and the raw one gave a row with no name, read aloud as
+// "   , Claude, idle", and a notification with an empty body (pre-release bug
+// hunt). Such a title is no title, so every client falls back to the pane id.
+test("a pane whose title is only spaces has no title", () => {
+  expect(paneTitle(pane("w1:p1", "w1", { terminal_title: "   " }))).toBeNull();
+  expect(paneTitle(pane("w1:p1", "w1", { terminal_title_stripped: " ", terminal_title: "\t", label: " build " }))).toBe("build");
+  expect(paneTitle(pane("w1:p1", "w1", { terminal_title_stripped: "  Fix the build ", terminal_title: "✳ Fix the build" }))).toBe("Fix the build");
 });
