@@ -29,7 +29,7 @@ import {
   type NativeScrollEvent,
 } from "react-native";
 import { Text, useLargeText } from "@/components/text";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
 // wholesale, so a separately installed @react-navigation/elements would carry
@@ -41,7 +41,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import type { Activity, LogBlock, LogMessage, ParsedPrompt, PromptOption, SessionLog } from "@shahi/shared";
 import { FileDownloadError } from "@shahi/shared/file-download";
-import { connection, UnauthorizedError, UnreachableError } from "@/lib/api";
+import { ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells } from "@/lib/scroll-cells";
 import { memoryOf } from "@/lib/reader-memory";
@@ -214,6 +214,15 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   const [awaiting, setAwaiting] = useState(false);
   const [readable, setReadable] = useState(true);
   const [loading, setLoading] = useState(true);
+  /**
+   * The computer says there is no such pane. A notification or link for a
+   * pane closed since used to open a live-looking conversation with a
+   * composer that never closed, polling for 404s every 2.5 s, while the route
+   * dismisses only panes it has seen in the list (pre-release bug hunt).
+   */
+  const [gone, setGoneState] = useState(false);
+  const goneRef = useRef(false);
+  const setGone = useCallback((value: boolean) => { goneRef.current = value; setGoneState(value); }, []);
   const [draft, setDraftState] = useState(savedDraft.text);
   function setDraft(value: SetStateAction<string>) {
     savedDraft.text = typeof value === "function" ? value(savedDraft.text) : value;
@@ -529,6 +538,9 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
+  // A later snapshot listing it means the 404 raced its creation: look again.
+  const listed = !!pane;
+  useEffect(() => { if (listed && goneRef.current) setGone(false); }, [listed, setGone]);
   // The native header sits above this screen, and "padding" measures from the
   // window — without the offset the composer stops a header's height short.
   const headerHeight = useHeaderHeight();
@@ -677,6 +689,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       try {
         const detail = await detailRequest;
         if (!stillActive()) return;
+        if (goneRef.current) setGone(false);
         setPrompt(detail.frame?.prompt ?? null);
         const act = detail.frame?.activity ?? null;
         setActivity(act);
@@ -699,11 +712,12 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
         // these 503s were swallowed and the pane looked fine until a send
         // failed (pre-release bug hunt).
         if (backendUnavailable(e) && control?.handshake?.backend.state === "connected") void control.refresh();
+        if (e instanceof ApiError && e.status === 404) setGone(true);
         // Otherwise transient; the next poll will catch up.
       }
     };
     await Promise.all([readLog(), readScreen()]);
-  }, [paneId, unauthorized, stillActive, control]);
+  }, [paneId, unauthorized, stillActive, control, setGone]);
   // One load in flight at most. The timer, a pushed frame and a `log_changed`
   // all call this; while a terminal repaints they arrive faster than a fetch
   // returns, and un-coalesced that was several identical requests outstanding
@@ -721,11 +735,13 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
    * instead, then relaxes back to 2.5s so a quiet pane costs nothing.
    */
   useEffect(() => {
+    // Nothing to poll for a pane the computer says does not exist.
+    if (gone) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       await load();
-      if (cancelled) return;
+      if (cancelled || goneRef.current) return;
       const fast = Date.now() < activeUntil.current;
       timer = setTimeout(() => void tick(), fast ? POLL_ACTIVE_MS : POLL_MS);
     };
@@ -734,7 +750,7 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, gone]);
 
   // Event-driven refresh: the server already pushes a frame the instant this
   // pane's content changes, so react to that instead of waiting for the next
@@ -868,6 +884,19 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       <Text style={styles.sendText}>Send</Text>
     </Pressable>
   );
+
+  if (gone) {
+    return (
+      <View style={[styles.screen, styles.centered]}>
+        <Stack.Screen options={{ headerTitle: () => <Text style={styles.title} numberOfLines={1}>{pane?.title ?? paneId}</Text> }} />
+        <Text style={styles.goneTitle} accessibilityRole="header">This pane is gone</Text>
+        <Text style={styles.dim}>It was closed on the computer, or it no longer exists.</Text>
+        <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}>
+          <Text style={styles.ghostText}>Back to agents</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -1811,6 +1840,7 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   dim: { color: theme.dim, textAlign: "center" },
+  goneTitle: { color: theme.fg, fontSize: 18, fontWeight: "600", textAlign: "center" },
 
   banner: {
     flexDirection: "row",

@@ -1703,3 +1703,39 @@ describe("herdr stopped behind a live link", () => {
     expect(view.getByText(offline.message)).toBeTruthy();
   });
 });
+
+// A notification or a link for a pane closed since: the screen showed a live
+// composer and polled 404s every 2.5 s for as long as it stayed open
+// (pre-release bug hunt).
+describe("a pane that no longer exists", () => {
+  const GONE = "w7:p77";
+  const panes = mockSession.session.panes;
+  afterEach(() => { mockSession.session.panes = panes; });
+
+  test("a notification for an already closed pane says it is gone, offers no composer, and stops asking", async () => {
+    mocked.sessionLog.mockRejectedValue(new ApiError("no such pane", 404));
+    mocked.pane.mockRejectedValue(new ApiError("no such pane", 404));
+    const view = render(<Pane paneId={GONE} />);
+    await view.findByText("This pane is gone");
+    expect(view.getByText("Back to agents")).toBeTruthy();
+    expect(view.queryByPlaceholderText(/Reply to this/)).toBeNull();
+    expect(view.queryByText("Send")).toBeNull();
+    const asked = mocked.pane.mock.calls.length;
+    await act(async () => { jest.advanceTimersByTime(20_000); });
+    await settle();
+    expect(mocked.pane.mock.calls.length).toBe(asked);
+  });
+
+  test("a pane that answered 404 before the list knew it opens once the list has it", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Started.")]));
+    mocked.pane.mockRejectedValueOnce(new ApiError("no such pane", 404));
+    mockSession.session.panes = [];
+    const view = render(<Pane paneId={GONE} />);
+    await view.findByText("This pane is gone");
+    mockSession.session.panes = [...panes, { paneId: GONE, title: "New agent", agent: "claude", isAgent: true }];
+    view.rerender(<Pane paneId={GONE} />);
+    await view.findByText(/Started\./);
+    expect(view.queryByText("This pane is gone")).toBeNull();
+    expect(view.getByPlaceholderText(/Reply to this/)).toBeTruthy();
+  });
+});
