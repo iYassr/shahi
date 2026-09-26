@@ -41,7 +41,11 @@ Publish only from a clean checkout of a committed revision, and record the
 Cloudflare version ID beside that commit, as the verified-deployment section
 below does. The privacy policy the App Store listing links to was once
 deployed from uncommitted work, so for days the text users read existed in no
-commit at all.
+commit at all. Every publish gets an entry of its own, with the version it
+replaced, which is the one to roll back to; `bunx wrangler deployments list`
+in `site/` shows both. The homepage publish of 25 September went unrecorded,
+so this file named a version that was no longer serving as the current one
+(pre-release bug hunt, B102).
 
 `bun run build:web` still builds the local sidecar client in `web/dist` with `/`
 as its base. Hosted output is independently built in `web/dist-hosted` with
@@ -243,7 +247,20 @@ Cache-Control, a range past the end with 416, and an unknown name with 404;
 `/site.css` now arrives with `content-encoding: br` while `/` keeps
 `no-transform`. In Chromium (1440 wide) and WebKit (iPhone 14) the page chose
 the wide and the square cut, played, seeked to 0:20 and loaded all 14 caption
-cues, with no policy refusals and no request to another origin.
+cues, with no policy refusals and no request to another origin. It replaced
+`33c11069-ae4b-468e-a14e-6dbd68eff044` (below), the version to roll back to.
+
+## Deployment — 25 September 2026, the homepage's two download choices
+
+Published at 23:16 UTC on 24 September from `0dd970a` (the web app and a
+TestFlight invite side by side) as Cloudflare version
+`33c11069-ae4b-468e-a14e-6dbd68eff044`, fifty minutes after the entry below,
+which it replaced; `fa88e525-771d-4d0a-a633-13ab292b9587` is its rollback. It
+was not recorded when it was published, so what was checked afterwards is not
+known. Recorded from `wrangler deployments list` after the pre-release bug hunt
+(B102) found it serving and this file naming `fa88e525` as current. The hunt
+found the live files byte-identical to `0dd970a`; the browser app under `/pwa/`
+had not changed since `a586b7e`.
 
 ## Verified deployment — 25 September 2026
 
