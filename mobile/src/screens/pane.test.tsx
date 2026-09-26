@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
-import { api, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
+import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 
@@ -1678,5 +1678,28 @@ describe("spoken labels", () => {
     expect(yes.props.accessibilityState).toMatchObject({ selected: true });
     const no = view.getByRole("button", { name: "2. No, and tell Claude what to do differently. Esc" });
     expect(no.props.accessibilityState).toMatchObject({ selected: false });
+  });
+});
+
+// herdr stopped while the socket stayed open: the pane's reads answered 503,
+// were treated as a blip, and nothing looked wrong until a send failed
+// (pre-release bug hunt).
+describe("herdr stopped behind a live link", () => {
+  const offline = { state: "offline", message: "herdr is offline. Shahi will reconnect automatically." };
+  const control = { handshake: { capabilities: ["attachments"], backend: { state: "connected" } as { state: string; message?: string } }, refresh: jest.fn(async () => {}) };
+  beforeEach(() => { control.handshake.backend = { state: "connected" }; control.refresh.mockClear(); (mockSession as { control?: object }).control = control; });
+  afterEach(() => { delete (mockSession as { control?: object }).control; });
+
+  test("an open pane asks the computer at once and says herdr is not running", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready.")]));
+    mocked.pane.mockRejectedValue(new ApiError(offline.message, 503, "backend_unavailable"));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Ready\./);
+    await waitFor(() => expect(control.refresh).toHaveBeenCalled());
+    // The computer's answer, which the header and every banner read.
+    control.handshake.backend = offline;
+    view.rerender(<Pane paneId={PANE} />);
+    expect(view.getByText("herdr isn’t running on your computer")).toBeTruthy();
+    expect(view.getByText(offline.message)).toBeTruthy();
   });
 });

@@ -1,7 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import { SessionProvider, useSession } from "./session";
-import { api, connection, IncompatibleServerError, UnauthorizedError } from "./api";
+import { api, ApiError, connection, IncompatibleServerError, UnauthorizedError } from "./api";
 import { COMPUTERS_KEY, computerId, type ComputerConnection } from "./computers";
 import { openTunnel } from "./tunnel";
 import { AppState } from "react-native";
@@ -287,6 +287,27 @@ test("update needed clears by itself once the computer speaks the app's contract
     expect(value.link).toBe("live");
     expect(socket.ensureConnected).toHaveBeenCalled();
   } finally { ui.unmount(); retry.mockRestore(); delete (api as unknown as { control?: unknown }).control; }
+});
+
+// herdr stopped: after a return from the background the session answered 503
+// and the app said "Reconnecting…" while the computer's own report of herdr
+// waited for its 30-second poll (pre-release bug hunt).
+test("a session refused because herdr stopped asks the computer for herdr's state at once", async () => {
+  const offline = { state: "offline", message: "herdr is offline. Shahi will reconnect automatically." };
+  const handshake = (backend: object) => ({ control: 1, serverId: b.serverId, buildId: "one", api: { min: 5, max: 5 }, capabilities: [], backend, update: { managed: false, phase: "idle", channel: "stable" } });
+  const control = jest.fn(async () => handshake({ state: "connected", version: "0.9.1", protocol: 22 }) as unknown);
+  (api as unknown as { control: typeof control }).control = control;
+  const ui = await mount(); await pairBoth();
+  try {
+    await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(value.control?.handshake?.backend.state).toBe("connected");
+    const asked = control.mock.calls.length;
+    control.mockResolvedValue(handshake(offline));
+    (api.session as jest.Mock).mockRejectedValueOnce(new ApiError(offline.message, 503, "backend_unavailable"));
+    await act(async () => { await value.refresh(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(control.mock.calls.length).toBeGreaterThan(asked);
+    expect(value.control?.handshake?.backend.state).toBe("offline");
+  } finally { ui.unmount(); delete (api as unknown as { control?: unknown }).control; }
 });
 
 test("an offline notification wins over a late initial network snapshot and preserves drafts", async () => {

@@ -1,7 +1,7 @@
 import { clearNativeDrafts, forgetNativeDraft } from "./drafts";
 import { forgetPaneMemory } from "./reader-memory";
 import { reconcileSession } from "./session-reconcile";
-import { endedPanes, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type AnsweredPrompt, type Reviewed, type DashboardPane, type ParsedPrompt, type PromptState, type Session, type SocketMessage } from "@shahi/shared";
+import { backendUnavailable, endedPanes, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type AnsweredPrompt, type Reviewed, type DashboardPane, type ParsedPrompt, type PromptState, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
@@ -125,6 +125,8 @@ export class ComputerSession {
     if (e instanceof UnauthorizedError) { void this.unauthorized(); return; }
     this.error = e as Error;
     this.link = "lost";
+    // herdr, not the link: learn its state now for the header and banner.
+    if (backendUnavailable(e)) void this.control.refresh();
     if (e instanceof IncompatibleServerError) { this.incompatible = true; this.socket?.close(); }
     this.changed();
   }

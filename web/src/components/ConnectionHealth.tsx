@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { connectionHealth } from "@shahi/shared";
+import { useComputerControl } from "./ComputerUpdate";
 
 export function ConnectionHealth({ link, error, relay, onRetry }: {
   link: "connecting" | "live" | "lost"; error: Error | null; relay: boolean; onRetry: () => Promise<void>;
@@ -11,7 +12,9 @@ export function ConnectionHealth({ link, error, relay, onRetry }: {
     window.addEventListener("online", update); window.addEventListener("offline", update);
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
   }, []);
-  const health = connectionHealth({ link, error, online, transport: relay ? "relay" : "direct" });
+  // herdr's own state: the socket stays open while herdr is stopped.
+  const backend = useComputerControl()?.handshake?.backend;
+  const health = connectionHealth({ link, error, online, transport: relay ? "relay" : "direct", backend });
   if (!health) return null;
   return <div className="connection-health" role="status">
     <div><strong>{health.title}</strong><p>{health.detail}</p><small>Live updates resume when the connection returns.</small></div>

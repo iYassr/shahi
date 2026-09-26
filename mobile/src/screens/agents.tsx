@@ -1,9 +1,10 @@
 import { plainHeaderRight } from "@/lib/header-controls";
 import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
+import { LinkBadge } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
-import { agentLabel, answerRefused, inboxPanes, latestConversations, promptIdentity as identityOf, type AnsweredPrompt } from "@shahi/shared";
+import { agentLabel, answerRefused, backendUnavailable, inboxPanes, latestConversations, promptIdentity as identityOf, type AnsweredPrompt } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useCallback, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -30,7 +31,11 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
-  const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId } = useSession();
+  const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId, control } = useSession();
+  // Nothing a card offers can be answered while herdr is not running, though
+  // the socket, and so the list, stays up (pre-release bug hunt).
+  const backend = control?.handshake?.backend;
+  const herdrAway = backendUnavailable(error) || !!backend && backend.state !== "connected";
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */
@@ -72,9 +77,26 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // an incompatible snapshot is not useful: every action against it will be
   // refused. Always replace stale data with the upgrade instructions for a
   // 426, including when the server changed versions while the app was open.
+  // Just the server and whether it is talking — the waiting count was the
+  // card's job said twice, and the bell now lives in Settings. Given on every
+  // path below, and the badge reads the session itself: a header keeps the
+  // last options a screen set, and the error path used to set none.
+  const header = (
+    <Stack.Screen
+      options={{
+        headerLeft: () => <GreetingLogo size={36} />,
+        ...plainHeaderRight(
+          <View style={styles.status}>
+            <ComputerSwitcher />
+            <LinkBadge />
+          </View>
+        ),
+      }}
+    />
+  );
   if (error && shouldTakeOverSession(error, session)) {
     return (
-      <View style={{ flex: 1 }}><ComputerUpdate /><Unreachable
+      <View style={{ flex: 1 }}>{header}<ComputerUpdate /><Unreachable
         title={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
         message={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
         server={server}
@@ -86,6 +108,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   if (!session) {
     return (
       <View style={styles.centered}>
+        {header}
         <ActivityIndicator color={theme.peach} />
         <Text style={styles.dim}>Connecting to your computer…</Text>
       </View>
@@ -136,21 +159,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
 
   return (
     <View style={styles.screen}>
-      {/* Just the server and whether it is talking — the waiting count was
-          the card's job said twice, and the bell now lives in Settings. */}
-      <Stack.Screen
-        options={{
-          headerLeft: () => <GreetingLogo size={36} />,
-          ...plainHeaderRight(
-            <View style={styles.status}>
-              <ComputerSwitcher />
-              <Text style={[styles.link, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
-                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
-              </Text>
-            </View>
-          ),
-        }}
-      />
+      {header}
       <FlatList
         {...agentScroll}
         contentInsetAdjustmentBehavior="automatic"
@@ -214,6 +223,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
                 pane={pane}
                 prompt={prompts[pane.paneId]}
                 answered={answered[pane.paneId]}
+                stale={herdrAway}
                 onAnswer={(option) => answer(pane.paneId, option)}
                 onOpen={() => onOpenPane(pane.paneId)}
               />
@@ -231,7 +241,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
           <View>
           {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
           {item.status === "blocked" ? <BlockedCard key={promptIdentity(prompts[item.paneId])} pane={item} prompt={prompts[item.paneId]}
-            answered={answered[item.paneId]} onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
+            answered={answered[item.paneId]} stale={herdrAway} onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
             pane={item}
             pinned={pins.has(item.paneId)}
             onPress={onOpenPane}
@@ -445,6 +455,7 @@ function BlockedCard({
   pane,
   prompt,
   answered,
+  stale = false,
   onAnswer,
   onOpen,
 }: {
@@ -452,6 +463,8 @@ function BlockedCard({
   prompt: ParsedPrompt | undefined;
   /** This phone's answer to the question the card last showed, while the pane still waits. */
   answered?: AnsweredPrompt;
+  /** herdr is not running: the question is as it was last seen, and cannot be answered. */
+  stale?: boolean;
   /** Rejects when the answer did not land; the card then offers its options again. */
   onAnswer: (option: PromptOption) => Promise<void>;
   onOpen: () => void;
@@ -509,6 +522,7 @@ function BlockedCard({
               ))}
             </View>
           )}
+          {stale && <Text style={styles.stale}>herdr isn’t running, so this question is as it was last seen and can’t be answered yet.</Text>}
           {prompt.options.map((option) => {
             const isArmed = armed === option.index;
             const lit = isArmed || (armed === null && !!option.selected);
@@ -520,10 +534,10 @@ function BlockedCard({
                 // Where the terminal's cursor sits is a state, said as one.
                 accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail]
                   .filter(Boolean).join(", ")}
-                accessibilityState={{ selected: lit, disabled: armed !== null }}
+                accessibilityState={{ selected: lit, disabled: armed !== null || stale }}
                 key={option.index}
-                style={[styles.choice, isArmed && styles.choiceArmed]}
-                disabled={armed !== null}
+                style={[styles.choice, isArmed && styles.choiceArmed, stale && styles.choiceStale]}
+                disabled={armed !== null || stale}
                 onPress={() => choose(option)}
               >
                 <Text style={styles.cursor}>{lit ? "❯" : " "}</Text>
@@ -575,7 +589,6 @@ const styles = StyleSheet.create({
   dim: { color: theme.dim, textAlign: "center" },
 
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
-  link: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
   notice: {
     color: theme.dim,
     fontSize: 12,
@@ -699,6 +712,8 @@ const styles = StyleSheet.create({
 
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 11, paddingHorizontal: 4, borderRadius: 6, borderCurve: "continuous" },
   choiceArmed: { backgroundColor: theme.raised },
+  choiceStale: { opacity: 0.45 },
+  stale: { color: theme.dim, fontSize: 13, lineHeight: 18, marginBottom: 6 },
   cursor: { color: theme.peach, fontFamily: theme.mono, fontSize: 14, width: 12 },
   choiceIndex: { color: theme.dim, fontSize: 14 },
   choiceBody: { flex: 1 },

@@ -1,5 +1,6 @@
 import { plainHeaderRight } from "@/lib/header-controls";
 import { ComputerSwitcher } from "@/components/computer-switcher";
+import { LinkBadge } from "@/components/link-badge";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectionHealth } from "@/components/connection-health";
 import { randomUUID } from "expo-crypto";
@@ -33,25 +34,26 @@ import { Icon } from "@/components/icons";
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
-  const { link, activeComputerId } = useSession();
+  const { activeComputerId } = useSession();
   // Above the `!session` return below: hooks cannot be called conditionally.
   const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId);
-  if (!session) return <Centered>Connecting…</Centered>;
+  const header = (
+    <Stack.Screen
+      options={{
+        ...plainHeaderRight(
+          <View style={styles.status}>
+            <ComputerSwitcher />
+            <LinkBadge />
+          </View>
+        ),
+      }}
+    />
+  );
+  if (!session) return <>{header}<Centered>Connecting…</Centered></>;
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen
-        options={{
-          ...plainHeaderRight(
-            <View style={styles.status}>
-              <ComputerSwitcher />
-              <Text style={[styles.statusText, { color: link === "live" ? theme.mint : theme.dim }]} maxFontSizeMultiplier={1.2}>
-                {link === "live" ? "LIVE" : link === "lost" ? "OFFLINE" : "CONNECTING"}
-              </Text>
-            </View>
-          ),
-        }}
-      />
+      {header}
       <FlatList
         {...spaceScroll}
         contentInsetAdjustmentBehavior="automatic"
@@ -514,7 +516,6 @@ const styles = StyleSheet.create({
   title: { color: theme.fg, fontSize: 15, fontWeight: "600" },
   headTitle: { alignItems: "center" },
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
-  statusText: { fontFamily: theme.mono, fontSize: 11, letterSpacing: 1 },
 
   space: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 15 },
   avatar: {

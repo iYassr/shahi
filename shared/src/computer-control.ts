@@ -67,7 +67,12 @@ export function controlMessage(h: ControlHandshake): string {
  * older servers still send it as a message, so a message counts only from a
  * managed install; the card with that notice could not be dismissed from the
  * Agents list or any conversation (compatibility bug hunt).
+ *
+ * herdr merely stopped is not one either: the connection banner says so,
+ * beside every other reason nothing can be done, and the card said it a
+ * second time (pre-release bug hunt).
  */
 export function controlNeedsAttention(h: ControlHandshake, control: { pending: boolean; error: string | null }): boolean {
-  return control.pending || !!control.error || updateInProgress(h.update.phase) || h.backend.state !== "connected" || !!h.update.available || (h.update.managed && !!h.update.message);
+  const backendNews = h.backend.state !== "connected" && h.backend.state !== "offline";
+  return control.pending || !!control.error || updateInProgress(h.update.phase) || backendNews || !!h.update.available || (h.update.managed && !!h.update.message);
 }

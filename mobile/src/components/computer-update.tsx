@@ -9,6 +9,9 @@ export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
   const h = control?.handshake;
   if (!control || !h) return null;
   const busy = control.pending || updateInProgress(h.update.phase);
+  // herdr merely stopped is the connection banner's news, beside every other
+  // reason nothing can be done; here it would say the same thing twice (see
+  // `controlNeedsAttention`).
   if (!settings && !controlNeedsAttention(h, control)) return null;
   return <View style={styles.box} accessibilityLiveRegion="polite" testID="computer-update">
     <Text style={styles.title}>{h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : "This computer"}</Text>

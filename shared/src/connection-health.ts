@@ -1,12 +1,26 @@
+import type { BackendState } from "./compatibility";
 import { HostKeyError, IncompatibleServerError, UnauthorizedError, UnreachableError } from "./errors";
 
-/** Only describe causes reported by the transport; silence cannot prove sleep. */
-export function connectionHealth({ link, error, transport, online = true, computerName }: {
+/** The computer answered, but herdr behind it did not (`backend_unavailable`). */
+export function backendUnavailable(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "backend_unavailable";
+}
+
+/**
+ * Only describe causes reported by the transport; silence cannot prove sleep.
+ *
+ * `backend` is herdr's state as the computer last reported it. The link is
+ * only the socket, which stays open while herdr is stopped, so the header
+ * said LIVE and an open pane showed nothing wrong until a send failed
+ * (pre-release bug hunt).
+ */
+export function connectionHealth({ link, error, transport, online = true, computerName, backend }: {
   link: "connecting" | "live" | "lost";
   error?: Error | null;
   transport: "relay" | "ssh" | "direct";
   online?: boolean;
   computerName?: string;
+  backend?: BackendState | null;
 }): { title: string; detail: string } | null {
   const computer = computerName?.trim() || "your computer";
   if (!online || error instanceof UnreachableError && error.reason === "offline") return {
@@ -24,6 +38,10 @@ export function connectionHealth({ link, error, transport, online = true, comput
   };
   if (error instanceof UnreachableError && ["tls", "ats", "address"].includes(error.reason)) return {
     title: "Connection setup needs attention", detail: "Check the connection address and secure connection settings on your computer, then retry.",
+  };
+  if (backendUnavailable(error) || link === "live" && !error && backend?.state === "offline") return {
+    title: backend?.state === "offline" ? `herdr isn’t running on ${computer}` : `herdr isn’t available on ${computer}`,
+    detail: error?.message || (backend && "message" in backend && backend.message) || "Shahi will reconnect automatically when herdr is back.",
   };
   if (link === "live" && !error) return null;
   return {

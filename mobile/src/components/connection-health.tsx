@@ -12,11 +12,11 @@ export function ConnectionHealth() {
 }
 
 function ComputerHealth({ session }: { session: ReturnType<typeof useSession> }) {
-  const { link, error, server, reconnect, online = true, activeComputerId, computers } = session;
+  const { link, error, server, reconnect, online = true, activeComputerId, computers, control } = session;
   const computerName = computers?.find(computer => computer.id === activeComputerId)?.name;
   const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<Error | null>(null);
-  const health = connectionHealth({ link, online, computerName, error: error ?? (link === "live" ? null : retryError), transport: server?.startsWith("ssh:") ? "ssh" : "relay" });
+  const health = connectionHealth({ link, online, computerName, error: error ?? (link === "live" ? null : retryError), transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
   if (!health) return null;
   return <View style={styles.card} accessibilityLiveRegion="polite">
     <Text style={styles.title}>{health.title}</Text>

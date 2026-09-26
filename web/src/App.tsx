@@ -1,5 +1,5 @@
 import { ComputerSwitcher } from "./components/ComputerSwitcher";
-import { ComputerUpdate, ComputerControlProvider } from "./components/ComputerUpdate";
+import { ComputerUpdate, ComputerControlProvider, useComputerControl } from "./components/ComputerUpdate";
 import { Computers } from "./components/Computers";
 import { connectionHealth } from "@shahi/shared";
 import { UnreachableError } from "@shahi/shared/errors";
@@ -525,10 +525,14 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
 }
 
 function LinkState({ state }: { state: LinkState }) {
+  // The socket is not herdr: it stays open while herdr is stopped, and "live"
+  // there described a computer that could do nothing (pre-release bug hunt).
+  const backend = useComputerControl()?.handshake?.backend;
+  const herdrStopped = state === "live" && backend?.state === "offline";
   return (
-    <span className={`link link--${state}`}>
+    <span className={`link link--${herdrStopped ? "lost" : state}`}>
       <span className="link__dot" />
-      {state === "live" ? "live" : state === "lost" ? "offline" : "…"}
+      {herdrStopped ? "herdr offline" : state === "live" ? "live" : state === "lost" ? "offline" : "…"}
     </span>
   );
 }

@@ -36,7 +36,9 @@ test("an unmanaged computer's notice is not a reason to show the card outside Se
   // What still earns a place on every screen.
   expect(controlNeedsAttention({ ...h, update: { ...h.update, message: "The update did not start correctly." } }, idle)).toBe(true);
   expect(controlNeedsAttention({ ...h, update: { ...h.update, available: "0.3.1" } }, idle)).toBe(true);
-  expect(controlNeedsAttention({ ...h, backend: { state: "offline", message: "herdr is offline" } }, idle)).toBe(true);
+  expect(controlNeedsAttention({ ...h, backend: { state: "update-required", message: "Update herdr" } }, idle)).toBe(true);
+  // herdr stopped is the connection banner's to say, not the card's as well.
+  expect(controlNeedsAttention({ ...h, backend: { state: "offline", message: "herdr is offline" } }, idle)).toBe(false);
   expect(controlNeedsAttention(h, { pending: false, error: "Cannot reach this computer." })).toBe(true);
   expect(controlNeedsAttention(h, idle)).toBe(false);
 });

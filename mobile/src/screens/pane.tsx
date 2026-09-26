@@ -1,7 +1,7 @@
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { supports } from "@shahi/shared";
+import { backendUnavailable, supports } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -694,11 +694,16 @@ export function Pane({ paneId, initialView = "reader" }: Props) {
       } catch (e) {
         if (!stillActive()) return;
         if (e instanceof UnauthorizedError) return unauthorized();
-        // Transient; the next poll will catch up.
+        // herdr stopped behind a live socket. The computer is asked now rather
+        // than on its 30-second poll, and the banner above follows its answer;
+        // these 503s were swallowed and the pane looked fine until a send
+        // failed (pre-release bug hunt).
+        if (backendUnavailable(e) && control?.handshake?.backend.state === "connected") void control.refresh();
+        // Otherwise transient; the next poll will catch up.
       }
     };
     await Promise.all([readLog(), readScreen()]);
-  }, [paneId, unauthorized, stillActive]);
+  }, [paneId, unauthorized, stillActive, control]);
   // One load in flight at most. The timer, a pushed frame and a `log_changed`
   // all call this; while a terminal repaints they arrive faster than a fetch
   // returns, and un-coalesced that was several identical requests outstanding

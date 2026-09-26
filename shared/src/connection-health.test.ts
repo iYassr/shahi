@@ -28,3 +28,20 @@ test("an SSH server presenting a key this phone does not trust says what to chec
   expect(health?.title).toBe("Check this computer’s identity");
   expect(health?.detail).toBe(refusal.message);
 });
+
+// herdr stopped while the socket stayed open: the header said LIVE and an open
+// pane showed nothing wrong until a send failed (pre-release bug hunt).
+test("herdr stopped behind a live link says so, naming the computer", () => {
+  const offline = { state: "offline" as const, message: "herdr is offline. Shahi will reconnect automatically." };
+  const health = connectionHealth({ link: "live", transport: "relay", computerName: "My Mac", backend: offline });
+  expect(health?.title).toBe("herdr isn’t running on My Mac");
+  expect(health?.detail).toBe(offline.message);
+  expect(connectionHealth({ link: "live", transport: "relay", backend: { state: "connected", version: "0.9.1", protocol: 22 } })).toBeNull();
+});
+
+test("a request refused because herdr is unavailable is not called reconnecting", () => {
+  const refusal = Object.assign(new Error("herdr is offline. Shahi will reconnect automatically."), { code: "backend_unavailable" });
+  const health = connectionHealth({ link: "lost", transport: "relay", computerName: "My Mac", error: refusal });
+  expect(health?.title).toBe("herdr isn’t available on My Mac");
+  expect(health?.detail).toBe(refusal.message);
+});
