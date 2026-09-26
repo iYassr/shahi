@@ -28,7 +28,7 @@ import { Observability } from "./observability";
 import { Auth, LoginThrottle, SESSION_COOKIE, readCookie } from "./auth";
 import type { Config } from "./config";
 import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor } from "./herdr-client";
-import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
+import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { findCodexRollout, readCodexLog } from "./codex-log";
@@ -938,9 +938,22 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             return json({ error: "clientRequestId is required" }, { status: 400 });
           }
           try {
+            // A kind herdr has no manifest for fails only after a tab has been
+            // made for it, so it is refused before (pre-release bug hunt, B81).
+            const { manifests } = await client.rpc("server.agent_manifests", {});
+            if (!manifests.some((manifest) => manifest.agent === body.kind)) {
+              return json({ error: `herdr on this computer does not know how to start “${body.kind}”.` }, { status: 400 });
+            }
+          } catch (err) {
+            return failure(err);
+          }
+          try {
             arrival.holdOpen?.();
             const delivery = trackDelivery((method: string, params: unknown, options?: { timeoutMs?: number }) =>
               client.rpc(method as Method, params as ParamsFor<Method>, options));
+            // A start that certainly failed has closed its tab, so a retry
+            // under the same id may run again rather than replay the failure.
+            let undone = false;
             const started = await operations.run(`start:${body.clientRequestId}`, body, () => startAgentInTab(
               delivery.rpc as never,
               {
@@ -955,7 +968,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
                 // was chosen. The picker was decorative without this line.
                 mode: body.mode ?? null,
               },
-            ), delivery.reachedNothing);
+            ).catch((err: unknown) => {
+              if (err instanceof AgentStartFailed) undone = true;
+              throw err;
+            }), () => undone || delivery.reachedNothing());
             // The client opens this pane immediately. Event delivery and the
             // periodic mirror can lag behind a successful herdr creation.
             await store.resyncAfterMutation();

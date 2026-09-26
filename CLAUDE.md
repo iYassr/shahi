@@ -115,7 +115,11 @@ a report from a phone.
   killed shell's empty answer is not cached.
 - **`agent.start` races the shell it needs.** The pane exists before its shell
   does, so starting immediately fails with `agent_pane_busy`. The server owns
-  the retry (`startAgentInTab`), and clients call one route.
+  the retry (`startAgentInTab`), and clients call one route. The kind is
+  checked against `server.agent_manifests` before a tab is made, and a start
+  that certainly failed — herdr refused before acting, or `agent.get` says the
+  launched agent is gone — closes its tab and says so in words; a timeout or a
+  pane still busy keeps it, since it may yet become an agent.
 - **`agent.prompt` refuses a blocked agent.** herdr's own semantic submit
   (protocol 20) is how a prompt reaches an agent — one call, no paste delay,
   herdr drives the composer. But "if the agent is already blocked, submission

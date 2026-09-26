@@ -1,7 +1,10 @@
-import { argsForMode, type InstalledAgent } from "@shahi/shared";
+import { agentLabel, argsForMode, type InstalledAgent } from "@shahi/shared";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { HerdrError } from "./herdr-client";
+import { refusedBeforeDelivery } from "./herdr-delivery";
+import { OperationError } from "./operations";
 
 export type { InstalledAgent };
 
@@ -127,6 +130,17 @@ export function forgetInstalledAgents(): void {
 }
 
 /**
+ * The agent certainly did not start, and the tab made for it has been closed.
+ * Nothing it did is left behind, so a retry under the same request id may
+ * run again rather than be handed this failure.
+ */
+export class AgentStartFailed extends OperationError {
+  constructor(message: string) {
+    super(message, 400);
+  }
+}
+
+/**
  * Creates a tab and starts an agent in it.
  *
  * The two calls are one operation, and splitting them across the network was a
@@ -206,10 +220,46 @@ export async function startAgentInTab(
         continue;
       }
       const busy = err instanceof Error && err.message.includes("agent_pane_busy");
-      if (!busy || attempt >= START_ATTEMPTS - 1) throw err;
-      await wait(START_RETRY_MS);
+      if (busy && attempt < START_ATTEMPTS - 1) {
+        await wait(START_RETRY_MS);
+        continue;
+      }
+      throw await undoCertainFailure(rpc, err, created.tab?.tab_id, options.kind);
     }
   }
+}
+
+/**
+ * Closes the tab of a start that certainly failed, and says so in words.
+ *
+ * A failed start left its tab behind, an empty shell per attempt that
+ * survived herdr restarts and sat in the space, and the phone showed herdr's
+ * own text: "herdr agent.get failed [agent_not_found]: agent target w2:p2
+ * not found" for an agent that exited while launching (pre-release bug hunt,
+ * B81). Certain means herdr answered with a refusal made before it acted, or
+ * that the agent it launched is gone. Anything else — a timeout, a lost
+ * socket, a pane still busy, an agent still starting — may yet become an
+ * agent, so its tab stays and the failure goes up unchanged.
+ */
+async function undoCertainFailure(
+  rpc: <T>(method: string, params: unknown, options?: { timeoutMs?: number }) => Promise<T>,
+  err: unknown,
+  tabId: string | undefined,
+  kind: string,
+): Promise<unknown> {
+  if (!(err instanceof HerdrError) || !refusedBeforeDelivery(err) || !tabId) return err;
+  try {
+    await rpc("tab.close", { tab_id: tabId });
+  } catch {
+    // The tab stays, and so does herdr's own account of what happened.
+    return err;
+  }
+  const name = agentLabel(kind);
+  return new AgentStartFailed(
+    err.code === "agent_not_found" && err.method === "agent.get"
+      ? `${name} exited while it was starting, so its tab was closed. Run it in a terminal in this space to see why.`
+      : `herdr could not start ${name} (${err.code}), so its tab was closed.`,
+  );
 }
 
 /** Long enough for a shell to appear (~5s), short enough to still feel like one action. */

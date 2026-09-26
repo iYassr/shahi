@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
+import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
+import { HerdrError } from "./herdr-client";
 
 describe("installedAgents", () => {
   test("resolves through a login shell, not this process's PATH", async () => {
@@ -295,4 +296,65 @@ test("a startup permission question opens immediately instead of waiting for an 
   };
   expect((await startAgentInTab(rpc, { workspaceId: "w", cwd: null, label: null, kind: "claude", name: "claude" }, async () => {})).paneId).toBe("new");
   expect(calls).toEqual(["tab.create", "agent.start"]);
+});
+
+/**
+ * Pre-release bug hunt, B81: a start that failed left its tab behind, one
+ * empty shell per attempt that survived herdr restarts, and the phone read
+ * herdr's own "agent.get failed [agent_not_found]". A tab is closed only
+ * when the failure is certain; one that may yet become an agent is kept.
+ */
+describe("a start that fails", () => {
+  const options = { workspaceId: "w1", cwd: null, label: null, kind: "claude", name: "claude" };
+  /** herdr as far as the tab; `start` decides what agent.start and agent.get do next. */
+  function herdr(start: (method: string) => unknown, { closeFails = false } = {}) {
+    const calls: { method: string; params: unknown }[] = [];
+    const rpc = async (method: string, params: unknown) => {
+      calls.push({ method, params });
+      if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" }, tab: { tab_id: "w1:t2" } } as never;
+      if (method === "tab.close") {
+        if (closeFails) throw new Error("herdr tab.close timed out after 5000ms");
+        return {} as never;
+      }
+      return start(method) as never;
+    };
+    return { rpc, calls };
+  }
+  const exits = (method: string) => {
+    if (method === "agent.start") return { agent: { launch_pending: true, interactive_ready: false } };
+    throw new HerdrError("agent_not_found", "agent target w1:p2 not found", "agent.get");
+  };
+
+  test("closes the tab of an agent that exited while starting, and says so in words", async () => {
+    const { rpc, calls } = herdr(exits);
+    const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);
+    expect(failure).toBeInstanceOf(AgentStartFailed);
+    expect(failure.message).toBe("Claude exited while it was starting, so its tab was closed. Run it in a terminal in this space to see why.");
+    expect(calls.at(-1)).toEqual({ method: "tab.close", params: { tab_id: "w1:t2" } });
+  });
+
+  test("closes the tab when herdr refuses to start the agent", async () => {
+    const { rpc, calls } = herdr(() => { throw new HerdrError("invalid_args", "unknown flag", "agent.start"); });
+    const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);
+    expect(failure).toBeInstanceOf(AgentStartFailed);
+    expect(failure.message).toContain("invalid_args");
+    expect(calls.map((c) => c.method)).toEqual(["tab.create", "agent.start", "tab.close"]);
+  });
+
+  test.each([
+    ["a timeout", new Error("herdr agent.start timed out after 310000ms")],
+    ["a pane that stays busy", new HerdrError("agent_pane_busy", "not a shell", "agent.start")],
+    ["a code herdr may have acted on", new HerdrError("agent_start_failed", "spawn failed", "agent.start")],
+  ])("keeps the tab after %s, which may still become an agent", async (_, error) => {
+    const { rpc, calls } = herdr(() => { throw error; });
+    await expect(startAgentInTab(rpc, options, async () => {})).rejects.toBe(error);
+    expect(calls.map((c) => c.method)).not.toContain("tab.close");
+  });
+
+  test("keeps herdr's own error when the tab cannot be closed", async () => {
+    const { rpc } = herdr(exits, { closeFails: true });
+    const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);
+    expect(failure).toBeInstanceOf(HerdrError);
+    expect(failure.code).toBe("agent_not_found");
+  });
 });

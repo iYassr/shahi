@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { Auth } from "./auth";
 import { Devices, Pairing } from "./pairing";
 import type { Config } from "./config";
-import { HerdrClient } from "./herdr-client";
+import { HerdrClient, HerdrError } from "./herdr-client";
 import { createServer, MAX_PROMPT_BYTES } from "./http";
 import { Poller } from "./poller";
 import { PushService } from "./push";
@@ -44,6 +44,9 @@ let agentStatus: string | null = null;
  * yet: `pane.get` reports it in this state while the snapshot lists no agent.
  */
 let unmirroredAgent: string | null = null;
+
+/** Set to make the agent the fake herdr launches exit before it is ready. */
+let agentExitsWhileStarting = false;
 
 /** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
 let herdrDown: unknown = null;
@@ -116,7 +119,13 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
         }
         case "agent.start":
           await Bun.sleep(25);
+          return agentExitsWhileStarting ? { agent: { launch_pending: true, interactive_ready: false } } : {};
+        case "agent.get":
+          throw new HerdrError("agent_not_found", `agent target ${(params as { target: string }).target} not found`, "agent.get");
+        case "tab.close":
           return {};
+        case "server.agent_manifests":
+          return { manifests: [{ agent: "claude" }, { agent: "codex" }] };
         case "workspace.list":
           return { workspaces: snapshot.workspaces };
         default:
@@ -959,6 +968,49 @@ describe("making something in a folder that is not there", () => {
     const before = s.calls.length;
     expect((await post("/api/agents/start", body)).status).toBe(200);
     expect(creates(before).map((c) => c.method)).toEqual(["tab.create", "agent.start"]);
+  });
+});
+
+// Pre-release bug hunt, B81: a failed start left an empty tab behind for
+// every attempt, surviving herdr restarts, and the phone showed herdr's raw
+// "agent.get failed [agent_not_found]".
+describe("an agent that cannot start", () => {
+  const post = (body: unknown) =>
+    fetch(`${s.base}/api/agents/start`, {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const methods = (from: number) => s.calls.slice(from).map((c) => c.method).filter((m) => m.startsWith("tab.") || m.startsWith("agent."));
+
+  test("is refused before a tab is made when herdr does not know the kind", async () => {
+    const before = s.calls.length;
+    const res = await post({ workspaceId: "w1", kind: "not-an-agent", clientRequestId: "unknown-kind" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("does not know how to start");
+    expect(methods(before)).toEqual([]);
+  });
+
+  test("closes its tab when it exits while starting, says so in words, and can be tried again", async () => {
+    agentExitsWhileStarting = true;
+    try {
+      const body = { workspaceId: "w1", kind: "claude", clientRequestId: "exits-while-starting" };
+      const before = s.calls.length;
+      const res = await post(body);
+      expect(res.status).toBe(400);
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toContain("exited while it was starting");
+      expect(error).not.toContain("agent_not_found");
+      expect(methods(before)).toEqual(["tab.create", "agent.start", "agent.get", "tab.close"]);
+      expect(s.calls.find((c, i) => i >= before && c.method === "tab.close")?.params).toEqual({ tab_id: "t1" });
+      // Nothing was left behind, so the same request runs again rather than
+      // being handed the failure for ten minutes.
+      const retry = s.calls.length;
+      expect((await post(body)).status).toBe(400);
+      expect(methods(retry)).toContain("tab.create");
+    } finally {
+      agentExitsWhileStarting = false;
+    }
   });
 });
 
