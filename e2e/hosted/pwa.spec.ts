@@ -100,6 +100,13 @@ test("an unknown address shows a Shahi page not found instead of an empty respon
   expect(refused).toEqual([]);
 });
 
+test("the site's HSTS covers its subdomains, as the relay's does", async ({ request }) => {
+  // It lacked the includeSubDomains that relay.getshahi.dev sends (pre-release bug hunt, B51).
+  for (const path of ["/", "/privacy", "/pwa/", "/no-such-page"]) {
+    expect((await request.get(`${site}${path}`)).headers()["strict-transport-security"], path).toBe("max-age=31536000; includeSubDomains");
+  }
+});
+
 test("the website serves its own fonts and asks no third party for anything", async ({ page }) => {
   const foreign: string[] = [];
   const refused: string[] = [];

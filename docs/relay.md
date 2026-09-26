@@ -373,8 +373,32 @@ off in `wrangler.toml`. It stays as blind here as on the wire.
 **HTTPS.** Every relay response served over HTTPS carries
 `Strict-Transport-Security: max-age=31536000; includeSubDomains`, the
 WebSocket `101` included; nothing is sent over plain HTTP, where a host must
-not send it and where `wrangler dev` and the tests speak. Redirecting HTTP to
-HTTPS is a Cloudflare zone setting, not relay code.
+not send it. Plain HTTP is served only on the machine running the relay, to
+`wrangler dev` and the tests, whose requests carry a loopback
+`cf-connecting-ip` or none; the same rule exempts them from the connect
+limiter. A request that reached Cloudflare's edge over HTTP is answered `301`
+to the same URL over HTTPS before it is routed, so a cleartext WebSocket
+upgrade fails instead of opening a link. The URL cannot make that distinction:
+`wrangler dev` presents the route's own host over `http:`. Until the
+pre-release bug hunt (B51) the relay left this to the zone, whose **Always Use
+HTTPS** was off: `http://relay.getshahi.dev/health` answered 200 and a `ws://`
+upgrade opened.
+
+Two settings of the zone the relay is deployed in are still required, because
+code cannot make them: **Always Use HTTPS** on (SSL/TLS → Edge Certificates),
+which does the same redirect at the edge for every hostname in the zone, the
+website included; and **Minimum TLS Version** at 1.2 (SSL/TLS → Edge
+Certificates), because the default of 1.0 accepts TLS 1.0 and 1.1 handshakes
+that RFC 8996 retired. On 25 September 2026 the first was off and the second
+at 1.0 (pre-release bug hunt, B51 and B52).
+Check them after changing the zone, and after deploying the relay:
+
+```sh
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://relay.getshahi.dev/health   # 301 https://relay.getshahi.dev/health
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://getshahi.dev/pwa/          # 301 https://getshahi.dev/pwa/
+openssl s_client -connect relay.getshahi.dev:443 -servername relay.getshahi.dev -tls1_1 -cipher 'DEFAULT:@SECLEVEL=0' </dev/null   # must fail to handshake
+openssl s_client -connect getshahi.dev:443 -servername getshahi.dev -tls1_1 -cipher 'DEFAULT:@SECLEVEL=0' </dev/null               # must fail to handshake
+```
 
 ## Observability
 

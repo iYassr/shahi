@@ -55,10 +55,39 @@ describe("strict transport security", () => {
     expect(limited.headers.get("strict-transport-security")).toBe(STRICT_TRANSPORT_SECURITY);
   });
 
-  test("a response over plain HTTP carries none", async () => {
-    const response = await worker.fetch(new Request("http://127.0.0.1:8787/health"), environment().env);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("strict-transport-security")).toBeNull();
+  test("a response over plain HTTP on this machine carries none, and is served", async () => {
+    // What `wrangler dev` hands the Worker: its route's host over http, from a
+    // loopback address (measured, wrangler 4.129). The tests send no address.
+    const local = [
+      new Request("http://127.0.0.1:8787/health"),
+      new Request("http://relay.example/health", { headers: { "cf-connecting-ip": "127.0.0.1" } }),
+      new Request("http://relay.example/health", { headers: { "cf-connecting-ip": "::1" } }),
+    ];
+    for (const request of local) {
+      const response = await worker.fetch(request, environment().env);
+      expect(response.status, request.url).toBe(200);
+      expect(response.headers.get("strict-transport-security"), request.url).toBeNull();
+    }
+  });
+
+  test("plain HTTP from the edge is sent to HTTPS, and a cleartext upgrade is never routed", async () => {
+    // relay.getshahi.dev answered /health over HTTP and upgraded ws:// to a
+    // live link, because the zone's "Always Use HTTPS" was off and nothing
+    // here checked the scheme (pre-release bug hunt, B51).
+    let routed = 0;
+    const env = { RELAY: { idFromName: (name: string) => name, get: () => ({ fetch: async () => { routed++; return new Response("routed"); } }) } };
+    const edge = { "cf-connecting-ip": "192.0.2.9" };
+    const health = await worker.fetch(new Request("http://relay.example/health?probe=1", { headers: edge }), env);
+    expect(health.status).toBe(301);
+    expect(health.headers.get("location")).toBe("https://relay.example/health?probe=1");
+    expect(health.headers.get("strict-transport-security")).toBeNull();
+    const upgrade = await worker.fetch(new Request(`http://relay.example/v1/phone/${SERVER_ID}`, { headers: { ...edge, upgrade: "websocket" } }), env);
+    expect(upgrade.status).toBe(301);
+    expect(upgrade.headers.get("location")).toBe(`https://relay.example/v1/phone/${SERVER_ID}`);
+    expect(routed).toBe(0);
+    // Over HTTPS the same visitor is routed.
+    expect((await worker.fetch(new Request(`https://relay.example/v1/phone/${SERVER_ID}`, { headers: { ...edge, upgrade: "websocket" } }), env)).status).toBe(200);
+    expect(routed).toBe(1);
   });
 
   test("the object's upgrade is passed through untouched", async () => {

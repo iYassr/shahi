@@ -8,7 +8,10 @@
   X-Content-Type-Options: nosniff
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
-  Strict-Transport-Security: max-age=31536000
+  # includeSubDomains, as the relay sends (pre-release bug hunt, B51). Sent
+  # whatever the scheme, since a rule cannot see it; the zone's "Always Use
+  # HTTPS" redirects before a plain-HTTP request reaches this (docs/relay.md).
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY
   Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()

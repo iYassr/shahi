@@ -31,8 +31,34 @@ export interface Env extends TelemetryEnv {
 /** base64url(sha256(pub)) is 32 bytes unpadded: exactly 43 characters of the base64url alphabet. */
 const SERVER_ID = /^[A-Za-z0-9_-]{43}$/;
 
+/**
+ * Whether a request came through Cloudflare's edge from a real client, rather
+ * than from `wrangler dev` or the tests on this machine. Cloudflare sets
+ * `cf-connecting-ip` to the visitor's address, which a client cannot spoof and
+ * is never loopback there; locally it is loopback or absent. The URL cannot
+ * tell them apart: `wrangler dev` hands the Worker its first route's host over
+ * plain HTTP (`http://relay.getshahi.dev/…`, measured with wrangler 4.129),
+ * which is exactly what a cleartext visitor looks like in production.
+ */
+function fromEdge(request: Request): string | null {
+  const ip = request.headers.get("cf-connecting-ip");
+  return ip && ip !== "127.0.0.1" && ip !== "::1" ? ip : null;
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
+    // Plain HTTP from the edge goes to HTTPS before it is routed. The zone's
+    // "Always Use HTTPS" does this too, but it was off for relay.getshahi.dev,
+    // which then answered /health and upgraded ws:// to a live link in
+    // cleartext (pre-release bug hunt, B51). A relay deployed to someone
+    // else's zone is in the same position, so the relay does not depend on
+    // the setting. A WebSocket client does not follow the redirect: a
+    // cleartext upgrade simply fails, which is the point.
+    const url = new URL(request.url);
+    if (url.protocol === "http:" && fromEdge(request)) {
+      url.protocol = "https:";
+      return new Response(null, { status: 301, headers: { location: url.href } });
+    }
     const response = await route(request, env);
     // The upgrade is the object's own response, which carries the header
     // already; it is passed through untouched so its WebSocket goes with it.
@@ -74,12 +100,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   // Rate the source before addressing an object: an over-quota IP is refused
   // here, so a flood of connects to random serverIds cannot each spin up a
   // Durable Object and burn the account's daily quota (pentest C1). Only real
-  // edge traffic is rated: `cf-connecting-ip` is set by Cloudflare and cannot
-  // be spoofed there, while `wrangler dev` and the test harness present a
-  // loopback address, which is not a threat surface and is skipped. IPv6
-  // sources are counted by their /64 (see connectLimitKey).
-  const ip = request.headers.get("cf-connecting-ip");
-  if (env.CONNECT_LIMIT && ip && ip !== "127.0.0.1" && ip !== "::1") {
+  // edge traffic is rated (see fromEdge): `wrangler dev` and the test harness
+  // are not a threat surface. IPv6 sources are counted by their /64 (see
+  // connectLimitKey).
+  const ip = fromEdge(request);
+  if (env.CONNECT_LIMIT && ip) {
     const { success } = await env.CONNECT_LIMIT.limit({ key: connectLimitKey(ip) });
     if (!success) {
       record(env, { synthetic, kind: "rate_limited", serverId, colo: coloOf(request) });
