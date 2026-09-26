@@ -85,7 +85,10 @@ cd <managed root> && exec env HERDR_SOCKET_PATH=… SHAHI_ENV_FILE=… SHAHI_DAT
 
 Your own init must run it and restart it whenever it exits: an update exits it
 on purpose. `shahi.status` then shows `service none (no systemd)`, `shahi.pair`
-works once the sidecar answers, and `shahi.restart` prints the command again.
+works once the sidecar answers, and `shahi.restart` prints the command again
+while it does not. Once your init keeps it running, every herdr start finds it
+answering, says so, and leaves it the update request a reinstall owes it,
+instead of failing its startup hook.
 
 ## What gets created, and where
 
@@ -196,6 +199,14 @@ herdr plugin action invoke shahi.restart
 A moved port costs the app's SSH tunnel, which always forwards to 7171 (the
 SSH form has no port field); relay pairing is unaffected.
 
+Setup, `status` and the `pair` popup count the sidecar as running only when it
+accepts a session signed with this install's own key. Anything else answering
+on the port — another user's Shahi, a development checkout — is reported as the
+port being taken, with the `PORT=` line to add, and `status` exits 1; the
+sidecar itself refuses to share a port rather than binding beside another
+listener. Setup waits up to 30 seconds for a slow start and says "still
+starting" rather than "did not start" while the service is up but silent.
+
 The port answers only requests whose `Host` is `127.0.0.1`, `localhost` or
 `[::1]`, with any port; anything else is a 403 saying to connect through the
 relay or an SSH tunnel. That is the DNS-rebinding defence. A reverse proxy
@@ -282,7 +293,7 @@ herdr plugin log list --plugin shahi        # their output
 | action | does |
 |---|---|
 | `pair` | opens the QR popup, setting Shahi up first when there is no service |
-| `status` | service state and pid, the address, the relay and whether the box is on it, what `GET /api/meta` says (the release version and herdr's), how many phones are paired, where everything is. Exit 1 when the API is not answering. |
+| `status` | service state and pid, the address, the relay and whether the box is on it, what `GET /api/meta` says (the release version and herdr's), how many phones are paired, where everything is. Exit 1 when the API is not answering, or when what answers is not this install's sidecar. |
 | `restart` | re-renders the managed service from `.env`, restarts it, and requests a compatible approved update; with no systemd, prints the command to run |
 | `reset-passcode` | replaces the passcode, prints the new one once to the plugin log, and restarts; sessions and paired phones stay |
 | `stop` | stops the sidecar. The service stays installed, so it comes back at the next herdr start, `restart`, or login (on Linux with lingering, the next boot) |

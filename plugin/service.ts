@@ -301,7 +301,7 @@ export function unsupervised(): Service {
     render: renderCommand,
     install(spec) {
       throw new Error(
-        "No systemd on this machine, so there is no user service to install.\n" +
+        "Shahi is not running. No systemd on this machine, so there is no user service to install.\n" +
           "Alpine and other busybox/OpenRC systems do not have one, and cannot install it.\n" +
           "\n" +
           "Everything else is ready: the secrets and the approved release this runs.\n" +

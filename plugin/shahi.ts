@@ -1,5 +1,5 @@
 import { bootstrap } from "./releases/bootstrap";
-import { requestUpdate } from "./releases/storage";
+import { readJson, requestUpdate } from "./releases/storage";
 /**
  * Everything the herdr plugin does, as one command with a verb:
  *
@@ -45,16 +45,16 @@ import { requestUpdate } from "./releases/storage";
  * toast is also every attached client, a screen share, and on some terminals
  * the OS notification centre.
  */
-import { existsSync, mkdirSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readSync, closeSync, fstatSync, statSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import { SHAHI_API_VERSION, type DeviceList, type ServerInfo } from "@shahi/shared";
+import { SHAHI_API_VERSION, type ComputerUpdate, type DeviceList, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../server/lib/auth";
 import { parsePort } from "../server/lib/config";
 import { herdrCli } from "../server/lib/herdr-session";
 import { ensureSecrets, randomPasscode, readEnvFile, writeEnvFile } from "../server/lib/secrets";
 import { layoutFromEnv, type Layout } from "./layout";
-import { serviceFor, type Service, type ServiceSpec } from "./service";
+import { renderCommand, serviceFor, type Service, type ServiceSpec } from "./service";
 
 export const VERBS = ["setup", "status", "restart", "stop", "logs", "pair", "open-pair", "reset-passcode", "uninstall"] as const;
 type Verb = (typeof VERBS)[number];
@@ -216,26 +216,115 @@ async function meta(url: string): Promise<ServerInfo | null> {
   }
 }
 
-/** Bounded: the hook must exit promptly whether or not the server comes up. */
-async function waitForMeta(url: string, ms = 6_000): Promise<ServerInfo | null> {
+/**
+ * A session signed with this install's own key — the same trick as pair.ts.
+ * Anyone who can read the .env already owns the server.
+ */
+function ownSession(env: Map<string, string>): string | null {
+  const secret = env.get("SESSION_SECRET");
+  if (!secret) return null;
+  const auth = new Auth({ passcodeHash: "", sessionSecret: secret, sessionTtlMs: 60_000 });
+  return auth.cookie(auth.issue()).split(";")[0]!;
+}
+
+/**
+ * Whose server answers at `url`: this install's, someone else's, or none.
+ *
+ * An answering /api/meta proved nothing: any Shahi has one — another user's,
+ * or a development checkout on the default port — and setup, status and the
+ * pair popup all reported that server as this install running, while the
+ * real sidecar crash-looped on EADDRINUSE and pair.ts failed with a 401
+ * blaming SESSION_SECRET (pre-release bug hunt). Only this install's sidecar
+ * accepts a session signed with this install's key. /api/auth/status answers
+ * that on every API version, before any version check.
+ */
+export async function whoAnswers(url: string, env: Map<string, string>): Promise<"ours" | "other" | "none"> {
+  const cookie = ownSession(env);
+  let res: Response;
+  try {
+    res = await fetch(`${url}/api/auth/status`, { headers: cookie ? { cookie } : {}, signal: AbortSignal.timeout(3_000) });
+  } catch {
+    return "none";
+  }
+  try {
+    if (res.ok && ((await res.json()) as { authenticated?: unknown }).authenticated === true) return "ours";
+  } catch { /* not a Shahi */ }
+  return "other";
+}
+
+/** Why a sidecar cannot listen, and the one thing to change. */
+function portTaken(layout: Layout, url: string): string {
+  return [
+    `Another program is answering at ${url}, and it is not this install's Shahi: it does not accept this install's session key.`,
+    "Shahi cannot listen there while it does. It may be another user's Shahi or a development checkout.",
+    `  Put PORT=<a free port> in ${layout.envFile}, then:  ${herdr()} plugin action invoke shahi.restart`,
+  ].join("\n");
+}
+
+/**
+ * How long setup waits for the sidecar: as long as the manager allows a
+ * release to become ready. It waited 6 s, and a healthy cold start measured
+ * up to 7.8 s on a loaded VM, so setup reported "not answering … The log
+ * says why" and toasted "Shahi did not start" for a service that answered a
+ * moment later (pre-release bug hunt).
+ */
+const START_MS = 30_000;
+
+/**
+ * The manager's own account of a service that exited, if it wrote one after
+ * `since`: it outlives its crashing child, so the service manager keeps
+ * reporting "running" throughout. Older records are about an earlier start.
+ */
+export function managerFailure(managerRoot: string, since: number): string | null {
+  try {
+    const path = join(managerRoot, "status.json");
+    if (statSync(path).mtimeMs < since) return null;
+    const status = readJson<ComputerUpdate>(path);
+    return status?.phase === "failed" ? status.message ?? "The service exited." : null;
+  } catch {
+    return null;
+  }
+}
+
+type Start =
+  | { state: "answering"; info: ServerInfo | null }
+  | { state: "taken" }
+  | { state: "starting" }
+  | { state: "failed"; why: string | null };
+
+/** Bounded: the hook must exit whether or not the server comes up. */
+export async function waitForStart(
+  url: string,
+  env: Map<string, string>,
+  service: Service,
+  managerRoot: string,
+  since: number,
+  ms = START_MS,
+): Promise<Start> {
   const until = Date.now() + ms;
-  while (Date.now() < until) {
-    const info = await meta(url);
-    if (info) return info;
+  let stoppedSince: number | null = null;
+  for (;;) {
+    const who = await whoAnswers(url, env);
+    if (who === "ours") return { state: "answering", info: await meta(url) };
+    if (who === "other") return { state: "taken" };
+    const why = managerFailure(managerRoot, since);
+    if (why) return { state: "failed", why };
+    // A service that stays stopped will not answer however long this waits.
+    // A few seconds' grace, because launchd and systemd can report a service
+    // they have just been told to start as not running yet.
+    if (service.status().running) stoppedSince = null;
+    else if (Date.now() - (stoppedSince ??= Date.now()) >= 5_000) return { state: "failed", why: null };
+    if (Date.now() >= until) return { state: "starting" };
     await Bun.sleep(250);
   }
-  return null;
 }
 
 async function deviceCount(url: string, env: Map<string, string>): Promise<number | null> {
-  const secret = env.get("SESSION_SECRET");
-  if (!secret) return null;
-  // The same trick as pair.ts: sign a session with the server's own key.
-  // Anyone who can read the .env already owns the server.
-  const auth = new Auth({ passcodeHash: "", sessionSecret: secret, sessionTtlMs: 60_000 });
+  const cookie = ownSession(env);
+  if (!cookie) return null;
   try {
     const res = await fetch(`${url}/api/devices`, {
-      headers: { cookie: auth.cookie(auth.issue()).split(";")[0]!, "x-shahi-api": String(SHAHI_API_VERSION) },
+      headers: { cookie, "x-shahi-api": String(SHAHI_API_VERSION) },
       signal: AbortSignal.timeout(3_000),
     });
     if (!res.ok) return null;
@@ -258,7 +347,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 
 /** What a setup did, for whoever reports it: a toast from the hook, nothing from the popup (it is on screen). */
 export interface Installed {
-  answering: boolean;
+  /** Where the sidecar was when setup stopped waiting for it. */
+  state: Start["state"];
   relayUrl: string | null;
   relayDefaulted: boolean;
   /** A passcode was chosen, and printed, by this run. */
@@ -305,23 +395,48 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   }
 
   const spec = serviceSpec(layout, env);
-  service.install({ ...spec, root: managerRoot, entry: join(managerRoot, "manager.js"), env: { ...spec.env, SHAHI_MANAGER_ROOT: managerRoot } });
-  try { requestUpdate(managerRoot, { action: "install" }); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
-
+  const managed = { ...spec, root: managerRoot, entry: join(managerRoot, "manager.js"), env: { ...spec.env, SHAHI_MANAGER_ROOT: managerRoot } };
   const { url } = address(layout, env);
-  const info = await waitForMeta(url);
+  const requestInstall = () => {
+    try { requestUpdate(managerRoot, { action: "install" }); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
+  };
+  const since = Date.now();
+  let start: Start | undefined;
+  if (service.kind === "none") {
+    // Nothing here supervises the sidecar, so on every herdr start a sidecar
+    // this person started by hand was reported as "not set up": the hook
+    // failed, toasted so, and skipped the update request a reinstall should
+    // leave (pre-release bug hunt). The request goes first, for the manager
+    // running now or the one started next.
+    requestInstall();
+    const who = await whoAnswers(url, env);
+    if (who === "other") start = { state: "taken" };
+    else if (who === "none") service.install(managed); // the hand-over: what to start, and how
+    else {
+      start = { state: "answering", info: await meta(url) };
+      console.log(`Shahi is running at ${url}, started outside herdr: no systemd here, so this machine's own init keeps it running. What it runs:\n  ${renderCommand(managed)}\n`);
+    }
+  } else {
+    service.install(managed);
+    requestInstall();
+  }
+  start ??= await waitForStart(url, env, service, managerRoot, since);
   const relayUrl = relayUrlFor(env);
   const relayDefaulted = !env.has("RELAY_URL");
-  if (info) {
+  if (start.state === "answering") {
     console.log(`Shahi's connection service is running at ${url}.`);
     console.log(
       relayUrl
         ? `  relay     ${relayUrl}${relayDefaulted ? ` (Shahi's relay, the default; RELAY_URL= in ${layout.envFile} turns it off)` : ""}`
         : "  relay     off (RELAY_URL is empty): reachable directly only",
     );
+  } else if (start.state === "taken") {
+    console.log(portTaken(layout, url));
+  } else if (start.state === "starting") {
+    console.log(`Shahi was started and is still starting; it has not answered at ${url} yet. ${herdr()} plugin action invoke shahi.status shows when it does.`);
   } else {
-    console.log(`Shahi was started but is not answering at ${url} yet. The log says why:\n  ${layout.logPath}`);
+    console.log(`Shahi was started but is not running${start.why ? `: ${start.why}` : "."} The log says why:\n  ${layout.logPath}`);
   }
   // An install that went ahead in the recovery state (an unapproved herdr or
   // bun) says so, and names the versions, instead of looking like success.
@@ -330,7 +445,7 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));
   console.log(`\n  ${pairHint()}\n  ${KEY_HINT}`);
-  return { answering: info !== null, relayUrl, relayDefaulted, passcode: passcode !== null, linger };
+  return { state: start.state, relayUrl, relayDefaulted, passcode: passcode !== null, linger };
 }
 
 /**
@@ -350,8 +465,16 @@ export async function setup(layout: Layout, service: Service, opts: { newPasscod
     );
     throw err;
   }
-  if (!done.answering) {
+  if (done.state === "taken") {
+    notify("Shahi cannot start: its port is taken", `Another program answers on Shahi's port. Put PORT=<a free port> in ${layout.envFile}, then: ${herdr()} plugin action invoke shahi.restart`);
+    return 1;
+  }
+  if (done.state === "failed") {
     notify("Shahi did not start", `See ${layout.logPath}`);
+    return 1;
+  }
+  if (done.state === "starting") {
+    notify("Shahi is starting", `It has not answered yet; ${herdr()} plugin action invoke shahi.status shows when it does.`);
     return 0;
   }
   notify(
@@ -370,8 +493,13 @@ export async function status(layout: Layout, service: Service): Promise<number> 
   const env = readEnvFile(layout.envFile);
   const { url } = address(layout, env);
   const state = service.status();
-  const info = await meta(url);
+  const who = await whoAnswers(url, env);
+  // Another program's version, relay and devices are not this install's.
+  const info = who === "ours" ? await meta(url) : null;
   const devices = info ? await deviceCount(url, env) : null;
+  // The manager outlives a crashing sidecar, so "running" above can be true
+  // of a service that never answers; the manager's own record says why.
+  const why = who === "none" ? managerFailure(join(layout.stateDir, "managed"), 0) : null;
 
   const serviceLine = service.kind === "none"
     ? `none (no systemd): you run it — ${herdr()} plugin action invoke shahi.restart prints the command`
@@ -395,7 +523,9 @@ export async function status(layout: Layout, service: Service): Promise<number> 
   console.log(
     info
       ? `  api       answering — shahi ${info.serverVersion}, api ${info.api.min}–${info.api.max}, herdr ${info.herdr?.version} (protocol ${info.herdr?.protocol})`
-      : `  api       not answering at ${url}/api/meta`,
+      : who === "other"
+        ? `  api       port taken — ${portTaken(layout, url).split("\n").join("\n            ")}`
+        : `  api       not answering at ${url}/api/meta${why ? ` — ${why}` : ""}`,
   );
   console.log(`  devices   ${devices === null ? "unknown" : `${devices} paired`}`);
   console.log(where(layout, service));
@@ -490,13 +620,20 @@ export async function pairPopup(prepare: () => PopupSteps, waitForEnter: () => P
   return 1;
 }
 
-function popupSteps(layout: Layout, service: Service, args: string[]): PopupSteps {
+export function popupSteps(layout: Layout, service: Service, args: string[]): PopupSteps {
   return {
     // With no service manager nothing here can tell a sidecar started by hand
-    // from none, so an answering API is the whole test.
-    running: async () =>
-      (service.kind === "none" || service.status().running) && (await meta(address(layout, readEnvFile(layout.envFile)).url)) !== null,
-    setup: () => install(layout, service),
+    // from none, so this install's sidecar answering is the whole test.
+    running: async () => {
+      const env = readEnvFile(layout.envFile);
+      return (service.kind === "none" || service.status().running) && (await whoAnswers(address(layout, env).url, env)) === "ours";
+    },
+    // A sidecar that is not up has no code to show; what setup printed says why.
+    setup: async () => {
+      const done = await install(layout, service);
+      if (done.state === "starting") throw new Error("Shahi has not answered yet, so there is no code to show. Open this again in a moment.");
+      if (done.state !== "answering") throw new Error("Shahi is not running, so there is no code to show.");
+    },
     // pair.ts puts on the code the relay the running sidecar reports, so only
     // the .env (for the session key and the port) needs naming.
     showCode: () =>

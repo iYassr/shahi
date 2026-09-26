@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { layoutFromEnv, type Layout } from "./layout";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -16,8 +16,10 @@ const scratch = (prefix: string) => {
 afterAll(() => {
   for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
 });
+import { Auth, readCookie, SESSION_COOKIE } from "../server/lib/auth";
 import { loadConfig } from "../server/lib/config";
 import { readEnvFile } from "../server/lib/secrets";
+import { atomicJson } from "./releases/storage";
 import { unsupervised, type Service, type ServiceSpec } from "./service";
 import {
   bunPath,
@@ -27,10 +29,12 @@ import {
   openPair,
   openPairFailure,
   pairPopup,
+  popupSteps,
   relayUrlFor,
   serviceSpec,
   setup,
   status,
+  waitForStart,
   type PopupSteps,
 } from "./shahi";
 
@@ -142,7 +146,7 @@ function stagedRelease(layout: Layout): void {
   writeFileSync(join(managed, "installation.json"), JSON.stringify({ active: { version: "0.0.0", buildId: "test-build" }, channel: "stable", sequence: {} }));
 }
 
-function fakeService(install: (spec: ServiceSpec) => void = () => {}): Service {
+function fakeService(install: (spec: ServiceSpec) => void = () => {}, running = false): Service {
   return {
     kind: "launchd",
     path: "/nonexistent/app.shahi.sidecar.plist",
@@ -150,9 +154,51 @@ function fakeService(install: (spec: ServiceSpec) => void = () => {}): Service {
     render: () => "",
     install,
     stop() {},
-    status: () => ({ installed: true, running: false, pid: null }),
+    status: () => ({ installed: true, running, pid: null }),
     remove() {},
   };
+}
+
+/** A port nothing listens on, for as long as the test runs. */
+function freePort(): number {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+  const port = probe.port!;
+  probe.stop(true);
+  return port;
+}
+
+/**
+ * A sidecar on the port the layout's .env names (a fresh one unless it names
+ * one): this install's when `ours`, which is to say it accepts a session
+ * signed with the key in that .env, the way the real one does; another
+ * program's Shahi otherwise. `after` delays it, as a slow cold start would.
+ */
+function sidecar(layout: Layout, { ours = true, after = 0 } = {}) {
+  mkdirSync(layout.configDir, { recursive: true });
+  let port = Number(readEnvFile(layout.envFile).get("PORT"));
+  if (!port) {
+    port = freePort();
+    appendFileSync(layout.envFile, `PORT=${port}\n`);
+  }
+  const started = { at: 0 };
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  const serve = () => {
+    started.at = Date.now();
+    server = Bun.serve({ hostname: "127.0.0.1", port, fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === "/api/auth/status") {
+        const secret = readEnvFile(layout.envFile).get("SESSION_SECRET") ?? "";
+        const token = readCookie(req.headers.get("cookie"), SESSION_COOKIE);
+        const accepted = ours && !!secret && new Auth({ passcodeHash: "", sessionSecret: secret, sessionTtlMs: 60_000 }).verifyToken(token);
+        return Response.json({ required: true, authenticated: accepted });
+      }
+      if (path === "/api/meta") return Response.json({ serverId: "s".repeat(43), serverVersion: ours ? "9.9.9-ours" : "1.0.0-theirs", api: { min: 5, max: 5 } });
+      return new Response("not here", { status: 404 });
+    } });
+  };
+  const timer = after ? setTimeout(serve, after) : (serve(), undefined);
+  restore.push(() => { clearTimeout(timer); void server?.stop(true); });
+  return { port, started };
 }
 
 const realFetch = globalThis.fetch;
@@ -370,10 +416,7 @@ describe("the first setup's passcode", () => {
     const out = captured();
     const layout = scratchLayout();
     stagedRelease(layout);
-    const meta = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ serverId: "s".repeat(43), api: { min: 5, max: 5 } }) });
-    restore.push(() => void meta.stop(true));
-    mkdirSync(layout.configDir, { recursive: true });
-    writeFileSync(layout.envFile, `PORT=${meta.port}\n`);
+    sidecar(layout);
     await install(layout, fakeService());
     const first = readEnvFile(layout.envFile).get("PASSCODE_HASH_B64");
 
@@ -443,6 +486,8 @@ describe("a Linux without systemd", () => {
     captured();
     const layout = scratchLayout();
     stagedRelease(layout);
+    mkdirSync(layout.configDir, { recursive: true });
+    writeFileSync(layout.envFile, `PORT=${freePort()}\n`); // nothing answers there
     let said = "";
     await install(layout, unsupervised()).catch((err: Error) => { said = err.message; });
     expect(said).toContain("No systemd on this machine");
@@ -466,6 +511,134 @@ describe("a Linux without systemd", () => {
     expect(out.text()).toContain("none (no systemd)");
     expect(out.text()).toContain(layout.envFile);
   });
+
+  // Measured on Alpine: with the printed command running under the box's
+  // own init, every herdr start marked the startup hook failed, toasted
+  // "Shahi is not set up" and skipped the update request a reinstall should
+  // leave (pre-release bug hunt).
+  test("a sidecar started by hand and answering is reported running, not 'not set up', and gets the update request", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    sidecar(layout);
+    const herdr = fakeHerdr();
+    expect(await setup(layout, unsupervised())).toBe(0);
+    expect(out.text()).toContain("Shahi is running at");
+    expect(out.text()).toContain("started outside herdr");
+    expect(out.text()).toContain("manager.js");
+    expect(out.text()).not.toContain("Shahi is not running");
+    expect(herdr.calls()).toContain("notification show Shahi is running");
+    expect(herdr.calls()).not.toContain("not set up");
+    expect(JSON.parse(readFileSync(join(layout.stateDir, "managed", "request.json"), "utf8"))).toEqual({ action: "install" });
+  });
+
+  test("with nothing answering, the hand-over says it is not running, and still leaves the update request", async () => {
+    captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    mkdirSync(layout.configDir, { recursive: true });
+    writeFileSync(layout.envFile, `PORT=${freePort()}\n`);
+    await expect(install(layout, unsupervised())).rejects.toThrow(/^Shahi is not running\. No systemd on this machine/);
+    expect(existsSync(join(layout.stateDir, "managed", "request.json"))).toBe(true);
+  });
+});
+
+/**
+ * Any Shahi's /api/meta used to count as this install running: another
+ * user's, or a development checkout on the default port. Setup printed
+ * "running", status exited 0 with the other server's version, and the popup
+ * went straight to a pair.ts that failed with a 401 blaming SESSION_SECRET,
+ * while the real sidecar crash-looped on EADDRINUSE (pre-release bug hunt).
+ */
+describe("another program on Shahi's port", () => {
+  test("setup reports the port taken and how to move, instead of 'running'", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    sidecar(layout, { ours: false });
+    const herdr = fakeHerdr();
+    expect(await setup(layout, fakeService(() => {}, true))).toBe(1);
+    expect(out.text()).toContain("Another program is answering at");
+    expect(out.text()).toContain(`Put PORT=<a free port> in ${layout.envFile}`);
+    expect(out.text()).not.toContain("is running at");
+    expect(herdr.calls()).toContain("port is taken");
+  });
+
+  test("status says so and exits 1, without the other server's version or devices", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    sidecar(layout, { ours: false });
+    appendFileSync(layout.envFile, `SESSION_SECRET=${"k".repeat(43)}\n`);
+    expect(await status(layout, fakeService(() => {}, true))).toBe(1);
+    expect(out.text()).toContain("port taken");
+    expect(out.text()).not.toContain("1.0.0-theirs");
+  });
+
+  test("the popup does not take it for a running sidecar, and does not go on to a code", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    sidecar(layout, { ours: false });
+    let shown = 0;
+    // The real steps, with a launchd job that is running and pair.ts counted, not run.
+    const code = await pairPopup(() => ({ ...popupSteps(layout, fakeService(() => {}, true), []), showCode: async () => { shown++; return 0; } }), async () => {});
+    expect(code).toBe(1);
+    expect(shown).toBe(0);
+    expect(out.text()).toContain("Another program is answering at");
+  });
+
+  test("this install's own sidecar is still recognised as running", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    sidecar(layout);
+    expect((await install(layout, fakeService(() => {}, true))).state).toBe("answering");
+    expect(out.text()).toContain("Shahi's connection service is running at");
+    expect(await status(layout, fakeService(() => {}, true))).toBe(0);
+    expect(out.text()).toContain("9.9.9-ours");
+  });
+});
+
+/**
+ * Setup waited a fixed 6 s, and a healthy cold start on a loaded VM took up
+ * to 7.8 s, so restart said "not answering … The log says why" and toasted
+ * "Shahi did not start" for a service that answered a moment later
+ * (pre-release bug hunt).
+ */
+describe("a sidecar that starts slowly", () => {
+  test("answering after 7 s is reported running, not as a failure", async () => {
+    const out = captured();
+    const layout = scratchLayout();
+    stagedRelease(layout);
+    sidecar(layout, { after: 7_000 });
+    const herdr = fakeHerdr();
+    expect(await setup(layout, fakeService(() => {}, true))).toBe(0);
+    expect(out.text()).toContain("Shahi's connection service is running at");
+    expect(out.text()).not.toContain("The log says why");
+    expect(herdr.calls()).toContain("notification show Shahi is running");
+  }, 20_000);
+
+  test("still running but silent when the wait ends is 'still starting', not 'did not start'", async () => {
+    const layout = scratchLayout();
+    const env = new Map([["SESSION_SECRET", "k".repeat(43)]]);
+    const url = `http://127.0.0.1:${freePort()}`;
+    expect(await waitForStart(url, env, fakeService(() => {}, true), join(layout.stateDir, "managed"), Date.now(), 1_000)).toEqual({ state: "starting" });
+  });
+
+  test("a service that stays stopped, or that its manager says exited, is a failure at once", async () => {
+    const layout = scratchLayout();
+    const env = new Map([["SESSION_SECRET", "k".repeat(43)]]);
+    const url = `http://127.0.0.1:${freePort()}`;
+    const root = join(layout.stateDir, "managed");
+    const since = Date.now();
+    const stopped = Date.now();
+    expect(await waitForStart(url, env, fakeService(() => {}, false), root, since, 20_000)).toEqual({ state: "failed", why: null });
+    expect(Date.now() - stopped).toBeLessThan(8_000);
+    atomicJson(join(root, "status.json"), { managed: true, phase: "failed", channel: "stable", current: "0.3.7", message: "The service exited with code 1." });
+    expect(await waitForStart(url, env, fakeService(() => {}, true), root, since, 20_000)).toEqual({ state: "failed", why: "The service exited with code 1." });
+    // A record from before this start says nothing about it.
+    expect(await waitForStart(url, env, fakeService(() => {}, true), root, Date.now() + 60_000, 500)).toEqual({ state: "starting" });
+  }, 20_000);
 });
 
 /**
