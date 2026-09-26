@@ -352,9 +352,32 @@ export async function readWindow(
   const to = beyond < total ? index.offsets[beyond] : undefined;
 
   const window = await Bun.file(path).slice(from, to).text();
-  const messages = normalizer(parseLines(window), start).slice(0, end - start);
+  const messages = normaliseReadable(parseLines(window), start, normalizer).slice(0, end - start);
 
   return { sessionId: path, path, messages, total, offset: index.size };
+}
+
+/**
+ * A window's messages under the index's rule: a row the normaliser throws on
+ * costs that row. The index never counted such a row, so the page must drop
+ * it too, both to agree with the index's offsets and because handing it to
+ * the one call below failed every page that covered it with a 500
+ * (pre-release bug hunt, September 2026). Rows are tried one at a time only
+ * once the whole window has thrown, so a readable window costs one call.
+ */
+function normaliseReadable(
+  rows: Record<string, unknown>[],
+  start: number,
+  normalizer: (rows: Record<string, unknown>[], start?: number) => LogMessage[],
+): LogMessage[] {
+  try {
+    return normalizer(rows, start);
+  } catch {
+    const readable = rows.filter((row) => {
+      try { normalizer([row]); return true; } catch { return false; }
+    });
+    return normalizer(readable, start);
+  }
 }
 
 /**

@@ -195,3 +195,23 @@ test("one oddly shaped Cursor row does not fail the page that covers it", async 
     expect(page!.messages.map((m) => m.blocks[0])).toEqual([{ kind: "text" as const, text: "first" }, { kind: "text" as const, text: "last" }].slice(-limit));
   }
 });
+
+// The Claude index has always skipped a row its normaliser throws on, but the
+// page read the same bytes again and handed every row to one normaliser call,
+// so that row answered 500 for every page that covered it (pre-release bug
+// hunt). The normalisers no longer throw on any shape above; this holds the
+// page to the index's rule for whatever one might throw on next.
+test("a row the normaliser throws on costs that row in the page, not the page", async () => {
+  const rows = [said(0), said(1), { ...said(9), uuid: "unreadable" }, said(2), said(3)];
+  const path = file(rows);
+  const fussy = (batch: Record<string, unknown>[]) => {
+    if (batch.some((row) => row.uuid === "unreadable")) throw new TypeError("a shape this normaliser cannot read");
+    return normalise(batch);
+  };
+  const expected = [0, 1, 2, 3].map((n) => ({ kind: "text" as const, text: `message ${n}` }));
+  for (const limit of [60, 3]) {
+    const page = await readWindow(path, { limit }, fussy);
+    expect(page!.total).toBe(4);
+    expect(page!.messages.map((m) => m.blocks[0])).toEqual(expected.slice(-limit));
+  }
+});
