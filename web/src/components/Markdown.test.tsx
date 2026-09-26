@@ -99,4 +99,33 @@ describe("links to files on the computer", () => {
     expect(JSON.stringify(view.toJSON())).toContain("api.ts");
     await act(async () => view.unmount());
   });
+
+  // The destination ended at the first ")", so these opened ".../space name (1"
+  // or ".../app/(auth", and a <...> destination with spaces was no link at all
+  // (pre-release bug hunt). The native reader opened every one of them.
+  test("a link whose target holds parentheses or spaces opens the whole target", async () => {
+    const open = async (text: string) => {
+      const opened: string[] = [];
+      let view!: ReactTestRenderer;
+      await act(async () => { view = create(<Markdown text={text} onOpenFile={(f) => opened.push(f.path)} />); });
+      for (const button of view.root.findAllByType("button")) await act(async () => button.props.onClick());
+      const hrefs = view.root.findAllByType("a").map((a) => a.props.href as string);
+      const rendered = JSON.stringify(view.toJSON());
+      await act(async () => view.unmount());
+      return { opened, hrefs, rendered };
+    };
+    expect((await open("Edited [encoded](/Users/me/docs/space%20name%20(1).txt) today.")).opened).toEqual(["/Users/me/docs/space name (1).txt"]);
+    expect((await open("Edited [spaced](</Users/me/docs/space name (1).txt>) today.")).opened).toEqual(["/Users/me/docs/space name (1).txt"]);
+    expect((await open("Edited [plain](</Users/me/docs/a b.md>) today.")).opened).toEqual(["/Users/me/docs/a b.md"]);
+    const route = await open("Edited [page.tsx](/Users/me/web/app/(auth)/login/page.tsx) today.");
+    expect(route.opened).toEqual(["/Users/me/web/app/(auth)/login/page.tsx"]);
+    expect(route.rendered).not.toContain("login/page.tsx)");
+    const wiki = await open("See [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)) now.");
+    expect(wiki.hrefs).toEqual(["https://en.wikipedia.org/wiki/Rust_(programming_language)"]);
+    expect(wiki.rendered).not.toContain(") now");
+    // And an aside in parentheses after a link is still prose.
+    const aside = await open("A [x](/a) and [y](/b) on one line (aside).");
+    expect(aside.opened).toEqual(["/a", "/b"]);
+    expect(aside.rendered).toContain("(aside)");
+  });
 });

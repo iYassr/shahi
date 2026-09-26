@@ -213,9 +213,13 @@ const INLINE: { re: RegExp; render: (m: RegExpMatchArray, k: number) => ReactNod
   { re: /`([^`]+)`/, render: (m, k) => <code className="md__c" key={k}>{m[1]}</code> },
   // Web links, and paths on the computer that agents link to the files they
   // touched (review finding F106: the web reader showed those as bracket text,
-  // while the native reader opened them).
+  // while the native reader opened them). A destination is either `<…>`,
+  // which may hold spaces, or bare with at most one level of balanced
+  // parentheses: ending at the first ")" opened `…/app/(auth` for a Next.js
+  // route group, `…/space name (1` for a copied file and a cut-off Wikipedia
+  // URL (pre-release bug hunt).
   {
-    re: /\[([^\]]+)\]\((<?(?:https?:\/\/|\/(?!\/)|~\/)[^\s)]*>?)\)/,
+    re: /\[([^\]]+)\]\((<(?:https?:\/\/|\/(?!\/)|~\/)[^<>\n]*>|(?:https?:\/\/|\/(?!\/)|~\/)(?:[^\s()]|\([^\s()]*\))*)\)/,
     render: (m, k) => <ProseLink label={m[1]!} target={m[2]!} key={k} />,
   },
   { re: /\*\*([^*]+)\*\*/, render: (m, k) => <strong key={k}>{m[1]}</strong> },
