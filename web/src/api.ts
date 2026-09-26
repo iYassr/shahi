@@ -70,6 +70,8 @@ export interface PaneDetail {
     cwd?: string | null;
     agent?: string | null;
   } | null;
+  /** Who holds the pane id now (`DashboardPane.instanceId`); absent on older servers. */
+  instanceId?: string;
   agent: { name?: string | null } | null;
   layout: { area: Rect } | null;
   frame: PaneFrame | null;
@@ -238,17 +240,23 @@ const api = {
    * permission offers "1. Yes", so without them a card for one command could
    * approve the next. So does the id of the prompt's appearance, when the
    * server gave one: the same command asked for twice draws the same card.
+   *
+   * Writes name the pane's occupant they were meant for, when the server named
+   * one: herdr reuses pane ids, and the server refuses (409 `pane_replaced`) a
+   * write another program would receive.
    */
-  answerPrompt: (paneId: string, index: number, label: string, shown?: Pick<ParsedPrompt, "question" | "context" | "promptId">) =>
+  answerPrompt: (paneId: string, index: number, label: string, shown?: Pick<ParsedPrompt, "question" | "context" | "promptId">, instanceId?: string) =>
     postJson(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
       index,
       label,
       ...(shown ? { question: shown.question, context: shown.context } : {}),
       ...(shown?.promptId ? { promptId: shown.promptId } : {}),
+      ...(instanceId ? { instanceId } : {}),
     }),
-  send: (paneId: string, text: string, clientMessageId: string) =>
-    postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, { text, clientMessageId }),
-  sendKeys: (paneId: string, keys: string[]) => postJson(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys }),
+  send: (paneId: string, text: string, clientMessageId: string, instanceId?: string) =>
+    postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, { text, clientMessageId, ...(instanceId ? { instanceId } : {}) }),
+  sendKeys: (paneId: string, keys: string[], instanceId?: string) =>
+    postJson(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys, ...(instanceId ? { instanceId } : {}) }),
 
   /** Agent kinds that could actually start here, resolved in a real shell. */
   agents: () => request<{ agents: { kind: string; command: string }[]; known: number }>("/api/agents"),

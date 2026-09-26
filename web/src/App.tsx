@@ -8,6 +8,7 @@ import { NavigationIcon } from "./components/NavigationIcon";
 import { Logo } from "./components/Logo";
 import { browserConnection, browserComputers, nameBrowserComputer, forgetBrowser, hosted, restoreBrowser } from "./connection";
 import { listenForNotifications, openNotification } from "./notification-route";
+import { forgetEndedConversations } from "./pane-occupants";
 import { PairBrowser } from "./components/PairBrowser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -41,11 +42,11 @@ export function App(props: { initialPairingCode?: string }) {
     void restoreBrowser().then(async () => {
       if (!window.location.pathname.endsWith("/notification")) return;
       const query = new URLSearchParams(window.location.search);
-      await openNotification(query.get("pane"), query.get("computer"), (path) => navigate(path, { replace: true }));
+      await openNotification(query.get("pane"), query.get("computer"), (path) => navigate(path, { replace: true }), query.get("instance"));
     }).finally(() => setRestored(true));
-    return listenForNotifications((pane, computer) => {
+    return listenForNotifications((pane, computer, instance) => {
       void restoreBrowser()
-        .then(() => openNotification(pane, computer, (path) => navigate(path)))
+        .then(() => openNotification(pane, computer, (path) => navigate(path), instance))
         .catch(() => navigate("/computers"));
     });
   }, []);
@@ -89,9 +90,18 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
    */
   const incompatible = healthError instanceof IncompatibleServerError;
   const [reachable, setReachable] = useState(true);
-  const [session, setSession] = useState<Session | null>(() => browserConnection().session);
+  const [session, storeSession] = useState<Session | null>(() => browserConnection().session);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  // The last real snapshot, updated as sessions arrive rather than as they
+  // render, so two that land before a render are each compared with the one
+  // before them.
+  const lastSnapshot = useRef(session);
+  const setSession = useCallback((next: Session | null) => {
+    if (next) forgetEndedConversations(lastSnapshot.current, next);
+    if (next?.version) lastSnapshot.current = next;
+    storeSession(next);
+  }, []);
   const [reviewed, setReviewed] = useState<Reviewed>({});
   useEffect(() => { setReviewed((current) => retainReviews(current, session?.panes ?? [])); }, [session]);
   const markReviewed = useCallback((pane: DashboardPane) => {
@@ -231,7 +241,8 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
       try {
         const option = prompts[paneId]?.options.find((o) => o.index === optionIndex);
         if (!option) throw new Error("That prompt changed. Wait for the latest question.");
-        await api.answerPrompt(paneId, optionIndex, option.label, prompts[paneId]);
+        const instanceId = sessionRef.current?.panes.find((pane) => pane.paneId === paneId)?.instanceId;
+        await api.answerPrompt(paneId, optionIndex, option.label, prompts[paneId], instanceId);
         setFrames((current) => current[paneId] ? { ...current, [paneId]: { ...current[paneId]!, prompt: null } } : current);
         // The agent's next frame is what confirms it landed; clearing here keeps
         // the card from re-offering a question that is on its way out.

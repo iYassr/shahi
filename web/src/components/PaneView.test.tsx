@@ -1,5 +1,6 @@
 import { clearWebDrafts, webDraft } from "../drafts";
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { forgetEndedConversations } from "../pane-occupants";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ApiContext, ApiError, IncompatibleServerError, UnauthorizedError, api } from "../api";
@@ -172,4 +173,72 @@ test("a pane that is now a shell asks for a command, not a reply to an agent", a
   expect(view!.root.findByType("textarea").props.placeholder).toBe("Run a command…");
   await act(async () => view!.update(tree(true)));
   expect(view!.root.findByType("textarea").props.placeholder).toBe("Reply to this agent…");
+});
+
+// herdr reuses pane ids: close the highest space, restart herdr, create one,
+// and its panes have the old ids. The pre-release bug hunt kept a draft and an
+// uncertain send for w3:p1 in an open page across that: the new program's
+// composer showed the old draft, and the retried send ran in the new shell.
+describe("a pane id another program has taken", () => {
+  const occupied = (instanceId: string, title = "Conversation") =>
+    ({ version: "0.9.1", panes: [{ paneId: "w1:p1", instanceId, title, isAgent: true, agent: "claude", status: "idle" }] } as any);
+  const tree = (scoped: typeof api, session: any, entry = "/pane/w1:p1") =>
+    <ApiContext.Provider value={scoped}><MemoryRouter initialEntries={[entry]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>;
+  const sendButton = () => view!.root.findAllByType("button").find(b => b.props.className === "compose__send")!;
+
+  test("a retried send names the conversation it was typed for, so it cannot land in the next one", async () => {
+    const send = mock(() => Promise.reject(new TypeError("response lost")));
+    const scoped = { ...api, send, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+    await act(async () => { view = create(tree(scoped, occupied("term_a"))); });
+    await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: "yes, roll it back" } }));
+    await act(async () => sendButton().props.onClick());
+    await act(async () => sendButton().props.onClick());
+    expect(send).toHaveBeenCalledTimes(2);
+    const [first, retry] = send.mock.calls as unknown as unknown[][];
+    expect(first).toEqual(["w1:p1", "yes, roll it back", expect.any(String), "term_a"]);
+    expect(retry).toEqual(first);
+  });
+
+  test("the composer drops an unsent draft when another program takes the pane", async () => {
+    const send = mock(() => Promise.reject(new TypeError("response lost")));
+    const scoped = { ...api, send, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+    const before = occupied("term_a");
+    await act(async () => { view = create(tree(scoped, before)); });
+    await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: "A-DRAFT: roll back the payments hotfix on prod" } }));
+    await act(async () => sendButton().props.onClick());
+    const after = occupied("term_b", "Another conversation");
+    // What App does with every session before it renders it.
+    await act(async () => { forgetEndedConversations(before, after); view!.update(tree(scoped, after)); });
+    expect(view!.root.findByType("textarea").props.value).toBe("");
+    expect(webDraft("direct", "w1:p1").pending).toBeNull();
+  });
+
+  test("an open reader starts over for the new program, even while its fetches fail", async () => {
+    const said = { sessionId: "s-a", path: "/a.jsonl", total: 1, offset: 0, messages: [{ id: "a1", role: "agent", at: 0, blocks: [{ kind: "text", text: "A: shall I roll back prod?" }] }] };
+    const sessionLog = mock().mockResolvedValueOnce(said).mockRejectedValue(new ApiError("unavailable", 503));
+    const scoped = { ...api, sessionLog, pane: mock().mockResolvedValue(detail) };
+    const before = occupied("term_a");
+    await act(async () => { view = create(tree(scoped, before)); });
+    expect(output()).toContain("A: shall I roll back prod?");
+    const after = occupied("term_b", "Another conversation");
+    await act(async () => { forgetEndedConversations(before, after); view!.update(tree(scoped, after)); });
+    expect(output()).not.toContain("A: shall I roll back prod?");
+  });
+
+  test("a notification for a conversation that has ended says so instead of opening the new one", async () => {
+    const scoped = { ...api, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+    await act(async () => { view = create(tree(scoped, occupied("term_b", "Another conversation"), "/pane/w1:p1?instance=term_a")); });
+    expect(output()).toContain("has ended");
+    expect(view!.root.findAllByType("textarea")).toHaveLength(0);
+    await act(async () => view!.root.findAllByType("button").find(b => b.children.join("") === "Open what runs there now")!.props.onClick());
+    expect(output()).not.toContain("has ended");
+    expect(output()).toContain("Another conversation");
+  });
+
+  test("while a notification for the conversation still there opens it", async () => {
+    const scoped = { ...api, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+    await act(async () => { view = create(tree(scoped, occupied("term_a"), "/pane/w1:p1?instance=term_a")); });
+    expect(output()).not.toContain("has ended");
+    expect(view!.root.findAllByType("textarea")).toHaveLength(1);
+  });
 });

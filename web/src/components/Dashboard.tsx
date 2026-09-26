@@ -1,4 +1,4 @@
-import { agentLabel, inboxPanes, latestConversations, type Reviewed } from "@shahi/shared";
+import { agentLabel, inboxPanes, latestConversations, pinnedPanes, retainPins, togglePin as togglePinOf, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
@@ -36,8 +36,19 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   const selected = useMatch("/pane/:paneId")?.params.paneId;
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [pins, setPins] = useState<string[]>(() => { try { const stored = JSON.parse(preferences.get("shahi.pins") ?? "[]"); return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []; } catch { return []; } });
-  const togglePin = (id: string) => setPins((current) => { const next = current.includes(id) ? current.filter((p) => p !== id) : [...current, id]; preferences.set("shahi.pins", JSON.stringify(next)); return next; });
+  const [storedPins, setStoredPins] = useState<readonly string[]>(() => { try { const stored = JSON.parse(preferences.get("shahi.pins") ?? "[]"); return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []; } catch { return []; } });
+  const savePins = (next: readonly string[]) => { preferences.set("shahi.pins", JSON.stringify(next)); setStoredPins(next); };
+  // A pin names the conversation it was put on, not only its pane id, and is
+  // dropped once that conversation has ended: herdr reuses pane ids, and a pin
+  // on w3:p1 starred the next conversation to get that id (pre-release bug
+  // hunt). See `pane-instance.ts` in @shahi/shared.
+  const pins = pinnedPanes(storedPins, session?.panes ?? []);
+  const togglePin = (pane: DashboardPane) => savePins(togglePinOf(storedPins, pane));
+  useEffect(() => {
+    if (!session) return;
+    const kept = retainPins(storedPins, session);
+    if (kept !== storedPins) savePins(kept);
+  }, [session, storedPins]);
 
   // Keep explicit grouping choices; default to one chronological list.
   const scroller = useRef<HTMLDivElement>(null);
@@ -70,7 +81,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
   const active = chips.some((c) => c.id === filter) ? filter : "all";
   const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "inbox" && inboxIds.has(p.paneId) || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
   const blocked = active === "inbox" ? latestConversations(agents.filter(p => p.status === "blocked")) : [];
-  const rest = latestConversations(active === "inbox" ? agents.filter(p => p.status !== "blocked") : agents, new Set(pins));
+  const rest = latestConversations(active === "inbox" ? agents.filter(p => p.status !== "blocked") : agents, pins);
 
   if (session.panes.length === 0) {
     return (
@@ -137,7 +148,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
                 </h2>
               </div>
               {group.panes.map((pane) => (
-                pane.status === "blocked" && !selected ? <BlockedCard key={pane.paneId} pane={pane} prompt={prompts[pane.paneId]} onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)} onAnswer={(index) => onAnswer(pane.paneId, index)} /> : <div className={`agent-row${pins.includes(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
+                pane.status === "blocked" && !selected ? <BlockedCard key={pane.paneId} pane={pane} prompt={prompts[pane.paneId]} onOpen={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)} onAnswer={(index) => onAnswer(pane.paneId, index)} /> : <div className={`agent-row${pins.has(pane.paneId) ? " pinned-agent" : ""}`} key={pane.paneId}><button
                   className={`row row--${pane.status}${selected === pane.paneId ? " row--selected" : ""}`}
                   aria-current={selected === pane.paneId ? "page" : undefined}
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
@@ -145,7 +156,7 @@ export function Dashboard({ session, prompts, onAnswer, reviewed, onReviewed }: 
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
                   <span className="row__title">{pane.title ?? pane.paneId}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}</span>
-                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${pane.title ?? pane.paneId} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.includes(pane.paneId)} aria-label={`${pins.includes(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane.paneId)}>{pins.includes(pane.paneId) ? "★" : "☆"}</button>}</div>
+                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${pane.title ?? pane.paneId} reviewed`} onClick={() => onReviewed(pane)}>Reviewed</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={`${pins.has(pane.paneId) ? "Unpin" : "Pin"} ${pane.title ?? pane.paneId}`} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
             </section>
           ))}

@@ -4,7 +4,8 @@ export interface WebDraft {
   inFlight: boolean;
   listeners: Set<() => void>;
   attachments: { name: string; path: string; size?: number }[];
-  pending: { body: string; id: string } | null;
+  /** An uncertain send: its operation id, and the occupant it was meant for (see `DashboardPane.instanceId`). */
+  pending: { body: string; id: string; instanceId?: string } | null;
 }
 const scopes = new Map<string, Map<string, WebDraft>>();
 export function draftOwner(identity?: { serverId: string; deviceId: string } | null): string {
@@ -50,6 +51,23 @@ export function webDraft(owner: string, pane: string): WebDraft {
   return draft;
 }
 export function clearWebDrafts(owner: string) { scopes.delete(owner); }
+
+/**
+ * Empties the draft of a pane whose conversation has ended (`endedPanes`): it
+ * closed, or another program took its id. Kept by pane id, a draft outlived
+ * the pane it was typed for: the pre-release bug hunt found an unsent draft in
+ * an unrelated conversation's composer, and its uncertain send, retried there,
+ * typed into a new shell. Emptied in place rather than removed, because a
+ * composer on screen holds this object and keeps typing into it.
+ */
+export function forgetWebDraft(owner: string, pane: string) {
+  const draft = scopes.get(owner)?.get(pane);
+  if (!draft || (!draft.text && !draft.attachments.length && !draft.pending)) return;
+  draft.text = "";
+  draft.attachments = [];
+  draft.pending = null;
+  notifyWebDraft(draft);
+}
 
 /**
  * Whether any conversation, open or not, holds work a page reload would lose.

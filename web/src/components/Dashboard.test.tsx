@@ -1,6 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import type { AgentStatus, DashboardPane } from "../api";
-import { groupPanes } from "./Dashboard";
+import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { MemoryRouter } from "react-router-dom";
+import type { AgentStatus, DashboardPane, Session } from "../api";
+import { Dashboard, groupPanes } from "./Dashboard";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const pane = (over: Partial<DashboardPane> & { paneId: string }): DashboardPane => ({
   workspaceId: "w1",
@@ -98,5 +102,57 @@ describe("groupPanes", () => {
       expect(total).toHaveLength(15);
       expect(new Set(total.map((p) => p.paneId)).size).toBe(15);
     }
+  });
+});
+
+// herdr reuses pane ids: close the highest space, restart herdr, create one,
+// and its panes have the old ids. The pre-release bug hunt pinned w3:p1 and
+// found the next conversation to get that id starred and sorted first.
+describe("pins", () => {
+  let view: ReactTestRenderer | undefined;
+  const stored = new Map<string, string>();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  beforeAll(() => Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => void stored.set(key, value), removeItem: (key: string) => void stored.delete(key) },
+  }));
+  afterAll(() => {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous); else Reflect.deleteProperty(globalThis, "localStorage");
+  });
+  afterEach(async () => {
+    if (view) await act(async () => view!.unmount());
+    view = undefined;
+    stored.clear();
+  });
+  const session = (...panes: DashboardPane[]) => ({ version: "0.9.1", panes } as unknown as Session);
+  const tree = (current: Session) => <MemoryRouter><Dashboard session={current} prompts={{}} onAnswer={mock()} reviewed={{}} onReviewed={mock()} /></MemoryRouter>;
+  const pin = (title: string) => view!.root.findAll((node) => node.type === "button" && typeof node.props["aria-label"] === "string" && node.props["aria-label"].endsWith(` ${title}`))[0]!;
+
+  test("a pin on one conversation does not pin the next conversation to get its pane id", async () => {
+    const first = pane({ paneId: "w3:p1", instanceId: "term_a", title: "Roll back prod" });
+    await act(async () => { view = create(tree(session(first, pane({ paneId: "w1:p1", title: "Other" })))); });
+    await act(async () => pin("Roll back prod").props.onClick());
+    expect(pin("Roll back prod").props["aria-pressed"]).toBe(true);
+
+    // The pane id comes back holding another program, with no list between.
+    const next = pane({ paneId: "w3:p1", instanceId: "term_b", title: "Unrelated work" });
+    await act(async () => view!.update(tree(session(next, pane({ paneId: "w1:p1", title: "Other" })))));
+    expect(pin("Unrelated work").props["aria-pressed"]).toBe(false);
+    expect(JSON.parse(stored.get("shahi.pins")!)).toEqual([]);
+  });
+
+  test("while a pin stays with its conversation, and an older server's pins go by pane id", async () => {
+    const first = pane({ paneId: "w3:p1", instanceId: "term_a", title: "Roll back prod" });
+    await act(async () => { view = create(tree(session(first))); });
+    await act(async () => pin("Roll back prod").props.onClick());
+    await act(async () => view!.update(tree(session({ ...first, preview: "moved on" }))));
+    expect(pin("Roll back prod").props["aria-pressed"]).toBe(true);
+
+    await act(async () => view!.unmount());
+    stored.clear();
+    const older = pane({ paneId: "w2:p1", title: "Older server" });
+    await act(async () => { view = create(tree(session(older))); });
+    await act(async () => pin("Older server").props.onClick());
+    expect(pin("Older server").props["aria-pressed"]).toBe(true);
   });
 });

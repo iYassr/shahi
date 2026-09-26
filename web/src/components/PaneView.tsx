@@ -14,7 +14,7 @@ import { supports } from "@shahi/shared";
  */
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { lazyChunk } from "../lazy-chunk";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   GAP_MARKER,
   ApiError,
@@ -85,11 +85,36 @@ const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = 
  * be typed as `exit` in the composer, which at least requires meaning it.
  */
 
+/**
+ * Counts the times another program has taken this pane id while it was open.
+ *
+ * herdr reuses pane ids, so the id in the address can come to name a new
+ * conversation under an open view (see `DashboardPane.instanceId`). What the
+ * view drew from the previous one — its reader, its detail — starts over when
+ * this changes. Learning the occupant for the first time is not a change: a
+ * view opened before the list loaded would otherwise reload for nothing.
+ */
+function useOccupancy(instanceId: string | undefined): number {
+  const seen = useRef<{ instanceId?: string; generation: number }>({ generation: 0 });
+  if (instanceId && seen.current.instanceId && instanceId !== seen.current.instanceId) seen.current.generation++;
+  if (instanceId) seen.current.instanceId = instanceId;
+  return seen.current.generation;
+}
+
 export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast }: Props) {
   const api = useApi();
   const control = useComputerControl();
   const { paneId = "" } = useParams();
   const navigate = useNavigate();
+  /**
+   * The occupant a notification was about. Tapped after herdr gave the pane id
+   * to another program, it opened the new conversation with no notice
+   * (pre-release bug hunt), so the view says the conversation has ended
+   * instead, until the person asks for what runs there now.
+   */
+  const [searchParams] = useSearchParams();
+  const notifiedFor = searchParams.get("instance");
+  const [openAnyway, setOpenAnyway] = useState(false);
 
   const [detail, setDetail] = useState<PaneDetail | null>(null);
   /**
@@ -155,6 +180,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
   // however fast the request was.
   const known = session?.panes.find((pane) => pane.paneId === paneId) ?? null;
   const reportedPresent = known !== null;
+  const instanceId = known?.instanceId ?? detail?.instanceId;
+  const occupancy = useOccupancy(instanceId);
   const frame = frames[paneId] ?? detail?.frame ?? null;
   const prompt = prompts[paneId] ?? frame?.prompt ?? null;
 
@@ -201,8 +228,9 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       window.removeEventListener("online", reconnect);
     };
   // Newly created panes may reach the live dashboard after an initial 404.
-  // Retry on that membership transition, not on every dashboard refresh.
-  }, [paneId, api, reportedPresent]);
+  // Retry on that membership transition, not on every dashboard refresh, and
+  // when another program takes the pane id.
+  }, [paneId, api, reportedPresent, occupancy]);
 
   useEffect(() => {
     if (tab !== "history") return;
@@ -278,13 +306,15 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
     const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
 
     if (actionInFlight.current || savedDraft.inFlight || !mounted.current) return;
-    if (pending.current?.body !== body) pending.current = { body, id: requestId() };
+    // The occupant rides with the operation id, so a retry is refused (409
+    // pane_replaced) rather than typed into whatever took the pane id since.
+    if (pending.current?.body !== body) pending.current = { body, id: requestId(), ...(instanceId ? { instanceId } : {}) };
     savedDraft.pending = pending.current;
     savedDraft.inFlight = true;
     notifyWebDraft(savedDraft);
     await send(async () => {
       try {
-        await api.send(paneId, body, savedDraft.pending!.id);
+        await api.send(paneId, body, savedDraft.pending!.id, savedDraft.pending!.instanceId);
         savedDraft.pending = null;
         if (savedDraft.text === draft) savedDraft.text = "";
         savedDraft.attachments = savedDraft.attachments.filter(file => !attachments.some(sent => sent.path === file.path));
@@ -294,6 +324,30 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
         notifyWebDraft(savedDraft);
       }
     }, "Message not sent");
+  }
+
+  if (notifiedFor && instanceId && notifiedFor !== instanceId && !openAnyway) {
+    return (
+      <div className="detail">
+        <header className="topbar">
+          <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
+            ‹
+          </button>
+          <div className="detail__where">{paneId}</div>
+        </header>
+        <div className="empty" role="status">
+          <span className="empty__mark">○</span>
+          The conversation this notification was about has ended. Another
+          program now runs in {paneId}.
+          <button className="empty__action" onClick={() => setOpenAnyway(true)}>
+            Open what runs there now
+          </button>
+          <button className="empty__action" onClick={() => navigate("/")}>
+            Back to agents
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (gone) {
@@ -407,7 +461,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
       </div>
 
       {tab === "read" && readable ? (
-        <Reader key={paneId} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
+        <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>
@@ -473,7 +527,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast 
               aria-label={({ esc: "Escape", "^C": "Interrupt (Control C)", "⇥": "Tab", "⇧⇥": "Shift Tab", "↑": "Up arrow", "↓": "Down arrow", "⏎": "Enter" }[label] ?? label)}
               className={tab === "screen" && label === "^C" ? "keys__interrupt" : undefined}
               title={label === "^C" ? "Interrupt the running process" : undefined}
-              onClick={() => void send(() => api.sendKeys(paneId, keys), `${label} not sent`)}
+              onClick={() => void send(() => api.sendKeys(paneId, keys, instanceId), `${label} not sent`)}
             >
               {tab === "screen" ? ({ esc: "Esc", "^C": "Ctrl+C", "⇥": "Tab", "⇧⇥": "Shift+Tab", "⏎": "Enter" }[label] ?? label) : label}
             </button>

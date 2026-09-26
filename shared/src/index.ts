@@ -236,13 +236,13 @@ export interface DashboardPane {
    * parse it.
    *
    * A pane id is not a conversation: herdr gives a closed pane's id to a new
-   * pane after a restart, and every herdr session starts at w1:p1. Keep what
-   * belongs to one conversation — a draft, a pin, a place in the reader, a
-   * notification — under this beside the pane id (`occupantKey`), and send it
-   * back with a prompt, an answer or keys, so the server refuses a write the
-   * pane's new program was never meant to get (409 `pane_replaced`). It
-   * survives a herdr restart that resumes the same agent session. Absent on
-   * older servers, whose clients key by pane id alone as before.
+   * pane after a restart, and every herdr session starts at w1:p1. A client
+   * forgets what it kept for a pane when this changes (`endedPanes`), stores
+   * it with a pin, carries it in a notification, and sends it back with a
+   * prompt, an answer or keys, so the server refuses a write the pane's new
+   * program was never meant to get (409 `pane_replaced`). It survives a herdr
+   * restart that resumes the same agent session. Absent on older servers,
+   * whose clients go by pane id alone as before.
    */
   instanceId?: string;
   workspaceId: string;
@@ -443,3 +443,4 @@ export type SocketMessage =
 export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch" };
 
 export { agentLabel } from "./agent-label";
+export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";

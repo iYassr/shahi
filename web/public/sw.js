@@ -155,7 +155,10 @@ self.addEventListener("push", (event) => {
       // stacking a new one on top.
       tag: `${payload.serverId || ""}:${payload.paneId || "herdr"}`,
       renotify: Boolean(payload.paneId),
-      data: { paneId: payload.paneId, serverId: payload.serverId },
+      // The pane's occupant rides along, so a tap after herdr has given the
+      // pane id to another program says the conversation ended instead of
+      // opening the new one (see `notification-route.ts`).
+      data: { paneId: payload.paneId, serverId: payload.serverId, instanceId: payload.instanceId },
     }),
   );
 });
@@ -183,7 +186,10 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const paneId = event.notification.data?.paneId;
   const serverId = event.notification.data?.serverId;
-  const target = paneId ? `${BASE}notification?pane=${encodeURIComponent(paneId)}&computer=${encodeURIComponent(serverId || "")}` : BASE;
+  const instanceId = event.notification.data?.instanceId;
+  const target = paneId
+    ? `${BASE}notification?pane=${encodeURIComponent(paneId)}&computer=${encodeURIComponent(serverId || "")}${instanceId ? `&instance=${encodeURIComponent(instanceId)}` : ""}`
+    : BASE;
 
   event.waitUntil(
     (async () => {
@@ -193,7 +199,7 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of windows) {
         if (client.url.startsWith(self.registration.scope)) {
           await client.focus();
-          if (await routeInPlace(client, { type: "shahi:open-notification", pane: paneId || "", computer: serverId || "" })) return;
+          if (await routeInPlace(client, { type: "shahi:open-notification", pane: paneId || "", computer: serverId || "", instance: instanceId || "" })) return;
           if ("navigate" in client) await client.navigate(target);
           return;
         }

@@ -53,6 +53,17 @@ const rememberedTranscripts = new Map<string, string>();
 export function clearReaderMemory() { memoryGeneration++; remembered.clear(); rememberedOffsets.clear(); rememberedTranscripts.clear(); forgetReaderPlace(); }
 
 /**
+ * Forgets one pane's conversation and place: its conversation ended, or it has
+ * none. Remembered by pane id, a conversation came back under whatever took
+ * the id next, and stayed there while fetches failed; a pane whose agent had
+ * quit showed the dead conversation on every open until its 404 arrived
+ * (pre-release bug hunt).
+ */
+export function forgetReaderMemory(paneId: string) {
+  remembered.delete(paneId); rememberedOffsets.delete(paneId); rememberedTranscripts.delete(paneId); forgetReaderPlace(paneId);
+}
+
+/**
  * The identity of the transcript a page came from.
  *
  * A herdr pane outlives the agent session in it: start a new Cursor chat or
@@ -203,7 +214,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       setLoading(false);
     } catch (err) {
       if (!active()) return;
-      if (err instanceof ApiError && err.status === 404) onUnavailable();
+      if (err instanceof ApiError && err.status === 404) { forgetReaderMemory(paneId); onUnavailable(); }
       else { setError(err instanceof Error ? err.message : "Could not read conversation"); setLoading(false); }
     } finally { busy.current = false; }
   }, [paneId, onUnavailable]);

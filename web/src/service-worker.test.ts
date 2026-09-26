@@ -207,7 +207,20 @@ describe("tapping a notification", () => {
     // A navigation reloads the page, and with it every unsent draft and any
     // computer paired for this session only.
     expect(app.calls).toEqual(["focus"]);
-    expect(app.messages).toEqual([{ type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b" }]);
+    expect(app.messages).toEqual([{ type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b", instance: "" }]);
+  });
+
+  // herdr gives a closed pane's id to a new pane after a restart, and a tap
+  // opened whatever held the id by then (pre-release bug hunt). The occupant
+  // that was waiting travels with the tap, however the app is reached.
+  test("a tap names the conversation that was waiting, not only its pane id", async () => {
+    const named = { notification: { ...click.notification, data: { ...click.notification.data, instanceId: "term_a" } } };
+    const app = openApp(true);
+    await worker(source, () => undefined, { timers: "real", windows: [app] }).extend("notificationclick", named);
+    expect(app.messages).toEqual([{ type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b", instance: "term_a" }]);
+    const closed = worker(source, () => undefined, { windows: [] });
+    await closed.extend("notificationclick", named);
+    expect(closed.opened).toEqual(["/pwa/notification?pane=w1%3Ap2&computer=computer-b&instance=term_a"]);
   });
 
   test("navigates an open page from an older release that does not answer", async () => {
@@ -227,14 +240,14 @@ describe("tapping a notification", () => {
     const container = new EventTarget();
     const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { serviceWorker: container } });
-    const routed: Array<[string | null, string | null]> = [];
-    const stop = listenForNotifications((pane, computer) => routed.push([pane, computer]));
+    const routed: Array<[string | null, string | null, string | null]> = [];
+    const stop = listenForNotifications((pane, computer, instance) => routed.push([pane, computer, instance]));
     try {
       const channel = new MessageChannel();
       const answered = new Promise((resolve) => { channel.port1.onmessage = (event) => resolve(event.data); });
-      container.dispatchEvent(new MessageEvent("message", { data: { type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b" }, ports: [channel.port2] }));
+      container.dispatchEvent(new MessageEvent("message", { data: { type: OPEN_NOTIFICATION, pane: "w1:p2", computer: "computer-b", instance: "term_a" }, ports: [channel.port2] }));
       expect(await answered).toBe("opened");
-      expect(routed).toEqual([["w1:p2", "computer-b"]]);
+      expect(routed).toEqual([["w1:p2", "computer-b", "term_a"]]);
       channel.port1.close();
     } finally {
       stop();
