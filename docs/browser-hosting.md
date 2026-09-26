@@ -288,6 +288,12 @@ applicant is Reply-To. `BETA_DELIVERY_TO` is a Worker secret containing that
 verified destination. Update it if the support forwarding rule changes.
 The sender is `beta@getshahi.dev`. The domain must have Email Routing enabled.
 
+`_headers` does not reach a Worker's response, so `site/src/signup.ts` sets the
+site's baseline headers on every answer itself (`X-Frame-Options`,
+`Referrer-Policy`, `Cross-Origin-Resource-Policy`, `nosniff`, `no-store`, and
+HSTS over HTTPS), and a 405 names `Allow: POST`; until the pre-release bug hunt
+(B99) it sent `no-store` and `nosniff` alone.
+
 Requests require a same-origin JSON submission, an email address, and consent.
 A honeypot, a 2 KB body limit, and five requests per minute per IP per Cloudflare
 location limit abuse. This is a lightweight limit, not global bot protection.

@@ -2,9 +2,29 @@ interface Dependencies {
   limit(key: string): Promise<boolean>;
   send(email: string): Promise<void>;
 }
-const reply = (status: number, message: string) => Response.json({ message }, {
-  status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...(status === 429 ? { "Retry-After": "60" } : {}) },
-});
+/**
+ * What site/public/_headers gives every page. That file reaches static assets
+ * only, never a Worker's own answer, so this route went out with no-store and
+ * nosniff alone (pre-release bug hunt, B99). Strict-Transport-Security only
+ * over HTTPS, where a host may send it (RFC 6797 §7.2).
+ */
+function reply(request: Request, status: number, message: string): Response {
+  const secure = new URL(request.url).protocol === "https:";
+  return Response.json({ message }, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      ...(secure ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" } : {}),
+      // RFC 9110 requires a 405 to say what is allowed.
+      ...(status === 405 ? { Allow: "POST" } : {}),
+      ...(status === 429 ? { "Retry-After": "60" } : {}),
+    },
+  });
+}
 
 /**
  * The rate-limit key for a client address: an IPv6 source by its /64, any
@@ -27,32 +47,32 @@ export function limitKey(ip: string): string {
 }
 
 export async function signup(request: Request, deps: Dependencies): Promise<Response> {
-  if (request.method !== "POST") return reply(405, "Use the signup form to register.");
-  if (request.headers.get("Origin") !== new URL(request.url).origin) return reply(403, "Submit the form from the Shahi website.");
-  if (!request.headers.get("Content-Type")?.startsWith("application/json")) return reply(415, "Send a JSON form submission.");
-  if (!await deps.limit(limitKey(request.headers.get("CF-Connecting-IP") ?? "unknown"))) return reply(429, "Too many attempts. Please try again in a minute.");
+  if (request.method !== "POST") return reply(request, 405, "Use the signup form to register.");
+  if (request.headers.get("Origin") !== new URL(request.url).origin) return reply(request, 403, "Submit the form from the Shahi website.");
+  if (!request.headers.get("Content-Type")?.startsWith("application/json")) return reply(request, 415, "Send a JSON form submission.");
+  if (!await deps.limit(limitKey(request.headers.get("CF-Connecting-IP") ?? "unknown"))) return reply(request, 429, "Too many attempts. Please try again in a minute.");
   // Bound the stream too: Content-Length is optional and cannot enforce a limit.
   const reader = request.body?.getReader();
-  if (!reader) return reply(400, "Enter your email address.");
+  if (!reader) return reply(request, 400, "Enter your email address.");
   let raw = "", size = 0;
   const decoder = new TextDecoder();
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 2048) { await reader.cancel(); return reply(413, "The submission is too large."); }
+    if (size > 2048) { await reader.cancel(); return reply(request, 413, "The submission is too large."); }
     raw += decoder.decode(value, { stream: true });
   }
   raw += decoder.decode();
   let body: { email?: unknown; website?: unknown; consent?: unknown };
-  try { body = JSON.parse(raw); } catch { return reply(400, "Check your email address and try again."); }
-  if (!body || typeof body !== "object") return reply(400, "Enter your email address.");
-  if (body.website) return reply(400, "Unable to accept this submission.");
+  try { body = JSON.parse(raw); } catch { return reply(request, 400, "Check your email address and try again."); }
+  if (!body || typeof body !== "object") return reply(request, 400, "Enter your email address.");
+  if (body.website) return reply(request, 400, "Unable to accept this submission.");
   const email = typeof body.email === "string" ? body.email.trim() : "";
-  if (email.length > 254 || !/^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(email)) return reply(400, "Enter a valid email address.");
-  if (body.consent !== true) return reply(400, "Please agree to receive email about the iOS beta.");
+  if (email.length > 254 || !/^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(email)) return reply(request, 400, "Enter a valid email address.");
+  if (body.consent !== true) return reply(request, 400, "Please agree to receive email about the iOS beta.");
   try { await deps.send(email); }
-  catch { return reply(503, "We couldn’t send your request. Please try again, or email support@getshahi.dev."); }
+  catch { return reply(request, 503, "We couldn’t send your request. Please try again, or email support@getshahi.dev."); }
   // Invites are sent by hand, once Apple lets an address in, so this promises when, not now.
-  return reply(200, `Request sent. We’ll email ${email} when your TestFlight invite is ready.`);
+  return reply(request, 200, `Request sent. We’ll email ${email} when your TestFlight invite is ready.`);
 }

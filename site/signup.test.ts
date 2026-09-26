@@ -40,3 +40,27 @@ test("rate limits an IPv6 host by its /64, and every other address as given", as
   expect(limitKey("2001:db8:1:3::1")).not.toBe(limitKey("2001:db8:1:2::1"));
 });
 
+// site/public/_headers reaches static assets only, never a Worker's answer, so
+// this route sent no-store and nosniff alone, and its 405 named no method
+// (pre-release bug hunt, B99).
+test("every answer carries the site's baseline headers, and a refused method is told the one to use", async () => {
+  const deps = { limit: async () => true, send: async () => {} };
+  const answers = [
+    await signup(request(valid), deps),
+    await signup(request({}), deps),
+    await signup(new Request("https://getshahi.dev/api/ios-beta"), deps),
+    await signup(new Request("https://getshahi.dev/api/ios-beta", { method: "OPTIONS" }), deps),
+  ];
+  expect(answers.map(r => r.status)).toEqual([200, 400, 405, 405]);
+  for (const r of answers) {
+    expect(r.headers.get("Cache-Control")).toBe("no-store");
+    expect(r.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(r.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(r.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(r.headers.get("Cross-Origin-Resource-Policy")).toBe("same-origin");
+    expect(r.headers.get("Strict-Transport-Security")).toBe("max-age=31536000; includeSubDomains");
+  }
+  expect(answers.map(r => r.headers.get("Allow"))).toEqual([null, null, "POST", "POST"]);
+  // Never over plain HTTP, where a host must not send it (RFC 6797 §7.2).
+  expect((await signup(new Request("http://127.0.0.1:8787/api/ios-beta"), deps)).headers.get("Strict-Transport-Security")).toBeNull();
+});
