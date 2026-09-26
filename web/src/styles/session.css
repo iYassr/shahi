@@ -7,6 +7,23 @@
   min-height: 0;
 }
 
+/*
+ * The answer card inside a pane scrolls rather than clips.
+ *
+ * `.blocked` hides its overflow for the dashboard, and in this full-height
+ * column the card shrank to whatever was left: in phone landscape, at 200%
+ * zoom or with the keyboard open, "3. No, and tell Claude…" was cut off, a
+ * codex approval showed no options at all, and nothing scrolled to them
+ * (pre-release bug hunt, 2026-09). Capped at half the column, so a strip of
+ * the conversation stays in view wherever there is room for one.
+ */
+.detail > .blocked {
+  flex: 0 1 auto;
+  max-height: 50%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .detail__where {
   /* Whatever is left after the title has had what it needs, and gone entirely
      when there is not enough for both. */

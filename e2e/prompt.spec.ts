@@ -101,6 +101,37 @@ test.describe("answering a prompt", () => {
     await expect(page.locator(".detail__title")).not.toHaveText("Waiting on you");
   });
 
+  // In phone landscape, at 200% zoom or with the keyboard open, the pane's card
+  // clipped its options and nothing scrolled to them: a Claude permission lost
+  // "3. No, and tell Claude…" and a codex approval showed no options at all
+  // (pre-release bug hunt). A script can scroll a clipped box, so the test
+  // asks what a person can: every option is in view, or the card scrolls.
+  for (const viewport of [{ width: 664, height: 390 }, { width: 390, height: 330 }]) {
+    test(`every answer in a pane can be reached at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+      await scenario(page, "waiting");
+      await page.setViewportSize(viewport);
+      for (const paneId of ["w1:p1", "w1:p2", "w2:p1"]) {
+        await page.goto(`/pane/${encodeURIComponent(paneId)}`);
+        const card = page.locator(".detail > .blocked");
+        await expect(card.locator(".choice").first()).toBeAttached();
+        const reachable = await card.evaluate((el) => {
+          const overflow = getComputedStyle(el).overflowY;
+          const box = el.getBoundingClientRect();
+          return [...el.querySelectorAll(".choice")].every((choice) => {
+            const row = choice.getBoundingClientRect();
+            return (row.top >= box.top - 1 && row.bottom <= box.bottom + 1) || overflow === "auto" || overflow === "scroll";
+          });
+        });
+        expect(reachable, `${paneId}: an option is clipped with no way to scroll to it`).toBe(true);
+        await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+      }
+      const last = page.locator(".detail > .blocked .choice").last();
+      const index = Number((await last.locator(".choice__index").textContent())!.replace(".", ""));
+      await tap(page, last);
+      await expect.poll(async () => (await paneWrites(page)).map((w) => w.body.index)).toEqual([index]);
+    });
+  }
+
   /**
    * A codex approval carries a command longer than the screen. Taken as the
    * question it wrapped across eight lines and pushed the answers out of view,
