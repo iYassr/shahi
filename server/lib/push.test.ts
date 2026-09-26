@@ -50,6 +50,7 @@ function storeWith(pane: PaneInfo | undefined, label = "project"): SessionStore 
   return {
     pane: () => pane,
     workspace: () => ({ label }),
+    instance: () => undefined,
   } as unknown as SessionStore;
 }
 
