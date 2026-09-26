@@ -13,7 +13,7 @@ jest.mock("expo-router", () => ({
   Stack: { Screen: ({ options }: { options: unknown }) => { mockStackOptions(options); return null; } },
 }));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
-jest.mock("@/lib/push", () => ({ enablePush: jest.fn() }));
+jest.mock("@/lib/push", () => ({ enablePush: jest.fn(), pushEnabled: jest.fn(async () => false) }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
 jest.mock("@/lib/session", () => ({
   useLastUpdate: () => Date.now(),

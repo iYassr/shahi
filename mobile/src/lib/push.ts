@@ -18,7 +18,7 @@
  */
 import * as Device from "expo-device";
 import Constants, { ExecutionEnvironment } from "expo-constants";
-import { preparePushRegistration } from "@/lib/push-registration";
+import { preparePushRegistration, savedPushToken } from "@/lib/push-registration";
 
 import { api, type Api } from "./api";
 
@@ -76,6 +76,21 @@ function showWhileOpen(notifications: Notifications): void {
  */
 export function showNotificationsWhileOpen(): void {
   void load().then((notifications) => { if (notifications) showWhileOpen(notifications); });
+}
+
+/**
+ * Whether the selected computer notifies this phone: a token this phone
+ * registered with it, and permission to show what arrives.
+ */
+export async function pushEnabled(): Promise<boolean> {
+  if (!(await savedPushToken())) return false;
+  const notifications = await load();
+  if (!notifications) return false;
+  try {
+    return (await notifications.getPermissionsAsync()).granted;
+  } catch {
+    return false;
+  }
 }
 
 export async function enablePush(client: Api = api): Promise<PushResult> {

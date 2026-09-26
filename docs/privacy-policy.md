@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 25 September 2026. Published at
+_Last updated: 26 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -17,7 +17,9 @@ HTTPS proxy whose name you list in `SHAHI_ALLOWED_HOSTS`.
 The native app stores its connection credentials in the iOS Keychain: your
 relay address, server identifier and paired-device secret, or your SSH host,
 username, password or private key, passphrase, sidecar passcode and the SSH
-host keys you chose to trust. It also stores local preferences such as pinned
+host keys you chose to trust. With notifications on, it also keeps the push
+token it registered with each computer, so it can say whether they are on and
+turn them off. It also stores local preferences such as pinned
 conversations and terminal width. These Keychain items are kept on this device
 only: they are not restored to another device from a backup, so a restored
 iPhone must be paired or connected again.
@@ -156,7 +158,7 @@ When you use TestFlight, Apple processes beta-testing information, including ins
 
 ## Your choices and deletion
 
-To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device later under Settings → Devices with access on another phone or browser paired with that computer. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Disable notifications in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.
+To remove a saved computer from the iPhone app, use Computers or sign out of that computer in Settings. This removes its saved connection from the app. Sign out while connected so the server can revoke access and push registrations; if the computer is offline, revoke the device later under Settings → Devices with access on another phone or browser paired with that computer. Other saved computers remain until removed. iOS Keychain items may survive uninstalling the app, so remove saved connections first. Deleting a connection does not delete transcripts or uploaded files on your computer; delete those on that computer. Turn notifications off in the app's Settings to stop a computer sending them, or in iOS Settings to stop their display. There is no Shahi account to delete. Email support@getshahi.dev to request access, correction or deletion of beta-signup and support information. We may need to verify the request. Operational records expire under the retention periods above; legal obligations may require some records to be retained.
 
 ## How we use data
 

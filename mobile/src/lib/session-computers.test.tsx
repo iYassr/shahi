@@ -10,7 +10,7 @@ import { RelayLink } from "./relay";
 
 const mockSockets: any[] = [];
 jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}), forgetHostKey: jest.fn(async () => {}) }));
-jest.mock("./push-registration", () => ({ configurePushProfile: jest.fn(), forgetPushRegistration: jest.fn(), restorePushRegistration: jest.fn(async () => {}) }));
+jest.mock("./push-registration", () => ({ configurePushComputer: jest.fn(), forgetPushRegistration: jest.fn(), renewPushRegistration: jest.fn(async () => {}) }));
 jest.mock("./api", () => ({ ...jest.requireActual("./api"),
   createApi: () => require("./api").api,
   api: { session: jest.fn(), login: jest.fn(async () => {}) },

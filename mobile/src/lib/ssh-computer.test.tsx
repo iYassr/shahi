@@ -42,6 +42,7 @@ import { SessionProvider, useSession } from "./session";
 import { COMPUTERS_KEY, computerId, type SavedComputer } from "./computers";
 import { connection } from "./api";
 import { openTunnel } from "./tunnel";
+import { pushKeyFor } from "./push-registration";
 import { Pane } from "@/screens/pane";
 import { ConnectionHealth } from "@/components/connection-health";
 
@@ -54,7 +55,7 @@ const saved: SavedComputer = { id: computerId({ kind: "ssh", ssh: profile }), na
 const PIN = "shahi.knownhost.box.example_22";
 
 /** The sidecar behind every live forward. */
-const sidecar = { cookies: new Set<string>(), issued: 0, login: null as null | Promise<void> };
+const sidecar = { cookies: new Set<string>(), issued: 0, login: null as null | Promise<void>, pushes: [] as { cookie?: string; token: string }[] };
 function reply(status: number, body: unknown, headers: Record<string, string> = {}) {
   return {
     ok: status >= 200 && status < 300, status,
@@ -65,7 +66,7 @@ function reply(status: number, body: unknown, headers: Record<string, string> = 
 }
 const snapshot = { version: "0.9.1", protocol: 22, workspaces: [], tabs: [], panes: [{ paneId: "w1:p1", title: "A task", agent: "claude", isAgent: true }] };
 const transcript = { sessionId: "s1", path: "/home/x/s1.jsonl", total: 1, offset: 0, messages: [{ id: "a1", role: "agent", at: 1, blocks: [{ kind: "text", text: "hello from the agent" }] }] };
-async function fakeFetch(url: string, init: { method?: string; headers?: Record<string, string> } = {}) {
+async function fakeFetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) {
   const target = new URL(url);
   if (![...native.forwards.values()].includes(Number(target.port))) throw new TypeError("Could not connect to the server.");
   const path = decodeURIComponent(target.pathname);
@@ -80,6 +81,7 @@ async function fakeFetch(url: string, init: { method?: string; headers?: Record<
   }
   if (!authed) return reply(401, { error: "unauthorized" });
   if (path === "/api/session") return reply(200, snapshot);
+  if (path === "/api/push/expo") { sidecar.pushes.push({ cookie: init.headers?.cookie, token: JSON.parse(init.body ?? "{}").token }); return reply(200, { ok: true }); }
   if (path === "/api/panes/w1:p1/session") return reply(200, transcript);
   if (path === "/api/panes/w1:p1") return reply(200, { frame: null, layout: null });
   return reply(404, { error: "not found" });
@@ -126,7 +128,7 @@ const realFetch = globalThis.fetch;
 beforeEach(() => {
   jest.useFakeTimers();
   store.clear(); FakeSocket.opened = []; native.forwards.clear(); native.opening = null;
-  sidecar.cookies.clear(); sidecar.issued = 0; sidecar.login = null;
+  sidecar.cookies.clear(); sidecar.issued = 0; sidecar.login = null; sidecar.pushes = [];
   connection.baseUrl = ""; connection.cookie = null; connection.relay = null;
   store.set(COMPUTERS_KEY, JSON.stringify([saved]));
   store.set("shahi.connection", JSON.stringify(saved.connection));
@@ -242,5 +244,35 @@ test("signing out of an SSH computer forgets the host key it trusted", async () 
   expect(value.computers).toEqual([]);
   expect(store.has(PIN)).toBe(false);
   expect(native.forwards.size).toBe(0);
+  ui.unmount();
+});
+
+// The server ends a passcode session's notifications when the session does,
+// and an SSH computer signs in afresh on every launch and every new tunnel.
+// Carried only by Connect's sign-in, a phone's notifications would stop once
+// the session that turned them on ran out.
+test("an SSH computer's notifications follow it into every session it signs in with", async () => {
+  store.set(pushKeyFor(saved.connection)!, "ExponentPushToken[phone]");
+  const ui = await mount();
+  await live();
+  await waitFor(() => expect(sidecar.pushes).toEqual([{ cookie: "shahi_session=c1", token: "ExponentPushToken[phone]" }]));
+
+  // The phone was locked and the tunnel died under it.
+  act(() => { native.forwards.clear(); FakeSocket.opened.at(-1)!.close(); });
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await value.reconnect(); });
+  await waitFor(() => expect(sidecar.pushes.map((p) => p.cookie)).toEqual(["shahi_session=c1", "shahi_session=c2"]));
+
+  // A refresh on the same session carries nothing again.
+  await act(async () => { await value.refresh(); for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  expect(sidecar.pushes).toHaveLength(2);
+  ui.unmount();
+});
+
+test("an SSH computer that never turned notifications on registers nothing", async () => {
+  const ui = await mount();
+  await live();
+  await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  expect(sidecar.pushes).toEqual([]);
   ui.unmount();
 });

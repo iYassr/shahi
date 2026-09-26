@@ -16,8 +16,8 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import Constants from "expo-constants";
 import { router, Stack, useIsFocused } from "expo-router";
-import { preparePushLogout } from "@/lib/push-registration";
-import { enablePush } from "@/lib/push";
+import { preparePushLogout, unregisterPushRegistration } from "@/lib/push-registration";
+import { enablePush, pushEnabled } from "@/lib/push";
 import { useSession, useLastUpdate } from "@/lib/session";
 import { theme } from "@/lib/theme";
 import { Icon, type IconName } from "@/components/icons";
@@ -31,7 +31,17 @@ export function Settings() {
     useSession();
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
-  const [push, setPush] = useState<"off" | "asking" | "on" | string>("off");
+  // Whether notifications are on came from this screen's own memory, so every
+  // relaunch read "Off" while the computer kept notifying, and "On" disabled
+  // the row, leaving iOS Settings the only way to stop them (pre-release bug
+  // hunt). It is read from what this phone registered with the computer; the
+  // screen remounts when the computer changes.
+  const [push, setPush] = useState<{ on: boolean; busy?: boolean; note?: string }>({ on: false });
+  useEffect(() => {
+    let live = true;
+    void pushEnabled().then((on) => { if (live && on) setPush((now) => (now.busy ? now : { on: true })); });
+    return () => { live = false; };
+  }, []);
   // Native tabs mount every tab at launch, so this screen exists long before
   // anyone looks at it. Work that only matters on screen waits for focus.
   const focused = useIsFocused();
@@ -117,20 +127,24 @@ export function Settings() {
       <ComputerUpdate settings />
       <View style={styles.group}>
         <Row
-          icon={push === "on" ? "bell" : "bell-off"}
-          tint={push === "on" ? theme.mint : theme.peach}
+          icon={push.on ? "bell" : "bell-off"}
+          tint={push.on ? theme.mint : theme.peach}
           label="Notifications"
-          value={push === "on" ? "On" : push === "asking" ? "Asking…" : "Off"}
-          disabled={push === "asking" || push === "on"}
+          value={push.busy ? (push.on ? "Turning off…" : "Asking…") : push.on ? "On" : "Off"}
+          disabled={push.busy}
           onPress={() => {
-            setPush("asking");
-            void enablePush(api).then((r) => setPush(r.ok ? "on" : r.reason));
+            if (push.on) {
+              setPush({ on: true, busy: true });
+              void unregisterPushRegistration(api).then(
+                () => setPush({ on: false }),
+                (e: unknown) => setPush({ on: true, note: `Still on. ${e instanceof Error ? e.message : "The computer could not be reached."}` }),
+              );
+              return;
+            }
+            setPush({ on: false, busy: true });
+            void enablePush(api).then((r) => setPush(r.ok ? { on: true } : { on: false, note: r.reason }));
           }}
-          hint={
-            push !== "off" && push !== "on" && push !== "asking"
-              ? push
-              : "Get notified when an agent needs your reply."
-          }
+          hint={push.note ?? (push.on ? "Tap to stop notifications from this computer." : "Get notified when an agent needs your reply.")}
         />
         <Separator />
         <View style={styles.row}>

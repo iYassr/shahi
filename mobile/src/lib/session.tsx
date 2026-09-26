@@ -22,7 +22,7 @@ import { pinnedPanes, retainPins, togglePin as togglePinOf, type ParsedPrompt, t
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
 import { closeRelay, type RelayIdentity } from "@/lib/relay";
-import { configurePushProfile, forgetPushRegistration, restorePushRegistration } from "@/lib/push-registration";
+import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { forgetHostKey } from "@/lib/tunnel";
 import { COMPUTERS_KEY, computerAddress, computerId, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
@@ -205,7 +205,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const entry = id ? live.current.get(id) : undefined;
     // Only pairing and push registration use this temporary/default client.
     Object.assign(connection, entry?.connection ?? { baseUrl: "", cookie: null, relay: null });
-    configurePushProfile(entry?.saved.connection.kind === "ssh" ? entry.saved.connection.ssh : null);
+    configurePushComputer(entry?.saved.connection ?? null);
     lastUpdate.at = entry?.updatedAt ?? null;
     lastUpdate.listeners.forEach(fn => fn());
   }
@@ -362,8 +362,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signIn({ kind: "relay", ...identity });
     },
     signInSsh: profile => {
+      // Its computer carries a saved notification opt-in over to this sign-in
+      // (ComputerSession), as it does on every later one.
       signIn({ kind: "ssh", ssh: profile }, { ...connection, relay: null });
-      void restorePushRegistration(() => selected.current === computerId({ kind: "ssh", ssh: profile }));
     },
     session: entry?.session ?? null, prompts: entry?.prompts ?? {}, reviewed: entry?.reviewed ?? {},
     markReviewed: pane => entry?.markReviewed(pane),

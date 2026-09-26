@@ -5,6 +5,7 @@ import { endedPanes, retainReviews, reviewKey, type Reviewed, type DashboardPane
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
+import { renewPushRegistration } from "./push-registration";
 import type { SavedComputer } from "./computers";
 import { ControlSession } from "@shahi/shared";
 
@@ -28,6 +29,8 @@ export class ComputerSession {
   private work: Promise<void> | null = null;
   private socketLink: LinkState = "connecting";
   private received = 0;
+  /** The SSH session cookie a saved notification opt-in was last carried to. */
+  private pushCookie: string | null = null;
   /**
    * The server answered 426. Held until a request succeeds, because nothing
    * else here is evidence the versions agree: the relay attaches its stream on
@@ -65,6 +68,14 @@ export class ComputerSession {
         // name this computer from its first launch. Recovery remains
         // reachable across an ordinary API mismatch.
         try { this.serverId = (await this.api.meta()).serverId; } catch (e) { if (!(e instanceof IncompatibleServerError)) throw e; }
+        // Each new session, Connect's included, takes over this phone's saved
+        // notification opt-in: the server ends a passcode session's
+        // registrations when it expires, and SSH signs in afresh on every
+        // launch and reconnect.
+        if (this.connection.cookie && this.connection.cookie !== this.pushCookie) {
+          this.pushCookie = this.connection.cookie;
+          void renewPushRegistration(this.saved.connection, this.api, () => !this.disposed);
+        }
       }
       if (this.disposed) return;
       this.control.start();

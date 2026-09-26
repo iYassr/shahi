@@ -96,6 +96,17 @@ registers an Expo token with `/api/push/expo`; the server sends on the
 transition to `blocked` and drops tokens Expo reports as `DeviceNotRegistered`;
 tapping a notification routes to its pane. None of it is missing.
 
+The app tells iOS to show a notification that arrives while it is open as soon
+as it launches, not when Settings is opened: without that handler,
+expo-notifications answers "show nothing", and every notification that arrived
+with the app open after a relaunch vanished. The phone keeps the token it
+registered with each computer in the keychain, per SSH endpoint or per paired
+relay device, so Settings reads On after a relaunch and can turn notifications
+off, which removes the registration from the computer before the phone forgets
+the token. An SSH computer signs in with a new passcode session on every launch
+and reconnect, and carries its saved token to each one, because a passcode
+session's registrations end when it expires.
+
 What is missing is a device. The history is why it took so long:
 
 - **Expo Go cannot receive remote push since SDK 53.** Not a configuration
