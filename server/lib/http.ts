@@ -47,7 +47,7 @@ import { followTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
 import { OutsideHomeError, collapseHome, folderProblem, listDirectories } from "./dirs";
-import { FileTooLarge, NotAFileError, RangeNotSatisfiable, parseRange, readWithinHome } from "./files";
+import { FileTooLarge, NotAFileError, RangeNotSatisfiable, contentDisposition, parseRange, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
@@ -349,28 +349,6 @@ async function smallJsonObject<T extends object>(req: Request, limit: number): P
     // Treated as an empty object, as `jsonObject` does.
   }
   return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Partial<T>) : {};
-}
-
-/**
- * A `Content-Disposition` for any name a file can have.
- *
- * Header values are bytes, and `Headers` throws on anything above U+00FF: an
- * Arabic or emoji name, or the U+202F macOS puts before "AM" in a screenshot's
- * name, made `/api/file` answer "cannot read that file" for a file that was
- * there (review finding F38). RFC 6266 has the answer: an ASCII `filename`
- * for clients that know no better and the real name, percent-encoded, in
- * `filename*`. Quotes and backslashes would end the quoted string and control
- * characters (a newline is a legal filename on Linux) would end the header, so
- * the fallback replaces them too.
- */
-function contentDisposition(kind: "inline" | "attachment", name: string): string {
-  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
-  // encodeURIComponent leaves ' ( ) * alone, which RFC 8187 does not allow bare.
-  const encoded = encodeURIComponent(name.toWellFormed()).replace(
-    /['()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 export interface ServerOptions {

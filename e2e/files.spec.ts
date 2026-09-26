@@ -150,6 +150,41 @@ test.describe("files in the reader", () => {
     expect(button!.height - image!.height).toBeLessThan(24);
   });
 
+  /**
+   * The stub wrote the raw name into `filename="…"`, which a header cannot
+   * carry, and answered 500 where a real computer serves the file (review
+   * finding F38 fixed the server; the September 2026 pre-release bug hunt found
+   * the stub had its own copy). A test of such a name failed because of the
+   * harness, not the app.
+   */
+  test("a file named with accents, Arabic or an emoji opens, as it does from a real computer", async ({ page }) => {
+    await scenario(page, "busy");
+    const names = ["résumé notes.md", "ملاحظات 😀.md"];
+    await page.request.post("/__stub/scenario", {
+      data: {
+        patch: {
+          transcripts: {
+            [PANE]: [{
+              id: "named", role: "agent", at: 1,
+              blocks: names.map((name) => ({
+                kind: "tool", name: "Read", summary: name, file: { path: `/home/x/${name}`, name },
+                result: { text: "", isError: false, truncated: false, images: [] },
+              })),
+            }],
+          },
+        },
+      },
+    });
+    await page.goto(`/pane/${encodeURIComponent(PANE)}`);
+    for (const [index, text] of ["Accents in the name.", "Arabic and an emoji in the name."].entries()) {
+      await tap(page, page.locator(".tool__open").nth(index));
+      await expect(page.locator(".viewer__name")).toHaveText(names[index]!);
+      await expect(page.locator(".viewer__text")).toContainText(text, { timeout: 20_000 });
+      await tap(page, page.locator(".viewer__close"));
+      await expect(page.locator(".viewer")).toHaveCount(0);
+    }
+  });
+
   test("a file that cannot be read says why, rather than showing a broken image", async ({
     page,
   }) => {

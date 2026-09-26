@@ -147,6 +147,32 @@ export class NotAFileError extends Error {
   }
 }
 
+/**
+ * A `Content-Disposition` for any name a file can have.
+ *
+ * Header values are bytes, and `Headers` throws on anything above U+00FF: an
+ * Arabic or emoji name, or the U+202F macOS puts before "AM" in a screenshot's
+ * name, made `/api/file` answer "cannot read that file" for a file that was
+ * there (review finding F38). RFC 6266 has the answer: an ASCII `filename`
+ * for clients that know no better and the real name, percent-encoded, in
+ * `filename*`. Quotes and backslashes would end the quoted string and control
+ * characters (a newline is a legal filename on Linux) would end the header, so
+ * the fallback replaces them too.
+ *
+ * Here rather than in the route so the e2e stub sends the same header: its own
+ * copy put the raw name in `filename="…"`, so every accented, Arabic or emoji
+ * name was a 500 from the stub alone (September 2026 pre-release bug hunt).
+ */
+export function contentDisposition(kind: "inline" | "attachment", name: string): string {
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  // encodeURIComponent leaves ' ( ) * alone, which RFC 8187 does not allow bare.
+  const encoded = encodeURIComponent(name.toWellFormed()).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export function contentTypeFor(path: string, { download = false } = {}): string {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
   if (download) return "application/octet-stream";

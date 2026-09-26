@@ -1,5 +1,5 @@
 import { UploadTransfers, TRANSFER_CHUNK, TransferError } from "../../server/lib/upload-transfers";
-import { parseRange, readWithinHome } from "../../server/lib/files";
+import { contentDisposition, parseRange, readWithinHome } from "../../server/lib/files";
 import { samplePdf } from "./sample-pdf";
 import type { ControlHandshake } from "@shahi/shared";
 /**
@@ -71,6 +71,10 @@ writeFileSync(join(files, "prompt-parser.ts"), "const OPTION_RE = /^\\s*(\\d+)\\
 writeFileSync(join(files, "sample.pdf"), samplePdf());
 const transfers = new UploadTransfers(join(files, "uploads"));
 writeFileSync(join(files, "notes.md"), "# Notes\n\nA file the agent wrote.\n");
+// Names a header cannot carry as they stand. The stub put them in
+// `filename="…"` raw and answered 500 where a real computer serves the file.
+writeFileSync(join(files, "résumé notes.md"), "Accents in the name.\n");
+writeFileSync(join(files, "ملاحظات 😀.md"), "Arabic and an emoji in the name.\n");
 // A 240x160 PNG, so "is the thumbnail drawn?" can fail honestly.
 const PNG = Buffer.from(
   "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",
@@ -298,7 +302,7 @@ Bun.serve({
           "content-type": result.contentType,
           "x-shahi-file-version": result.version,
           ...(result.range ? { "content-range": `bytes ${result.range.start}-${result.range.end}/${result.total}` } : {}),
-          "content-disposition": `${download ? "attachment" : "inline"}; filename="${result.name}"`,
+          "content-disposition": contentDisposition(download ? "attachment" : "inline", result.name),
         },
       });
     }
