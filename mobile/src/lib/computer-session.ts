@@ -55,6 +55,7 @@ export class ComputerSession {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
+    if (saved.connection.kind === "ssh") this.connection.via = sshHost(saved.connection.ssh);
     this.api = createApi(this.connection);
     this.control = new ControlSession(this.api, () => {
       if (this.disposed) return;

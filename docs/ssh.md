@@ -13,6 +13,13 @@ points its ordinary `fetch` and `WebSocket` at `http://127.0.0.1:<localPort>`,
 and the agent list, the reader, everything, works unchanged over the tunnel. No
 file outside `lib/tunnel.ts` and the Connect screen knows SSH is involved.
 
+The forward is proven before its port is handed out: right after the login,
+the forwarder opens one channel to the sidecar and closes it. A server with
+`AllowTcpForwarding` off then says so, and one with nothing listening on the
+sidecar's port says that, where every request used to fail as "the connection
+to 127.0.0.1:<a random port> dropped mid-request" — a port on the phone, and
+not the cause. Failures after that name the SSH host, not the local end.
+
 Credentials — a password, or a private key with a passphrase — go straight to
 the iOS Keychain (SecureStore) and never leave the phone, not even in a backup:
 every Keychain item the app keeps is `WHEN_UNLOCKED_THIS_DEVICE_ONLY`

@@ -61,8 +61,9 @@ export { AccessRefusedError, ApiError, IncompatibleServerError, UnauthorizedErro
  * trimmed of the wrapper, so an unknown failure stays diagnosable — it is
  * just not dressed up as a known one.
  */
-export function describeTransportFailure(e: unknown, url: string, timeoutMs = REQUEST_TIMEOUT_MS): UnreachableError {
+export function describeTransportFailure(e: unknown, url: string, timeoutMs = REQUEST_TIMEOUT_MS, via?: string): UnreachableError {
   if (e instanceof UnreachableError) return e;
+  if (via) return describeSshFailure(describeTransportFailure(e, url, timeoutMs), via, timeoutMs);
   const host = hostOf(url);
   const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string } } | undefined;
 
@@ -131,6 +132,26 @@ export function describeTransportFailure(e: unknown, url: string, timeoutMs = RE
   return new UnreachableError("unknown", host, detail ? `Couldn't reach ${host} (${detail}).` : `Couldn't reach ${host}.`);
 }
 
+/**
+ * The same failure through an SSH forward, in terms of the SSH host.
+ *
+ * The address fetch was given is this phone's own end of the tunnel,
+ * `127.0.0.1:<a port chosen at random>`, so the words above named that port —
+ * "The connection to 127.0.0.1:54119 dropped mid-request" for a server that
+ * would not forward, or an SSH session that had died (pre-release bug hunt).
+ * Nothing on 127.0.0.1 means anything to the person holding the phone.
+ */
+function describeSshFailure(failure: UnreachableError, via: string, timeoutMs: number): UnreachableError {
+  const said: Partial<Record<UnreachableReason, string>> = {
+    refused: `The SSH connection to ${via} has closed. Try again.`,
+    lost: `The SSH connection to ${via} dropped mid-request. Try again.`,
+    timeout: `${via} didn't answer through the SSH connection within ${Math.round(timeoutMs / 1000)} seconds. It may be asleep or overloaded.`,
+    unknown: `Couldn't reach Shahi through the SSH connection to ${via}.`,
+  };
+  const message = said[failure.reason];
+  return message ? new UnreachableError(failure.reason, via, message) : failure;
+}
+
 export interface Connection {
   /** e.g. `http://ubuntu.tailnet01.ts.net:7171` */
   baseUrl: string;
@@ -142,6 +163,11 @@ export interface Connection {
    * and `baseUrl` and `cookie` are unused — the link is the session.
    */
   relay: RelayTarget | null;
+  /**
+   * The SSH host, when `baseUrl` is this phone's end of an SSH forward:
+   * failures name it rather than the local port (see `describeSshFailure`).
+   */
+  via?: string;
 }
 
 /**
@@ -170,7 +196,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
  * the timeout's, so Cancel on an SSH upload did nothing until the upload
  * finished and attached itself anyway (pre-release review).
  */
-export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
+export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS, via?: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   const caller = init.signal;
@@ -182,7 +208,7 @@ export async function fetchWithTimeout(url: string, init: RequestInit, ms = REQU
   } catch (e) {
     // The caller's own cancel, which is not the host failing to answer.
     if (caller?.aborted) throw cancelled();
-    throw describeTransportFailure(e, url, ms);
+    throw describeTransportFailure(e, url, ms, via);
   } finally {
     clearTimeout(timer);
     caller?.removeEventListener("abort", cancel);
@@ -280,6 +306,7 @@ async function dispatch(
     `${connection.baseUrl}${path}`,
     { ...init, credentials: "omit", cache: "no-store" } as RequestInit,
     ms,
+    connection.via,
   );
   return {
     ok: response.ok, status: response.status, headers: response.headers,
@@ -743,6 +770,7 @@ const api = {
               `${connection.baseUrl}/api/uploads`,
               { method: "POST", headers: baseHeaders(), body, credentials: "omit", signal: options.signal }, // see `dispatch`
               uploadTimeout(file.size),
+              connection.via,
             );
           })();
       if (res.status === 426) throw await incompatible(res);

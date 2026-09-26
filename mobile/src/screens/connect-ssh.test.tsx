@@ -30,11 +30,12 @@ jest.mock("expo", () => {
   };
 });
 const mockLogin = jest.fn(async () => "shahi_session=fake");
+const mockMeta = jest.fn(async (_connection: unknown): Promise<unknown> => ({ serverId: "box", api: { min: 5, max: 5 } }));
 jest.mock("@/lib/api", () => {
   const actual = jest.requireActual("@/lib/api");
   // Connect signs in on a client of its own, so that is the one answered.
   return { ...actual, createApi: (connection: { cookie: string | null }) => ({
-    ...actual.createApi(connection), meta: jest.fn(async () => ({ serverId: "box", api: { min: 5, max: 5 } })),
+    ...actual.createApi(connection), meta: () => mockMeta(connection),
     login: async () => { connection.cookie = await mockLogin(); return connection.cookie; },
   }) };
 });
@@ -98,7 +99,7 @@ test("a changed host key shows both fingerprints and connects only after a delib
   fireEvent.press(screen.getByText("Trust the new key"));
   await waitFor(() => expect(onConnectedSsh).toHaveBeenCalledWith(
     expect.objectContaining<Partial<SshProfile>>({ host: "box.example" }),
-    { baseUrl: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), cookie: "shahi_session=fake", relay: null },
+    { baseUrl: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/), cookie: "shahi_session=fake", relay: null, via: "box.example" },
   ));
   expect(mockNative.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "bmV3LWtleS1zaGEyNTY=" }));
   expect(pins.get("shahi.knownhost.box.example_22")).toBe("bmV3LWtleS1zaGEyNTY=");
@@ -114,4 +115,34 @@ test("a failed re-add of a saved SSH computer leaves that computer's own tunnel 
 
   expect(await screen.findByText("That passcode did not work.")).toBeTruthy();
   expect([...mockForwards.values()]).toEqual([Number(saved.split(":").at(-1))]);
+});
+
+// A server with AllowTcpForwarding off accepted the login, and every request
+// through the forward then failed as "The connection to 127.0.0.1:54119
+// dropped mid-request" — a port on the phone, and not the cause.
+test("an SSH server that will not forward a port says so, instead of naming the phone's own port", async () => {
+  pins.set("shahi.knownhost.box.example_22", "bmV3LWtleS1zaGEyNTY=");
+  mockNative.open.mockRejectedValueOnce(Object.assign(
+    new Error("ssh_forwarding: Signed in to box.example, but its SSH server does not allow port forwarding, which Shahi needs. Allow it for this user (AllowTcpForwarding in sshd_config) and try again. (at ExpoModulesCore/Promise.swift:65)"),
+    { code: "ssh_forwarding" },
+  ));
+  fillSshForm();
+  expect(await screen.findByText(/^Signed in to box\.example, but its SSH server does not allow port forwarding/)).toBeTruthy();
+  expect(screen.queryByText(/127\.0\.0\.1/)).toBeNull();
+  expect(mockLogin).not.toHaveBeenCalled();
+});
+
+test("a forward that drops while signing in is described by the SSH host, not the phone's own port", async () => {
+  pins.set("shahi.knownhost.box.example_22", "bmV3LWtleS1zaGEyNTY=");
+  const realFetch = globalThis.fetch;
+  (globalThis as { fetch: unknown }).fetch = jest.fn(async () => { throw new TypeError("The network connection was lost."); });
+  const { createApi: realApi } = jest.requireActual("@/lib/api");
+  mockMeta.mockImplementationOnce(async (connection) => realApi(connection).meta());
+  try {
+    fillSshForm();
+    expect(await screen.findByText("The SSH connection to box.example dropped mid-request. Try again.")).toBeTruthy();
+    expect(screen.queryByText(/127\.0\.0\.1/)).toBeNull();
+  } finally {
+    (globalThis as { fetch: unknown }).fetch = realFetch;
+  }
 });

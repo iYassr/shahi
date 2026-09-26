@@ -12,6 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 static const NSInteger SshForwarderHostKeyRefused = 2;
 /** The server refused the username, password or key. */
 static const NSInteger SshForwarderLoginRefused = 3;
+/** Signed in, but the server will not forward a port (`AllowTcpForwarding`). */
+static const NSInteger SshForwarderForwardingRefused = 4;
 
 /**
  * The whole tunnel: connect, handshake, authenticate, and forward — all
@@ -53,11 +55,12 @@ static const NSInteger SshForwarderLoginRefused = 3;
                   remotePort:(int32_t)remotePort;
 
 /**
- * Connects, verifies the host key, authenticates, and starts the forward,
- * returning the local port it listens on. Returns nil with a human-readable
- * error on any failure — an NSNumber (not a scalar) so Swift imports it as a
- * throwing call. The server must present exactly `expectedHostKey`, a key the
- * person has trusted (see +hostKeyForHost:port:error:); without one, or on a
+ * Connects, verifies the host key, authenticates, proves the forward by
+ * opening one channel to remoteHost:remotePort, and starts listening,
+ * returning the local port. Returns nil with a human-readable error on any
+ * failure — an NSNumber (not a scalar) so Swift imports it as a throwing
+ * call. The server must present exactly `expectedHostKey`, a key the person
+ * has trusted (see +hostKeyForHost:port:error:); without one, or on a
  * mismatch, it refuses before authenticating with code
  * SshForwarderHostKeyRefused.
  *

@@ -98,9 +98,9 @@ struct TunnelError: Error { let message: String; var code = "ssh_tunnel" }
  * subclass sets, so every native explanation ("Authentication failed…", "host
  * key has changed…") was replaced by the app's generic fallback. Seen on a
  * simulator in the pre-release review. Each refusal no retry fixes has its own
- * code — a host key (`ssh_host_key`), a login (`ssh_login`) — so the app says
- * what to check rather than "reconnecting", and a saved computer does not
- * repeat it on a timer.
+ * code — a host key (`ssh_host_key`), a login (`ssh_login`), port forwarding
+ * (`ssh_forwarding`) — so the app says what to check rather than
+ * "reconnecting", and a saved computer does not repeat it on a timer.
  */
 final class TunnelException: Exception, @unchecked Sendable {
   private let message: String
@@ -148,6 +148,7 @@ final class Tunnel {
         switch failure.code {
         case SshForwarderHostKeyRefused: code = "ssh_host_key"
         case SshForwarderLoginRefused: code = "ssh_login"
+        case SshForwarderForwardingRefused: code = "ssh_forwarding"
         default: break
         }
       }

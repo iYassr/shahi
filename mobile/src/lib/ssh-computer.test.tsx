@@ -297,6 +297,7 @@ test("an error the computer answered with does not reopen a working SSH tunnel",
 test.each([
   ["a host key that does not match", { code: "ssh_host_key", message: "ssh_host_key: This computer's host key has changed since you trusted it, so your login was not sent." }],
   ["a refused SSH login", { code: "ssh_login", message: "ssh_login: Authentication failed — check the username and credentials." }],
+  ["a server that will not forward a port", { code: "ssh_forwarding", message: "ssh_forwarding: Signed in to box.example, but its SSH server does not allow port forwarding, which Shahi needs." }],
   // A build from before the code said it only in words.
   ["a refused SSH login, from an older build", { code: "ssh_tunnel", message: "ssh_tunnel: Authentication failed — check the username and credentials." }],
 ])("%s is not retried on a timer", async (_, refusal) => {
@@ -326,6 +327,18 @@ test("a tunnel that cannot be reopened never puts an internal address error on t
   const relative = (globalThis.fetch as jest.Mock).mock.calls.filter(([url]) => !/^https?:/.test(String(url)));
   expect(relative).toEqual([]);
   expect(value.control?.error ?? "").not.toMatch(/full address/);
+  ui.unmount();
+});
+
+// Failures used to name this phone's end of the tunnel, a random port on
+// 127.0.0.1: "The connection to 127.0.0.1:54119 dropped mid-request".
+test("an SSH computer's dropped tunnel is described by its SSH host, not the phone's local port", async () => {
+  const ui = await mount();
+  await live();
+  act(() => { native.forwards.clear(); });
+  await act(async () => { await value.refresh(); });
+  expect(value.error?.message).toMatch(/box\.example/);
+  expect(value.error?.message).not.toMatch(/127\.0\.0\.1/);
   ui.unmount();
 });
 

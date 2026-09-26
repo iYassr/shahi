@@ -115,7 +115,7 @@ export async function forgetHostKey(removed: SshProfile, remaining: SshProfile[]
 function tunnelFailureMessage(error: unknown): string | null {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const message = raw
-    .replace(/^ssh_(?:tunnel|host_key|login):\s*/i, "")
+    .replace(/^ssh_(?:tunnel|host_key|login|forwarding):\s*/i, "")
     .replace(/\s*\(at [^()]+\.swift:\d+\)\s*$/i, "")
     .trim();
   // Expo uses this placeholder when an Objective-C rejection has no reason.
@@ -130,12 +130,13 @@ function nativeFailure(error: unknown, host: string, port: number): Error {
   if (code === "ssh_host_key") {
     return new HostKeyError(tunnelFailureMessage(error) ?? `${host}:${port} did not present the host key this phone trusts, so your login was not sent.`);
   }
-  // A refused login refuses again on every retry, and a saved computer now reconnects by itself: presenting a
+  // A refused login, or a server that will not forward, refuses again on
+  // every retry, and a saved computer now reconnects by itself: presenting a
   // refused password every half minute is how a phone gets banned by
   // fail2ban. A native module from before the "ssh_login" code says it only
   // in words, and an over-the-air update can run on one.
   const reason = tunnelFailureMessage(error);
-  if (code === "ssh_login" || /^Authentication failed/.test(reason ?? "")) {
+  if (code === "ssh_login" || code === "ssh_forwarding" || /^Authentication failed/.test(reason ?? "")) {
     return new AccessRefusedError(reason ?? `${host}:${port} refused this SSH login.`);
   }
   // Expo wraps native rejects as `ssh_tunnel: … (at Promise.swift:65)` and

@@ -39,6 +39,13 @@ static NSError *Refused(NSInteger code, NSString *message) {
   return [NSError errorWithDomain:@"SshForwarder" code:code userInfo:@{NSLocalizedDescriptionKey: message}];
 }
 
+// libssh2's own words for the last failure on a session, for a message.
+static NSString *LastError(LIBSSH2_SESSION *ssh) {
+  char *message = NULL;
+  libssh2_session_last_error(ssh, &message, NULL, 0);
+  return message ? @(message) : @"unknown error";
+}
+
 // Whether a libssh2 error means the session's socket is finished: the server
 // disconnected, or a read or write on it failed or timed out.
 static BOOL SessionErrorIsFatal(int rc) {
@@ -272,6 +279,31 @@ static NSString *HostKeyType(LIBSSH2_SESSION *ssh) {
         : Refused(SshForwarderLoginRefused, @"Authentication failed — check the username and credentials.");
     return nil;
   }
+
+  // 3a. Prove the forward before handing out a port. The login succeeding
+  // said nothing about it: a server with AllowTcpForwarding off, or with no
+  // sidecar listening, accepted every local connection and dropped it, which
+  // the app could only report as "the connection to 127.0.0.1:<port> dropped
+  // mid-request" (pre-release bug hunt). The channel's own refusal says which.
+  LIBSSH2_CHANNEL *probe = libssh2_channel_direct_tcpip_ex(_ssh, _remoteHost.UTF8String, _remotePort, "127.0.0.1", 0);
+  if (probe == NULL) {
+    NSString *reason = LastError(_ssh);
+    if (error) {
+      if ([reason containsString:@"administratively prohibited"]) {
+        *error = Refused(SshForwarderForwardingRefused, [NSString stringWithFormat:
+            @"Signed in to %@, but its SSH server does not allow port forwarding, which Shahi needs. "
+             "Allow it for this user (AllowTcpForwarding in sshd_config) and try again.", _host]);
+      } else if ([reason containsString:@"connect failed"]) {
+        *error = Failure([NSString stringWithFormat:
+            @"Signed in to %@, but nothing answered on port %d there. Check that Shahi is running on it.", _host, _remotePort]);
+      } else {
+        *error = Failure([NSString stringWithFormat:
+            @"Signed in to %@, but could not reach port %d through it (%@).", _host, _remotePort, reason]);
+      }
+    }
+    return nil;
+  }
+  libssh2_channel_free(probe);
 
   // Non-blocking so channel reads/writes return EAGAIN instead of stalling.
   libssh2_session_set_blocking(_ssh, 0);

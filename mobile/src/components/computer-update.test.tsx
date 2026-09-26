@@ -3,9 +3,10 @@ import { ComputerUpdate } from "./computer-update";
 import type { ControlHandshake } from "@shahi/shared";
 const mockRequest = jest.fn();
 let mockControl: { handshake: ControlHandshake; pending: boolean; error: string | null; request: typeof mockRequest };
-jest.mock("@/lib/session", () => ({ useSession: () => ({ control: mockControl }) }));
+let mockServer = "relay://relay.getshahi.dev";
+jest.mock("@/lib/session", () => ({ useSession: () => ({ control: mockControl, server: mockServer }) }));
 beforeEach(() => {
-  mockRequest.mockClear();
+  mockRequest.mockClear(); mockServer = "relay://relay.getshahi.dev";
   mockControl = { pending: false, error: null, request: mockRequest, handshake: {
     control: 1, serverId: "computer-a", api: { min: 5, max: 5 }, capabilities: ["computer-updates"],
     backend: { state: "connected", version: "0.9.0", protocol: 22 },
@@ -41,4 +42,15 @@ test("an unmanaged computer shows no card on the Agents list, and its notice in 
   render(<ComputerUpdate settings />);
   expect(screen.getByTestId("computer-update")).toBeTruthy();
   expect(screen.queryByText("Check for updates")).toBeNull();
+});
+
+// An SSH computer was never paired; what it keeps is its saved login.
+test("an unreachable SSH computer is not said to keep a pairing", () => {
+  mockControl.error = "The SSH connection to box.example has closed. Try again.";
+  mockServer = "ssh://me@box.example";
+  const result = render(<ComputerUpdate />);
+  expect(screen.getByText("Computer unavailable. Your SSH login is saved.")).toBeTruthy();
+  expect(screen.queryByText(/pairing/)).toBeNull();
+  mockServer = "relay://relay.getshahi.dev"; result.rerender(<ComputerUpdate />);
+  expect(screen.getByText("Computer unavailable. Your pairing is saved.")).toBeTruthy();
 });

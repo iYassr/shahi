@@ -29,6 +29,7 @@ import { openTunnel, closeTunnel, sshTunnelAvailable, type HostKeyReview } from 
 import { committed } from "@/lib/feel";
 import {
   emptySshProfile,
+  sshHost,
   sshProfileReady,
   type SshProfile,
 } from "@/lib/ssh";
@@ -204,8 +205,9 @@ export function Connect({
     setError(null);
     let tunnel = "";
     try {
-      // Its own connection, for the reason `pair` has one.
-      const signingIn: Connection = { baseUrl: "", cookie: null, relay: null };
+      // Its own connection, for the reason `pair` has one. Failures on it
+      // name the SSH host rather than this phone's end of the tunnel.
+      const signingIn: Connection = { baseUrl: "", cookie: null, relay: null, via: sshHost(ssh) };
       const client = createApi(signingIn);
       // A key this phone has not trusted for that server is shown first; the
       // login is sent only if the person trusts it.
