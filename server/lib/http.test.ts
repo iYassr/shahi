@@ -314,6 +314,22 @@ describe("the gate", () => {
     expect(res.headers.get("content-security-policy")).not.toContain("unsafe-eval");
   });
 
+  // iOS kept the passcode sign-in, its Set-Cookie and every session answer in
+  // the app's Cache.db, still valid after sign-out: no route said otherwise.
+  test("no API answer can be stored by a client's HTTP cache unless its route asks for caching", async () => {
+    const login = await fetch(`${s.base}/api/auth/login`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: PASSCODE }),
+    });
+    expect(login.status).toBe(200);
+    expect(login.headers.get("cache-control")).toBe("no-store");
+    for (const path of ["/api/meta", "/api/session", `/api/panes/${encodeURIComponent(PANE)}`, "/api/nowhere"]) {
+      const res = await fetch(`${s.base}${path}`, { headers: { cookie: s.cookie } });
+      expect([path, res.headers.get("cache-control")]).toEqual([path, "no-store"]);
+    }
+    // The app's own shell is not an API answer.
+    expect((await fetch(`${s.base}/`)).headers.get("cache-control")).not.toBe("no-store");
+  });
+
   test("cookies on an HTTPS reverse-proxy hop are Secure, including logout", async () => {
     const login = await fetch(`${s.base}/api/auth/login`, {
       method: "POST", headers: { "content-type": "application/json", "x-forwarded-proto": "https" },

@@ -30,6 +30,15 @@ by an earlier build are moved into the device-only class on first read. The
 cost is that a backup restored onto another iPhone brings no saved computers:
 pair it, or add the SSH computer, again.
 
+Nothing the computer answers is written to disk either. Expo's fetch ignores
+the app's `cache: "no-store"` and used the system's shared URL cache, so every
+sign-in over SSH, with the passcode in its body and the session cookie in its
+answer, went into the app's `Library/Caches/…/Cache.db` along with sessions and
+transcripts, and stayed there after sign-out (September 2026 bug hunt). The
+native `ShahiHttpCache` module gives that cache no room when the app starts and
+empties what an earlier build left in it, and the sidecar sends
+`Cache-Control: no-store` on every API answer that does not choose caching.
+
 An SSH connection remembers the whole profile, not a base URL: the local port is
 a throwaway that changes each launch, so a cold start re-opens the tunnel from
 the stored profile and signs in again with the remembered passcode.

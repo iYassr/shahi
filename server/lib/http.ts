@@ -616,7 +616,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
       });
       // Compression happens here and nowhere else: routes stay unaware of it,
       // and a websocket upgrade (which returns undefined) passes through.
-      return response ? harden(await compress(req, response, compressionKey(response))) : response;
+      return response ? harden(await compress(req, response, compressionKey(response)), new URL(req.url).pathname) : response;
     },
 
     websocket: {
@@ -1699,7 +1699,14 @@ const CONTENT_TYPES: Record<string, string> = {
  * referrers are refused for the same reason the cookie is `SameSite=Strict`:
  * nothing legitimate embeds this app or needs to know which file was open.
  */
-function harden(response: Response): Response {
+function harden(response: Response, pathname = ""): Response {
+  // An API answer is live state, and often a credential: the sign-in's
+  // Set-Cookie, a session, what is on a terminal. Only the routes that chose
+  // otherwise said anything, so iOS kept the rest on disk — Expo's fetch
+  // ignores the app's own `cache: "no-store"` — the passcode login and live
+  // cookies included (pre-release bug hunt). A route that wants caching still
+  // says so: the transcript's ETag revalidation, immutable images.
+  if (pathname.startsWith("/api/") && !response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
   response.headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   response.headers.set("x-content-type-options", "nosniff");
   response.headers.set("x-frame-options", "DENY");

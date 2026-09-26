@@ -300,8 +300,11 @@ async function dispatch(
   // Every API response is live state. NSURLSession may otherwise satisfy a
   // cold-start GET from its disk cache after the sidecar has been upgraded,
   // which leaves an old session on screen and hides the new server's 426.
-  // The server also sends no-store, but declaring it here protects the client
-  // from proxies and test servers that forget that header.
+  // On iOS this `cache` is not enough on its own: Expo's fetch drops it, and
+  // every answer went to disk, passcode sign-ins and cookies included, until
+  // the native ShahiHttpCache module gave the shared cache no room. The
+  // server also sends no-store on every API answer that has no caching of
+  // its own (pre-release bug hunt).
   const response = await fetchWithTimeout(
     `${connection.baseUrl}${path}`,
     { ...init, credentials: "omit", cache: "no-store" } as RequestInit,
