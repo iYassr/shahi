@@ -44,7 +44,7 @@ import { answerPrompt, PromptChanged, PromptGone } from "./answer";
 import { followTranscript } from "./transcript-watch";
 import { UploadTooLarge, storeUpload } from "./uploads";
 import { UploadTransfers, TransferError, TRANSFER_CHUNK } from "./upload-transfers";
-import { OutsideHomeError, collapseHome, listDirectories } from "./dirs";
+import { OutsideHomeError, collapseHome, folderProblem, listDirectories } from "./dirs";
 import { FileTooLarge, readWithinHome } from "./files";
 import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
@@ -929,11 +929,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (typeof body.workspaceId !== "string" || !body.workspaceId || typeof body.kind !== "string" || !body.kind) {
             return json({ error: "workspaceId and kind are required" }, { status: 400 });
           }
-          // herdr does not expand `~`; it silently uses $HOME instead, which puts
-          // the agent somewhere the user did not ask for.
-          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
-            return json({ error: "cwd must be an absolute path" }, { status: 400 });
-          }
+          // herdr silently uses $HOME for `~` and for a folder that is not
+          // there, which puts the agent somewhere the user did not ask for.
+          // Refused before the operation is recorded, so a retry can go ahead.
+          const startProblem = await folderProblem(body.cwd);
+          if (startProblem) return json({ error: startProblem }, { status: 400 });
           if (typeof body.clientRequestId !== "string" || !body.clientRequestId || body.clientRequestId.length > 128) {
             return json({ error: "clientRequestId is required" }, { status: 400 });
           }
@@ -974,9 +974,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           const body = await jsonObject<{ label: string | null; cwd: string | null }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
-          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
-            return json({ error: "cwd must be an absolute path" }, { status: 400 });
-          }
+          const tabProblem = await folderProblem(body.cwd);
+          if (tabProblem) return json({ error: tabProblem }, { status: 400 });
           try {
             const result = await client.rpc("tab.create", {
               workspace_id: workspaceId, label: body.label ?? null, cwd: body.cwd ?? null, focus: false,
@@ -992,10 +991,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           const body = await jsonObject<{ label: string | null; cwd: string | null }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
-          // herdr does not expand `~`; it silently uses $HOME instead.
-          if (body.cwd && (typeof body.cwd !== "string" || !body.cwd.startsWith("/"))) {
-            return json({ error: "cwd must be an absolute path" }, { status: 400 });
-          }
+          // herdr silently uses $HOME for `~` and for a folder that is not there.
+          const spaceProblem = await folderProblem(body.cwd);
+          if (spaceProblem) return json({ error: spaceProblem }, { status: 400 });
           try {
             const created = await client.rpc("workspace.create", {
               label: body.label ?? null,

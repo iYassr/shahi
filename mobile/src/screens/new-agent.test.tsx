@@ -102,6 +102,23 @@ describe("NewSpace", () => {
     expect(createWorkspace).toHaveBeenCalledWith({ label: "production QA", cwd: "/tmp/shahi-first-space" });
     expect(onCreated).toHaveBeenCalledTimes(1);
   });
+
+  // Pre-release bug hunt, B9: a typo in the folder made a space in the home
+  // directory, labelled with the folder that was meant. The computer now
+  // refuses it, and the sheet shows its words and stays open to fix the path.
+  test("a folder that is not on the computer is refused in words, and the sheet stays open", async () => {
+    const createWorkspace = api.createWorkspace as jest.Mock;
+    createWorkspace.mockRejectedValueOnce(new Error("That folder does not exist on this computer."));
+    const onCreated = jest.fn();
+    render(<NewSpace session={{ workspaces: [], tabs: [], panes: [] } as unknown as Session} onCreated={onCreated} />);
+
+    await userEvent.type(screen.getByTestId("new-space-folder"), "/home/you/porject");
+    await userEvent.press(screen.getByTestId("create-space"));
+
+    expect(await screen.findByText("That folder does not exist on this computer.")).toBeTruthy();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(screen.getByTestId("create-space").props.accessibilityState.disabled).toBe(false);
+  });
 });
 
 jest.mock("@/lib/session", () => ({ useSession: () => ({ api: require("@/lib/api").api }) }));

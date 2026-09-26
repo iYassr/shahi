@@ -10,7 +10,7 @@
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -911,6 +911,54 @@ describe("a message to an agent waiting on a menu", () => {
     const before = app.calls.length;
     expect((await send("blue", "menu-open-2")).status).toBe(200);
     expect(typed(before).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
+});
+
+// Pre-release bug hunt, B9: herdr silently uses $HOME for a folder that is
+// not there, so a project deleted after its space was made got an agent, in
+// bypass-permissions mode, in the home directory, under a card naming the
+// project. Each create route now says so instead, before asking herdr.
+describe("making something in a folder that is not there", () => {
+  const post = (path: string, body: unknown) =>
+    fetch(`${s.base}${path}`, {
+      method: "POST",
+      headers: { cookie: s.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const creates = (from: number) =>
+    s.calls.slice(from).filter((c) => ["workspace.create", "tab.create", "agent.start"].includes(c.method));
+  const routes: [string, Record<string, unknown>][] = [
+    ["/api/workspaces", { label: "gone" }],
+    ["/api/workspaces/w1/tabs", { label: "gone" }],
+    ["/api/agents/start", { workspaceId: "w1", kind: "claude", clientRequestId: "missing-folder" }],
+  ];
+
+  test.each(routes)("%s is refused in words, and herdr is asked nothing", async (path, body) => {
+    const before = s.calls.length;
+    const res = await post(path, { ...body, cwd: join(scratch, "deleted-project") });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("That folder does not exist on this computer.");
+    expect(creates(before)).toEqual([]);
+  });
+
+  test.each(routes)("%s refuses a file", async (path, body) => {
+    const file = join(scratch, "not-a-folder.txt");
+    writeFileSync(file, "a file");
+    const before = s.calls.length;
+    const res = await post(path, { ...body, cwd: file, clientRequestId: "file-folder" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("That path is a file, not a folder.");
+    expect(creates(before)).toEqual([]);
+  });
+
+  test("an agent refused for a deleted folder starts on the retry once the folder is back", async () => {
+    const project = join(scratch, "renamed-project");
+    const body = { workspaceId: "w1", kind: "claude", clientRequestId: "folder-comes-back", cwd: project };
+    expect((await post("/api/agents/start", body)).status).toBe(400);
+    mkdirSync(project);
+    const before = s.calls.length;
+    expect((await post("/api/agents/start", body)).status).toBe(200);
+    expect(creates(before).map((c) => c.method)).toEqual(["tab.create", "agent.start"]);
   });
 });
 

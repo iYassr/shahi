@@ -13,7 +13,8 @@
  */
 import type { DirEntry, DirListing } from "@shahi/shared";
 import { realpathSync } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { access, readdir, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 
 export type { DirEntry, DirListing };
 import { homedir } from "node:os";
@@ -128,4 +129,36 @@ export async function listDirectories(
     parent: path === REAL_HOME ? null : collapseHome(resolve(path, "..")),
     entries: directories,
   };
+}
+
+/**
+ * Why `cwd` cannot be where a new space, tab or agent starts, or null when it
+ * can. No folder at all means herdr's default, which is fine.
+ *
+ * herdr cannot start anything in a folder it cannot enter, and does not say
+ * so: for `~`, a relative path, a folder that does not exist or a file, it
+ * silently uses $HOME, and the space or agent looks as if it went where it was
+ * asked. A project deleted or renamed after its space was made put an agent in
+ * bypass-permissions mode in the home directory, under a card still naming
+ * the project (pre-release bug hunt, B9). Not scoped to home, unlike the
+ * listing above: a space can live anywhere its owner can go.
+ */
+export async function folderProblem(cwd: unknown): Promise<string | null> {
+  if (cwd === null || cwd === undefined || cwd === "") return null;
+  // The old wording, kept: clients have shown it since `~` was first refused.
+  if (typeof cwd !== "string" || !isAbsolute(cwd)) return "cwd must be an absolute path";
+  try {
+    if (!(await stat(cwd)).isDirectory()) return "That path is a file, not a folder.";
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return "That folder does not exist on this computer.";
+    return "That folder cannot be opened on this computer.";
+  }
+  // A folder that cannot be entered is $HOME to herdr just the same.
+  try {
+    await access(cwd, constants.X_OK);
+    return null;
+  } catch {
+    return "That folder cannot be opened on this computer.";
+  }
 }

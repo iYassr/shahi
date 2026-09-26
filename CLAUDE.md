@@ -102,6 +102,9 @@ a report from a phone.
   faithfully and let the user scale, never re-wrap.
 - **herdr does not expand `~`.** It silently uses `$HOME` instead, so a display
   path lands every new space in the wrong folder. Always send absolute paths.
+  It does the same for a folder that does not exist or is a file, so the
+  create routes check the folder first (`folderProblem` in `dirs.ts`) and
+  answer a readable 400 before herdr is asked.
 - **Key names are strict.** `shift+tab` is accepted, `S-Tab` is not — it answers
   `invalid_key`. Every name in the key bar has been sent to a live pane.
 - **Agent detection needs an interactive shell.** `bash -lc` found 2 of 4;

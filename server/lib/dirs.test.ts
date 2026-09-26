@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { homedir, tmpdir } from "node:os";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { OutsideHomeError, collapseHome, expandHome, listDirectories, resolveWithinHome } from "./dirs";
+import { OutsideHomeError, collapseHome, expandHome, folderProblem, listDirectories, resolveWithinHome } from "./dirs";
 
 const HOME = homedir();
 
@@ -109,4 +109,50 @@ test("a home directory reached through a symlink can still be browsed", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+/**
+ * herdr uses $HOME for any folder it cannot enter, and says nothing, so a new
+ * space or agent in a deleted project landed in the home directory
+ * (pre-release bug hunt, B9).
+ */
+describe("folderProblem", () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-folder-"));
+
+  test("a folder that is there, anywhere on the computer, is fine", async () => {
+    expect(await folderProblem(root)).toBeNull();
+  });
+
+  test("no folder is herdr's default, and fine", async () => {
+    expect(await folderProblem(null)).toBeNull();
+    expect(await folderProblem(undefined)).toBeNull();
+    expect(await folderProblem("")).toBeNull();
+  });
+
+  test("a folder that is not there says so", async () => {
+    expect(await folderProblem(join(root, "deleted-project"))).toBe("That folder does not exist on this computer.");
+  });
+
+  test("a path through a file says the folder is not there", async () => {
+    writeFileSync(join(root, "notes.txt"), "x");
+    expect(await folderProblem(join(root, "notes.txt"))).toBe("That path is a file, not a folder.");
+    expect(await folderProblem(join(root, "notes.txt", "inside"))).toBe("That folder does not exist on this computer.");
+  });
+
+  test("home shorthand and relative paths are refused as before", async () => {
+    expect(await folderProblem("~/project")).toBe("cwd must be an absolute path");
+    expect(await folderProblem("project")).toBe("cwd must be an absolute path");
+    expect(await folderProblem(7)).toBe("cwd must be an absolute path");
+  });
+
+  test.skipIf(process.getuid?.() === 0)("a folder that cannot be entered is refused", async () => {
+    const locked = join(root, "locked");
+    mkdirSync(locked);
+    chmodSync(locked, 0o600);
+    try {
+      expect(await folderProblem(locked)).toBe("That folder cannot be opened on this computer.");
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
 });

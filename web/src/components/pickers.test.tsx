@@ -130,6 +130,22 @@ test("retrying an uncertain agent start keeps its operation identity", async () 
   expect(onStarted).toHaveBeenCalledWith("wtest:p3");
 });
 
+// Pre-release bug hunt, B9: a folder deleted after its space was made used to
+// start the agent in the home directory. The computer now refuses it, and the
+// sheet says so in the computer's words and stays open for another folder.
+test("a start refused because the folder is gone says why and can be tried again", async () => {
+  const { NewAgent } = await import("./NewAgent");
+  const { ApiError } = await import("../api");
+  const startAgent = mock().mockRejectedValueOnce(new ApiError("That folder does not exist on this computer.", 400));
+  const onToast = mock(), onClose = mock();
+  const client = { ...api, agents: mock().mockResolvedValue({ agents: [{ kind: "codex", command: "codex" }] }), startAgent };
+  await act(async () => { view = create(<ApiContext.Provider value={client}><NewAgent space={{ workspaceId: "wtest", label: "Test", cwd: "~/deleted", cwdPath: "/home/test/deleted" }} onClose={onClose} onToast={onToast} onStarted={mock()} /></ApiContext.Provider>); });
+  await act(async () => button("Start Codex").props.onClick());
+  expect(onToast).toHaveBeenCalledWith("That folder does not exist on this computer.");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(button("Start Codex").props.disabled).toBe(false);
+});
+
 test("dashboard uses accessible provider and inbox icons without changing filter identifiers", async () => {
   const { Dashboard } = await import("./Dashboard");
   const { MemoryRouter } = await import("react-router-dom");
