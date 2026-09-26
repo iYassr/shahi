@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { ControlSession, controlMessage, updateInProgress } from "@shahi/shared";
+import { ControlSession, controlMessage, controlNeedsAttention, updateInProgress } from "@shahi/shared";
 import { useApi } from "../api";
 
 const ControlContext = createContext<{ control: ControlSession } | null>(null);
@@ -18,7 +18,7 @@ export function ComputerUpdate() {
   const h = control?.handshake;
   if (!h || !control) return null;
   const busy = control.pending || updateInProgress(h.update.phase);
-  if (!settings && h.backend.state === "connected" && !h.update.available && !busy && !h.update.message && !control.error) return null;
+  if (!settings && !controlNeedsAttention(h, control)) return null;
   return <section className="computer-update" aria-live="polite">
     <strong>{h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : "This computer"}</strong>
     <p>{control.pending ? "Requesting update…" : control.error ? (updateInProgress(h.update.phase) ? "Reconnecting after the update…" : "Computer unavailable. Your pairing is saved.") : controlMessage(h)}</p>

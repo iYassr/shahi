@@ -48,11 +48,26 @@ export class ControlSession {
   }
 }
 
+/** Said in Settings only: a development checkout or a hand-run sidecar works, and has nothing to act on. */
+export const UNMANAGED_MESSAGE = "Computer updates need the managed Shahi service: install Shahi on this computer with herdr plugin install iYassr/shahi.";
+
 export function controlMessage(h: ControlHandshake): string {
   const u = h.update;
   if (updateInProgress(u.phase)) return ({ checking: "Checking for updates…", downloading: "Downloading computer update…", verifying: "Verifying computer update…", restarting: "Restarting Shahi · reconnecting automatically…" } as Record<string, string>)[u.phase]!;
   if (h.backend.state !== "connected") return h.backend.message;
   if (u.message) return u.message;
   if (u.available) return "A tested update is ready. Shahi will reconnect automatically.";
+  if (!u.managed) return UNMANAGED_MESSAGE;
   return "Connected";
+}
+
+/**
+ * Whether the card belongs outside Settings: something is happening, needs
+ * doing, or went wrong. An unmanaged computer's notice is none of those, and
+ * older servers still send it as a message, so a message counts only from a
+ * managed install; the card with that notice could not be dismissed from the
+ * Agents list or any conversation (compatibility bug hunt).
+ */
+export function controlNeedsAttention(h: ControlHandshake, control: { pending: boolean; error: string | null }): boolean {
+  return control.pending || !!control.error || updateInProgress(h.update.phase) || h.backend.state !== "connected" || !!h.update.available || (h.update.managed && !!h.update.message);
 }

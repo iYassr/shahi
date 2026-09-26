@@ -29,3 +29,16 @@ test("channel selection checks compatibility without automatically installing be
   render(<ComputerUpdate settings />);
   fireEvent.press(screen.getByText("Beta")); expect(mockRequest).toHaveBeenCalledWith("check", "beta");
 });
+
+// A development checkout's notice sat on the Agents list, where it could not
+// be dismissed; older servers still send it as a message (compatibility bug
+// hunt). Settings is where it belongs.
+test("an unmanaged computer shows no card on the Agents list, and its notice in Settings", () => {
+  mockControl.handshake.update = { managed: false, channel: "stable", phase: "idle", current: "development", message: "Install the managed Shahi service on this computer to enable app updates." };
+  const agents = render(<ComputerUpdate />);
+  expect(screen.queryByTestId("computer-update")).toBeNull();
+  agents.unmount();
+  render(<ComputerUpdate settings />);
+  expect(screen.getByTestId("computer-update")).toBeTruthy();
+  expect(screen.queryByText("Check for updates")).toBeNull();
+});

@@ -27,3 +27,22 @@ test("only a fixed request is published and a second request cannot overwrite it
   expect(() => control.request({ action: "install", channel: "beta" })).toThrow("in progress");
   expect(JSON.parse(readFileSync(join(root, "request.json"), "utf8"))).toEqual({ action: "install", channel: "stable" });
 });
+
+// Both clients show a card with a message on every screen, and a development
+// checkout said "Install the managed Shahi service…" on the Agents list and in
+// every conversation; a fresh managed install said it too until its manager
+// wrote a status (compatibility bug hunt).
+test("an unmanaged computer's handshake carries no message for a card on every screen", () => {
+  const h = new ComputerControl("dev", () => ({ state: "connected", version: "0.9.1", protocol: 22 }), undefined).handshake();
+  expect(h.update).toMatchObject({ managed: false, phase: "idle" });
+  expect(h.update.message).toBeUndefined();
+  expect(h.capabilities).not.toContain("computer-updates");
+});
+test("a managed install before its manager's first status is managed and checking, not told to install itself", () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-control-first-")); roots.push(root);
+  const release = { version: "0.3.7", buildId: "b" };
+  atomicJson(join(root, "installation.json"), { active: release, channel: "stable", sequence: {} });
+  const h = new ComputerControl("fresh", () => ({ state: "offline", message: "offline" }), root).handshake();
+  expect(h.update).toEqual({ managed: true, channel: "stable", phase: "checking", current: "0.3.7" });
+  expect(h.capabilities).toContain("computer-updates");
+});

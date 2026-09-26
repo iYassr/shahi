@@ -196,6 +196,8 @@ Bun.serve({
         serverVersion: "0.1.0",
         api: apiRange,
         herdr: { version: scenario.session.version, protocol: scenario.session.protocol },
+        // As the real server says it: the clients ask for the handshake only then.
+        ...(control ? { control: 1 } : {}),
       });
     }
 
