@@ -31,6 +31,12 @@ const PASSCODE = "2468";
 
 /** What the fake pane shows; tests that answer a prompt set it. */
 let screen = "";
+/**
+ * What the fake agent draws once a key lands, as a real one moves on from the
+ * question it was answering. Without it an answer waits out its full settle
+ * time for a screen that never changes.
+ */
+let afterKeys: string | null = "";
 /** Set before a boot() to make the fake pane an agent in that state. */
 let agentStatus: string | null = null;
 /**
@@ -70,7 +76,8 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     protocol: 20,
     workspaces: [{ workspace_id: "w1", label: "one", agent_status: "unknown", pane_count: 1, tab_count: 1, focused: true }],
     tabs: [{ tab_id: "t1", workspace_id: "w1", label: "1", number: 1, agent_status: "unknown", pane_count: 1, focused: true }],
-    panes: [pane],
+    // An agent's pane carries its status in both lists, as herdr's do.
+    panes: [agentStatus ? { ...pane, agent: "claude", agent_status: agentStatus } : pane],
     agents: agentStatus ? [{ ...pane, agent: "claude", agent_status: agentStatus }] : [],
     layouts: [],
     focused_pane_id: PANE,
@@ -83,6 +90,8 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
         case "session.snapshot":
           return { snapshot: structuredClone(snapshot) };
         case "pane.send_keys":
+          if (afterKeys !== null) screen = afterKeys;
+          return {};
         case "pane.send_text":
           return {};
         case "pane.read":
@@ -932,6 +941,17 @@ describe("writes to one pane from two phones", () => {
     expect(sent(before)).toEqual(["text:alpha", "keys:Enter", "text:bravo", "keys:Enter"]);
   });
 
+  // The Up landed between the answer's read and its Enter, which then
+  // confirmed "No, exit" and quit the agent.
+  test("a key pressed while an answer is on its way waits for it", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    const before = s.calls.length;
+    const answer = post("/answer", { index: 2, label: "Yes, I trust this folder" });
+    const key = post("/keys", { keys: ["Up"] });
+    expect([(await answer).status, (await key).status]).toEqual([200, 200]);
+    expect(sent(before)).toEqual(["keys:Enter", "keys:Up"]);
+  });
+
   test("a key pressed while a message is being typed waits for its Enter", async () => {
     const before = s.calls.length;
     const message = post("/prompt", { text: "please use blue", clientMessageId: "key-during-message" });
@@ -940,6 +960,75 @@ describe("writes to one pane from two phones", () => {
     const key = post("/keys", { keys: ["Up"] });
     expect([(await message).status, (await key).status]).toEqual([200, 200]);
     expect(sent(before)).toEqual(["text:please use blue", "keys:Enter", "keys:Up"]);
+  });
+});
+
+// Pre-release bug hunt, B5 and B46: two phones answering one prompt both
+// pressed "1" before the agent repainted, approving the next prompt; and a
+// card left from one prompt approved an identical one asked after it.
+describe("answering a prompt another phone has answered", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    agentStatus = "blocked";
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    agentStatus = null;
+    afterKeys = "";
+  });
+  const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
+  const BASH = fixture("blocked__claude-bash__text.txt");
+  const post = (body: unknown) =>
+    fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/answer`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify(body),
+    });
+  const pressed = (from: number) => app.calls.slice(from).filter((c) => c.method === "pane.send_keys");
+  /**
+   * The card a phone draws: the prompt as the pane route sends it. The route
+   * serves the poller's last frame, so each test asks a fresh server.
+   */
+  async function card() {
+    app.stop();
+    app = await boot();
+    const res = await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}`, { headers: { cookie: app.cookie } });
+    const { frame } = (await res.json()) as { frame: { prompt: { question: string; context?: string[]; promptId?: string } } };
+    return { index: 1, label: "Yes", question: frame.prompt.question, context: frame.prompt.context, promptId: frame.prompt.promptId };
+  }
+
+  test("presses one key between two phones answering at once", async () => {
+    screen = BASH;
+    afterKeys = BASH.replace("   touch probe.txt", "   touch probe-2.txt");
+    const shown = await card();
+    const before = app.calls.length;
+    const responses = await Promise.all([post(shown), post(shown)]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(pressed(before)).toHaveLength(1);
+  });
+
+  test("a card from before the agent asked the same thing again is a 409 prompt_gone", async () => {
+    screen = BASH;
+    afterKeys = "✻ Working…";
+    const shown = await card();
+    expect(shown.promptId).toBeString();
+    expect((await post(shown)).status).toBe(200);
+    // The agent asks for the same command again; the other phone's card is the old one.
+    screen = BASH;
+    const before = app.calls.length;
+    const stale = await post(shown);
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { code: string }).code).toBe("prompt_gone");
+    expect(pressed(before)).toEqual([]);
+  });
+
+  test("refuses a prompt id that is not one", async () => {
+    screen = BASH;
+    const before = app.calls.length;
+    expect((await post({ index: 1, label: "Yes", promptId: 7 })).status).toBe(400);
+    expect((await post({ index: 1, label: "Yes", promptId: "x".repeat(65) })).status).toBe(400);
+    expect(pressed(before)).toEqual([]);
   });
 });
 

@@ -23,6 +23,7 @@
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
+import { PromptInstances, screenId } from "./prompt-instances";
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
 
 /** The two herdr calls this module makes, typed loosely so a test can fake them. */
@@ -44,13 +45,18 @@ export interface Choice {
    */
   question?: string;
   context?: string[];
+  /** The appearance of the prompt the card was drawn from; see `ParsedPrompt.promptId`. */
+  promptId?: string;
 }
 
-/** The screen no longer shows a prompt at all. */
+/**
+ * The prompt the card showed is not on screen: there is none, it has been
+ * answered already, or the one there now is a later appearance.
+ */
 export class PromptGone extends Error {
   readonly code = "prompt_gone";
-  constructor(paneId: string) {
-    super(`${paneId} is not asking anything now`);
+  constructor(paneId: string, message = `${paneId} is not asking anything now`) {
+    super(message);
   }
 }
 
@@ -91,26 +97,88 @@ export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
   return [...moves, "Enter"];
 }
 
-/** Reads the pane, checks the choice is still on offer, and presses the keys for it. */
-export async function answerPrompt(rpc: AnswerRpc, paneId: string, choice: Choice): Promise<string[]> {
-  // The same read the poller makes, so what is parsed here is what it parsed.
-  const { read } = (await rpc("pane.read", {
-    pane_id: paneId,
-    source: "visible",
-    format: "ansi",
-    strip_ansi: false,
-  })) as { read: { text: string } };
+/** How long an answer holds its pane for the agent to draw what follows, and how often it looks. */
+export const SETTLE_MS = 1_500;
+const SETTLE_POLL_MS = 25;
 
-  const prompt = parsePrompt(stripAnsi(read.text));
+export interface AnswerOptions {
+  /** Every read of the pane, the poller's included, observed in one place. */
+  instances?: PromptInstances;
+  sleep?: (ms: number) => Promise<void>;
+  settleMs?: number;
+}
+
+/**
+ * Reads the pane, checks the choice is still on offer, and presses the keys for it.
+ *
+ * Then it waits, up to `SETTLE_MS`, for the screen to change, and the caller
+ * holds the pane's write lock (`PaneWrites`) throughout. Two phones answering
+ * one prompt within the agent's repaint time both read it still on screen
+ * and both pressed "1"; the second approved the next prompt, which neither
+ * had shown (pre-release bug hunt, B5: 29 of 40 trials against an agent that
+ * repaints in 32ms). Queued behind the wait, the second re-reads what the
+ * first left. A screen that has not changed by then is refused to every later
+ * answer as already answered, until it does.
+ */
+export async function answerPrompt(
+  rpc: AnswerRpc,
+  paneId: string,
+  choice: Choice,
+  { instances = new PromptInstances(), sleep = (ms) => Bun.sleep(ms), settleMs = SETTLE_MS }: AnswerOptions = {},
+): Promise<string[]> {
+  const { prompt, screen, promptId } = await look(rpc, paneId, instances);
   if (!prompt) throw new PromptGone(paneId);
+  if (instances.alreadyAnswered(paneId, screen)) {
+    throw new PromptGone(paneId, "That question has already been answered. Wait for the agent to show what comes next.");
+  }
   const target = prompt.options.find((o) => o.index === choice.index);
   if (!target || target.label !== choice.label) throw new PromptChanged(paneId);
   if (choice.question !== undefined && !sameQuestion(prompt, choice)) throw new PromptChanged(paneId);
+  // Same content, another appearance: the card was drawn before an answer,
+  // and this is the agent asking again.
+  if (choice.promptId !== undefined && choice.promptId !== promptId) {
+    throw new PromptGone(paneId, "The agent has asked this again since the card was drawn. Check the new question before answering.");
+  }
 
   const keys = keysFor(prompt, target);
-  if (keys.length > 0) await rpc("pane.send_keys", { pane_id: paneId, keys });
+  if (keys.length === 0) return keys;
+  await rpc("pane.send_keys", { pane_id: paneId, keys });
+  // A text field's digit only puts the cursor in it: the question is still
+  // open, waiting for what is typed there.
+  if (isTextField(prompt, target)) return keys;
+
+  instances.answered(paneId, screen);
+  // Counted in polls rather than against the clock, so each wait is a poll
+  // interval plus one read, and a test's sleep can stand in for it.
+  for (let waited = 0; waited < settleMs; waited += SETTLE_POLL_MS) {
+    await sleep(SETTLE_POLL_MS);
+    const now = await look(rpc, paneId, instances).catch(() => null);
+    if (!now || now.screen !== screen) break;
+  }
   return keys;
 }
+
+/**
+ * The same read the poller makes, so what is parsed here is what it parsed,
+ * and observed like it. A read the poller overtook with a different screen
+ * has no id to give, since the screen was changing under it; it is made again.
+ */
+async function look(rpc: AnswerRpc, paneId: string, instances: PromptInstances) {
+  for (let attempt = 1; ; attempt++) {
+    const ticket = instances.ticket(paneId);
+    const { read } = (await rpc("pane.read", {
+      pane_id: paneId,
+      source: "visible",
+      format: "ansi",
+      strip_ansi: false,
+    })) as { read: { text: string } };
+    const screen = screenId(read.text);
+    const prompt = parsePrompt(stripAnsi(read.text));
+    const promptId = instances.observe(paneId, ticket, prompt, screen);
+    if (!prompt || promptId !== undefined || attempt === LOOK_ATTEMPTS) return { prompt, screen, promptId };
+  }
+}
+const LOOK_ATTEMPTS = 3;
 
 /** Whether the screen still asks what the card showed; a prompt without context equals an empty one. */
 function sameQuestion(prompt: ParsedPrompt, choice: Choice): boolean {

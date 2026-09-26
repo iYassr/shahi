@@ -19,7 +19,6 @@
  *    worth almost nothing. With no clients connected at all, polling stops
  *    entirely — the dashboard should cost nothing while the phone is asleep.
  */
-import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { HerdrError, type HerdrClient } from "./herdr-client";
 import type { PaneFrame } from "@shahi/shared";
@@ -27,6 +26,7 @@ import { parseActivity } from "./activity";
 
 export type { PaneFrame };
 import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
+import { PromptInstances, screenId } from "./prompt-instances";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 
@@ -57,6 +57,8 @@ interface PaneRecord {
 }
 
 export class Poller extends EventEmitter<PollerEvents> {
+  /** Which appearance of a prompt each screen shows; the answer route observes through the same one. */
+  readonly prompts = new PromptInstances();
   readonly #records = new Map<string, PaneRecord>();
   readonly #watchers = new Map<string, number>();
   /** Last time herdr was asked to settle a status the screen disagreed with. */
@@ -128,6 +130,7 @@ export class Poller extends EventEmitter<PollerEvents> {
     this.#records.delete(paneId);
     this.#watchers.delete(paneId);
     this.#confirmedAt.delete(paneId);
+    this.prompts.forget(paneId);
   }
 
   #intervalFor(paneId: string): number {
@@ -225,6 +228,7 @@ export class Poller extends EventEmitter<PollerEvents> {
   }
 
   async #read(paneId: string): Promise<PaneFrame | undefined> {
+    const ticket = this.prompts.ticket(paneId);
     const { read } = await this.client.rpc("pane.read", {
       pane_id: paneId,
       source: "visible",
@@ -233,11 +237,12 @@ export class Poller extends EventEmitter<PollerEvents> {
     });
 
     const existing = this.#records.get(paneId);
-    const hash = createHash("sha1").update(read.text).digest("hex");
+    const hash = screenId(read.text);
     const now = Date.now();
 
     if (existing?.hash === hash) {
       existing.lastPolledAt = now;
+      const promptId = this.prompts.observe(paneId, ticket, existing.parsed, hash);
       // The screen has not changed, but herdr's opinion of it may have. A new
       // agent's folder-trust menu is on screen while herdr still reports it
       // `unknown` (measured: several seconds after `agent.start`), and a
@@ -245,11 +250,19 @@ export class Poller extends EventEmitter<PollerEvents> {
       // window kept `prompt: null`, and the card for a waiting agent had no
       // answer buttons for as long as it waited (pre-release review). Ask
       // again, through the same rate-limited confirmation a new screen gets.
-      if (existing.parsed && !existing.frame.prompt && (await this.#status(paneId, true)) === "blocked") {
+      //
+      // Its prompt's id can move on an unchanged screen too: an identical
+      // question drawn over an identical screen after an answer. A card left
+      // on the old id would be refused for good. The answered screen itself
+      // is not re-sent, or the card just answered would flash back.
+      const current = existing.frame.prompt;
+      const stale = current !== null && promptId !== undefined && current.promptId !== promptId &&
+        !this.prompts.alreadyAnswered(paneId, hash);
+      if (stale || (existing.parsed && !current && (await this.#status(paneId, true)) === "blocked")) {
         // A read that finished meanwhile holds a newer screen; keep that.
         const latest = this.#records.get(paneId);
         if (latest !== existing) return latest?.frame;
-        existing.frame = { ...existing.frame, prompt: existing.parsed, at: now };
+        existing.frame = { ...existing.frame, prompt: withId(existing.parsed!, promptId), at: now };
         this.emit("frame", existing.frame);
       }
       return existing.frame;
@@ -260,6 +273,7 @@ export class Poller extends EventEmitter<PollerEvents> {
     // round-trip for the same screen.
     const text = stripAnsi(read.text);
     const parsed = parsePrompt(text);
+    const promptId = this.prompts.observe(paneId, ticket, parsed, hash);
     const status = await this.#status(paneId, parsed !== null);
 
     const frame: PaneFrame = {
@@ -269,7 +283,7 @@ export class Poller extends EventEmitter<PollerEvents> {
       // Only offer answer buttons when herdr itself says the agent is waiting.
       // The parser is deliberately strict, but this is the outer guard: a tap
       // sends a real keystroke into a live session.
-      prompt: status === "blocked" ? parsed : null,
+      prompt: status === "blocked" && parsed ? withId(parsed, promptId) : null,
       // Deliberately not gated on herdr's `agent_status`. Its working-state
       // detection is tuned for Claude Code: a codex pane displaying
       // `• Working (5s • esc to interrupt)` is still reported as `idle`, so
@@ -369,6 +383,11 @@ const HISTORY_LINES = 1000;
 
 /** Floor between status confirmations for one pane. */
 const CONFIRM_INTERVAL_MS = 1_000;
+
+/** A read overtaken by a later one has no id to give, and its prompt goes out as older servers sent it. */
+function withId(prompt: ParsedPrompt, promptId: string | undefined): ParsedPrompt {
+  return promptId === undefined ? prompt : { ...prompt, promptId };
+}
 
 function isMissingPane(err: unknown): boolean {
   const code = (err as { code?: string })?.code;

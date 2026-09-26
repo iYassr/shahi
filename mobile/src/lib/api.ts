@@ -637,16 +637,19 @@ const api = {
    *
    * The card's question and context go too. Every Claude permission offers
    * "1. Yes", so without them a card for one command could approve the next.
+   * So does the id of the prompt's appearance, when the server gave one: the
+   * same command asked for twice draws the same card.
    */
   answerPrompt: (
     paneId: string,
     option: Pick<PromptOption, "index" | "label">,
-    shown?: Pick<ParsedPrompt, "question" | "context">,
+    shown?: Pick<ParsedPrompt, "question" | "context" | "promptId">,
   ) =>
     postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
       index: option.index,
       label: option.label,
       ...(shown ? { question: shown.question, context: shown.context } : {}),
+      ...(shown?.promptId ? { promptId: shown.promptId } : {}),
     }),
 
   /**

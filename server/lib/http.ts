@@ -1217,7 +1217,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // now, because the phone never learns which menu shape it showed,
           // and its copy of the screen may be seconds old (see `answer.ts`).
           if (sub === "/answer" && req.method === "POST") {
-            const body = await jsonObject<{ index: unknown; label: unknown; question?: unknown; context?: unknown }>(req);
+            const body = await jsonObject<{ index: unknown; label: unknown; question?: unknown; context?: unknown; promptId?: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
             if (!Number.isInteger(body.index) || typeof body.label !== "string") {
@@ -1232,13 +1232,22 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             ) {
               return json({ error: "question must be text and context a list of text" }, { status: 400 });
             }
+            // Which appearance of the prompt the card was drawn from, when the
+            // server that drew it said (see `ParsedPrompt.promptId`).
+            if (body.promptId !== undefined && (typeof body.promptId !== "string" || body.promptId.length > 64)) {
+              return json({ error: "promptId must be the id the prompt was sent with" }, { status: 400 });
+            }
             try {
               await paneWrites.run(paneId, () => answerPrompt(herdrRpc, paneId, {
                 index: body.index as number,
                 label: body.label as string,
                 ...(typeof body.question === "string" ? { question: body.question } : {}),
                 ...(Array.isArray(body.context) ? { context: body.context as string[] } : {}),
-              }));
+                ...(typeof body.promptId === "string" ? { promptId: body.promptId } : {}),
+              }, { instances: poller.prompts }));
+              // What the agent drew next, to watchers and as a new card to
+              // every client, now rather than at the next poll.
+              void poller.refresh(paneId);
               return json({ ok: true });
             } catch (err) {
               if (err instanceof PromptGone || err instanceof PromptChanged) {

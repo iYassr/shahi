@@ -307,6 +307,19 @@ describe("semantic requests", () => {
     });
   });
 
+  // Pre-release bug hunt, B46: the same command asked for twice draws the
+  // same card, so the card says which appearance it was drawn from.
+  test("answering a prompt sends back which appearance of it the card showed", async () => {
+    ok({ ok: true });
+    await api.answerPrompt("w1:p1", { index: 1, label: "Yes" }, {
+      question: "Do you want to proceed?",
+      context: ["Bash command", "touch probe.txt"],
+      promptId: "3f6c1a52-0d7e-4a8e-9a55-2b8a7a1e9c10",
+    });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init.body)).toMatchObject({ index: 1, label: "Yes", promptId: "3f6c1a52-0d7e-4a8e-9a55-2b8a7a1e9c10" });
+  });
+
   test("a new space is a workspace request", async () => {
     ok({ workspaceId: "w9" });
     await expect(api.createWorkspace({ label: "notes", cwd: "/home/y/notes" })).resolves.toEqual({

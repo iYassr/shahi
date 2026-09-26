@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { HerdrError, type HerdrClient } from "./herdr-client";
 import { Poller } from "./poller";
+import { screenId } from "./prompt-instances";
 import type { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
 
@@ -215,6 +216,68 @@ describe("answering sooner than the mirror knows", () => {
 
     expect(calls.filter((call) => call === "pane.read")).toHaveLength(4);
     expect(calls.filter((call) => call === "pane.get")).toHaveLength(1);
+  });
+});
+
+/**
+ * Pre-release bug hunt, B46: nothing on the wire told two identical prompts
+ * apart, so a card left from the first approved the second. Each appearance
+ * goes out with an id the phone sends back.
+ */
+describe("which appearance of a prompt a frame shows", () => {
+  const blocked = { pane: () => ({ agent_status: "blocked" }) } as unknown as SessionStore;
+  function pane(first: string) {
+    const shown = { screen: first };
+    const client = {
+      rpc: async (method: string) => {
+        if (method === "pane.get") return { pane: { agent_status: "blocked" } };
+        return { read: { text: shown.screen } };
+      },
+    } as unknown as HerdrClient;
+    return { shown, poller: new Poller(client, blocked, new TranscriptStore(":memory:")) };
+  }
+
+  test("keeps its id from frame to frame while it stays on screen", async () => {
+    const { shown, poller } = pane(MENU);
+    const first = (await poller.refresh("w1:p1"))?.prompt?.promptId;
+    expect(first).toBeString();
+    shown.screen = MENU.replace("❯ 1.", "  1.").replace("  2.", "❯ 2.");
+    expect((await poller.refresh("w1:p1"))?.prompt?.promptId).toBe(first!);
+  });
+
+  test("gets a new id when the same question is asked again", async () => {
+    const { shown, poller } = pane(MENU);
+    const first = (await poller.refresh("w1:p1"))?.prompt?.promptId;
+    shown.screen = "✻ Working…";
+    await poller.refresh("w1:p1");
+    shown.screen = MENU;
+    expect((await poller.refresh("w1:p1"))?.prompt?.promptId).not.toBe(first!);
+  });
+
+  // The answer route saw the screen in between; the poller did not, and its
+  // screen is byte for byte the one it last sent. The card must still move on.
+  test("is sent again under a new id when only the answer route saw the question go", async () => {
+    const { shown, poller } = pane(MENU);
+    const frames: (string | undefined)[] = [];
+    poller.on("frame", (frame) => frames.push(frame.prompt?.promptId));
+    const first = (await poller.refresh("w1:p1"))?.prompt?.promptId;
+    poller.prompts.answered("w1:p1", screenId(MENU));
+    poller.prompts.observe("w1:p1", poller.prompts.ticket("w1:p1"), null, "working");
+    const again = (await poller.refresh("w1:p1"))?.prompt?.promptId;
+    expect(again).toBeString();
+    expect(again).not.toBe(first!);
+    expect(frames.at(-1)).toBe(again);
+  });
+
+  // The card just answered would flash back if its own screen were re-sent.
+  test("is not re-sent for the screen an answer was pressed on", async () => {
+    const { poller } = pane(MENU);
+    const frames: unknown[] = [];
+    await poller.refresh("w1:p1");
+    poller.on("frame", (frame) => frames.push(frame));
+    poller.prompts.answered("w1:p1", screenId(MENU));
+    await poller.refresh("w1:p1");
+    expect(frames).toEqual([]);
   });
 });
 

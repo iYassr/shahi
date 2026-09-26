@@ -32,7 +32,9 @@ test.describe("answering a prompt", () => {
     await expect(page.locator(".choice").first()).toHaveAttribute("data-selected", "true");
   });
 
-  test("tapping an option submits its index and displayed label", async ({ page }) => {
+  // The prompt's id goes back too: the same command asked for twice draws the
+  // same card, and only the id tells them apart (pre-release bug hunt, B46).
+  test("tapping an option submits its index, displayed label and the prompt's id", async ({ page }) => {
     await scenario(page, "busy");
     await page.goto("/");
 
@@ -42,7 +44,7 @@ test.describe("answering a prompt", () => {
     const sent = await paneWrites(page);
     expect(sent[0]).toMatchObject({
       path: `/api/panes/${encodeURIComponent(BLOCKED_PANE)}/answer`,
-      body: { index: 2, label: "Green" },
+      body: { index: 2, label: "Green", promptId: "stub-colour-question" },
     });
   });
 

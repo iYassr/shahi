@@ -228,6 +228,18 @@ permission offers "1. Yes". An older client that sends only index and label is
 still answered on those two. A 409 with `prompt_gone` or `prompt_changed` is
 the answer when the screen moved on; nothing is pressed.
 
+Content cannot tell one appearance of a prompt from the next: the same command
+asked for twice draws the same card. So every read of a pane, the poller's and
+the answer route's, goes through `prompt-instances.ts`, which gives each
+appearance an id (`ParsedPrompt.promptId`, optional on the wire): a new one
+when a prompt appears, when its question or options change, and once it has
+been answered. Clients send it back, and a card with an id that is no longer
+current is a 409 `prompt_gone`. After pressing, an answer holds the pane's
+write queue until the screen changes (up to 1.5s), because two phones both read
+the prompt before the agent repainted and the second key approved the next
+prompt; a screen still unchanged after that is refused as already answered
+until the pane shows anything else.
+
 **Writes to one pane take turns.** `/prompt`, `/answer` and `/keys` run
 through one queue per pane (`pane-writes.ts`), so each sees the screen the
 one before it left: two phones' messages were typed into each other before

@@ -73,6 +73,8 @@ export const pane = (
 export const question = (): ParsedPrompt => ({
   question: "Which colour do you prefer?",
   answer: "digit",
+  // Which appearance of the question this is; the card sends it back.
+  promptId: "stub-colour-question",
   options: [
     { index: 1, label: "Red", selected: true, detail: "Warm, high-contrast." },
     { index: 2, label: "Green", selected: false, detail: "Reads as success." },

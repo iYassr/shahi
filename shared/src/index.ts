@@ -191,6 +191,17 @@ export interface ParsedPrompt {
    * so a command and its description stay apart.
    */
   context?: string[];
+  /**
+   * Which appearance of this prompt on its pane the card was drawn from. A
+   * new id is given when a prompt appears, when its question or options
+   * change, and once it has been answered, so an agent asking the same
+   * question again gets a new one. Clients send it back to `/answer`, where
+   * an id that is no longer current is refused as `prompt_gone`: content
+   * alone could not tell the second `touch probe.txt` approval from the
+   * first, and a stale card on another phone approved it (pre-release bug
+   * hunt, B46). Absent from older servers, and optional to send.
+   */
+  promptId?: string;
 }
 
 /* ---------------------------------------------------------------- activity */
