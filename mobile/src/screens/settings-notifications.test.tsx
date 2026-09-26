@@ -62,9 +62,13 @@ const keychain = new Map<string, string>();
 beforeEach(() => {
   jest.clearAllMocks();
   keychain.clear();
-  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string) => keychain.get(key) ?? null);
-  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, value: string) => { keychain.set(key, value); });
-  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string) => { keychain.delete(key); });
+  // This build's own keychain service; the default one an earlier build used
+  // is empty here. A keychain that answered either, as this one once did,
+  // loses every write to the old copy's clean-up (see keychain.ts).
+  type Options = { keychainService?: string } | undefined;
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string, options: Options) => (options?.keychainService ? keychain.get(key) ?? null : null));
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, value: string, options: Options) => { if (options?.keychainService) keychain.set(key, value); });
+  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string, options: Options) => { if (options?.keychainService) keychain.delete(key); });
   (Notifications.getPermissionsAsync as jest.Mock).mockImplementation(async () => ({ granted: true }));
 });
 
