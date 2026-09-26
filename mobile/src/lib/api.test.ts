@@ -643,6 +643,13 @@ describe("an SSH upload", () => {
     expect(sent.aborted).toBe(true);
   });
 
+  // September 2026 pre-release bug hunt: over SSH a 33 MB file went up the
+  // tunnel in full and came back as "file is 34.6MB, over the 33.554432MB limit".
+  test("a file over 32 MB over SSH is refused before any of it is sent, in the words used everywhere else", async () => {
+    await expect(api.upload({ ...photo, size: 33 * 1024 * 1024 })).rejects.toThrow("Files can be up to 32 MB");
+    expect(hanging).not.toHaveBeenCalled();
+  });
+
   test("an upload cancelled before it starts sends nothing", async () => {
     const controller = new AbortController();
     controller.abort();

@@ -992,6 +992,17 @@ test("chunk upload routes enforce authentication, body bounds and session owners
   } finally { app.stop(); }
 });
 
+// September 2026 pre-release bug hunt: the multipart route divided the binary
+// limit by a decimal million, and the native Attach sheet showed its words over
+// SSH as they stood: "file is 34.6MB, over the 33.554432MB limit".
+test("a multipart upload over the limit is told files can be up to 32 MB, not 33.554432MB", async () => {
+  const form = new FormData();
+  form.set("file", new File([new Uint8Array(33 * 1024 * 1024)], "clip.mov"));
+  const res = await fetch(`${s.base}/api/uploads`, { method: "POST", headers: { cookie: s.cookie }, body: form });
+  expect(res.status).toBe(413);
+  expect(await res.json()).toEqual({ error: "Files can be up to 32 MB" });
+});
+
 // September 2026 pre-release bug hunt: only a transfer's owner or the
 // 10-minute idle sweep reclaimed an unfinished upload, and a revoked phone or
 // a dead cookie can do neither, so two such phones held both upload slots and

@@ -704,6 +704,11 @@ const api = {
    */
   upload: (file: { uri: string; name: string; type: string; size?: number }, options: UploadOptions = {}): Promise<StoredUpload> =>
     abortable(options.signal, (async () => {
+      // No computer accepts more, over any connection. Over SSH the whole file
+      // used to go up the tunnel before the computer refused it, in words of
+      // its own (September 2026 pre-release bug hunt); the web client checks
+      // the same way.
+      if (file.size !== undefined && file.size > 32 * 1024 * 1024) throw new Error("Files can be up to 32 MB");
       if (connection.relay) {
         const transferRequest: UploadRequest = (path, init) => dispatch(path, { ...init, headers: baseHeaders(init.headers) }, 60_000);
         const limits = await uploadCapability(transferRequest);

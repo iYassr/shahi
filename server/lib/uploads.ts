@@ -30,9 +30,15 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 const KEEP_MS = 14 * 24 * 60 * 60 * 1000;
 
 
+/**
+ * Past MAX_UPLOAD_BYTES. Worded as the chunked route and both clients word it:
+ * this used to divide the binary limit by a decimal million and print "file is
+ * 34.6MB, over the 33.554432MB limit", which the native Attach sheet shows as
+ * it stands over SSH (September 2026 pre-release bug hunt).
+ */
 export class UploadTooLarge extends Error {
-  constructor(size: number) {
-    super(`file is ${(size / 1e6).toFixed(1)}MB, over the ${MAX_UPLOAD_BYTES / 1e6}MB limit`);
+  constructor(readonly size: number) {
+    super("Files can be up to 32 MB");
     this.name = "UploadTooLarge";
   }
 }
