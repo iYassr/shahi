@@ -76,7 +76,8 @@ test.each(["All", "Inbox 1"])("a new question on a still-waiting agent can be an
   expect(mockState.api.answerPrompt).toHaveBeenCalledTimes(2);
   // Sent with the question the card now shows, so the server can refuse it
   // if the screen has moved on again.
-  expect(mockState.api.answerPrompt).toHaveBeenLastCalledWith("w1:p1", expect.objectContaining({ label: "No" }), next);
+  // The last argument is the pane's occupant, which this session's server does not name.
+  expect(mockState.api.answerPrompt).toHaveBeenLastCalledWith("w1:p1", expect.objectContaining({ label: "No" }), next, undefined);
 });
 
 test("answer options are read by their words, with the terminal's cursor said as a state", () => {

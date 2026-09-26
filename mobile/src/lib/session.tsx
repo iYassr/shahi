@@ -18,7 +18,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from "react-native";
 import { addNetworkStateListener, getNetworkStateAsync, type NetworkState } from "expo-network";
 import { deleteSecret, readSecret, writeSecret } from "./keychain";
-import type { ParsedPrompt, Session } from "@shahi/shared";
+import { pinnedPanes, retainPins, togglePin as togglePinOf, type ParsedPrompt, type Session } from "@shahi/shared";
 import { api, connection, type Api, type Connection, type LinkState } from "@/lib/api";
 import { hostOf } from "@/lib/errors";
 import { closeRelay, type RelayIdentity } from "@/lib/relay";
@@ -102,7 +102,7 @@ interface SessionValue {
   onPaneFrame: (paneId: string, cb: () => void) => () => void;
   /** Drops a remembered prompt once it has been answered. */
   clearPrompt: (paneId: string) => void;
-  /** Conversations kept on top of the list, by pane id, per device. */
+  /** Conversations kept on top of the list, per device: the pane ids whose pinned conversation is still there. */
   pins: Set<string>;
   togglePin: (paneId: string) => void;
   clearPins: () => void;
@@ -235,8 +235,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // landed on the chooser instead of its pane (pre-release review). Saved,
       // it is known from the first render.
       const serverId = current.saved.connection.kind === "ssh" ? current.serverId : undefined;
-      if ((name && current.saved.name !== name) || (serverId && current.saved.serverId !== serverId)) {
-        current.saved = { ...current.saved, ...(name && { name }), ...(serverId && { serverId }) };
+      // A pin names the conversation it was put on and goes when that
+      // conversation ends: herdr reuses pane ids, and a pin on w3:p1 starred
+      // the next conversation to get that id (pre-release bug hunt).
+      const pins = current.session ? retainPins(current.saved.pins, current.session) : current.saved.pins;
+      if ((name && current.saved.name !== name) || (serverId && current.saved.serverId !== serverId) || pins !== current.saved.pins) {
+        current.saved = { ...current.saved, ...(name && { name }), ...(serverId && { serverId }), pins: [...pins] };
         bank.current = bank.current.map(c => c.id === saved.id ? current.saved : c);
         const savedNames = JSON.stringify(bank.current);
         void write(() => writeSecret(COMPUTERS_KEY, savedNames));
@@ -365,8 +369,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     markReviewed: pane => entry?.markReviewed(pane),
     link: entry?.link ?? "connecting", error: storageError ?? entry?.error ?? null,
     ...actions,
-    pins: new Set(entry?.saved.pins ?? []),
-    togglePin: pane => updatePins(entry?.saved.pins.includes(pane) ? entry.saved.pins.filter(id => id !== pane) : [...(entry?.saved.pins ?? []), pane]),
+    pins: pinnedPanes(entry?.saved.pins ?? [], entry?.session?.panes ?? []),
+    togglePin: pane => updatePins(togglePinOf(entry?.saved.pins ?? [], entry?.session?.panes.find(p => p.paneId === pane) ?? { paneId: pane })),
     clearPins: () => updatePins([]), terminalWidth,
     setTerminalWidth: columns => { setWidth(columns); void writeSecret(WIDTH_KEY, String(columns)).catch(() => {}); },
     server: entry ? (entry.saved.connection.kind === "relay" ? relayLabel(entry.saved.connection) : `ssh://${entry.saved.connection.ssh.username}@${entry.saved.connection.ssh.host}`) : "",

@@ -24,7 +24,9 @@ let value: ReturnType<typeof useSession>;
 function Probe() { value = useSession(); return null; }
 const a = { kind: "relay", relay: "wss://relay.test", serverId: "computer-a", deviceId: "phone-a", deviceSecret: "secret-a" } satisfies ComputerConnection;
 const b = { ...a, serverId: "computer-b", deviceId: "phone-b", deviceSecret: "secret-b" };
-const snapshot = { panes: [], tabs: [], workspaces: [], version: "test", protocol: 22 };
+// The panes the pin tests pin: a pin is shown, and kept, only while its pane
+// is in the computer's session (herdr reuses pane ids).
+const snapshot = { panes: [{ paneId: "a-pin", status: "idle" }, { paneId: "same-pane-id", status: "idle" }], tabs: [], workspaces: [], version: "test", protocol: 22 };
 const store = new Map<string, string>();
 const bank = () => JSON.parse(store.get(COMPUTERS_KEY)!);
 async function mount() {
@@ -255,5 +257,21 @@ test("an offline notification wins over a late initial network snapshot and pres
   expect(value.api).toBe(owner);
   expect(nativeDraft(value.api, "p1").text).toBe("Continue this later");
   expect(value.computers).toHaveLength(2);
+  ui.unmount();
+});
+
+// herdr reuses pane ids: close the highest space, restart herdr, create one,
+// and its panes have the old ids. The pre-release bug hunt pinned w3:p1 and
+// found the next conversation to get that id starred.
+test("a pin on one conversation does not pin the next conversation to get its pane id", async () => {
+  (api.session as jest.Mock).mockResolvedValue({ ...snapshot, panes: [{ paneId: "w3:p1", instanceId: "term_a", status: "idle" }] });
+  const ui = await mount();
+  act(() => value.signInRelay(a)); await act(async () => {});
+  act(() => value.togglePin("w3:p1")); await act(async () => {});
+  expect(value.pins.has("w3:p1")).toBe(true);
+  act(() => mockSockets.at(-1).message({ type: "session", session: { ...snapshot, panes: [{ paneId: "w3:p1", instanceId: "term_b", status: "idle" }] } }));
+  await act(async () => {});
+  expect(value.pins.has("w3:p1")).toBe(false);
+  expect(bank().find((c: { id: string }) => c.id === computerId(a)).pins).toEqual([]);
   ui.unmount();
 });

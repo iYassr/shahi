@@ -181,7 +181,8 @@ describe("sending a reply", () => {
 
     expect(view.getByText(/ship it/)).toBeTruthy();
     expect(view.getAllByText("YOU")).toHaveLength(1);
-    expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it", expect.any(String));
+    // No occupant: this session is from a server that names none.
+    expect(mocked.send).toHaveBeenCalledWith(PANE, "ship it", expect.any(String), undefined);
     // The composer is cleared with the tap, not with the receipt.
     expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
     expect(view.getByPlaceholderText("Reply to this agent…").props.editable).toBe(false);
@@ -1389,6 +1390,32 @@ test("a dropped connection preserves the loaded conversation and unsent draft wi
   view.unmount();
 });
 
+// herdr reuses pane ids: close the highest space, restart herdr, create one,
+// and its panes have the old ids. The pre-release bug hunt retried an
+// uncertain send across that and it ran in the new shell; the restarted
+// sidecar had forgotten the first delivery. The send names its occupant, and
+// the server refuses it for any other (409 pane_replaced).
+test("a retried send names the conversation it was typed for, so it cannot land in the next one", async () => {
+  const pane = mockSession.session.panes[0] as { instanceId?: string };
+  pane.instanceId = "term_a";
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Shall I roll back?")]));
+    mocked.send.mockRejectedValueOnce(new Error("response lost")).mockResolvedValue(receipt);
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Shall I roll back\?/);
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "yes, roll it back");
+    fireEvent.press(view.getByText("Send"));
+    await view.findByText("response lost");
+    fireEvent.press(view.getByText("Send"));
+    await settle();
+    expect(mocked.send.mock.calls[0]).toEqual([PANE, "yes, roll it back", expect.any(String), "term_a"]);
+    expect(mocked.send.mock.calls[1]).toEqual(mocked.send.mock.calls[0]);
+    view.unmount();
+  } finally {
+    delete pane.instanceId;
+  }
+});
+
 // Every Claude Code permission offers "1. Yes", so the server can only tell a
 // stale card from the request on screen if the tap says which question the
 // card showed (pre-release review).
@@ -1407,7 +1434,7 @@ test("answering from the pane says which question the card showed", async () => 
   await view.findByText("Do you want to proceed?");
   fireEvent.press(view.getByText("Yes"));
   await settle();
-  expect(answerPrompt).toHaveBeenCalledWith(PANE, bash.options[0], bash);
+  expect(answerPrompt).toHaveBeenCalledWith(PANE, bash.options[0], bash, undefined);
   view.unmount();
 });
 

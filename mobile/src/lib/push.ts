@@ -108,15 +108,26 @@ export async function enablePush(client: Api = api): Promise<PushResult> {
  * Routes a tapped notification to the pane it is about.
  *
  * The point of the notification is the answer that follows it, so it should
- * land on the prompt rather than on the list.
+ * land on the prompt rather than on the list. The occupant that was waiting
+ * comes too, when the server named one: herdr reuses pane ids, and a tap after
+ * the id changed hands opened the new conversation (pre-release bug hunt).
  */
-export function onNotificationTapped(open: (paneId: string, serverId?: string) => void): () => void {
+export function onNotificationTapped(open: (paneId: string, serverId?: string, instanceId?: string) => void): () => void {
   let remove: (() => void) | undefined;
   let cancelled = false;
 
   const route = (response: import("expo-notifications").NotificationResponse | null): string | null => {
     const paneId = response?.notification.request.content.data?.paneId;
     return typeof paneId === "string" && paneId ? paneId : null;
+  };
+  const deliver = (paneId: string, response: import("expo-notifications").NotificationResponse | null) => {
+    const data = response?.notification.request.content.data;
+    const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
+    const serverId = typeof data?.serverId === "string" ? data.serverId : undefined;
+    const instanceId = text(data?.instanceId);
+    if (instanceId) open(paneId, serverId, instanceId);
+    else if (serverId !== undefined) open(paneId, serverId);
+    else open(paneId);
   };
 
   void load().then((notifications) => {
@@ -132,18 +143,14 @@ export function onNotificationTapped(open: (paneId: string, serverId?: string) =
       if (cancelled) return;
       const paneId = route(response);
       if (paneId) {
-        const serverId = response?.notification.request.content.data?.serverId;
-        if (typeof serverId === "string") open(paneId, serverId); else open(paneId);
+        deliver(paneId, response);
         void notifications.clearLastNotificationResponseAsync();
       }
     });
 
     const subscription = notifications.addNotificationResponseReceivedListener((response) => {
       const paneId = route(response);
-      if (paneId) {
-        const serverId = response.notification.request.content.data?.serverId;
-        if (typeof serverId === "string") open(paneId, serverId); else open(paneId);
-      }
+      if (paneId) deliver(paneId, response);
     });
     remove = () => subscription.remove();
   });

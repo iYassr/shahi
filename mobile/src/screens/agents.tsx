@@ -41,7 +41,7 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // ordinary outcome, not an exception to swallow.
   async function answer(paneId: string, option: PromptOption) {
     try {
-      await api.answerPrompt(paneId, option, prompts[paneId]);
+      await api.answerPrompt(paneId, option, prompts[paneId], session?.panes.find((pane) => pane.paneId === paneId)?.instanceId);
     } catch (e) {
       refused();
       throw e;

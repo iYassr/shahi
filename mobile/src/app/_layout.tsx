@@ -41,16 +41,16 @@ function Navigation() {
   const session = useSession();
   const { connectionKey, ready, activeComputerId } = session;
   const current = useRef(session); current.current = session;
-  const [pending, setPending] = useState<{ id: string; pane: string } | null>(null);
+  const [pending, setPending] = useState<{ id: string; pane: string; instance?: string } | null>(null);
   // Above the remounting stack: a notification can select another computer.
   useEffect(() => {
     if (!ready) return;
-    return onNotificationTapped((pane, serverId) => {
+    return onNotificationTapped((pane, serverId, instance) => {
       const state = current.current;
       const target = serverId ? state.computers.find(c => c.serverId === serverId) :
         state.computers.length === 1 ? state.computers[0] : undefined;
       if (!target) { router.push("/computers"); return; }
-      setPending({ id: target.id, pane });
+      setPending({ id: target.id, pane, ...(instance && { instance }) });
       if (target.id !== state.activeComputerId) void state.switchComputer(target.id).catch(() => {
         setPending(null); router.push("/computers");
       });
@@ -58,7 +58,7 @@ function Navigation() {
   }, [ready]);
   useEffect(() => {
     if (!pending || pending.id !== activeComputerId) return;
-    const frame = requestAnimationFrame(() => { openPane(pending.pane); setPending(null); });
+    const frame = requestAnimationFrame(() => { if (pending.instance) openPane(pending.pane, pending.instance); else openPane(pending.pane); setPending(null); });
     return () => cancelAnimationFrame(frame);
   }, [pending, activeComputerId, connectionKey]);
   return <>

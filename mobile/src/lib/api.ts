@@ -645,17 +645,23 @@ const api = {
    * "1. Yes", so without them a card for one command could approve the next.
    * So does the id of the prompt's appearance, when the server gave one: the
    * same command asked for twice draws the same card.
+   *
+   * Writes name the pane's occupant they were meant for, when the server named
+   * one: herdr reuses pane ids, and the server refuses (409 `pane_replaced`) a
+   * write another program would receive.
    */
   answerPrompt: (
     paneId: string,
     option: Pick<PromptOption, "index" | "label">,
     shown?: Pick<ParsedPrompt, "question" | "context" | "promptId">,
+    instanceId?: string,
   ) =>
     postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
       index: option.index,
       label: option.label,
       ...(shown ? { question: shown.question, context: shown.context } : {}),
       ...(shown?.promptId ? { promptId: shown.promptId } : {}),
+      ...(instanceId ? { instanceId } : {}),
     }),
 
   /**
@@ -670,15 +676,16 @@ const api = {
    * `clientMessageId` lets a retry after a timeout be recognised as the same
    * message, so a bad connection cannot deliver a prompt twice.
    */
-  send: (paneId: string, text: string, clientMessageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`) =>
+  send: (paneId: string, text: string, clientMessageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, instanceId?: string) =>
     postJson<PromptReceipt>(`/api/panes/${encodeURIComponent(paneId)}/prompt`, {
       text,
       clientMessageId,
+      ...(instanceId ? { instanceId } : {}),
     }),
 
   /** Key presses — Escape, arrows, a digit for a numbered prompt. */
-  sendKeys: (paneId: string, keys: string[]) =>
-    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys }),
+  sendKeys: (paneId: string, keys: string[], instanceId?: string) =>
+    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys, ...(instanceId ? { instanceId } : {}) }),
 
   /** Registers this device for notifications. See `lib/push`. */
   registerPush: (token: string) => postJson<{ ok: boolean }>("/api/push/expo", { token }),

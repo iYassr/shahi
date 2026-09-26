@@ -1,6 +1,7 @@
-import { clearNativeDrafts } from "./drafts";
+import { clearNativeDrafts, forgetNativeDraft } from "./drafts";
+import { forgetPaneMemory } from "./reader-memory";
 import { reconcileSession } from "./session-reconcile";
-import { retainReviews, reviewKey, type Reviewed, type DashboardPane, type ParsedPrompt, type Session, type SocketMessage } from "@shahi/shared";
+import { endedPanes, retainReviews, reviewKey, type Reviewed, type DashboardPane, type ParsedPrompt, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
 import { openTunnel, closeTunnel } from "./tunnel";
@@ -13,6 +14,8 @@ export class ComputerSession {
   readonly api;
   readonly control;
   session: Session | null = null;
+  /** The last session from a real snapshot, for `endedPanes`; `session` keeps whatever came. */
+  private lastSnapshot: Session | null = null;
   serverId?: string;
   prompts: Record<string, ParsedPrompt> = {};
   reviewed: Reviewed = {};
@@ -110,6 +113,21 @@ export class ComputerSession {
       // Background computers receive dashboards without subscribing to a pane.
       const unchanged = this.error === null && JSON.stringify(this.session) === JSON.stringify(msg.session);
       if (unchanged) { this.changed(false); return; }
+      // herdr reuses pane ids. A pane that closed or changed hands takes its
+      // draft, uncertain send and remembered conversation with it, before any
+      // screen renders the new list (see `pane-instance.ts` in @shahi/shared).
+      for (const paneId of endedPanes(this.lastSnapshot, msg.session)) {
+        forgetNativeDraft(this.api, paneId);
+        forgetPaneMemory(this.api, paneId);
+      }
+      // An agent that quit leaves its shell in the same terminal, so the
+      // occupant is unchanged, but its conversation is over: kept, it opened
+      // every time over a composer that now runs commands (pre-release bug
+      // hunt). Only what the reader remembers goes; a draft stays with the
+      // person, and the composer says it runs a command.
+      const agents = new Set(this.lastSnapshot?.panes.filter((pane) => pane.isAgent).map((pane) => pane.paneId));
+      for (const pane of msg.session.panes) if (!pane.isAgent && agents.has(pane.paneId)) forgetPaneMemory(this.api, pane.paneId);
+      if (msg.session.version) this.lastSnapshot = msg.session;
       this.session = reconcileSession(this.session, msg.session); this.error = null;
       this.reviewed = retainReviews(this.reviewed, msg.session.panes);
       const next: Record<string, ParsedPrompt> = {};

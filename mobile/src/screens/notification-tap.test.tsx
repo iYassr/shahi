@@ -15,9 +15,9 @@ import { act, render } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import type { SshProfile } from "@/lib/ssh";
 
-let mockTap: ((paneId: string, serverId?: string) => void) | null = null;
+let mockTap: ((paneId: string, serverId?: string, instanceId?: string) => void) | null = null;
 jest.mock("@/lib/push", () => ({
-  onNotificationTapped: (open: (paneId: string, serverId?: string) => void) => { mockTap = open; return () => { mockTap = null; }; },
+  onNotificationTapped: (open: (paneId: string, serverId?: string, instanceId?: string) => void) => { mockTap = open; return () => { mockTap = null; }; },
 }));
 jest.mock("@/lib/navigate", () => ({ openPane: jest.fn() }));
 jest.mock("expo-router", () => ({
@@ -72,5 +72,16 @@ test("a notification tapped on a cold launch opens its pane on a saved SSH compu
 
   expect(router.push).not.toHaveBeenCalledWith("/computers");
   expect(openPane).toHaveBeenCalledWith("w1:p1");
+  ui.unmount();
+});
+
+// herdr reuses pane ids; the pane route compares the occupant a notification
+// was about with the one there now (pre-release bug hunt).
+test("a notification tap opens its pane with the conversation it was about", async () => {
+  keychain([{ id: computerId(relay), name: "Relay", connection: relay, pins: [] }]);
+  const ui = render(<RootLayout />);
+  await act(async () => { for (let i = 0; i < 20 && !mockTap; i++) await Promise.resolve(); });
+  await act(async () => { mockTap!("w3:p1", "relay-box-id", "term_a"); for (let i = 0; i < 20; i++) await Promise.resolve(); });
+  expect(openPane).toHaveBeenCalledWith("w3:p1", "term_a");
   ui.unmount();
 });

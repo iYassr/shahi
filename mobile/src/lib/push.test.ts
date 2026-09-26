@@ -198,3 +198,16 @@ test("a delayed permission prompt registers only with the computer that opened i
   expect(client.registerPush).toHaveBeenCalledWith("ExponentPushToken[abc]");
   expect(require("@/lib/api").api.registerPush).not.toHaveBeenCalled();
 });
+
+// herdr reuses pane ids, and a tap after the id changed hands opened the new
+// conversation (pre-release bug hunt). The occupant that was waiting comes too.
+test("a notification tap names the conversation that was waiting, not only its pane id", async () => {
+  const push = load();
+  const notifications = require("expo-notifications");
+  const open = jest.fn();
+  notifications.getLastNotificationResponseAsync.mockResolvedValue({ notification: { request: { content: { data: { paneId: "w3:p1", serverId: "computer-a", instanceId: "term_a" } } } } });
+  const cancel = push.onNotificationTapped(open);
+  await flush();
+  expect(open).toHaveBeenCalledWith("w3:p1", "computer-a", "term_a");
+  cancel();
+});

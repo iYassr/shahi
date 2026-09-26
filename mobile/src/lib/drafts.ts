@@ -1,5 +1,11 @@
 /** ComputerSession owns its API identity, so equal pane IDs cannot share a draft. */
-export interface NativeDraft { inFlight: boolean; listeners: Set<() => void>; text: string; pending: { key: string; id: string } | null }
+export interface NativeDraft {
+  inFlight: boolean;
+  listeners: Set<() => void>;
+  text: string;
+  /** An uncertain send: its operation id, and the occupant it was meant for (see `DashboardPane.instanceId`). */
+  pending: { key: string; id: string; instanceId?: string } | null;
+}
 const scopes = new WeakMap<object, Map<string, NativeDraft>>();
 const LIMIT = 20;
 
@@ -47,5 +53,21 @@ function evictOne(drafts: Map<string, NativeDraft>): boolean {
 }
 
 export function clearNativeDrafts(owner: object) { scopes.delete(owner); }
+
+/**
+ * Empties the draft of a pane whose conversation has ended (`endedPanes`): it
+ * closed, or another program took its id. Kept by pane id, a draft outlived
+ * the pane it was typed for: the pre-release bug hunt found an unsent draft in
+ * an unrelated conversation's composer, and its uncertain send, retried there,
+ * typed into a new shell. Emptied in place rather than removed, because a
+ * composer on screen holds this object.
+ */
+export function forgetNativeDraft(owner: object, pane: string) {
+  const draft = scopes.get(owner)?.get(pane);
+  if (!draft || (!draft.text && !draft.pending)) return;
+  draft.text = "";
+  draft.pending = null;
+  notifyNativeDraft(draft);
+}
 
 export function notifyNativeDraft(draft: NativeDraft) { draft.listeners.forEach(notify => notify()); }

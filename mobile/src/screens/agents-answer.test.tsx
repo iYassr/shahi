@@ -41,5 +41,6 @@ test("answering from the list says which question the card showed", async () => 
   const view = render(<Agents onOpenPane={jest.fn()} />);
   fireEvent.press(view.getByText("Yes"));
   await waitFor(() => expect(mockState.api.answerPrompt).toHaveBeenCalledTimes(1));
-  expect(mockState.api.answerPrompt).toHaveBeenCalledWith("w1:p1", bash.options[0], bash);
+  // No occupant: this session is from a server that names none.
+  expect(mockState.api.answerPrompt).toHaveBeenCalledWith("w1:p1", bash.options[0], bash, undefined);
 });
