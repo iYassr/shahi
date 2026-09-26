@@ -30,12 +30,13 @@ export function Agents({ onOpenPane }: { onOpenPane: (paneId: string) => void })
   // Declared here, above the early returns below, because a hook cannot be
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
-  const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId);
   const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId, control } = useSession();
   // Nothing a card offers can be answered while herdr is not running, though
   // the socket, and so the list, stays up (pre-release bug hunt).
   const backend = control?.handshake?.backend;
   const herdrAway = backendUnavailable(error) || !!backend && backend.state !== "connected";
+  // This computer's place in its own list; see scroll-memory.
+  const agentScroll = useRememberedScroll("agents", () => rows.current, (p) => p.paneId, api);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   /** The row a long-press opened actions for. */

@@ -185,3 +185,87 @@ test("a middle row in a long agents list survives repeated visits and insertion 
     again.unmount();
   }
 });
+
+// Signing out and pairing again, or switching computers, opened the Agents
+// list with its search field, filter chips and "+ New agent" hidden under the
+// large title, three times in three (pre-release bug hunt).
+describe("the list a person comes back to after a sign-in or a switch", () => {
+  /** A measured first row below the list's header, as the Agents list has. */
+  function measured(view: ReturnType<typeof mount>, data: Row[]) {
+    const cell = render(createElement(view.api().CellRendererComponent, { item: data[0]!, cellKey: data[0]!.id, index: 0, children: null, style: undefined }));
+    fireEvent(cell.UNSAFE_getByType(View), "layout", { nativeEvent: { layout: { y: 300, height: 80 } } });
+    return cell;
+  }
+
+  test("the list at rest at its top is remembered as the top, not as a place behind the large title", () => {
+    const data = rows("a", "b", "c");
+    const first = mount("list", data);
+    const cell = measured(first, data);
+    // Automatic insets: the resting top is negative, behind the large title.
+    const top = { nativeEvent: { contentOffset: { y: -140 } } } as never;
+    act(() => first.api().onScrollBeginDrag());
+    act(() => first.api().onScroll(top));
+    act(() => first.api().onScrollEndDrag(top));
+    expect(scrollPlace("list")).toBeUndefined();
+    first.unmount(); cell.unmount();
+    const again = mount("list", data);
+    act(() => again.api().onContentSizeChange());
+    expect(again.list.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  test("a list leaving the window does not take its settling offset for a place", () => {
+    const data = rows("a", "b", "c");
+    const first = mount("list", data);
+    const cell = measured(first, data);
+    // No drag: iOS ends a momentum as the view leaves the window.
+    act(() => first.api().onMomentumScrollEnd({ nativeEvent: { contentOffset: { y: 310 } } } as never));
+    act(() => first.api().onMomentumScrollBegin());
+    act(() => first.api().onMomentumScrollEnd({ nativeEvent: { contentOffset: { y: 320 } } } as never));
+    expect(scrollPlace("list")).toBeUndefined();
+    // A real fling still counts.
+    act(() => first.api().onScrollBeginDrag());
+    act(() => first.api().onScrollEndDrag({ nativeEvent: { contentOffset: { y: 305 } } } as never));
+    act(() => first.api().onMomentumScrollBegin());
+    act(() => first.api().onMomentumScrollEnd({ nativeEvent: { contentOffset: { y: 330 } } } as never));
+    expect(scrollPlace("list")).toBe("a");
+    first.unmount(); cell.unmount();
+  });
+
+  test("each computer keeps its own place, and a new sign-in starts at the top", () => {
+    const one = {}; const two = {};
+    const data = rows("a", "b", "c", "d");
+    const first = renderHook(() => useRememberedScroll<Row>("agents", () => data, idOf, one));
+    act(() => first.result.current.onViewableItemsChanged(viewable("c")));
+    first.unmount();
+    expect(scrollPlace("agents", one)).toBe("c");
+    // Another computer, or the same one paired again: a new API object.
+    expect(scrollPlace("agents", two)).toBeUndefined();
+    const other = renderHook(() => useRememberedScroll<Row>("agents", () => data, idOf, two));
+    const list = { scrollToIndex: jest.fn(), scrollToOffset: jest.fn() };
+    other.result.current.ref.current = list as never;
+    act(() => other.result.current.onContentSizeChange());
+    expect(list.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  test("a place too near the end to reach stops being restored once the list stops there", () => {
+    const data = rows("a", "b", "c");
+    const first = mount("list", data);
+    const cells = data.map((row, index) => render(createElement(first.api().CellRendererComponent, { item: row, cellKey: row.id, index, children: null, style: undefined })));
+    cells.forEach((cell, index) => fireEvent(cell.UNSAFE_getByType(View), "layout", { nativeEvent: { layout: { y: 300 + index * 80, height: 80 } } }));
+    act(() => first.api().onScrollBeginDrag());
+    act(() => first.api().onScrollEndDrag({ nativeEvent: { contentOffset: { y: 470 } } } as never));
+    expect(scrollPlace("list")).toBe("c");
+    first.unmount();
+    const again = mount("list", data);
+    cells.forEach((cell) => cell.unmount());
+    const more = data.map((row, index) => render(createElement(again.api().CellRendererComponent, { item: row, cellKey: row.id, index, children: null, style: undefined })));
+    more.forEach((cell, index) => fireEvent(cell.UNSAFE_getByType(View), "layout", { nativeEvent: { layout: { y: 300 + index * 80, height: 80 } } }));
+    act(() => again.api().onContentSizeChange());
+    // The screen is taller now: the list can only reach 400.
+    act(() => again.api().onScroll({ nativeEvent: { contentOffset: { y: 400 }, contentSize: { height: 1000 }, layoutMeasurement: { height: 600 } } } as never));
+    again.list.scrollToIndex.mockClear();
+    act(() => again.api().onContentSizeChange());
+    expect(again.list.scrollToIndex).not.toHaveBeenCalled();
+    more.forEach((cell) => cell.unmount());
+  });
+});

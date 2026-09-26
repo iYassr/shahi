@@ -34,9 +34,9 @@ import { Icon } from "@/components/icons";
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
-  const { activeComputerId } = useSession();
+  const { activeComputerId, api } = useSession();
   // Above the `!session` return below: hooks cannot be called conditionally.
-  const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId);
+  const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId, api);
   const header = (
     <Stack.Screen
       options={{
@@ -115,14 +115,14 @@ export function Spaces({ session }: { session: Session | null }) {
 }
 
 export function SpaceDetail({ space, session }: { space: Space; session: Session }) {
-  const { activeComputerId } = useSession();
+  const { activeComputerId, api } = useSession();
   // Stable per computer, so the memoised rows below keep their identity.
   const open = useCallback((paneId: string) => openPane(paneId, activeComputerId), [activeComputerId]);
   const tabs = useMemo(
     () => session.tabs.filter((t) => t.workspaceId === space.workspaceId),
     [session, space],
   );
-  const tabScroll = useRememberedScroll(`space:${space.workspaceId}`, () => tabs, (t) => t.tabId);
+  const tabScroll = useRememberedScroll(`space:${space.workspaceId}`, () => tabs, (t) => t.tabId, api);
 
   return (
     <View style={styles.screen}>

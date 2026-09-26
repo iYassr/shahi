@@ -20,7 +20,11 @@
  * When the row it names is gone, the list opens at the top, honestly, rather
  * than at whatever now happens to sit at that offset.
  *
- * Memory lives for the life of the process, like the reader's. Nothing here is
+ * Memory lives for the life of the process, like the reader's, and belongs to
+ * the computer whose list it is: `owner` is that computer's API object, as for
+ * the reader and drafts. One process-wide map keyed only by the list's name
+ * carried a place from one computer to another, and from before a sign-out to
+ * the same computer paired again (pre-release bug hunt). Nothing here is
  * worth persisting to the Keychain: a cold start is a new session, and opening
  * at the top is the right answer then.
  */
@@ -28,17 +32,25 @@ import { useCallback, useEffect, useRef } from "react";
 import type { FlatList, ViewToken, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import { anchorAt, useScrollCells, type ScrollAnchor } from "./scroll-cells";
 
-/** list key → the id of the row that was at the top. */
-const places = new Map<string, ScrollAnchor>();
+/** list key → the id of the row that was at the top, per computer. */
+const owned = new WeakMap<object, Map<string, ScrollAnchor>>();
+/** Lists with no computer behind them. */
+const unowned = new Map<string, ScrollAnchor>();
+function placesOf(owner: object | undefined): Map<string, ScrollAnchor> {
+  if (!owner) return unowned;
+  let places = owned.get(owner);
+  if (!places) owned.set(owner, places = new Map());
+  return places;
+}
 
 /** Forgets one list's place. Used when a list is deliberately reset. */
-export function forgetScrollPlace(key: string): void {
-  places.delete(key);
+export function forgetScrollPlace(key: string, owner?: object): void {
+  placesOf(owner).delete(key);
 }
 
 /** Test seam: what the app currently remembers. */
-export function scrollPlace(key: string): string | undefined {
-  return places.get(key)?.id;
+export function scrollPlace(key: string, owner?: object): string | undefined {
+  return placesOf(owner).get(key)?.id;
 }
 
 export interface RememberedScroll<T> {
@@ -72,11 +84,20 @@ export function useRememberedScroll<T>(
    */
   rows: () => readonly T[],
   idOf: (item: T) => string,
+  /** The computer the list belongs to: its API object. */
+  owner?: object,
 ): RememberedScroll<T> {
   const ref = useRef<FlatList<T> | null>(null);
   const cells = useScrollCells(idOf);
   const retry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const userScroll = useRef(false);
+  /** A drag just ended, so a momentum that begins now is the person's fling. */
+  const afterDrag = useRef(false);
+  /** The momentum under way followed a drag. */
+  const flung = useRef(false);
+  const places = placesOf(owner);
+  const placesRef = useRef(places);
+  placesRef.current = places;
   useEffect(() => () => clearTimeout(retry.current), []);
   // Refreshed every render so the stable callbacks below always see the
   // current rows without being rebuilt.
@@ -98,7 +119,7 @@ export function useRememberedScroll<T>(
     // Native scroll events capture the pixel-within-row position. Viewability
     // is only a fallback before any measured cells exist, not a second writer
     // racing the scroll event with an older top row.
-    if (typeof top?.key === "string" && cells.frames.current.size === 0) places.set(key, { id: top.key, offset: 0 });
+    if (typeof top?.key === "string" && cells.frames.current.size === 0) placesRef.current.set(key, { id: top.key, offset: 0 });
   }).current;
 
   const onContentSizeChange = useCallback(() => {
@@ -124,16 +145,27 @@ export function useRememberedScroll<T>(
 
   const remember = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = nativeEvent.contentOffset.y;
+    // At or above zero is the list's own top. Under automatic insets the
+    // resting top is negative, behind the large title, and a place recorded
+    // there (a row before the first, at a negative offset) restored to y=0:
+    // the search field and filter chips opened hidden under the title
+    // (pre-release bug hunt). The top is remembered as no place at all.
+    if (y <= 0) { placesRef.current.delete(key); return; }
     const anchor = anchorAt(cells.frames.current, y);
-    if (anchor) places.set(key, anchor);
+    if (anchor) placesRef.current.set(key, anchor);
   }, [key]);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const want = pending.current;
     if (want) {
-      const y = event.nativeEvent.contentOffset.y;
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const y = contentOffset.y;
       const frame = cells.frames.current.get(want.id);
-      if (frame && Math.abs(y - frame.y - want.offset) < 2) pending.current = undefined;
+      // Landed; or stopped at the end of a list too short to put the row at
+      // the top, which is as close as it can come. Owed for ever, the restore
+      // pulled the list back to it on every snapshot.
+      const bottom = contentSize && layoutMeasurement ? contentSize.height - layoutMeasurement.height : Infinity;
+      if (frame && (Math.abs(y - frame.y - want.offset) < 2 || y >= bottom - 1 && y < frame.y + want.offset)) pending.current = undefined;
       return;
     }
     // iOS emits scroll events while a screen is settling out of the native
@@ -144,9 +176,12 @@ export function useRememberedScroll<T>(
   }, [remember]);
 
   return { ref, CellRendererComponent: cells.CellRendererComponent, onScroll, scrollEventThrottle: 16,
-    onScrollBeginDrag: () => { pending.current = undefined; clearTimeout(retry.current); userScroll.current = true; },
-    onScrollEndDrag: (event) => { remember(event); userScroll.current = false; },
-    onMomentumScrollBegin: () => { userScroll.current = true; },
-    onMomentumScrollEnd: (event) => { remember(event); userScroll.current = false; },
+    onScrollBeginDrag: () => { pending.current = undefined; clearTimeout(retry.current); userScroll.current = true; afterDrag.current = false; },
+    onScrollEndDrag: (event) => { remember(event); userScroll.current = false; afterDrag.current = true; },
+    // iOS also ends a "momentum" when the list leaves the window, with no
+    // drag behind it, and recording that took a settling screen's offset for
+    // a place (pre-release bug hunt). Only a fling that followed a drag counts.
+    onMomentumScrollBegin: () => { flung.current = afterDrag.current; afterDrag.current = false; userScroll.current = flung.current; },
+    onMomentumScrollEnd: (event) => { if (flung.current) remember(event); flung.current = false; userScroll.current = false; },
     onViewableItemsChanged, viewabilityConfig, onContentSizeChange, onScrollToIndexFailed };
 }
