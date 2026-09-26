@@ -33,6 +33,11 @@ const PASSCODE = "2468";
 let screen = "";
 /** Set before a boot() to make the fake pane an agent in that state. */
 let agentStatus: string | null = null;
+/**
+ * An agent herdr has started in the fake pane that the mirror has not seen
+ * yet: `pane.get` reports it in this state while the snapshot lists no agent.
+ */
+let unmirroredAgent: string | null = null;
 
 /** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
 let herdrDown: unknown = null;
@@ -82,6 +87,10 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
           return {};
         case "pane.read":
           return { read: { text: screen } };
+        case "pane.get": {
+          const status = unmirroredAgent ?? agentStatus;
+          return { pane: status ? { ...pane, agent: "claude", agent_status: status } : pane };
+        }
         case "tab.create":
           if (freshCreation) {
             const workspaceId = (params as { workspace_id: string }).workspace_id;
@@ -893,6 +902,34 @@ describe("a message to an agent waiting on a menu", () => {
     const before = app.calls.length;
     expect((await send("blue", "menu-open-2")).status).toBe(200);
     expect(typed(before).map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
+});
+
+// Pre-release bug hunt, B4: a message sent in an agent's first seconds, while
+// the mirror still listed the pane as a shell, was typed onto the
+// folder-trust menu with no screen read, and its Enter chose "No, exit".
+describe("a message to an agent the mirror has not recognised yet", () => {
+  let app: Booted;
+  beforeAll(async () => {
+    unmirroredAgent = "unknown";
+    app = await boot();
+  });
+  afterAll(() => {
+    app.stop();
+    unmirroredAgent = null;
+  });
+
+  test("is refused at its folder-trust menu, and nothing is typed", async () => {
+    screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+    const before = app.calls.length;
+    const res = await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/prompt`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) },
+      body: JSON.stringify({ text: "please fix the tests", clientMessageId: "unmirrored-trust" }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("prompt_open");
+    expect(app.calls.slice(before).filter((c) => c.method.startsWith("pane.send") || c.method === "agent.prompt")).toEqual([]);
   });
 });
 

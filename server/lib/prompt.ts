@@ -26,11 +26,12 @@
  * Enter confirms whichever row is lit. Measured on Claude Code 2.1.280's Bash
  * permission menu, cursor on "1. Yes": typing "no" then Enter ran the command.
  * The folder-trust menu's lit row quits the agent, and codex's approval rows
- * answer to single letters (`y`, `p`). So before typing at an agent, the
- * screen is read, and if it shows a menu the text is refused with
- * `prompt_open` — unless the lit row is one that takes typed text, where the
- * text replaces the row's label and Enter submits it (measured on the same
- * version; see `isTextField`). Found in the pre-release review.
+ * answer to single letters (`y`, `p`). So before any write to an agent, by
+ * either path, the screen is read, and if it shows a menu the text is refused
+ * with `prompt_open` — unless the lit row is one that takes typed text, where
+ * the text replaces the row's label and Enter submits it (measured on the
+ * same version; see `isTextField`). Found in the pre-release review; the
+ * agent path was added to it in the pre-release bug hunt (B4).
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
@@ -68,9 +69,25 @@ export async function submitPrompt(
   text: string,
   sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
 ): Promise<PromptPath> {
-  if (target.isAgent && target.status !== "blocked") {
+  const { paneId } = target;
+  if (!target.isAgent) {
+    await rpc("pane.send_text", { pane_id: paneId, text });
+    await sleep(SUBMIT_DELAY_MS);
+    await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
+    return "terminal";
+  }
+
+  // The screen is read before every write to an agent, whatever herdr says
+  // its status is. herdr reports a new agent `unknown` for its first seconds
+  // (about 3s after `agent.start` on 0.9.1, measured) with its folder-trust
+  // menu already drawn, and `agent.prompt` accepted text then, typed it
+  // and pressed Enter on the lit "No, exit", quitting the agent; on codex it
+  // confirmed a trust nobody chose (pre-release bug hunt, B4). A menu on
+  // screen means the agent is waiting on it, so it takes the terminal path,
+  // and only into a text field.
+  if (!(await openMenu(rpc, paneId)) && target.status !== "blocked") {
     try {
-      await rpc("agent.prompt", { target: target.paneId, text });
+      await rpc("agent.prompt", { target: paneId, text });
       return "agent";
     } catch (err) {
       // The status can change between the mirror's last snapshot and now. If
@@ -78,16 +95,19 @@ export async function submitPrompt(
       // would have been chosen with fresher information.
       if (!(err instanceof Error && err.message.includes("agent_blocked"))) throw err;
     }
+    await openMenu(rpc, paneId);
   }
-  if (target.isAgent && (await menuWithoutTextField(rpc, target.paneId))) throw new PromptOpen();
-  await rpc("pane.send_text", { pane_id: target.paneId, text });
+  await rpc("pane.send_text", { pane_id: paneId, text });
   await sleep(SUBMIT_DELAY_MS);
-  await rpc("pane.send_keys", { pane_id: target.paneId, keys: ["Enter"] });
+  await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
   return "terminal";
 }
 
-/** True when the pane shows a menu whose lit row would not take typed text. */
-async function menuWithoutTextField(rpc: PromptRpc, paneId: string): Promise<boolean> {
+/**
+ * True when the pane shows a menu, and throws `PromptOpen` when its lit row
+ * would not take typed text.
+ */
+async function openMenu(rpc: PromptRpc, paneId: string): Promise<boolean> {
   // The same read the poller and `answer.ts` make, so the menu found here is
   // the one the phone was offered buttons for.
   const { read } = (await rpc("pane.read", {
@@ -99,5 +119,39 @@ async function menuWithoutTextField(rpc: PromptRpc, paneId: string): Promise<boo
   const menu = parsePrompt(stripAnsi(read.text));
   if (!menu) return false;
   const lit = menu.options.find((option) => option.selected);
-  return !lit || !isTextField(menu, lit);
+  if (!lit || !isTextField(menu, lit)) throw new PromptOpen();
+  return true;
+}
+
+/**
+ * What the pane is, asked of herdr now rather than of the mirror.
+ *
+ * The mirror is re-snapshotted every 3s, and a just-started agent was still a
+ * shell in it: the text went down the terminal path with no screen read at
+ * all, onto the folder-trust menu (pre-release bug hunt, B4). herdr's own
+ * `pane.get` knows it launched an agent there. Either opinion that the pane
+ * holds an agent is taken, because the agent path is the careful one: it
+ * reads the screen, and `agent.prompt` refuses a pane with no agent rather
+ * than typing into its shell. The mirror stands in when herdr cannot answer.
+ */
+export async function promptTarget(
+  rpc: PromptRpc,
+  paneId: string,
+  mirrored: { agent_status?: string | null } | undefined,
+): Promise<PromptTarget> {
+  const fallback = { paneId, isAgent: mirrored !== undefined, status: mirrored?.agent_status ?? null };
+  try {
+    const { pane } = (await rpc("pane.get", { pane_id: paneId })) as {
+      pane?: { agent?: string | null; agent_status?: string | null };
+    };
+    if (!pane) return fallback;
+    const fresh = Boolean(pane.agent);
+    return {
+      paneId,
+      isAgent: fresh || fallback.isAgent,
+      status: fresh ? pane.agent_status ?? null : fallback.status,
+    };
+  } catch {
+    return fallback;
+  }
 }

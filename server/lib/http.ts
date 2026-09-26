@@ -35,7 +35,7 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { findTranscript, readSessionImage, readSessionLog } from "./session-log";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
-import { PromptOpen, submitPrompt } from "./prompt";
+import { PromptOpen, promptTarget, submitPrompt } from "./prompt";
 import { OperationError, Operations } from "./operations";
 import { trackDelivery } from "./herdr-delivery";
 import { createHash } from "node:crypto";
@@ -1191,10 +1191,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             try {
               const delivery = trackDelivery(herdrRpc);
               const receipt = await operations.run(key, body.text, async (): Promise<PromptReceipt> => {
-                const agent = store.agent(paneId);
-                await submitPrompt(delivery.rpc, {
-                  paneId, isAgent: agent !== undefined, status: agent?.agent_status ?? null,
-                }, body.text!);
+                const target = await promptTarget(delivery.rpc, paneId, store.agent(paneId));
+                await submitPrompt(delivery.rpc, target, body.text!);
                 return { accepted: true, clientMessageId: body.clientMessageId!, acceptedAt: Date.now() };
               }, delivery.reachedNothing);
               return json(receipt);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PromptOpen, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { PromptOpen, promptTarget, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
 
@@ -28,12 +28,13 @@ const noSleep = { slept: [] as number[] };
 const sleep = async (ms: number) => void noSleep.slept.push(ms);
 
 describe("submitPrompt", () => {
-  test("an agent gets one agent.prompt and no pause", async () => {
+  test("an agent gets one agent.prompt and no pause, once its screen shows no menu", async () => {
     const { rpc, calls } = fakeRpc();
     noSleep.slept = [];
     const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle" }, "run the tests", sleep);
     expect(path).toBe("agent");
-    expect(calls).toEqual([{ method: "agent.prompt", params: { target: "w1:p1", text: "run the tests" } }]);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt"]);
+    expect(calls[1]).toEqual({ method: "agent.prompt", params: { target: "w1:p1", text: "run the tests" } });
     expect(noSleep.slept).toEqual([]);
   });
 
@@ -62,7 +63,7 @@ describe("submitPrompt", () => {
     const { rpc, calls } = fakeRpc({ "agent.prompt": "agent_blocked" });
     const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle" }, "yes", sleep);
     expect(path).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["agent.prompt", "pane.read", "pane.send_text", "pane.send_keys"]);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read", "pane.send_text", "pane.send_keys"]);
   });
 
   test("any other agent.prompt failure is the caller's to report", async () => {
@@ -104,6 +105,32 @@ describe("a message to an agent waiting on a menu", () => {
     expect(writes(calls)).toEqual([]);
   });
 
+  // Pre-release bug hunt, B4: herdr reports a new agent `unknown` for its
+  // first seconds, its trust menu already drawn, and `agent.prompt` typed the
+  // text and pressed Enter on "No, exit". Only `blocked` used to be checked.
+  test.each(["unknown", "idle", "working"])(
+    "is refused at the folder-trust menu while herdr calls the agent %s",
+    async (status) => {
+      const { rpc, calls } = fakeRpc({}, fixture("blocked__trust-folder__text.txt"));
+      await expect(submitPrompt(rpc, { ...blocked, status }, "please fix the tests", sleep)).rejects.toBeInstanceOf(PromptOpen);
+      expect(calls.map((c) => c.method)).toEqual(["pane.read"]);
+    },
+  );
+
+  test("is refused at a codex trust menu while herdr calls the agent unknown", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("blocked__codex-trust-folder__text.txt"));
+    await expect(submitPrompt(rpc, { ...blocked, status: "unknown" }, "hi", sleep)).rejects.toBeInstanceOf(PromptOpen);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read"]);
+  });
+
+  // A question that takes text is typed into even before herdr says blocked:
+  // `agent.prompt` would be refused or would drive the composer beneath it.
+  test("is typed into a text field while herdr still calls the agent idle", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-ask-type__text.txt"));
+    expect(await submitPrompt(rpc, { ...blocked, status: "idle" }, "blue", sleep)).toBe("terminal");
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.send_keys"]);
+  });
+
   // codex's approval rows answer to single letters: "yes" would approve at the "y".
   test("is refused at a codex approval", async () => {
     const { rpc } = fakeRpc({}, fixture("blocked__wE-p6__text.txt"));
@@ -140,5 +167,45 @@ describe("a message to an agent waiting on a menu", () => {
     const { rpc, calls } = fakeRpc({}, fixture("blocked__claude-bash__text.txt"));
     expect(await submitPrompt(rpc, { paneId: "w1:p3", isAgent: false, status: null }, "2", sleep)).toBe("terminal");
     expect(calls.map((c) => c.method)).toEqual(["pane.send_text", "pane.send_keys"]);
+  });
+});
+
+/**
+ * What the route asks herdr before choosing a path. The mirror is up to 3s
+ * behind, and a just-started agent was still a shell in it, so its message was
+ * typed onto the trust menu with no screen read (pre-release bug hunt, B4).
+ */
+describe("promptTarget", () => {
+  const herdr = (pane: unknown) => async (method: string) => {
+    if (method !== "pane.get") throw new Error(`unexpected ${method}`);
+    if (pane instanceof Error) throw pane;
+    return { pane };
+  };
+
+  test("an agent herdr has started is an agent before the mirror has seen it", async () => {
+    const rpc = herdr({ pane_id: "w1:p2", agent: "claude", agent_status: "unknown" });
+    expect(await promptTarget(rpc, "w1:p2", undefined)).toEqual({ paneId: "w1:p2", isAgent: true, status: "unknown" });
+  });
+
+  test("herdr's status is fresher than the mirror's", async () => {
+    const rpc = herdr({ pane_id: "w1:p2", agent: "codex", agent_status: "blocked" });
+    expect(await promptTarget(rpc, "w1:p2", { agent_status: "working" })).toMatchObject({ isAgent: true, status: "blocked" });
+  });
+
+  // The careful path: agent.prompt refuses a pane whose agent has gone,
+  // rather than the text running in the shell left behind.
+  test("the mirror's agent is kept when herdr names none", async () => {
+    const rpc = herdr({ pane_id: "w1:p2", agent: null, agent_status: "unknown" });
+    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle" });
+  });
+
+  test("a shell is a shell to both", async () => {
+    const rpc = herdr({ pane_id: "w1:p3", agent: null, agent_status: "unknown" });
+    expect(await promptTarget(rpc, "w1:p3", undefined)).toEqual({ paneId: "w1:p3", isAgent: false, status: null });
+  });
+
+  test("the mirror answers when herdr cannot", async () => {
+    const rpc = herdr(new Error("herdr pane.get timed out"));
+    expect(await promptTarget(rpc, "w1:p2", { agent_status: "idle" })).toEqual({ paneId: "w1:p2", isAgent: true, status: "idle" });
   });
 });

@@ -122,9 +122,15 @@ a report from a phone.
   `pane.send_text`, 200ms, Enter — and falls back to it if herdr answers
   `agent_blocked` under a stale status. The 200ms is measured: codex's composer
   drops Enter that arrives too soon after pasted text (150ms sufficed).
-  Before typing at an agent that way, `prompt.ts` reads the visible screen: if
-  the prompt parser finds a menu whose highlighted row is not a text field,
-  nothing is typed and `/api/panes/:id/prompt` answers 409 `prompt_open`.
+  Before any write to an agent, by either path and whatever herdr says its
+  status is, `prompt.ts` reads the visible screen: if the prompt parser finds
+  a menu whose highlighted row is not a text field, nothing is typed and
+  `/api/panes/:id/prompt` answers 409 `prompt_open`; a menu whose lit row is a
+  field is typed into. herdr reports a new agent `unknown` for about 3s with
+  its trust menu drawn, and `agent.prompt` typed into it then and pressed
+  Enter on `No, exit`. Whether a pane is an agent is asked of herdr's
+  `pane.get` too, not only the 3s mirror, which still lists a just-started
+  agent as a shell.
   Measured on Claude Code 2.1.280 / herdr 0.9.1 (2026-09-23): at the Bash
   permission menu with the cursor on `1. Yes`, typing "no" then Enter ran the
   command. The text-field rows are `Type something.` (the question tool) and
