@@ -118,6 +118,18 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   const [link, setLink] = useState<LinkState>("connecting");
   const [toast, setToast] = useState<string | null>(null);
   const socketRef = useRef<SessionSocket | null>(null);
+  /*
+   * The pane on screen, held here rather than only in the socket.
+   *
+   * A pane opened by URL — a reload, a bookmark, a notification — mounts in
+   * the same commit as the socket, and a child's effect runs before its
+   * parent's: PaneView asked to watch while there was no socket yet, the
+   * request went nowhere, and the pane was never watched. Its Screen tab
+   * kept its first frame, and an answered card stayed on screen with its
+   * options disabled (pre-release bug hunt, 2026-09). Each new socket now
+   * starts by watching whatever is on screen.
+   */
+  const watchedRef = useRef<string | null>(null);
   const navigate = useNavigate();
 
   const showToast = useCallback((message: string) => {
@@ -206,6 +218,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
     });
     socketRef.current = socket;
     socket.connect();
+    if (watchedRef.current) socket.watch(watchedRef.current);
     // Authentication may open the relay before the screen subscribes. Fetch
     // a snapshot explicitly so an early push cannot leave this computer empty.
     void api.session().then(next => { if (active()) setSession(next); }).catch(error => {
@@ -218,6 +231,7 @@ function AppSession({ initialPairingCode = "", openPairing = false }: { initialP
   }, [authenticated, onMessage, incompatible]);
 
   const watch = useCallback((paneId: string | null) => {
+    watchedRef.current = paneId;
     socketRef.current?.watch(paneId);
   }, []);
 

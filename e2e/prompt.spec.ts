@@ -88,6 +88,19 @@ test.describe("answering a prompt", () => {
     expect(sent[0]).toMatchObject({ body: { index: 1, label: "Red" } });
   });
 
+  // Opened by its address, the pane was never watched, so no live frame ever
+  // replaced the first read: after answering, the card stayed up saying
+  // "Waiting on you" with every option disabled (pre-release bug hunt).
+  test("answering in a pane opened by its address clears the card", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto(`/pane/${encodeURIComponent(BLOCKED_PANE)}`);
+    await expect(page.locator(".blocked__question")).toHaveText("Which colour do you prefer?");
+    await page.locator(".choice", { hasText: "Red" }).click();
+    await expect.poll(async () => (await paneWrites(page)).length).toBe(1);
+    await expect(page.locator(".blocked")).toHaveCount(0);
+    await expect(page.locator(".detail__title")).not.toHaveText("Waiting on you");
+  });
+
   /**
    * A codex approval carries a command longer than the screen. Taken as the
    * question it wrapped across eight lines and pushed the answers out of view,

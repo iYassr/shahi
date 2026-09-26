@@ -130,6 +130,10 @@ const fixture = Bun.serve<Link>({
             stream.onmessage = event => send(ws, { t: "ws", data: JSON.parse(String(event.data)) });
             stream.onopen = () => stream.send(JSON.stringify(message.data));
           } else if (ws.data.stream.readyState === WebSocket.OPEN) ws.data.stream.send(JSON.stringify(message.data));
+          // The stream opened at the handshake may still be connecting when the
+          // phone's first watch arrives, which it sends at once; dropping it
+          // made a pane reloaded through the relay look unwatched.
+          else if (ws.data.stream.readyState === WebSocket.CONNECTING) { const stream = ws.data.stream; stream.addEventListener("open", () => stream.send(JSON.stringify(message.data)), { once: true }); }
           return;
         }
         if (message.t !== "req" || !message.path.startsWith("/api/")) throw new Error("invalid path");

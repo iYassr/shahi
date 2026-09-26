@@ -52,8 +52,16 @@ const APP_SPEAKS = { min: SHAHI_API_VERSION, max: SHAHI_API_VERSION };
 let apiRange = { ...APP_SPEAKS };
 /** Everything the app tried to change, in order, for tests to assert on. */
 let writes: { method: string; path: string; body: unknown; at: number }[] = [];
+/**
+ * What the app said down the socket: `watch` and `unwatch`, in order.
+ *
+ * Recorded because a pane opened by its address — a reload, a bookmark, a
+ * notification — was never watched, and nothing could tell: the stub ignored
+ * these messages, so the frozen Screen tab and the answered card that stayed
+ * on screen were found on a real computer (pre-release bug hunt, 2026-09).
+ */
+let socketMessages: { type: string; paneId?: string; at: number }[] = [];
 const sockets = new Set<ServerWebSocket<unknown>>();
-
 /**
  * Files the file viewer can open, written once into a temp directory.
  *
@@ -104,6 +112,24 @@ const broadcast = (message: unknown) => {
   for (const socket of sockets) socket.send(payload);
 };
 
+/** The pane's screen as the poller would report it; null for a pane that is not there. */
+function frameOf(paneId: string) {
+  const known = scenario.session.panes.find((p) => p.paneId === paneId);
+  if (!known) return null;
+  const screen = scenario.screens[paneId] ?? "";
+  return {
+    paneId,
+    ansi: screen,
+    text: screen.replace(/\x1b\[[0-9;]*m/g, ""),
+    prompt: scenario.prompts[paneId] ?? null,
+    activity:
+      known.status === "working"
+        ? { verb: "Baking", elapsed: "8m 34s", detail: "26.0k tokens" }
+        : null,
+    at: Date.now(),
+  };
+}
+
 /** Substitutes the temp-directory paths into a transcript's file references. */
 function withRealFiles(messages: Scenario["transcripts"][string]): Scenario["transcripts"][string] {
   return messages.map((message) => ({
@@ -133,6 +159,7 @@ Bun.serve({
       apiRange = { ...APP_SPEAKS };
       control = null;
       writes = [];
+      socketMessages = [];
       broadcast({ type: "session", session: scenario.session });
       return json({ ok: true });
     }
@@ -154,6 +181,7 @@ Bun.serve({
     }
 
     if (pathname === "/__stub/writes") return json({ writes });
+    if (pathname === "/__stub/socket") return json({ messages: socketMessages });
 
     if (pathname === "/__stub/meta" && req.method === "POST") {
       // Advertise a contract range and refuse everything outside it — a
@@ -351,7 +379,6 @@ Bun.serve({
 
       if (!sub) {
         if (!known) return json({ error: "no such pane" }, { status: 404 });
-        const screen = scenario.screens[paneId] ?? "";
         return json({
           pane: {
             pane_id: paneId,
@@ -361,17 +388,7 @@ Bun.serve({
           },
           agent: known.agent ? { name: known.agent } : null,
           layout: { area: { width: 146, height: 42 } },
-          frame: {
-            paneId,
-            ansi: screen,
-            text: screen.replace(/\x1b\[[0-9;]*m/g, ""),
-            prompt: scenario.prompts[paneId] ?? null,
-            activity:
-              known.status === "working"
-                ? { verb: "Baking", elapsed: "8m 34s", detail: "26.0k tokens" }
-                : null,
-            at: Date.now(),
-          },
+          frame: frameOf(paneId),
         });
       }
     }
@@ -481,8 +498,16 @@ Bun.serve({
     close(socket) {
       sockets.delete(socket);
     },
-    message() {
-      // watch / unwatch: the stub polls nothing, so there is nothing to change.
+    message(socket, raw) {
+      let message: { type?: unknown; paneId?: unknown };
+      try { message = JSON.parse(String(raw)); } catch { return; }
+      if (message.type !== "watch" && message.type !== "unwatch") return;
+      const paneId = typeof message.paneId === "string" ? message.paneId : undefined;
+      socketMessages.push({ type: message.type, ...(paneId ? { paneId } : {}), at: Date.now() });
+      // Like the real server, a new watcher is sent the pane's current frame
+      // at once rather than waiting for the screen to change.
+      const frame = message.type === "watch" && paneId ? frameOf(paneId) : null;
+      if (frame) socket.send(JSON.stringify({ type: "frame", frame }));
     },
   },
 });

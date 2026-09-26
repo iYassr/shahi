@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures";
-import { scenario } from "./stub/control";
+import { scenario, socketMessages } from "./stub/control";
 
 test.describe("getting around", () => {
   test("moves between agents and spaces", async ({ page }) => {
@@ -36,6 +36,23 @@ test.describe("getting around", () => {
     await page.goto(url);
     await expect(page.locator(".detail__task")).toBeVisible();
     expect(problems).toEqual([]);
+  });
+
+  /*
+   * A pane opened by its address — a reload, a bookmark, a notification —
+   * mounted in the same commit as the live socket and asked to be watched
+   * before the socket existed. Nothing was watched: the Screen tab kept its
+   * first frame and an answered card stayed on screen (pre-release bug hunt).
+   */
+  test("a pane opened by its address is watched, and again after a reload", async ({ page }) => {
+    await scenario(page, "busy");
+    await page.goto("/pane/w1%3Ap2");
+    await expect(page.locator(".detail__task")).toBeVisible();
+    await expect.poll(async () => (await socketMessages(page)).filter((m) => m.type === "watch").map((m) => m.paneId)).toEqual(["w1:p2"]);
+
+    await page.reload();
+    await expect(page.locator(".detail__task")).toBeVisible();
+    await expect.poll(async () => (await socketMessages(page)).filter((m) => m.type === "watch").map((m) => m.paneId)).toEqual(["w1:p2", "w1:p2"]);
   });
 
   /**

@@ -27,6 +27,11 @@ export async function paneWrites(page: Page): Promise<{ path: string; body: Reco
   return (await writes(page)).filter((w) => /^\/api\/panes\/[^/]+\/(prompt|answer|keys)$/.test(w.path)) as { path: string; body: Record<string, any> }[];
 }
 
+/** What the app sent down the socket — its watches and unwatches — in order. */
+export async function socketMessages(page: Page): Promise<{ type: string; paneId?: string }[]> {
+  return (await (await page.request.get("/__stub/socket")).json()).messages;
+}
+
 /** Pushes a message down the socket, as the poller would. */
 export async function push(page: Page, message: unknown): Promise<void> {
   await page.request.post("/__stub/push", { data: message });

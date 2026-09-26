@@ -18,8 +18,9 @@ class FakeSocket {
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  sent: unknown[] = [];
   constructor(readonly url: string) { FakeSocket.made.push(this); }
-  send() {}
+  send(data: string) { this.sent.push(JSON.parse(data)); }
   close() { this.readyState = 3; }
   push(message: unknown) { this.onmessage?.({ data: JSON.stringify(message) }); }
 }
@@ -57,8 +58,8 @@ afterEach(async () => {
 });
 const text = () => JSON.stringify(view!.toJSON());
 const settle = () => act(async () => { for (let i = 0; i < 10; i++) await Bun.sleep(0); });
-async function render() {
-  await act(async () => { view = create(<MemoryRouter><App /></MemoryRouter>); });
+async function render(path = "/") {
+  await act(async () => { view = create(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>); });
   await settle();
 }
 
@@ -133,4 +134,16 @@ test("a New agent sheet whose space closed goes back to choosing a space, not to
   await settle();
   expect(text()).not.toContain("New agent in");
   expect(text()).toContain("Choose a space");
+});
+
+test("a pane opened by its address is watched once the live stream opens", async () => {
+  // A reload, a bookmark or a notification mounts the pane in the same commit
+  // as the socket, and the pane asked to watch before the socket existed: the
+  // Screen tab froze on its first frame and an answered card stayed up.
+  routes["/api/auth/status"] = json({ required: false, authenticated: true });
+  routes["/api/session"] = json({ panes: [], workspaces: [], tabs: [] });
+  await render("/pane/w1%3Ap1");
+  const stream = FakeSocket.made[0]!;
+  await act(async () => { stream.readyState = 1; stream.onopen?.(); });
+  expect(stream.sent).toContainEqual({ type: "watch", paneId: "w1:p1" });
 });

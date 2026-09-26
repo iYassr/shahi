@@ -153,6 +153,21 @@ test("fragment pairing is removed before connecting and no secret is stored in w
   expect(values.includes("deviceSecret")).toBe(false);
   expect(values.includes(new URLSearchParams(code.split("#")[1]).get("secret")!)).toBe(false);
 });
+// Opened by its address, a pane was never watched: through the relay the
+// session began with only an unwatch, and the Screen tab kept its first frame
+// (pre-release bug hunt).
+test("a pane reloaded through the relay is watched", async ({ page, request }) => {
+  await pair(page, true);
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  await expect(page).toHaveURL(/\/pane\//);
+  const pane = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1)!);
+  const watched = async () => ((await (await request.get(`http://127.0.0.1:${FIRST + 1}/__stub/socket`)).json()).messages as { type: string; paneId?: string }[])
+    .filter((m) => m.type === "watch").map((m) => m.paneId);
+  await expect.poll(watched).toEqual([pane]);
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "Screen", exact: true })).toBeVisible();
+  await expect.poll(watched).toEqual([pane, pane]);
+});
 test("hosted shell has restrictive security headers and phone/laptop layouts fit", async ({ page }) => {
   const response = await page.goto("/pwa/");
   const headers = response!.headers();
