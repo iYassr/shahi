@@ -18,7 +18,7 @@ import { HerdrClient, HerdrSubscriber } from "./lib/herdr-client";
 import { BackendMonitor, probeHerdr } from "./lib/backend";
 import { PaneInstances } from "./lib/herdr-pane";
 import { ComputerControl } from "./lib/control";
-import { createServer } from "./lib/http";
+import { createServer, type ShahiServer } from "./lib/http";
 import { serverIdentity } from "./lib/identity";
 import { Devices, Pairing, pairCommand } from "./lib/pairing";
 import { Poller } from "./lib/poller";
@@ -27,7 +27,25 @@ import { RelayClient } from "./lib/relay-client";
 import { SessionStore } from "./lib/state";
 import { TranscriptStore } from "./lib/transcript";
 
-const config = loadConfig();
+/**
+ * A failed start is one line with the time, and exit 1. Thrown instead, Bun
+ * printed five lines of the minified release around the cause — a taken
+ * port, a bad .env value — about 5 KB, and the manager started it again every
+ * few seconds, so the log grew by 127 MB a day and said the same thing once
+ * per 5 KB (pre-release bug hunt). Nothing is lost: the release has no source
+ * maps, so that context was never readable.
+ */
+function orExit<T>(start: () => T): T {
+  try {
+    return start();
+  } catch (err) {
+    const said = (err instanceof Error ? err.message : String(err)).replace(/\s*\n\s*/g, " ");
+    console.error(`${new Date().toISOString()} Shahi could not start: ${said}`);
+    process.exit(1);
+  }
+}
+
+const config = orExit(() => loadConfig());
 
 const client = new HerdrClient({ socketPath: config.socketPath });
 
@@ -37,11 +55,14 @@ const client = new HerdrClient({ socketPath: config.socketPath });
 // durable fix: it covers the WAL and shm files SQLite makes beside it too
 // (2026-09-02 review, R4). `.env` has been 0600 since it was first written.
 const dataDir = dirname(config.dataPath);
-mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-chmodSync(dataDir, 0o700);
-const db = new Database(config.dataPath, { create: true });
-chmodSync(config.dataPath, 0o600);
-db.exec("PRAGMA journal_mode = WAL");
+const db = orExit(() => {
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(dataDir, 0o700);
+  const db = new Database(config.dataPath, { create: true });
+  chmodSync(config.dataPath, 0o600);
+  db.exec("PRAGMA journal_mode = WAL");
+  return db;
+});
 
 const observability = new Observability(rotatingLog(join(dataDir, "operations.jsonl")));
 const store = new SessionStore(client, new PaneInstances(db));
@@ -98,7 +119,8 @@ const backend = new BackendMonitor(
 );
 
 const identity = serverIdentity(db);
-const server = createServer({
+// Listening is where a port another program holds fails.
+const server: ShahiServer = orExit(() => createServer({
   control: new ComputerControl(identity.serverId, () => backend.state),
   config,
   observability,
@@ -113,7 +135,7 @@ const server = createServer({
   serverId: identity.serverId,
   // Created below, because it needs this server; read at request time.
   relay: () => (relay ? { url: config.relayUrl!, connected: relay.connected } : null),
-});
+}));
 
 // Dialled out, never listened on: with a relay the box is reachable from
 // anywhere the relay is, with nothing opened here. See docs/relay.md.
