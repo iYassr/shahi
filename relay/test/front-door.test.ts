@@ -75,6 +75,28 @@ function connect(ip: string): Request {
   });
 }
 
+describe("the health check", () => {
+  test("answers HEAD as it answers GET, so a monitor that uses HEAD sees the relay up", async () => {
+    // Only GET matched, so HEAD /health fell through to the 404 (pre-release bug hunt, B106).
+    const { env } = environment();
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request("https://relay.example/health", { method }), env);
+      expect(response.status, method).toBe(200);
+      expect(response.headers.get("cache-control"), method).toBe("no-store");
+      expect(response.headers.get("strict-transport-security"), method).toBe(STRICT_TRANSPORT_SECURITY);
+    }
+  });
+
+  test("any other method is told which ones it may use", async () => {
+    const { env } = environment();
+    for (const method of ["POST", "PUT", "DELETE", "OPTIONS"]) {
+      const response = await worker.fetch(new Request("https://relay.example/health", { method }), env);
+      expect(response.status, method).toBe(405);
+      expect(response.headers.get("allow"), method).toBe("GET, HEAD");
+    }
+  });
+});
+
 describe("the connect limiter", () => {
   test("one IPv6 host cannot get past it by using a fresh address from its /64", async () => {
     // Every /128 had a bucket of its own, so a host with a routed /64 was never

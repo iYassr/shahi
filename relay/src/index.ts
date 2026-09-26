@@ -47,7 +47,12 @@ export default {
 async function route(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname;
   const synthetic = !!env.STATS_TOKEN && request.headers.get("x-shahi-probe") === env.STATS_TOKEN;
-  if (path === "/health" && request.method === "GET") return Response.json({ ok: true, service: "shahi-relay" }, { headers: { "cache-control": "no-store" } });
+  if (path === "/health") {
+    // HEAD as well as GET: uptime monitors commonly send HEAD, and it fell
+    // through to the 404 (pre-release bug hunt, B106).
+    if (request.method !== "GET" && request.method !== "HEAD") return new Response("method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+    return Response.json({ ok: true, service: "shahi-relay" }, { headers: { "cache-control": "no-store" } });
+  }
   // A read of the fleet telemetry, off the hot path. Hidden unless a token
   // is set (see telemetry.ts); never touches a Durable Object.
   if (path === "/stats") return (await handleStats(request, env)) ?? new Response("not found", { status: 404 });
