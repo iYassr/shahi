@@ -8,6 +8,15 @@
   const label = button.textContent;
   let busy = false;
   let opener = null;
+  // The status answers one request. It was cleared only when a valid form was
+  // sent, so an old error, or "we'll email <the previous address>", sat above
+  // a reopened, empty form, and beside the browser's own bubble for a box left
+  // unticked (pre-release bug hunt, B97). An answer still on its way is kept.
+  const clearStatus = () => { if (!busy) { status.textContent = ''; status.dataset.success = 'false'; } };
+  form.addEventListener('input', clearStatus);
+  // A form the browser refuses never fires submit, so its bubble sat beside
+  // the last answer. `invalid` does not bubble, hence the capture.
+  form.addEventListener('invalid', clearStatus, true);
 
   // Without <dialog> (Safari before 15.4) the page stays as the HTML made it:
   // the opener links lead to #ios-beta, where the email address is still
@@ -20,6 +29,7 @@
         event.preventDefault();
         if (dialog.open) return;
         opener = control;
+        clearStatus();
         dialog.showModal();
         email.focus();
       });
@@ -34,20 +44,29 @@
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
+    clearStatus();
     // aria-disabled, not disabled: disabling the focused button moved focus to
     // <body>, outside the modal, in both engines; busy already refuses a second submit.
     busy = true; button.setAttribute('aria-disabled', 'true'); button.textContent = 'Sending…';
-    status.textContent = ''; status.dataset.success = 'false';
     const fields = new FormData(form);
+    let response;
     try {
-      const response = await fetch('/api/ios-beta', {
+      response = await fetch('/api/ios-beta', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: fields.get('email'), website: fields.get('website'), consent: fields.get('consent') === 'on' }),
       });
-      const result = await response.json();
-      status.textContent = result.message;
-      if (response.ok) { status.dataset.success = 'true'; form.reset(); }
-    } catch { status.textContent = 'Couldn’t reach Shahi. Please try again, or email support@getshahi.dev.'; }
+    } catch { response = null; }
+    try {
+      // A server that answered is not unreachable: an HTML error page from the
+      // edge failed to parse and was reported as "Couldn't reach Shahi" (B97).
+      const result = response && await response.json().catch(() => null);
+      if (!response) status.textContent = 'Couldn’t reach Shahi. Please try again, or email support@getshahi.dev.';
+      else if (typeof result?.message !== 'string') status.textContent = `Shahi couldn’t take your request (error ${response.status}). Please try again, or email support@getshahi.dev.`;
+      else {
+        status.textContent = result.message;
+        if (response.ok) { status.dataset.success = 'true'; form.reset(); }
+      }
+    }
     finally {
       busy = false; button.removeAttribute('aria-disabled'); button.textContent = label;
       // On a small or zoomed screen the answer lands below the dialog's fold,

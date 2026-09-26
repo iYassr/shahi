@@ -293,6 +293,72 @@ test.describe("the homepage's iOS download", () => {
     expect(refused).toEqual([]);
   });
 
+  // The status was cleared only when a valid form went out, so reopening the
+  // dialog showed the last error, or "we'll email <the previous address>"
+  // above an empty form, and an HTML error page from the edge read as
+  // "Couldn't reach Shahi" (pre-release bug hunt, B97).
+  test("the TestFlight dialog's answer is about the request in front of you, and a server that answered is not called unreachable", async ({ page }) => {
+    let answer: "handler" | "html" | "offline" = "handler";
+    await page.route(`${site}/api/ios-beta`, async route => {
+      if (answer === "offline") return route.abort("internetdisconnected");
+      if (answer === "html") return route.fulfill({ status: 502, contentType: "text/html", body: "<html><body>Bad gateway</body></html>" });
+      const request = route.request();
+      const response = await signup(new Request(request.url(), {
+        method: "POST", body: request.postData() ?? "", headers: { "Content-Type": request.headers()["content-type"] ?? "", Origin: site },
+      }), { limit: async () => true, send: async () => {} });
+      await route.fulfill({ status: response.status, contentType: "application/json", body: await response.text() });
+    });
+    await page.goto(`${site}/`);
+    const download = page.getByRole("main").getByRole("link", { name: "Download iOS App (TestFlight)" });
+    const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
+    const email = dialog.getByRole("textbox", { name: "Email address" });
+    const consent = dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." });
+    const submit = dialog.getByRole("button", { name: "Email me an invite" });
+    const status = dialog.getByRole("status");
+
+    // The browser takes a@b; the server does not.
+    await download.click();
+    await email.fill("a@b");
+    await consent.check();
+    await submit.click();
+    await expect(status).toHaveText("Enter a valid email address.");
+    // Editing the address is a new request in the making.
+    await email.pressSequentially("c");
+    await expect(status).toHaveText("");
+    await submit.click();
+    await expect(status).toHaveText("Enter a valid email address.");
+    // So is reopening the dialog.
+    await page.keyboard.press("Escape");
+    await download.click();
+    await expect(status).toHaveText("");
+
+    // A success names the address it was for, and not the next one.
+    await email.fill("tester@example.com");
+    await submit.click();
+    await expect(status).toHaveText(/^Request sent\. We’ll email tester@example\.com/);
+    await page.keyboard.press("Escape");
+    await download.click();
+    await expect(status).toHaveText("");
+    // Sending the emptied form again is refused by the browser, beside no stale answer.
+    await expect(email).toHaveValue("");
+    await email.fill("tester@example.com");
+    await consent.check();
+    await submit.click();
+    await expect(status).toHaveText(/^Request sent\./);
+    await submit.click();
+    await expect(status).toHaveText("");
+
+    // An error page is an error from Shahi, and only no answer at all is "Couldn't reach".
+    answer = "html";
+    await email.fill("tester@example.com");
+    await consent.check();
+    await submit.click();
+    await expect(status).toHaveText("Shahi couldn’t take your request (error 502). Please try again, or email support@getshahi.dev.");
+    answer = "offline";
+    await submit.click();
+    await expect(status).toHaveText("Couldn’t reach Shahi. Please try again, or email support@getshahi.dev.");
+  });
+
   test("the two download choices and the email dialog fit a 320-pixel screen", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto(`${site}/`);
