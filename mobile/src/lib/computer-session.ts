@@ -248,7 +248,8 @@ export class ComputerSession {
    * password and key included. So while a sign-in is in flight, or none has
    * produced a cookie, a 401 says nothing about access. Otherwise the cookie
    * held now is asked about directly, because a 401 can still belong to a
-   * request sent before that cookie existed.
+   * request sent before that cookie existed, and a cookie the server refuses
+   * is replaced by signing in again: for SSH only a sign-out ends access.
    */
   unauthorized(): Promise<void> {
     this.checking ??= this.checkAccess().finally(() => { this.checking = null; });
