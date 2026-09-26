@@ -384,13 +384,15 @@ pre-release bug hunt (B51) the relay left this to the zone, whose **Always Use
 HTTPS** was off: `http://relay.getshahi.dev/health` answered 200 and a `ws://`
 upgrade opened.
 
-Two settings of the zone the relay is deployed in are still required, because
+Two settings of the zone the relay is deployed in must remain enabled, because
 code cannot make them: **Always Use HTTPS** on (SSL/TLS → Edge Certificates),
 which does the same redirect at the edge for every hostname in the zone, the
 website included; and **Minimum TLS Version** at 1.2 (SSL/TLS → Edge
 Certificates), because the default of 1.0 accepts TLS 1.0 and 1.1 handshakes
 that RFC 8996 retired. On 25 September 2026 the first was off and the second
-at 1.0 (pre-release bug hunt, B51 and B52).
+at 1.0 (pre-release bug hunt, B51 and B52). Both were corrected through the
+signed-in dashboard on 26 September. The site, relay and review hosts then
+redirected HTTP with 301, refused TLS 1.0/1.1 and accepted TLS 1.2.
 Check them after changing the zone, and after deploying the relay:
 
 ```sh

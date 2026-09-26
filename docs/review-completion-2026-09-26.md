@@ -22,6 +22,9 @@ agents. Dependency versions were not upgraded.
 | Relay tests | 118 passed |
 | Browser suite, Chromium and WebKit | 364 passed, 1 skipped |
 | Final dashboard/prompt/Inbox/parity rerun | 59 passed |
+| Final full browser matrix in release CI | Passed Chromium and WebKit |
+| Local full-browser follow-up | 358 passed, 4 skipped; 6 timeouts all passed on targeted rerun |
+| Published Beta package, upgrade/recovery smokes | Both passed; catalog signature and archive digest verified |
 | Final encrypted hosted multi-computer suite | 68 passed |
 | PWA lifecycle/cache suite | 44 passed, 2 skipped |
 | Isolated real herdr 0.9.1 adapter | 23 passed; paid-agent and preview cases skipped |
@@ -39,6 +42,21 @@ Hermes bundle. Reader position was checked after the message-layout changes.
 Normal-size and AX5 layouts were inspected. Fresh README images use synthetic
 conversations only. This does not substitute for a fresh signed-device build or
 the physical-device checks in [verify-on-device.md](verify-on-device.md).
+
+## Publication
+
+Computer release [0.3.8](https://github.com/iYassr/shahi/releases/tag/v0.3.8)
+was published to Beta, exercised through the isolated upgrade/reconnect and
+supervisor rollback smokes, then promoted to Stable. Both signed catalogs name
+the same immutable build `0.3.8-5748ecbe4beb` and archive SHA-256
+`fbf929ea5ba0cae9734d75d408ac535c712ac42a015b5ff0f220cef489160fdc`.
+The Stable workflow passed all required checks; GitHub Latest now names 0.3.8.
+
+The hosted web deployment and rollback version are recorded in
+[browser-hosting.md](browser-hosting.md). Native build 17 processed successfully
+and is assigned to the existing internal TestFlight group. This does not mean
+Apple has approved the App Store submission. Private review correspondence and
+the physical-device recording checklist stay outside the repository.
 
 ## Multiple-computer audit dispositions
 
@@ -123,13 +141,17 @@ and a new notification-onboarding step are feature suggestions, not silently
 claimed as delivered. System privacy/permissions pages and verbatim licence
 text keep their platform behavior.
 
+## Deployed zone fixes
+
+B51/B52 are complete. On 26 September the signed-in Cloudflare dashboard was
+used to enable Always Use HTTPS and set Minimum TLS Version to 1.2. Independent
+network probes confirmed HTTP 301 to HTTPS on `getshahi.dev`,
+`relay.getshahi.dev` and `review.getshahi.dev`; all three refused TLS 1.0 and
+1.1 with a protocol-version alert and accepted TLS 1.2. The CLI deployment token
+still lacks zone-settings permission, so keep these checks separate from deployment.
+
 ## Remaining boundaries
 
-- **B51/B52, Cloudflare zone:** on 26 September, `http://getshahi.dev` still
-  returned 200 and TLS 1.0 still negotiated. Existing deployment credentials
-  cannot read or write the required zone settings (403); the dashboard needs
-  owner sign-in. Enable Always Use HTTPS and minimum TLS 1.2, then verify both
-  public hosts. These items are not fixed by an application rebuild.
 - **B4, terminal input already queued:** the sidecar checks the foreground
   process and prompt before typing and again before Enter. It cannot recall
   input that reached the terminal queue before the shell starts another program.
@@ -150,3 +172,9 @@ advances a controlled clock through expiry and keeps it fixed during renewal;
 the real-time socket-expiry check is unchanged. The actual reader-page builder
 also has a regression check for a 1.2 MB synthetic message, beyond the existing
 `fitPage` unit tests.
+
+The first Stable gate encountered one WebKit timeout opening the homepage's
+TestFlight dialog at 320 px. Its trace showed the opener's JavaScript was loaded
+and repeated layout/viewport stability checks before the automated click. Ten
+consecutive local reruns passed without a source change. The failed CI job was
+rerun and passed; no approval bypass or increased timeout was used.

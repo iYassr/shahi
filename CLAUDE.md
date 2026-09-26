@@ -599,10 +599,11 @@ can trigger the SSH server’s lockout.
   Enter. A command still waiting in the terminal input queue can pass both checks
   and later launch a trust menu. The B4 manual recheck reproduced this race; the
   sidecar cannot make that queue visible. Do not describe this as fully solved.
-- **Production zone settings require separate verification.** The September 26
-  check still found HTTP serving static site/PWA assets. The available CLI token
-  cannot read or change Always Use HTTPS or minimum TLS. See `docs/relay.md`;
-  neither a Worker deployment nor an HSTS header proves these settings are fixed.
+- **Production zone settings need checks outside the build.** On 26 September
+  Always Use HTTPS and minimum TLS 1.2 were enabled through the signed-in
+  dashboard. Public probes confirmed redirects and refused TLS 1.0/1.1 on the
+  site, relay and review hosts. The CLI token still lacks zone-settings access.
+  See `docs/relay.md`; a Worker deployment or HSTS header alone proves neither.
 
 Stated plainly, because a vague gaps list is worse than none.
 

@@ -237,6 +237,26 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 26 September 2026, review completion
+
+Published the site and hosted client from clean commit `5748ecb` as Cloudflare
+version `87168355-4214-4231-bdab-7967c63c356b`. It replaces
+`504b885f-122c-4c51-9241-000b639ceb2c`, which is the rollback version. The live
+JavaScript/CSS referenced by `/pwa/`, its service worker and `/privacy` were
+byte-identical to this build. `/pwa/`, its assets, `/pwa/sw.js` and `/privacy`
+answered 200; an unknown `/api` route answered 404. Cache policy still revalidates
+the shell and forbids storing the service worker.
+
+The hosted and PWA suites passed locally; the complete browser matrix also
+passed in the Beta release workflow. The computer release and signed native
+binary are separate publications; see the [completion report](review-completion-2026-09-26.md).
+
+Cloudflare's Always Use HTTPS was enabled and Minimum TLS Version set to 1.2
+in the signed-in dashboard. Public probes confirmed HTTP 301 to HTTPS and
+TLS 1.0/1.1 rejection on `getshahi.dev`, `relay.getshahi.dev` and
+`review.getshahi.dev`; TLS 1.2 succeeded on each. This closes B51/B52 from the
+earlier deployment. No relay deployment was needed for these zone settings.
+
 ## Verified deployment — 26 September 2026, the bug-hunt fixes
 
 Published the site and hosted client from a clean checkout of `6737727` (the
@@ -253,8 +273,9 @@ back to. Checks after deploying:
 - The wide cut answers `Range: bytes=0-1` with 206.
 - `GET /api/ios-beta` answers 405, with `nosniff` and HSTS.
 
-`http://getshahi.dev/` still answers 200 over cleartext. That is the zone's
-"Always Use HTTPS" setting (B51), which only the owner can change.
+At this earlier check, `http://getshahi.dev/` still answered 200 over cleartext.
+The later review-completion deployment record above closes the zone-setting
+findings (B51/B52).
 
 The relay was deployed from the same checkout as `shahi-relay` version
 `d56e3bd0-db54-4e41-84a1-44d246d1878f`. It replaced

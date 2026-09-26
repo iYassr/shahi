@@ -649,12 +649,12 @@ computer release or native binary to reach installed users.
 - **Listener ownership (B39).** `reusePort: false` prevents a second Bun listener
   from quietly sharing the service port on macOS.
 
-**Production zone settings remain unverified/unfixed here (B51, B52).** The
-26 September check received HTTP 200 for `http://getshahi.dev`, including the
-static-assets path that bypasses the Worker. The existing CLI token was refused
-permission to read/change Always Use HTTPS and minimum TLS. Set Always Use HTTPS
-On and minimum TLS 1.2 in the zone, then verify as described in [relay operations](relay.md).
-The relay’s own redirect and an HSTS header do not establish those zone settings.
+**Production zone settings fixed and verified (B51, B52).** On 26 September,
+Always Use HTTPS was enabled and Minimum TLS Version set to 1.2 through the
+signed-in Cloudflare dashboard. Independent probes confirmed 301 redirects to
+HTTPS and rejection of TLS 1.0/1.1 on the site, relay and review hosts; TLS 1.2
+succeeded. The deployment token still cannot read or change these zone settings.
+Repeat the checks in [relay operations](relay.md) after any zone change.
 
 **Terminal startup still has a race (B4).** A command already waiting in the
 terminal input queue can launch an agent’s trust menu after Shahi’s process and
