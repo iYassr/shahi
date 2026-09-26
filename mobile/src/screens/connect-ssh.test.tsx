@@ -53,11 +53,14 @@ const mockNative = requireOptionalNativeModule("SshTunnel") as unknown as {
   forwards: Map<string, number>; hostKey: jest.Mock; open: jest.Mock; close: jest.Mock;
 };
 const mockForwards = mockNative.forwards;
+/** This build's own keychain service, and the default one builds up to TestFlight 15 wrote. */
 const pins = new Map<string, string>();
+const earlierPins = new Map<string, string>();
 beforeEach(() => {
-  jest.clearAllMocks(); pins.clear(); mockForwards.clear();
-  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string) => pins.get(key) ?? null);
-  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, value: string) => { pins.set(key, value); });
+  jest.clearAllMocks(); pins.clear(); earlierPins.clear(); mockForwards.clear();
+  (SecureStore.getItemAsync as jest.Mock).mockImplementation(async (key: string, options?: object) => (options ? pins : earlierPins).get(key) ?? null);
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key: string, value: string, options?: object) => { (options ? pins : earlierPins).set(key, value); });
+  (SecureStore.deleteItemAsync as jest.Mock).mockImplementation(async (key: string, options?: object) => { (options ? pins : earlierPins).delete(key); });
 });
 
 function fillSshForm() {
@@ -103,6 +106,27 @@ test("a changed host key shows both fingerprints and connects only after a delib
   ));
   expect(mockNative.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "bmV3LWtleS1zaGEyNTY=" }));
   expect(pins.get("shahi.knownhost.box.example_22")).toBe("bmV3LWtleS1zaGEyNTY=");
+});
+
+// Builds up to TestFlight 15 pinned the first key they met without showing
+// it. This build carried such a pin over as reviewed, and Connect skipped the
+// review because the key presented matched it (pre-release bug hunt).
+test("a key an earlier version trusted unseen is shown before the login, even though it has not changed", async () => {
+  earlierPins.set("shahi.knownhost.box.example_22", "bmV3LWtleS1zaGEyNTY=");
+  const onConnectedSsh = fillSshForm();
+
+  expect(await screen.findByText("Check this computer’s identity")).toBeTruthy();
+  expect(screen.getByText(/An earlier version of Shahi trusted this key for box\.example without showing it to you/)).toBeTruthy();
+  expect(screen.getByTestId("host-key-fingerprint").props.children).toBe("SHA256:bmV3LWtleS1zaGEyNTY");
+  expect(screen.queryByTestId("host-key-previous")).toBeNull();
+  expect(mockNative.open).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId("trust-host-key"));
+  await waitFor(() => expect(onConnectedSsh).toHaveBeenCalled());
+  expect(mockNative.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "bmV3LWtleS1zaGEyNTY=" }));
+  // Reviewed now, so it is this build's own, and the unseen copy is gone.
+  expect(pins.get("shahi.knownhost.box.example_22")).toBe("bmV3LWtleS1zaGEyNTY=");
+  expect(earlierPins.size).toBe(0);
 });
 
 test("a failed re-add of a saved SSH computer leaves that computer's own tunnel running", async () => {

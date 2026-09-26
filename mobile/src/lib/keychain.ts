@@ -68,6 +68,18 @@ export function readSecret(key: string, merge?: (kept: string, earlier: string) 
   });
 }
 
+/**
+ * Both copies of a key, moving nothing: for a value whose meaning depends on
+ * which build saved it. A host key pinned by an earlier build was trusted
+ * without being shown to anyone (see `lib/tunnel.ts`).
+ */
+export function readSecretCopies(key: string): Promise<{ kept: string | null; earlier: string | null }> {
+  return serial(async () => ({
+    kept: await SecureStore.getItemAsync(key, DEVICE_ONLY),
+    earlier: await SecureStore.getItemAsync(key),
+  }));
+}
+
 export function writeSecret(key: string, value: string): Promise<void> {
   return serial(async () => {
     await SecureStore.setItemAsync(key, value, DEVICE_ONLY);

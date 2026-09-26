@@ -14,7 +14,7 @@
  * function — the Direct connection path keeps working regardless.
  */
 import { requireOptionalNativeModule } from "expo";
-import { deleteSecret, readSecret, writeSecret } from "./keychain";
+import { deleteSecret, readSecretCopies, writeSecret } from "./keychain";
 import { AccessRefusedError, HostKeyError } from "./errors";
 import type { SshProfile } from "@/lib/ssh";
 
@@ -67,13 +67,21 @@ export interface HostKeyReview {
   keyType: string;
   /** The fingerprint trusted before, when the key has changed since. */
   previous: string | null;
+  /**
+   * The key is the one an earlier version pinned without showing it to
+   * anyone: builds up to TestFlight 15 trusted a first key silently.
+   */
+  trustedUnseen: boolean;
 }
 
 /** Resolves true only when the person chose to trust the key. */
 export type ReviewHostKey = (review: HostKeyReview) => Promise<boolean>;
 
-/** The person declined the key; nothing was sent to that server. */
-export class HostKeyNotTrustedError extends Error {
+/**
+ * The person declined the key; nothing was sent to that server. A refusal of
+ * the key like any other, so a saved computer does not ask again on a timer.
+ */
+export class HostKeyNotTrustedError extends HostKeyError {
   constructor() {
     super("Not connected. Nothing was sent to that computer.");
   }
@@ -86,7 +94,12 @@ export class HostKeyNotTrustedError extends Error {
  * it BEFORE sending credentials, so a server whose key has changed — a
  * different machine, or a man in the middle — is refused before the password
  * or key leaves the phone. A first key is trusted only after a person has
- * seen its fingerprint (`openTunnel`'s review), never silently.
+ * seen its fingerprint (`openTunnel`'s review), never silently, and only such
+ * a key is saved in this phone's own Keychain service. A pin found only in
+ * the default service was saved by a build up to TestFlight 15, which
+ * trusted the first key it met without showing it; the pre-release bug hunt
+ * found those carried into this version as reviewed, so their review never
+ * happened. They are shown once before they are relied on.
  */
 function knownHostKeyName(host: string, port: number): string {
   // SecureStore keys allow only [A-Za-z0-9._-]; a host:port maps into that
@@ -172,10 +185,12 @@ let opened = 0;
  * silently, with the password in the same native call, and a failed write
  * reopening that window on every later connect.
  *
- * Without `review` (a saved computer reconnecting, with nobody to ask) only a
- * remembered key is accepted.
+ * A saved computer reconnecting (`saved`) accepts only its remembered key and
+ * does not probe: see docs/ssh.md on OpenSSH's PerSourcePenalties. Its
+ * `review` is asked only about a key an earlier version trusted unseen.
+ * Without `review` such a key is refused.
  */
-export async function openTunnel(profile: SshProfile, review?: ReviewHostKey): Promise<string> {
+export async function openTunnel(profile: SshProfile, review?: ReviewHostKey, { saved = false }: { saved?: boolean } = {}): Promise<string> {
   if (!native) {
     throw new Error(
       "SSH isn't available in this build. It needs the native tunnel module — rebuild the app to use it.",
@@ -184,15 +199,17 @@ export async function openTunnel(profile: SshProfile, review?: ReviewHostKey): P
   const host = profile.host.trim();
   const { port } = profile;
   const name = knownHostKeyName(host, port);
-  let remembered;
+  let pin;
   try {
-    remembered = await readSecret(name);
+    pin = await readSecretCopies(name);
   } catch {
     throw new Error("Couldn't read the host keys this phone trusts, so nothing was sent. Unlock the phone and try again.");
   }
+  const remembered = pin.kept;
+  const unseen = remembered === null ? pin.earlier : null;
 
   let expectedHostKey = remembered;
-  if (review) {
+  if (review && (!saved || unseen !== null)) {
     let presented;
     try {
       presented = await native.hostKey({ host, port });
@@ -200,11 +217,15 @@ export async function openTunnel(profile: SshProfile, review?: ReviewHostKey): P
       throw nativeFailure(e, host, port);
     }
     if (presented.hostKey !== remembered) {
+      // What this phone trusted before, if the server now presents another:
+      // the reviewed pin, or else the one an earlier version saved unseen.
+      const before = remembered ?? (unseen !== presented.hostKey ? unseen : null);
       const trusted = await review({
         host, port,
         fingerprint: fingerprint(presented.hostKey),
         keyType: presented.keyType,
-        previous: remembered ? fingerprint(remembered) : null,
+        previous: before ? fingerprint(before) : null,
+        trustedUnseen: unseen === presented.hostKey,
       });
       if (!trusted) throw new HostKeyNotTrustedError();
       try {
@@ -216,8 +237,9 @@ export async function openTunnel(profile: SshProfile, review?: ReviewHostKey): P
     expectedHostKey = presented.hostKey;
   }
   if (!expectedHostKey) {
-    throw new HostKeyError(
-      `This phone has no trusted host key for ${host}:${port}, so it did not send your login. Add the computer again from Computers to check its key.`,
+    throw new HostKeyError(unseen
+      ? `An earlier version of Shahi trusted ${host}:${port}'s key without showing it to you, so this phone did not send your login. Add the computer again from Computers to check its key.`
+      : `This phone has no trusted host key for ${host}:${port}, so it did not send your login. Add the computer again from Computers to check its key.`,
     );
   }
 

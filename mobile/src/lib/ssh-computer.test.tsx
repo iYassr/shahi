@@ -10,7 +10,7 @@
  * checks cookies the way server/lib/http.ts does, the WebSocket, and the
  * Keychain's storage.
  */
-import { act, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import type { SshProfile } from "./ssh";
 
@@ -45,9 +45,10 @@ import { openTunnel } from "./tunnel";
 import { pushKeyFor } from "./push-registration";
 import { Pane } from "@/screens/pane";
 import { ConnectionHealth } from "@/components/connection-health";
+import { HostKeyCard } from "@/components/host-key-card";
 
 const native = requireOptionalNativeModule("SshTunnel") as unknown as {
-  forwards: Map<string, number>; opening: null | Promise<void>; open: jest.Mock; close: jest.Mock;
+  forwards: Map<string, number>; opening: null | Promise<void>; open: jest.Mock; close: jest.Mock; hostKey: jest.Mock;
 };
 
 /** The fake's own forward-opening, restored before each test that replaces it. */
@@ -120,6 +121,8 @@ const bank = (): SavedComputer[] => JSON.parse(store.get(COMPUTERS_KEY) ?? "[]")
 let value: ReturnType<typeof useSession>;
 function Probe({ reader = false, health = false }: { reader?: boolean; health?: boolean }) {
   value = useSession();
+  // What the root layout shows over every screen.
+  if (value.hostKeyReview) return <HostKeyCard review={value.hostKeyReview.review} answer={value.hostKeyReview.answer} />;
   if (health) return <ConnectionHealth />;
   return reader && value.connected ? <Pane paneId="w1:p1" /> : null;
 }
@@ -446,4 +449,51 @@ test("a computer an earlier build added after a downgrade is listed beside this 
   await waitFor(() => expect(bank().map(c => c.id).sort()).toEqual([saved.id, other.id].sort()));
   expect(earlier.has(COMPUTERS_KEY)).toBe(false);
   ui.unmount();
+});
+
+// Builds up to TestFlight 15 pinned the first key they met without showing
+// it, and this build carried such pins over as reviewed: a saved computer
+// relied on one at once, and its review never happened (pre-release bug hunt).
+describe("a saved computer whose key an earlier version trusted unseen", () => {
+  beforeEach(() => {
+    store.delete(PIN); earlier.set(PIN, "cGlubmVkLWhvc3Qta2V5");
+    native.hostKey.mockReset(); native.hostKey.mockResolvedValue({ hostKey: "cGlubmVkLWhvc3Qta2V5", keyType: "ED25519" });
+  });
+
+  test("shows that key once before sending a login, and trusts it from then on", async () => {
+    const ui = await mount(false, true);
+    expect(await screen.findByText(/An earlier version of Shahi trusted this key for box\.example without showing it to you/)).toBeTruthy();
+    expect(screen.getByTestId("host-key-fingerprint").props.children).toBe("SHA256:cGlubmVkLWhvc3Qta2V5");
+    expect(native.open).not.toHaveBeenCalled();
+    expect(sidecar.logins).toBe(0);
+
+    act(() => { fireEvent.press(screen.getByTestId("trust-host-key")); });
+    await live();
+    expect(native.open).toHaveBeenCalledWith(expect.objectContaining({ expectedHostKey: "cGlubmVkLWhvc3Qta2V5" }));
+    expect(store.get(PIN)).toBe("cGlubmVkLWhvc3Qta2V5");
+    expect(earlier.has(PIN)).toBe(false);
+
+    // Reviewed now: the next reconnect neither asks nor probes.
+    act(() => { native.forwards.clear(); FakeSocket.opened.at(-1)!.close(); });
+    await act(async () => { await value.reconnect(); });
+    await live();
+    expect(native.hostKey).toHaveBeenCalledTimes(1);
+    expect(value.hostKeyReview).toBeNull();
+    ui.unmount();
+  });
+
+  test("declining sends nothing, keeps the computer, and is not asked again on a timer", async () => {
+    const ui = await mount(false, true);
+    act(() => { fireEvent.press(screen.getByTestId("reject-host-key")); });
+    expect(await screen.findByText("Check this computer’s identity")).toBeTruthy();
+    expect(screen.getByText("Not connected. Nothing was sent to that computer.")).toBeTruthy();
+    await settle(120_000);
+    expect(value.hostKeyReview).toBeNull();
+    expect(native.hostKey).toHaveBeenCalledTimes(1);
+    expect(native.open).not.toHaveBeenCalled();
+    expect(sidecar.logins).toBe(0);
+    expect(bank().map(c => c.id)).toEqual([saved.id]);
+    expect(earlier.get(PIN)).toBe("cGlubmVkLWhvc3Qta2V5");
+    ui.unmount();
+  });
 });

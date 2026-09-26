@@ -24,7 +24,7 @@ import { hostOf } from "@/lib/errors";
 import type { RelayIdentity } from "@/lib/relay";
 import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
-import { forgetHostKey } from "@/lib/tunnel";
+import { forgetHostKey, type HostKeyReview, type ReviewHostKey } from "@/lib/tunnel";
 import { COMPUTERS_KEY, computerAddress, computerId, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
@@ -74,6 +74,12 @@ interface SessionValue {
   signInSsh: (profile: SshProfile, connection: Connection) => void;
   /** Called by Connect once a pairing over a relay has answered with a device. */
   signInRelay: (identity: RelayIdentity) => void;
+  /**
+   * A saved computer's host key waiting for the person, before its login is
+   * sent: one an earlier version trusted without showing it. The root layout
+   * shows it; one at a time.
+   */
+  hostKeyReview: { review: HostKeyReview; answer: (trusted: boolean) => void } | null;
   signOut: () => void;
   /**
    * Why a computer was just removed without the person asking: this phone's
@@ -187,6 +193,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [terminalWidth, setWidth] = useState(100);
   const [storageError, setStorageError] = useState<Error | null>(null);
   const [accessEnded, setAccessEnded] = useState<string | null>(null);
+  const [hostKeyReview, setHostKeyReview] = useState<SessionValue["hostKeyReview"]>(null);
+  const reviews = useRef<{ queue: Promise<unknown>; pending: ((trusted: boolean) => void) | null }>({ queue: Promise.resolve(), pending: null });
   const [, render] = useState(0);
   const bank = useRef<SavedComputer[]>([]);
   const live = useRef(new Map<string, ComputerSession>());
@@ -208,6 +216,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     });
   }, [write]);
   const paint = useCallback(() => { if (mounted.current) render(n => n + 1); }, []);
+  // Several saved computers can reconnect at once; their questions queue.
+  const reviewSavedHostKey = useCallback<ReviewHostKey>((review) => {
+    const turn = reviews.current.queue.then(() => new Promise<boolean>((resolve) => {
+      if (!mounted.current) { resolve(false); return; }
+      const answer = (trusted: boolean) => {
+        reviews.current.pending = null;
+        if (mounted.current) setHostKeyReview(null);
+        resolve(trusted);
+      };
+      reviews.current.pending = answer;
+      setHostKeyReview({ review, answer });
+    }));
+    reviews.current.queue = turn;
+    return turn;
+  }, []);
   function choose(id: string | null) {
     live.current.get(selected.current ?? "")?.watch(null);
     selected.current = id; setSelection(id); setConnectionKey(n => n + 1);
@@ -268,7 +291,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         ? `This phone is no longer paired with ${lost.name}. Show a new pairing code on that computer to connect again.`
         : `${lost.name} signed this phone out. Add it again with its Shahi passcode to connect.`);
       forget(saved.id);
-    }, adopted);
+    }, adopted, reviewSavedHostKey);
     live.current.set(saved.id, entry);
     void entry.start();
     return entry;
@@ -322,6 +345,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     void getNetworkStateAsync().then(state => { if (!observedNetwork) networkChanged(state); }).catch(() => {});
     return () => {
       cancelled = true; mounted.current = false; sub.remove(); reachability.remove();
+      // Leaving is a refusal: the login waiting on the answer must never run.
+      reviews.current.pending?.(false);
       for (const entry of live.current.values()) entry.dispose();
       live.current.clear();
     };
@@ -377,6 +402,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signOut: () => { setAccessEnded(null); if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
     accessEnded,
     signInRelay: identity => signIn({ kind: "relay", ...identity }),
+    hostKeyReview,
     signInSsh: (profile, signedIn) => {
       // Its computer carries a saved notification opt-in over to this sign-in
       // (ComputerSession), as it does on every later one.

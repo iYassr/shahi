@@ -1,5 +1,6 @@
 import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
+import { Modal } from "react-native";
 import { router, ThemeProvider } from "expo-router";
 import { onNotificationTapped, showNotificationsWhileOpen } from "@/lib/push";
 import { openPane, showComputerHome } from "@/lib/navigate";
@@ -8,6 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SessionProvider, useSession } from "@/lib/session";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { HostKeyCard } from "@/components/host-key-card";
 import { theme } from "@/lib/theme";
 import { navigationTheme } from "@/lib/navigation-theme";
 
@@ -42,7 +44,7 @@ export default function RootLayout() {
 
 function Navigation() {
   const session = useSession();
-  const { connectionKey, ready, activeComputerId } = session;
+  const { connectionKey, ready, activeComputerId, hostKeyReview } = session;
   const current = useRef(session); current.current = session;
   const [pending, setPending] = useState<{ id: string; pane: string; switched: boolean; instance?: string } | null>(null);
   // Above the remounting stack: a notification can select another computer.
@@ -121,5 +123,11 @@ function Navigation() {
         />
       </Stack>
       <StatusBar style="light" />
+      {/* A saved computer's key, asked about over whatever is on screen:
+          nothing is sent to that computer until it is answered. Swiping the
+          sheet away is a Cancel. */}
+      <Modal visible={!!hostKeyReview} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => hostKeyReview?.answer(false)}>
+        {hostKeyReview && <HostKeyCard review={hostKeyReview.review} answer={hostKeyReview.answer} />}
+      </Modal>
     </>;
 }

@@ -31,7 +31,7 @@ jest.mock("expo-secure-store", () => {
   };
 });
 
-import { deleteSecret, readSecret, writeSecret } from "./keychain";
+import { deleteSecret, readSecret, readSecretCopies, writeSecret } from "./keychain";
 import { mergeSavedComputers, type SavedComputer } from "./computers";
 
 const everywhere = () => [...mockItems.entries()];
@@ -119,4 +119,10 @@ test("writing a credential removes an earlier build's stale copy of it", async (
   mockItems.set("app/shahi.connection", { value: "[stale]", accessible: "WHEN_UNLOCKED" });
   await writeSecret("shahi.connection", "[current]");
   expect(everywhere()).toEqual([["shahi.device-only/shahi.connection", { value: "[current]", accessible: "WHEN_UNLOCKED_THIS_DEVICE_ONLY" }]]);
+});
+
+test("reading both copies of a key moves neither", async () => {
+  mockItems.set("app/shahi.knownhost.box_22", { value: "unseen pin", accessible: "WHEN_UNLOCKED" });
+  await expect(readSecretCopies("shahi.knownhost.box_22")).resolves.toEqual({ kept: null, earlier: "unseen pin" });
+  expect(everywhere()).toEqual([["app/shahi.knownhost.box_22", { value: "unseen pin", accessible: "WHEN_UNLOCKED" }]]);
 });

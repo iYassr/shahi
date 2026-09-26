@@ -84,10 +84,22 @@ and **Trust the new key** replaces the pin — which is how a reinstalled server
 comes back. Removing or signing out of an SSH computer forgets its pin, unless
 another saved login uses the same host and port.
 
-Only the Connect screen probes. OpenSSH 9.8 and later count a connection that
-closes before authenticating as `noauth` under `PerSourcePenalties`: one
-second of penalty per probe, and the source is refused once penalties pass the
-15-second minimum. A probe on every reconnect would spend that budget for
+Builds up to TestFlight 15 trusted a first key silently, and saved it where
+every Keychain item then lived, the default service. This version saves a pin
+in its own service only once a person has trusted it, so a pin found only in
+the default one is treated as never reviewed; until the September 2026 bug
+hunt such pins were carried over as trusted and their review never happened.
+The first time one would be relied on — adding the computer again, or the
+saved computer reconnecting — its fingerprint is shown with **Check this
+computer’s identity**, saying an earlier version trusted it unseen, and no
+login is sent until **Trust and connect**, which moves the pin into this
+phone's own service. **Cancel** keeps the computer, not connected; Retry asks
+again.
+
+Only the Connect screen probes, and a saved computer once, for that review.
+OpenSSH 9.8 and later count a connection that closes before authenticating as
+`noauth` under `PerSourcePenalties`: one second of penalty per probe, and the
+source is refused once penalties pass the 15-second minimum. A probe on every reconnect would spend that budget for
 nothing, and a saved computer already knows which key to expect.
 
 The SSH username has no safe universal default. `root` login is commonly

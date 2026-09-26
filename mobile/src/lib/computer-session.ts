@@ -4,7 +4,7 @@ import { reconcileSession } from "./session-reconcile";
 import { backendUnavailable, endedPanes, promptAnswered, promptPushed, promptsFromSession, retainReviews, reviewKey, type AnsweredPrompt, type Reviewed, type DashboardPane, type ParsedPrompt, type PromptState, type Session, type SocketMessage } from "@shahi/shared";
 import { createApi, SessionSocket, UnauthorizedError, UnreachableError, IncompatibleServerError, type Connection, type LinkState } from "./api";
 import { deviceTarget, closeRelay, relayLink } from "./relay";
-import { openTunnel, closeTunnel } from "./tunnel";
+import { openTunnel, closeTunnel, type ReviewHostKey } from "./tunnel";
 import { renewPushRegistration } from "./push-registration";
 import { AccessRefusedError, HostKeyError } from "./errors";
 import { sshHost } from "./ssh";
@@ -53,7 +53,11 @@ export class ComputerSession {
   private checking: Promise<void> | null = null;
   private retryMs = SSH_RETRY_FIRST_MS;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
-  constructor(public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection) {
+  constructor(
+    public saved: SavedComputer, private changed: (visible?: boolean) => void, private expired: () => void, adopted?: Connection,
+    /** Asks the person about a host key an earlier version trusted unseen (see `openTunnel`). */
+    private reviewHostKey?: ReviewHostKey,
+  ) {
     this.connection = adopted ?? { baseUrl: "", cookie: null, relay: saved.connection.kind === "relay" ? deviceTarget(saved.connection) : null };
     if (saved.connection.kind === "ssh") this.connection.via = sshHost(saved.connection.ssh);
     this.api = createApi(this.connection);
@@ -79,7 +83,7 @@ export class ComputerSession {
     try {
       if (this.saved.connection.kind === "ssh") {
         if (!this.connection.baseUrl) {
-          const baseUrl = await openTunnel(this.saved.connection.ssh);
+          const baseUrl = await openTunnel(this.saved.connection.ssh, this.reviewHostKey, { saved: true });
           // Signed out while it opened: nobody else will close this forward.
           if (this.disposed) { void closeTunnel(baseUrl); return; }
           this.connection.baseUrl = baseUrl;
