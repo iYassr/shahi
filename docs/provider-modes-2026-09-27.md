@@ -83,6 +83,12 @@ missing provider chrome, moved questions, fresh horizontal selections, alternate
 highlight colours, legacy answer payloads, blocking typed text, waiting dashboard
 state, and the Cursor feedback field changing after typing.
 
+Release CI also exposed intermittent TestFlight-dialog test failures in Linux
+WebKit. A diagnostic run recorded the page scrolling between mouse-down and
+mouse-up, delivering the click to a surrounding section instead of the opener.
+The phone cases now use the existing touch helper; desktop cases still click.
+Dialog, focus, validation and small-screen assertions remain intact.
+
 These checks do not substitute for successful Claude tasks after quota resets,
 physical-device push/reconnect testing, or structured Antigravity/OpenCode Reader
 support. OpenCode's default policy is documented by its

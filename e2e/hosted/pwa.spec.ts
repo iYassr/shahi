@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readdirSync, readFileSync } from "node:fs";
 import { signup } from "../../site/src/signup";
+import { tap } from "../touch";
 
 async function ready(page: Page) {
   await page.evaluate(async () => {
@@ -314,7 +315,10 @@ test.describe("the homepage's iOS download", () => {
     const main = page.getByRole("main");
     await expect(main.getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
     const download = main.getByRole("link", { name: "Download iOS App (TestFlight)" });
-    await download.click();
+    // Linux WebKit moved the page between mouse-down and mouse-up near the
+    // viewport edge, delivering a click to the surrounding section instead.
+    // Exercise the phone's touch input (and a mouse on the desktop project).
+    await tap(page, download);
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await expect(dialog).toBeVisible();
     const email = dialog.getByRole("textbox", { name: "Email address" });
@@ -323,7 +327,7 @@ test.describe("the homepage's iOS download", () => {
     // Consent stays required, as the privacy policy describes: without it the
     // browser refuses the form, which the single request below also proves.
     const submit = dialog.getByRole("button", { name: "Email me an invite" });
-    await submit.click();
+    await tap(page, submit);
     await dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." }).check();
     // From the keyboard: a disabled button used to hand focus to <body>, outside the modal.
     await submit.focus();
@@ -340,16 +344,16 @@ test.describe("the homepage's iOS download", () => {
     // The availability line and the beta section open the same dialog, and
     // Esc or its Close button returns focus to whichever opened it.
     const join = main.getByRole("link", { name: "Join the iOS beta" });
-    await join.click();
+    await tap(page, join);
     await expect(dialog).toBeVisible();
     await expect(email).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(join).toBeFocused();
     const sectionButton = page.getByRole("region", { name: /Shahi for iPhone/ }).getByRole("button", { name: "Request a TestFlight invite" });
-    await sectionButton.click();
+    await tap(page, sectionButton);
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Close" }).click();
+    await tap(page, dialog.getByRole("button", { name: "Close" }));
     await expect(dialog).toBeHidden();
     await expect(sectionButton).toBeFocused();
     expect(refused).toEqual([]);
@@ -379,45 +383,45 @@ test.describe("the homepage's iOS download", () => {
     const status = dialog.getByRole("status");
 
     // The browser takes a@b; the server does not.
-    await download.click();
+    await tap(page, download);
     await email.fill("a@b");
     await consent.check();
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText("Enter a valid email address.");
     // Editing the address is a new request in the making.
     await email.pressSequentially("c");
     await expect(status).toHaveText("");
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText("Enter a valid email address.");
     // So is reopening the dialog.
     await page.keyboard.press("Escape");
-    await download.click();
+    await tap(page, download);
     await expect(status).toHaveText("");
 
     // A success names the address it was for, and not the next one.
     await email.fill("tester@example.com");
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText(/^Request sent\. We’ll email tester@example\.com/);
     await page.keyboard.press("Escape");
-    await download.click();
+    await tap(page, download);
     await expect(status).toHaveText("");
     // Sending the emptied form again is refused by the browser, beside no stale answer.
     await expect(email).toHaveValue("");
     await email.fill("tester@example.com");
     await consent.check();
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText(/^Request sent\./);
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText("");
 
     // An error page is an error from Shahi, and only no answer at all is "Couldn't reach".
     answer = "html";
     await email.fill("tester@example.com");
     await consent.check();
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText("Shahi couldn’t take your request (error 502). Please try again, or email support@getshahi.dev.");
     answer = "offline";
-    await submit.click();
+    await tap(page, submit);
     await expect(status).toHaveText("Couldn’t reach Shahi. Please try again, or email support@getshahi.dev.");
   });
 
@@ -426,7 +430,7 @@ test.describe("the homepage's iOS download", () => {
     await page.goto(`${site}/`);
     const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     expect(await fits()).toBe(true);
-    await page.getByRole("link", { name: "Download iOS App (TestFlight)" }).click();
+    await tap(page, page.getByRole("link", { name: "Download iOS App (TestFlight)" }));
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await expect(dialog).toBeVisible();
     const box = (await dialog.boundingBox())!;
@@ -441,11 +445,11 @@ test.describe("the homepage's iOS download", () => {
     await page.setViewportSize({ width: 320, height: 568 });
     await page.route(`${site}/api/ios-beta`, route => route.fulfill({ json: { message: "Request sent. We’ll email tester@example.com when your TestFlight invite is ready." } }));
     await page.goto(`${site}/`);
-    await page.getByRole("link", { name: "Download iOS App (TestFlight)" }).click();
+    await tap(page, page.getByRole("link", { name: "Download iOS App (TestFlight)" }));
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await dialog.getByRole("textbox", { name: "Email address" }).fill("tester@example.com");
     await dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." }).check();
-    await dialog.getByRole("button", { name: "Email me an invite" }).click();
+    await tap(page, dialog.getByRole("button", { name: "Email me an invite" }));
     const status = dialog.getByRole("status");
     await expect(status).toHaveText(/^Request sent\./);
     // It used to land below the dialog's fold, so nothing visible said the request went through.
