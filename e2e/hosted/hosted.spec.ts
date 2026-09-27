@@ -1,4 +1,4 @@
-import { test as base, expect } from "@playwright/test";
+import { test as base, expect } from "./fixtures";
 import QRCode from "qrcode";
 const test = base.extend<{ noPlaintext: void }>({
   noPlaintext: [async ({ context, baseURL }, use) => {

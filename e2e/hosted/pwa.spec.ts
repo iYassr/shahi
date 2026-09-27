@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { readdirSync, readFileSync } from "node:fs";
 import { signup } from "../../site/src/signup";
 import { tap } from "../touch";
@@ -14,7 +15,11 @@ async function cacheKeys(page: Page) {
 }
 
 test.beforeEach(async ({ request }) => { await request.post("/__hosted/reset"); });
-test.afterEach(async ({ request }) => { await request.post("/__hosted/site-online"); await request.post("/__hosted/online"); });
+test.afterEach(async ({ request }, info) => {
+  if (info.status === "skipped") return;
+  await request.post("/__hosted/site-online");
+  await request.post("/__hosted/online");
+});
 
 test("Cloudflare serves every public app route with production security headers", async ({ request, page }) => {
   for (const path of ["/pwa/", "/pwa/computers", "/pwa/settings", "/pwa/spaces", "/pwa/space/example", "/pwa/pane/example", "/pwa/notification?pane=example&computer=example"]) {

@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -40,7 +40,7 @@ jobs:
       - run: bun plugin/releases/compatibility-smoke.ts
       - run: bun plugin/releases/manager-smoke.ts
       - name: Preserve the tested release candidate
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tested-computer-package
@@ -50,7 +50,9 @@ jobs:
   checks:
     name: types and unit tests
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      WRANGLER_SEND_METRICS: "false"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -59,6 +61,12 @@ jobs:
         with:
           bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
+
+      - name: Validate GitHub Actions workflows
+        run: bash .github/scripts/check-workflows.sh
+
+      - name: Keep local Worker diagnostics
+        run: echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/wrangler-logs" >> "$GITHUB_ENV"
 
       # This also covers the native Expo app, which is a check
       # that it compiles against `shared/`. Two clients drifting apart is
@@ -74,14 +82,43 @@ jobs:
       # Component tests in JavaScript; this does not compile or run an iOS binary.
       - run: bun run test:mobile
 
+      - name: Preserve local Worker diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wrangler-checks
+          path: ${{ runner.temp }}/wrangler-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
   browser:
-    name: browser (${{ matrix.suite }}, Chromium and WebKit)
-    runs-on: ubuntu-latest
+    name: browser (${{ matrix.name }})
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: "false"
     strategy:
       fail-fast: false
       matrix:
-        suite: [e2e, hosted, pwa]
+        include:
+          # Separate runners, each with one worker and its own mutable stub.
+          # WebKit also installs Chromium for the signin project dependency.
+          - name: e2e-chromium
+            suite: e2e
+            project: --project=phone
+            browsers: chromium
+          - name: e2e-webkit
+            suite: e2e
+            project: --project=ios
+            browsers: chromium webkit
+          - name: hosted
+            suite: hosted
+            project: ""
+            browsers: chromium webkit
+          - name: pwa
+            suite: pwa
+            project: ""
+            browsers: chromium webkit
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -96,30 +133,42 @@ jobs:
       # restart, and just as quiet.
       - run: bun run build:web
 
+      - name: Keep local Worker diagnostics
+        run: echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/wrangler-logs" >> "$GITHUB_ENV"
+
       - name: Cache browsers
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          key: playwright-${{ runner.os }}-${{ matrix.browsers }}-${{ hashFiles('bun.lock') }}
 
       # WebKit is not optional. Three faults in a row were invisible in
       # Chromium: a tap that never landed, a thumbnail that collapsed, and a
       # blank page in a Safari tab.
-      - run: bunx playwright install --with-deps chromium webkit
+      - run: bunx playwright install --with-deps ${{ matrix.browsers }}
 
       - run: bun run build:site
         if: matrix.suite != 'e2e'
-      - run: bun run test:${{ matrix.suite }}
+      - run: bun run test:${{ matrix.suite }} ${{ matrix.project }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: playwright-${{ matrix.suite }}
+          name: playwright-${{ matrix.name }}
           path: |
             test-results/
             e2e/test-results/
             e2e/playwright-report/
             playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Preserve local Worker diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wrangler-${{ matrix.name }}
+          path: ${{ runner.temp }}/wrangler-logs/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -130,7 +179,7 @@ jobs:
   # channel runs nightly in herdr-preview.yml.
   herdr:
     name: real herdr (${{ matrix.herdr }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -198,7 +247,7 @@ jobs:
     name: CI required
     if: always()
     needs: [checks, upgrades, browser, herdr]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require every suite to succeed
