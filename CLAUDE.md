@@ -1302,3 +1302,20 @@ generic page fitter only shortens text and thinking blocks.
 with a scratch `XDG_CONFIG_HOME`. Do not use it to prepare isolated tests. Copy
 only the required integration files to the disposable provider config; never
 copy herdr's plugin registry or restart a user's service.
+
+## Reader activity presentation, September 28
+
+`shared/src/reader-rows.ts` projects API messages into Reader rows for both clients.
+Consecutive agent records share one collapsed Activity disclosure beneath their
+written responses; user and system messages end that group. Routine tools and
+thinking stay inspectable there. Questions, failed steps and message images stay
+visible, and deduplicated tool file links and result images remain outside the
+disclosure. Preserve raw messages for pagination, echo reconciliation and caches.
+
+Keep prose rows individually keyed by their original message IDs: a single giant
+virtualized turn breaks native paragraph anchors. Reuse unchanged projected rows
+and retain activity keys across appends and prepends. A new transcript must reset
+disclosure state even when it reuses message IDs. A busy-to-finished transition
+collapses activity once; the user can reopen it afterward. One current activity
+status replaces the duplicate working footer. Unknown tools get neutral status,
+never guessed prose or fabricated results.

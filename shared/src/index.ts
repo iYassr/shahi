@@ -1,4 +1,5 @@
 export { latestConversations } from "./conversation-order";
+export { readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity, type ActivityStep } from "./reader-rows";
 export { backendUnavailable, connectionHealth } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
 export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, type AnsweredPrompt, type PromptState } from "./prompts";

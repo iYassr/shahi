@@ -1,20 +1,21 @@
+import { readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { agentColor } from "./AgentIcon";
 import type { CSSProperties } from "react";
 import { Download, RemoteImage } from "./RemoteMedia";
 /**
  * Reader view: the agent's conversation, reflowed for a phone.
  *
- * Fed by Claude Code's own JSONL transcript rather than the terminal, which is
+ * Fed by the provider's structured transcript rather than the terminal, which is
  * what makes reflowing possible at all — terminal output arrives pre-wrapped at
  * the server's width and cannot be rewrapped without mangling every diff and
  * table in it. Here the text is just text.
  *
- * Tool calls collapse to one tappable line. In a real transcript they are the
+ * Routine tool calls collapse into one activity disclosure per turn. They are the
  * overwhelming majority of the traffic, and almost none of it is what you came
  * to read; burying it behind a tap is the difference between a readable
  * conversation and a wall of command output.
  */
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { ApiError, useApi, type Activity, type LogBlock, type LogMessage, type SessionLog } from "../api";
 import { forgetReaderPlace, readerWasAway, useReaderScroll } from "../reader-scroll";
 import { FileView } from "./FileView";
@@ -154,6 +155,10 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
   const transcript = useRef<string | null>(rememberedTranscripts.get(paneId) ?? null);
   /** Mirrors `total` for the poll, which must not close over a stale value. */
   const knownTotal = useRef(0);
+  const previousRows = useRef<ReaderRow[]>([]);
+  const rows = useMemo(() => readerRows(messages, previousRows.current), [messages]);
+  previousRows.current = rows;
+
   const reading = useReaderScroll({ paneId, scroller, ready: !loading, revision: messages, following: pinnedToBottom,
     onPosition: bottom => { setAway(!bottom); if (bottom) setUnseen(0); } });
 
@@ -323,12 +328,12 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
         </button>
       )}
 
-      {messages.map((message) => (
-        <MessageView key={message.id} message={message} paneId={paneId} onCopyError={setError} />
+      {rows.map((message) => (
+        <MessageView key={`${transcript.current}:${message.id}`} message={message} working={message === rows.at(-1) && !!activity && !echoVisible} paneId={paneId} onCopyError={setError} />
       ))}
 
       {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
-      {activity && <Working activity={activity} />}
+      {activity && (echoVisible || !rows.at(-1)?.activity) && <Working activity={activity} />}
 
       <div />
 
@@ -357,19 +362,54 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
 }
 
 // Stable messages skip markdown and tool-tree work while the agent is streaming.
-const MessageView = memo(function MessageView({ message, paneId, onCopyError }: {
-  message: LogMessage; paneId: string; onCopyError: (message: string) => void;
+const MessageView = memo(function MessageView({ message, working, paneId, onCopyError }: {
+  message: ReaderRow; working: boolean; paneId: string; onCopyError: (message: string) => void;
 }) {
+  if (message.activity) return <ActivityGroup id={message.id} activity={message.activity} working={working} paneId={paneId} />;
+  const text = message.blocks.flatMap(block => block.kind === "text" ? [block.text] : []).join("\n\n");
   return (
         <article className={`msg msg--${message.role}`} data-message-id={message.id}>
-          <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}</div>
-          <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(message.blocks.map((block) => block.kind === "text" || block.kind === "thinking" ? block.text : block.kind === "tool" ? [block.summary, block.result?.text].filter(Boolean).join("\n") : "").join("\n")).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>
+          {message.showHeader && <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}{!!message.at && <time dateTime={new Date(message.at).toISOString()}> · {new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}</div>}
+          {text && <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(text).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>}
           {message.blocks.map((block, index) => (
             <BlockView key={index} block={block} paneId={paneId} />
           ))}
         </article>
   );
 });
+
+function ActivityGroup({ id, activity, working, paneId }: {
+  id: string; activity: ReaderActivity; working: boolean; paneId: string;
+}) {
+  const api = useApi();
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<{ path: string; name: string } | null>(null);
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working) setOpen(false);
+    wasWorking.current = working;
+  }, [working]);
+  const label = readerActivityLabel(activity, working);
+  return <section className="reader-activity" data-message-id={id} aria-label="Agent activity">
+    {activity.files.length > 0 && <div className="reader-activity__files">
+      {activity.files.map(item => <div className="reader-activity__file" key={item.path}>
+        <button className="tool__open" aria-label={`Open file ${item.name}`} onClick={() => setFile(item)}>{item.name}</button>
+        <Download className="tool__get" path={api.fileUrl(item.path, { download: true })} name={item.name}>↓</Download>
+      </div>)}
+    </div>}
+    {activity.images.map(ref => <ResultImage key={ref} paneId={paneId} imageRef={ref} />)}
+    <button className="reader-activity__head" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      <span>{label}</span><span aria-hidden="true">{open ? "▾" : "▸"}</span>
+    </button>
+    {open && <div className="reader-activity__details">
+      {activity.steps.map(step => <div className="reader-activity__step" key={step.id}>
+        {!!step.at && <time dateTime={new Date(step.at).toISOString()}>{new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
+        <BlockView block={step.block} paneId={paneId} attachments={false} />
+      </div>)}
+    </div>}
+    {file && <FileView name={file.name} url={api.fileUrl(file.path)} downloadUrl={api.fileUrl(file.path, { download: true })} onClose={() => setFile(null)} />}
+  </section>;
+}
 
 /** An image a tool returned — a screenshot, usually, and worth opening. */
 function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
@@ -419,7 +459,7 @@ function Working({ activity }: { activity: Activity }) {
   );
 }
 
-function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
+function BlockView({ block, paneId, attachments = true }: { block: LogBlock; paneId: string; attachments?: boolean }) {
   const api = useApi();
   const [open, setOpen] = useState(false);
   /** The file this block named, once you have asked to see it. */
@@ -492,7 +532,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
     case "tool":
       return (
         <div className="tool">
-          <button className="tool__head" onClick={() => setOpen((o) => !o)}>
+          <button className="tool__head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             <span className="tool__caret" aria-hidden="true">
               {open ? "▾" : "▸"}
             </span>
@@ -534,7 +574,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
           {/* The file the call named, if it named one. Outside the collapsed
               section deliberately: on a phone this is usually the part you
               wanted, and burying it behind a second tap defeats the point. */}
-          {block.file && (
+          {attachments && block.file && (
             <div className="tool__file">
               <button className="tool__open" onClick={() => setViewing(true)}>
                 {block.file.name}
@@ -565,7 +605,7 @@ function BlockView({ block, paneId }: { block: LogBlock; paneId: string }) {
               {/* Reading a screenshot returns the image here rather than as a
                   block of the message, and it is usually the whole point of
                   having expanded the tool. */}
-              {block.result.images.map((ref) => (
+              {attachments && block.result.images.map((ref) => (
                 <ResultImage key={ref} paneId={paneId} imageRef={ref} />
               ))}
               {!block.result.text.trim() && block.result.images.length === 0 && (

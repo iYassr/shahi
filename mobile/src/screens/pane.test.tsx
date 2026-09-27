@@ -275,7 +275,8 @@ describe("sending a reply", () => {
     const expand = async (result: ToolResult) => {
       mocked.sessionLog.mockResolvedValue(log([ranTool(result)]));
       const view = render(<Pane paneId={PANE} />);
-      fireEvent.press(await view.findByText("Bash"));
+      fireEvent.press(await view.findByRole("button", { name: /Activity · 1 step/ }));
+      fireEvent.press(view.getByText("Bash"));
       return view;
     };
 
@@ -1809,7 +1810,8 @@ test("a tool result that lands after a later message replaces 'Still running.'",
   });
   mocked.sessionLog.mockResolvedValue(log([said("u1", "you", "run both"), bash("t1", "bun test", null), bash("t2", "bun run lint", null)]));
   const view = render(<Pane paneId={PANE} />);
-  fireEvent.press(await view.findByText("bun test"));
+  fireEvent.press(await view.findByRole("button", { name: /Activity · 2 steps/ }));
+  fireEvent.press(view.getByText("bun test"));
   expect(view.getByText("Still running.")).toBeTruthy();
 
   mocked.sessionLog.mockResolvedValue(log([
@@ -2085,6 +2087,8 @@ describe("provider Reader pages", () => {
     expect(view.getByText("status.txt")).toBeTruthy();
     expect(view.queryByText(/Internal only/)).toBeNull();
     expect(view.queryByText(fixture.thinking)).toBeNull();
+    expect(view.queryByRole("button", { name: "Thinking" })).toBeNull();
+    fireEvent.press(view.getByRole("button", { name: /Activity · 3 steps/ }));
     fireEvent.press(view.getByRole("button", { name: "Thinking" }));
     expect(view.getByText(fixture.thinking)).toBeTruthy();
     expect(view.queryByText(fixture.output)).toBeNull();
@@ -2127,5 +2131,54 @@ describe("provider Reader pages", () => {
     expect(again.queryByText(/OLD/)).toBeNull();
     again.unmount();
     forgetPaneMemory(api, paneId);
+  });
+});
+
+
+describe("grouped Reader activity", () => {
+  const work = (id: string): LogMessage => ({ id, role: "agent", at: 1, blocks: [{ kind: "tool", name: "Bash", summary: `private-command-${id}`, result: null }] });
+
+  test("a new transcript with reused ids starts with activity collapsed", async () => {
+    mocked.sessionLog.mockResolvedValue({ ...log([work("same")]), sessionId: "old" });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(await view.findByRole("button", { name: "Activity · 1 step" }));
+    expect(view.getByText("private-command-same")).toBeTruthy();
+    mocked.sessionLog.mockResolvedValue({ ...log([work("same")]), sessionId: "new" });
+    logChanged();
+    await settle();
+    expect(view.getByRole("button", { name: "Activity · 1 step" }).props.accessibilityState.expanded).toBe(false);
+    expect(view.queryByText("private-command-same")).toBeNull();
+  });
+
+  test("a busy turn has one status, keeps its files accessible, and collapses after completion", async () => {
+    const transcript = [said("request", "you", "Check the project"), work("one"), work("two")];
+    mocked.sessionLog.mockResolvedValue(log(transcript));
+    mocked.pane.mockResolvedValue(detail({ verb: "Working" }));
+    const view = render(<Pane paneId={PANE} />);
+    const activity = await view.findByRole("button", { name: "Running a command… · 2 steps" });
+    expect(view.queryByText("private-command-one")).toBeNull();
+    expect(view.queryByText("Working")).toBeNull();
+    fireEvent.press(activity);
+    expect(view.getByText("private-command-one")).toBeTruthy();
+    mocked.sessionLog.mockResolvedValue(log([...transcript, said("response", "agent", "The project is ready.")]));
+    mocked.pane.mockResolvedValue(detail());
+    logChanged();
+    await view.findByText("The project is ready.");
+    expect(view.getByRole("button", { name: "Activity · 2 steps" }).props.accessibilityState.expanded).toBe(false);
+    expect(view.queryByText("private-command-one")).toBeNull();
+    fireEvent.press(view.getByRole("button", { name: "Activity · 2 steps" }));
+    expect(view.getByText("private-command-one")).toBeTruthy();
+  });
+
+  test.each(["claude", "codex", "cursor", "agy", "opencode"])("%s tool traffic leaves the written response visible and groups routine steps", async agent => {
+    const paneId = `activity-${agent}`;
+    const transcript = [said("request", "you", "Check it"), ...Array.from({ length: 20 }, (_, i) => work(String(i))), said("response", "agent", "Everything is ready.")];
+    mocked.sessionLog.mockResolvedValue(log(transcript));
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText("Everything is ready.");
+    expect(view.getAllByText("AGENT")).toHaveLength(1);
+    expect(view.getByRole("button", { name: "Activity · 20 steps" })).toBeTruthy();
+    expect(view.queryByText("private-command-0")).toBeNull();
+    expect(view.UNSAFE_getByType(FlatList).props.data.map((row: { id: string }) => row.id).slice(0, 2)).toEqual(["request", "response"]);
   });
 });

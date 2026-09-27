@@ -238,6 +238,9 @@ test("files, images, downloads and uploads stay inside the encrypted connection"
   await expect(page.locator(".reader .msg").first()).toBeVisible();
   const image = page.locator(".msg__image").first();
   await expect(image).toHaveAttribute("src", /^blob:/);
+  // Reader starts at the newest response. Safari may leave an earlier lazy
+  // image undecoded until the person scrolls it into view.
+  await image.scrollIntoViewIfNeeded();
   await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
   await page.locator(".tool__open").first().click();
   await expect(page.locator(".viewer__text")).toContainText("OPTION_RE");

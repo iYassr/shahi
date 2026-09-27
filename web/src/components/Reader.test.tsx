@@ -117,6 +117,36 @@ describe("a pane reused by a new session", () => {
     expect(output()).not.toContain("OLD");
   });
 
+  test("activity disclosure resets when a new transcript reuses message ids", async () => {
+    const work: LogMessage = { id: "reused", role: "agent", at: 1, blocks: [{ kind: "tool", name: "Bash", summary: "Check project", result: null }] };
+    let current = log("old", [work]);
+    await render(async () => current);
+    const drawer = () => view!.root.findByProps({ className: "reader-activity__head" });
+    await act(async () => drawer().props.onClick());
+    expect(drawer().props["aria-expanded"]).toBe(true);
+    current = log("new", [work]);
+    await logChanged();
+    expect(drawer().props["aria-expanded"]).toBe(false);
+    expect(view!.root.findAllByProps({ className: "tool__head" })).toHaveLength(0);
+  });
+
+  test("working activity collapses when finished but can be reopened", async () => {
+    const work: LogMessage = { id: "step", role: "agent", at: 1, blocks: [{ kind: "tool", name: "Read", summary: "Check project", result: null }] };
+    const sessionLog = async () => log("same", [work]);
+    const draw = (activity: { verb: string; elapsed: string; detail: string } | null) =>
+      <ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={activity} onUnavailable={() => {}} /></ApiContext.Provider>;
+    await act(async () => { view = create(draw({ verb: "Working", elapsed: "1s", detail: "" })); });
+    const drawer = () => view!.root.findByProps({ className: "reader-activity__head" });
+    expect(output()).toContain("Reading files… · 1 step");
+    expect(view!.root.findAllByProps({ className: "working" })).toHaveLength(0);
+    await act(async () => drawer().props.onClick());
+    expect(drawer().props["aria-expanded"]).toBe(true);
+    await act(async () => view!.update(draw(null)));
+    expect(drawer().props["aria-expanded"]).toBe(false);
+    await act(async () => drawer().props.onClick());
+    expect(drawer().props["aria-expanded"]).toBe(true);
+  });
+
   test("a history page from the previous session is not prepended to the new one", async () => {
     let olderReply!: (value: SessionLog) => void;
     let polls = 0;
@@ -139,6 +169,10 @@ describe("a pane reused by a new session", () => {
       expect(output()).toContain(fixture.question);
       expect(output()).toContain("Keep reviewing");
       expect(output()).not.toContain("Internal only");
+      expect(view!.root.findAllByProps({ className: "msg__thinking" })).toHaveLength(0);
+      expect(view!.root.findByProps({ className: "reader-activity__head" }).props['aria-expanded']).toBe(false);
+      expect(view!.root.findByProps({ className: "tool__open" }).children).toEqual(["status.txt"]);
+      await act(async () => view!.root.findByProps({ className: "reader-activity__head" }).props.onClick());
       expect(view!.root.findByProps({ className: "msg__thinking" }).findByType("p").children).toEqual([fixture.thinking]);
       expect(view!.root.findByProps({ className: "tool__open" }).children).toEqual(["status.txt"]);
       const head = (summary: string) => view!.root.findAllByProps({ className: "tool__head" }).find(button => button.findByProps({ className: "tool__summary" }).children.join("") === summary)!;

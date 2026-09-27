@@ -70,8 +70,9 @@ limits. Screen mode remains available for the terminal itself.
 - **A free tunnel, ready to use.** Scan a pairing QR code to connect through
   Shahi's built-in encrypted tunnel. It is free for everyone, with no Shahi
   account, public server port, VPN installation or domain setup needed.
-- **Read comfortably.** Conversation view formats messages, code, tool calls,
-  and results for a small screen. Screen mode shows the underlying terminal.
+- **Read comfortably.** Written responses take priority. Routine tool calls and
+  thinking share one expandable Activity section per turn, while files, images,
+  questions and failed steps stay accessible. Screen mode shows the terminal.
 - **Keep work moving.** Answer supported permission prompts inline, send a
   follow-up, attach a file, or use terminal keys your phone keyboard lacks.
 - **Find what needs you.** The Inbox in Agents gathers unanswered requests,
