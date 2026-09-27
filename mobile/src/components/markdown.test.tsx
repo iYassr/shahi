@@ -1,6 +1,9 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import { Linking } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { Markdown } from "./markdown";
+
+jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn(async () => true) }));
 
 /**
  * The renderer that turns agent prose into native elements.
@@ -128,4 +131,41 @@ test("unsupported link schemes cannot launch phone applications", () => {
   expect(view.getByText("Unsafe (link unavailable)")).toBeTruthy();
   expect(view.getByText("Phone file (link unavailable)")).toBeTruthy();
   expect(open).not.toHaveBeenCalled();
+});
+
+describe("bare web links", () => {
+  test("bare and labeled URLs use the same open and copy behavior without consuming punctuation", async () => {
+    const open = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+    const url = "https://example.com/a_(b)?q=1#result";
+    const view = draw(`Visit (${url}). Or [the guide](${url}).`);
+    expect(view.getAllByRole("link")).toHaveLength(2);
+    await act(async () => { fireEvent.press(view.getByRole("link", { name: url })); });
+    expect(open).toHaveBeenCalledWith(url);
+    await act(async () => { fireEvent(view.getByRole("link", { name: "the guide" }), "longPress"); });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(url);
+    expect(open).toHaveBeenCalledTimes(1);
+    open.mockRestore();
+  });
+
+  test("inline and fenced code stay literal while prose, emphasis and tables have links", () => {
+    const view = draw("`https://code.example/inline`\n\n```\nhttps://code.example/fenced\n```\n\n**Visit https://prose.example/_path_**\n\n| https://head.example | name |\n| --- | --- |\n| https://cell.example | value |");
+    expect(view.getAllByRole("link").map(link => link.props.accessibilityLabel)).toEqual([
+      "https://prose.example/_path_", "https://head.example", "https://cell.example",
+    ]);
+    expect(view.getByText("https://code.example/inline")).toBeTruthy();
+    expect(view.getByText("https://code.example/fenced")).toBeTruthy();
+  });
+
+  test("URL path emphasis characters remain part of the target and no hard line break is merged", () => {
+    const view = draw("See https://example.com/_path_\ncontinued and https://other.example/a*b*c.");
+    expect(view.getAllByRole("link").map(link => link.props.accessibilityLabel))
+      .toEqual(["https://example.com/_path_", "https://other.example/a*b*c"]);
+  });
+
+  test("malformed Markdown HTTP targets are unavailable and other scheme text stays plain", () => {
+    const view = draw("[Bad](https:///example.com) [Secret](https://user:pass@example.com) javascript:https://example.com and file:///https://example.com");
+    expect(view.queryAllByRole("link")).toHaveLength(0);
+    expect(view.getByText("Bad (link unavailable)")).toBeTruthy();
+    expect(view.getByText("Secret (link unavailable)")).toBeTruthy();
+  });
 });

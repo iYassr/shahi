@@ -64,6 +64,14 @@ silent network loss and a cold offline launch, switching away from an offline
 computer, one live connection per computer, and a computer update that keeps
 its pairing.
 
+## `ReaderLinkTests`
+
+A synthetic message with a bare HTTP URL must expose a link to accessibility.
+Holding it copies just the address, verified by pasting into the composer;
+tapping it opens Safari, and returning keeps Reader visible. This checks native
+gesture handling inside selectable prose, which component tests cannot prove.
+All output comes from the recording fixture; no prompt is submitted.
+
 ## `ReaderPlaceTests`
 
 Proves reading mode keeps your place in the fixture's 140-message

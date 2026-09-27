@@ -31,6 +31,36 @@ test.describe("reader", () => {
     expect(problems).toEqual([]);
   });
 
+  test("bare Reader URLs open complete destinations and preserve literal code", async ({ page }) => {
+    const destination = "https://reader-link.example/a_b*c_(guide)?next=%2F&mode=read#part_1";
+    await page.context().route("https://reader-link.example/**", route => route.fulfill({ contentType: "text/html", body: "<p>Reader link destination</p>" }));
+    await page.route(/\/api\/panes\/[^/]+\/session(?:\?|$)/, route => route.fulfill({ json: {
+      sessionId: "bare-url-reader", path: "/stub/bare-url-reader", offset: 0, total: 1,
+      messages: [{ id: "bare-url-message", role: "agent", at: 1, blocks: [{ kind: "text", text: [
+        `Open (${destination}).`,
+        "`https://reader-link.example/inline-code`",
+        "```text",
+        "https://reader-link.example/fenced-code",
+        "```",
+        "[Named destination](https://reader-link.example/named) and [notes](/tmp/notes.md).",
+      ].join("\n") }] }],
+    } }));
+    await openReader(page);
+    const link = page.getByRole("link", { name: destination, exact: true });
+    await expect(link).toHaveAttribute("href", destination);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    await expect(page.locator(".reader a")).toHaveCount(2);
+    await expect(page.locator(".reader code")).toHaveText("https://reader-link.example/inline-code");
+    await expect(page.locator(".reader pre.md__code")).toHaveText("https://reader-link.example/fenced-code");
+    await expect(page.getByRole("button", { name: "notes", exact: true })).toBeVisible();
+    const [opened] = await Promise.all([page.waitForEvent("popup"), tap(page, link)]);
+    await expect(opened).toHaveURL(destination);
+    await expect(opened.locator("p")).toHaveText("Reader link destination");
+    await expect(page.locator(".reader .msg")).toHaveCount(1);
+    await opened.close();
+  });
+
   /**
    * The reader polls every 2.5s. Reading something older than the last page has
    * to survive that.

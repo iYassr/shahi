@@ -12,9 +12,11 @@
  * else falls through as plain text, which is the correct failure.
  */
 import { createContext, useContext, Fragment, type ReactNode } from "react";
-import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { isWebUrl, webLinks } from "@shahi/shared";
 import { Text } from "@/components/text";
 import { CopyOnHold } from "@/components/copy";
+import { ExternalLink } from "@/components/external-link";
 import { theme } from "@/lib/theme";
 
 type OpenFile = (file: { path: string; name: string }) => void;
@@ -26,7 +28,7 @@ export function Markdown({ text, onOpenFile }: { text: string; onOpenFile?: Open
 function ProseLink({ label, target }: { label: string; target: string }) {
   const openFile = useContext(FileAction);
   const destination = target.trim().replace(/^<|>$/g, "");
-  if (/^https?:\/\//i.test(destination)) return <Text accessibilityRole="link" style={styles.link} onPress={() => void Linking.openURL(destination)}>{label}</Text>;
+  if (isWebUrl(destination)) return <ExternalLink url={destination}>{label}</ExternalLink>;
   // These are paths on the paired computer, never file:// URLs on the phone.
   // The authenticated server still enforces its readable-root boundary.
   if ((destination.startsWith("/") && !destination.startsWith("//")) || destination.startsWith("~/")) {
@@ -101,7 +103,7 @@ function renderBlocks(text: string): ReactNode[] {
             <View style={[styles.tr, styles.trHead]}>
               {header.map((cell, c) => (
                 <Text style={[styles.cell, styles.th]} key={c}>
-                  {cell}
+                  {inline(cell)}
                 </Text>
               ))}
             </View>
@@ -179,10 +181,21 @@ const INLINE: { re: RegExp; wrap: (m: RegExpMatchArray, k: number) => ReactNode 
     re: /\[([^\]]+)\]\(((?:\([^()]*\)|[^()\n])+)\)/,
     wrap: (m, k) => <ProseLink key={k} label={m[1]!} target={m[2]!} />,
   },
-  { re: /\*\*([^*]+)\*\*/, wrap: (m, k) => <Text style={styles.bold} key={k}>{m[1]}</Text> },
-  { re: /(?<!\w)_([^_]+)_(?!\w)/, wrap: (m, k) => <Text style={styles.italic} key={k}>{m[1]}</Text> },
-  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, wrap: (m, k) => <Text style={styles.italic} key={k}>{m[1]}</Text> },
+  { re: /\*\*([^*]+)\*\*/, wrap: (m, k) => <Text style={styles.bold} key={k}>{plainLinks(m[1]!)}</Text> },
+  { re: /(?<!\w)_([^_]+)_(?!\w)/, wrap: (m, k) => <Text style={styles.italic} key={k}>{plainLinks(m[1]!)}</Text> },
+  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, wrap: (m, k) => <Text style={styles.italic} key={k}>{plainLinks(m[1]!)}</Text> },
 ];
+
+function plainLinks(text: string): ReactNode {
+  const out: ReactNode[] = [];
+  let from = 0;
+  for (const link of webLinks(text)) {
+    out.push(text.slice(from, link.start), <ExternalLink key={link.start} url={link.url} />);
+    from = link.end;
+  }
+  out.push(text.slice(from));
+  return out;
+}
 
 /**
  * Scans a line left to right, taking whichever marker comes first.
@@ -194,10 +207,13 @@ const INLINE: { re: RegExp; wrap: (m: RegExpMatchArray, k: number) => ReactNode 
  */
 function inline(text: string): ReactNode {
   const out: ReactNode[] = [];
-  let rest = text;
+  const links = webLinks(text);
+  let linkIndex = 0;
+  let offset = 0;
   let key = 0;
 
-  while (rest.length > 0) {
+  while (offset < text.length) {
+    const rest = text.slice(offset);
     let best:
       | { at: number; match: RegExpMatchArray; wrap: (m: RegExpMatchArray, k: number) => ReactNode }
       | null = null;
@@ -207,13 +223,25 @@ function inline(text: string): ReactNode {
       if (!best || match.index < best.at) best = { at: match.index, match, wrap };
     }
 
+    // An underscore or asterisk in a URL path is not an emphasis delimiter.
+    // Earlier code and explicit Markdown links still own their entire span.
+    while (linkIndex < links.length && links[linkIndex]!.start < offset) linkIndex++;
+    const link = links[linkIndex];
+    if (link && (!best || link.start - offset < best.at)) {
+      if (link.start > offset) out.push(text.slice(offset, link.start));
+      out.push(<ExternalLink key={key++} url={link.url} />);
+      offset = link.end;
+      linkIndex++;
+      continue;
+    }
+
     if (!best) {
       out.push(rest);
       break;
     }
     if (best.at > 0) out.push(rest.slice(0, best.at));
     out.push(best.wrap(best.match, key++));
-    rest = rest.slice(best.at + best.match[0].length);
+    offset += best.at + best.match[0].length;
   }
 
   return <Fragment>{out}</Fragment>;

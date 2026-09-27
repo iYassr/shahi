@@ -20,6 +20,7 @@
  * single worst-looking thing in the reader.
  */
 import { createContext, Fragment, useContext, type ReactNode } from "react";
+import { isWebUrl, webLinks } from "@shahi/shared";
 
 type OpenFile = (file: { path: string; name: string }) => void;
 
@@ -43,7 +44,7 @@ export function Markdown({ text, onOpenFile }: { text: string; onOpenFile?: Open
  */
 export function linkTarget(raw: string): { kind: "url"; href: string } | { kind: "file"; path: string } | null {
   const destination = raw.trim().replace(/^<|>$/g, "");
-  if (/^https?:\/\//i.test(destination)) return { kind: "url", href: destination };
+  if (isWebUrl(destination)) return { kind: "url", href: destination };
   if ((destination.startsWith("/") && !destination.startsWith("//")) || destination.startsWith("~/")) {
     let path = destination.replace(/#L\d+(?:-L?\d+)?$/, "");
     try { path = decodeURIComponent(path); } catch { /* A literal percent in a file name. */ }
@@ -77,6 +78,22 @@ function ProseLink({ label, target }: { label: string; target: string }) {
     );
   }
   return <>{label}</>;
+}
+
+/** Emphasized prose can contain URLs too, without turning code or link labels
+ * into nested Markdown or nested anchors. */
+function linkedProse(text: string): ReactNode {
+  const links = webLinks(text);
+  if (links.length === 0) return text;
+  const out: ReactNode[] = [];
+  let position = 0;
+  for (const link of links) {
+    if (link.start > position) out.push(text.slice(position, link.start));
+    out.push(<ProseLink key={link.start} label={link.url} target={link.url} />);
+    position = link.end;
+  }
+  if (position < text.length) out.push(text.slice(position));
+  return <Fragment>{out}</Fragment>;
 }
 
 function renderBlocks(text: string): ReactNode[] {
@@ -219,12 +236,12 @@ const INLINE: { re: RegExp; render: (m: RegExpMatchArray, k: number) => ReactNod
   // route group, `…/space name (1` for a copied file and a cut-off Wikipedia
   // URL (pre-release bug hunt).
   {
-    re: /\[([^\]]+)\]\((<(?:https?:\/\/|\/(?!\/)|~\/)[^<>\n]*>|(?:https?:\/\/|\/(?!\/)|~\/)(?:[^\s()]|\([^\s()]*\))*)\)/,
+    re: /\[([^\]]+)\]\((<(?:https?:\/\/|\/(?!\/)|~\/)[^<>\n]*>|(?:https?:\/\/|\/(?!\/)|~\/)(?:[^\s()]|\([^\s()]*\))*)\)/i,
     render: (m, k) => <ProseLink label={m[1]!} target={m[2]!} key={k} />,
   },
-  { re: /\*\*([^*]+)\*\*/, render: (m, k) => <strong key={k}>{m[1]}</strong> },
-  { re: /(?<!\w)_([^_]+)_(?!\w)/, render: (m, k) => <em key={k}>{m[1]}</em> },
-  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, render: (m, k) => <em key={k}>{m[1]}</em> },
+  { re: /\*\*([^*]+)\*\*/, render: (m, k) => <strong key={k}>{linkedProse(m[1]!)}</strong> },
+  { re: /(?<!\w)_([^_]+)_(?!\w)/, render: (m, k) => <em key={k}>{linkedProse(m[1]!)}</em> },
+  { re: /(?<![*\w])\*([^*]+)\*(?!\w)/, render: (m, k) => <em key={k}>{linkedProse(m[1]!)}</em> },
 ];
 
 /**
@@ -239,7 +256,10 @@ const INLINE: { re: RegExp; render: (m: RegExpMatchArray, k: number) => ReactNod
  */
 export function inline(text: string): ReactNode {
   const out: ReactNode[] = [];
+  const links = webLinks(text);
   let rest = text;
+  let position = 0;
+  let linkIndex = 0;
   let key = 0;
 
   while (rest.length > 0) {
@@ -250,13 +270,28 @@ export function inline(text: string): ReactNode {
       if (!best || match.index < best.at) best = { at: match.index, match, render };
     }
 
+    // A URL is one span, including any underscores or asterisks in its path.
+    // Earlier Markdown markers still win, so code and explicit link labels
+    // are consumed whole before any URL inside them can become an anchor.
+    while (links[linkIndex] && links[linkIndex]!.start < position) linkIndex++;
+    const link = links[linkIndex];
+    if (link && (!best || link.start - position < best.at)) {
+      if (link.start > position) out.push(text.slice(position, link.start));
+      out.push(<ProseLink key={key++} label={link.url} target={link.url} />);
+      position = link.end;
+      rest = text.slice(position);
+      linkIndex++;
+      continue;
+    }
+
     if (!best) {
       out.push(rest);
       break;
     }
     if (best.at > 0) out.push(rest.slice(0, best.at));
     out.push(best.render(best.match, key++));
-    rest = rest.slice(best.at + best.match[0].length);
+    position += best.at + best.match[0].length;
+    rest = text.slice(position);
   }
 
   return <Fragment>{out}</Fragment>;

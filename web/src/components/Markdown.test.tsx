@@ -62,6 +62,90 @@ describe("inline", () => {
   });
 });
 
+describe("bare web links in Reader prose", () => {
+  test("opens complete URLs while keeping sentence punctuation outside the anchor", async () => {
+    const urls = [
+      "https://example.com/a_b*c?one=two&next=%2F#part_1",
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "HTTP://localhost:7471/ready",
+      "http://127.0.0.1:3000/test",
+    ];
+    const text = `👋 Visit ${urls[0]}, then (${urls[1]}).\nTry ${urls[2]} or ${urls[3]}!`;
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(<Markdown text={text} />); });
+    const anchors = view.root.findAllByType("a");
+    expect(anchors.map((a) => a.props.href)).toEqual(urls);
+    expect(anchors.map((a) => a.children.join(""))).toEqual(urls);
+    for (const anchor of anchors) {
+      expect(anchor.props.target).toBe("_blank");
+      expect(anchor.props.rel).toBe("noreferrer noopener");
+    }
+    expect(view.root.findAllByType("em")).toHaveLength(0);
+    await act(async () => view.unmount());
+  });
+
+  test("links emphasized prose, headings, lists, quotes and table cells", async () => {
+    const text = [
+      "# https://example.com/heading",
+      "**https://example.com/bold** and _https://example.com/italic_",
+      "- https://example.com/list",
+      "> https://example.com/quote",
+      "| Link |",
+      "| --- |",
+      "| https://example.com/table |",
+    ].join("\n");
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(<Markdown text={text} />); });
+    expect(view.root.findAllByType("a").map((a) => a.props.href)).toEqual(
+      ["heading", "bold", "italic", "list", "quote", "table"].map((path) => `https://example.com/${path}`),
+    );
+    expect(view.root.findByType("strong").findByType("a").props.href).toBe("https://example.com/bold");
+    expect(view.root.findByType("em").findByType("a").props.href).toBe("https://example.com/italic");
+    await act(async () => view.unmount());
+  });
+
+  test("preserves code, explicit links and file actions without nested anchors", async () => {
+    const opened: string[] = [];
+    const text = [
+      "`https://example.com/inline` [https://example.com/label](HTTPS://example.com/target) [https://example.com/file](/tmp/file.txt)",
+      "```text",
+      "https://example.com/fenced",
+      "```",
+      "https://example.com/plain",
+      "```",
+      "https://example.com/still-streaming",
+    ].join("\n");
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(<Markdown text={text} onOpenFile={(file) => opened.push(file.path)} />); });
+    const anchors = view.root.findAllByType("a");
+    expect(anchors.map((a) => a.props.href)).toEqual(["HTTPS://example.com/target", "https://example.com/plain"]);
+    expect(anchors[0]!.children.join("")).toBe("https://example.com/label");
+    expect(view.root.findByType("code").children.join("")).toBe("https://example.com/inline");
+    expect(view.root.findAllByType("pre").map((pre) => pre.children.join(""))).toEqual([
+      "https://example.com/fenced", "https://example.com/still-streaming",
+    ]);
+    const file = view.root.findByType("button");
+    expect(file.children.join("")).toBe("https://example.com/file");
+    await act(async () => file.props.onClick());
+    expect(opened).toEqual(["/tmp/file.txt"]);
+    await act(async () => view.unmount());
+  });
+
+  test("HTML remains literal text and unsafe explicit URLs never become anchors", async () => {
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(<Markdown text={'<img src="https://example.com/image" onerror="alert(1)"> <script>alert(2)</script>'} />); });
+    expect(view.root.findAllByType("img")).toHaveLength(0);
+    expect(view.root.findAllByType("script")).toHaveLength(0);
+    const literal = view.root.findByType("p").children.filter((child) => typeof child === "string").join("");
+    expect(literal).toContain('<img src="');
+    expect(literal).toContain("<script>alert(2)</script>");
+    for (const url of ["javascript:alert(1)", "https://", "https://user:secret@example.com", "https://example.com\n/hidden"]) {
+      expect(linkTarget(url)).toBeNull();
+    }
+    await act(async () => view.unmount());
+  });
+});
+
 // Review finding F106: agents link the files they touched as paths on the
 // computer. The native reader opened them; the web reader showed bracket text.
 describe("links to files on the computer", () => {

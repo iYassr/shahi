@@ -1085,6 +1085,13 @@ verification certificate is not a private signing key and may remain tracked.
 
 ## TestFlight feedback fixes, September 2026
 
+Reader recognizes explicit HTTP(S) URLs in prose through `shared/src/web-links.ts`.
+Keep code literal, preserve URL punctuation within the address, and leave local
+file links on the authenticated file-viewer path. Native `ExternalLink` opens on
+tap and copies only the URL on hold; a hold must not also open the browser.
+`ReaderLinkTests` checks the native text responder and paste result against the
+encrypted fixture. Unit event calls alone do not prove selectable-text gestures.
+
 For the current Claude/Codex mode, session-ordering and Reader checks, see
 `docs/agent-compatibility-2026-09-27.md`. Known agents start with explicit Ask me
 flags even when an older client omits its mode. Unknown mode ids fail before a
