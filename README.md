@@ -105,8 +105,10 @@ Reader supports these five agents running inside herdr:
 | <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a recorded single call; images and results for multiple calls are unsupported. |
 | <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, recorded images and undo changes. Requires herdr's OpenCode integration. |
 
-OpenCode and Antigravity require **computer release 0.3.11 or newer**; the existing
-iPhone app can read them. Readers select the exact session reported by herdr or
+OpenCode and Antigravity require **computer release 0.3.11 or newer**, currently
+available on the computer's **Beta** channel. In Shahi's Settings, select **Beta**
+and then **Update computer**; the existing iPhone app can read them.
+Readers select the exact session reported by herdr or
 a uniquely identified process-owned transcript. They never select another
 conversation just because it shares a folder. Use Screen mode for other agents
 or output Reader cannot format.
