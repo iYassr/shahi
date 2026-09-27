@@ -96,3 +96,21 @@ test("conversation rows reorder on new messages while pinned conversations stay 
     expect(ids()).toEqual(["row-Pinned-pinned", "row-Older", "row-Newest"]);
   } finally { mockState.session = previous; mockState.pins = previousPins; }
 });
+
+test("new Claude and Codex conversations enter at the top before their first message", () => {
+  const previous = mockState.session;
+  try {
+    mockState.session = { panes: [{ ...pane("Existing", "working"), lastMessageAt: 10 }] };
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    const ids = () => view.getAllByTestId(/^row-/).map(row => row.props.testID);
+    for (const [agent, startedAt] of [["claude", 20], ["codex", 30]] as const) {
+      mockState.session = { panes: [...mockState.session.panes,
+        { ...pane(agent, "idle"), agent, preview: null, lastMessageAt: null, startedAt }] };
+      view.rerender(<Agents onOpenPane={jest.fn()} />);
+      expect(ids()[0]).toBe(`row-${agent}`);
+    }
+    mockState.session = { panes: mockState.session.panes.map(p => p.paneId === "Existing" ? { ...p, lastMessageAt: 40 } : p) };
+    view.rerender(<Agents onOpenPane={jest.fn()} />);
+    expect(ids()).toEqual(["row-Existing", "row-codex", "row-claude"]);
+  } finally { mockState.session = previous; }
+});

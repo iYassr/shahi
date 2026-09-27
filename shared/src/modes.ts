@@ -30,7 +30,7 @@ const CLAUDE: AgentMode[] = [
   {
     id: "default",
     label: "Ask me",
-    description: "Stops for permission before editing files or running commands.",
+    description: "Asks before unapproved changes and commands; saved permission rules still apply.",
     // Claude persists the last mode selected in its TUI. No flag therefore
     // means "whatever this machine used last", which can be auto approval.
     // `manual` is Claude 2.1.261's explicit ask-before-tools contract.
@@ -39,19 +39,19 @@ const CLAUDE: AgentMode[] = [
   {
     id: "acceptEdits",
     label: "Auto-accept edits",
-    description: "Edits files without asking; still stops for anything else.",
+    description: "Approves edits and common file commands in the working folders; asks for other unapproved actions.",
     args: ["--permission-mode", "acceptEdits"],
   },
   {
     id: "plan",
     label: "Plan first",
-    description: "Works out an approach and waits for you before touching anything.",
+    description: "Explores and plans without editing source files, then asks before implementation.",
     args: ["--permission-mode", "plan"],
   },
   {
     id: "bypass",
     label: "Skip all permissions",
-    description: "Never asks. It can run any command as you, without a prompt.",
+    description: "Bypasses normal permission checks and can run commands as you. Claude may still require some confirmations.",
     args: ["--dangerously-skip-permissions"],
     unsafe: true,
   },
@@ -62,13 +62,13 @@ const CODEX: AgentMode[] = [
     id: "default",
     label: "Ask me",
     description: "Starts read-only and asks before making changes.",
-    args: ["--sandbox", "read-only", "--ask-for-approval", "on-request"],
+    args: ["--sandbox", "read-only", "--ask-for-approval", "on-request", "-c", 'approvals_reviewer="user"'],
   },
   {
     id: "on-request",
     label: "Agent decides",
-    description: "Runs what it judges safe and asks when it is unsure.",
-    args: ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
+    description: "Can edit and run commands in the workspace sandbox; asks you when it requests extra access.",
+    args: ["--sandbox", "workspace-write", "--ask-for-approval", "on-request", "-c", 'approvals_reviewer="user"'],
   },
   {
     id: "full-auto",

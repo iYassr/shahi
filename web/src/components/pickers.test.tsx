@@ -233,4 +233,9 @@ test("conversation sidebar follows latest messages, including waiting conversati
   session = { ...session, panes: session.panes.map((p: any) => p.paneId === "Old waiting" ? { ...p, lastMessageAt: 40 } : p) };
   await act(async () => view.update(tree()));
   expect(titles()).toEqual(["Old waiting", "New reply", "Working"]);
+  for (const [agent, startedAt] of [["claude", 50], ["codex", 60]] as const) {
+    session = { ...session, panes: [...session.panes, { ...pane(agent, 0, "idle"), agent, startedAt, lastMessageAt: null }] };
+    await act(async () => view.update(tree()));
+    expect(titles()[0]).toBe(agent);
+  }
 });

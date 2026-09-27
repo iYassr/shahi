@@ -32,6 +32,7 @@ import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInT
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { readSessionImage } from "./session-log";
+import { readCodexImage } from "./codex-log";
 import { agentSessionOf } from "./herdr-pane";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
@@ -519,7 +520,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
     readingSummaries = true;
     try {
       const session = await dashboard(store, poller, defaultGrouping, client);
-      const signature = JSON.stringify(session.panes.map(p => [p.paneId, p.lastMessageAt, p.preview]));
+      const signature = JSON.stringify(session.panes.map(p => [p.paneId, p.lastMessageAt, p.startedAt, p.preview]));
       if (signature !== summarySignature) {
         summarySignature = signature;
         broadcast({ type: "session", session });
@@ -1410,10 +1411,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // and tool calls already paired with their results.
           // An image out of the transcript, served rather than inlined.
           if (sub === "/image") {
-            const sessionId = agentSessionOf(store.pane(paneId));
+            const pane = store.pane(paneId);
+            const sessionId = agentSessionOf(pane);
             const ref = url.searchParams.get("ref");
-            if (!sessionId || !ref) return json({ error: "not found" }, { status: 404 });
-            const image = await readSessionImage(sessionId, ref);
+            if (!pane || !ref) return json({ error: "not found" }, { status: 404 });
+            const path = pane.agent === "codex" ? await transcriptPathFor(pane, client) : null;
+            const image = pane.agent === "codex" ? (path ? await readCodexImage(path, ref) : null)
+              : sessionId ? await readSessionImage(sessionId, ref) : null;
             if (!image) return json({ error: "not found" }, { status: 404 });
             return new Response(image.bytes, {
               headers: {
@@ -1608,6 +1612,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
   const panes: DashboardPane[] = await Promise.all(state.panes.map(async (pane) => ({
     paneId: pane.pane_id,
     instanceId: store.instance(pane.pane_id),
+    startedAt: store.startedAt(pane.pane_id),
     workspaceId: pane.workspace_id,
     workspaceLabel: store.workspace(pane.workspace_id)?.label ?? pane.workspace_id,
     tabId: pane.tab_id,

@@ -509,7 +509,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     if (typeof content === "string") {
       const rendered = renderUserText(content);
-      if (rendered) blocks.push(rendered);
+      if (rendered) { blocks.push(rendered); onlyNotes = false; }
     } else {
       for (const block of blocksOf(row)) {
         switch (block.type) {

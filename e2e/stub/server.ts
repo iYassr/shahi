@@ -443,7 +443,7 @@ Bun.serve({
         const paneId = `${space.workspaceId}:p${number}`;
         const tabId = `${space.workspaceId}:t${number}`;
         scenario.session.panes.push(makePane({ paneId, tabId, workspaceId: space.workspaceId,
-          workspaceLabel: space.label, agent: body.kind, title: `New ${body.kind} ${number}` }));
+          workspaceLabel: space.label, agent: body.kind, title: `New ${body.kind} ${number}`, startedAt: Date.now(), lastMessageAt: null }));
         scenario.session.tabs.push({ tabId, workspaceId: space.workspaceId, number,
           label: `New ${body.kind}`, status: "idle", paneCount: 1, focused: false });
         space.paneCount++;

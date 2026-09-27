@@ -171,6 +171,10 @@ export class SessionStore extends EventEmitter<SessionStoreEvents> {
     return this.instances.of(paneId);
   }
 
+  startedAt(paneId: string): number | null {
+    return this.pane(paneId)?.agent ? this.instances.startedAt(paneId) : null;
+  }
+
   agent(paneId: string): AgentInfo | undefined {
     return this.#state.agents.find((a) => a.pane_id === paneId);
   }

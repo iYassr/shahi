@@ -31,6 +31,11 @@ const user = (content: unknown, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+test("a plain-string assistant reply remains an agent message, not a system note", () => {
+  expect(normalise([{ type: "assistant", message: { content: "Done" } }])[0])
+    .toMatchObject({ role: "agent", blocks: [{ kind: "text", text: "Done" }] });
+});
+
 describe("parseLines", () => {
   test("skips blank lines", () => {
     expect(parseLines('{"a":1}\n\n{"b":2}\n')).toEqual([{ a: 1 }, { b: 2 }]);

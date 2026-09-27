@@ -17,3 +17,16 @@ test("old servers and missing or invalid dates retain stable positions after dat
   const items = [pane("old"), pane("none", null), pane("invalid", NaN), pane("negative", -1), pane("new", 10), pane("tie", 10)];
   expect(latestConversations(items).map(p => p.paneId)).toEqual(["new", "tie", "old", "none", "invalid", "negative"]);
 });
+
+test("new empty sessions appear ahead of older messages, below pins, then follow conversation activity", () => {
+  const items = [pane("old", 20), pane("pinned", 5),
+    { ...pane("claude", null), startedAt: 30 }, { ...pane("codex", null), startedAt: 40 }];
+  const pins = new Set(["pinned"]);
+  expect(latestConversations(items, pins).map(p => p.paneId)).toEqual(["pinned", "codex", "claude", "old"]);
+  // A delayed first transcript may predate when we observed the launch. It
+  // must not suddenly bury the conversation again.
+  items[3]!.lastMessageAt = 35;
+  expect(latestConversations(items, pins).map(p => p.paneId)).toEqual(["pinned", "codex", "claude", "old"]);
+  items[0]!.lastMessageAt = 50;
+  expect(latestConversations(items, pins).map(p => p.paneId)).toEqual(["pinned", "old", "codex", "claude"]);
+});

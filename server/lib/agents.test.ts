@@ -212,7 +212,7 @@ describe("startAgentInTab", () => {
     expect(startParams?.args).toEqual(["--permission-mode", "plan"]);
   });
 
-  test("no mode means no args key at all", async () => {
+  test("an omitted mode explicitly asks instead of inheriting the agent's saved permissions", async () => {
     let startParams: Record<string, unknown> | undefined;
     const rpc = async (method: string, params: unknown) => {
       if (method === "tab.create") return { root_pane: { pane_id: "w1:p2" } } as never;
@@ -220,7 +220,14 @@ describe("startAgentInTab", () => {
       return {} as never;
     };
     await startAgentInTab(rpc, options, async () => {});
-    expect("args" in (startParams ?? {})).toBe(false);
+    expect(startParams?.args).toEqual(modesFor("codex")[0]!.args);
+  });
+
+  test("a mode this computer cannot honour creates no tab", async () => {
+    const calls: string[] = [];
+    const rpc = async (method: string) => { calls.push(method); return {} as never; };
+    await expect(startAgentInTab(rpc, { ...options, mode: "future-mode" })).rejects.toThrow("permission mode is not available");
+    expect(calls).toEqual([]);
   });
 
   test("retries while the pane is still becoming a shell", async () => {

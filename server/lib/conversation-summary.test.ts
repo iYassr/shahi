@@ -164,6 +164,10 @@ test("dashboard builds do not ask a Codex or Cursor pane's process for its trans
       retainSummaries([]);
       await conversationSummary(pane, client);
       expect(asked).toBe(5);
+      // A new terminal may reuse the same pane id before its integration
+      // reports a session. Never keep the previous occupant's lookup then.
+      await conversationSummary({ ...pane, terminal_id: "replacement" }, client);
+      expect(asked).toBe(6);
     } finally { setSystemTime(); }
   }
 });

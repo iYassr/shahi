@@ -454,9 +454,8 @@ describe("normaliseCodex, codex 0.151+ items", () => {
 
   test("item types it does not render are dropped, not guessed at", () => {
     expect(normaliseCodex([
-      item({ type: "CommandExecution", id: "x", command: ["ls"], status: "completed" }),
-      item({ type: "ImageView", id: "y", path: "/tmp/a.png" }),
-      item({ type: "ContextCompaction", id: "z" }),
+      item({ type: "HookPrompt", id: "x", fragments: [{ text: "internal context" }] }),
+      item({ type: "Extension", id: "y", kind: "future.item", text: "unknown" }),
       item({ type: "SomethingNew", id: "w", text: "surprising" }),
     ])).toEqual([]);
   });

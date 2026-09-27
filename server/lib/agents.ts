@@ -1,4 +1,4 @@
-import { agentLabel, argsForMode, type InstalledAgent } from "@shahi/shared";
+import { agentLabel, argsForMode, modesFor, type InstalledAgent } from "@shahi/shared";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -170,6 +170,15 @@ export async function startAgentInTab(
   },
   wait: (ms: number) => Promise<unknown> = (ms) => Bun.sleep(ms),
 ): Promise<{ paneId: string; tabId: string | null }> {
+  const modes = modesFor(options.kind);
+  const mode = options.mode ?? modes[0]?.id ?? null;
+  // An old client may omit its selection. Known agents still need explicit
+  // Ask me flags: their own persisted defaults can approve automatically.
+  // A selection we cannot honour must fail before creating a tab.
+  if (mode !== null && !modes.some(candidate => candidate.id === mode)) {
+    throw new AgentStartFailed("That permission mode is not available on this computer. Choose another mode and try again.");
+  }
+  const args = argsForMode(options.kind, mode);
   const created = await rpc<{ root_pane?: { pane_id: string }; tab?: { tab_id: string } }>(
     "tab.create",
     {
@@ -193,7 +202,6 @@ export async function startAgentInTab(
   const readyDeadline = Date.now() + 300_000;
   for (let attempt = 0; ; attempt++) {
     try {
-      const args = argsForMode(options.kind, options.mode ?? null);
       const started = await rpc<{ agent?: { interactive_ready?: boolean; launch_pending?: boolean; agent_status?: string } }>(
         "agent.start",
         { pane_id: paneId, kind: options.kind, name, ...(args.length ? { args } : {}) },

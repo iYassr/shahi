@@ -90,6 +90,26 @@ test("unchanged tail reads only the requested records, and appends index only ne
   expect(result.messages[0]?.id).toBe("codex-1800");
 });
 
+test("current Codex display items survive indexed pagination and an appended question-only message", async () => {
+  const item = (fields: object) => event("item_completed", { item: fields });
+  const rows = [
+    item({ type: "UserMessage", content: [{ type: "local_image", path: "/tmp/input.png" }] }),
+    item({ type: "Plan", text: "Check the image" }),
+    item({ type: "CommandExecution", command: ["ls"], aggregated_output: "input.png", exit_code: 0, status: "completed" }),
+    item({ type: "ImageView", path: "/tmp/input.png" }),
+    item({ type: "Extension", kind: "web.search", query: "image format" }),
+    item({ type: "Extension", kind: "image_gen.generation", status: "completed", savedPath: "/tmp/output.png" }),
+    item({ type: "ContextCompaction" }),
+  ];
+  const path = rollout(rows);
+  for (let before = 1; before <= rows.length; before++) {
+    expect((await readCodexWindow(path, { limit: 2, before })).messages).toEqual(normaliseCodex(rows).slice(Math.max(0, before - 2), before));
+  }
+  const question = item({ type: "AgentMessage", content: [], questions: [{ title: "Save it?", options: ["Yes", "No"] }] });
+  appendFileSync(path, lines([question]));
+  expect((await readCodexWindow(path, { limit: 1 })).messages).toEqual(normaliseCodex([...rows, question]).slice(-1));
+});
+
 test("partial UTF-8 line resumes once complete; reasoning and distant tool results update", async () => {
   const rows = [response("function_call", { call_id: "pending", name: "exec" }), event("agent_reasoning", { text: "one" })];
   const path = rollout(rows);

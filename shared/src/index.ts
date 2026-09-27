@@ -268,6 +268,8 @@ export interface DashboardPane {
   preview: string | null;
   /** Latest transcript message time in milliseconds; absent on older servers. */
   lastMessageAt?: number | null;
+  /** When the computer first observed this conversation starting; unknown for older sessions/servers. */
+  startedAt?: number | null;
   /** What the agent is doing right now, when its status line says. */
   activity: Activity | null;
 }

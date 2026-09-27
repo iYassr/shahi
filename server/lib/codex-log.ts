@@ -38,6 +38,8 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
 import { realPathSync } from "./real-path";
+import { codexDisplayItem, codexInputAttachments, codexQuestions } from "./codex-items";
+import { codexItemImages } from "./codex-media";
 import {
   anchorAfter, emptyIndex, indexStillHolds, inTranscript, isRecord, renderUserText, stringOr,
   type Block, type IndexedFile, type LogMessage, type SessionLog,
@@ -476,8 +478,10 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       // are items too. The legacy events below stopped occurring: a September
       // 2026 census of 65 local rollouts (0.151 to 0.155) found none of them,
       // so all four were silently dropped until this review mapped the items
-      // onto the same builders. Other item types stay dropped, including
-      // CommandExecution, which the `exec` rows already show.
+      // onto the same builders. codex-items.ts adds the public completed
+      // commands, questions, plans, media links and extension items in 0.157.1.
+      // CommandExecution ids do not join to raw call ids; retain the structured
+      // command/output alongside its outer exec wrapper.
       //
       // Native edits and MCP calls are made from inside an `exec` call, and
       // that exec row stays as well as the item. That is deliberate. An item
@@ -504,16 +508,16 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
               .filter(Boolean)
               .join("\n")
               .trim();
-            if (!text) break;
-            const block = item.type === "UserMessage" ? codexUserText(text) : { kind: "text" as const, text };
-            if (block) messages.push({ id, role: item.type === "UserMessage" ? "you" : "agent", at, blocks: [block] });
+            const block = text ? item.type === "UserMessage" ? codexUserText(text) : { kind: "text" as const, text } : null;
+            const blocks = [...(block ? [block] : []), ...(item.type === "UserMessage" ? codexInputAttachments(content) : codexQuestions(item))];
+            if (blocks.length) messages.push({ id, role: item.type === "UserMessage" ? "you" : "agent", at, blocks });
             break;
           }
           case "Reasoning":
             pushThinking(messages, reasoningText(item), id, at);
             break;
           case "McpToolCall":
-            messages.push({ id, role: "agent", at, blocks: [mcpToolBlock(item, item.result, item.status === "failed")] });
+            messages.push({ id, role: "agent", at, blocks: [mcpToolBlock(item, item.result ?? (isRecord(item.error) ? { Err: item.error.message } : null), item.status === "failed")] });
             break;
           case "FileChange":
             messages.push({ id, role: "agent", at, blocks: [patchApplyBlock({ ...item, success: item.status !== "failed" })] });
@@ -521,6 +525,18 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
           case "WebSearch":
             messages.push({ id, role: "agent", at, blocks: [webSearchBlock(item.query)] });
             break;
+          default: {
+            const display = item && codexDisplayItem(item);
+            if (display) messages.push({ id, at, ...display });
+          }
+        }
+        if (item) {
+          const images: Block[] = codexItemImages(item).map((image, nth) => ({ kind: "image", mediaType: image.mediaType, ref: `${index}:${nth}` }));
+          if (images.length) {
+            const message = messages.at(-1);
+            if (message?.id === id) message.blocks.push(...images);
+            else messages.push({ id, at, role: item.type === "UserMessage" ? "you" : "agent", blocks: images });
+          }
         }
         continue;
       }
@@ -596,10 +612,45 @@ export async function readCodexLog(
 ): Promise<SessionLog | null> {
   try {
     const log = await readCodexWindow(path, options);
+    // Pane ids survive /new. An old image URL must never resolve against the
+    // next conversation, even when both images occupy the same row ordinal.
+    for (const message of log.messages) for (const block of message.blocks) {
+      if (block.kind === "image") block.ref = `codex:${basename(path, ".jsonl")}:${block.ref}`;
+    }
     return inTranscript(log, basename(path, ".jsonl"));
   } catch {
     return null;
   }
+}
+
+/** Resolve only an image from this exact rollout and a public, indexed UI item. */
+export async function readCodexImage(path: string, ref: string): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
+  const prefix = `codex:${basename(path, ".jsonl")}:`;
+  if (!ref.startsWith(prefix)) return null;
+  const match = /^(\d+):(\d+)$/.exec(ref.slice(prefix.length));
+  if (!match) return null;
+  const ordinal = Number(match[1]), nth = Number(match[2]);
+  if (!Number.isSafeInteger(ordinal) || !Number.isSafeInteger(nth)) return null;
+  try {
+    await readCodexWindow(path, { limit: 0 });
+    const range = codexIndexes.get(path)?.messages.flatMap(m => m.rows).find(r => r.ordinal === ordinal);
+    if (!range) return null;
+    const file = await open(path, "r");
+    try {
+      const bytes = Buffer.alloc(range.end - range.start);
+      let consumed = 0;
+      while (consumed < bytes.length) {
+        const read = await file.read(bytes, consumed, bytes.length - consumed, range.start + consumed);
+        if (!read.bytesRead) return null;
+        consumed += read.bytesRead;
+      }
+      const row = JSON.parse(bytes.toString("utf8"));
+      if (row?.type !== "event_msg" || row.payload?.type !== "item_completed" || !isRecord(row.payload.item)) return null;
+      const image = codexItemImages(row.payload.item)[nth];
+      if (!image || !image.data || image.data.length > 48 * 1024 * 1024) return null;
+      return { bytes: Uint8Array.from(atob(image.data), c => c.charCodeAt(0)), mediaType: image.mediaType };
+    } finally { await file.close(); }
+  } catch { return null; }
 }
 
 interface RowRange { start: number; end: number; ordinal: number }

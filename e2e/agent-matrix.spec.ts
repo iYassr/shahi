@@ -28,6 +28,12 @@ for (const entry of ["agents", "spaces"]) for (const kind of kinds) {
       const prompts = (await writes(page)).filter(w => w.path === `/api/panes/${encodeURIComponent(paneId)}/prompt` || w.path === `/api/panes/${paneId}/prompt`);
       expect(prompts).toHaveLength(1);
       expect(prompts[0]!.body).toMatchObject({ text: "Synthetic agent compatibility check", clientMessageId: expect.any(String) });
+      // Even before its first transcript arrives, the newly created agent
+      // belongs above older conversations when returning to the inbox.
+      await page.goto("/");
+      await expect(page.locator(".agent-row, .blocked").first()).toContainText(`New ${kind}`);
+      await page.locator(".agent-row, .blocked").first().locator(".row, .blocked__head").click();
+      await expect(page).toHaveURL(new RegExp(`/pane/${encodeURIComponent(paneId)}$`));
     });
   }
 }

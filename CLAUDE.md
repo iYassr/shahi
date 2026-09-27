@@ -207,8 +207,13 @@ MCP calls, native edits and web searches arrive only as `item_completed` items
 still read for old rollouts. The `exec` row that wraps a native edit or MCP
 call deliberately stays beside the item: items carry no call id to join on,
 and a failed patch emits no `FileChange`, so the exec row is the only record of
-that failure. Other item types (`CommandExecution`, `ImageView`,
-`ContextCompaction`, anything new) stay dropped. Codex user messages that are
+that failure. `codex-items.ts` also reads 0.157.1's completed commands and
+tool responses, questions (including messages with no prose), plans, reviews,
+compaction notes, viewed/generated image paths, and the web-search, image-generation
+and sleep extensions. Inline Codex images use authenticated, rollout-scoped image
+references; base64 bytes never travel in Reader pages. Local paths use the file
+viewer. Audio attachments are indicated, but inline audio playback is unavailable.
+Injected hook prompts and unknown shapes stay dropped. Codex user messages that are
 really `<task-notification>` reports, `<send_user_message_question_reply>`
 answers, or Claude Code's command and `!cmd` tags are unwrapped. The Claude
 reader's system-note handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`)
@@ -1080,6 +1085,12 @@ verification certificate is not a private signing key and may remain tracked.
 
 ## TestFlight feedback fixes, September 2026
 
+For the current Claude/Codex mode, session-ordering and Reader checks, see
+`docs/agent-compatibility-2026-09-27.md`. Known agents start with explicit Ask me
+flags even when an older client omits its mode. Unknown mode ids fail before a
+tab is created. Codex's two asking modes explicitly select the user as approval
+reviewer, so an inherited auto-review setting cannot change what the picker promises.
+
 New-agent clients derive an internal control name from the retained operation ID,
 so old servers also avoid globally colliding default names. Keep the operation
 ID and internal name stable on uncertain retries; display labels remain separate.
@@ -1097,8 +1108,13 @@ module requires a new binary, not only an over-the-air JavaScript update. File
 downloads use authenticated sequential ranges of 512 KiB, retain the 25 MiB
 ceiling and reject changed file versions. Older small-file responses still work.
 
-**Conversation order follows messages.** Both clients default to newest message
-first, with explicitly pinned conversations above the regular list. Waiting
+**Conversation order follows starts and messages.** Both clients default to the
+newest of the observed conversation start and latest message, with explicitly
+pinned conversations above the regular list. A new empty conversation therefore
+appears at the top immediately. `PaneInstances` persists `startedAt` for agents
+first observed after its initial snapshot; learning the first session id later,
+redetection and resuming that same session do not bump it. The initial snapshot
+is a baseline, not evidence that existing agents just started. Waiting
 cards stay in chronological position outside Inbox. The server supplies optional
 `lastMessageAt` from each pane's exact transcript; Cursor lacks message timestamps
 and uses that transcript's modification time. Missing dates sort last, stably.

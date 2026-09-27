@@ -173,6 +173,26 @@ let passcodeHash = "";
 const scratch = mkdtempSync(join(tmpdir(), "shahi-http-"));
 let booted = 0;
 
+test("the dashboard gives a newly detected empty agent a stable start time", async () => {
+  const app = await boot();
+  try {
+    const newPane = { ...app.herdr.panes[0]!, pane_id: "w1:new", terminal_id: "term_new", agent: "codex", agent_status: "idle", agent_session: null };
+    const before = Date.now();
+    app.herdr.panes.push(newPane);
+    await app.store.resync();
+    const read = async () => {
+      const response = await fetch(`${app.base}/api/session`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+      return ((await response.json()) as { panes: { paneId: string; startedAt: number | null; lastMessageAt: number | null }[] }).panes.find(p => p.paneId === "w1:new")!;
+    };
+    const started = await read();
+    expect(started.startedAt).toBeGreaterThanOrEqual(before);
+    expect(started.lastMessageAt).toBeNull();
+    newPane.agent_status = "working";
+    await app.store.resync();
+    expect((await read()).startedAt).toBe(started.startedAt);
+  } finally { app.stop(); }
+});
+
 async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false, recovery = false, recoveryRoot = "", freshCreation = false, allowedHosts = [] as string[], port = 0 } = {}): Promise<Booted> {
   const calls: Booted["calls"] = [];
   const client = fakeHerdr(calls, freshCreation);

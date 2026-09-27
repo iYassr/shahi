@@ -63,6 +63,7 @@ export function agentSessionOf(pane: Pick<PaneInfo, "agent" | "agent_session"> |
 export class PaneInstances {
   readonly #byPane = new Map<string, Occupancy>();
   readonly #db: Database | undefined;
+  #observed = false;
 
   constructor(db?: Database) {
     this.#db = db;
@@ -73,11 +74,15 @@ export class PaneInstances {
         instance TEXT NOT NULL,
         terminal TEXT NOT NULL,
         agent    TEXT,
-        session  TEXT
+        session  TEXT,
+        started_at INTEGER
       )
     `);
-    for (const row of db.query<Occupancy & { pane_id: string }, []>("SELECT pane_id, instance, terminal, agent, session FROM pane_occupancy").all()) {
-      this.#byPane.set(row.pane_id, { instance: row.instance, terminal: row.terminal, agent: row.agent, session: row.session });
+    if (!db.query<{ name: string }, []>("PRAGMA table_info(pane_occupancy)").all().some(column => column.name === "started_at")) {
+      db.exec("ALTER TABLE pane_occupancy ADD COLUMN started_at INTEGER");
+    }
+    for (const row of db.query<Occupancy & { pane_id: string }, []>("SELECT pane_id, instance, terminal, agent, session, started_at FROM pane_occupancy").all()) {
+      this.#byPane.set(row.pane_id, { instance: row.instance, terminal: row.terminal, agent: row.agent, session: row.session, started_at: row.started_at });
     }
   }
 
@@ -86,8 +91,13 @@ export class PaneInstances {
     return this.#byPane.get(paneId)?.instance;
   }
 
+  /** Observed once at launch, never a focus/status/reconnect time. */
+  startedAt(paneId: string): number | null {
+    return this.#byPane.get(paneId)?.started_at ?? null;
+  }
+
   /** Brings the record up to date with every pane herdr reports now, and forgets the rest. */
-  observe(panes: readonly PaneInfo[]): void {
+  observe(panes: readonly PaneInfo[], now = Date.now()): void {
     const live = new Set<string>();
     const changed: [string, Occupancy][] = [];
     for (const pane of panes) {
@@ -102,26 +112,37 @@ export class PaneInstances {
         // The last session seen, not the current one: a pane whose agent
         // flickers out of detection must still be recognised when herdr
         // restores it.
-        if (session === null || (held.agent === pane.agent && held.session === session)) continue;
-        next = { ...held, agent: pane.agent ?? null, session };
+        if (!pane.agent || (held.agent === pane.agent && (session === null || held.session === session))) continue;
+        const newConversation = held.agent !== pane.agent || (held.session !== null && session !== null && held.session !== session);
+        next = {
+          ...held, agent: pane.agent, session,
+          started_at: newConversation && this.#observed ? now : held.started_at,
+        };
       } else {
         const resumed = held !== undefined && session !== null && held.agent === pane.agent && held.session === session;
-        next = { instance: resumed ? held.instance : pane.terminal_id, terminal: pane.terminal_id, agent: session ? pane.agent ?? null : null, session };
+        next = {
+          instance: resumed ? held.instance : pane.terminal_id, terminal: pane.terminal_id,
+          agent: pane.agent ?? null, session,
+          started_at: resumed ? held.started_at : pane.agent && this.#observed ? now : null,
+        };
       }
       this.#byPane.set(pane.pane_id, next);
       changed.push([pane.pane_id, next]);
     }
     const gone = [...this.#byPane.keys()].filter((paneId) => !live.has(paneId));
     for (const paneId of gone) this.#byPane.delete(paneId);
+    // The first snapshot is existing work, not evidence every agent just
+    // started. Persist later starts so a service restart cannot bump them.
+    this.#observed = true;
     const db = this.#db;
     if (!db || (changed.length === 0 && gone.length === 0)) return;
     const upsert = db.prepare(
-      `INSERT INTO pane_occupancy (pane_id, instance, terminal, agent, session) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(pane_id) DO UPDATE SET instance = excluded.instance, terminal = excluded.terminal, agent = excluded.agent, session = excluded.session`,
+      `INSERT INTO pane_occupancy (pane_id, instance, terminal, agent, session, started_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(pane_id) DO UPDATE SET instance = excluded.instance, terminal = excluded.terminal, agent = excluded.agent, session = excluded.session, started_at = excluded.started_at`,
     );
     const remove = db.prepare("DELETE FROM pane_occupancy WHERE pane_id = ?");
     db.transaction(() => {
-      for (const [paneId, o] of changed) upsert.run(paneId, o.instance, o.terminal, o.agent, o.session);
+      for (const [paneId, o] of changed) upsert.run(paneId, o.instance, o.terminal, o.agent, o.session, o.started_at);
       for (const paneId of gone) remove.run(paneId);
     })();
   }
@@ -133,4 +154,5 @@ interface Occupancy {
   /** The agent and session last seen running in this terminal, for recognising it when herdr restores it. */
   agent: string | null;
   session: string | null;
+  started_at: number | null;
 }

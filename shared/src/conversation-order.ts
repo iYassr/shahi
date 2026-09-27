@@ -1,7 +1,8 @@
 import type { DashboardPane } from "./index";
 
-/** Unknown dates stay at the end; ties preserve the existing order. */
+/** Starting a conversation counts before its first message. Unknown dates stay last; ties are stable. */
 export function latestConversations(panes: readonly DashboardPane[], pins: ReadonlySet<string> = new Set()): DashboardPane[] {
-  const time = (p: DashboardPane) => Number.isFinite(p.lastMessageAt) && p.lastMessageAt! > 0 ? p.lastMessageAt! : 0;
+  const valid = (at: number | null | undefined) => Number.isFinite(at) && at! > 0 ? at! : 0;
+  const time = (p: DashboardPane) => Math.max(valid(p.lastMessageAt), valid(p.startedAt));
   return [...panes].sort((a, b) => Number(pins.has(b.paneId)) - Number(pins.has(a.paneId)) || time(b) - time(a));
 }

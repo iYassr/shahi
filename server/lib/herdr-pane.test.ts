@@ -32,6 +32,50 @@ describe("agentSessionOf", () => {
 });
 
 describe("a pane's occupancy", () => {
+  test("a new agent gets a stable start time before its first transcript exists", () => {
+    const instances = new PaneInstances();
+    instances.observe([pane("old", "claude", "old-session")], 10);
+    expect(instances.startedAt("w3:p1")).toBeNull();
+    instances.observe([pane("new")], 20);
+    instances.observe([pane("new", "codex")], 30);
+    expect(instances.startedAt("w3:p1")).toBe(30);
+    instances.observe([pane("new", "codex", "new-session")], 40);
+    instances.observe([{ ...pane("new", "codex", "new-session"), focused: true, agent_status: "working" }], 50);
+    instances.observe([pane("new")], 60);
+    instances.observe([pane("new", "codex", "new-session")], 70);
+    expect(instances.startedAt("w3:p1")).toBe(30);
+    // /new in the same terminal is a new conversation; reporting its id
+    // later must not look like a second start of the initial conversation.
+    instances.observe([pane("new", "codex", "another-session")], 80);
+    expect(instances.startedAt("w3:p1")).toBe(80);
+  });
+
+  test("observed starts survive service and herdr restarts, while reused panes start afresh", () => {
+    const db = new Database(":memory:");
+    const instances = new PaneInstances(db);
+    instances.observe([], 10);
+    instances.observe([pane("term_a", "claude")], 20);
+    instances.observe([pane("term_a", "claude", "s1")], 30);
+    const restarted = new PaneInstances(db);
+    restarted.observe([pane("term_b", "claude", "s1")], 100);
+    expect(restarted.startedAt("w3:p1")).toBe(20);
+    restarted.observe([], 110);
+    restarted.observe([pane("term_c", "claude", "s2")], 120);
+    expect(restarted.startedAt("w3:p1")).toBe(120);
+    db.close();
+  });
+
+  test("an existing occupancy database gains no invented launch dates on upgrade", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE pane_occupancy (pane_id TEXT PRIMARY KEY, instance TEXT NOT NULL, terminal TEXT NOT NULL, agent TEXT, session TEXT)");
+    db.exec("INSERT INTO pane_occupancy VALUES ('w3:p1', 'term_a', 'term_a', 'claude', 's1')");
+    const instances = new PaneInstances(db);
+    instances.observe([pane("term_a", "claude", "s1")], 100);
+    expect(instances.of("w3:p1")).toBe("term_a");
+    expect(instances.startedAt("w3:p1")).toBeNull();
+    db.close();
+  });
+
   test("a new program under a closed pane's id is a new occupant", () => {
     const instances = new PaneInstances();
     instances.observe([pane("term_a", "claude", "s-a")]);

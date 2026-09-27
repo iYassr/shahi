@@ -39,7 +39,7 @@ type Window = { limit?: number; before?: number };
 const locations = new Map<string, { key: string; at: number; path: Promise<string | null> }>();
 const LOCATION_MAX_AGE_MS = 15_000;
 
-const locationKey = (pane: PaneInfo) => JSON.stringify([pane.agent ?? null, agentSessionOf(pane), pane.agent_status]);
+const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane), pane.agent_status]);
 
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
 export function transcriptPathFor(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
