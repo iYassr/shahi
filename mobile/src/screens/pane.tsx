@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, supports } from "@shahi/shared";
+import { agentLabel, backendUnavailable, supports, readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -200,7 +200,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const transcript = useRef<string | null>(messageMemory.get(paneId)?.transcript ?? null);
   const knownTotal = useRef(messageMemory.get(paneId)?.total ?? 0);
   const anchorLock = useRef(typeof scrollMemory.get(paneId) === "object");
-  const cells = useScrollCells<LogMessage>((message) => message.id, (id, frame, previous) => {
+  const cells = useScrollCells<ReaderRow>((message) => message.id, (id, frame, previous) => {
     if (previous && previous.y !== frame.y && !shifted.current.has(id)) shifted.current.set(id, previous.y);
     const spot = scrollMemory.get(paneId);
     if (anchorLock.current && typeof spot === "object" && spot.id === id) {
@@ -215,6 +215,12 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    * after a short timeout, so a dropped send cannot leave a ghost behind.
    */
   const [pending, setPending] = useState<{ message: LogMessage; youBaseline: number; at: number }[]>([]);
+  const renderedRows = useRef<ReaderRow[]>([]);
+  const readerData = useMemo(() => {
+    const source = pending.length ? [...messages, ...pending.map(p => p.message)] : messages;
+    return readerRows(source, renderedRows.current);
+  }, [messages, pending]);
+  renderedRows.current = readerData;
   const pendingSeq = useRef(0);
   const promptAttempt = useRef(savedDraft.pending);
   const promptInFlight = useRef(false);
@@ -320,7 +326,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       setError(null);
     }
   }, [link]);
-  const listRef = useRef<FlatList<LogMessage>>(null);
+  const listRef = useRef<FlatList<ReaderRow>>(null);
   const olderCursor = useRef<number | null>(null);
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -383,7 +389,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    * the target. The person's own scroll cancels the operation immediately.
    */
   function scrollToTail() {
-    const last = messagesRef.current.at(-1);
+    const last = renderedRows.current.at(-1);
     const { height, viewport } = scrollMetrics.current;
     if (last && cells.frames.current.has(last.id) && viewport > 0) {
       // FlatList.scrollToEnd omits content-container bottom padding. Once the
@@ -496,7 +502,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     const { y, height, viewport } = scrollMetrics.current;
     if (viewport <= 0 || height <= 0) return false;
     if (spot === "bottom") {
-      const last = messagesRef.current.at(-1);
+      const last = renderedRows.current.at(-1);
       const frame = last && cells.frames.current.get(last.id);
       if (height - viewport - y > 2 || (last && (!frame || frame.y + frame.height > y + viewport + 2))) return false;
       setAway(false);
@@ -527,7 +533,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       return;
     }
     const index =
-      typeof spot === "object" ? messagesRef.current.findIndex((m) => m.id === spot.id) : -1;
+      typeof spot === "object" ? renderedRows.current.findIndex((m) => m.id === spot.id) : -1;
     if (index < 0) {
       // The anchor fell out of the fetched window: the conversation moved on
       // past your place, and the tail is the closest honest answer.
@@ -1116,7 +1122,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           CellRendererComponent={cells.CellRendererComponent}
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
-          data={pending.length ? [...messages, ...pending.map((p) => p.message)] : messages}
+          data={readerData}
           ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>Ready when you are. Tell {agentLabel(pane?.agent ?? "the agent")} what to do.</Text></View>}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
@@ -1133,7 +1139,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           // pressing a key takes two taps while the composer has focus.
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <Message message={item} paneId={paneId} agentColor={AGENT_COLORS[pane?.agent ?? ""] ?? theme.fg} onOpenFile={setViewing} />
+            <Message key={transcript.current} message={item} working={item === readerData.at(-1) && !sending && !prompt && !!(activity || awaiting)} paneId={paneId} agentColor={AGENT_COLORS[pane?.agent ?? ""] ?? theme.fg} onOpenFile={setViewing} />
           )}
           // A long transcript is the other list RN can choke on. Rendering a
           // bounded window keeps scrolling and each poll cheap; Message is
@@ -1255,7 +1261,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             if (following.current) scrollToTail();
           }}
           ListFooterComponent={
-            sending ? <Text style={styles.dim}>Sending…</Text> : prompt ? null : activity ? (
+            sending ? <Text style={styles.dim}>Sending…</Text> : prompt || readerData.at(-1)?.activity ? null : activity ? (
               <Working activity={activity} />
             ) : awaiting ? (
               <Working activity={AWAITING_ACTIVITY} />
@@ -1439,25 +1445,30 @@ function Prompt({
 // message objects and stable other props, an unchanged row never re-renders.
 const Message = memo(function Message({
   message,
+  working,
   paneId,
   agentColor,
   onOpenFile,
 }: {
-  message: LogMessage;
+  message: ReaderRow;
+  working: boolean;
   paneId: string;
   agentColor: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
+  if (message.activity) return <ActivityGroup activity={message.activity} working={working} paneId={paneId} onOpenFile={onOpenFile} />;
   const mine = message.role === "you";
   const system = message.role === "system";
   return (
     <View testID={`message-${message.id}`} style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+        {message.showHeader && <>
           <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
             {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
           </Text>
           {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
+        </>}
         </View>
         {message.blocks.some((block) => block.kind === "text") && (
           <CopyButton text={message.blocks.flatMap((block) => block.kind === "text" ? [block.text] : []).join("\n\n")} />
@@ -1470,12 +1481,46 @@ const Message = memo(function Message({
   );
 });
 
+function ActivityGroup({ activity, working, paneId, onOpenFile }: {
+  activity: ReaderActivity; working: boolean; paneId: string;
+  onOpenFile: (file: { path: string; name: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wasWorking = useRef(working);
+  useEffect(() => {
+    if (wasWorking.current && !working) setOpen(false);
+    wasWorking.current = working;
+  }, [working]);
+  const label = readerActivityLabel(activity, working);
+  return <View style={styles.activityGroup}>
+    {activity.files.length > 0 && <View style={styles.activityFiles}>
+      {activity.files.map(file => <Pressable key={file.path} accessibilityRole="button" accessibilityLabel={`Open file ${file.name}`} style={styles.activityFile} onPress={() => onOpenFile(file)}>
+        <Text style={styles.toolFileName}>{file.name}</Text>
+      </Pressable>)}
+    </View>}
+    {activity.images.map(ref => <TranscriptImage key={ref} paneId={paneId} imageRef={ref} />)}
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} style={styles.activityHead} onPress={() => setOpen(value => !value)}>
+      {working && <ActivityIndicator size="small" color={theme.dim} />}
+      <Text style={styles.activityLabel}>{label}</Text>
+      <Text style={styles.activityLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</Text>
+    </Pressable>
+    {open && <View style={styles.activityDetails}>
+      {activity.steps.map(step => <View key={step.id}>
+        {!!step.at && <Text style={styles.activityTime}>{new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
+        <Block block={step.block} paneId={paneId} onOpenFile={onOpenFile} attachments={false} />
+      </View>)}
+    </View>}
+  </View>;
+}
+
 export function Block({
   block,
+  attachments = true,
   paneId,
   onOpenFile,
 }: {
   block: LogBlock;
+  attachments?: boolean;
   paneId: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
@@ -1550,7 +1595,7 @@ export function Block({
       {/* The file the call named. Outside the collapsed section deliberately:
           on a phone this is usually the part you wanted, and burying it behind
           a second tap defeats the point. */}
-      {block.file && (
+      {attachments && block.file && (
         <Pressable accessibilityRole="button" style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
           <Text style={styles.toolFileName}>{block.file.name}</Text>
           <Text style={styles.toolFileGo}>open</Text>
@@ -1571,7 +1616,7 @@ export function Block({
               </ScrollView>
             </CopyOnHold>
           )}
-          {block.result.images.map((ref) => (
+          {attachments && block.result.images.map((ref) => (
             <TranscriptImage key={ref} paneId={paneId} imageRef={ref} />
           ))}
           {/* A call that returned nothing is a fact, not an absence: an empty
@@ -2035,6 +2080,14 @@ export function FilePicker({
 }
 
 const styles = StyleSheet.create({
+  activityGroup: { paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.line },
+  activityHead: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, paddingVertical: 8 },
+  activityLabel: { color: theme.dim, fontSize: 13 },
+  activityDetails: { paddingLeft: 12, borderLeftWidth: 1, borderLeftColor: theme.line, gap: 12 },
+  activityTime: { color: theme.dim, fontSize: 11, marginBottom: 4 },
+  activityFiles: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 4 },
+  activityFile: { borderWidth: 1, borderColor: theme.line, borderRadius: 8, paddingHorizontal: 12, minHeight: 44, justifyContent: "center", maxWidth: "100%" },
+
   screen: { flex: 1, backgroundColor: theme.void },
   body: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },

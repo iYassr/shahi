@@ -565,3 +565,14 @@
 .pdf-preview nav button { padding: 8px 12px; min-height: 44px; }
 .pdf-preview__page { overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
 .pdf-preview canvas { display: block; margin: 0 auto; }
+
+/* One quiet disclosure per agent turn; files stay available without expanding. */
+.reader-activity { padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.reader-activity__head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 0; color: var(--muted); font-size: 13px; text-align: left; }
+.reader-activity__details { border-left: 1px solid var(--line); padding-left: 12px; }
+.reader-activity__step { margin-bottom: 12px; }
+.reader-activity__step > time { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.reader-activity__files { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+.reader-activity__file { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; max-width: 100%; }
+.reader-activity__file > button, .reader-activity__file > a { min-height: 44px; display: flex; align-items: center; overflow-wrap: anywhere; min-width: 0; }
+.msg__who time { color: var(--muted); letter-spacing: 0; }

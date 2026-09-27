@@ -55,7 +55,7 @@ test.describe("files in the reader", () => {
     await openPane(page);
 
     // Two calls named a file; the Bash calls named none and get no row.
-    await expect(page.locator(".tool__file")).toHaveCount(2);
+    await expect(page.locator(".tool__file, .reader-activity__file")).toHaveCount(2);
     await expect(page.locator(".tool__open").first()).toHaveText("prompt-parser.ts");
   });
 

@@ -97,7 +97,8 @@ test.describe("reader", () => {
   test("expanded tool output stays expanded across a poll", async ({ page }) => {
     await openReader(page);
 
-    const tool = page.locator(".tool__head").first();
+    await tap(page, page.locator(".reader-activity__head").first());
+    const tool = page.locator(".reader-activity__details .tool__head").first();
     await tool.scrollIntoViewIfNeeded();
     await tap(page, tool);
     await expect(page.locator(".tool__out, .msg__aside").first()).toBeVisible();
@@ -219,7 +220,9 @@ test.describe("provider Reader pages", () => {
       await expect(page.locator(".reader")).not.toContainText("Internal only");
       await expect(page.locator(".asked__q")).toHaveText(fixture.question);
       await expect(page.locator(".asked__label").filter({ hasText: "Keep reviewing" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "status.txt", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Open file status.txt", exact: true })).toBeVisible();
+      await expect(page.locator(".msg__thinking")).toHaveCount(0);
+      await tap(page, page.locator(".reader-activity__head"));
       const thinking = page.locator(".msg__thinking");
       await expect(thinking.locator("p")).not.toBeVisible();
       await tap(page, thinking.locator("summary"));
@@ -236,4 +239,28 @@ test.describe("provider Reader pages", () => {
       await expect(page.locator(".reader")).not.toContainText("Still running.");
     });
   }
+});
+
+
+test("routine activity is grouped below the answer and expands without repeated Agent headings", async ({ page }) => {
+  const messages = [
+    { id: "request", role: "you", at: 1, blocks: [{ kind: "text", text: "Check the project" }] },
+    ...Array.from({ length: 24 }, (_, i) => ({ id: `step-${i}`, role: "agent", at: 2 + i,
+      blocks: [{ kind: "tool", name: i % 2 ? "Read" : "Bash", summary: `/private/synthetic/step-${i}`, result: { text: `Result ${i}`, isError: false, truncated: false, images: [] } }] })),
+    { id: "answer", role: "agent", at: 30, blocks: [{ kind: "text", text: "The connection is fixed and the tests pass." }] },
+  ];
+  await page.route(/\/api\/panes\/[^/]+\/session(?:\?|$)/, route => route.fulfill({ json: { sessionId: "grouped", path: "/stub/grouped", offset: 0, total: messages.length, messages } }));
+  await openReader(page);
+  await expect(page.getByText("The connection is fixed and the tests pass.", { exact: true })).toBeVisible();
+  await expect(page.locator(".reader .msg--agent .msg__who")).toHaveCount(1);
+  await expect(page.locator(".reader .tool__head")).toHaveCount(0);
+  const activity = page.locator(".reader-activity__head");
+  await expect(activity).toHaveText("Activity · 24 steps▸");
+  await expect(activity).toHaveAttribute("aria-expanded", "false");
+  await tap(page, activity);
+  await expect(page.locator(".reader .tool__head")).toHaveCount(24);
+  await tap(page, page.locator(".reader .tool__head").first());
+  await expect(page.locator(".tool__out").first()).toHaveText("Result 0");
+  await tap(page, activity);
+  await expect(page.locator(".reader .tool__head")).toHaveCount(0);
 });
