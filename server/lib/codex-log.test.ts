@@ -482,8 +482,13 @@ describe("findCodexRollout, by session id", () => {
   } as never;
 
   const load = async () => {
+    const saved = process.env.CODEX_HOME;
     process.env.CODEX_HOME = home;
-    return (await import(`./codex-log?codex-home=${encodeURIComponent(home)}`)) as typeof import("./codex-log");
+    try { return (await import(`./codex-log?codex-home=${encodeURIComponent(home)}`)) as typeof import("./codex-log"); }
+    finally {
+      if (saved === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = saved;
+    }
   };
 
   test("finds the rollout the id names, with no index and no process", async () => {
@@ -509,6 +514,47 @@ describe("findCodexRollout, by session id", () => {
     for (const bad of ["../../etc/passwd", `${id}/..`, "", "*"]) {
       expect(await findCodexRollout(noClient, "w1:p1", null, bad)).toBe(null);
     }
+  });
+
+  test("the session-id fallback refuses duplicate rollouts and symlinks escaping sessions", async () => {
+    const { findCodexRollout } = await load();
+    const duplicateId = "019f9bd1-1b6b-7f33-a046-a60cce4e6491";
+    const first = join(dirname(rollout), `rollout-2026-07-26T00-00-00-${duplicateId}.jsonl`);
+    const second = join(dirname(rollout), `rollout-2026-07-26T00-00-01-${duplicateId}.jsonl`);
+    writeFileSync(first, ""); writeFileSync(second, "");
+    expect(await findCodexRollout(noClient, "w1:p1", null, duplicateId)).toBeNull();
+    rmSync(second);
+    expect(await findCodexRollout(noClient, "w1:p1", null, duplicateId)).toBe(first);
+    const escapedId = "019f9bd1-1b6b-7f33-a046-a60cce4e6492";
+    const outside = join(home, "outside.jsonl");
+    writeFileSync(outside, "");
+    symlinkSync(outside, join(dirname(rollout), `rollout-2026-07-26T00-00-00-${escapedId}.jsonl`));
+    expect(await findCodexRollout(noClient, "w1:p1", null, escapedId)).toBeNull();
+  });
+
+  test("two foreground Codex processes are ambiguous even if the first has one rollout open", async () => {
+    const { findCodexRollout } = await load();
+    const descriptor = openSync(rollout, "r");
+    try {
+      const client = { rpc: async () => ({ process_info: { foreground_processes: [
+        { name: "codex", pid: process.pid }, { name: "codex", pid: process.pid + 1 },
+      ] } }) } as never;
+      expect(await findCodexRollout(client, "w1:p1", null)).toBeNull();
+    } finally { closeSync(descriptor); }
+  });
+
+  test("both index and filename lookup refuse an in-root symlink to another session", async () => {
+    const { findCodexRollout } = await load();
+    const aliasId = "019f9bd1-1b6b-7f33-a046-a60cce4e6493";
+    const alias = join(dirname(rollout), `rollout-2026-07-26T00-00-00-${aliasId}.jsonl`);
+    symlinkSync(rollout, alias);
+    expect(await findCodexRollout(noClient, "w1:p1", null, aliasId)).toBeNull();
+    const db = new Database(join(home, "state_5.sqlite"));
+    db.exec("CREATE TABLE IF NOT EXISTS threads (id TEXT, cwd TEXT, rollout_path TEXT, updated_at INTEGER)");
+    db.query("INSERT INTO threads VALUES (?, ?, ?, ?)").run(aliasId, "/same/project", alias, Date.now());
+    db.close();
+    expect(await findCodexRollout(noClient, "w1:p1", null, aliasId)).toBeNull();
+    expect(await findCodexRollout(noClient, "w1:p1", null, id)).toBe(rollout);
   });
 });
 
@@ -589,6 +635,22 @@ test("rolloutWithinSessions follows a symlinked sessions directory", () => {
   expect(rolloutWithinSessions(viaLink, join(root, "link", "sessions"))).toBe(viaLink);
   expect(rolloutWithinSessions(resolved, join(root, "link", "sessions"))).toBe(resolved);
   expect(rolloutWithinSessions(join(root, "real", "sessions", "..", "..", "etc.jsonl"), real)).toBeNull();
+});
+
+test("rolloutWithinSessions follows the file itself before accepting a symlink", () => {
+  const root = scratch("shahi-rollout-file-link-");
+  const sessions = join(root, "sessions");
+  mkdirSync(sessions);
+  const outside = join(root, "outside.jsonl");
+  const escaped = join(sessions, "rollout-escaped.jsonl");
+  writeFileSync(outside, "");
+  symlinkSync(outside, escaped);
+  expect(rolloutWithinSessions(escaped, sessions)).toBeNull();
+  const own = join(sessions, "rollout-own.jsonl");
+  const alias = join(sessions, "rollout-alias.jsonl");
+  writeFileSync(own, "");
+  symlinkSync(own, alias);
+  expect(rolloutWithinSessions(alias, sessions)).toBeNull();
 });
 
 // On Linux the lookup returned the first rollout descriptor it listed, while

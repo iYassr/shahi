@@ -92,8 +92,12 @@ export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR)
   // follows a symlinked directory, so the check is on where the file actually
   // is rather than on how it was spelt.
   const resolved = resolve(path);
-  const candidate = join(realpathIfExists(dirname(resolved)), basename(resolved));
-  return candidate.startsWith(`${realpathIfExists(sessionsDir)}/`) ? path : null;
+  // Resolve the leaf as well: a .jsonl symlink inside sessions can otherwise
+  // point outside it even though its parent directory passes this check.
+  const candidate = realpathIfExists(join(realpathIfExists(dirname(resolved)), basename(resolved)));
+  // A directory alias preserves the rollout name; a differently named leaf
+  // could substitute another session even while remaining inside sessions.
+  return candidate.startsWith(`${realpathIfExists(sessionsDir)}/`) && basename(candidate) === basename(resolved) ? path : null;
 }
 
 /**
@@ -146,8 +150,14 @@ function rolloutFromSessionId(sessionId: string): string | null {
   }
 
   try {
-    const matches = [...new Bun.Glob(`**/rollout-*-${sessionId}.jsonl`).scanSync(SESSIONS_DIR)];
-    if (matches.length > 0) return join(SESSIONS_DIR, matches.sort().at(-1)!);
+    const matches = new Map<string, string>();
+    for (const match of new Bun.Glob(`**/rollout-*-${sessionId}.jsonl`).scanSync(SESSIONS_DIR)) {
+      const path = rolloutWithinSessions(join(SESSIONS_DIR, match));
+      if (path) matches.set(realpathIfExists(path), path);
+    }
+    // A duplicate copy with the same id is not resolved by picking whichever
+    // timestamp sorts last. Only the database or an exact process can choose.
+    if (matches.size === 1) return [...matches.values()][0]!;
   } catch {
     // No sessions directory yet.
   }
@@ -161,18 +171,17 @@ async function rolloutFromProcess(client: HerdrClient, paneId: string): Promise<
     const info = (await client.rpc("pane.process_info" as never, { pane_id: paneId } as never)) as {
       process_info?: { foreground_processes?: { pid: number; name: string }[] };
     };
-    pids = (info.process_info?.foreground_processes ?? [])
+    pids = [...new Set((info.process_info?.foreground_processes ?? [])
       .filter((p) => p.name === "codex")
-      .map((p) => p.pid);
+      .map((p) => p.pid))];
   } catch {
     return null;
   }
 
-  for (const pid of pids) {
-    const target = process.platform === "darwin" ? await rolloutFromMacProcess(pid) : await rolloutFromLinuxProcess(pid);
-    if (target) return target;
-  }
-  return null;
+  // One foreground process with one open rollout is evidence. Choosing the
+  // first of multiple Codex processes would silently pick a conversation.
+  if (pids.length !== 1) return null;
+  return process.platform === "darwin" ? rolloutFromMacProcess(pids[0]!) : rolloutFromLinuxProcess(pids[0]!);
 }
 
 /**

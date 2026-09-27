@@ -6,6 +6,7 @@ import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } fr
 import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
+import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
 
 // The first test in this file pays for loading the screen and its mocks under
 // fake timers, and GitHub's ubuntu runner took more than Jest's 5s default
@@ -2070,4 +2071,61 @@ test("a busy agent's disjoint tail fetches the missed messages before merging", 
   await settle();
   expect(mocked.sessionLog).toHaveBeenCalledWith(PANE, 140);
   expect(view.UNSAFE_getByType(FlatList).props.data.map((m: LogMessage) => m.id)).toEqual(messages.map(m => m.id));
+});
+
+
+describe("provider Reader pages", () => {
+  test.each(providerReaderFixtures)("$label exposes messages, thinking, files, questions and actual tool outcomes", async fixture => {
+    mocked.sessionLog.mockResolvedValue(fixture.log);
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("The sample is ready.");
+    expect(view.getByText("Read the sample and change it to ready.")).toBeTruthy();
+    expect(view.getAllByText(fixture.question).length).toBeGreaterThan(0);
+    expect(view.getByText(/Keep reviewing/)).toBeTruthy();
+    expect(view.getByText("status.txt")).toBeTruthy();
+    expect(view.queryByText(/Internal only/)).toBeNull();
+    expect(view.queryByText(fixture.thinking)).toBeNull();
+    fireEvent.press(view.getByRole("button", { name: "Thinking" }));
+    expect(view.getByText(fixture.thinking)).toBeTruthy();
+    expect(view.queryByText(fixture.output)).toBeNull();
+    fireEvent.press(view.getByText(fixture.command));
+    expect(view.getByText(fixture.output)).toBeTruthy();
+    fireEvent.press(view.getByText(fixture.deniedCommand));
+    expect(view.getByText(fixture.error)).toBeTruthy();
+    expect(view.getByText("failed")).toBeTruthy();
+    expect(view.queryByText("Still running.")).toBeNull();
+  });
+
+  test.each(["OpenCode undo", "Cursor rewrite"])("%s changes the path in the same session and discards retained/late history", async provider => {
+    const paneId = `w1:p-${provider}`;
+    const base = provider === "OpenCode undo" ? "/data/opencode.db#ses_same" : "/data/cursor/store.db#same";
+    const first: SessionLog = { sessionId: "same", path: base, total: 6, offset: 0, messages: [said("same:2", "you", "OLD recent question"), said("same:3", "agent", "OLD recent answer")] };
+    const older = { ...first, messages: [said("same:0", "you", "OLD earlier question"), said("same:1", "agent", "OLD earlier answer")] };
+    const replacement = { ...first, path: `${base}:rewritten`, total: 1, messages: [said("same:2", "you", "NEW retained turn")] };
+    let current = first;
+    const late = deferred<SessionLog>();
+    let earlierCalls = 0;
+    mocked.sessionLog.mockImplementation(async (_pane: string, _limit: number, before?: number) => before === undefined ? current : ++earlierCalls === 1 ? older : late.promise);
+    const view = render(<Pane paneId={paneId} />);
+    await view.findByText("OLD recent answer");
+    fireEvent.press(view.getByText("Load earlier messages"));
+    await view.findByText("OLD earlier question");
+    fireEvent.press(view.getByText("Load earlier messages"));
+    current = replacement;
+    logChanged(paneId);
+    await view.findByText("NEW retained turn");
+    expect(view.queryByText(/OLD/)).toBeNull();
+    expect(view.queryByText("Load earlier messages")).toBeNull();
+    late.resolve({ ...first, messages: [said("same:old", "agent", "OLD late history")] });
+    await settle();
+    expect(view.queryByText(/OLD/)).toBeNull();
+    expect(paneScrollPlace(api, paneId)).toBe("bottom");
+    view.unmount();
+    mocked.sessionLog.mockRejectedValue(new Error("offline"));
+    const again = render(<Pane paneId={paneId} />);
+    await again.findByText("NEW retained turn");
+    expect(again.queryByText(/OLD/)).toBeNull();
+    again.unmount();
+    forgetPaneMemory(api, paneId);
+  });
 });

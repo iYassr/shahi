@@ -1,4 +1,4 @@
-import { conversationSummary, retainSummaries, transcriptPage, transcriptPathFor } from "./conversation-summary";
+import { conversationSummary, retainSummaries, transcriptPage, transcriptSourceFor, transcriptWatchSource } from "./conversation-summary";
 import { buildId } from "./build";
 /**
  * HTTP and WebSocket surface.
@@ -33,6 +33,7 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
+import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf } from "./herdr-pane";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
@@ -1408,24 +1409,24 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             }
           }
 
-          // Claude Code's own structured transcript, when this pane has one.
-          // Far better than the recorded screen: real messages, full history,
-          // and tool calls already paired with their results.
-          // An image out of the transcript, served rather than inlined.
+          // Images belong to the exact provider session in this pane. A UUID
+          // reported by another provider must never select a Claude image.
           if (sub === "/image") {
             const pane = store.pane(paneId);
             const sessionId = agentSessionOf(pane);
             const ref = url.searchParams.get("ref");
             if (!pane || !ref) return json({ error: "not found" }, { status: 404 });
-            const path = pane.agent === "codex" ? await transcriptPathFor(pane, client) : null;
-            const image = pane.agent === "codex" ? (path ? await readCodexImage(path, ref) : null)
-              : sessionId ? await readSessionImage(sessionId, ref) : null;
+            const source = pane.agent === "codex" || pane.agent === "opencode" ? await transcriptSourceFor(pane, client) : null;
+            const image = pane.agent === "codex" && typeof source === "string" ? await readCodexImage(source, ref)
+              : pane.agent === "opencode" && source && typeof source !== "string" ? await readOpenCodeImage(source, ref)
+              : pane.agent === "claude" && sessionId ? await readSessionImage(sessionId, ref) : null;
             if (!image) return json({ error: "not found" }, { status: 404 });
             return new Response(image.bytes, {
               headers: {
                 "content-type": image.mediaType,
-                // The transcript is append-only, so a given ref never changes.
-                "cache-control": "private, max-age=31536000, immutable",
+                // OpenCode edits parts in place; its image refs are rechecked
+                // against the current session and must not outlive that check.
+                "cache-control": pane.agent === "opencode" ? "no-store" : "private, max-age=31536000, immutable",
               },
             });
           }
@@ -1439,7 +1440,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
             // Each agent keeps its transcript its own way; `transcriptPage`
             // reads it by kind, and not at all while the file is unchanged.
-            const path = pane ? await transcriptPathFor(pane, client) : null;
+            const path = pane ? await transcriptSourceFor(pane, client) : null;
             const page = path ? await transcriptPage(paneId, path, pane!.agent, { limit, before }) : null;
 
             if (!page) {
@@ -1568,7 +1569,8 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   function watchLog(ws: StreamClient, paneId: string): () => void {
     const follow = followTranscript(async () => {
       const pane = store.pane(paneId);
-      return pane ? transcriptPathFor(pane, client) : null;
+      const source = pane ? await transcriptSourceFor(pane, client) : null;
+      return source ? transcriptWatchSource(source) : null;
     }, (offset) => {
       if (ws.data.watchedPaneId !== paneId) return;
       ws.send(JSON.stringify({ type: "log_changed", paneId, offset }));

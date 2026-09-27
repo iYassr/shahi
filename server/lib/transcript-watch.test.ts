@@ -70,6 +70,49 @@ describe("watchTranscript", () => {
     await Bun.sleep(200);
     expect(seen).toEqual([]);
   });
+
+  test("a same-length rewrite is a change even when the file does not grow", async () => {
+    const path = join(dir, "rewrite.jsonl");
+    writeFileSync(path, "before\n");
+    const seen: number[] = [];
+    stops.push(watchTranscript(path, (offset) => seen.push(offset), { debounceMs: 10, fallbackMs: 30 }));
+    await Bun.sleep(60);
+    writeFileSync(path, "after!\n");
+    await until(() => seen.length > 0);
+    expect(seen).toEqual([7]);
+  });
+
+  test("a database revision invalidates readers without file growth", async () => {
+    let version = "db:wal:1";
+    const seen: number[] = [];
+    stops.push(watchTranscript({ key: "database/session-one", current: async () => ({ version, offset: 123 }) },
+      (offset) => seen.push(offset), { fallbackMs: 20 }));
+    await Bun.sleep(50);
+    version = "db:wal:2";
+    await until(() => seen.length > 0);
+    expect(seen).toEqual([123]);
+    await Bun.sleep(60);
+    expect(seen).toHaveLength(1);
+  });
+
+  test("a revision probe that finishes after stopping cannot push", async () => {
+    let version = "first";
+    let release: (() => void) | undefined;
+    let defer = false;
+    const seen: number[] = [];
+    const stop = watchTranscript({ key: "delayed-database", current: async () => {
+      if (defer) await new Promise<void>(resolve => { release = resolve; });
+      return { version, offset: 1 };
+    } }, offset => seen.push(offset), { fallbackMs: 20 });
+    stops.push(stop);
+    await Bun.sleep(50);
+    defer = true; version = "second";
+    await until(() => !!release);
+    expect(release).toBeDefined();
+    stop(); release!();
+    await Bun.sleep(30);
+    expect(seen).toEqual([]);
+  });
 });
 
 /**
@@ -154,5 +197,26 @@ describe("followTranscript", () => {
     await Bun.sleep(150);
     expect(seen).toEqual([]);
     expect(lookups).toBe(after);
+  });
+
+  test("switching sessions in one database changes the watched identity", async () => {
+    const versions = ["first", "second"];
+    let selected = 0;
+    const seen: number[] = [];
+    const handle = followTranscript(async () => {
+      const index = selected;
+      return { key: `shared.db/session-${index}`, current: async () => ({ version: versions[index]!, offset: index }) };
+    }, offset => seen.push(offset), { fallbackMs: 20, relocateMs: 30 });
+    stops.push(handle.stop);
+    await Bun.sleep(70);
+    selected = 1;
+    await until(() => seen.length === 1);
+    expect(seen).toEqual([1]);
+    versions[0] = "old session changed";
+    await Bun.sleep(80);
+    expect(seen).toEqual([1]);
+    versions[1] = "new reply";
+    await until(() => seen.length === 2);
+    expect(seen).toEqual([1, 1]);
   });
 });

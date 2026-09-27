@@ -2,6 +2,7 @@ import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 import { isHarmless, tap } from "./touch";
 import { scenario } from "./stub/control";
+import { providerReaderFixtures } from "../shared/test-fixtures/provider-reader";
 
 /**
  * A pane whose transcript the stub always provides — `w1:p1` has one of every
@@ -175,4 +176,34 @@ test.describe("finding your way back down", () => {
     await expect(page.locator(".reader__more")).toHaveText("Load earlier (628 more)", { timeout: 20_000 });
     await expect(page.locator(".reader__jump")).toHaveText(/500 new/);
   });
+});
+
+// API pages generated from the provider adapters, shared with native rendering
+// tests. These checks exercise real mobile browser taps and collapsed content.
+test.describe("provider Reader pages", () => {
+  for (const fixture of providerReaderFixtures) {
+    test(`${fixture.label} exposes thinking, file links, questions and finished tool results`, async ({ page }) => {
+      await page.route(/\/api\/panes\/[^/]+\/session(?:\?|$)/, route => route.fulfill({ json: fixture.log }));
+      await openReader(page);
+      await expect(page.getByText("The sample is ready.", { exact: true })).toBeVisible();
+      await expect(page.locator(".reader")).not.toContainText("Internal only");
+      await expect(page.locator(".asked__q")).toHaveText(fixture.question);
+      await expect(page.locator(".asked__label").filter({ hasText: "Keep reviewing" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "status.txt", exact: true })).toBeVisible();
+      const thinking = page.locator(".msg__thinking");
+      await expect(thinking.locator("p")).not.toBeVisible();
+      await tap(page, thinking.locator("summary"));
+      await expect(thinking.locator("p")).toHaveText(fixture.thinking);
+      await expect(thinking.locator("p")).toBeVisible();
+      const command = page.locator(".tool").filter({ has: page.locator(".tool__summary", { hasText: fixture.command }) });
+      await expect(command.locator(".tool__out")).toHaveCount(0);
+      await tap(page, command.locator(".tool__head"));
+      await expect(command.locator(".tool__out")).toHaveText(fixture.output);
+      const denied = page.locator(".tool").filter({ has: page.locator(".tool__summary", { hasText: fixture.deniedCommand }) });
+      await expect(denied.locator(".tool__err")).toHaveText("failed");
+      await tap(page, denied.locator(".tool__head"));
+      await expect(denied.locator(".tool__out")).toHaveText(fixture.error);
+      await expect(page.locator(".reader")).not.toContainText("Still running.");
+    });
+  }
 });

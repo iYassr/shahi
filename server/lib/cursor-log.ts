@@ -1,6 +1,6 @@
 /** Cursor CLI JSONL transcripts. Session ownership comes from herdr or the exact
  * pane process's open store.db; a shared working folder is never a match. */
-import { readdir, readlink, mkdtemp, readFile, rm } from "node:fs/promises";
+import { readdir, readlink, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
@@ -20,16 +20,18 @@ export async function findCursorTranscript(sessionId: string, root = ROOT): Prom
   const projects = join(root, "projects");
   try {
     const realRoot = await realPath(projects);
-    const matches: string[] = [];
+    const matches = new Set<string>();
     for (const project of await readdir(projects)) {
       for (const tail of [join(sessionId, `${sessionId}.jsonl`), `${sessionId}.jsonl`]) {
         try {
           const path = await realPath(join(projects, project, "agent-transcripts", tail));
-          if (path.startsWith(realRoot + "/")) matches.push(path);
+          // A project alias may preserve the exact file, but A.jsonl pointing
+          // to B.jsonl must never lend B's conversation to session A.
+          if (path.startsWith(realRoot + "/") && basename(path) === `${sessionId}.jsonl` && (await stat(path)).isFile()) matches.add(path);
         } catch { /* This project does not own that session. */ }
       }
     }
-    return matches.length === 1 ? matches[0]! : null;
+    return matches.size === 1 ? [...matches][0]! : null;
   } catch { return null; }
 }
 async function openFiles(pid: number): Promise<string[]> {
@@ -75,7 +77,16 @@ export function cursorUserText(text: string): string {
   const queries = [...text.matchAll(/<user_query>([\s\S]*?)<\/user_query>/g)]
     .map((match) => match[1]!.trim())
     .filter(Boolean);
-  if (queries.length > 0) return queries.join("\n\n");
+  if (queries.length > 0) {
+    // Cursor's JSONL exporter appends these literal labels for attached image
+    // and file blocks. The bytes and file paths are not in the export. Keep
+    // the labels outside the context wrappers: returning only user_query hid
+    // attachments entirely. A label inside model context is not an attachment.
+    const outside = text.replace(/<([A-Za-z_][\w-]*)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g, "");
+    const attachments = outside.split(/\r?\n/).map(line => line.trim())
+      .filter(line => /^\[(?:Image|File(?:: [^\r\n]+)?)\]$/.test(line));
+    return [...queries, ...attachments].join("\n\n");
+  }
   let rest = text;
   for (let wrapped; (wrapped = /^\s*<([A-Za-z_][\w-]*)(?:\s[^>]*)?>[\s\S]*?<\/\1>/.exec(rest)); ) {
     rest = rest.slice(wrapped[0].length);
@@ -83,15 +94,27 @@ export function cursorUserText(text: string): string {
   return rest.trim();
 }
 
-/** Cursor currently records calls without results or timestamps. Don't invent
- * either, and don't describe a historical call as still running forever. */
+/** Cursor's 2026.09.26 JSONL exporter records calls without results, call ids or
+ * timestamps, merges reasoning into prose and labels attachments as text. Do
+ * not invent the missing data or describe a historical call as still running.
+ * The exporter does record failed/interrupted turns; omitting those made a
+ * failed agent look as if it silently stopped midway through a request. */
 export function normaliseCursor(rows: Record<string, unknown>[], start = 0): LogMessage[] {
   let position = start;
   return rows.flatMap((row) => {
     // A bare `null` line, or a field of a type Cursor never wrote, is dropped
     // like any unknown shape; it used to throw and fail the page (pre-release
     // bug hunt, September 2026). `normalise` checks the blocks' own fields.
-    if (!isRecord(row) || (row.role !== "user" && row.role !== "assistant")) return [];
+    if (!isRecord(row)) return [];
+    if (row.type === "turn_ended" && (row.status === "error" || row.status === "aborted")) {
+      const detail = typeof row.error === "string" ? row.error.trim() : "";
+      const headline = row.status === "error" ? "Agent turn failed" : "Agent turn cancelled";
+      return [{
+        id: `cursor-${position++}`, role: "system" as const, at: 0,
+        blocks: [{ kind: "text" as const, text: detail ? `${headline}: ${detail}` : `${headline}.` }],
+      }];
+    }
+    if (row.role !== "user" && row.role !== "assistant") return [];
     const content = isRecord(row.message) ? row.message.content : undefined;
     if (!Array.isArray(content)) return [];
     const safe = content
@@ -103,6 +126,6 @@ export function normaliseCursor(rows: Record<string, unknown>[], start = 0): Log
   });
 }
 export async function readCursorLog(path: string, options: { limit?: number; before?: number } = {}): Promise<SessionLog | null> {
-  const log = await readWindow(path, options, normaliseCursor);
+  const log = await readWindow(path, { ...options, revision: true }, normaliseCursor);
   return log && inTranscript(log, basename(path, ".jsonl"));
 }

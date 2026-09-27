@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { ApiContext, api, type LogMessage, type SessionLog } from "../api";
 import { Reader, clearReaderMemory, merge } from "./Reader";
+import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,6 +130,60 @@ describe("a pane reused by a new session", () => {
     expect(output()).not.toContain("OLD");
     expect(output()).toContain("NEW follow-up");
   });
+
+  for (const fixture of providerReaderFixtures) {
+    test(`${fixture.label} pages expose authored messages, thinking, editable files, questions and tool outcomes`, async () => {
+      await render(mock().mockResolvedValue(fixture.log));
+      expect(output()).toContain("Read the sample and change it to ready.");
+      expect(output()).toContain("The sample is ready.");
+      expect(output()).toContain(fixture.question);
+      expect(output()).toContain("Keep reviewing");
+      expect(output()).not.toContain("Internal only");
+      expect(view!.root.findByProps({ className: "msg__thinking" }).findByType("p").children).toEqual([fixture.thinking]);
+      expect(view!.root.findByProps({ className: "tool__open" }).children).toEqual(["status.txt"]);
+      const head = (summary: string) => view!.root.findAllByProps({ className: "tool__head" }).find(button => button.findByProps({ className: "tool__summary" }).children.join("") === summary)!;
+      expect(output()).not.toContain(fixture.error);
+      await act(async () => head(fixture.command).props.onClick());
+      expect(view!.root.findAllByProps({ className: "tool__out" }).some(node => JSON.stringify(node.children).includes(fixture.output))).toBe(true);
+      await act(async () => head(fixture.deniedCommand).props.onClick());
+      expect(output()).toContain(fixture.error);
+      expect(head(fixture.deniedCommand).findByProps({ className: "tool__err" }).children).toEqual(["failed"]);
+      expect(output()).not.toContain("Still running.");
+    });
+  }
+
+  for (const provider of ["OpenCode undo", "Cursor rewrite"]) {
+    test(`${provider} changes the path in the same session, clearing retained history and a late earlier page`, async () => {
+      const base = provider === "OpenCode undo" ? "/data/opencode.db#ses_same" : "/data/cursor/store.db#same";
+      const first: SessionLog = { ...oldChat, sessionId: "same", path: base, total: 6, messages: oldChat.messages.slice(2) };
+      const replacement: SessionLog = { ...newChat, sessionId: "same", path: `${base}:rewritten`, total: 1, messages: [said("cursor-2", "NEW retained turn")] };
+      let current = first;
+      let earlierCalls = 0;
+      let late!: (value: SessionLog) => void;
+      const sessionLog = mock((_pane: string, options: { before?: number } = {}) => options.before === undefined ? Promise.resolve(current)
+        : ++earlierCalls === 1 ? Promise.resolve({ ...first, messages: oldChat.messages.slice(0, 2) })
+        : new Promise<SessionLog>(resolve => { late = resolve; }));
+      const more = () => view!.root.findByProps({ className: "reader__more" });
+      await render(sessionLog);
+      await act(async () => more().props.onClick());
+      expect(output()).toContain("OLD secret question");
+      // Another pagination request is still in flight when the provider rewrites.
+      await act(async () => { void more().props.onClick(); });
+      current = replacement;
+      await logChanged();
+      expect(output()).toContain("NEW retained turn");
+      expect(output()).not.toContain("OLD");
+      expect(output()).not.toContain("Load earlier");
+      await act(async () => late({ ...first, messages: [said("cursor-old", "OLD late history")] }));
+      expect(output()).not.toContain("OLD");
+      // The stale page must not reappear from remembered history on next open.
+      await act(async () => view!.unmount());
+      await render(mock().mockRejectedValue(new Error("offline")));
+      expect(output()).toContain("NEW retained turn");
+      expect(output()).not.toContain("OLD");
+    });
+  }
+
 });
 
 describe("more messages than a poll's tail", () => {

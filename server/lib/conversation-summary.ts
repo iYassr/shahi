@@ -2,8 +2,8 @@
  * A pane's conversation, as its agent's transcript records it: where that
  * transcript is, the dashboard's one-line summary of it, and the reader's page.
  *
- * Both the summary and the page are kept with the state of the file they were
- * read from, so polling a quiet conversation costs a stat rather than a read,
+ * Both the summary and the page are kept with the state of their source, so
+ * polling a quiet conversation costs file stats rather than another parse,
  * and both are kept for exactly the panes that exist (`retainSummaries`).
  */
 import { stat } from "node:fs/promises";
@@ -12,12 +12,19 @@ import type { HerdrClient } from "./herdr-client";
 import type { PaneInfo } from "./herdr-schema";
 import { findCodexRollout, readCodexLog } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
+import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log";
+import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
 import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
 import { fitPage } from "./session-window";
+import type { TranscriptWatchSource } from "./transcript-watch";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
 type Window = { limit?: number; before?: number };
+export type TranscriptSource = string | OpenCodeTranscript;
+
+const sourceKey = (source: TranscriptSource): string => typeof source === "string"
+  ? source : JSON.stringify([source.kind, source.databasePath, source.sessionId]);
 
 /**
  * Where the dashboard last found each pane's transcript, and what that
@@ -36,33 +43,44 @@ type Window = { limit?: number; before?: number };
  * watcher always look afresh for the pane someone has open, and the dashboard
  * reuses what they found.
  */
-const locations = new Map<string, { key: string; at: number; path: Promise<string | null> }>();
+const locations = new Map<string, { key: string; at: number; source: Promise<TranscriptSource | null> }>();
 const LOCATION_MAX_AGE_MS = 15_000;
 
 const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane), pane.agent_status]);
 
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
-export function transcriptPathFor(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
+export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource | null> {
   // Never a session herdr kept after its agent left the pane (see herdr-pane.ts).
   const id = agentSessionOf(pane);
-  const path = pane.agent === "cursor" ? (client ? cursorTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
+  const source = pane.agent === "cursor" ? (client ? cursorTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
     : pane.agent === "codex" ? (client ? findCodexRollout(client, pane.pane_id, pane.cwd ?? null, id) : Promise.resolve(null))
-    : id ? findTranscript(id) : Promise.resolve(null);
-  locations.set(pane.pane_id, { key: locationKey(pane), at: Date.now(), path: path.catch(() => null) });
-  return path;
+    : pane.agent === "agy" ? (client ? antigravityTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
+    : pane.agent === "opencode" ? (id ? findOpenCodeTranscript(id) : Promise.resolve(null))
+    : pane.agent === "claude" && id ? findTranscript(id) : Promise.resolve(null);
+  locations.set(pane.pane_id, { key: locationKey(pane), at: Date.now(), source: source.catch(() => null) });
+  return source;
+}
+
+/** File-only compatibility for callers that need actual bytes, such as Codex images. */
+export async function transcriptPathFor(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
+  const source = await transcriptSourceFor(pane, client);
+  return typeof source === "string" ? source : null;
 }
 
 /** The dashboard's lookup: see `locations`. */
-function locate(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
+function locate(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource | null> {
   const held = locations.get(pane.pane_id);
-  if (held && held.key === locationKey(pane) && Date.now() - held.at < LOCATION_MAX_AGE_MS) return held.path;
-  return transcriptPathFor(pane, client);
+  if (held && held.key === locationKey(pane) && Date.now() - held.at < LOCATION_MAX_AGE_MS) return held.source;
+  return transcriptSourceFor(pane, client);
 }
 
 /** Reads a window of the transcript at `path` the way its agent writes it. */
-async function readTranscript(path: string, kind: string | null | undefined, window: Window): Promise<SessionLog | null> {
+async function readTranscript(path: TranscriptSource, kind: string | null | undefined, window: Window): Promise<SessionLog | null> {
+  if (typeof path !== "string") return kind === "opencode" ? readOpenCodeLog(path, window) : null;
   if (kind === "cursor") return readCursorLog(path, window);
   if (kind === "codex") return readCodexLog(path, window);
+  if (kind === "agy") return readAntigravityLog(path, window);
+  if (kind && kind !== "claude") return null;
   // A Claude transcript is named after its session.
   const log = await readWindow(path, window);
   return log && { ...log, sessionId: basename(path, ".jsonl") };
@@ -73,9 +91,23 @@ async function readTranscript(path: string, kind: string | null | undefined, win
  * so a write landing mid-read leaves an older version on the entry and the
  * next poll reads again, rather than the reverse.
  */
-async function versionOf(path: string): Promise<{ version: string; mtimeMs: number }> {
+async function versionOf(path: TranscriptSource): Promise<{ version: string; mtimeMs: number }> {
+  if (typeof path !== "string") return openCodeStamp(path);
   const file = await stat(path);
   return { version: `${file.ino}:${file.size}:${file.mtimeMs}`, mtimeMs: file.mtimeMs };
+}
+
+export function transcriptWatchSource(source: TranscriptSource): TranscriptWatchSource {
+  if (typeof source === "string") return source;
+  return {
+    key: sourceKey(source),
+    current: async () => {
+      const state = await openCodeStamp(source);
+      // Readers treat log_changed as an invalidation hint. Database revisions
+      // have no meaningful byte offset; their modification time is the hint.
+      return { version: state.version, offset: Math.floor(state.mtimeMs) };
+    },
+  };
 }
 
 /**
@@ -102,15 +134,16 @@ export async function conversationSummary(pane: PaneInfo, client?: HerdrClient):
 }
 
 /** The summary of the transcript at `path`, read again only when the file has changed. */
-export async function transcriptSummary(paneId: string, path: string, kind?: string | null): Promise<Summary> {
+export async function transcriptSummary(paneId: string, path: TranscriptSource, kind?: string | null): Promise<Summary> {
   const { version, mtimeMs } = await versionOf(path);
   const held = summaries.get(paneId);
-  if (held && held.path === path && held.version === version) return held.summary;
+  const key = JSON.stringify([kind ?? "claude", sourceKey(path)]);
+  if (held && held.path === key && held.version === version) return held.summary;
   const log = await readTranscript(path, kind, { limit: 3 });
   // Cursor does not record timestamps. Its exact transcript's modification
   // time is the best available fallback, and survives a sidecar restart.
   const summary = summaryOf(log, kind === "cursor" ? mtimeMs : null);
-  summaries.set(paneId, { path, version, summary });
+  summaries.set(paneId, { path: key, version, summary });
   return summary;
 }
 
@@ -135,12 +168,13 @@ const pages = new Map<string, { path: string; version: string; windows: Map<stri
 const MAX_WINDOWS_PER_PANE = 4;
 
 /** The reader's page of the transcript at `path`, or null when there is no such transcript. */
-export async function transcriptPage(paneId: string, path: string, kind: string | null | undefined, window: Window): Promise<Page | null> {
+export async function transcriptPage(paneId: string, path: TranscriptSource, kind: string | null | undefined, window: Window): Promise<Page | null> {
   let version: string;
   try { ({ version } = await versionOf(path)); } catch { return null; }
   let held = pages.get(paneId);
-  if (!held || held.path !== path || held.version !== version) {
-    held = { path, version, windows: new Map() };
+  const identity = JSON.stringify([kind ?? "claude", sourceKey(path)]);
+  if (!held || held.path !== identity || held.version !== version) {
+    held = { path: identity, version, windows: new Map() };
     pages.set(paneId, held);
   }
   const key = `${window.limit ?? ""}:${window.before ?? ""}`;
@@ -159,6 +193,11 @@ export async function transcriptPage(paneId: string, path: string, kind: string 
   const page = { log, etag: `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"` };
   // Kept only if no newer version of the file replaced the entry meanwhile.
   if (pages.get(paneId) === held) {
+    // A provider's index can be evicted independently of these page windows.
+    // Cursor/Antigravity rebuild with a fresh boundary even if the file's
+    // stat is unchanged. Never leave the tail cached under its old boundary:
+    // clients discard mismatched pagination and must recover on their next poll.
+    if ([...held.windows.values()].some(previous => previous.log.path !== log.path || previous.log.sessionId !== log.sessionId)) held.windows.clear();
     held.windows.set(key, page);
     for (const old of [...held.windows.keys()].slice(0, Math.max(0, held.windows.size - MAX_WINDOWS_PER_PANE))) held.windows.delete(old);
   }

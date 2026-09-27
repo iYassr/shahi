@@ -1097,7 +1097,7 @@ ID and internal name stable on uncertain retries; display labels remain separate
 Cursor CLI Read mode uses its exact reported session or the pane process's open
 `store.db` to find JSONL under `.cursor/projects/*/agent-transcripts/`. Never
 select a transcript by folder recency. Missing recorded tool outputs are explicit.
-Cursor user turns show only their `<user_query>` text; `<timestamp>`,
+Cursor user turns show their `<user_query>` text and exported attachment labels; `<timestamp>`,
 `<dynamic_tools>` and other wrapped context are dropped, because every user
 bubble had shown them as something the person typed.
 
@@ -1259,3 +1259,39 @@ ownership explicit, on 0.157.1 this per-invocation configuration uses an embedde
 server. Without it Full auto and bypass attached to the shared daemon, losing
 this terminal's hook environment and exact process-file Reader lookup. Never
 repair that by selecting a rollout by working folder or modification time.
+
+## Reader providers, September 27
+
+`docs/reader-providers-2026-09-27.md` records Reader coverage for the five
+installed agents. `conversation-summary.ts` selects providers explicitly; an
+unknown agent's reported UUID must never fall through to Claude's transcript or
+image reader. Claude, Cursor and Codex file lookups validate canonical containment
+and refuse ambiguous copies. Process fallbacks never choose a newest file.
+
+OpenCode 1.18.32 uses a shared SQLite database with message/part projections.
+Select only herdr's reported `ses_` ID, query read-only in bounded windows, and
+include both the database and WAL in change detection. Images use authenticated
+session/part references, never base64 in Reader pages or remote URL fetches.
+Undo must change the Reader's existing path identity so API 5 clients clear
+retained history. Include the durable removal-event sequence as well: undo and
+a new prompt can prune the old branch and clear revert between two polls.
+Unknown older schemas without that event history remain unavailable. Its TUI integration retains the previous session at home until
+the next first prompt; do not infer a session change from terminal prose.
+
+Antigravity 1.2.11 writes the documented transcript under its brain UUID.
+Its unique open `presence/<UUID>.lock` identifies the current conversation when
+no hook ID is available; conversation database handles may include previous or
+child sessions and are not sufficient. Only an immediately following result
+with the next step index can complete a singular tool call. Internal metadata
+and unknown records are omitted.
+
+Cursor's exporter rewrites its transcript and removes prior end-of-turn notes.
+Failure/cancellation notes must therefore invalidate retained positional history
+when replaced. Existing clients already reset on transcript path changes; keep
+the actual reported session ID exact. Bound tool fields as well as prose: the
+generic page fitter only shortens text and thinking blocks.
+
+`herdr integration install opencode` writes the provider's normal config even
+with a scratch `XDG_CONFIG_HOME`. Do not use it to prepare isolated tests. Copy
+only the required integration files to the disposable provider config; never
+copy herdr's plugin registry or restart a user's service.

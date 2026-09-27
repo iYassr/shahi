@@ -1,16 +1,17 @@
 /**
- * Tells a watcher when a transcript file has grown.
+ * Tells a watcher when a transcript changes.
  *
  * The reader is fed by the agent's transcript, not the terminal — so the
  * terminal repainting is the wrong signal to refresh on, and a 2.5s poll is the
  * wrong cadence for a reply that was written milliseconds ago. This watches the
- * file itself and reports its new size; the server turns that into one
+ * source itself and reports an invalidation hint; the server turns that into one
  * `log_changed` message for the client watching that pane, which then fetches
  * the tail it needs. Nothing about the content is read or reported here.
  *
  * Two mechanisms, because neither is sufficient alone: `fs.watch` is prompt but
- * can miss events (and on some filesystems never fires), so a size check on an
- * interval backs it up. Bursts of writes collapse into one report per debounce
+ * can miss events (and on some filesystems never fires), so a revision check on an
+ * interval backs it up. Database sources use that interval to check their WAL
+ * as well as their database file. Bursts of writes collapse into one report per debounce
  * window. A file that shrinks or is replaced is reported too — the reader's
  * index checks the file's inode and its last indexed bytes, and rebuilds for
  * anything that is not an append.
@@ -21,23 +22,41 @@ import { stat } from "node:fs/promises";
 export interface WatchOptions {
   /** How long to wait after the last change before reporting. */
   debounceMs?: number;
-  /** How often to check the size when `fs.watch` says nothing. */
+  /** How often to check revisions when `fs.watch` says nothing or is unavailable. */
   fallbackMs?: number;
+}
+
+/** Databases change in place (and in their WAL), so byte length alone is not
+ * a revision. A provider supplies its bounded revision probe, without exposing
+ * transcript content to the watcher. */
+export type TranscriptWatchSource = string | {
+  key: string;
+  current: () => Promise<{ version: string; offset: number }>;
+};
+
+function identity(source: TranscriptWatchSource): string {
+  return typeof source === "string" ? source : source.key;
+}
+
+async function current(source: TranscriptWatchSource): Promise<{ version: string; offset: number }> {
+  if (typeof source !== "string") return source.current();
+  const file = await stat(source);
+  return { version: `${file.ino}:${file.size}:${file.mtimeMs}:${file.ctimeMs}`, offset: file.size };
 }
 
 /**
  * Watches `path` until the returned function is called.
  *
- * `onChange` receives the file's current size whenever it differs from the last
- * size reported. The first call reports nothing: the reader already fetched the
- * file when it opened the pane.
+ * `onChange` receives the source's offset hint whenever its revision changes.
+ * The first call reports nothing: the reader already fetched the transcript
+ * when it opened the pane. Offsets carry no transcript content.
  */
 export function watchTranscript(
-  path: string,
+  path: TranscriptWatchSource,
   onChange: (offset: number) => void,
   { debounceMs = 40, fallbackMs = 1_000 }: WatchOptions = {},
 ): () => void {
-  let lastSize = -1;
+  let lastVersion: string | undefined;
   let stopped = false;
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let checking = false;
@@ -46,12 +65,13 @@ export function watchTranscript(
     if (stopped || checking) return;
     checking = true;
     try {
-      const size = (await stat(path)).size;
-      if (lastSize === -1) {
-        lastSize = size;
-      } else if (size !== lastSize) {
-        lastSize = size;
-        onChange(size);
+      const state = await current(path);
+      if (stopped) return;
+      if (lastVersion === undefined) {
+        lastVersion = state.version;
+      } else if (state.version !== lastVersion) {
+        lastVersion = state.version;
+        onChange(state.offset);
       }
     } catch {
       // Gone, or not there yet. The next tick will see it if it comes back.
@@ -65,13 +85,15 @@ export function watchTranscript(
     debounce = setTimeout(() => void check(), debounceMs);
   };
 
-  // Seed the size now so the first real change is reported as one.
+  // Seed the revision now so the first real change is reported as one.
   void check();
 
   let watcher: FSWatcher | undefined;
   try {
-    watcher = fsWatch(path, () => schedule());
-    watcher.on("error", () => watcher?.close());
+    if (typeof path === "string") {
+      watcher = fsWatch(path, () => schedule());
+      watcher.on("error", () => watcher?.close());
+    }
   } catch {
     // Left to the interval.
   }
@@ -107,11 +129,11 @@ export function watchTranscript(
  * now rather than on its next poll or the new file's next write.
  */
 export function followTranscript(
-  locate: () => Promise<string | null>,
+  locate: () => Promise<TranscriptWatchSource | null>,
   onChange: (offset: number) => void,
   { relocateMs = 3_000, ...options }: WatchOptions & { relocateMs?: number } = {},
 ): { wake: () => void; stop: () => void } {
-  let path: string | null = null;
+  let path: TranscriptWatchSource | null = null;
   let stopFile: (() => void) | null = null;
   let locating = false;
   let stopped = false;
@@ -121,14 +143,14 @@ export function followTranscript(
     locating = true;
     try {
       const next = await locate();
-      if (stopped || !next || next === path) return;
+      if (stopped || !next || (path && identity(next) === identity(path))) return;
       const moved = path !== null;
       stopFile?.();
       path = next;
       stopFile = watchTranscript(next, onChange, options);
       if (!moved) return;
-      const { size } = await stat(next);
-      if (!stopped) onChange(size);
+      const { offset } = await current(next);
+      if (!stopped) onChange(offset);
     } catch {
       // Best-effort: the reader's own poll still covers a missed push.
     } finally {

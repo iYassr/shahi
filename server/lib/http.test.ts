@@ -25,6 +25,7 @@ import { SessionStore } from "./state";
 import { TranscriptStore } from "./transcript";
 import { ComputerControl } from "./control";
 import { atomicJson } from "../../plugin/releases/storage";
+import { createOpenCodeFixture, openCodeFixtureMessage, OPEN_CODE_SESSION } from "./opencode-log-fixtures";
 
 const PANE = "w1:p1";
 const PASSCODE = "2468";
@@ -1574,6 +1575,53 @@ describe("answering from a card drawn from another question", () => {
   });
 });
 
+test("OpenCode Reader routes serve only the pane's exact session, cache updates and scope images", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "shahi-http-opencode-"));
+  const databasePath = join(dir, "opencode.db");
+  const db = createOpenCodeFixture(databasePath);
+  const previousDatabase = process.env.OPENCODE_DB;
+  let app: Booted | undefined;
+  const route = `/api/panes/${encodeURIComponent(PANE)}`;
+  try {
+    process.env.OPENCODE_DB = databasePath;
+    openCodeFixtureMessage(db, "msg_route", "assistant", 1_800_000_000_000, [
+      { id: "prt_text", type: "text", text: "OpenCode HTTP reply" },
+      { id: "prt_picture", type: "file", mime: "image/png", url: "data:image/png;base64,iVBORw0KGgo=" },
+    ]);
+    db.run("INSERT INTO session(id) VALUES (?)", ["ses_different"]);
+    openCodeFixtureMessage(db, "msg_secret", "assistant", 1_800_000_000_001, [
+      { id: "prt_secret", type: "file", mime: "image/png", url: "data:image/png;base64,iVBORw0KGgo=" },
+    ], "ses_different");
+    occupant = { agent: "opencode", agent_session: { agent: "opencode", kind: "id", source: "herdr:opencode", value: OPEN_CODE_SESSION } };
+    app = await boot();
+    const get = (path: string, headers = {}) => fetch(`${app!.base}${route}${path}`, { headers: { cookie: app!.cookie, "x-shahi-api": String(SHAHI_API_VERSION), ...headers } });
+    expect((await fetch(`${app.base}${route}/session`)).status).toBe(401);
+    const response = await get("/session");
+    expect(response.status).toBe(200);
+    const log = await response.json() as { sessionId: string; messages: { blocks: unknown[] }[] };
+    expect(log.sessionId).toBe(OPEN_CODE_SESSION);
+    expect(log.messages).toHaveLength(1);
+    expect(log.messages[0]!.blocks).toContainEqual({ kind: "text", text: "OpenCode HTTP reply" });
+    const etag = response.headers.get("etag")!;
+    expect((await get("/session", { "if-none-match": etag })).status).toBe(304);
+    db.run("UPDATE part SET data=? WHERE id='prt_text'", [JSON.stringify({ type: "text", text: "Updated through the WAL" })]);
+    const changed = await get("/session", { "if-none-match": etag });
+    expect(changed.status).toBe(200);
+    expect(JSON.stringify(await changed.json())).toContain("Updated through the WAL");
+    const image = await get(`/image?ref=${encodeURIComponent(`${OPEN_CODE_SESSION}:prt_picture:file`)}`);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(image.headers.get("cache-control")).toBe("no-store");
+    expect((await image.arrayBuffer()).byteLength).toBe(8);
+    expect((await get("/image?ref=ses_different%3Aprt_secret%3Afile")).status).toBe(404);
+    expect((await get(`/image?ref=${OPEN_CODE_SESSION}%3Aprt_secret%3Afile`)).status).toBe(404);
+  } finally {
+    app?.stop(); occupant = {};
+    if (previousDatabase === undefined) delete process.env.OPENCODE_DB; else process.env.OPENCODE_DB = previousDatabase;
+    db.close(); rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // herdr keeps a pane's agent_session after its agent is gone: restarted with
 // resume off, or with the agent missing from its PATH, the pane comes back as
 // a shell still naming the old conversation. The reader showed that dead
@@ -1594,7 +1642,7 @@ describe("a pane herdr restored as a shell, still naming its dead agent's sessio
       ...real,
       // The reader finds a transcript by path and reads it from there, so
       // finding it is the one step to fake.
-      findTranscript: async (id: string) => (id === dead ? path : real.findTranscript(id)),
+      findTranscript: async (id: string, root?: string) => (id === dead ? path : real.findTranscript(id, root)),
     }));
     occupant = { agent: null, agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: dead } };
     app = await boot();

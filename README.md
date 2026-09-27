@@ -6,8 +6,8 @@
 
 **Your herdr agents, as a chat on your phone.**
 
-Not a terminal squeezed onto a small screen: Shahi turns the Claude Code, Codex<br>
-and Cursor CLI sessions running in herdr into a conversation you read, answer and steer with your thumb.
+Not a terminal squeezed onto a small screen: Shahi turns the Claude Code, Codex,<br>
+Cursor CLI, Antigravity and OpenCode sessions running in herdr into a conversation you read, answer and steer with your thumb.
 
 **Two commands, one scan, about a minute.** End-to-end encrypted. No account, VPN or open port.
 
@@ -47,7 +47,7 @@ phone does not stop the agents running there.
 
 A terminal on a phone is a poor way to talk to an agent. SSH apps show output
 wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
-Tab. Shahi reads the transcripts that Claude Code, Codex and Cursor keep for
+Tab. Shahi reads the transcripts that Claude Code, Codex, Cursor, Antigravity and OpenCode keep for
 themselves instead, so messages, tool calls and diffs fit your screen, and supported permission prompts become buttons.
 It feels like texting. The terminal is still one tap away, on the Screen tab.
 
@@ -62,7 +62,7 @@ clear conversations, readable code, colored agent icons, and controls that are
 easy to reach. Live updates keep you close to the work; returning to a conversation
 keeps your reading position and unfinished reply.
 
-Claude Code, Codex and Cursor activity is formatted automatically. Messages, tool calls,
+Claude Code, Codex, Cursor, Antigravity and OpenCode activity is formatted automatically. Messages, tool calls,
 command results, file changes and supported approval requests become readable
 conversation items, so you can understand what happened and decide what comes
 next from your phone. There is no per-tool layout to configure. Screen mode is
@@ -217,9 +217,18 @@ the range headers, so Shahi falls back to a whole-file request up to one relay
 body (783,360 bytes, about 765 KiB). Larger relay downloads require 0.3.7 or
 newer and say when an update is needed. SSH has no such fallback limit.
 
-Read mode supports Claude Code, Codex and Cursor CLI transcripts. Cursor tool
-calls appear when present in its transcript; outputs that Cursor does not store
-are labeled unavailable. Screen remains available for other agents.
+Read mode supports Claude Code, Codex, Cursor CLI, Antigravity and OpenCode
+transcripts. OpenCode and Antigravity require computer release 0.3.11 or newer;
+the existing iPhone app can read them. Each Reader selects the exact reported
+session or a uniquely identified process-owned transcript, never the newest
+conversation in the same folder.
+
+Cursor tool calls appear when present in its export; missing results are labeled
+unavailable, and attachments show the labels Cursor recorded. Antigravity images
+are not yet supported. OpenCode needs herdr's OpenCode integration to report the
+selected session. At its empty home screen, the integration retains the previous
+session until the first prompt in a new one. Screen remains available for other
+agents and content their transcript format does not expose.
 
 Unsent messages are kept separately for each conversation and computer while
 Shahi remains open. They are not saved permanently: reloading the browser or

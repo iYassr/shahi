@@ -33,9 +33,11 @@
  * the terminal view remains the universal fallback rather than a legacy one.
  */
 import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
+import { createHash, type Hash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { realPath } from "./real-path";
 
 const PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
@@ -63,25 +65,32 @@ export type { LogMessage, SessionLog };
  * round-trip through that encoding, would simply not be found. The id is a
  * UUID, so a scan is unambiguous.
  */
-export async function findTranscript(sessionId: string): Promise<string | null> {
+export async function findTranscript(sessionId: string, projectsDir = PROJECTS_DIR): Promise<string | null> {
   if (!/^[0-9a-f-]{16,64}$/i.test(sessionId)) return null;
 
   let projects: string[];
+  let realRoot: string;
   try {
-    projects = await readdir(PROJECTS_DIR);
+    realRoot = await realPath(projectsDir);
+    projects = await readdir(projectsDir);
   } catch {
     return null;
   }
 
+  const matches = new Set<string>();
   for (const project of projects) {
-    const candidate = join(PROJECTS_DIR, project, `${sessionId}.jsonl`);
     try {
-      if ((await stat(candidate)).isFile()) return candidate;
+      const candidate = await realPath(join(projectsDir, project, `${sessionId}.jsonl`));
+      // Directory aliases can preserve a session. A leaf symlink to another
+      // UUID does not, even when both transcripts live under projects.
+      if (candidate.startsWith(realRoot + "/") && basename(candidate) === `${sessionId}.jsonl` && (await stat(candidate)).isFile()) matches.add(candidate);
     } catch {
       // Not in this project; keep looking.
     }
   }
-  return null;
+  // A moved session or directory alias can name the same canonical file twice.
+  // Two distinct copies are ambiguous; directory order is not ownership.
+  return matches.size === 1 ? [...matches][0]! : null;
 }
 
 /**
@@ -120,6 +129,10 @@ export async function findTranscript(sessionId: string): Promise<string | null> 
 interface TranscriptIndex extends IndexedFile {
   /** Byte offset of the line that produced each message, in order. */
   offsets: number[];
+  /** Stable through appends; a rewrite invalidates position-based message ids. */
+  revision: string;
+  /** Rewrite-capable providers need more than tail bytes to validate history. */
+  prefixHash?: Hash;
 }
 
 /** What an index remembers of the file it read, to tell an append from a rewrite next time. */
@@ -203,6 +216,7 @@ async function scanLines(
   from: number,
   onRow: (offset: number, row: Record<string, unknown>) => void,
   anchor: Uint8Array = new Uint8Array(0),
+  onBytes?: (bytes: Uint8Array) => void,
 ): Promise<{ end: number; anchor: Uint8Array }> {
   const decoder = new TextDecoder();
   let pending: Uint8Array<ArrayBuffer> = new Uint8Array(0);
@@ -228,7 +242,11 @@ async function scanLines(
     }
     // Taken from the bytes just scanned rather than read again afterwards, so
     // it can only ever describe the file these offsets came from.
-    if (start > 0) anchor = anchorAfter(anchor, buffer.subarray(0, start));
+    if (start > 0) {
+      const indexed = buffer.subarray(0, start);
+      anchor = anchorAfter(anchor, indexed);
+      onBytes?.(indexed);
+    }
     consumed += start;
     pending = buffer.subarray(start);
   }
@@ -255,31 +273,46 @@ const indexing = new Map<string, Promise<TranscriptIndex>>();
  * extended would only turn the others into full re-reads of the transcript.
  * The Codex reader already took turns.
  */
-export function indexTranscript(path: string, normalizer = normalise): Promise<TranscriptIndex> {
+export function indexTranscript(path: string, normalizer = normalise, verifyPrefix = false): Promise<TranscriptIndex> {
   const next = (indexing.get(path) ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => extendIndex(path, normalizer));
+    .then(() => extendIndex(path, normalizer, verifyPrefix));
   indexing.set(path, next);
   const done = () => { if (indexing.get(path) === next) indexing.delete(path); };
   next.then(done, done);
   return next;
 }
 
-async function extendIndex(path: string, normalizer: (rows: Record<string, unknown>[]) => LogMessage[]): Promise<TranscriptIndex> {
+async function extendIndex(path: string, normalizer: (rows: Record<string, unknown>[]) => LogMessage[], verifyPrefix: boolean): Promise<TranscriptIndex> {
   const now = await stat(path);
   const held = indexes.get(path);
   // Not kept half-extended if the read below fails; the next one starts over.
   indexes.delete(path);
 
-  const verdict = held
+  let verdict = held
     ? await indexStillHolds(held, now, (from, to) => Bun.file(path).slice(from, to).bytes())
     : "other";
-  const index: TranscriptIndex = held && verdict !== "other" ? held : { ...emptyIndex(now), offsets: [] };
+  const checkPrefix = verifyPrefix || held?.prefixHash !== undefined;
+  if (held && checkPrefix) {
+    if (!held.prefixHash) verdict = "other";
+    else if (verdict === "grown") {
+      // Cursor rewrites with writeFile; Antigravity can replace history after
+      // /rewind. A changed middle can leave the final 64 bytes unchanged. Hash
+      // only a changed file, streaming its prefix without retaining/parsing it.
+      const hash = createHash("sha256");
+      for await (const chunk of Bun.file(path).slice(0, held.size).stream()) hash.update(chunk);
+      if (hash.digest("hex") !== held.prefixHash.copy().digest("hex")) verdict = "other";
+    }
+  }
+  const index: TranscriptIndex = held && verdict !== "other" ? held : {
+    ...emptyIndex(now), offsets: [], revision: crypto.randomUUID(),
+    ...(checkPrefix ? { prefixHash: createHash("sha256") } : {}),
+  };
 
   if (verdict !== "same") {
     const scanned = await scanLines(path, index.size, (offset, row) => {
       if (normalizer([row]).length > 0) index.offsets.push(offset);
-    }, index.anchor);
+    }, index.anchor, bytes => index.prefixHash?.update(bytes));
     index.size = scanned.end;
     index.anchor = scanned.anchor;
     // As stated before the scan: bytes appended during it only make the next
@@ -334,10 +367,10 @@ const PAIRING_SLACK = 4;
 /** Reads and normalises a window of a transcript, newest messages last. */
 export async function readWindow(
   path: string,
-  options: { limit?: number; before?: number } = {},
+  options: { limit?: number; before?: number; revision?: boolean } = {},
   normalizer: (rows: Record<string, unknown>[], start?: number) => LogMessage[] = normalise,
 ): Promise<SessionLog | null> {
-  const index = await indexTranscript(path, normalizer);
+  const index = await indexTranscript(path, normalizer, options.revision);
   const total = index.offsets.length;
 
   const limit = options.limit ?? 200;
@@ -354,7 +387,16 @@ export async function readWindow(
   const window = await Bun.file(path).slice(from, to).text();
   const messages = normaliseReadable(parseLines(window), start, normalizer).slice(0, end - start);
 
-  return { sessionId: path, path, messages, total, offset: index.size };
+  // Cursor removes prior turn_ended rows; Antigravity /rewind replaces history.
+  // A reader retaining more history than its fetched tail must reset then, or
+  // reused ids leave removed messages attached to new content.
+  // Opt in only where needed: Claude's UUID ids and literal path stay intact.
+  return {
+    sessionId: path,
+    path: options.revision ? `${path}#revision=${index.revision}` : path,
+    messages: options.revision ? messages.map(message => ({ ...message, id: `${index.revision}:${message.id}` })) : messages,
+    total, offset: index.size,
+  };
 }
 
 /**
