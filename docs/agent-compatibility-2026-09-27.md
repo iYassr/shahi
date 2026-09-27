@@ -104,10 +104,34 @@ conversations in their normal histories.
   Local audio paths can be opened through the file viewer.
 - Opaque web-search result metadata is not rendered as authored text. Unknown
   future schema shapes are omitted until checked against their provider.
-- This run did not repeat physical-iPhone QA or the full deployment/recovery
-  release matrix. The existing physical checklist and remaining boundaries in
+- This run did not repeat physical-iPhone QA. The existing physical checklist and remaining boundaries in
   [the review completion report](review-completion-2026-09-26.md#remaining-boundaries)
   still apply. Successful paid-provider work under every mode is not established.
-- Publish an approved computer release and an updated phone build before claiming
-  these fixes are present in the installed product. The current App Store
-  submission was not withdrawn or replaced by this audit.
+- Ordering requires both the updated client and computer service 0.3.9 or newer.
+  The existing App Store submission was not withdrawn or replaced by this audit.
+
+## Release verification
+
+The full [release gate](https://github.com/iYassr/shahi/actions/runs/36281569424)
+passed for source `5ec5da827be7ea7457280679c7575f5aeddef772`: 364 browser cases,
+68 hosted-client cases, 44 PWA cases, native and relay tests, three herdr
+profiles, and upgrade/recovery tests on macOS and Linux, Intel and ARM.
+
+Computer **0.3.9** was published to Beta and installed on the verification Mac.
+The service reconnected to herdr and the relay with its pairing identity intact.
+The Mac's service had still referenced a stopped test session; restarting it
+against the active herdr session corrected that configuration without restarting
+herdr or its agents.
+
+A signed production iOS archive and a simulator build from the same source
+completed. The archive's signature, bundle identifier, loopback-only ATS setting,
+13 privacy manifests and absence of the two encryption declaration keys were
+verified. All **16** Claude/Codex creation/navigation cases passed on the
+iOS 27 simulator through the encrypted fixture, covering both entry points and
+all eight offered modes. This is simulator coverage, not a physical-device claim.
+
+Expo Doctor still reports the existing duplicate `expo-file-system` and
+`expo-font` patch versions and recommends SDK patch updates, as it did for the
+previous archive. No dependency versions were changed under the existing
+dependency-update hold. Both native builds and the simulator checks passed with
+the pinned dependency tree; those warnings remain a separate maintenance item.
