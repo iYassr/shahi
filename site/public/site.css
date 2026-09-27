@@ -125,9 +125,9 @@ figcaption { color: var(--muted); font-size: 12px; text-align: center; text-wrap
 /* One rhythm for every section below the example: the same rule above each, the same
    space around it, one heading size and one body size. They had grown five paddings,
    four heading sizes and 14px body text beside an 18px lede. */
-.setup, .features, .why, .security, .beta, .closing { padding: 64px 0; border-top: 1px solid var(--line); }
+.setup, .features, .why, .security, .beta, .faq, .closing { padding: 64px 0; border-top: 1px solid var(--line); }
 h2, .features h3 { text-wrap: balance; font-size: 19px; font-weight: 500; letter-spacing: -.025em; line-height: 1.3; margin: 20px 0 12px; }
-.setup h2, .why h2, .security h2, .beta h2, .closing h2 { font-size: clamp(26px, 3.2vw, 34px); letter-spacing: -.03em; line-height: 1.2; margin: 0 0 16px; }
+.setup h2, .why h2, .security h2, .beta h2, .faq h2, .closing h2 { font-size: clamp(26px, 3.2vw, 34px); letter-spacing: -.03em; line-height: 1.2; margin: 0 0 16px; }
 /* :where() adds nothing to the weight, so .command p below still sets its caption's size. */
 .features p, .setup p:where(:not(.eyebrow)) { font-size: 16px; color: var(--muted); margin: 0; }
 .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 42px; }
@@ -155,7 +155,7 @@ footer nav { display: flex; gap: 24px; }footer a { display: inline-flex; align-i
 /* Below 960px the three feature columns ran seven to nine lines each, and two setup
    columns left the commands a 302px box (at 768) where they need 322px. */
 @media (max-width: 960px) { .features { grid-template-columns: 1fr; gap: 28px; }.features article { display: grid; grid-template-columns: 30px 1fr; gap: 0 14px; max-width: 680px; }.feature-number { grid-row: 1 / 3; padding-top: 5px; }.features h3 { margin: 0 0 8px; }.features p { grid-column: 2; }.setup { grid-template-columns: 1fr; gap: 28px; }.command { max-width: 560px; } }
-@media (max-width: 760px) { .wrap { padding: 0 24px; }.masthead { padding: 24px 0; }.hero { padding: 48px 0; }.launch { margin-bottom: 40px; }.launch-video video { aspect-ratio: 1; border-radius: 12px; }.product-frame { grid-template-columns: 1fr; }.inbox { border-right: 0; }.inbox .panel-heading { min-height: 50px; }.agent-row { padding: 14px 20px; }.agent-row:not(.selected), .preview-nav { display: none; }.selected > div { display: grid; grid-template-columns: 1fr auto; gap: 0 16px; width: 100%; }.selected .state { grid-column: 2; grid-row: 1 / 3; margin: 0; }.reader > .panel-heading { display: none; }.setup, .features, .why, .security, .beta, .closing { padding: 48px 0; }.conversation { padding: 20px; font-size: 16px; } }
+@media (max-width: 760px) { .wrap { padding: 0 24px; }.masthead { padding: 24px 0; }.hero { padding: 48px 0; }.launch { margin-bottom: 40px; }.launch-video video { aspect-ratio: 1; border-radius: 12px; }.product-frame { grid-template-columns: 1fr; }.inbox { border-right: 0; }.inbox .panel-heading { min-height: 50px; }.agent-row { padding: 14px 20px; }.agent-row:not(.selected), .preview-nav { display: none; }.selected > div { display: grid; grid-template-columns: 1fr auto; gap: 0 16px; width: 100%; }.selected .state { grid-column: 2; grid-row: 1 / 3; margin: 0; }.reader > .panel-heading { display: none; }.setup, .features, .why, .security, .beta, .faq, .closing { padding: 48px 0; }.conversation { padding: 20px; font-size: 16px; } }
 /* The arrow and its gap stay outside the centred label, matching the second
    button. Compact type and top space keep the two hero actions reachable on
    phones; provider names sit below them instead of lengthening the lede. */
@@ -175,6 +175,15 @@ footer nav { display: flex; gap: 24px; }footer a { display: inline-flex; align-i
 .closing h2 { margin: 0; }
 .closing p { max-width: 560px; margin: 0; font-size: 16px; color: var(--muted); }
 .closing .quiet-link { justify-self: start; }
+
+/* Native disclosures keep keyboard support and open state without JavaScript. */
+.faq { scroll-margin-top: 24px; }
+.faq-list { max-width: 760px; }
+.faq details { border-top: 1px solid var(--line); }
+.faq summary { min-height: 56px; padding: 14px 0; cursor: pointer; font-weight: 500; line-height: 1.5; }
+.faq summary::marker { color: var(--muted); }
+.faq summary:hover { color: var(--accent); }
+.faq details p { margin: 0 0 18px; color: var(--muted); font-size: 16px; }
 
 /* The iOS beta form lives in a modal dialog, opened from the hero, the availability line and the beta section. */
 .beta-dialog { width: min(100% - 32px, 520px); padding: 0; border: 1px solid var(--line-bright); border-radius: var(--radius-card); background: var(--surface); color: var(--text); box-shadow: 0 24px 70px #00000080; overscroll-behavior: contain; }

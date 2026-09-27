@@ -9,7 +9,8 @@
 Read, answer and steer your Claude Code, Codex, Cursor CLI,<br>
 Antigravity and OpenCode sessions in herdr from your phone.
 
-**Two commands, one scan, about a minute.** End-to-end encrypted. No account, VPN or open port.
+**Two commands, one scan, about a minute.** Shahi's encrypted tunnel is ready to
+use and free for everyone. No VPN, port forwarding or Shahi account required.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
@@ -66,8 +67,9 @@ Reader formats the content each supported agent records, with no per-tool layout
 to configure. Coverage differs by provider; the table below lists the main
 limits. Screen mode remains available for the terminal itself.
 
-- **Scan and connect.** The default connection uses a pairing QR code. No Shahi
-  account, public server port, VPN installation, or domain setup is needed.
+- **A free tunnel, ready to use.** Scan a pairing QR code to connect through
+  Shahi's built-in encrypted tunnel. It is free for everyone, with no Shahi
+  account, public server port, VPN installation or domain setup needed.
 - **Read comfortably.** Conversation view formats messages, code, tool calls,
   and results for a small screen. Screen mode shows the underlying terminal.
 - **Keep work moving.** Answer supported permission prompts inline, send a
@@ -300,6 +302,11 @@ systemctl --user daemon-reload
 
 ## How it connects
 
+**Shahi's tunnel is included, ready to use and free for everyone.** There is no
+VPN to install, tunnel service to subscribe to, or port forwarding to configure.
+Your coding agents still use their own providers and any accounts or plans
+those providers require.
+
 Both your phone and your computer make an **outbound connection** to Shahi’s
 relay. That lets them find each other without opening an inbound port on your
 computer or configuring your router.
@@ -373,6 +380,78 @@ what the published security reviews do—and do not—establish. The project has
 not had an independent security audit. For data collection
 and retention, read the [privacy policy](docs/privacy-policy.md). Report security
 issues through [SECURITY.md](SECURITY.md).
+
+## FAQ
+
+<details>
+<summary>What do I need on my computer?</summary>
+
+Install herdr and the coding agents you want to use, sign in to those agents on
+the computer, then add the Shahi plugin. Run the agents inside herdr so Shahi can
+find them. See [Quick start](#quick-start) for versions and setup commands.
+
+</details>
+
+<details>
+<summary>Will my agents keep working when I close Shahi?</summary>
+
+Closing Shahi on your phone does not stop the agents on your computer. The
+computer must remain awake, connected and running herdr. An agent waiting for
+permission or an answer still needs your response before it can continue.
+
+</details>
+
+<details>
+<summary>Which agents can I read as a conversation?</summary>
+
+Claude Code, Codex, Cursor CLI, Antigravity and OpenCode. Coverage depends on the
+transcript each agent records; some results and attachments are unavailable.
+The [coverage table](#supported-agents) explains the limits. Screen mode shows
+the original terminal for other agents and output Reader cannot format.
+
+</details>
+
+<details>
+<summary>Is the Shahi tunnel free? Do I need a VPN?</summary>
+
+The built-in Shahi tunnel is ready to use and free for everyone. No Shahi
+account, VPN or port forwarding is needed: both devices connect outward through
+the encrypted relay, paired with a one-time QR code. Your coding agent's account
+or subscription is separate. The iPhone app also supports your existing SSH connection;
+see [connection options](#how-it-connects).
+
+</details>
+
+<details>
+<summary>Can the relay read my code or conversations?</summary>
+
+The relay forwards encrypted content without the keys to read it. It and its
+hosting provider can see connection metadata, including IP addresses, traffic
+sizes and timing. Your connected devices can read the content. The
+[privacy policy](https://getshahi.dev/privacy) also explains diagnostics,
+notifications and data retention; it is linked from Connect and Settings in
+the app.
+
+</details>
+
+<details>
+<summary>Can I connect more than one computer?</summary>
+
+Yes. Add each computer from **Settings → Computers → Add a computer**, then
+switch using the computer name on the main screen. Each computer has its own
+pairing and sessions.
+
+</details>
+
+<details>
+<summary>Is Shahi available for iPhone and Android?</summary>
+
+The web app works in a modern phone browser and can be added to the home screen.
+The native iPhone app is in private TestFlight beta; [request an
+invite](https://getshahi.dev/#ios-beta) and wait for the invitation email. A native
+Android app is not currently available.
+
+</details>
 
 ## Development
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shahi — your herdr agents, as a chat on your phone.</title>
-<meta name="description" content="Read and steer Claude Code, Codex, Cursor CLI, Antigravity and OpenCode in herdr from your phone. End-to-end encrypted. Open source.">
+<meta name="description" content="Read and steer your herdr coding agents from your phone. Built-in Shahi tunnel, free for everyone. End-to-end encrypted. No VPN or port forwarding.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E0D0B">
 <link rel="canonical" href="https://getshahi.dev/">
@@ -12,7 +12,7 @@
      site/og/render.ts from og.html so the card stays on-brand and local. -->
 <meta property="og:site_name" content="Shahi">
 <meta property="og:title" content="Shahi — your herdr agents, as a chat on your phone.">
-<meta property="og:description" content="Read and steer Claude Code, Codex, Cursor CLI, Antigravity and OpenCode from your phone. Two commands, one scan, end-to-end encrypted.">
+<meta property="og:description" content="Your herdr coding agents, on your phone. A free Shahi tunnel, ready to use. End-to-end encrypted. No VPN or port forwarding.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getshahi.dev/">
 <meta property="og:image" content="https://getshahi.dev/og.png">
@@ -44,7 +44,7 @@
     <section class="hero" aria-labelledby="headline">
       <p class="eyebrow">A plugin for herdr, the terminal workspace for coding agents</p>
       <h1 id="headline">Your agents,<br><span>as a chat on your phone.</span></h1>
-      <p class="lede">Keep your coding agents moving when you step away. Read their work, answer questions and send the next instruction from your phone. Add one plugin to <a href="https://herdr.dev">herdr</a>, scan a QR code, and connect with <span class="nowrap">end-to-end</span> encryption.</p>
+      <p class="lede">Read your agents’ work and keep it moving from your phone. Shahi’s built-in tunnel is encrypted end to end, ready to use and free for everyone. Add the plugin to <a href="https://herdr.dev">herdr</a> and scan a QR code.</p>
       <div class="hero-actions">
         <div class="hero-buttons">
           <a class="button-primary" href="/pwa/">Open Shahi Web App <span aria-hidden="true">↗</span></a>
@@ -53,7 +53,7 @@
         </div>
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
-      <p class="availability"><span>No account, VPN or open ports.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
+      <p class="availability"><span>Free Shahi tunnel · No Shahi account, VPN or port forwarding.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
       <div class="reader-providers" role="group" aria-labelledby="reader-providers-label">
         <p id="reader-providers-label">Reader support</p>
         <ul class="provider-list" role="list">
@@ -129,7 +129,7 @@
       <div>
         <p class="eyebrow">Setup</p>
         <h2 id="setup-title">Install. Scan. Connect.</h2>
-        <p>Two commands in herdr on your Mac or Linux computer, then one scan on your phone: about a minute once herdr is running.</p>
+        <p>Two commands in herdr on your Mac or Linux computer, then one scan on your phone: about a minute once herdr is running. The Shahi tunnel is included and connects automatically after pairing.</p>
         <!-- The code is a shahi:// link, which a phone's camera cannot hand to a browser. -->
         <p>On your phone, open <a href="/pwa/">getshahi.dev/pwa</a> and tap <strong>Scan QR code</strong>, or scan it with the iOS app. Your camera app can’t pass this code to the browser, so scan it from inside Shahi.</p>
         <p><strong>New to herdr?</strong> Shahi shows the agents you run inside it. <a href="https://herdr.dev">Install herdr first</a>, then start your agents there.</p>
@@ -207,6 +207,40 @@ herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer,
         </form>
       </div>
     </dialog>
+
+    <section class="faq" id="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title">Frequently asked questions.</h2>
+      <div class="faq-list">
+        <details>
+          <summary>What do I need before I connect?</summary>
+          <p>Install herdr and your coding agent’s CLI on your Mac or Linux computer, then sign in to the agent or configure its provider credentials. Run your agents inside herdr and install the Shahi plugin. The <a href="#quick-start">setup section</a> has the requirements and commands.</p>
+        </details>
+        <details>
+          <summary>Will my agents keep working when I close Shahi?</summary>
+          <p>Yes. Closing Shahi on your phone does not stop the agents running on your computer. Keep that computer or server awake and connected to the internet to receive live updates and send instructions.</p>
+        </details>
+        <details>
+          <summary>Which agents can I read in Shahi?</summary>
+          <p>Reader formats saved conversations from Claude Code, Codex, Cursor CLI, Antigravity and OpenCode. Coverage varies: some tool results, images and attachments are unavailable. Use Screen for the underlying terminal, including other agents herdr runs. See the <a href="https://github.com/iYassr/shahi/blob/master/docs/reader-providers-2026-09-27.md">Reader coverage and limits</a>.</p>
+        </details>
+        <details>
+          <summary>Is the Shahi tunnel free? Do I need a VPN?</summary>
+          <p>Shahi’s built-in tunnel is ready to use and free for everyone. It uses outbound internet connections, so you need no Shahi account, VPN or port forwarding. Your agents still use their own provider accounts; any agent subscriptions or API charges are separate.</p>
+        </details>
+        <details>
+          <summary>Can the relay read my conversations?</summary>
+          <p>No. Conversation, file and command content is encrypted end to end between your device and computer. The relay and Cloudflare can see connection metadata, including IP addresses, identifiers, traffic size and timing. Read about <a href="#connection-security">connection security and its limits</a>, including device security and optional notifications.</p>
+        </details>
+        <details>
+          <summary>Can I connect more than one computer?</summary>
+          <p>Yes. Pair each one from <strong>Settings → Computers → Add a computer</strong>. Tap the computer name on the main screen, or open Computers in Settings, to switch. Each computer keeps its own connection while Shahi is open.</p>
+        </details>
+        <details>
+          <summary>Is there an iPhone or Android app?</summary>
+          <p>The iPhone app is in a private TestFlight beta. <a href="#ios-beta">Request an invite</a>; invitations arrive by email as places become available. On Android, use the <a href="/pwa/">web app</a> and add it to your home screen. The web app also works on iPhone; a native Android release is not currently available.</p>
+        </details>
+      </div>
+    </section>
 
     <section class="closing" aria-labelledby="closing-title">
       <h2 id="closing-title">Two commands, one scan.</h2>
