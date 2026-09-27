@@ -1,6 +1,6 @@
 import { modesFor } from "@shahi/shared";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
@@ -86,6 +86,21 @@ describe("installedAgents and a slow shell", () => {
     writeFileSync(path, `#!/bin/sh\n${prelude}\nexec /bin/bash "$@"\n`, { mode: 0o755 });
     return path;
   }
+
+  test("finds Cursor's agent without the editor and refuses an editor-only installation", async () => {
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    const isolatedShell = join(dir, "isolated-shell");
+    writeFileSync(isolatedShell, `#!/bin/sh\nPATH='${bin}' exec /bin/bash --noprofile --norc "$@"\n`, { mode: 0o755 });
+    process.env.SHELL = isolatedShell;
+    writeFileSync(join(bin, "cursor-agent"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    expect(await installedAgents(["cursor"])).toEqual([{ kind: "cursor", command: join(bin, "cursor-agent") }]);
+
+    rmSync(join(bin, "cursor-agent"));
+    writeFileSync(join(bin, "cursor"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    forgetInstalledAgents();
+    expect(await installedAgents(["cursor"])).toEqual([]);
+  });
 
   test("the sidecar keeps serving while the user's shell starts", async () => {
     process.env.SHELL = shell("sleep 0.6");

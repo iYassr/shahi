@@ -103,6 +103,8 @@ export function stripAnsi(text: string): string {
 }
 
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
+import { providerPrompt } from "./provider-prompts";
+import { openCodePrompt } from "./opencode-prompt";
 
 export type { ParsedPrompt, PromptOption };
 
@@ -124,9 +126,15 @@ export interface ParseOptions {
 export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedPrompt | null {
   const scanLines = options.scanLines ?? 25;
 
-  const allLines = stripAnsi(screen).split("\n").map((l) => l.trimEnd());
+  // A top-aligned startup menu can have more than 25 empty terminal rows
+  // below it. Empty padding must not push a live menu outside the scan.
+  const allLines = stripAnsi(screen).trimEnd().split("\n").map((l) => l.trimEnd());
   const start = Math.max(0, allLines.length - scanLines);
   const lines = allLines.slice(start);
+  const openCode = openCodePrompt(screen, allLines);
+  if (openCode) return openCode;
+  const provider = providerPrompt(lines);
+  if (provider) return provider.prompt;
 
   const run = findOptionRun(lines) ?? findCursorMenu(lines);
   if (!run) return null;
@@ -143,6 +151,7 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
       : {}),
     ...(question.context.length > 0 ? { context: question.context } : {}),
   };
+  if (prompt.question === "shift+tab to auto-approve file edits Accept this file edit?") prompt.question = "Accept this file edit?";
   for (const option of prompt.options) if (isTextField(prompt, option)) option.textInput = true;
   return prompt;
 }
@@ -480,6 +489,7 @@ function dedent(block: string[]): string {
  * Claude what to do differently": typing there does nothing.
  */
 export function isTextField(prompt: ParsedPrompt, option: PromptOption): boolean {
+  if (option.textInput) return true;
   if (TEXT_FIELD_LABELS.has(option.label) || option.detail === PLAN_FEEDBACK_DETAIL) return true;
   const n = prompt.options.indexOf(option);
   return n >= 0 && n === prompt.options.length - 2 && prompt.options.at(-1)!.label === "Chat about this";

@@ -557,8 +557,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   const prompted = new Set<string>();
   poller.on("frame", (frame: PaneFrame) => {
     if (frame.prompt) {
+      const appeared = !prompted.has(frame.paneId);
       prompted.add(frame.paneId);
       broadcast({ type: "prompt", paneId: frame.paneId, prompt: frame.prompt });
+      if (appeared) broadcastSession();
     } else if (prompted.delete(frame.paneId)) broadcastSession();
   });
 
@@ -1616,7 +1618,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     workspaceId: pane.workspace_id,
     workspaceLabel: store.workspace(pane.workspace_id)?.label ?? pane.workspace_id,
     tabId: pane.tab_id,
-    status: pane.agent_status,
+    status: poller.frame(pane.pane_id)?.prompt ? "blocked" : pane.agent_status,
     agent: pane.display_agent ?? pane.agent ?? null,
     title: paneTitle(pane),
     cwd: pane.cwd ?? null,
@@ -1629,7 +1631,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     // snapshot's prompt as the current one, and a frame that arrived while a
     // summary was read is newer than one read before it.
     hasPrompt: poller.frame(pane.pane_id)?.prompt != null,
-    prompt: pane.agent_status === "blocked" ? (poller.frame(pane.pane_id)?.prompt ?? null) : null,
+    prompt: poller.frame(pane.pane_id)?.prompt ?? null,
     activity: poller.frame(pane.pane_id)?.activity ?? null,
   })));
 

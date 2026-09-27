@@ -1233,3 +1233,29 @@ must not capture Tab or Escape. Mark sending before receipt, working only after 
 `site/privacy.test.ts` requires all review-environment expiry disclosures to match
 `demo/wrangler.toml`. `relay/test/protocol-doc.test.ts` checks hello versions and
 close-code ownership. Keep these checks in `bun run test` and `test:relay`.
+
+## Live provider checks, September 27
+
+`docs/provider-modes-2026-09-27.md` records the real-work checks and their limits.
+Discover herdr's `cursor` through `cursor-agent`; `cursor` launches the editor.
+
+Current Codex folder trust can sit above 25 empty rows. Trim empty terminal
+padding before scanning. Cursor trust/commands have letter shortcuts, and
+OpenCode permission menus have horizontal choices whose cursor is a distinct
+background colour. Preserve ANSI through parsing and through both write guards;
+never assume OpenCode's first choice is still selected. Unknown highlight shapes
+remain unparsed. Existing clients send index/label; fresh server reads choose keys.
+
+herdr 0.9.1 can report idle/done while current Codex, Cursor or Antigravity menus
+wait. Only the exact measured provider shapes in `provider-prompts.ts` override
+that status; generic numbered prose still requires herdr's blocked state. The
+dashboard projects those cards as waiting, and clears them when the screen changes.
+Cursor's Skip opens a feedback field. Typing replaces its entire hint. Before
+Enter, verify the exact replacement and unchanged screen above it. Wrapped or
+multiline feedback stays conservative and may require Enter from the key bar.
+
+All four Codex modes set `approvals_reviewer="user"`. Besides making reviewer
+ownership explicit, on 0.157.1 this per-invocation configuration uses an embedded
+server. Without it Full auto and bypass attached to the shared daemon, losing
+this terminal's hook environment and exact process-file Reader lookup. Never
+repair that by selecting a rollout by working folder or modification time.

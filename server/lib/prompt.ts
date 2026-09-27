@@ -41,6 +41,7 @@
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
+import { cursorFeedbackTyped } from "./provider-prompts";
 
 /** The herdr calls this module is allowed to make, typed loosely so a test can fake them. */
 export type PromptRpc = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -146,7 +147,7 @@ export async function submitPrompt(
   // is also what catches a menu drawn over text typed before it: sent the
   // moment Claude Code had the terminal, 4 messages in 4 were stopped here
   // with its trust menu up (B4, re-verified).
-  if (!sameSpot(menu, await openMenu(rpc, paneId, { refuse: false }))) throw new PromptMoved();
+  if (!sameSpot(menu, await openMenu(rpc, paneId, { refuse: false, previous: menu, typed: text }))) throw new PromptMoved();
   await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
   return "terminal";
 }
@@ -155,6 +156,7 @@ export async function submitPrompt(
 interface Spot {
   question: string;
   row: number;
+  feedbackScreen?: string;
 }
 
 function sameSpot(before: Spot | null, after: Spot | null): boolean {
@@ -167,7 +169,7 @@ function sameSpot(before: Spot | null, after: Spot | null): boolean {
  * would not take typed text is refused with `PromptOpen`, unless `refuse` is
  * false, when it is returned like any other.
  */
-async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true } = {}): Promise<Spot | null> {
+async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previous, typed }: { refuse?: boolean; previous?: Spot | null; typed?: string } = {}): Promise<Spot | null> {
   // The same read the poller and `answer.ts` make, so the menu found here is
   // the one the phone was offered buttons for.
   const { read } = (await rpc("pane.read", {
@@ -176,11 +178,12 @@ async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true } = {}):
     format: "ansi",
     strip_ansi: false,
   })) as { read: { text: string } };
-  const menu = parsePrompt(stripAnsi(read.text));
+  const menu = parsePrompt(read.text);
+  if (!menu && previous?.feedbackScreen && typed !== undefined && cursorFeedbackTyped(previous.feedbackScreen, stripAnsi(read.text), typed)) return previous;
   if (!menu) return null;
   const lit = menu.options.find((option) => option.selected);
   if (refuse && (!lit || !isTextField(menu, lit))) throw new PromptOpen();
-  return { question: menu.question, row: lit?.index ?? 0 };
+  return { question: menu.question, row: lit?.index ?? 0, ...(menu.question === "Tell the agent what to do instead" && lit?.textInput ? { feedbackScreen: stripAnsi(read.text) } : {}) };
 }
 
 /**

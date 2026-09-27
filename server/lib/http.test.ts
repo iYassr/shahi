@@ -7,7 +7,7 @@
  * server is the real `createServer`; only herdr is faked, with the three
  * methods these routes reach.
  */
-import { SHAHI_API_VERSION } from "@shahi/shared";
+import { SHAHI_API_VERSION, type Session } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
@@ -1784,4 +1784,60 @@ test("a pane whose title is only spaces reaches the phone with no title", async 
   await store.resync();
   const session = await dashboard(store, { frame: () => undefined } as unknown as Poller);
   expect(session.panes.map((p) => [p.paneId, p.title])).toEqual([[PANE, null]]);
+});
+
+// Installed CLIs can be waiting while herdr still reports idle/done. These
+// exact menus must block free text and appear as waiting on every dashboard.
+describe("provider menus herdr has not recognised", () => {
+  for (const [kind, fixture] of [["codex", "CODEX_TRUST"], ["cursor", "CURSOR_TRUST"], ["cursor", "CURSOR_COMMAND"], ["agy", "AGY_TRUST"], ["agy", "AGY_EDIT"]] as const) {
+    test(`${kind} ${fixture}: no typed input and a current dashboard card`, async () => {
+      const menus = await import("../fixtures/provider-menus");
+      agentStatus = "idle";
+      const app = await boot();
+      try {
+        app.herdr.panes[0]!.agent = kind;
+        await app.store.resync();
+        screen = menus[fixture];
+        await app.poller.refresh(PANE);
+        const getSession = async () => (await fetch(`${app.base}/api/session`, { headers: { cookie: app.cookie } })).json() as Promise<Session>;
+        const waiting = (await getSession()).panes[0]!;
+        expect(waiting.status).toBe("blocked");
+        expect(waiting.prompt?.options.length).toBeGreaterThan(1);
+        const before = app.calls.length;
+        const refused = await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/prompt`, {
+          method: "POST", headers: { cookie: app.cookie, "content-type": "application/json" },
+          body: JSON.stringify({ text: "read sample.txt", clientMessageId: crypto.randomUUID() }),
+        });
+        expect(refused.status).toBe(409);
+        expect((await refused.json() as { code: string }).code).toBe("prompt_open");
+        expect(app.calls.slice(before).filter(c => WRITES.has(c.method))).toEqual([]);
+        screen = "Ready for another message";
+        await app.poller.refresh(PANE);
+        const ready = (await getSession()).panes[0]!;
+        expect(ready.status).toBe("idle");
+        expect(ready.prompt).toBeNull();
+      } finally { app.stop(); agentStatus = null; screen = ""; }
+    });
+  }
+});
+
+test("OpenCode's coloured approval rejects typing and answers the fresh horizontal selection", async () => {
+  const { openCodeMenu } = await import("../fixtures/provider-menus");
+  agentStatus = "blocked";
+  const app = await boot();
+  try {
+    app.herdr.panes[0]!.agent = "opencode";
+    await app.store.resync();
+    screen = openCodeMenu(0);
+    await app.poller.refresh(PANE);
+    expect(app.poller.frame(PANE)?.prompt?.answer).toBe("horizontal");
+    const post = (action: string, body: unknown) => fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/${action}`, {
+      method: "POST", headers: { cookie: app.cookie, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await post("prompt", { text: "no", clientMessageId: "opencode-no" })).status).toBe(409);
+    screen = openCodeMenu(1); // The user moves right after the phone draws.
+    const before = app.calls.length;
+    expect((await post("answer", { index: 3, label: "Reject", question: "Permission required", context: app.poller.frame(PANE)!.prompt!.context })).status).toBe(200);
+    expect(app.calls.slice(before).filter(c => WRITES.has(c.method))).toEqual([{ method: "pane.send_keys", params: { pane_id: PANE, keys: ["Right", "Enter"] } }]);
+  } finally { app.stop(); agentStatus = null; screen = ""; }
 });

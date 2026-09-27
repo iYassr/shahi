@@ -41,7 +41,7 @@ describe("modesFor", () => {
 describe("argsForMode", () => {
   test("resolves a choice to its flags", () => {
     expect(argsForMode("claude", "acceptEdits")).toEqual(["--permission-mode", "acceptEdits"]);
-    expect(argsForMode("codex", "full-auto")).toEqual(["--sandbox", "workspace-write", "--ask-for-approval", "never"]);
+    expect(argsForMode("codex", "full-auto")).toEqual(["--sandbox", "workspace-write", "--ask-for-approval", "never", "-c", 'approvals_reviewer="user"']);
   });
 
   test("adds nothing for anything it does not recognise", () => {

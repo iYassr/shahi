@@ -146,6 +146,8 @@ export interface PromptOption {
   label: string;
   /** True for the option currently under the cursor. */
   selected: boolean;
+  /** A shortcut printed by a recognised provider menu; interpreted only by the server. */
+  key?: string;
   /** Selecting this row opens a text field; it does not submit an answer yet. */
   textInput?: boolean;
   /**
@@ -168,7 +170,7 @@ export interface ParsedPrompt {
    * the screen, decides the keystrokes. Shown so the card can drop the
    * numbers where they would mean nothing.
    */
-  answer: "digit" | "cursor";
+  answer: "digit" | "cursor" | "key" | "horizontal";
   /** Some numbered startup menus select by digit but still require Enter. */
   confirm?: boolean;
   options: PromptOption[];

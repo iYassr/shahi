@@ -26,6 +26,7 @@ import { parseActivity } from "./activity";
 
 export type { PaneFrame };
 import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
+import { providerIsWaiting } from "./provider-prompts";
 import { PromptInstances, screenId } from "./prompt-instances";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
@@ -266,7 +267,7 @@ export class Poller extends EventEmitter<PollerEvents> {
       const current = existing.frame.prompt;
       const stale = current !== null && promptId !== undefined && current.promptId !== promptId &&
         !this.prompts.alreadyAnswered(paneId, hash);
-      if (stale || (existing.parsed && !current && (await this.#status(paneId, true)) === "blocked")) {
+      if (stale || (existing.parsed && !current && (await this.#status(paneId, existing.parsed, existing.frame.text)) === "blocked")) {
         // A read that finished meanwhile holds a newer screen; keep that.
         const latest = this.#records.get(paneId);
         if (latest !== existing) return latest?.frame;
@@ -277,20 +278,19 @@ export class Poller extends EventEmitter<PollerEvents> {
     }
 
     // One read serves all three consumers: xterm.js needs the escapes, the
-    // parser and transcript need them gone. Stripping locally avoids a second
-    // round-trip for the same screen.
+    // transcript needs them gone. The parser retains colour for OpenCode's
+    // horizontal selection. One read keeps those views on the same screen.
     const text = stripAnsi(read.text);
-    const parsed = parsePrompt(text);
+    const parsed = parsePrompt(read.text);
     const promptId = this.prompts.observe(paneId, ticket, parsed, hash);
-    const status = await this.#status(paneId, parsed !== null);
+    const status = await this.#status(paneId, parsed, text);
 
     const frame: PaneFrame = {
       paneId,
       ansi: read.text,
       text,
-      // Only offer answer buttons when herdr itself says the agent is waiting.
-      // The parser is deliberately strict, but this is the outer guard: a tap
-      // sends a real keystroke into a live session.
+      // Require herdr's blocked state, or a measured provider-specific menu
+      // whose exact renderer is missing from herdr's current detection rules.
       prompt: status === "blocked" && parsed ? withId(parsed, promptId) : null,
       // Deliberately not gated on herdr's `agent_status`. Its working-state
       // detection is tuned for Claude Code: a codex pane displaying
@@ -327,8 +327,11 @@ export class Poller extends EventEmitter<PollerEvents> {
    * to be behind, rate-limited so a screen the parser mis-reads cannot turn
    * every frame into two calls.
    */
-  async #status(paneId: string, screenLooksBlocked: boolean): Promise<string | undefined> {
-    const mirrored = this.store.pane(paneId)?.agent_status;
+  async #status(paneId: string, parsed: ParsedPrompt | null, text: string): Promise<string | undefined> {
+    const pane = this.store.pane(paneId);
+    const mirrored = pane?.agent_status;
+    if (providerIsWaiting(pane?.agent, text, parsed)) return "blocked";
+    const screenLooksBlocked = parsed !== null;
     if (!screenLooksBlocked || mirrored === "blocked") return mirrored;
 
     const now = Date.now();

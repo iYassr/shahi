@@ -22,7 +22,7 @@
  * shows what is actually on screen.
  */
 
-import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
+import { isTextField, parsePrompt } from "./prompt-parser";
 import { PromptInstances, screenId } from "./prompt-instances";
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
 
@@ -89,6 +89,13 @@ export class PromptChanged extends Error {
  * the answer is what the person types next.
  */
 export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
+  if (target.selected && isTextField(prompt, target)) return [];
+  if (prompt.answer === "key") {
+    // Choices posted by clients contain only index/label. This key always
+    // comes from a fresh, recognised menu, never from the request body.
+    if (!target.key || !["a", "q", "y", "n", "Tab", "shift+tab"].includes(target.key)) throw new Error("Unrecognised menu shortcut");
+    return [target.key];
+  }
   if (prompt.answer === "digit") {
     const lit = prompt.options.find((o) => o.selected);
     const inField = lit !== undefined && isTextField(prompt, lit);
@@ -98,7 +105,7 @@ export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
   const from = prompt.options.findIndex((o) => o.selected);
   const to = prompt.options.indexOf(target);
   const delta = to - from;
-  const moves = Array.from({ length: Math.abs(delta) }, () => (delta > 0 ? "Down" : "Up"));
+  const moves = Array.from({ length: Math.abs(delta) }, () => prompt.answer === "horizontal" ? (delta > 0 ? "Right" : "Left") : (delta > 0 ? "Down" : "Up"));
   return [...moves, "Enter"];
 }
 
@@ -178,7 +185,7 @@ async function look(rpc: AnswerRpc, paneId: string, instances: PromptInstances) 
       strip_ansi: false,
     })) as { read: { text: string } };
     const screen = screenId(read.text);
-    const prompt = parsePrompt(stripAnsi(read.text));
+    const prompt = parsePrompt(read.text);
     const promptId = instances.observe(paneId, ticket, prompt, screen);
     if (!prompt || promptId !== undefined || attempt === LOOK_ATTEMPTS) return { prompt, screen, promptId };
   }

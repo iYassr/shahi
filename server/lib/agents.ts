@@ -74,7 +74,13 @@ async function discover(kinds: string[], now: () => number, timeoutMs: number): 
 
   // One shell, one line per resolved agent, so a slow profile is paid once.
   const script = safe
-    .map((kind) => `p=$(command -v ${kind} 2>/dev/null) && printf '%s\\t%s\\n' ${kind} "$p"`)
+    .map((kind) => {
+      // herdr's `cursor` kind launches cursor-agent. `cursor` is the editor's
+      // launcher: requiring it hides a working CLI-only installation, while
+      // finding the editor alone cannot establish that the agent will start.
+      const command = kind === "cursor" ? "cursor-agent" : kind;
+      return `p=$(command -v ${command} 2>/dev/null) && printf '%s\\t%s\\n' ${kind} "$p"`;
+    })
     .join("; ");
 
   // `-i` is what sources ~/.bashrc; stderr is discarded because an interactive

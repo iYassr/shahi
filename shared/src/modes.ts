@@ -74,13 +74,18 @@ const CODEX: AgentMode[] = [
     id: "full-auto",
     label: "Full auto",
     description: "Runs commands without asking, inside its own sandbox.",
-    args: ["--sandbox", "workspace-write", "--ask-for-approval", "never"],
+    // Keep the reviewer explicit in every mode, including modes which never
+    // ask. Codex 0.157's shared daemon cannot apply this invocation override
+    // and runs an embedded server instead, preserving the pane's hook/session
+    // ownership and exact process-file Reader lookup. Without it these two
+    // modes silently attached to a daemon launched by another terminal.
+    args: ["--sandbox", "workspace-write", "--ask-for-approval", "never", "-c", 'approvals_reviewer="user"'],
   },
   {
     id: "bypass",
     label: "Skip sandbox and prompts",
     description: "Never asks and does not sandbox. Anything it runs, runs as you.",
-    args: ["--dangerously-bypass-approvals-and-sandbox"],
+    args: ["--dangerously-bypass-approvals-and-sandbox", "-c", 'approvals_reviewer="user"'],
     unsafe: true,
   },
 ];
