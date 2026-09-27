@@ -3,6 +3,7 @@ import { AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig } from "
 import { lerp, ramp, settle, window } from "./motion";
 import { Phone, PHONE_H, PHONE_W } from "./Phone";
 import { Terminal } from "./Terminal";
+import { brandMark } from "../../../shared/src/brand";
 import { c, mono, S, sans } from "./theme";
 
 export const Video = () => {
@@ -226,19 +227,10 @@ const EndCard = ({ f, wide }: { f: number; wide: boolean }) => {
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 26 * s, transform: `scale(${s})` }}>
-        {/* Geometry of docs/logo.svg; the steam square settling in is the brand's one sanctioned logo motion. */}
+        {/* The shared mark: the s arrives with the card, then the glass settles into the cursor's place — the brand's one sanctioned logo motion. */}
         <svg width={150} height={150} viewBox="0 0 100 100" style={{ opacity: mark }}>
-          <rect x="44" y="10" width="12" height="12" rx="2" fill={c.amber} opacity={steam} transform={`translate(0 ${(1 - steam) * 12})`} />
-          <path
-            d="M22 34H78L71 72Q70 80 62 80H38Q30 80 29 72Z"
-            fill="none"
-            stroke={c.amber}
-            strokeWidth={8}
-            strokeLinejoin="round"
-            pathLength={1}
-            strokeDasharray={1}
-            strokeDashoffset={1 - mark}
-          />
+          <path d={brandMark.letter} fill={c.amber} />
+          <path d={brandMark.glass} fill={c.amber} opacity={steam} transform={`translate(0 ${(1 - steam) * 10})`} />
         </svg>
         <Img src={staticFile("wordmark.svg")} style={{ height: 114, opacity: word, transform: `translateX(${(1 - word) * -16}px)` }} />
       </div>

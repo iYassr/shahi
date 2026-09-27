@@ -1,4 +1,4 @@
-# Shahi identity — 2.0
+# Shahi identity — 3.0
 
 ![Shahi identity](overview.png)
 
@@ -24,19 +24,21 @@ Avoid whimsical error messages, urgency without a reason, and claims such as “
 
 ## Logo
 
-The mark is a broad, tapered tea glass with a square of rising steam that also suggests a terminal cursor. The open interior keeps it legible at small sizes. It has no liquid line, device button, or animated steam.
+The mark is the wordmark's lowercase s followed by a tea glass, an istikana, standing where a text cursor would wait: a word just typed, and a glass of shahi. The glass keeps the cursor's footprint, so below about 40pt it reads as a caret and the s carries the mark; the tea shows from there up. Its proportions are what make it an istikana rather than an hourglass: a long straight flare, the waist below the middle, and a round belly low down.
+
+Identity 3.0 (September 2026) replaced a tapered glass under a square of steam. At home-screen and favicon sizes that mark read as a trash bin with a lid knob; ten alternatives were rendered at real sizes and judged, and this one was chosen.
 
 - Master mark and outlined wordmark geometry: `shared/src/brand.ts`. Native components and generated exports use it directly.
 - Amber mark: `../logo.svg`; dark and light monochrome: `mark-dark.svg`, `mark-light.svg`.
 - Outlined lowercase lettering: `wordmark.svg` (porcelain), `wordmark-dark.svg` (kettle black); horizontal combinations: `lockup.svg`, `lockup-dark.svg`. Monochrome combinations: `lockup-mono-light.svg`, `lockup-mono-dark.svg`.
 - Minimum mark canvas: 16px. Prefer 24–48px in product chrome; at 16px use the mark alone.
-- Clear space: at least one cursor square (12 units on the 100-unit canvas) outside the visible drawing.
+- Clear space: at least the width of the glass (about 18 units on the 100-unit canvas) outside the visible drawing.
 - Minimum lockup width: 116px. Do not squeeze or independently scale its parts.
 - Use amber or porcelain on dark grounds, kettle black on light grounds. Amber is not approved as a small mark on white.
-- Keep flat, single-color geometry. Do not add gradients, glows, shadows, extra steam, permanent rotation, or borders around the mark. The brief welcome motion below is the only decorative logo animation. Platform icon materials may be applied by the OS.
+- Keep flat, single-color geometry. Do not add gradients, glows, shadows, steam, a liquid line, permanent rotation, or borders around the mark. Keep the s and the glass together at their fixed spacing. The brief welcome motion below is the only decorative logo animation. Platform icon materials may be applied by the OS.
 - App icons have an opaque kettle-black ground and centered artwork inside the platform safe area. Android foreground and monochrome exports remain transparent.
 
-Run `bun run brand:assets` after geometry or export changes. It regenerates the SVG exports, website wordmark, native and PWA PNG icons, and this overview. The wordmark is outlined; it does not depend on an installed font. Brand lockups use the shared outlined lettering; ordinary in-app headings use the platform sans face for accessibility.
+Run `bun run brand:assets` after geometry or export changes. It regenerates the SVG exports, website and video wordmarks, native and PWA PNG icons, provider badges, and this overview. Then render the share card with `bun site/og/render.ts`; video sources use the same exported mark but published videos and posters need a fresh render through the [video publishing workflow](../../marketing/video/README.md). The wordmark is outlined; it does not depend on an installed font. Brand lockups use the shared outlined lettering; ordinary in-app headings use the platform sans face for accessibility.
 
 ## Color and emphasis
 
@@ -73,11 +75,11 @@ At full opacity on Steeped, calculated contrast ratios are porcelain 15.21:1, wa
 
 ## Applied examples and release checks
 
-- Website: headline, outlined wordmark, amber glass, restrained agent-inbox example.
+- Website: headline, outlined wordmark, amber mark, restrained agent-inbox example.
 - Connect: Shahi mark and a sans heading followed immediately by connection controls.
 - Agent list: neutral filters; amber retained for the request needing an answer.
 - Approval: readable sans choices with explicit labels; no color-only decisions.
-- Home-screen icon: amber glass on kettle black, with matching PWA and native exports.
+- Home-screen icon: the amber s and glass on kettle black, with matching PWA and native exports.
 
 Review the icon at 16, 24, and 48px and on a device home screen. Check text enlargement and contrast after changing a surface or opacity. Build both web targets and typecheck native before release. Native icon changes require a new native build. Existing screenshots are historical product captures; replace them with real updated device captures for the next store release, never retouch their UI.
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shahi — your herdr agents, as a chat on your phone.</title>
-<meta name="description" content="Your Claude Code, Codex and Cursor CLI sessions in herdr, as a chat on your phone. One plugin, one scan, end-to-end encrypted. Open source.">
+<meta name="description" content="Read and steer Claude Code, Codex, Cursor CLI, Antigravity and OpenCode in herdr from your phone. End-to-end encrypted. Open source.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E0D0B">
 <link rel="canonical" href="https://getshahi.dev/">
@@ -12,7 +12,7 @@
      site/og/render.ts from og.html so the card stays on-brand and local. -->
 <meta property="og:site_name" content="Shahi">
 <meta property="og:title" content="Shahi — your herdr agents, as a chat on your phone.">
-<meta property="og:description" content="Not a terminal squeezed onto a phone: Shahi turns your running agents into a conversation you read, answer and steer with your thumb. Two commands, one scan.">
+<meta property="og:description" content="Read and steer Claude Code, Codex, Cursor CLI, Antigravity and OpenCode from your phone. Two commands, one scan, end-to-end encrypted.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://getshahi.dev/">
 <meta property="og:image" content="https://getshahi.dev/og.png">
@@ -44,8 +44,7 @@
     <section class="hero" aria-labelledby="headline">
       <p class="eyebrow">A plugin for herdr, the terminal workspace for coding agents</p>
       <h1 id="headline">Your agents,<br><span>as a chat on your phone.</span></h1>
-      <!-- The one place "about a minute" is claimed up top; the setup section says what it assumes. -->
-      <p class="lede">Shahi turns the Claude Code, Codex and Cursor CLI sessions in <a href="https://herdr.dev">herdr</a> into a conversation you answer with your thumb, not a terminal squeezed onto a phone. Add one plugin, scan a QR code: connected in about a minute, <span class="nowrap">end-to-end</span> encrypted through a relay that can’t read your messages.</p>
+      <p class="lede">Keep your coding agents moving when you step away. Read their work, answer questions and send the next instruction from your phone. Add one plugin to <a href="https://herdr.dev">herdr</a>, scan a QR code, and connect with <span class="nowrap">end-to-end</span> encryption.</p>
       <div class="hero-actions">
         <div class="hero-buttons">
           <a class="button-primary" href="/pwa/">Open Shahi Web App <span aria-hidden="true">↗</span></a>
@@ -55,6 +54,17 @@
         <a class="quiet-link" href="#quick-start">Set up your computer <span aria-hidden="true">↓</span></a>
       </div>
       <p class="availability"><span>No account, VPN or open ports.</span> <span>Works in your phone’s browser · <a href="#ios-beta" data-beta-open>Join the iOS beta</a></span></p>
+      <div class="reader-providers" role="group" aria-labelledby="reader-providers-label">
+        <p id="reader-providers-label">Reader support</p>
+        <ul class="provider-list" role="list">
+          <li><img src="/agents/claude.svg" alt="" width="20" height="20"><span>Claude Code</span></li>
+          <li><img src="/agents/codex.svg" alt="" width="20" height="20"><span>Codex</span></li>
+          <li><img src="/agents/cursor.svg" alt="" width="20" height="20"><span>Cursor CLI</span></li>
+          <li><img src="/agents/agy.svg" alt="" width="20" height="20"><span>Antigravity</span></li>
+          <li><img src="/agents/opencode.svg" alt="" width="20" height="20"><span>OpenCode</span></li>
+        </ul>
+        <p class="provider-note">Coverage follows each agent’s saved transcript. <a href="https://github.com/iYassr/shahi/blob/master/docs/reader-providers-2026-09-27.md">See coverage and limits</a>.</p>
+      </div>
     </section>
 
     <div class="launch">
@@ -64,9 +74,9 @@
              served from R2 by site/src/media.ts; marketing/video/scripts/publish-media.ts
              writes their names here. Captions stay off until chosen: the frames carry their
              own large on-screen text. -->
-        <video controls playsinline preload="none" poster="/media/launch-poster.95cf6dff.jpg" aria-label="Shahi launch video" aria-describedby="launch-video-caption">
-          <source src="/media/launch-1x1.a0499c6a.mp4" type="video/mp4" media="(max-width: 760px)">
-          <source src="/media/launch-16x9.5dcc72a4.mp4" type="video/mp4">
+        <video controls playsinline preload="none" poster="/media/launch-poster.23b82789.jpg" aria-label="Shahi launch video" aria-describedby="launch-video-caption">
+          <source src="/media/launch-1x1.4d08d34d.mp4" type="video/mp4" media="(max-width: 760px)">
+          <source src="/media/launch-16x9.1c94ac46.mp4" type="video/mp4">
           <track kind="captions" srclang="en" label="English" src="/media/launch.eaadcd70.en.vtt">
         </video>
         <figcaption id="launch-video-caption">Shahi in 32 seconds, with sound. Captions are in the player’s menu.</figcaption>
@@ -126,20 +136,20 @@
         <a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a>
       </div>
       <div class="command"><div class="file-label">On your computer, in herdr</div><pre><code>herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer, git, and bun 1.3.13 or newer (if bun is missing, the install adds it), on macOS or on Linux with systemd. Each code can be used once and expires after 10 minutes.</p></div>
+herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer, git, and bun 1.3.13 or newer (if bun is missing, the install adds it), on macOS or Linux. Automatic background setup on Linux uses systemd. Each code can be used once and expires after 10 minutes.</p></div>
     </section>
 
     <section class="features" aria-labelledby="features-title">
       <h2 class="visually-hidden" id="features-title">What Shahi does</h2>
       <article><span class="feature-number">01</span><h3>Encrypted end to end, and live</h3><p>Your phone and computer encrypt every message they send each other. Shahi’s relay passes them along without being able to read them, so there is no Shahi account, no VPN and no open port. Conversations update as the agent writes.</p></article>
-      <article><span class="feature-number">02</span><h3>Like WhatsApp, for your agents</h3><p>Messages, tool calls, file changes and results arrive as a conversation made for your phone. Permission prompts Shahi recognises from Claude Code and Codex become buttons. Reply in a few taps and watch the agent carry on.</p></article>
+      <article><span class="feature-number">02</span><h3>Like WhatsApp, for your agents</h3><p>Messages, reasoning, supported tool results and file changes become a conversation made for your phone. Permission prompts Shahi recognises become buttons. Reply in a few taps and watch the agent carry on.</p></article>
       <article><span class="feature-number">03</span><h3>Built on herdr</h3><p>herdr is a lightweight home for your agents, with spaces, panes and live status for every one. Shahi mirrors all of it, so you can browse your spaces and start new agents from your phone.</p></article>
     </section>
 
     <section class="why" aria-labelledby="why-title">
       <p class="eyebrow">Why not a terminal app?</p>
       <h2 id="why-title">A terminal on a phone is not a good way to talk to an agent.</h2>
-      <p>SSH apps give you a terminal wrapped for a wide screen: you pinch, scroll sideways and hunt for Esc and Tab. Shahi reads the transcripts that Claude Code, Codex and Cursor keep for themselves, so their work fits your screen. The terminal is still one tap away, on the Screen tab, for the moments you need it and for any other agent herdr runs.</p>
+      <p>SSH apps give you a terminal wrapped for a wide screen: you pinch, scroll sideways and hunt for Esc and Tab. Shahi reads the saved conversations from Claude Code, Codex, Cursor CLI, Antigravity and OpenCode, so their messages fit your screen. Coverage depends on what each agent records: some tool results, images and other attachments may be unavailable. The original terminal is one tap away on the Screen tab, including for other agents herdr runs.</p>
     </section>
 
     <section class="security" id="connection-security" aria-labelledby="security-title">
@@ -205,7 +215,7 @@ herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer,
       <a class="quiet-link" href="#quick-start">See the two setup commands <span aria-hidden="true">↑</span></a>
     </section>
   </main>
-  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav><p class="disclaimer">Shahi is an independent open-source project, not affiliated with herdr, Anthropic, OpenAI or Cursor.</p></footer>
+  <footer><span>Shahi <span class="subtle">/ MIT licensed</span></span><nav aria-label="Footer"><a href="https://github.com/iYassr/shahi">Source</a><a href="mailto:support@getshahi.dev">Contact</a><a href="/privacy">Privacy</a></nav><p class="disclaimer">Shahi is an independent open-source project, not affiliated with herdr, Anthropic, OpenAI, Cursor, Google or the OpenCode project. Product names and logos belong to their respective owners.</p></footer>
 </div>
 <script defer src="/welcome.js"></script>
 <script defer src="/beta.js"></script>

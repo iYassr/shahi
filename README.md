@@ -6,8 +6,8 @@
 
 **Your herdr agents, as a chat on your phone.**
 
-Not a terminal squeezed onto a small screen: Shahi turns the Claude Code, Codex,<br>
-Cursor CLI, Antigravity and OpenCode sessions running in herdr into a conversation you read, answer and steer with your thumb.
+Read, answer and steer your Claude Code, Codex, Cursor CLI,<br>
+Antigravity and OpenCode sessions in herdr from your phone.
 
 **Two commands, one scan, about a minute.** End-to-end encrypted. No account, VPN or open port.
 
@@ -20,7 +20,7 @@ Cursor CLI, Antigravity and OpenCode sessions running in herdr into a conversati
 
 ## Your work stays where you started it
 
-You start a task with Claude Code or Codex on your computer or server. Then you
+You start a task with a coding agent on your computer or server. Then you
 step away. An agent needs permission, has a question, or finishes something you
 want to review.
 
@@ -47,9 +47,9 @@ phone does not stop the agents running there.
 
 A terminal on a phone is a poor way to talk to an agent. SSH apps show output
 wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
-Tab. Shahi reads the transcripts that Claude Code, Codex, Cursor, Antigravity and OpenCode keep for
-themselves instead, so messages, tool calls and diffs fit your screen, and supported permission prompts become buttons.
-It feels like texting. The terminal is still one tap away, on the Screen tab.
+Tab. Shahi reads the agent's saved transcript so supported messages, tool calls
+and diffs fit your screen. Supported permission prompts become buttons. The
+terminal is still one tap away, on the Screen tab.
 
 Shahi is built on [herdr](https://herdr.dev), a lightweight home for your agents
 with spaces, panes and live status for each one. Shahi mirrors all of it, so you
@@ -62,12 +62,9 @@ clear conversations, readable code, colored agent icons, and controls that are
 easy to reach. Live updates keep you close to the work; returning to a conversation
 keeps your reading position and unfinished reply.
 
-Claude Code, Codex, Cursor, Antigravity and OpenCode activity is formatted automatically. Messages, tool calls,
-command results, file changes and supported approval requests become readable
-conversation items, so you can understand what happened and decide what comes
-next from your phone. There is no per-tool layout to configure. Screen mode is
-always available for the terminal itself; unfamiliar agent output may need that
-view rather than a formatted conversation.
+Reader formats the content each supported agent records, with no per-tool layout
+to configure. Coverage differs by provider; the table below lists the main
+limits. Screen mode remains available for the terminal itself.
 
 - **Scan and connect.** The default connection uses a pairing QR code. No Shahi
   account, public server port, VPN installation, or domain setup is needed.
@@ -94,6 +91,31 @@ view rather than a formatted conversation.
 </p>
 <p align="center"><sub>iPhone simulator captures, 26 September 2026. All conversations shown are synthetic examples.</sub></p>
 
+## Supported agents
+
+Reader supports these five agents running inside herdr:
+
+| Agent | Reader coverage |
+| --- | --- |
+| <img src="site/public/agents/claude.svg" alt="" width="24" height="24"> **Claude Code** | Messages, thinking, tools and results, supported questions and images. |
+| <img src="site/public/agents/codex.svg" alt="" width="24" height="24"> **Codex** | Messages, reasoning, commands, edits, questions, MCP and web activity, and images. Audio attachments are indicated; playback is unavailable. |
+| <img src="site/public/agents/cursor.svg" alt="" width="24" height="24"> **Cursor CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
+| <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a recorded single call; images and results for multiple calls are unsupported. |
+| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, recorded images and undo changes. Requires herdr's OpenCode integration. |
+
+OpenCode and Antigravity require **computer release 0.3.11 or newer**; the existing
+iPhone app can read them. Readers select the exact session reported by herdr or
+a uniquely identified process-owned transcript. They never select another
+conversation just because it shares a folder. Use Screen mode for other agents
+or output Reader cannot format.
+
+For OpenCode, run `herdr integration install opencode` on the computer and start
+or resume your session inside herdr. At OpenCode's empty home screen, its
+integration retains the previous session until the first prompt in a new one.
+For Codex, `herdr integration install codex` also keeps Reader available after
+the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
+for tested versions and further limits.
+
 ## Quick start
 
 Inside [herdr](https://herdr.dev) on your Mac or Linux computer:
@@ -119,21 +141,24 @@ fetch the plugin, and bun 1.3.13 or newer; with no bun at all, the install
 fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`
 and adds `~/.bun/bin` to the shell’s rc file. Allow HTTPS access to `github.com`
 and `release-assets.githubusercontent.com`.
-Linux service installation requires systemd; see the
-[installation requirements](docs/plugin.md). Run your agents inside herdr,
+On Linux, systemd supervises Shahi automatically. Without systemd, setup prints
+the command to run under your own service manager; see the
+[installation requirements](docs/plugin.md#requirements). Run your agents inside herdr,
 then install Shahi:
 
 ```sh
 herdr plugin install iYassr/shahi
 ```
 
-herdr shows the commands it will run before running them. None of them starts
-Shahi: the service comes from a signed release and is set up the first time
-you pair (below), or at the next herdr start. Need herdr first? Start with
+herdr shows the commands it will run before running them. On a first install,
+the service comes from a signed release and is set up the first time you pair
+(below), or at the next herdr start. Reinstalling updates and restarts an existing
+service. Need herdr first? Start with
 [herdr’s installation instructions](https://herdr.dev).
 
-On a headless Linux server, also run `loginctl enable-linger $USER` once, or
-the service stops when your last SSH session ends.
+On a headless Linux server using systemd, also run
+`loginctl enable-linger $USER` once, or the service stops when your last SSH
+session ends.
 
 ### 2. Show a pairing code
 
@@ -180,9 +205,10 @@ to these commands.
   **Connect this browser?** card first, naming the relay and the computer;
   continue only if you opened that link yourself. Add Shahi to your home screen
   for a standalone app window.
-- **iPhone app:** [request a TestFlight beta invite](https://getshahi.dev/#ios-beta).
-  Once invited, open the app and choose **Scan QR code**. Invitations depend on
-  beta availability; the signup form does not immediately grant access.
+- **iPhone app:** [request a private TestFlight beta invite](https://getshahi.dev/#ios-beta).
+  Invitations are sent by email as places become available; submitting the form
+  does not grant immediate access. Once invited, install through TestFlight,
+  open Shahi and choose **Scan QR code**.
 
 Pair several computers from **Settings → Computers → Add a computer**. Tap the computer
 name on the main screen, or open Computers in Settings, to switch. Every saved computer
@@ -196,8 +222,8 @@ Your existing agents appear after pairing. Outbound internet access is required
 for the default relay connection; you do not need to expose Shahi’s local port.
 
 The browser app is available on phones and computers. The native iOS app is in
-beta; a native Android release is not currently available. SSH tunnelling is
-built into the native app, not the hosted browser app.
+private TestFlight beta; a native Android release is not currently available.
+SSH tunnelling is built into the native app, not the hosted browser app.
 
 ## Updating
 
@@ -216,19 +242,6 @@ through the encrypted relay in 512 KiB parts. Computer release 0.3.6 drops
 the range headers, so Shahi falls back to a whole-file request up to one relay
 body (783,360 bytes, about 765 KiB). Larger relay downloads require 0.3.7 or
 newer and say when an update is needed. SSH has no such fallback limit.
-
-Read mode supports Claude Code, Codex, Cursor CLI, Antigravity and OpenCode
-transcripts. OpenCode and Antigravity require computer release 0.3.11 or newer;
-the existing iPhone app can read them. Each Reader selects the exact reported
-session or a uniquely identified process-owned transcript, never the newest
-conversation in the same folder.
-
-Cursor tool calls appear when present in its export; missing results are labeled
-unavailable, and attachments show the labels Cursor recorded. Antigravity images
-are not yet supported. OpenCode needs herdr's OpenCode integration to report the
-selected session. At its empty home screen, the integration retains the previous
-session until the first prompt in a new one. Screen remains available for other
-agents and content their transcript format does not expose.
 
 Unsent messages are kept separately for each conversation and computer while
 Shahi remains open. They are not saved permanently: reloading the browser or

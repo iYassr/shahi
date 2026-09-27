@@ -244,7 +244,7 @@ export function Connect({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
       >
-        {/* The horizontal lockup: tea glass + lowercase wordmark — and the
+        {/* The horizontal lockup: the s-and-glass mark + lowercase wordmark — and the
             intended way in beside it. It sits in the title row on purpose: as
             a card above the form it pushed the Connect button under the
             keyboard on an iPhone 17, which every flow, and every person typing

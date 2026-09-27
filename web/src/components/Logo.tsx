@@ -11,7 +11,7 @@ export function Wordmark({ height = 40 }: { height?: number }) {
 
 export function Logo({ size = 32 }: { size?: number }) {
   return <svg className="brand-mark" data-brand-welcome width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
-    <rect {...brandMark.cursor} fill="currentColor" />
-    <path d={brandMark.glass} fill="none" stroke="currentColor" strokeWidth={8} strokeLinejoin="round" />
+    <path d={brandMark.letter} fill="currentColor" />
+    <path d={brandMark.glass} fill="currentColor" />
   </svg>;
 }

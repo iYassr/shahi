@@ -16,12 +16,12 @@
 import { agentIdentity, agentMarks, brandMark, brandWordmark } from "@shahi/shared/brand";
 import Svg, { G, Path, Rect } from "react-native-svg";
 
-/** The tea glass and rising cursor use the same geometry as every exported mark. */
+/** The s and its tea-glass cursor use the same geometry as every exported mark. */
 export function Logo({ color, size = 24 }: { color: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
-      <Rect {...brandMark.cursor} fill={color} />
-      <Path d={brandMark.glass} fill="none" stroke={color} strokeWidth={8} strokeLinejoin="round" />
+      <Path d={brandMark.letter} fill={color} />
+      <Path d={brandMark.glass} fill={color} />
     </Svg>
   );
 }

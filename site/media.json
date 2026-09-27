@@ -2,22 +2,22 @@
   "//": "Written by marketing/video/scripts/publish-media.ts. The files are in the R2 bucket shahi-site-media, not in git; docs/browser-hosting.md says how to publish a new cut.",
   "files": [
     {
-      "name": "launch-16x9.5dcc72a4.mp4",
+      "name": "launch-16x9.1c94ac46.mp4",
       "contentType": "video/mp4",
-      "bytes": 4395677,
-      "sha256": "5dcc72a4d9a957aa45882db18c4318c868c3b7f569e0568fe3bc666e43576ea0"
+      "bytes": 4393899,
+      "sha256": "1c94ac46b237861b13a2bb33804adc29ee6609b2b1e3c9e8f7534ddb1e33e768"
     },
     {
-      "name": "launch-1x1.a0499c6a.mp4",
+      "name": "launch-1x1.4d08d34d.mp4",
       "contentType": "video/mp4",
-      "bytes": 2484877,
-      "sha256": "a0499c6a5212208ecd3723ec4936ace2bf0b9df507ae45fe2e59002ae5419ab1"
+      "bytes": 2483017,
+      "sha256": "4d08d34deb32cab68850006edcdfa50d3c4eac5609069e6ecf2c80781e63c85f"
     },
     {
-      "name": "launch-poster.95cf6dff.jpg",
+      "name": "launch-poster.23b82789.jpg",
       "contentType": "image/jpeg",
-      "bytes": 53912,
-      "sha256": "95cf6dffd6bac9c0d3dfe10dbd19ee15190c2eb57043d50a99d74ffb99613af6"
+      "bytes": 54482,
+      "sha256": "23b82789b98daf257424c5d3e5269e9d1851d6ce5b523017b6f1dc92d4eb9041"
     },
     {
       "name": "launch.eaadcd70.en.vtt",

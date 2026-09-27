@@ -1,11 +1,11 @@
 /** Regenerate identity exports from the shared mark: bun scripts/brand-assets.ts. */
 import sharp from "sharp";
-import { agentMarks, brandColors, brandMark, brandWordmark } from "../shared/src/brand";
+import { agentIdentity, brandColors, brandMark, brandWordmark } from "../shared/src/brand";
+import { agentLabel } from "../shared/src/agent-label";
 import { mkdir, writeFile } from "node:fs/promises";
 const amber = brandColors.accent, black = brandColors.void, porcelain = brandColors.text;
 function mark(ink: string) {
-  const c = brandMark.cursor;
-  return `<rect x="${c.x}" y="${c.y}" width="${c.width}" height="${c.height}" rx="${c.rx}" fill="${ink}"/><path d="${brandMark.glass}" fill="none" stroke="${ink}" stroke-width="8" stroke-linejoin="round"/>`;
+  return `<path d="${brandMark.letter}" fill="${ink}"/><path d="${brandMark.glass}" fill="${ink}"/>`;
 }
 function svg(body: string, w = 100, h = w) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Shahi">${body}</svg>\n`;
@@ -15,7 +15,7 @@ const dot = brandWordmark.dot;
 const letters = `<g fill="none" stroke="currentColor" stroke-width="${brandWordmark.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"><path d="${brandWordmark.path}"/></g><rect x="${dot.x}" y="${dot.y}" width="${dot.width}" height="${dot.height}" rx="${dot.rx}" fill="currentColor"/>`;
 
 await mkdir("docs/brand", { recursive: true });
-for (const path of ["docs/logo.svg", "site/public/favicon.svg", "web/public/favicon.svg"]) await writeFile(path, svg(mark(amber)));
+for (const path of ["docs/logo.svg", "site/public/favicon.svg", "web/public/favicon.svg", "marketing/video/public/mark.svg"]) await writeFile(path, svg(mark(amber)));
 await writeFile("docs/brand/mark-dark.svg", svg(mark(black)));
 await writeFile("docs/brand/mark-light.svg", svg(mark(porcelain)));
 for (const [name, ink] of [["wordmark", porcelain], ["wordmark-dark", black]]) {
@@ -27,9 +27,11 @@ for (const [name, markInk, textInk] of [
 ]) {
   await writeFile(`docs/brand/${name}.svg`, svg(`${mark(markInk)}<g color="${textInk}" transform="translate(108 12)">${letters}</g>`, 290, 100));
 }
-await writeFile("site/public/wordmark.svg", svg(`<g color="${porcelain}" transform="translate(${brandWordmark.translateX} 0)">${letters}</g>`, brandWordmark.width, brandWordmark.height));
+for (const path of ["site/public/wordmark.svg", "marketing/video/public/wordmark.svg"]) {
+  await writeFile(path, svg(`<g color="${porcelain}" transform="translate(${brandWordmark.translateX} 0)">${letters}</g>`, brandWordmark.width, brandWordmark.height));
+}
 const icon = (ink: string, bg?: string) => svg(`${bg ? `<rect width="1024" height="1024" fill="${bg}"/>` : ""}<g transform="translate(154 154) scale(7.16)">${mark(ink)}</g>`, 1024);
-await writeFile("mobile/assets/expo.icon/Assets/cup.svg", icon(amber));
+await writeFile("mobile/assets/expo.icon/Assets/mark.svg", icon(amber));
 for (const [path, size, ink, bg] of [
   ["mobile/assets/images/icon.png",1024,amber,black],
   ["mobile/assets/images/splash-icon.png",512,amber,undefined],
@@ -46,14 +48,16 @@ const colors = [
   ["Idle", brandColors.muted], ["Attention", amber], ["Working", brandColors.working],
   ["Done", brandColors.success], ["Error", brandColors.danger],
 ];
-const board = svg(`<rect width="1200" height="760" fill="${black}"/><g transform="translate(66 50)">${mark(amber)}<g color="${porcelain}" transform="translate(118 12)">${letters}</g></g><g fill="${porcelain}" font-family="Helvetica, Arial, sans-serif"><text x="80" y="280" font-size="64" font-weight="600">Coding agents.</text><text x="80" y="355" font-size="64" font-weight="600">On your phone.</text><text x="82" y="410" fill="${brandColors.muted}" font-size="24">Read conversations. Answer prompts.</text></g><rect x="880" y="120" width="220" height="220" rx="48" fill="${brandColors.raised}"/><g transform="translate(910 150) scale(1.6)">${mark(amber)}</g>${colors.map(([label,c],i)=>`<rect x="${80+i*132}" y="525" width="116" height="94" rx="12" fill="${c}" stroke="${brandColors.lineBright}"/><text x="${80+i*132}" y="649" fill="${brandColors.muted}" font-family="Menlo, monospace" font-size="14">${c}</text><text x="${80+i*132}" y="675" fill="${porcelain}" font-family="Helvetica, Arial, sans-serif" font-size="16">${label}</text>`).join("")}<text x="80" y="710" fill="${brandColors.muted}" font-family="Helvetica, Arial, sans-serif" font-size="16">SHAHI / IDENTITY 2.0</text>`,1200,760);
+const board = svg(`<rect width="1200" height="760" fill="${black}"/><g transform="translate(66 50)">${mark(amber)}<g color="${porcelain}" transform="translate(118 12)">${letters}</g></g><g fill="${porcelain}" font-family="Helvetica, Arial, sans-serif"><text x="80" y="280" font-size="64" font-weight="600">Coding agents.</text><text x="80" y="355" font-size="64" font-weight="600">On your phone.</text><text x="82" y="410" fill="${brandColors.muted}" font-size="24">Read conversations. Answer prompts.</text></g><rect x="880" y="120" width="220" height="220" rx="48" fill="${brandColors.raised}"/><g transform="translate(910 150) scale(1.6)">${mark(amber)}</g>${colors.map(([label,c],i)=>`<rect x="${80+i*132}" y="525" width="116" height="94" rx="12" fill="${c}" stroke="${brandColors.lineBright}"/><text x="${80+i*132}" y="649" fill="${brandColors.muted}" font-family="Menlo, monospace" font-size="14">${c}</text><text x="${80+i*132}" y="675" fill="${porcelain}" font-family="Helvetica, Arial, sans-serif" font-size="16">${label}</text>`).join("")}<text x="80" y="710" fill="${brandColors.muted}" font-family="Helvetica, Arial, sans-serif" font-size="16">SHAHI / IDENTITY 3.0</text>`,1200,760);
 await writeFile("docs/brand/overview.svg",board);
 await sharp(Buffer.from(board)).png().toFile("docs/brand/overview.png");
 console.log("Generated Shahi logo, wordmark, app icons, and identity overview.");
 
 await mkdir("site/public/agents", { recursive: true });
-for (const [kind, path, ink] of [["claude", agentMarks.claudecode, "#d97757"], ["codex", agentMarks.openai, "#10a37f"]]) {
-  await writeFile(`site/public/agents/${kind}.svg`, svg(`<path d="${path}" fill="${ink}"/>`, 24));
+for (const kind of ["claude", "codex", "cursor", "agy", "opencode"]) {
+  const { d, filled, color } = agentIdentity(kind);
+  const paint = filled ? `fill="${color}"` : `fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  await writeFile(`site/public/agents/${kind}.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="${agentLabel(kind)}"><path d="${d}" ${paint}/></svg>\n`);
 }
 
 // Keep CSS consumable without a runtime dependency on the shared package.
