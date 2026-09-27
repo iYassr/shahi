@@ -16,6 +16,11 @@ interface Step {
   env?: Record<string, string>;
 }
 interface Job {
+  "timeout-minutes"?: number;
+  environment?: string;
+  uses?: string;
+  needs?: string[] | string;
+  if?: string;
   permissions?: Record<string, string> | string;
   steps?: Step[];
   strategy?: { matrix?: { herdr?: string[]; include?: Record<string, string>[] } };
@@ -75,6 +80,14 @@ describe("phone updates", () => {
 });
 
 describe("tokens beside third-party code", () => {
+  test("every external action is pinned to an immutable commit", () => {
+    const external = steps.filter(({ step }) => step.uses && !step.uses.startsWith("./"));
+    expect(external.length).toBeGreaterThan(0);
+    for (const { where, step } of external) {
+      expect({ where, pinned: /@[0-9a-f]{40}$/.test(step.uses!) }).toEqual({ where, pinned: true });
+    }
+  });
+
   test("no checkout leaves the job token in .git/config", () => {
     const checkouts = steps.filter(({ step }) => step.uses?.startsWith("actions/checkout@"));
     expect(checkouts.length).toBeGreaterThan(0);
@@ -131,6 +144,15 @@ describe("herdr on the runners", () => {
 });
 
 describe("releases", () => {
+  test("computer signing keys leave the environment before child commands run", () => {
+    const signers = steps.filter(({ step }) => step.env && "SHAHI_RELEASE_PRIVATE_KEY" in step.env);
+    expect(signers).toHaveLength(2);
+    for (const { step } of signers) {
+      expect(step.run).toMatch(/> "\$RUNNER_TEMP\/shahi-release-key\.pem"[\s\S]*unset SHAHI_RELEASE_PRIVATE_KEY[\s\S]*\b(bun|gh) /);
+      expect(step.run).toContain("trap 'rm -f");
+    }
+  });
+
   test("a stable promotion is marked Latest on GitHub, not left behind an older release", () => {
     // Promoting a prerelease does not move Latest: v0.3.1 kept it through v0.3.6.
     const publish = jobs.find((j) => j.where === "release.yml publish")!;
@@ -140,6 +162,53 @@ describe("releases", () => {
     for (const promotion of promotions) {
       expect(promotion).toMatch(/if \[ "\$RELEASE_CHANNEL" = stable \]; then gh release edit "\$TAG" /);
       expect(promotion).toContain("--latest");
+    }
+  });
+});
+
+describe("required CI coverage", () => {
+  const ci = workflows.find(({ file }) => file === "ci.yml")!.workflow;
+  test("the merge gate requires every job, even when a dependency fails or is skipped", () => {
+    expect(ci.jobs.required!.if).toBe("always()");
+    expect([...(ci.jobs.required!.needs as string[])].sort()).toEqual(Object.keys(ci.jobs).filter(id => id !== "required").sort());
+    expect(ci.jobs.required!.steps![0]!.run).toContain('all(.[]; .result == "success")');
+  });
+
+  test("both scenario engines run in isolated jobs and hosted/PWA keep both engines", () => {
+    expect(ci.jobs.browser!.strategy!.matrix!.include).toEqual([
+      { name: "e2e-chromium", suite: "e2e", project: "--project=phone", browsers: "chromium" },
+      { name: "e2e-webkit", suite: "e2e", project: "--project=ios", browsers: "chromium webkit" },
+      { name: "hosted", suite: "hosted", project: "", browsers: "chromium webkit" },
+      { name: "pwa", suite: "pwa", project: "", browsers: "chromium webkit" },
+    ]);
+    const browser = ci.jobs.browser!.steps!;
+    expect(browser.some(s => s.run === "bun run test:${{ matrix.suite }} ${{ matrix.project }}")).toBe(true);
+    expect(browser.find(s => s.with?.name === "playwright-${{ matrix.name }}")).toBeDefined();
+    expect(browser.find(s => s.with?.name === "wrangler-${{ matrix.name }}")).toBeDefined();
+  });
+
+  test("GitHub workflow schemas and expressions are validated in the required checks", () => {
+    expect(ci.jobs.checks!.steps!.some(s => s.run === "bash .github/scripts/check-workflows.sh")).toBe(true);
+  });
+
+  test("every runner job has a bounded timeout and installs from a frozen lock", () => {
+    for (const { where, job, steps } of jobs) {
+      if (!job.uses) expect({ where, bounded: Number(job["timeout-minutes"]) > 0 }).toEqual({ where, bounded: true });
+      for (const step of steps) {
+        for (const line of (step.run ?? "").split("\n").filter(line => /\bbun install\b/.test(line))) {
+          expect({ where, frozen: line.includes("--frozen-lockfile") }).toEqual({ where, frozen: true });
+        }
+      }
+    }
+  });
+
+  test("publishing requires successful checks, master and the protected release environment", () => {
+    for (const file of ["release.yml", "mobile-update.yml"]) {
+      const workflow = workflows.find(w => w.file === file)!.workflow;
+      expect(workflow.jobs.tested!.uses).toBe("./.github/workflows/ci.yml");
+      expect(workflow.jobs.publish!.needs).toBe("tested");
+      expect(workflow.jobs.publish!.if).toBe("github.ref == 'refs/heads/master'");
+      expect(workflow.jobs.publish!.environment).toBe("releases");
     }
   });
 });

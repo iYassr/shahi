@@ -749,6 +749,10 @@ drifted apart — then the unit tests, the relay suite (`test:relay`) and the
 app's own (`test:mobile`), then a web build and the stub, hosted and PWA
 suites in both Playwright engines. Upgrade/recovery jobs exercise packaged
 releases on Linux and macOS, Intel and ARM.
+The long stub suite runs each engine on its own runner, with one worker and an
+isolated stub per job. Do not raise workers against the mutable shared scenario.
+`CI required` must continue to require every matrix result, including new jobs.
+CI runs the pinned actionlint checker as well as the workflow policy tests.
 Traces from a failing run are uploaded as an artifact. The stub suite writes
 its HTML report to `e2e/playwright-report/`, the hosted configs still to
 `playwright-report/` at the root; both are ignored at any depth, because a
@@ -828,8 +832,13 @@ twenty (measured 2026-09-23: 3 of 26, on a loaded machine) fails two or four
 tests with `page.goto: Could not connect to the server`: `wrangler dev` lost
 its local worker for a second ("Error inside ProxyWorker … Network connection
 lost" in `~/Library/Preferences/.wrangler/logs/`), which the relay's `wrangler
-dev` did too on 2026-09-01. That log line means rerun; without it, a failure
-is real.
+dev` did too on 2026-09-01. CI preserves Wrangler logs on failure. Hosted and
+PWA fixtures now probe each server before tests and after failures: an
+unreachable server adds an infrastructure annotation, preserves the original
+failure and skips later tests as untested. The output-directory marker survives
+worker replacement but is cleared for a new run. HTTP errors still run the app
+assertions. Inspect the logs before a targeted rerun; no assertion is retried
+automatically, and these diagnostics do not fix the upstream crash.
 
 ## The two clients
 

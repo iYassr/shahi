@@ -104,6 +104,7 @@ jobs:
           test -n "$SHAHI_RELEASE_PRIVATE_KEY"
           printf '%s' "$SHAHI_RELEASE_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-release-key.pem"
           trap 'rm -f "$RUNNER_TEMP/shahi-release-key.pem"' EXIT
+          unset SHAHI_RELEASE_PRIVATE_KEY
           channels=""
           if [ "$DUE_STABLE" = true ]; then channels="stable"; fi
           if [ "$DUE_BETA" = true ]; then channels="$channels beta"; fi

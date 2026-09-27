@@ -50,6 +50,7 @@ jobs:
           test -n "$SHAHI_RELEASE_PRIVATE_KEY"
           printf '%s' "$SHAHI_RELEASE_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-release-key.pem"
           trap 'rm -f "$RUNNER_TEMP/shahi-release-key.pem"' EXIT
+          unset SHAHI_RELEASE_PRIVATE_KEY
           VERSION=$(bun -e 'console.log(require("./plugin/releases/release.json").version)')
           TAG="v$VERSION"
           mkdir -p dist/channels/stable dist/channels/beta
