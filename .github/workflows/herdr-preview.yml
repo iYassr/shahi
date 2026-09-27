@@ -26,7 +26,7 @@ concurrency:
 jobs:
   preview:
     name: real herdr (latest preview)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.herdr.outputs.tag }}
@@ -84,7 +84,7 @@ jobs:
     name: file the preview failure
     needs: preview
     if: ${{ !cancelled() && needs.preview.outputs.probe == 'failure' && github.event_name == 'schedule' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       issues: write

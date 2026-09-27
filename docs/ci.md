@@ -105,5 +105,7 @@ Run `bun run typecheck`, `bun run test`, and the relevant browser/relay/mobile
 suites. Validate workflow changes with `bash .github/scripts/check-workflows.sh`
 (Linux x64 or Apple Silicon), or actionlint 1.7.12 directly on other platforms.
 The workflow checker does not claim shellcheck or Python lint coverage.
-CI pins Bun 1.3.13, the
-release runtime floor, even if a developer has a newer local Bun.
+CI pins Bun 1.3.13, the release runtime floor, even if a developer has a newer
+local Bun. Linux runners name Ubuntu 24.04 explicitly, including the release
+candidate producer. Moving to another Ubuntu major is a reviewed workflow
+change rather than an automatic `ubuntu-latest` migration.

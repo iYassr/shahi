@@ -45,7 +45,7 @@ jobs:
   check:
     name: days left on each signed catalog
     if: github.repository == 'iYassr/shahi'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       stable: ${{ steps.due.outputs.stable }}
@@ -78,7 +78,7 @@ jobs:
     name: re-sign the approved releases
     needs: check
     if: github.ref == 'refs/heads/master' && (needs.check.outputs.stable == 'true' || needs.check.outputs.beta == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: releases
     permissions:
@@ -129,7 +129,7 @@ jobs:
     name: file an issue when a catalog could not be renewed
     needs: [check, renew]
     if: always() && github.repository == 'iYassr/shahi' && (needs.check.result == 'failure' || needs.renew.result == 'failure')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       issues: write

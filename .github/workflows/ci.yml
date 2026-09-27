@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -40,7 +40,7 @@ jobs:
       - run: bun plugin/releases/compatibility-smoke.ts
       - run: bun plugin/releases/manager-smoke.ts
       - name: Preserve the tested release candidate
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tested-computer-package
@@ -50,7 +50,7 @@ jobs:
   checks:
     name: types and unit tests
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       WRANGLER_SEND_METRICS: "false"
     steps:
@@ -93,7 +93,7 @@ jobs:
 
   browser:
     name: browser (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       WRANGLER_SEND_METRICS: "false"
@@ -179,7 +179,7 @@ jobs:
   # channel runs nightly in herdr-preview.yml.
   herdr:
     name: real herdr (${{ matrix.herdr }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -247,7 +247,7 @@ jobs:
     name: CI required
     if: always()
     needs: [checks, upgrades, browser, herdr]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require every suite to succeed

@@ -16,6 +16,7 @@ interface Step {
   env?: Record<string, string>;
 }
 interface Job {
+  "runs-on"?: string;
   "timeout-minutes"?: number;
   environment?: string;
   uses?: string;
@@ -23,7 +24,7 @@ interface Job {
   if?: string;
   permissions?: Record<string, string> | string;
   steps?: Step[];
-  strategy?: { matrix?: { herdr?: string[]; include?: Record<string, string>[] } };
+  strategy?: { matrix?: { os?: string[]; herdr?: string[]; include?: Record<string, string>[] } };
 }
 interface Workflow {
   permissions?: Record<string, string> | string;
@@ -168,6 +169,15 @@ describe("releases", () => {
 
 describe("required CI coverage", () => {
   const ci = workflows.find(({ file }) => file === "ci.yml")!.workflow;
+  test("Linux runner majors are explicit and the tested candidate still has a producer", () => {
+    for (const { job } of jobs) {
+      expect(job["runs-on"]).not.toBe("ubuntu-latest");
+      expect(job.strategy?.matrix?.os ?? []).not.toContain("ubuntu-latest");
+    }
+    expect(ci.jobs.upgrades!.strategy!.matrix!.os).toContain("ubuntu-24.04");
+    const producer = ci.jobs.upgrades!.steps!.find(s => s.with?.name === "tested-computer-package") as Step & { if: string };
+    expect(producer.if).toBe("matrix.os == 'ubuntu-24.04'");
+  });
   test("the merge gate requires every job, even when a dependency fails or is skipped", () => {
     expect(ci.jobs.required!.if).toBe("always()");
     expect([...(ci.jobs.required!.needs as string[])].sort()).toEqual(Object.keys(ci.jobs).filter(id => id !== "required").sort());
