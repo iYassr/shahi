@@ -143,6 +143,7 @@ test.describe("files in the reader", () => {
   test("the thumbnail is actually drawn inside that button", async ({ page }) => {
     await openPane(page);
 
+    await page.locator(".msg__image").first().scrollIntoViewIfNeeded();
     await expectDrawn(page.locator(".msg__image").first(), 40, 40);
     const image = await page.locator(".msg__image").first().boundingBox();
     const button = await page.locator(".msg__zoom").first().boundingBox();
