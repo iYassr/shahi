@@ -1350,6 +1350,12 @@ Claude sessions. Missing identity and a missing transcript now have distinct
 reopening the phone app. The plain 404 from older servers remains supported.
 `CLAUDE_CONFIG_DIR` selects the one projects root for both messages and images.
 Do not search the default folder as an additional fallback across accounts.
+The plugin must carry it into the launchd/systemd service environment; reading
+Shahi's `.env` into `Config` does not populate `process.env` for the readers.
+An explicit `.env` value wins over the setup shell, including an empty value
+that restores Claude's default root. Regenerate the service with `shahi.restart`
+after changing it. Cover this path with fresh Reader processes using the
+rendered service environments, not only a test that sets `process.env` directly.
 
 Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
 2.1.283 process had a matching process start time but retained an older session
