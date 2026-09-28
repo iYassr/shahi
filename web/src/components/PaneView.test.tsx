@@ -58,6 +58,21 @@ test("only a confirmed missing pane displays the closed-pane message", async () 
   expect(output()).toContain("This pane is gone");
 });
 
+test("Reader preserves actionable setup guidance and recovers without switching to Screen", async () => {
+  const { Reader } = await import("./Reader");
+  const help = "Run herdr integration install claude, then resume this session.";
+  const sessionLog = mock().mockRejectedValueOnce(new ApiError(help, 404, "reader_session_missing"))
+    .mockResolvedValue({ sessionId: "recovered", path: "recovered", total: 1, offset: 0, messages: [{ id: "a", role: "agent", at: 1, blocks: [{ kind: "text", text: "Conversation restored." }] }] });
+  const onUnavailable = mock();
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="setup-guidance" activity={null} onUnavailable={onUnavailable} /></ApiContext.Provider>); });
+  expect(output()).toContain(help);
+  expect(onUnavailable).not.toHaveBeenCalled();
+  await act(async () => view!.root.findByType("button").props.onClick());
+  expect(output()).toContain("Conversation restored.");
+  expect(output()).not.toContain(help);
+  expect(onUnavailable).not.toHaveBeenCalled();
+});
+
 test("an expired session neither claims a closed pane nor rejects unhandled", async () => {
   await render(mock().mockRejectedValue(new UnauthorizedError()));
   expect(output()).toContain("Please reconnect to your computer");

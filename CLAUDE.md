@@ -1340,3 +1340,17 @@ disclosure state even when it reuses message IDs. A busy-to-finished transition
 collapses activity once; the user can reopen it afterward. One current activity
 status replaces the duplicate working footer. Unknown tools get neutral status,
 never guessed prose or fabricated results.
+
+## Claude Reader setup, September 28
+
+Claude's terminal detection does not supply its session identity. Reader needs
+`herdr integration install claude`, followed by quitting and resuming existing
+Claude sessions. Missing identity and a missing transcript now have distinct
+404 error codes and repair guidance; keep polling so setup can recover without
+reopening the phone app. The plain 404 from older servers remains supported.
+`CLAUDE_CONFIG_DIR` selects the one projects root for both messages and images.
+Do not search the default folder as an additional fallback across accounts.
+
+Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
+2.1.283 process had a matching process start time but retained an older session
+than its SessionStart hook. This metadata cannot safely replace hook identity.

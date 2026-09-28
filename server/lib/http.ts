@@ -1444,8 +1444,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const page = path ? await transcriptPage(paneId, path, pane!.agent, { limit, before }) : null;
 
             if (!page) {
+              const claude = pane?.agent === "claude";
+              const missingSession = claude && !agentSessionOf(pane);
               return json(
-                { error: "no transcript for this pane", messages: [] },
+                {
+                  error: missingSession
+                    ? "Shahi cannot identify this Claude conversation. On the computer running Claude, run herdr integration install claude, then quit and resume this session inside herdr."
+                    : claude
+                      ? "Shahi found this Claude session but cannot read its saved conversation. If it already has messages, check that Claude and Shahi use the same CLAUDE_CONFIG_DIR and that Claude is saving session history."
+                      : "no transcript for this pane",
+                  ...(claude ? { code: missingSession ? "reader_session_missing" : "reader_transcript_missing" } : {}),
+                  messages: [],
+                },
                 { status: 404 },
               );
             }

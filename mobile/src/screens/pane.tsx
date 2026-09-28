@@ -742,7 +742,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         // state. Keep cached messages (and the mounted list's reading position).
         const missing = e instanceof ApiError && e.status === 404;
         if (e instanceof ApiError && e.status === 413) logPausedUntil.current = Date.now() + TOO_LARGE_PAUSE_MS;
-        setLogError(missing ? null : {
+        const explained = missing && (e.code === "reader_session_missing" || e.code === "reader_transcript_missing");
+        setLogError(missing && !explained ? null : {
           message: e instanceof Error ? e.message : "The conversation could not be loaded.",
           unreachable: e instanceof UnreachableError,
         });
@@ -1080,7 +1081,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           {logError ? (
             <>
               <Text style={styles.dim}>The conversation could not be loaded.</Text>
-              <Text style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
+              <Text selectable style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
               <Pressable accessibilityRole="button" style={styles.ghost} onPress={retryLog}>
                 <Text style={styles.ghostText}>Try again</Text>
               </Pressable>
@@ -1094,6 +1095,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
                 A readable conversation is not available yet. You can follow this
                 agent in Screen.
               </Text>
+              {pane?.agent === "claude" && <Text selectable style={styles.dim}>
+                If Claude already has messages, run herdr integration install claude on the computer, then quit and resume this session inside herdr.
+              </Text>}
             </>
           )}
           <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>

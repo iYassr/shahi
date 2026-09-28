@@ -4,8 +4,8 @@
  * codex stores things quite differently, and two of the differences matter:
  *
  * **The session id has to be earned.** herdr populates `agent_session` for
- * Claude panes out of the box; for codex it only does so once its codex
- * integration is installed, because that is what puts a SessionStart hook in
+ * Claude panes once its Claude integration is installed; Codex also needs its
+ * integration installed, because that is what puts a SessionStart hook in
  * `~/.codex/hooks.json` to report the id. Where the id is there, it is the best
  * answer available and it outlives the process. Where it is not, the pane's
  * foreground process is asked what file it has open: herdr's

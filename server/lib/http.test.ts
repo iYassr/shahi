@@ -1575,6 +1575,31 @@ describe("answering from a card drawn from another question", () => {
   });
 });
 
+test("Claude's missing Reader explains whether session identity or the saved transcript is unavailable", async () => {
+  const config = mkdtempSync(join(tmpdir(), "shahi-http-claude-"));
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = config;
+  try {
+    for (const identified of [false, true]) {
+      occupant = { agent: "claude", agent_session: identified ? { agent: "claude", kind: "id", source: "herdr:claude", value: "11111111-2222-4333-8444-555555555555" } : null };
+      const app = await boot();
+      try {
+        const res = await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/session`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+        expect(res.status).toBe(404);
+        const body = await res.json() as { code: string; error: string; messages: unknown[] };
+        expect(body.code).toBe(identified ? "reader_transcript_missing" : "reader_session_missing");
+        expect(body.error).toContain(identified ? "CLAUDE_CONFIG_DIR" : "herdr integration install claude");
+        expect(body.messages).toEqual([]);
+      } finally { app.stop(); }
+    }
+  } finally {
+    occupant = {};
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+    rmSync(config, { recursive: true, force: true });
+  }
+});
+
 test("OpenCode Reader routes serve only the pane's exact session, cache updates and scope images", async () => {
   const dir = mkdtempSync(join(tmpdir(), "shahi-http-opencode-"));
   const databasePath = join(dir, "opencode.db");

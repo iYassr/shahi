@@ -465,6 +465,7 @@ describe("loading", () => {
 
     const view = render(<Pane paneId={PANE} />);
     await view.findByText("Nothing to read yet.");
+    expect(view.getByText(/If Claude already has messages/)).toBeTruthy();
     expect(mockSession.unauthorized).not.toHaveBeenCalled();
     expect(mocked.sessionLog).toHaveBeenCalledTimes(1);
 
@@ -475,6 +476,19 @@ describe("loading", () => {
     await view.findByText(/First words\./);
     expect(view.queryByText("Nothing to read yet.")).toBeNull();
     expect(mocked.sessionLog.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test.each(["reader_session_missing", "reader_transcript_missing"])("Reader shows %s guidance and recovers after setup", async (code) => {
+    const help = "Run herdr integration install claude on the computer, then resume this session.";
+    mocked.sessionLog.mockRejectedValueOnce(new ApiError(help, 404, code))
+      .mockResolvedValue(log([said("recovered", "agent", "Conversation restored.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(help);
+    expect(view.queryByText("Nothing to read yet.")).toBeNull();
+    expect(view.getByText(help).props.selectable).toBe(true);
+    await act(async () => { jest.advanceTimersByTime(3_000); });
+    await view.findByText(/Conversation restored\./);
+    expect(view.queryByText(help)).toBeNull();
   });
 
   // One ~800 KB message among the last sixty put the window over the relay's

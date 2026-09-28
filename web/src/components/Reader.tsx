@@ -241,10 +241,17 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       setLoading(false);
     } catch (err) {
       if (!active()) return;
-      if (err instanceof ApiError && err.status === 404) { forgetReaderMemory(paneId); onUnavailable(); }
-      else { setError(err instanceof Error ? err.message : "Could not read conversation"); setLoading(false); }
+      const missing = err instanceof ApiError && err.status === 404;
+      const explained = missing && (err.code === "reader_session_missing" || err.code === "reader_transcript_missing");
+      if (missing && !explained && agent !== "claude") { forgetReaderMemory(paneId); onUnavailable(); }
+      else {
+        setError(missing && !explained && agent === "claude"
+          ? "No saved conversation is available yet. If Claude already has messages, run herdr integration install claude on the computer, then quit and resume this session inside herdr."
+          : err instanceof Error ? err.message : "Could not read conversation");
+        setLoading(false);
+      }
     } finally { busy.current = false; }
-  }, [paneId, onUnavailable]);
+  }, [paneId, agent, onUnavailable]);
 
   // Starting on a different pane is the only reason to throw away what is on
   // screen. Deliberately not part of the polling effect below: tying them

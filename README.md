@@ -114,6 +114,12 @@ a uniquely identified process-owned transcript. They never select another
 conversation just because it shares a folder. Use Screen mode for other agents
 or output Reader cannot format.
 
+For Claude Code, run `herdr integration install claude` on the computer, then
+quit and resume existing Claude sessions inside herdr. The integration identifies
+the exact conversation for Reader; detecting Claude's terminal alone is not enough.
+If you use `CLAUDE_CONFIG_DIR`, start Shahi with the same setting as Claude.
+See [Reader troubleshooting](docs/reader-troubleshooting.md) if messages are missing.
+
 For OpenCode, run `herdr integration install opencode` on the computer and start
 or resume your session inside herdr. At OpenCode's empty home screen, its
 integration retains the previous session until the first prompt in a new one.

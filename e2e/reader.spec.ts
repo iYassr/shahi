@@ -18,6 +18,24 @@ const openReader = async (page: Page, paneId = READABLE) => {
 };
 
 test.describe("reader", () => {
+  test("Claude setup guidance stays in Read and recovers after the integration starts reporting", async ({ page }) => {
+    await scenario(page, "busy");
+    let ready = false;
+    await page.route("**/api/panes/*/session?*", async route => {
+      if (ready) return route.continue();
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({
+        code: "reader_session_missing", messages: [],
+        error: "On the computer, run herdr integration install claude, then resume this session.",
+      }) });
+    });
+    await page.goto(`/pane/${encodeURIComponent(READABLE)}`);
+    await expect(page.getByRole("alert")).toContainText("herdr integration install claude");
+    await expect(page.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute("aria-selected", "true");
+    ready = true;
+    await expect(page.locator(".reader .msg").first()).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
   test("shows the conversation", async ({ page }) => {
     const problems: string[] = [];
     page.on("pageerror", (e) => problems.push(String(e)));

@@ -2,9 +2,36 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findTranscript } from "./session-log";
+import { findTranscript, readSessionImage, readWindow } from "./session-log";
 
 const id = "11111111-2222-4333-8444-555555555555";
+
+test("Claude custom configuration finds its exact conversation and images", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "shahi-claude-config-")));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  try {
+    process.env.CLAUDE_CONFIG_DIR = root;
+    const project = join(root, "projects", "project");
+    await mkdir(project, { recursive: true });
+    const path = join(project, `${id}.jsonl`);
+    await writeFile(path, JSON.stringify({ type: "user", uuid: "image-1", message: { content: [
+      { type: "text", text: "Custom configuration conversation" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "aGVsbG8=" } },
+    ] } }) + "\n");
+    expect(await findTranscript(id)).toBe(path);
+    expect(JSON.stringify(await readWindow((await findTranscript(id))!))).toContain("Custom configuration conversation");
+    expect(await readSessionImage(id, "image-1:0")).toMatchObject({ mediaType: "image/png" });
+    // An explicit test root still wins; the override is not searched alongside
+    // the default, where another account could have the same UUID.
+    expect(await findTranscript(id, join(root, "missing"))).toBeNull();
+    process.env.CLAUDE_CONFIG_DIR = join(root, "missing");
+    expect(await findTranscript(id)).toBeNull();
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Claude transcript discovery requires one canonical file under its projects root", async () => {
   const root = await mkdtemp(join(tmpdir(), "shahi-claude-ownership-"));

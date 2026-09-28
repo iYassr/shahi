@@ -39,7 +39,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { realPath } from "./real-path";
 
-const PROJECTS_DIR = join(homedir(), ".claude", "projects");
+const claudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 
 /** Tool output can be enormous; the phone gets a readable slice. */
 const MAX_RESULT_CHARS = 2_000;
@@ -65,7 +65,7 @@ export type { LogMessage, SessionLog };
  * round-trip through that encoding, would simply not be found. The id is a
  * UUID, so a scan is unambiguous.
  */
-export async function findTranscript(sessionId: string, projectsDir = PROJECTS_DIR): Promise<string | null> {
+export async function findTranscript(sessionId: string, projectsDir = join(claudeConfigDir(), "projects")): Promise<string | null> {
   if (!/^[0-9a-f-]{16,64}$/i.test(sessionId)) return null;
 
   let projects: string[];
