@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { choiceHeld, chooseConversation, chosenSession, conversationChoices, forgetChoice, projectFolder } from "./claude-choice";
@@ -110,6 +110,47 @@ describe("choosing a conversation herdr cannot identify", () => {
     expect(await chooseConversation(client, pane(), "../../etc/passwd", new Set())).toBe(false);
     expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
     expect(await chosenSession(client, pane())).toBe(OLDER);
+  });
+
+  test("a leaf symlink outside history never exposes a preview", async () => {
+    const outside = join(root, `${OLDER}.jsonl`);
+    writeFileSync(outside, user("Outside history must stay private") + "\n");
+    const path = join(root, "projects", projectFolder(CWD), `${OLDER}.jsonl`);
+    rmSync(path);
+    symlinkSync(outside, path);
+    expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).not.toContain(OLDER);
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+  });
+
+  test("a project symlink outside history never exposes previews", async () => {
+    const outside = join(root, "outside-project");
+    mkdirSync(outside);
+    writeFileSync(join(outside, `${OLDER}.jsonl`), user("Outside project must stay private") + "\n");
+    const project = join(root, "projects", projectFolder(CWD));
+    rmSync(project, { recursive: true });
+    symlinkSync(outside, project);
+    expect(await conversationChoices(client, pane(), new Set())).toEqual([]);
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+  });
+
+  test("an alias for a different session never labels its preview as this session", async () => {
+    const project = join(root, "projects", projectFolder(CWD));
+    rmSync(join(project, `${OLDER}.jsonl`));
+    symlinkSync(join(project, `${NEWER}.jsonl`), join(project, `${OLDER}.jsonl`));
+    expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).toEqual([NEWER, RECORDED]);
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+  });
+
+  test("two distinct copies of a session are not offered when Reader cannot choose one", async () => {
+    transcript(OLDER, [user("A conflicting copy")], 1, projectFolder("/Users/me/duplicate"));
+    expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).not.toContain(OLDER);
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+  });
+
+  test("a directory alias of the same canonical history stays readable", async () => {
+    symlinkSync(join(root, "projects", projectFolder(CWD)), join(root, "projects", "alias"));
+    expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).toEqual([NEWER, RECORDED, OLDER]);
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
   });
 
   test("a choice holds while that Claude runs there, including through a tool it runs", async () => {

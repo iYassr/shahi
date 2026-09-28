@@ -23,6 +23,7 @@ import { basename, join } from "node:path";
 import type { HerdrClient } from "./herdr-client";
 import { agentSessionOf } from "./herdr-pane";
 import type { PaneInfo } from "./herdr-schema";
+import { realPath } from "./real-path";
 import { claudeConfigDir, findTranscript, normalise, parseLines, previewOf } from "./session-log";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -128,7 +129,12 @@ async function listFor(pid: number, cwd: string, claimed: ReadonlySet<string>): 
   const likely = await recordedSession(pid);
   const choices = (await Promise.all(files.map(async (file) => {
     try {
-      const said = await describe(file.path, file.size);
+      // Previewing already exposes transcript content. Apply Reader's exact
+      // ownership checks before reading, not only when the person chooses:
+      // one canonical file under projects, retaining this session's UUID.
+      const canonical = await findTranscript(file.sessionId);
+      if (!canonical || canonical !== await realPath(file.path)) return null;
+      const said = await describe(canonical, file.size);
       if (!said.firstPrompt && !said.lastMessage) return null;
       return { sessionId: file.sessionId, ...said, updatedAt: file.updatedAt, likely: file.sessionId === likely };
     } catch {
