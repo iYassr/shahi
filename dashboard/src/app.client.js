@@ -8,6 +8,9 @@ function bytes(v) {
   return `${n.toLocaleString(undefined, { maximumFractionDigits: i ? 1 : 0 })} ${units[i]}`;
 }
 const ms = (v) => number(v) === null ? '—' : `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })} ms`;
+const usd = (v) => number(v) === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(v));
+const percent = (n, total) => total > 0 ? `${(100 * n / total).toFixed(1)}%` : '—';
+const duration = (v) => number(v) === null ? '—' : `${(Number(v) / 60000).toLocaleString(undefined, { maximumFractionDigits: 1 })} min`;
 const timestamp = (v) => typeof v === 'string' ? Date.parse(/Z$|[+-]\d\d:\d\d$/.test(v) ? v : v.replace(' ', 'T') + 'Z') : NaN;
 const date = (v) => Number.isFinite(timestamp(v)) ? new Date(timestamp(v)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown time';
 function element(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
@@ -32,6 +35,62 @@ const expected = ['website', 'browser_app', 'signup_api', 'relay_http', 'relay_t
 let data = null;
 let active = null;
 let selected = '1h';
+function reliability(stats) {
+  const outcomes = Array.isArray(stats?.outcomes) ? stats.outcomes : null;
+  const sum = (kind, reasons) => outcomes?.filter(r => r.kind === kind && (!reasons || reasons.includes(r.reason))).reduce((n, r) => n + (number(r.n) ?? 0), 0) ?? null;
+  const auth = sum('box_auth'), failed = sum('auth_failed'), pending = sum('refused', ['too many pending boxes']);
+  const opened = sum('phone_open'), refused = sum('refused', ['box offline', 'too many phones']);
+  rows('reliability', [
+    ['Computer authentication rate', outcomes ? percent(auth, auth + failed + pending) : '—'],
+    ['Authenticated / failed or refused', outcomes ? `${count(auth)} / ${count(failed + pending)}` : '—'],
+    ['Phone admission rate', outcomes ? percent(opened, opened + refused) : '—'],
+    ['Phone links opened / refused', outcomes ? `${count(opened)} / ${count(refused)}` : '—'],
+    ['Computer disconnects', count(sum('box_gone'))],
+    ['Phones closed: computer offline', count(sum('phone_close', ['box offline']))],
+    ['Phones closed: send failed', count(sum('phone_close', ['send failed']))],
+  ]);
+  const handshake = stats?.boxHandshake;
+  const measured = number(handshake?.n) > 0;
+  const phone = stats?.durations?.find(r => r.kind === 'phone_close');
+  rows('performance', [['Computer handshakes measured', count(handshake?.n)],
+    ['Handshake median (p50)', ms(measured ? handshake.p50Ms : null)], ['Handshake p95', ms(measured ? handshake.p95Ms : null)],
+    ['Handshake p99', ms(measured ? handshake.p99Ms : null)],
+    ['Closed phone connections: median duration', duration(number(phone?.n) > 0 ? phone.p50Ms : null)],
+    ['Closed phone connections: p95 duration', duration(number(phone?.n) > 0 ? phone.p95Ms : null)]]);
+  const samples = stats?.capacity?.filter(r => Number.isFinite(timestamp(r.at)) && ['computers', 'phones', 'busiestComputer'].every(k => number(r[k]) !== null && Number(r[k]) >= 0));
+  const peak = (key) => samples?.length ? Math.max(...samples.map(r => Number(r[key]))) : null;
+  rows('capacity', [['Peak sampled computers', count(peak('computers'))], ['Peak sampled phone links', count(peak('phones'))],
+    ['Busiest observed computer', peak('busiestComputer') === null ? '—' : `${count(peak('busiestComputer'))} / 8 phone slots`], ['Five-minute buckets observed', count(samples?.length)]]);
+  table('capacity-table', ['Bucket start', 'Computers', 'Phone links'], (samples ?? []).slice(-48).map(r => [date(r.at), count(r.computers), count(r.phones)]), !stats?.capacity);
+}
+function budget() {
+  const amount = number($('budget').value), total = number(data?.usage?.model?.totalUsd);
+  const age = Date.now() - timestamp(data?.usage?.generatedAt);
+  $('budget-state').className = 'caption';
+  if (amount === null || amount <= 0) { $('budget-state').textContent = 'Enter a budget to compare with this projection. Kept only while this page is open; no email is sent.'; return; }
+  if (total === null || !Number.isFinite(age) || age > 1200000 || age < -60000) { $('budget-state').textContent = 'Usage unavailable or stale; budget status is unknown.'; return; }
+  $('budget-state').textContent = `${usd(total)} projected subtotal · ${percent(total, amount)} of ${usd(amount)} budget. ${total >= amount ? 'Projection exceeds this budget.' : total >= amount * .8 ? 'Projection is approaching this budget.' : 'Projection is below this budget.'} Excluded charges can increase actual spending.`;
+  if (total >= amount * .8) $('budget-state').className = 'notice';
+}
+function usage() {
+  const u = data?.usage;
+  $('usage-time').textContent = u ? `${date(u.since)} – ${date(u.until)} · seven-day window` : 'Cloudflare usage unavailable.';
+  table('usage', ['Metric', 'Shahi', 'Account'], u ? [
+    ['Worker invocations', count(u.shahi.workerRequests), count(u.account.workerRequests)],
+    ['Worker CPU (ms)', count(u.shahi.workerCpuMs), count(u.account.workerCpuMs)],
+    ['DO request units (planning)', count(u.shahi.durableRequests), count(u.account.durableRequests)],
+    ['DO duration (GB-s)', count(u.shahi.durableDurationGbSeconds), count(u.account.durableDurationGbSeconds)],
+    ['SQLite rows read', count(u.shahi.rowsRead), count(u.account.rowsRead)], ['SQLite rows written', count(u.shahi.rowsWritten), count(u.account.rowsWritten)],
+  ] : [], !u);
+  table('worker-usage', ['Worker', 'Invocations', 'CPU (ms)', 'Errors'], (u?.workers ?? []).map(r => [r.name, count(r.requests), count(r.cpuMs), count(r.errors)]), !u);
+  const costs = u?.model?.costs;
+  rows('cost', [['Projected 30-day subtotal', usd(u?.model?.totalUsd)], ['Base subscription', usd(costs?.subscription)],
+    ['Worker requests & CPU', usd(costs ? costs.workerRequests + costs.workerCpu : null)],
+    ['Durable Object requests & duration', usd(costs ? costs.durableRequests + costs.durableDuration : null)],
+    ['SQLite row operations', usd(costs ? costs.rowsRead + costs.rowsWritten : null)]]);
+  budget();
+}
+$('budget').addEventListener('input', budget);
 function setPage() {
   const stats = location.pathname === '/statistics';
   document.title = `${stats ? 'Statistics' : 'Dashboard'} · Shahi`;
@@ -93,7 +152,7 @@ function render() {
   $('phones').textContent = stats ? count(events.phone_open ?? 0) : '—';
   $('errors').textContent = stats ? count(events.internal_error ?? 0) : '—';
   $('traffic').textContent = traffic && number(traffic.upBytes) !== null && number(traffic.downBytes) !== null ? bytes(Number(traffic.upBytes) + Number(traffic.downBytes)) : '—';
-  health(data?.monitor); drawChart(stats);
+  health(data?.monitor); drawChart(stats); reliability(stats); usage();
   rows('transfer', [['Phone → computer', bytes(traffic?.upBytes)], ['Computer → phone', bytes(traffic?.downBytes)], ['Frames to computers', count(traffic?.upFrames)], ['Frames to phones', count(traffic?.downFrames)], ['Mean computer handshake', ms(stats?.boxHandshake?.meanMs)], ['Maximum computer handshake', ms(stats?.boxHandshake?.maxMs)]]);
   table('regions', ['Edge location', 'Attempts'], (stats?.connectsByColo ?? []).map((r) => [r.colo || 'Unknown', count(r.n)]), !stats);
   table('events', ['Event', 'Count'], (stats?.eventsByKind ?? []).map((r) => [names[r.kind] ?? r.kind, count(r.n)]), !stats);
@@ -103,6 +162,8 @@ function render() {
   const errors = [...(data?.errors ?? [])];
   const age = Date.now() - timestamp(stats?.generatedAt);
   if (stats && (!Number.isFinite(age) || age > 180000 || age < -60000)) errors.push('Statistics are stale. Values below are from the last available sample.');
+  const usageAge = Date.now() - timestamp(data?.usage?.generatedAt);
+  if (data?.usage && (!Number.isFinite(usageAge) || usageAge > 1200000 || usageAge < -60000)) errors.push('Cloudflare usage is stale; cost projections use the last available sample.');
   $('error').textContent = errors.join(' '); $('error').hidden = errors.length === 0;
   $('updated').textContent = stats ? `Statistics sampled ${date(stats.generatedAt)}` : 'Statistics unavailable';
 }

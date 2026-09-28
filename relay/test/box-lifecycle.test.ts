@@ -409,6 +409,26 @@ function telemetry() {
   return { env, of };
 }
 
+test("phone closes update the concurrency observation without waiting for another alarm", async () => {
+  const t = telemetry(), f = fixture(t.env), box = f.box();
+  const first = await f.phone(), second = await f.phone();
+  await f.relay.webSocketClose(first);
+  expect(t.of('box_presence').at(-1)?.value).toBe(1);
+  await f.relay.webSocketMessage(box, JSON.stringify({ t: 'close', link: second.state.link }));
+  expect(t.of('box_presence').at(-1)?.value).toBe(0);
+  const before = t.of('box_presence').length;
+  await f.relay.webSocketClose(second);
+  expect(t.of('box_presence')).toHaveLength(before);
+});
+
+test("an alarm does not publish a freshly expired computer as online", async () => {
+  const t = telemetry(), f = fixture(t.env);
+  f.box(true, Date.now() - 600000);
+  await f.relay.alarm();
+  expect(t.of('box_presence')).toEqual([]);
+  expect(t.of('box_gone')).toHaveLength(1);
+});
+
 test("a box that never answers its challenge is recorded as an authentication failure", async () => {
   // closeBox recorded only boxes that had become ready, and none of the three
   // timeout paths recorded anything, so "auth timeout" was on the allowlist

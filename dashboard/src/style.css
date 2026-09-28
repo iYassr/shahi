@@ -109,4 +109,4 @@ main{padding:25px 17px}
 .controls select{flex:1}
 h1{font-size:29px}
 }
-
+input[type="number"]{display:block;width:min(100%,14rem);font:inherit;color:inherit;background:var(--bg,#101513);border:1px solid #4b5750;border-radius:.5rem;padding:.65rem;margin-top:.5rem}input:focus-visible{outline:2px solid #b9efc8;outline-offset:3px}

@@ -119,4 +119,14 @@ describe('dashboard time windows', () => {
       expect(r.status).toBe(502); expect(await r.text()).not.toContain('private');
     } finally { globalThis.fetch = real; }
   });
+  test('usage view retains the bearer and GET-only boundary before any account query', async () => {
+    const real = globalThis.fetch; let calls = 0;
+    globalThis.fetch = (async () => { calls++; return Response.json({}); }) as unknown as typeof fetch;
+    try {
+      const url = 'https://relay/stats?view=usage';
+      expect((await handleStats(new Request(url), env))!.status).toBe(401);
+      expect((await handleStats(new Request(url, { method: 'POST', headers: { authorization: 'Bearer secret' } }), env))!.status).toBe(405);
+      expect(calls).toBe(0);
+    } finally { globalThis.fetch = real; }
+  });
 });
