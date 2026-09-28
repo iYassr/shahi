@@ -94,6 +94,13 @@ export function record(env: TelemetryEnv, e: Event): void {
 /** The dataset name; kept here so the queries and the binding agree. */
 export const DATASET = "shahi_relay";
 
+// Only constant SQL fragments reach the query; request text is never interpolated.
+const statsPeriods: Record<string, { interval: string; bucket: string; seconds: number; bucketSeconds: number; label: string }> = Object.assign(Object.create(null), {
+  "1h": { interval: "INTERVAL '1' HOUR", bucket: "INTERVAL '5' MINUTE", seconds: 3600, bucketSeconds: 300, label: "last 1 hour" },
+  "24h": { interval: "INTERVAL '24' HOUR", bucket: "INTERVAL '1' HOUR", seconds: 86400, bucketSeconds: 3600, label: "last 24 hours" },
+  "7d": { interval: "INTERVAL '7' DAY", bucket: "INTERVAL '6' HOUR", seconds: 604800, bucketSeconds: 21600, label: "last 7 days" },
+});
+
 /**
  * Answers `GET /stats` with a live summary, or the right refusal:
  *   - no STATS_TOKEN set    -> null (the caller 404s; the endpoint is hidden)
@@ -107,6 +114,10 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
   if (bearer !== `Bearer ${env.STATS_TOKEN}`) {
     return json({ error: "unauthorized" }, 401);
   }
+  if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
+  const range = new URL(request.url).searchParams.get("window") ?? "1h";
+  const period = statsPeriods[range];
+  if (!period) return json({ error: "window must be 1h, 24h or 7d" }, 400);
   if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) {
     return json(
       { error: "stats reads are not configured; set CF_ACCOUNT_ID and CF_ANALYTICS_TOKEN (Account Analytics Read) as secrets" },
@@ -114,27 +125,29 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
     );
   }
   try {
-    const [boxesOnline, byKind, closeCodes, refusals, byColo, traffic, handshake, timeline, alerts, site] = await Promise.all([
+    const [boxesOnline, byKind, closeCodes, refusals, byColo, traffic, handshake, timeline, alerts, site, signupWindow] = await Promise.all([
       // Presence includes long-lived connections, with a ten-minute aging window.
       one(env, `SELECT COUNT(DISTINCT blob2) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1 IN ('box_auth', 'box_presence') AND timestamp > NOW() - INTERVAL '10' MINUTE`),
-      rows(env, `SELECT blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY kind ORDER BY n DESC`),
-      rows(env, `SELECT double1 AS code, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='phone_close' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY code ORDER BY n DESC`),
-      rows(env, `SELECT blob3 AS reason, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='refused' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY reason ORDER BY n DESC`),
-      rows(env, `SELECT blob4 AS colo, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='connect' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY colo ORDER BY n DESC LIMIT 20`),
-      rows(env, `SELECT SUM(double2 * _sample_interval) AS upBytes, SUM(double3 * _sample_interval) AS downBytes, SUM(double4 * _sample_interval) AS upFrames, SUM(double5 * _sample_interval) AS downFrames FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='traffic' AND timestamp > NOW() - INTERVAL '1' HOUR`),
-      rows(env, `SELECT SUM(double6 * _sample_interval) / SUM(_sample_interval) AS meanMs, MAX(double6) AS maxMs FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='box_auth' AND timestamp > NOW() - INTERVAL '1' HOUR`),
-      rows(env, `SELECT toStartOfInterval(timestamp, INTERVAL '5' MINUTE) AS at, blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - INTERVAL '1' HOUR GROUP BY at, kind ORDER BY at`),
+      rows(env, `SELECT blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - ${period.interval} GROUP BY kind ORDER BY n DESC`),
+      rows(env, `SELECT double1 AS code, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='phone_close' AND timestamp > NOW() - ${period.interval} GROUP BY code ORDER BY n DESC`),
+      rows(env, `SELECT blob3 AS reason, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='refused' AND timestamp > NOW() - ${period.interval} GROUP BY reason ORDER BY n DESC`),
+      rows(env, `SELECT blob4 AS colo, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='connect' AND timestamp > NOW() - ${period.interval} GROUP BY colo ORDER BY n DESC LIMIT 20`),
+      rows(env, `SELECT SUM(double2 * _sample_interval) AS upBytes, SUM(double3 * _sample_interval) AS downBytes, SUM(double4 * _sample_interval) AS upFrames, SUM(double5 * _sample_interval) AS downFrames FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='traffic' AND timestamp > NOW() - ${period.interval}`),
+      rows(env, `SELECT SUM(double6 * _sample_interval) / SUM(_sample_interval) AS meanMs, MAX(double6) AS maxMs FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='box_auth' AND timestamp > NOW() - ${period.interval}`),
+      rows(env, `SELECT toStartOfInterval(timestamp, ${period.bucket}) AS at, blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - ${period.interval} GROUP BY at, kind ORDER BY at`),
       alertMetrics(env),
       rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - INTERVAL '5' MINUTE GROUP BY status`),
+      rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - ${period.interval} GROUP BY status`),
     ]);
     return json({
-      window: "last 1 hour (boxesOnline: last 10 min)",
+      window: `${period.label} (boxesOnline: last 10 min)`,
+      range, seconds: period.seconds, bucketSeconds: period.bucketSeconds,
       boxesOnlineEstimate: boxesOnline,
       eventsByKind: byKind,
       phoneCloseCodes: closeCodes,
       refusalsByReason: refusals,
       connectsByColo: byColo,
-      traffic: traffic[0] ?? {}, boxHandshake: handshake[0] ?? {}, timeline, alerts, site,
+      traffic: traffic[0] ?? {}, boxHandshake: handshake[0] ?? {}, timeline, alerts, site, signupWindow,
       generatedAt: new Date().toISOString(),
     });
   } catch {
@@ -151,7 +164,9 @@ async function query(env: TelemetryEnv, sql: string): Promise<Record<string, unk
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`analytics query ${res.status}`);
-  return ((await res.json()) as { data?: Record<string, unknown>[] }).data ?? [];
+  const result = await res.json() as { data?: Record<string, unknown>[] };
+  if (!Array.isArray(result.data)) throw new Error("invalid analytics response");
+  return result.data;
 }
 async function rows(env: TelemetryEnv, sql: string): Promise<Record<string, unknown>[]> {
   return query(env, sql);

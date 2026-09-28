@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>Dashboard · Shahi</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header><a class="brand" href="/"><img src="/favicon.svg" width="38" height="38" alt=""><span>shahi<span class="badge">OPERATIONS</span></span></a><a class="signout" href="/cdn-cgi/access/logout">Sign out ↗</a></header>
+<div class="layout">
+<aside><nav aria-label="Main navigation"><a href="/" data-page="overview">◫ <span>Overview</span></a><a href="/statistics" data-page="statistics">▥ <span>Statistics</span></a></nav><div class="aside-note"><span class="dot"></span> Production<br><small>Private owner dashboard</small></div></aside>
+<main id="main">
+  <div class="page-top"><div><p class="eyebrow">SHAHI / PRODUCTION</p><h1 id="title">Overview</h1><p id="subtitle" class="muted">A clear view of your service, from connection to delivery.</p></div><div class="controls"><label for="window">Time range</label><select id="window"><option value="1h">Last hour</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option></select><button id="refresh" type="button">↻ Refresh</button></div></div>
+  <div class="freshness"><span id="updated" role="status">Loading live data…</span><span>Refreshes every minute while open</span></div>
+  <div id="error" class="notice" role="alert" hidden></div>
+  <div id="content" aria-busy="true">
+    <section id="health-banner" class="health"><span class="health-symbol">◌</span><div><h2 id="health-title">Checking service health…</h2><p id="health-detail">Waiting for the latest monitor sample.</p></div><span class="tag" id="health-time">—</span></section>
+    <section class="metrics" aria-label="Key statistics">
+      <article class="metric"><h2>Computers online</h2><strong id="computers">—</strong><p>Estimate · seen in the last 10 min</p></article>
+      <article class="metric"><h2>Phone connections opened</h2><strong id="phones">—</strong><p>Includes reconnects · selected range</p></article>
+      <article class="metric"><h2>Encrypted traffic</h2><strong id="traffic">—</strong><p>Both directions · selected range</p></article>
+      <article class="metric"><h2>Relay errors</h2><strong id="errors">—</strong><p>Internal errors · selected range</p></article>
+    </section>
+    <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Connection attempts</h2></div><span id="chart-total" class="muted">—</span></div><div id="chart" class="chart" role="img" aria-label="Connection activity loading"></div><div class="chart-labels"><span id="chart-start">—</span><span id="chart-end">—</span></div><p class="caption">Attempts reaching the relay after its front-door rate limit. Counts include reconnects; the first and last buckets may be partial.</p><details><summary>View chart data</summary><div id="chart-table" class="table-scroll"></div></details></section>
+    <div id="overview-panels" class="columns"><section class="panel"><div class="panel-heading"><h2>Service health</h2><span class="tag">1 min checks</span></div><div id="checks" class="rows"><p class="muted">Loading checks…</p></div><p class="caption">A current sample is not an uptime SLA. Three failed checks open an incident; two healthy checks recover it.</p></section><section class="panel"><div class="panel-heading"><h2>Incidents & delivery</h2></div><div id="incidents" class="rows"></div><p id="delivery" class="caption"></p></section></div>
+    <div id="statistics-panels" hidden>
+      <div class="columns"><section class="panel"><div class="panel-heading"><h2>Traffic & handshake</h2></div><div id="transfer" class="rows"></div><p class="caption">Traffic arrives in batches on relay alarms or disconnects. Handshake duration is for computer authentication, not phone response time.</p></section><section class="panel"><div class="panel-heading"><h2>Connection locations</h2><span class="tag">Top 20</span></div><div id="regions"></div><p class="caption">Cloudflare edge codes, not users’ home locations.</p></section></div>
+      <div class="columns"><section class="panel"><div class="panel-heading"><h2>Relay events</h2></div><div id="events"></div></section><section class="panel"><div class="panel-heading"><h2>Connection refusals</h2></div><div id="refusals"></div></section></div>
+      <div class="columns"><section class="panel"><div class="panel-heading"><h2>Phone close codes</h2></div><div id="closes"></div></section><section class="panel"><div class="panel-heading"><h2>Beta signup requests</h2></div><div id="signups"></div><p class="caption">HTTP results for the signup form. Requests can repeat; a successful request is not an app install.</p></section></div>
+    </div>
+    <footer><strong>Operational data only.</strong> No conversations, prompts, terminal output, or files. Counts may be sampled; connected computers and connection events do not measure unique people. App installs, retention, and your Cloudflare bill are not measured here.</footer>
+  </div>
+  <noscript><p class="notice">Enable JavaScript to load the dashboard.</p></noscript>
+</main></div>
+</body></html>

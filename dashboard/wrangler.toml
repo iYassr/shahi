@@ -1,0 +1,25 @@
+name = "shahi-dashboard"
+main = "src/index.ts"
+compatibility_date = "2026-09-04"
+send_metrics = false
+workers_dev = false
+preview_urls = false
+
+[[routes]]
+pattern = "admin.getshahi.dev"
+custom_domain = true
+
+[[services]]
+binding = "OPERATIONS"
+service = "shahi-operations"
+
+# ACCESS_AUD is provisioned separately after creating this Worker's Access app.
+# Missing/mismatched Access context fails closed, including for every asset.
+# Bundle text directly: Cloudflare's Static Assets router drops ctx.access.
+[[rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.css", "**/*.client.js", "**/*.svg"]
+fallthrough = true
+
+[observability]
+enabled = false

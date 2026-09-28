@@ -189,6 +189,7 @@ describe("required CI coverage", () => {
       { name: "e2e-chromium", suite: "e2e", project: "--project=phone", browsers: "chromium" },
       { name: "e2e-webkit", suite: "e2e", project: "--project=ios", browsers: "chromium webkit" },
       { name: "hosted", suite: "hosted", project: "", browsers: "chromium webkit" },
+      { name: "dashboard", suite: "dashboard", project: "", browsers: "chromium webkit" },
       { name: "pwa", suite: "pwa", project: "", browsers: "chromium webkit" },
     ]);
     const browser = ci.jobs.browser!.steps!;

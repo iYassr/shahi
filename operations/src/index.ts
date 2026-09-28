@@ -2,6 +2,7 @@ import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
 import { advance, notification, type Incident } from "./incidents";
 import { probeTunnel } from "./probe";
+import { StatsCache, validRange } from "./stats-cache";
 
 interface Env {
   MONITOR: DurableObjectNamespace<Monitor>;
@@ -28,6 +29,25 @@ async function sendAlert(env: Env, subject: string, text: string): Promise<void>
 
 export class Monitor extends DurableObject<Env> {
   #running: Promise<State> | null = null;
+  #stats = new StatsCache(async (range) => {
+    const response = await fetch(`${RELAY}/stats?window=${range}`, {
+      headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("analytics unavailable");
+    const data = await response.json();
+    if (!data || typeof data !== "object" || !("generatedAt" in data) || !("eventsByKind" in data)) throw new Error("invalid analytics");
+    return data;
+  });
+  async dashboard(range: string): Promise<unknown> {
+    const [monitor, stats] = await Promise.allSettled([this.status(), this.#stats.get(range)]);
+    return {
+      monitor: monitor.status === "fulfilled" ? monitor.value : null,
+      stats: stats.status === "fulfilled" ? stats.value : null,
+      errors: [monitor.status === "rejected" ? "Health monitor unavailable." : null,
+        stats.status === "rejected" ? "Statistics unavailable. Try refreshing shortly." : null].filter(Boolean),
+      generatedAt: new Date().toISOString(),
+    };
+  }
   run(): Promise<State> {
     if (this.#running) return this.#running;
     this.#running = this.check().finally(() => { this.#running = null; });
@@ -94,6 +114,11 @@ export default {
   // authenticated administrative service binding can call these handlers.
   async fetch(request, env) {
     const monitor = env.MONITOR.getByName("production");
+    if (new URL(request.url).pathname === "/dashboard" && request.method === "GET") {
+      const range = new URL(request.url).searchParams.get("window") ?? "1h";
+      if (!validRange(range)) return Response.json({ error: "invalid window" }, { status: 400 });
+      return Response.json(await monitor.dashboard(range), { headers: { "cache-control": "no-store" } });
+    }
     if (new URL(request.url).pathname === "/status" && request.method === "GET") return Response.json(await monitor.status());
     if (new URL(request.url).pathname === "/check" && request.method === "POST") return Response.json(await monitor.run());
     if (new URL(request.url).pathname === "/test-alert" && request.method === "POST") {

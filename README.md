@@ -505,6 +505,10 @@ explains linking a checkout and restarting its managed service.
 - [Customer journey verification and known limits](docs/customer-journeys-2026-09-18.md)
 - [All documentation](docs/README.md)
 
+The infrastructure owner can use the private operations dashboard to inspect
+service health, relay traffic and connection trends. It collects no agent
+conversations or files; see [dashboard setup and metric limits](docs/operations.md#private-owner-dashboard).
+
 ## Support and license
 
 For questions, email [support@getshahi.dev](mailto:support@getshahi.dev) or

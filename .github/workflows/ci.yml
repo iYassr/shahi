@@ -75,6 +75,9 @@ jobs:
 
       - run: bun run test
 
+      - name: Bundle the private dashboard
+        run: bun node_modules/wrangler/bin/wrangler.js deploy --config dashboard/wrangler.toml --dry-run --outdir "$RUNNER_TEMP/dashboard-bundle"
+
       # The relay's own suite starts a local `wrangler dev` — no account, no
       # network beyond the loopback — and proves the Worker end of the protocol.
       - run: bun run test:relay
@@ -115,6 +118,10 @@ jobs:
             suite: hosted
             project: ""
             browsers: chromium webkit
+          - name: dashboard
+            suite: dashboard
+            project: ""
+            browsers: chromium webkit
           - name: pwa
             suite: pwa
             project: ""
@@ -132,6 +139,7 @@ jobs:
       # yesterday's app — the same trap as forgetting to rebuild before a
       # restart, and just as quiet.
       - run: bun run build:web
+        if: matrix.suite != 'dashboard'
 
       - name: Keep local Worker diagnostics
         run: echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/wrangler-logs" >> "$GITHUB_ENV"
@@ -148,7 +156,7 @@ jobs:
       - run: bunx playwright install --with-deps ${{ matrix.browsers }}
 
       - run: bun run build:site
-        if: matrix.suite != 'e2e'
+        if: matrix.suite == 'hosted' || matrix.suite == 'pwa'
       - run: bun run test:${{ matrix.suite }} ${{ matrix.project }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

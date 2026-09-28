@@ -86,3 +86,37 @@ describe("handleStats", () => {
 
   afterEach(() => {});
 });
+
+describe('dashboard time windows', () => {
+  const env: TelemetryEnv = { STATS_TOKEN: 'secret', CF_ACCOUNT_ID: 'account', CF_ANALYTICS_TOKEN: 'analytics' };
+  test('only allowlisted windows reach SQL, while presence and alerts keep their own windows', async () => {
+    const real = globalThis.fetch; const queries: string[] = [];
+    globalThis.fetch = (async (_url: unknown, options: RequestInit) => { queries.push(String(options.body)); return Response.json({ data: [] }); }) as unknown as typeof fetch;
+    try {
+      for (const [range, interval, bucket] of [['1h', "INTERVAL '1' HOUR", 300], ['24h', "INTERVAL '24' HOUR", 3600], ['7d', "INTERVAL '7' DAY", 21600]] as const) {
+        queries.length = 0;
+        const r = (await handleStats(new Request(`https://relay/stats?window=${range}`, { headers: { authorization: 'Bearer secret' } }), env))!;
+        const body = await r.json() as { range: string; bucketSeconds: number };
+        expect(r.status).toBe(200); expect(body.range).toBe(range); expect(body.bucketSeconds).toBe(bucket);
+        expect(queries.filter(q => q.includes(interval)).length).toBeGreaterThanOrEqual(8);
+        expect(queries.some(q => q.includes("INTERVAL '10' MINUTE"))).toBe(true);
+        expect(queries.filter(q => q.includes("INTERVAL '5' MINUTE")).length).toBeGreaterThanOrEqual(2);
+        expect(queries.filter(q => q.includes('FROM shahi_relay')).every(q => q.includes("blob5 != 'probe'"))).toBe(true);
+      }
+      queries.length = 0;
+      for (const range of ['__proto__', 'constructor', "1h' OR 1=1", '30d']) {
+        const r = await handleStats(new Request(`https://relay/stats?window=${encodeURIComponent(range)}`, { headers: { authorization: 'Bearer secret' } }), env);
+        expect(r!.status).toBe(400);
+      }
+      expect(queries).toHaveLength(0);
+    } finally { globalThis.fetch = real; }
+  });
+  test('query failure cannot become an empty successful dashboard', async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json({ error: 'private upstream detail' }, { status: 500 })) as unknown as typeof fetch;
+    try {
+      const r = (await handleStats(new Request('https://relay/stats', { headers: { authorization: 'Bearer secret' } }), env))!;
+      expect(r.status).toBe(502); expect(await r.text()).not.toContain('private');
+    } finally { globalThis.fetch = real; }
+  });
+});
