@@ -1,6 +1,6 @@
 import { Alert } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { PairedDevices, relative } from "./paired-devices";
+import { PairedDevices } from "./paired-devices";
 
 jest.mock("@/lib/api", () => ({
   api: { devices: jest.fn(), revokeDevice: jest.fn() },
@@ -152,13 +152,6 @@ describe("paired devices", () => {
     expect(onRevokedSelf).not.toHaveBeenCalled();
   });
 
-  test("ages read the way a person would say them", () => {
-    const t = 1_000_000_000;
-    expect(relative(t - 5_000, t)).toBe("just now");
-    expect(relative(t - 300_000, t)).toBe("5m ago");
-    expect(relative(t - 3 * 3_600_000, t)).toBe("3h ago");
-    expect(relative(t - 2 * 86_400_000, t)).toBe("2d ago");
-  });
 });
 
 let mockComputerId = "first";

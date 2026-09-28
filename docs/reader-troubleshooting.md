@@ -1,40 +1,60 @@
-# Claude conversations missing from Reader
+# Conversations missing from Reader
 
-Shahi can detect a Claude terminal while still lacking the session identity
-needed to find its saved conversation. On the computer running Claude:
+Reader finds a conversation by the session id its agent reports through
+herdr's integration for that agent. herdr also detects an agent from its
+terminal, which is enough to show it as Claude or Codex but not to say which
+saved conversation it is. So Shahi's computer service keeps those integrations
+installed: each time it starts, which is every herdr start and every update, it
+runs `herdr integration status` and, for each agent Reader supports, installs
+a missing integration if the agent is on the computer and updates an outdated
+one (`server/lib/herdr-integrations.ts`). Nothing needs typing. It is the
+service's job, not the plugin's startup hook, because "Update computer" in the
+app replaces the service; the hook changes only with a plugin reinstall.
 
-```sh
-herdr integration install claude
-```
+What it changes is what `herdr integration install` changes, and nothing else:
+for Claude, a hook script under `~/.claude/hooks/` and a `SessionStart` entry
+in `~/.claude/settings.json`, keeping the settings already there. An
+integration removed after Shahi has seen it installed stays removed. What it
+did, including anything it could not install, is in the service's log:
+`herdr plugin action invoke shahi.logs`, then `herdr plugin log list --plugin shahi`.
 
-Quit Claude and resume the affected conversation inside herdr. Installing the
-hook does not replay SessionStart for a session already running. Reader keeps
-checking and should populate once herdr receives the session ID and Claude has
-saved messages. Screen remains available meanwhile.
+Reader shows one of two waiting states rather than an error:
 
-If Reader reports that it found the session but cannot read its saved
-conversation, check that Claude is saving history and that Shahi runs under the
-same account and `CLAUDE_CONFIG_DIR`. Shahi uses that configured projects folder
-for both messages and images. It refuses ambiguous transcript copies and does
-not select another conversation by working folder or modification time.
+- **Claude has not saved any messages in this conversation yet.** Claude writes
+  its transcript with the first message; measured on Claude Code 2.1.284,
+  there is none after 12 seconds at the prompt. Every new conversation starts
+  here, and Reader fills in on the next poll after the first message.
+- **This Claude conversation started before Shahi could identify it.** The
+  hook reports a session when it starts, so a conversation already running when
+  the integration was installed never reported one, and herdr cannot resume it
+  after a restart either: it resumes with `--resume=<session id>` (0.9.1). So
+  Reader offers **Choose the conversation**: the computer lists the
+  conversations Claude saved for the folder Claude runs in, newest first, each
+  with its first request and latest message, and the person picks the one
+  running. The one Claude's own process record names is marked **Likely**,
+  following a conversation parked as a background job to the job's session;
+  on September 28 that put the right conversation first, marked, for all six
+  live panes. It stays a hint, not a choice: the record is undocumented and a
+  fresh Claude does not write one. The choice holds for that Claude process in that
+  terminal and ends with it, and the hook's own report replaces it. **Choose
+  another** above a chosen conversation corrects a mistaken pick, or one that
+  went stale after `/clear` in a Claude with no hook. Resuming the conversation
+  in Claude also identifies it.
+
+Screen shows the terminal meanwhile in both cases.
+
+Reader reads Claude's history from `~/.claude/projects`. A Claude started with
+a different `CLAUDE_CONFIG_DIR` saves its conversations elsewhere, and Reader
+does not find them yet: the sidecar honors `CLAUDE_CONFIG_DIR` only from its own
+environment, which the plugin's service does not carry. Reader never selects a
+conversation by working folder or modification time instead.
 
 The September 28 TestFlight report showed the old generic empty state on build
-20. That screenshot confirms an unavailable transcript, but does not reveal the
-computer's integration status or custom configuration. The reporter still needs
-to verify recovery on that computer. Updating the phone alone does not install
-the computer's Claude integration.
+20, which confirms an unavailable transcript but not the cause. The reporter's
+computer gets the integration when it updates to a release with this change,
+from the app or by reinstalling the plugin; physical verification on that
+computer remains outstanding.
 
-The fix adds separate server reasons for missing identity and missing saved
-history, displays those reasons in both clients, and honors `CLAUDE_CONFIG_DIR`.
-New clients also show setup guidance when an older computer returns a plain
-404. Existing API 5 clients remain compatible. The server change needs a
-computer release; the native guidance needs a phone update.
-
-Validation covers configured-folder message and image lookup, containment and
-duplicate protection, both HTTP reasons, native and browser guidance, and
-recovery after the next successful poll. Physical verification on the reporting
-tester’s computer remains outstanding.
-
-See [herdr’s Claude integration documentation](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/integrations.mdx)
-for installation and [Claude’s hooks documentation](https://code.claude.com/docs/en/hooks)
-for SessionStart behavior.
+See [herdr's integration documentation](https://raw.githubusercontent.com/herdrdev/herdr/v0.9.1/docs/next/website/src/content/docs/integrations.mdx)
+and [Claude's hooks documentation](https://code.claude.com/docs/en/hooks) for
+`SessionStart`.

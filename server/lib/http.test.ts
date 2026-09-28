@@ -1575,7 +1575,7 @@ describe("answering from a card drawn from another question", () => {
   });
 });
 
-test("Claude's missing Reader explains whether session identity or the saved transcript is unavailable", async () => {
+test("a Claude pane with no Reader yet says why without asking anyone to type a command", async () => {
   const config = mkdtempSync(join(tmpdir(), "shahi-http-claude-"));
   const previousConfig = process.env.CLAUDE_CONFIG_DIR;
   process.env.CLAUDE_CONFIG_DIR = config;
@@ -1588,12 +1588,60 @@ test("Claude's missing Reader explains whether session identity or the saved tra
         expect(res.status).toBe(404);
         const body = await res.json() as { code: string; error: string; messages: unknown[] };
         expect(body.code).toBe(identified ? "reader_transcript_missing" : "reader_session_missing");
-        expect(body.error).toContain(identified ? "CLAUDE_CONFIG_DIR" : "herdr integration install claude");
+        // Identified and empty is every new conversation before its first message.
+        expect(body.error).toEqual(identified ? "Claude has not saved any messages in this conversation yet." : expect.stringContaining("Choose which one it is"));
+        expect(body.error).not.toContain("herdr integration install");
         expect(body.messages).toEqual([]);
       } finally { app.stop(); }
     }
   } finally {
     occupant = {};
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+    rmSync(config, { recursive: true, force: true });
+  }
+});
+
+// The TestFlight report: a Claude conversation that started before herdr's
+// integration was installed reports no session, and Reader stayed empty.
+test("a Claude conversation herdr cannot identify becomes readable once the person names it", async () => {
+  const config = mkdtempSync(join(tmpdir(), "shahi-http-choice-"));
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = config;
+  const cwd = "/Users/me/reports.q3";
+  const mine = "55555555-5555-4555-8555-555555555555";
+  const folder = join(config, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, `${mine}.jsonl`), [
+    JSON.stringify({ type: "user", uuid: "u1", message: { role: "user", content: "Summarise the quarterly report" } }),
+    JSON.stringify({ type: "assistant", uuid: "a1", message: { role: "assistant", content: [{ type: "text", text: "Here is the summary." }] } }),
+  ].join("\n") + "\n");
+  occupant = { agent: "claude", agent_session: null, cwd, terminal_id: "term_choice" };
+  programInForeground = true;
+  const app = await boot();
+  const headers = { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) };
+  const base = `${app.base}/api/panes/${encodeURIComponent(PANE)}`;
+  const choose = (sessionId: string) => fetch(`${base}/conversation`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ sessionId }) });
+  try {
+    expect(((await (await fetch(`${base}/session`, { headers })).json()) as { code: string }).code).toBe("reader_session_missing");
+    const listed = await (await fetch(`${base}/conversations`, { headers })).json() as { choices: { sessionId: string; firstPrompt: string }[] };
+    expect(listed.choices).toEqual([expect.objectContaining({ sessionId: mine, firstPrompt: "Summarise the quarterly report" })]);
+
+    const refused = await choose("66666666-6666-4666-8666-666666666666");
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe("conversation_not_offered");
+    expect((await choose(mine)).status).toBe(200);
+
+    const read = await fetch(`${base}/session`, { headers });
+    expect(read.status).toBe(200);
+    const page = await read.json() as { sessionId: string; chosen?: boolean; messages: unknown[] };
+    expect(page).toMatchObject({ sessionId: mine, chosen: true });
+    expect(JSON.stringify(page.messages)).toContain("Here is the summary.");
+    expect((await fetch(`${base}/session`, { headers: { ...headers, "if-none-match": read.headers.get("etag")! } })).status).toBe(304);
+  } finally {
+    app.stop();
+    occupant = {};
+    programInForeground = false;
     if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = previousConfig;
     rmSync(config, { recursive: true, force: true });

@@ -20,6 +20,7 @@ import { ApiError, useApi, type Activity, type LogBlock, type LogMessage, type S
 import { forgetReaderPlace, readerWasAway, useReaderScroll } from "../reader-scroll";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
+import { ConversationPicker } from "./ConversationPicker";
 
 /** How often to pull while the tab is open. The server caches on file size. */
 const POLL_MS = 2_500;
@@ -91,6 +92,10 @@ interface Props {
   activity: Activity | null;
   /** Called when this pane has no transcript, so the caller can fall back. */
   onUnavailable: () => void;
+  /** The computer can list and record a person's choice of conversation (`conversation-choice`). */
+  canChoose?: boolean;
+  /** Who holds the pane (`DashboardPane.instanceId`), so a choice cannot land on the next occupant. */
+  instanceId?: string;
 }
 
 /**
@@ -124,7 +129,7 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
-export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) {
+export function Reader({ paneId, agent, activity, echo, onUnavailable, canChoose = false, instanceId }: Props) {
   const api = useApi();
   const mounted = useRef(true);
   const generation = useRef(memoryGeneration);
@@ -132,6 +137,13 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
   const [error, setError] = useState("");
+  /** Why there is nothing to read yet, when that is all it is. */
+  const [notice, setNotice] = useState("");
+  /** herdr cannot say which conversation this is, and the person may (ConversationPicker). */
+  const [unidentified, setUnidentified] = useState(false);
+  /** What is shown is the conversation the person chose, not one Claude reported. */
+  const [chosen, setChosen] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [offset, setOffset] = useState(() => rememberedOffsets.get(paneId) ?? 0);
   const busy = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -218,6 +230,9 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
         reading.goLatest();
       }
       setError("");
+      setNotice("");
+      setUnidentified(false);
+      setChosen(!!log.chosen);
 
       // And nothing re-renders unless something actually changed. A quiet
       // session polled every 2.5s otherwise rebuilt the entire conversation on
@@ -245,9 +260,14 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       const explained = missing && (err.code === "reader_session_missing" || err.code === "reader_transcript_missing");
       if (missing && !explained && agent !== "claude") { forgetReaderMemory(paneId); onUnavailable(); }
       else {
-        setError(missing && !explained && agent === "claude"
-          ? "No saved conversation is available yet. If Claude already has messages, run herdr integration install claude on the computer, then quit and resume this session inside herdr."
-          : err instanceof Error ? err.message : "Could not read conversation");
+        // Nothing to read yet is a state, not a failure: every new Claude
+        // conversation is `reader_transcript_missing` until its first message,
+        // and an alert with Retry made each one look broken. The poll fills
+        // it in. An older computer says only 404 and does not set up herdr's
+        // integration itself.
+        setNotice(!missing ? "" : explained ? err.message : "No saved conversation is available yet. If Claude already has messages, updating Shahi on the computer lets Reader find its conversations.");
+        setError(missing ? "" : err instanceof Error ? err.message : "Could not read conversation");
+        setUnidentified(missing && err.code === "reader_session_missing");
         setLoading(false);
       }
     } finally { busy.current = false; }
@@ -329,6 +349,19 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       onScroll={reading.onScroll}
     >
       {error && <p role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
+      {choosing ? (
+        <ConversationPicker paneId={paneId} instanceId={instanceId} onChosen={() => { setChoosing(false); void load(); }} onCancel={() => setChoosing(false)} />
+      ) : (
+        <>
+          {notice && !error && <p role="status">{notice}</p>}
+          {canChoose && (unidentified || chosen) && (
+            <p className="reader__chosen">
+              {chosen && "You chose this conversation. "}
+              <button className="empty__action" onClick={() => setChoosing(true)}>{chosen ? "Choose another" : "Choose the conversation"}</button>
+            </p>
+          )}
+        </>
+      )}
       {hasOlder && (
         <button className="reader__more" onClick={() => void loadOlder()} disabled={loadingOlder}>
           {loadingOlder ? "Loading…" : `Load earlier (${offset} more)`}

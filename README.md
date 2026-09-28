@@ -114,17 +114,21 @@ a uniquely identified process-owned transcript. They never select another
 conversation just because it shares a folder. Use Screen mode for other agents
 or output Reader cannot format.
 
-For Claude Code, run `herdr integration install claude` on the computer, then
-quit and resume existing Claude sessions inside herdr. The integration identifies
-the exact conversation for Reader; detecting Claude's terminal alone is not enough.
-If you use `CLAUDE_CONFIG_DIR`, start Shahi with the same setting as Claude.
-See [Reader troubleshooting](docs/reader-troubleshooting.md) if messages are missing.
+Readers identify a conversation by the session id its agent reports through
+herdr's integration for that agent. Shahi's computer service installs the
+integration for each of these agents it finds on the computer, and updates
+outdated ones, whenever it starts: every herdr start and every update. It edits
+only what herdr's own
+`herdr integration install` edits (for Claude, a hook in `~/.claude/settings.json`),
+and an integration you remove stays removed. A Claude conversation that was
+already running when its integration was installed cannot report itself, so
+Reader asks you to choose it from the conversations saved for its folder; the
+choice lasts until that Claude exits. See [Reader troubleshooting](docs/reader-troubleshooting.md)
+if messages are missing.
 
-For OpenCode, run `herdr integration install opencode` on the computer and start
-or resume your session inside herdr. At OpenCode's empty home screen, its
-integration retains the previous session until the first prompt in a new one.
-For Codex, `herdr integration install codex` also keeps Reader available after
-the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
+At OpenCode's empty home screen, its integration retains the previous session
+until the first prompt in a new one. The Codex integration also keeps Reader
+available after the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
 for tested versions and further limits.
 
 ## Quick start

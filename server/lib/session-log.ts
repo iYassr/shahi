@@ -39,7 +39,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { realPath } from "./real-path";
 
-const claudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+export const claudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 
 /** Tool output can be enormous; the phone gets a readable slice. */
 const MAX_RESULT_CHARS = 2_000;

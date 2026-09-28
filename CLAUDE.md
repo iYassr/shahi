@@ -1343,14 +1343,49 @@ never guessed prose or fabricated results.
 
 ## Claude Reader setup, September 28
 
-Claude's terminal detection does not supply its session identity. Reader needs
-`herdr integration install claude`, followed by quitting and resuming existing
-Claude sessions. Missing identity and a missing transcript now have distinct
-404 error codes and repair guidance; keep polling so setup can recover without
-reopening the phone app. The plain 404 from older servers remains supported.
-`CLAUDE_CONFIG_DIR` selects the one projects root for both messages and images.
-Do not search the default folder as an additional fallback across accounts.
+herdr's terminal detection names an agent but not its session; only the
+agent's integration hook reports that, and Reader needs it. The managed service
+keeps the integrations of Reader's agents installed (`herdr-integrations.ts`):
+once per start, after herdr answers, it installs a missing one for an agent
+present on the computer and updates an outdated one. Nobody types a command.
+It lives in the service, not the plugin's startup hook, because "Update
+computer" replaces the service and only a plugin reinstall replaces the hook.
+It runs only with `SHAHI_MANAGER_ROOT` and a connected herdr, because the live
+suite and the release smoke tests start the sidecar with the developer's real
+home, and an install writes the agent's real settings. An integration once
+seen installed and later missing was removed by someone; it stays removed.
+Discovery asks about every manifest kind: `installedAgents` caches one answer
+for the New Agent sheet as well.
+
+A Claude that started before its integration was installed never reports a
+session, and nothing on the computer identifies its transcript exactly: Claude
+holds no transcript open, and `sessions/<pid>.json` is undocumented and not
+written by every process (measured on 2.1.284: none for fresh processes, even
+after a prompt). Its one disagreement with the hook was a conversation parked
+as a background job: the record keeps its old `sessionId` and names the job in
+`parkedJobId`, whose `jobs/<id>/state.json` has the right session. Followed
+that way it named the right conversation for all six live panes. So the
+person names it (`claude-choice.ts`, capability
+`conversation-choice`): `GET /api/panes/:id/conversations` lists the
+transcripts in Claude's folder for the process's cwd (every non-alphanumeric
+character becomes `-`), newest first, minus sessions other panes hold, with
+the pid record's session marked `likely` as a hint only; `POST
+/api/panes/:id/conversation` accepts only an offered id. The choice is held in
+memory against that pane's terminal id and Claude pid, and ends when either
+changes or the hook reports; `chosenSession` checks the pid in the pane's
+foreground processes, not only ones named claude, because a tool shares its
+group. The page says `chosen: true`, part of its ETag, so clients offer
+"Choose another". Never pick from the folder without the person.
+
+Missing identity and a missing transcript have distinct 404 codes. Neither is
+an error in either client: every new Claude conversation has no transcript
+until its first message (none after 12s at the prompt, measured on 2.1.284),
+so both are a waiting state that keeps polling. The plain 404 from older
+servers remains supported. `CLAUDE_CONFIG_DIR` is honored only from the
+sidecar's own environment, which the plugin's service does not carry; `.env`
+keys reach `loadConfig`, not `process.env`.
 
 Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
-2.1.283 process had a matching process start time but retained an older session
-than its SessionStart hook. This metadata cannot safely replace hook identity.
+2.1.283 process had a matching process start time but an older session than its
+SessionStart hook, because it had parked the conversation as a background job.
+This metadata cannot safely replace hook identity; it only marks a choice likely.

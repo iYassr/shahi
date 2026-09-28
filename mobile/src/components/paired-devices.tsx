@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
-import type { DeviceList, PairedDevice } from "@shahi/shared";
+import { relativeTime as relative, type DeviceList, type PairedDevice } from "@shahi/shared";
 import type { Api } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -141,15 +141,6 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
       </Text>
     </View>
   );
-}
-
-/** "just now", "5m ago", "3h ago", "2d ago" — enough to tell a live phone from a forgotten one. */
-export function relative(at: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86_400)}d ago`;
 }
 
 const styles = StyleSheet.create({

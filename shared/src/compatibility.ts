@@ -1,7 +1,7 @@
 /** App contracts and recovery are independent of herdr and transport versions. */
 export const API_SUPPORT = { min: 5, max: 5, securityFloor: 5, generations: 2 } as const;
 export const CONTROL_VERSION = 1;
-export const CAPABILITIES = ["sessions", "prompt-receipts", "attachments", "device-revocation", "computer-updates"] as const;
+export const CAPABILITIES = ["sessions", "prompt-receipts", "attachments", "device-revocation", "computer-updates", "conversation-choice"] as const;
 export type Capability = typeof CAPABILITIES[number];
 export type ReleaseChannel = "stable" | "beta";
 export type BackendState =

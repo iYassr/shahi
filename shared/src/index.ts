@@ -24,6 +24,7 @@ export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFro
 export * from "./modes";
 export * from "./relay";
 export * from "./compatibility";
+export * from "./relative-time";
 export * from "./computer-control";
 
 /* --------------------------------------------------------------- handshake */
@@ -378,6 +379,29 @@ export interface SessionLog {
   messages: LogMessage[];
   total: number;
   offset: number;
+  /**
+   * The conversation is the one a person chose for this pane, because herdr
+   * cannot identify it (`/conversations`). Omitted otherwise, and by servers
+   * without the `conversation-choice` capability.
+   */
+  chosen?: boolean;
+}
+
+/**
+ * A saved Claude conversation a person may name as the one running in a pane
+ * herdr cannot identify: one that started before herdr's Claude integration
+ * was installed. Listed from the folder Claude runs in, never chosen by it.
+ */
+export interface ConversationChoice {
+  sessionId: string;
+  /** What was first asked, flattened to one line. */
+  firstPrompt: string | null;
+  /** The latest message, as a conversation preview shows it. */
+  lastMessage: string | null;
+  /** When the transcript was last written, in ms. */
+  updatedAt: number;
+  /** Claude's own record for the running process names this one: a hint only. */
+  likely: boolean;
 }
 
 /** A line the server recorded as it scrolled off a pane. */
