@@ -7,6 +7,12 @@ import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "
 import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
 import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
+import { voice } from "@/lib/voice";
+
+jest.mock("@/lib/voice", () => ({ ...jest.requireActual("@/lib/voice"), voice: {
+  support: jest.fn(), prepare: jest.fn(), start: jest.fn(), stop: jest.fn(), cancel: jest.fn(async () => {}),
+  progress: jest.fn(async () => 0), listen: jest.fn(() => ({ remove() {} })),
+} }));
 
 // The first test in this file pays for loading the screen and its mocks under
 // fake timers, and GitHub's ubuntu runner took more than Jest's 5s default
@@ -87,7 +93,10 @@ jest.mock("@/lib/api", () => {
 // options are set on a navigator this test does not mount. The last options
 // are kept, so a test can draw the header's title on its own.
 const mockStackOptions: { current: { headerTitle?: () => React.ReactElement } | null } = { current: null };
-jest.mock("expo-router", () => ({ Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
+jest.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => void) => require("react").useEffect(effect, [effect]),
+  Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } },
+}));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
@@ -1605,6 +1614,47 @@ test("an early missing-pane response recovers when the new agent’s next frame 
   await settle();
   expect(mocked.pane).toHaveBeenCalledTimes(2);
   expect(view.getByText("New agent is ready")).toBeTruthy();
+});
+
+test("voice input preserves the draft, appends edited text, and makes no request until Send", async () => {
+  const native = voice as jest.Mocked<typeof voice>;
+  native.support.mockResolvedValue({ available: true, preferred: "en-US", maximumSeconds: 300,
+    locales: [{ id: "en-US", name: "English", installed: true }] });
+  native.prepare.mockResolvedValue(true); native.start.mockResolvedValue(); native.stop.mockResolvedValue("Fix the typo.");
+  mocked.sessionLog.mockResolvedValue(log([said("voice-agent", "agent", "Ready for a reply.")]));
+  const view = render(<Pane paneId={PANE} />); await settle();
+  const draft = view.getByPlaceholderText("Reply to this agent…");
+  fireEvent.changeText(draft, "Keep this draft");
+  fireEvent.press(view.getByLabelText("Dictate a reply")); await settle();
+  fireEvent.press(view.getByText("Record")); await settle();
+  fireEvent.press(view.getByText("Stop and transcribe")); await settle();
+  fireEvent.changeText(view.getByLabelText("Edit voice transcript"), "Fix the README.");
+  fireEvent.press(view.getByText("Add to reply")); await settle();
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("Keep this draft\nFix the README.");
+  expect(mocked.send).not.toHaveBeenCalled(); expect(mocked.sendKeys).not.toHaveBeenCalled();
+  fireEvent.press(view.getByText("Send")); await settle();
+  expect(mocked.send).toHaveBeenCalledTimes(1);
+  expect(mocked.send.mock.calls[0][1]).toBe("Keep this draft\nFix the README.");
+});
+
+test("switching computers closes voice input and discards the old computer's pending transcript", async () => {
+  const native = voice as jest.Mocked<typeof voice>;
+  native.support.mockResolvedValue({ available: true, preferred: "en-US", maximumSeconds: 300,
+    locales: [{ id: "en-US", name: "English", installed: true }] });
+  native.prepare.mockResolvedValue(true); native.start.mockResolvedValue();
+  const pending = deferred<string>(); native.stop.mockReturnValueOnce(pending.promise);
+  mocked.sessionLog.mockResolvedValue(log([said("voice-switch", "agent", "Ready.")]));
+  const view = render(<Pane paneId={PANE} />); await settle();
+  fireEvent.press(view.getByLabelText("Dictate a reply")); await settle();
+  fireEvent.press(view.getByText("Record")); await settle();
+  fireEvent.press(view.getByText("Stop and transcribe")); await settle();
+  mockComputer.api = { ...api };
+  view.rerender(<Pane paneId={PANE} />); await settle();
+  expect(view.queryByText("Voice input")).toBeNull();
+  expect(native.cancel).toHaveBeenCalledWith(native.stop.mock.calls.at(-1)![0]);
+  await act(async () => pending.resolve("Old computer's text"));
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+  expect(mocked.send).not.toHaveBeenCalled();
 });
 
 test("a dropped connection preserves the loaded conversation and unsent draft without replaying it", async () => {

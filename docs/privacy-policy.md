@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 26 September 2026. Published at
+_Last updated: 28 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -147,7 +147,13 @@ Shahi is provided by Yasser Aldosari, an independent developer in Saudi Arabia. 
 
 ## Camera, photos and files
 
-Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi does not request microphone, contacts or location access.
+Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi does not request contacts or location access.
+
+## Optional voice input
+
+On supported iPhones, voice input asks for microphone access only when you tap Record. Apple’s on-device speech engine transcribes the recording on your iPhone; Shahi does not upload the audio or use cloud transcription. A language model may need to be downloaded from Apple before recording. Apple manages and may update those shared system models.
+
+Recordings last at most five minutes. Shahi keeps audio in a protected temporary file excluded from backups, then deletes it after transcription, cancellation, an interruption or leaving the app. If the process is killed before cleanup, Shahi deletes any remaining voice files when voice input is next opened. Review and edit the transcript before adding it to your reply. Adding it keeps your existing draft and does not send it; only tapping Send transmits that text to your connected computer, where it is handled like any other prompt. You can disable microphone access in iOS Settings.
 
 ## App updates and service providers
 

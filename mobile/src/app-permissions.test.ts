@@ -10,14 +10,14 @@
  * expo-camera deleted the microphone string, then expo-image-picker (whose mod
  * runs after it) wrote Expo's placeholder "Allow $(PRODUCT_NAME) to access
  * your microphone" back, and a bare "expo-secure-store" added a placeholder
- * Face ID string. The app uses neither, and a shipped binary declared both
- * (pre-release review). This runs the same introspection as
+ * Face ID string. Voice input now deliberately declares its own microphone
+ * purpose after those plugins; Face ID remains unused. This runs the same introspection as
  * `expo config --type introspect`, so a plugin upgrade or a new plugin that
  * re-adds one fails here rather than in App Review.
  */
 jest.setTimeout(60_000);
 
-test("the built app declares no microphone or Face ID purpose, and keeps the scanner's camera and the photo picker's library strings", async () => {
+test("the built app declares voice input's microphone purpose, no Face ID or cloud speech permission, and keeps camera and library strings", async () => {
   // mobile/, where app.json lives: this file is mobile/src/app-permissions.test.ts.
   const projectRoot = expect.getState().testPath!.replace(/[\\/]src[\\/][^\\/]+$/, "");
   // Plugins warn about Android features this iOS-first app does not install.
@@ -28,7 +28,8 @@ test("the built app declares no microphone or Face ID purpose, and keeps the sca
   await compileModsAsync(config.exp, { projectRoot, introspect: true, platforms: ["ios", "android"], assertMissingModProviders: false });
   const plist = config.exp.ios.infoPlist as Record<string, unknown>;
 
-  expect(plist).not.toHaveProperty("NSMicrophoneUsageDescription");
+  expect(plist.NSMicrophoneUsageDescription).toBe("Shahi records your voice to transcribe a reply on this iPhone. Audio is deleted after transcription or cancellation.");
+  expect(plist).not.toHaveProperty("NSSpeechRecognitionUsageDescription");
   expect(plist).not.toHaveProperty("NSFaceIDUsageDescription");
   expect(plist.NSCameraUsageDescription).toBe("Shahi uses the camera to scan the pairing code your server prints.");
   expect(plist.NSPhotoLibraryUsageDescription).toMatch(/^Shahi attaches a photo/);

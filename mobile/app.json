@@ -81,6 +81,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/with-voice.cjs",
       [
         "expo-router",
         {
@@ -115,7 +116,7 @@
         "expo-camera",
         {
           "cameraPermission": "Shahi uses the camera to scan the pairing code your server prints.",
-          "_comment": "Scanning only: no microphone string and no RECORD_AUDIO, so the app never claims a permission it has no use for.",
+          "_comment": "Scanning only: camera does not use audio. The voice plugin separately declares the iOS microphone purpose; Android recording stays disabled.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }

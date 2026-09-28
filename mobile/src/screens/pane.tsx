@@ -1,4 +1,6 @@
 import { Icon } from "@/components/icons";
+import { VoiceInput } from "@/components/voice-input";
+import { appendDictation } from "@/lib/voice";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
@@ -21,6 +23,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -278,6 +281,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     return () => { savedDraft.listeners.delete(update); };
   }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
+  const [dictating, setDictating] = useState<{ api: typeof api; paneId: string; owner: typeof owner } | null>(null);
   const [screen, setScreen] = useState<string | null>(null);
   /**
    * Reader or raw screen.
@@ -967,6 +971,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       <Text style={styles.sendText}>{sending ? "Sending…" : cannotWrite ? "Offline" : "Send"}</Text>
     </Pressable>
   );
+  const microphone = Platform.OS === "ios" && (
+    <Pressable accessibilityRole="button" accessibilityLabel="Dictate a reply" disabled={sending}
+      accessibilityState={{ disabled: sending }} style={styles.attach}
+      onPress={() => { Keyboard.dismiss(); setDictating({ api, paneId, owner }); }}>
+      <Icon name="microphone" color={theme.peach} size={20} />
+    </Pressable>
+  );
 
   if (gone) {
     return (
@@ -1364,10 +1375,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             // agent is prose, so it keeps them.
             {...(literalInput ? LITERAL_INPUT : {})}
           />
-          {largeText ? <View style={styles.composeButtons}>{attach || <View />}{send}</View> : send}
+          {largeText ? <View style={styles.composeButtons}>{attach || <View />}{microphone}{send}</View> : <>{microphone}{send}</>}
         </View>
       </View>
 
+      {dictating?.api === api && dictating.paneId === paneId && dictating.owner === owner && <VoiceInput onClose={() => setDictating(null)} onUse={text => {
+        if (dictating.owner === (connection.relay ?? connection.cookie) && stillActive() && !goneRef.current && !savedDraft.inFlight) setDraft(d => appendDictation(d, text));
+      }} />}
       {attaching && (
         <FilePicker
           onClose={() => setAttaching(false)}

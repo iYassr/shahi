@@ -600,6 +600,19 @@ can trigger the SSH server’s lockout.
 
 ## What is not done
 
+- **On-device voice input needs physical-device acceptance before release.** The
+  iOS 26+ module uses SpeechAnalyzer, with SpeechTranscriber or the on-device
+  DictationTranscriber for the selected language. There is no cloud fallback.
+  Record → stop → edit → Add to reply never sends a prompt; the existing Send
+  button remains the only submission. A recording belongs to one sheet lease,
+  and backgrounding, interruptions or navigation cancel it and delete its audio.
+  Language downloads require a separate tap and never start the microphone when
+  they finish. Keep the voice Info.plist plugin first: Expo runs those mods in
+  reverse order, and the camera/image-picker plugins otherwise delete its purpose
+  string. UI/permission tests and Swift compilation do not prove microphone
+  capture, language availability, recognition accuracy, latency or battery use.
+  See `docs/voice-input.md` for the device checks and engine decision.
+
 - **Terminal input already queued before a shell starts an agent cannot be inspected.**
   The sidecar checks the foreground process before typing and the screen before
   Enter. A command still waiting in the terminal input queue can pass both checks
