@@ -43,11 +43,23 @@ Reader shows one of two waiting states rather than an error:
 
 Screen shows the terminal meanwhile in both cases.
 
-Reader reads Claude's history from `~/.claude/projects`. A Claude started with
-a different `CLAUDE_CONFIG_DIR` saves its conversations elsewhere, and Reader
-does not find them yet: the sidecar honors `CLAUDE_CONFIG_DIR` only from its own
-environment, which the plugin's service does not carry. Reader never selects a
-conversation by working folder or modification time instead.
+Reader reads Claude's history from `~/.claude/projects` by default. If Claude
+uses a different `CLAUDE_CONFIG_DIR`, Shahi's service needs the same absolute
+configuration directory, not its `projects` subdirectory. Set
+`CLAUDE_CONFIG_DIR=/absolute/path/to/claude-config` in the `.env` inside
+`herdr plugin config-dir shahi`, keeping the other entries, then run
+`herdr plugin action invoke shahi.restart`. The plugin carries it into the
+launchd/systemd environment so both messages and images use that folder. The
+file's value wins over the setup shell; an empty value restores Claude's default.
+Restart regenerates the service definition. This startup correction requires
+an updated plugin installation when published; **Update computer** alone does
+not replace the plugin's startup hook.
+
+Picker previews use the same canonical transcript checks as Reader before
+reading any content. Links outside the history root, aliases naming a different
+session, and distinct copies of one session are not offered. A directory alias
+for the same canonical transcript remains supported. The person must choose;
+Reader never selects a conversation by working folder or modification time.
 
 The September 28 TestFlight report showed the old generic empty state on build
 20, which confirms an unavailable transcript but not the cause. The reporter's
