@@ -164,6 +164,11 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
     // would be a stale entry the moment /tmp is cleared.
     .filter((dir) => !dir.endsWith("/node_modules/.bin") && !unstableBun(`${dir}/x`));
   const relay = relayUrlFor(env);
+  // launchd/systemd do not inherit herdr's shell environment. Keep Claude's
+  // history root in the service itself: loadConfig reads the private .env into
+  // Config, but transcript and image lookup read process.env. An explicit file
+  // value wins, including an empty value that restores Claude's default root.
+  const claudeConfigDir = env.get("CLAUDE_CONFIG_DIR") ?? process.env.CLAUDE_CONFIG_DIR;
   return {
     bun,
     root: layout.root,
@@ -184,6 +189,7 @@ export function serviceSpec(layout: Layout, env: Map<string, string>, bun = bunP
       SHAHI_PLUGIN_ID: pluginId(),
       ...(process.env.HERDR_BIN_PATH ? { HERDR_BIN_PATH: process.env.HERDR_BIN_PATH } : {}),
       ...(process.env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME } : {}),
+      ...(claudeConfigDir !== undefined ? { CLAUDE_CONFIG_DIR: claudeConfigDir } : {}),
       HOME: homedir(),
       PATH: [...new Set([dirname(bun), ...inherited])].join(":"),
     },
