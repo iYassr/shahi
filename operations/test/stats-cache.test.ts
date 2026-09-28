@@ -17,3 +17,10 @@ test('failed refresh does not return stale success and the next attempt can reco
   fail = false; expect(await cache.get('1h')).toBe('ok'); expect(calls).toBe(3);
   await expect(cache.get('__proto__')).rejects.toThrow('invalid'); expect(calls).toBe(3);
 });
+test('usage cache coalesces requests for fifteen minutes independently of statistics windows', async () => {
+  let now = 0, calls = 0;
+  const cache = new StatsCache(async () => { calls++; return calls; }, () => now, 900000);
+  await Promise.all([cache.get('1h'), cache.get('1h')]);
+  now = 899999; expect(await cache.get('1h')).toBe(1);
+  now = 900000; expect(await cache.get('1h')).toBe(2);
+});

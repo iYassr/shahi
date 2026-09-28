@@ -62,3 +62,41 @@ test('dynamic labels render as text; empty range and absent handshake stay hones
   await expect(page.locator('#refusals img')).toHaveCount(0);
   await expect(page.locator('#transfer')).toContainText('Mean computer handshake—');
 });
+test('reliability, concurrency and cost models explain their units and budget comparison', async ({ page }) => {
+  await page.goto('/statistics');
+  await expect(page.locator('#reliability')).toContainText('97.6%');
+  await expect(page.locator('#performance')).toContainText('Handshake p95510 ms');
+  await expect(page.locator('#capacity')).toContainText('6 / 8 phone slots');
+  await expect(page.locator('#cost')).toContainText('$17.50');
+  await expect(page.locator('#usage')).toContainText('12,300');
+  await page.getByLabel('Planning budget').fill('20');
+  await expect(page.locator('#budget-state')).toContainText('87.5%');
+  await expect(page.locator('#budget-state')).toContainText('approaching');
+  await page.getByLabel('Planning budget').fill('10');
+  await expect(page.locator('#budget-state')).toContainText('exceeds');
+  await page.getByLabel('Time range').selectOption('24h');
+  await expect(page.locator('#content')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('#cost')).toContainText('$17.50');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test('missing or empty observations cannot manufacture perfect success, zero peaks or a cheap bill', async ({ page }) => {
+  const data = fixture(); data.stats.outcomes = []; data.stats.capacity = []; data.stats.boxHandshake.n = 0;
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: { ...data, usage: null, errors: ['Cloudflare usage unavailable.'] } }));
+  await page.goto('/statistics');
+  await expect(page.locator('#reliability')).toContainText('Computer authentication rate—');
+  await expect(page.locator('#performance')).toContainText('Handshake p95—');
+  await expect(page.locator('#capacity')).toContainText('Peak sampled phone links—');
+  await expect(page.locator('#cost')).toContainText('Projected 30-day subtotal—');
+  await page.getByLabel('Planning budget').fill('20');
+  await expect(page.locator('#budget-state')).toContainText('unknown');
+  await expect(page.locator('#phones')).toHaveText('642');
+});
+test('stale usage cannot report a safe budget even while connection statistics are fresh', async ({ page }) => {
+  const data = fixture(); data.usage.generatedAt = new Date(Date.now() - 1800000).toISOString();
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: data }));
+  await page.goto('/statistics');
+  await page.getByLabel('Planning budget').fill('100');
+  await expect(page.locator('#budget-state')).toContainText('unknown');
+  await expect(page.getByRole('alert')).toContainText('Cloudflare usage is stale');
+  await expect(page.locator('#phones')).toHaveText('642');
+});

@@ -23,6 +23,8 @@
  * telemetry.ts typechecks under any project that imports it (the test project
  * does not load @cloudflare/workers-types).
  */
+import { readUsage } from "./usage";
+
 export interface Dataset {
   writeDataPoint(point: { blobs?: (string | ArrayBuffer)[]; doubles?: number[]; indexes?: (string | ArrayBuffer)[] }): void;
 }
@@ -125,7 +127,8 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
     );
   }
   try {
-    const [boxesOnline, byKind, closeCodes, refusals, byColo, traffic, handshake, timeline, alerts, site, signupWindow] = await Promise.all([
+    if (new URL(request.url).searchParams.get("view") === "usage") return json(await readUsage(env));
+    const [boxesOnline, byKind, closeCodes, refusals, byColo, traffic, handshake, timeline, alerts, site, signupWindow, capacity, outcomes, durations] = await Promise.all([
       // Presence includes long-lived connections, with a ten-minute aging window.
       one(env, `SELECT COUNT(DISTINCT blob2) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1 IN ('box_auth', 'box_presence') AND timestamp > NOW() - INTERVAL '10' MINUTE`),
       rows(env, `SELECT blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - ${period.interval} GROUP BY kind ORDER BY n DESC`),
@@ -133,11 +136,17 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
       rows(env, `SELECT blob3 AS reason, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='refused' AND timestamp > NOW() - ${period.interval} GROUP BY reason ORDER BY n DESC`),
       rows(env, `SELECT blob4 AS colo, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='connect' AND timestamp > NOW() - ${period.interval} GROUP BY colo ORDER BY n DESC LIMIT 20`),
       rows(env, `SELECT SUM(double2 * _sample_interval) AS upBytes, SUM(double3 * _sample_interval) AS downBytes, SUM(double4 * _sample_interval) AS upFrames, SUM(double5 * _sample_interval) AS downFrames FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='traffic' AND timestamp > NOW() - ${period.interval}`),
-      rows(env, `SELECT SUM(double6 * _sample_interval) / SUM(_sample_interval) AS meanMs, MAX(double6) AS maxMs FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='box_auth' AND timestamp > NOW() - ${period.interval}`),
+      rows(env, `SELECT SUM(_sample_interval) AS n, SUM(double6 * _sample_interval) / SUM(_sample_interval) AS meanMs, MAX(double6) AS maxMs, quantileExactWeighted(0.50)(double6, _sample_interval) AS p50Ms, quantileExactWeighted(0.95)(double6, _sample_interval) AS p95Ms, quantileExactWeighted(0.99)(double6, _sample_interval) AS p99Ms FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='box_auth' AND timestamp > NOW() - ${period.interval}`),
       rows(env, `SELECT toStartOfInterval(timestamp, ${period.bucket}) AS at, blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - ${period.interval} GROUP BY at, kind ORDER BY at`),
       alertMetrics(env),
       rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - INTERVAL '5' MINUTE GROUP BY status`),
       rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - ${period.interval} GROUP BY status`),
+      // Last observation per computer per five-minute bucket, then sum. Never sum
+      // each computer's maximum and call that a simultaneous fleet maximum. These
+      // asynchronous, possibly sampled observations remain explicitly estimates.
+      rows(env, `SELECT at, SUM(online) AS computers, SUM(phones) AS phones, MAX(maxPhones) AS busiestComputer FROM (SELECT toStartOfInterval(timestamp, INTERVAL '5' MINUTE) AS at, blob2 AS computer, argMax(if(blob1='box_gone', 0, 1), timestamp) AS online, argMax(if(blob1 IN ('phone_open', 'box_presence'), double1, 0.0), timestamp) AS phones, MAX(if(blob1 IN ('phone_open', 'box_presence'), double1, 0.0)) AS maxPhones FROM ${DATASET} WHERE blob5 != 'probe' AND blob2 != '' AND blob1 IN ('box_auth', 'box_presence', 'phone_open', 'box_gone') AND timestamp > NOW() - ${period.interval} GROUP BY at, computer) GROUP BY at ORDER BY at LIMIT 2018`),
+      rows(env, `SELECT blob1 AS kind, blob3 AS reason, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1 IN ('box_auth', 'auth_failed', 'phone_open', 'refused', 'box_gone', 'phone_close') AND timestamp > NOW() - ${period.interval} GROUP BY kind, reason`),
+      rows(env, `SELECT blob1 AS kind, SUM(_sample_interval) AS n, quantileExactWeighted(0.50)(double6, _sample_interval) AS p50Ms, quantileExactWeighted(0.95)(double6, _sample_interval) AS p95Ms FROM ${DATASET} WHERE blob5 != 'probe' AND blob1 IN ('phone_close', 'box_gone') AND timestamp > NOW() - ${period.interval} GROUP BY kind`),
     ]);
     return json({
       window: `${period.label} (boxesOnline: last 10 min)`,
@@ -148,6 +157,7 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
       refusalsByReason: refusals,
       connectsByColo: byColo,
       traffic: traffic[0] ?? {}, boxHandshake: handshake[0] ?? {}, timeline, alerts, site, signupWindow,
+      capacity, outcomes, durations,
       generatedAt: new Date().toISOString(),
     });
   } catch {

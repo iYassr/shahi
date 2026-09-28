@@ -293,6 +293,7 @@ export class RelayBox extends DurableObject<unknown> {
       this.record({ kind: "phone_close", serverId: state.serverId, detail: "closed by box", value: CLOSE_NORMAL, durationMs: Date.now() - phoneState.since });
       phone.serializeAttachment({ ...phoneState, open: false });
       phone.close(CLOSE_NORMAL, "closed by box");
+      this.record({ kind: "box_presence", serverId: state.serverId, value: this.phones().length });
       return;
     }
     if (message.byteLength < LINK_PREFIX_BYTES) return;
@@ -374,6 +375,7 @@ export class RelayBox extends DurableObject<unknown> {
       if (box) this.tell(box, { t: "close", link: state.link });
       this.traffic(state);
       this.record({ kind: "phone_close", serverId: state.serverId, detail: reason, value: code, durationMs: Date.now() - state.since });
+      if (box) this.record({ kind: "box_presence", serverId: state.serverId, value: this.phones().length });
     }
     ws.close(code, reason);
   }
@@ -431,8 +433,6 @@ export class RelayBox extends DurableObject<unknown> {
 
   async alarm(): Promise<void> {
     const now = Date.now();
-    const box = this.readyBox();
-    if (box) this.record({ kind: "box_presence", serverId: (box.deserializeAttachment() as BoxState).serverId, value: this.phones().length });
     for (const phone of this.phones()) {
       const state = phone.deserializeAttachment() as PhoneState;
       this.traffic(state);
@@ -446,6 +446,10 @@ export class RelayBox extends DurableObject<unknown> {
       else if (state.ready) this.closeBox(ws, state, CLOSE_NORMAL, "silent");
       else this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "auth timeout");
     }
+    // Observe after expiry: a silent computer or expired phone must not be counted
+    // as online by the same alarm that just closed it.
+    const box = this.readyBox();
+    if (box) this.record({ kind: "box_presence", serverId: (box.deserializeAttachment() as BoxState).serverId, value: this.phones().length });
     await this.schedule();
   }
 

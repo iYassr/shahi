@@ -258,11 +258,47 @@ path, so the availability monitor alone cannot establish its absence.
 
 `GET https://relay.getshahi.dev/stats` requires a separate bearer admin token.
 It returns event/close/refusal/region breakdowns, bytes and frame counts,
-handshake mean/max, signup statuses and mean timings from `shahi_site`, a five-minute timeline, recent presence estimates and
+handshake mean/max and sampling-weighted p50/p95/p99, signup statuses and mean timings from `shahi_site`, a five-minute timeline, recent presence estimates and
 five-minute alert counters. Authenticated synthetic probes are excluded from fleet summaries. Presence is approximate and traffic is delayed
 until the next alarm/close. Missing query credentials return 503; query failure
 returns 502 rather than an empty healthy dashboard. All admin replies are
 `no-store`. Never put the bearer token in a URL, browser storage, or source code.
+
+The statistics page also compares completed computer-authentication outcomes and
+phone admissions. A relay admission is not proof of successful pairing or phone
+authentication. Outcomes can straddle time-window boundaries, and the denominator
+includes rejected strangers and reconnects. No observations means an unknown rate,
+not 100% success. Closed-connection duration is not reconnect recovery time.
+
+Concurrency uses the last observation per computer in each five-minute bucket,
+then sums those observations. Peak fleet values are **sampled estimates**, not a
+sum of each computer's independent peak or an exact simultaneous count. Missing
+buckets remain unknown. Phone-close paths emit a fresh presence count; alarms
+observe after closing expired connections. The busiest individual computer's
+observed phone count is compared with the existing eight-phone application limit.
+No new relay storage, device identifier, or client instrumentation is introduced.
+
+`/stats?view=usage` uses the same bearer and read-only boundary to query Cloudflare
+GraphQL usage. The dashboard's monitor caches the result for 15 minutes across all
+three connection windows. A usage API failure does not hide connection statistics,
+and partial GraphQL errors or truncated results never turn into a zero-cost report.
+The seven-day period ends at the preceding quarter hour. Account totals include
+other projects because allowances are shared; only Shahi Worker names are returned.
+
+The cost panel is a **30-day planning subtotal**, extrapolated from those seven days
+on Workers Standard. It includes the base subscription, Worker invocations/CPU,
+Durable Object requests/duration, and SQLite row operations with included allowances.
+Hibernation events are conservatively counted at full request weight because the
+API does not distinguish all billable messages from close/error callbacks. Incoming
+non-hibernating WebSocket messages use the documented 20:1 ratio. Service invocations
+can also overcount billable requests. Logs, stored data, Analytics Engine, other
+products and taxes are excluded; this is neither an invoice nor a spending ceiling.
+The optional budget comparison lives only in the open page and sends no email.
+Rates and rounding were checked on 28 September 2026 against
+[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and
+[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+Recheck these sources before changing the calculation. Growth/retention, crashes,
+feature usage and per-device reconnect recovery require separate instrumentation.
 
 The independent `shahi-operations` Worker has no public route, `workers.dev`, or
 preview URL. A cron runs every minute. It checks the public website, browser

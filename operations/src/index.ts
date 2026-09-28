@@ -38,13 +38,24 @@ export class Monitor extends DurableObject<Env> {
     if (!data || typeof data !== "object" || !("generatedAt" in data) || !("eventsByKind" in data)) throw new Error("invalid analytics");
     return data;
   });
+  #usage = new StatsCache(async () => {
+    const response = await fetch(`${RELAY}/stats?view=usage`, {
+      headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("usage unavailable");
+    const data = await response.json();
+    if (!data || typeof data !== "object" || !("model" in data) || !("until" in data)) throw new Error("invalid usage");
+    return data;
+  }, Date.now, 900_000);
   async dashboard(range: string): Promise<unknown> {
-    const [monitor, stats] = await Promise.allSettled([this.status(), this.#stats.get(range)]);
+    const [monitor, stats, usage] = await Promise.allSettled([this.status(), this.#stats.get(range), this.#usage.get("1h")]);
     return {
       monitor: monitor.status === "fulfilled" ? monitor.value : null,
       stats: stats.status === "fulfilled" ? stats.value : null,
+      usage: usage.status === "fulfilled" ? usage.value : null,
       errors: [monitor.status === "rejected" ? "Health monitor unavailable." : null,
-        stats.status === "rejected" ? "Statistics unavailable. Try refreshing shortly." : null].filter(Boolean),
+        stats.status === "rejected" ? "Statistics unavailable. Try refreshing shortly." : null,
+        usage.status === "rejected" ? "Cloudflare usage unavailable. Connection statistics are independent." : null].filter(Boolean),
       generatedAt: new Date().toISOString(),
     };
   }

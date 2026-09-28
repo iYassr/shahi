@@ -1313,6 +1313,17 @@ with a scratch `XDG_CONFIG_HOME`. Do not use it to prepare isolated tests. Copy
 only the required integration files to the disposable provider config; never
 copy herdr's plugin registry or restart a user's service.
 
+## Private operations statistics
+
+The private operations dashboard's concurrency values are five-minute sampled
+estimates. Aggregate the last observation per computer before summing; do not sum
+independent per-computer maxima as a fleet peak. Phone admission does not establish
+an authenticated device session. `/stats?view=usage` retains the admin bearer gate;
+its seven-day Cloudflare usage is cached separately for fifteen minutes. Account
+allowances are shared across projects. The 30-day cost model is a planning subtotal,
+not an invoice: retain its exclusions, conservative request weighting, checked
+pricing date and failure/unknown states. See `docs/operations.md`.
+
 ## Reader activity presentation, September 28
 
 `shared/src/reader-rows.ts` projects API messages into Reader rows for both clients.

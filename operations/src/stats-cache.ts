@@ -4,7 +4,7 @@ export function validRange(range: string): boolean { return ["1h", "24h", "7d"].
 export class StatsCache {
   private cached = new Map<string, { data: unknown; until: number }>();
   private pending = new Map<string, Promise<unknown>>();
-  constructor(private read: (range: string) => Promise<unknown>, private now = Date.now) {}
+  constructor(private read: (range: string) => Promise<unknown>, private now = Date.now, private ttlMs = 60_000) {}
   async get(range: string): Promise<unknown> {
     if (!validRange(range)) throw new Error("invalid window");
     const hit = this.cached.get(range);
@@ -12,7 +12,7 @@ export class StatsCache {
     const running = this.pending.get(range);
     if (running) return running;
     const task = this.read(range).then((data) => {
-      this.cached.set(range, { data, until: this.now() + 60_000 });
+      this.cached.set(range, { data, until: this.now() + this.ttlMs });
       return data;
     }).finally(() => this.pending.delete(range));
     this.pending.set(range, task);
