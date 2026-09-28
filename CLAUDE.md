@@ -16,6 +16,7 @@ web/       the React PWA: mobile behavior with responsive phone/laptop layouts
 e2e/       Playwright, against a stub of the server
 site/      public site Worker and hosted PWA
 operations/ monitoring Worker and service alerts
+dashboard/ private infrastructure-owner dashboard, gated by Cloudflare Access
 demo/      isolated App Review computer
 scripts/   brand assets and notice tooling
 ```

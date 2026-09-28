@@ -308,6 +308,67 @@ secrets `STATS_TOKEN` and `ALERT_TO`, deploy `operations/wrangler.toml`, then th
 relay with its `OPERATIONS` service binding. Use Wrangler secret input; never
 commit secrets. Keep the read-only analytics token separate from deploy access.
 
+## Private owner dashboard
+
+The operations dashboard at `https://admin.getshahi.dev/` has an overview and
+`/statistics` page. It is for Shahi's infrastructure owner, separate from the
+customer app and its paired computers. The overview shows recent service checks,
+open incidents and relay activity. Statistics include traffic, handshake timings,
+edge locations, refusal reasons, phone close codes and beta-form HTTP results.
+Select the last hour, 24 hours or seven days; presence always uses the last ten
+minutes and incident thresholds always use five minutes.
+
+These counts are operational estimates, not unique people, installs or retention.
+Analytics Engine may sample events. The presence estimate counts observed
+computer identities and can include a computer that disconnected recently.
+Traffic is emitted on alarms/close, so totals arrive with a delay. Empty traffic
+or handshake aggregates can be unavailable rather than zero. A monitor sample
+older than three minutes, a missing check or a failed query cannot appear as a
+current healthy result. There is no billing estimate or historical uptime SLA.
+
+The dashboard polls once a minute while visible. The private monitor coalesces
+concurrent statistics reads and caches each of three allowed windows for one
+minute. It does not persist a new copy of fleet analytics. Reads cannot trigger
+checks, email alerts, or customer-agent actions. A query failure is displayed
+independently from monitor status; refreshing never silently serves an expired
+cached success. No new customer telemetry or browser analytics SDK is added.
+
+Deploy the relay and operations Worker before the dashboard. The dashboard
+Worker has only a private `OPERATIONS` service binding, with no analytics or
+relay bearer token sent to the browser. It requires a Cloudflare Access
+application protecting **this Worker only**, with an allow policy restricted to
+the owner's identity. Never enable Access account-wide: that would gate the
+public app and relay. Provision the application's audience as the dashboard's
+`ACCESS_AUD` secret. The handler verifies Cloudflare's authenticated `ctx.access`
+and its audience and requires a human email identity before serving any HTML,
+JavaScript or data. Missing configuration, a removed Access policy, a forged
+request header or a different Access app fails closed.
+
+```sh
+bun node_modules/wrangler/bin/wrangler.js deploy --config relay/wrangler.toml
+bun node_modules/wrangler/bin/wrangler.js deploy --config operations/wrangler.toml
+bun node_modules/wrangler/bin/wrangler.js deploy --config dashboard/wrangler.toml
+# Configure the owner-only Access application, then enter its audience privately:
+bun node_modules/wrangler/bin/wrangler.js secret put ACCESS_AUD --config dashboard/wrangler.toml
+```
+
+HTML/CSS/JavaScript are bundled text modules, intentionally not Workers Static
+Assets: the assets router does not propagate `ctx.access`. See
+[Cloudflare's Access context documentation](https://developers.cloudflare.com/workers/configuration/cloudflare-access/#ctxaccess-limitations).
+All responses are `no-store`, deny framing and third-party scripts, and disable
+automatic HTML transformation. No service worker or browser storage is used.
+The Worker has no `workers.dev` or preview URL. Complete provisioning by checking
+that an unsigned request cannot read `/`, `/app.js` or `/api/dashboard`, then
+sign in as the owner and verify all three time ranges against live data.
+
+`bun run test:dashboard` runs Chromium and iPhone-sized WebKit against an isolated
+loopback fixture; it never connects to production. The fixture displays invented
+counts, not production measurements. Authentication and cache regression tests
+run in `bun run test`, telemetry SQL tests in `bun run test:relay`, and Worker
+source is covered by `bun run typecheck`. CI also bundles the dashboard to catch
+missing assets. Preview the fixture with `bun e2e/dashboard/server.ts` at
+`http://127.0.0.1:7999/`; this test-only server has no production credentials.
+
 ## Concurrency verification
 
 `bun relay/scripts/load.ts 1000` starts local workerd and creates 1,000 synthetic
