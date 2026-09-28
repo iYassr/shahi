@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
+  forbidOnly: !!process.env.CI,
   testDir: '.', testMatch: '*.spec.ts', fullyParallel: false, workers: 1, retries: 0, timeout: 15000,
   outputDir: '../../test-results/dashboard', reporter: [['list']],
   use: { baseURL: 'http://127.0.0.1:7999', serviceWorkers: 'block', trace: 'retain-on-failure' },

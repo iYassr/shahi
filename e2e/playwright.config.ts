@@ -71,7 +71,7 @@ export default defineConfig({
     { name: "signin", testMatch: /auth\.setup\.ts/, use: { defaultBrowserType: "chromium" } },
     {
       name: "phone",
-      testIgnore: /(?:live|hosted)\//,
+      testIgnore: /(?:^|[\\/])(?:live|hosted|dashboard)[\\/]/,
       dependencies: ["signin"],
       use: { defaultBrowserType: "chromium", storageState: "e2e/.auth/state.json" },
     },
@@ -85,7 +85,7 @@ export default defineConfig({
      */
     {
       name: "ios",
-      testIgnore: /(?:live|hosted)\//,
+      testIgnore: /(?:^|[\\/])(?:live|hosted|dashboard)[\\/]/,
       dependencies: ["signin"],
       use: { ...devices["iPhone 14"], storageState: "e2e/.auth/state.json" },
     },
