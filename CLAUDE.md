@@ -1381,9 +1381,18 @@ Missing identity and a missing transcript have distinct 404 codes. Neither is
 an error in either client: every new Claude conversation has no transcript
 until its first message (none after 12s at the prompt, measured on 2.1.284),
 so both are a waiting state that keeps polling. The plain 404 from older
-servers remains supported. `CLAUDE_CONFIG_DIR` is honored only from the
-sidecar's own environment, which the plugin's service does not carry; `.env`
-keys reach `loadConfig`, not `process.env`.
+servers remains supported. The plugin must carry `CLAUDE_CONFIG_DIR` into the
+launchd/systemd environment; `.env` keys reach `loadConfig`, not `process.env`.
+An explicit private `.env` value wins over the setup shell, including an empty
+value that restores Claude's default folder. Restart regenerates the service
+definition; this startup change requires an updated plugin installation.
+Exercise Reader messages and images in fresh processes launched with rendered
+service environments, not only tests setting `process.env` directly.
+
+Conversation previews expose content before a choice is made, so they must use
+the same canonical transcript lookup as Reader. Reject root escapes, leaf
+aliases for another UUID, and distinct copies of one UUID before reading the
+preview. Directory aliases naming the same canonical transcript remain valid.
 
 Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
 2.1.283 process had a matching process start time but an older session than its
