@@ -52,6 +52,8 @@ import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, theme } from "@/lib/theme";
 import { Markdown } from "@/components/markdown";
+import { DictationButton, DictationPanel, useDictation } from "@/components/dictation";
+import { appendDictation } from "@/lib/dictation";
 
 /** How often to pull while open. The server caches on file size. */
 const POLL_MS = 2_500;
@@ -278,6 +280,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     return () => { savedDraft.listeners.delete(update); };
   }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
+  // Written through the draft store, so words said while leaving still land here.
+  const voice = useDictation((text) => setDraft((d) => appendDictation(d, text)));
   const [screen, setScreen] = useState<string | null>(null);
   /**
    * Reader or raw screen.
@@ -956,6 +960,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       <Text style={styles.attachText}>+</Text>
     </Pressable>
   );
+  // Apple's on-device model only (iOS 26); elsewhere no button, and the
+  // keyboard's own microphone remains.
+  const mic = voice.available && <DictationButton voice={voice} disabled={sending} />;
   const send = (
     <Pressable
       accessibilityRole="button"
@@ -1342,6 +1349,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           ))}
         </ScrollView>
         )}
+        <DictationPanel voice={voice} />
         {/* At accessibility sizes the reply box takes a line of its own, with
             the buttons on the line under it. Beside them it was left a few
             characters wide and its placeholder was cut (AX5, September 2026
@@ -1364,7 +1372,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             // agent is prose, so it keeps them.
             {...(literalInput ? LITERAL_INPUT : {})}
           />
-          {largeText ? <View style={styles.composeButtons}>{attach || <View />}{send}</View> : send}
+          {largeText
+            ? <View style={styles.composeButtons}>{attach || <View />}<View style={styles.composeEnd}>{mic}{send}</View></View>
+            : <>{mic}{send}</>}
         </View>
       </View>
 
@@ -2318,6 +2328,7 @@ const styles = StyleSheet.create({
   // Attach at the left (or an empty slot, keeping Send at the right), in the
   // order VoiceOver reads them.
   composeButtons: { flexBasis: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+  composeEnd: { flexDirection: "row", gap: 8 },
   send: {
     minHeight: 44,
     paddingHorizontal: 16,

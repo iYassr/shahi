@@ -147,7 +147,19 @@ Shahi is provided by Yasser Aldosari, an independent developer in Saudi Arabia. 
 
 ## Camera, photos and files
 
-Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi does not request microphone, contacts or location access.
+Camera access is used to scan pairing codes. Scanning happens on your device. Photos and files are accessed when you choose an attachment; only the items you select are sent to your connected computer. These permissions are optional and can be changed in your device settings. Shahi requests microphone access only when you dictate (below), and never contacts or location access.
+
+## Voice dictation
+
+On an iPhone with iOS 26 that supports Apple's on-device speech model, you can
+dictate a reply. The microphone opens only after you tap the microphone
+button, and stops when you finish, cancel, leave the app or receive a call.
+Your voice is turned into text on the iPhone by Apple's Speech framework: the
+audio is not recorded to a file and is not sent to your computer, the relay,
+Shahi or anyone else. The text goes into your reply draft and is sent only
+when you tap Send. The first time, iOS downloads Apple's English speech model
+from Apple; iOS stores and updates that model and may share it with other apps.
+You can turn microphone access off in iOS Settings at any time.
 
 ## App updates and service providers
 

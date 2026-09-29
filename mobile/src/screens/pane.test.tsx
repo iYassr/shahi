@@ -83,6 +83,24 @@ jest.mock("@/lib/api", () => {
   };
 });
 
+// Dictation's native module (mobile/src/lib/dictation.ts): absent unless a test
+// says the iPhone runs Apple's model, as every other test here assumes.
+const mockDictation = { available: false, listeners: new Set<(event: { id: string; kind: string }) => void>(), finish: jest.fn(async (_id: string) => "Ship it after the tests pass.") };
+jest.mock("@/lib/dictation", () => ({
+  ...jest.requireActual("@/lib/dictation"),
+  dictation: {
+    availability: async () => ({ available: mockDictation.available, installed: true }),
+    install: async () => {},
+    start: async () => {},
+    finish: (id: string) => mockDictation.finish(id),
+    cancel: async () => {},
+    listen: (listener: (event: { id: string; kind: string }) => void) => {
+      mockDictation.listeners.add(listener);
+      return { remove: () => { mockDictation.listeners.delete(listener); } };
+    },
+  },
+}));
+
 // Neither the native header nor the keyboard exists here, and the screen
 // options are set on a navigator this test does not mount. The last options
 // are kept, so a test can draw the header's title on its own.
@@ -449,12 +467,31 @@ describe("loading", () => {
     connection.cookie = "computer-a";
     const pending = deferred<never>();
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hello")]));
-    mocked[route].mockReturnValue(pending.promise);
+    // Only computer A's first request is late. A render after the switch
+    // (dictation's availability check is one) loads again for computer B, and
+    // handing that request A's promise too made B's own call look like A's.
+    mocked[route].mockReturnValueOnce(pending.promise);
     const view = render(<Pane paneId={PANE} />);
     connection.cookie = "computer-b";
     await act(async () => { pending.reject(new UnauthorizedError()); });
     expect(mockSession.unauthorized).not.toHaveBeenCalled();
     view.unmount(); connection.cookie = previous;
+  });
+
+  test("dictating a reply puts the words in this conversation's reply box and sends nothing", async () => {
+    mockDictation.available = true;
+    try {
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready when you are.")]));
+      const view = render(<Pane paneId={PANE} />);
+      fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "Looks good.");
+      fireEvent.press(await view.findByLabelText("Dictate"));
+      await view.findByText(/Listening/);
+      await act(async () => { fireEvent.press(view.getByLabelText("Add to reply")); });
+      expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("Looks good. Ship it after the tests pass.");
+      expect(mocked.send).not.toHaveBeenCalled();
+    } finally {
+      mockDictation.available = false;
+    }
   });
 
   test("no transcript yet keeps polling rather than latching", async () => {
