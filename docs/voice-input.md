@@ -83,3 +83,15 @@ conversation:
 4. AirPods and the built-in microphone; a noisy room.
 5. Largest Dynamic Type and VoiceOver: the panel's Cancel and Add stay
    reachable; "Listening" and "Added" are announced.
+
+## September 29 review
+
+The review guards native cleanup by the recording's lease: a cancelled
+permission request cannot stop a newer recording, and a late finish cannot
+clear its identity. Leaving during Add reuses the same pending final result.
+The hook captures the original draft destination, stops on focus loss, and
+a replaced pane occupant invalidates pending dictation, including an empty draft.
+Regressions cover each JavaScript behavior. The physical-device checklist above
+remains required; the review Mac compiled the speech harness but reported
+SpeechTranscriber unavailable (speech authorization denied), so that run is
+not evidence of live recognition.
