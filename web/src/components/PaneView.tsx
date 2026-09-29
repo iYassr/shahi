@@ -501,7 +501,10 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
 
       <div className="detail__panel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`}>
       {tab === "read" && shell ? <div className="empty">This is a shell. Open Screen to view the terminal.<button className="empty__action" onClick={() => chooseTab("screen")}>Open Screen</button></div> : tab === "read" && readable ? (
-        <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack} />
+        <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack}
+          connected={available} historyKnown={!!known?.lastMessageAt || !!known?.preview || !!echo}
+          computerVersion={control?.handshake?.update?.current} herdrVersion={session?.version}
+          canChoose={supports(control?.handshake ?? null, "conversation-choice")} instanceId={known?.instanceId} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>

@@ -58,6 +58,67 @@ test("only a confirmed missing pane displays the closed-pane message", async () 
   expect(output()).toContain("This pane is gone");
 });
 
+// Every new Claude conversation is `reader_transcript_missing` until its first
+// message. An alert with Retry and a folder to check made each one look broken.
+test.each([
+  ["reader_transcript_missing", "Claude has not saved any messages in this conversation yet."],
+  ["reader_session_missing", "Shahi has not been told which Claude conversation this is. Claude says so when a conversation starts, so this one becomes readable the next time it starts in herdr."],
+])("a Claude conversation with nothing to read yet (%s) waits in Read, rather than failing, and fills in by itself", async (code, words) => {
+  const { Reader } = await import("./Reader");
+  const sessionLog = mock().mockRejectedValueOnce(new ApiError(words, 404, code))
+    .mockResolvedValue({ sessionId: "recovered", path: "recovered", total: 1, offset: 0, messages: [{ id: "a", role: "agent", at: 1, blocks: [{ kind: "text", text: "Conversation restored." }] }] });
+  const onUnavailable = mock();
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId={`waiting-${code}`} activity={null} onUnavailable={onUnavailable} /></ApiContext.Provider>); });
+  expect(output()).toContain(words);
+  expect(view!.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  expect(view!.root.findAllByType("button")).toHaveLength(0);
+  expect(view!.root.findByProps({ role: "status" })).toBeTruthy();
+  expect(onUnavailable).not.toHaveBeenCalled();
+  await act(async () => { window.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: `waiting-${code}` })); });
+  expect(output()).toContain("Conversation restored.");
+  expect(output()).not.toContain(words);
+  expect(onUnavailable).not.toHaveBeenCalled();
+});
+
+// The TestFlight report: an existing Claude conversation that started before
+// herdr's integration was installed reports no session, and Read was empty.
+test("an existing Claude conversation herdr cannot identify is read once the person chooses it", async () => {
+  const { Reader } = await import("./Reader");
+  const words = "Shahi has not been told which Claude conversation this is.";
+  const existing = "22222222-2222-4222-8222-222222222222";
+  let chosen = false;
+  const sessionLog = mock(async () => {
+    if (!chosen) throw new ApiError(words, 404, "reader_session_missing");
+    return { sessionId: existing, path: existing, total: 1, offset: 0, chosen: true, messages: [{ id: "a", role: "agent", at: 1, blocks: [{ kind: "text", text: "Here is the summary." }] }] };
+  });
+  const conversationChoices = mock(async () => ({ choices: [
+    { sessionId: "11111111-1111-4111-8111-111111111111", firstPrompt: "Fix the flaky test", lastMessage: "Fixed it.", updatedAt: Date.now() - 60_000, likely: false },
+    { sessionId: existing, firstPrompt: "Summarise the quarterly report", lastMessage: "Here is the summary.", updatedAt: Date.now() - 3_600_000, likely: true },
+  ] }));
+  const chooseConversation = mock(async () => { chosen = true; return { ok: true }; });
+  type Node = { type: unknown; children: (Node | string)[]; props: { onClick: () => unknown } };
+  const textOf = (node: Node): string => node.children.map((child) => typeof child === "string" ? child : textOf(child)).join("");
+  const button = (label: string) => (view!.root.findAllByType("button") as unknown as Node[]).find((node) => textOf(node).includes(label))!;
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, sessionLog, conversationChoices, chooseConversation }}><Reader paneId="choose-existing" activity={null} onUnavailable={() => {}} canChoose instanceId="term_a" /></ApiContext.Provider>); });
+  expect(output()).toContain(words);
+  await act(async () => button("Choose the conversation").props.onClick());
+  expect(output()).toContain("Summarise the quarterly report");
+  expect(output()).toContain("Likely");
+  await act(async () => button("Summarise the quarterly report").props.onClick());
+  expect(chooseConversation).toHaveBeenCalledWith("choose-existing", existing, "term_a");
+  expect(output()).toContain("Here is the summary.");
+  expect(output()).toContain("You chose this conversation.");
+  expect(output()).not.toContain("Which conversation is this?");
+});
+
+test("a computer that cannot record a choice offers none", async () => {
+  const { Reader } = await import("./Reader");
+  const sessionLog = mock(async () => { throw new ApiError("Shahi has not been told which Claude conversation this is.", 404, "reader_session_missing"); });
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="no-choice" activity={null} onUnavailable={() => {}} /></ApiContext.Provider>); });
+  expect(output()).toContain("Shahi has not been told");
+  expect(output()).not.toContain("Choose the conversation");
+});
+
 test("an expired session neither claims a closed pane nor rejects unhandled", async () => {
   await render(mock().mockRejectedValue(new UnauthorizedError()));
   expect(output()).toContain("Please reconnect to your computer");
