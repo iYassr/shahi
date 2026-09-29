@@ -163,3 +163,59 @@ test("a refused microphone says how to allow it", async () => {
   expect(view.getByText(/Microphone access is off/)).toBeTruthy();
   expect(view.getByText("Open Settings")).toBeTruthy();
 });
+
+test("leaving while Add is finishing waits for that same final result once", async () => {
+  let finish!: (text: string) => void;
+  mockNative.finish.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = await listening();
+  emit({ kind: "text", finalized: "Partial", volatile: "last words" });
+  await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+  await act(async () => view.unmount());
+  expect(mockNative.finish).toHaveBeenCalledTimes(1);
+  await act(async () => finish("Complete final words."));
+  expect(store.text).toBe("Please Complete final words.");
+});
+
+test("a late result belongs to the conversation that started dictation", async () => {
+  const a = jest.fn(), b = jest.fn();
+  let finish!: (text: string) => void;
+  mockNative.finish.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  function Switching({ insert }: { insert: (text: string) => void }) {
+    const voice = useDictation(insert);
+    return voice.available ? <DictationButton voice={voice} disabled={false} /> : null;
+  }
+  const view = render(<Switching insert={a} />);
+  const mic = await view.findByLabelText("Dictate");
+  await act(async () => fireEvent.press(mic));
+  await act(async () => fireEvent.press(view.getByLabelText("Stop dictating and add to reply")));
+  view.rerender(<Switching insert={b} />);
+  await act(async () => finish("From conversation A."));
+  expect(a).toHaveBeenCalledWith("From conversation A.");
+  expect(b).not.toHaveBeenCalled();
+});
+
+test("losing focus stops the microphone and preserves text in the original destination", async () => {
+  const insert = jest.fn();
+  function Focused({ active }: { active: boolean }) {
+    const voice = useDictation(insert, { active });
+    return voice.available ? <DictationButton voice={voice} disabled={false} /> : null;
+  }
+  const view = render(<Focused active />);
+  const mic = await view.findByLabelText("Dictate");
+  await act(async () => fireEvent.press(mic));
+  await act(async () => view.rerender(<Focused active={false} />));
+  expect(mockNative.finish).toHaveBeenCalledTimes(1);
+  expect(insert).toHaveBeenCalledWith("Fix the flaky login test.");
+  await act(async () => fireEvent.press(view.getByLabelText("Dictate")));
+  expect(mockNative.start).toHaveBeenCalledTimes(1);
+});
+
+test("Cancel while final words are pending cannot add them later", async () => {
+  let finish!: (text: string) => void;
+  mockNative.finish.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = await listening();
+  await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+  await act(async () => fireEvent.press(view.getByLabelText("Cancel dictation")));
+  await act(async () => finish("Cancelled words."));
+  expect(store.text).toBe("Please");
+});

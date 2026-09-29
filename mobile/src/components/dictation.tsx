@@ -39,7 +39,7 @@ export interface Dictation {
 
 const announce = (message: string) => AccessibilityInfo.announceForAccessibility(message);
 
-export function useDictation(insert: (text: string) => void): Dictation {
+export function useDictation(insert: (text: string) => void, { active = true, owner }: { active?: boolean; owner?: unknown } = {}): Dictation {
   const insertRef = useRef(insert);
   insertRef.current = insert;
   // Asked afresh for each conversation: iOS can remove an unused model at any time.
@@ -48,6 +48,8 @@ export function useDictation(insert: (text: string) => void): Dictation {
   const phaseRef = useRef<Phase>("idle");
   const setPhase = (value: Phase) => { phaseRef.current = value; setPhaseState(value); };
   const lease = useRef<string | null>(null);
+  const insertForLease = useRef(insert);
+  const finishing = useRef<{ id: string; result: Promise<string> } | null>(null);
   const [finalized, setFinalizedState] = useState("");
   const finalizedRef = useRef("");
   const setFinalized = (value: string) => { finalizedRef.current = value; setFinalizedState(value); };
@@ -62,9 +64,33 @@ export function useDictation(insert: (text: string) => void): Dictation {
   const clear = () => { setFinalized(""); setVolatile(""); setLevel(0); setSeconds(0); };
   const deliver = (text: string) => {
     if (!text.trim()) return;
-    insertRef.current(text);
+    insertForLease.current(text);
     announce("Added what you said to your reply.");
   };
+
+  function finishOnce(id: string) {
+    if (finishing.current?.id === id) return finishing.current.result;
+    const result = dictation.finish(id);
+    finishing.current = { id, result };
+    return result;
+  }
+  function stopAndKeep() {
+    const id = lease.current;
+    lease.current = null;
+    if (!id) return;
+    const destination = insertForLease.current;
+    const said = finalizedRef.current;
+    if (phaseRef.current === "listening" || phaseRef.current === "finishing") {
+      // Add may already be waiting for the last words. A second native finish
+      // loses them; a mutable callback can put them in the next conversation.
+      void finishOnce(id).then(text => destination(text || said), () => destination(said));
+    } else void dictation.cancel(id).catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!active) { stopAndKeep(); clear(); setPhase("idle"); }
+    return () => { stopAndKeep(); clear(); setPhase("idle"); };
+  }, [active, owner]);
 
   useEffect(() => {
     let live = true;
@@ -92,13 +118,7 @@ export function useDictation(insert: (text: string) => void): Dictation {
       events.remove();
       // Leaving the conversation keeps what was said: it lands in this
       // conversation's draft, which outlives the screen.
-      const id = lease.current;
-      lease.current = null;
-      if (!id) return;
-      if (phaseRef.current === "listening" || phaseRef.current === "finishing") {
-        const said = finalizedRef.current;
-        void dictation.finish(id).then((text) => insertRef.current(text || said), () => insertRef.current(said));
-      } else void dictation.cancel(id).catch(() => {});
+      stopAndKeep();
     };
   }, []);
 
@@ -109,8 +129,10 @@ export function useDictation(insert: (text: string) => void): Dictation {
   }, [phase]);
 
   async function begin() {
-    if (!availability?.available || phaseRef.current !== "idle") return;
+    if (!active || !availability?.available || phaseRef.current !== "idle") return;
     const id = randomUUID();
+    insertForLease.current = insertRef.current;
+    finishing.current = null;
     lease.current = id;
     setError(null); setNotice(null); clear();
     try {
@@ -151,7 +173,7 @@ export function useDictation(insert: (text: string) => void): Dictation {
     setPhase("finishing");
     let text = "";
     try {
-      text = await dictation.finish(id);
+      text = await finishOnce(id);
     } catch (e) {
       // The words already settled on screen are kept even if the last ones fail.
       text = finalizedRef.current;
