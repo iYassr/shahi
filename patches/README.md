@@ -1,4 +1,4 @@
-# Transitive dependency security patches
+# Dependency patches
 
 `bun install --frozen-lockfile` applies the patches declared in the root
 `patchedDependencies`. Keep them until the affected consumers can use an
