@@ -1,5 +1,6 @@
 import { EmailMessage } from "cloudflare:email";
 import { media } from "./media";
+import { clientUpdate } from "./client-update";
 import { signup } from "./signup";
 interface Env {
   ASSETS: Fetcher;
@@ -12,6 +13,7 @@ interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
+    if (pathname === "/api/client-update") return clientUpdate(request);
     if (pathname.startsWith("/media/")) return media(request, env.MEDIA);
     // The not-found page is the file 404.html, so the assets served it at
     // /404 as an ordinary page with a 200, and sent /404.html there with a
