@@ -33,7 +33,7 @@ jest.mock("expo", () => {
   return { ...jest.requireActual("expo"), requireOptionalNativeModule: (name: string) => (name === "SshTunnel" ? sshTunnel : null) };
 });
 // The reader's own surroundings, as pane.test.tsx has them.
-jest.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
+jest.mock("expo-router", () => ({ Stack: { Screen: () => null }, useIsFocused: () => true }));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
