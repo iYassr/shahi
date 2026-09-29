@@ -14,6 +14,12 @@ jest.mock("expo-haptics", () => ({
 
 jest.mock("expo-network", () => ({ addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })), getNetworkStateAsync: jest.fn(async () => ({})) }));
 
+// Unit tests never send reports. The sanitizer and Reader detector are tested
+// separately; a release build verifies delivery through the real SDK.
+jest.mock("@sentry/react-native", () => ({
+  init: jest.fn(), getClient: jest.fn(), captureException: jest.fn(), captureMessage: jest.fn(),
+}));
+
 // The relay's ephemeral keys want the platform's CSPRNG; here that is Node's.
 jest.mock("expo-crypto", () => ({
   randomUUID: () => require("node:crypto").randomUUID(),

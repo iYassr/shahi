@@ -116,7 +116,7 @@
         "expo-camera",
         {
           "cameraPermission": "Shahi uses the camera to scan the pairing code your server prints.",
-          "_comment": "Scanning only: no microphone string and no RECORD_AUDIO, so the app never claims a permission it has no use for.",
+          "_comment": "Scanning only: camera does not use audio. The voice plugin separately declares the iOS microphone purpose; Android recording stays disabled.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -128,6 +128,20 @@
           "ios": {
             "enableSceneSupport": true
           }
+        }
+      ],
+      [
+        "./plugins/with-private-sentry",
+        {
+          "dsn": "https://5b77e9b3eb738041aff5a0362deca6d3@o4512164542873600.ingest.de.sentry.io/4512164647469136"
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "yasser-dx",
+          "project": "shahi-mobile",
+          "url": "https://sentry.io/"
         }
       ]
     ],
