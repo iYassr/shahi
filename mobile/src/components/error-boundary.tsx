@@ -12,6 +12,7 @@ import { Component, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
+import { reportRenderError } from "@/lib/diagnostics";
 
 interface Props {
   children: ReactNode;
@@ -28,6 +29,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   reset = () => this.setState({ error: null });
+
+  componentDidCatch(error: Error) { reportRenderError(error); }
 
   render() {
     if (!this.state.error) return this.props.children;

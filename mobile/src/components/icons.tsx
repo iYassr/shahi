@@ -39,6 +39,7 @@ export function Wordmark({ color, width = 108 }: { color: string; width?: number
 }
 
 const ICONS = {
+  microphone: { d: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Zm7 8v2a7 7 0 0 1-14 0v-2m7 9v3m-4 0h8", filled: false },
   folder: { d: "M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z", filled: false },
   inbox: { d: "M22 12h-6l-2 3h-4l-2-3H2m3.45-6.89L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z", filled: false },
   copy: { d: "M9 9h11v11H9zM5 15H3V3h12v2", filled: false },
