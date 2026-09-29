@@ -74,3 +74,12 @@ jobs:
           unset SHAHI_OTA_PRIVATE_KEY
           if [ "$RELEASE_CHANNEL" = stable ]; then EAS_ENVIRONMENT=production; else EAS_ENVIRONMENT=preview; fi
           "$RUNNER_TEMP/eas/node_modules/.bin/eas" update --environment "$EAS_ENVIRONMENT" --channel "$RELEASE_CHANNEL" --rollout-percentage "$ROLLOUT_PERCENTAGE" --private-key-path "$RUNNER_TEMP/shahi-ota-key.pem" --message "Shahi $GITHUB_SHA" --non-interactive
+      - name: Upload matching update source maps
+        working-directory: mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: yasser-dx
+          SENTRY_PROJECT: shahi-mobile
+        run: |
+          test -n "$SENTRY_AUTH_TOKEN"
+          node ../node_modules/@sentry/react-native/scripts/expo-upload-sourcemaps.js dist

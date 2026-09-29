@@ -47,6 +47,14 @@ jobs:
           path: dist/release/
           if-no-files-found: error
           retention-days: 7
+      - name: Preserve debug artifacts for the trusted release job
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-computer-debug-artifacts
+          path: dist/sentry/computer/
+          if-no-files-found: error
+          retention-days: 7
   checks:
     name: types and unit tests
     timeout-minutes: 15

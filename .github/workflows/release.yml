@@ -39,6 +39,19 @@ jobs:
           path: dist/release
       - name: Verify tested package identity and integrity
         run: bun plugin/releases/candidate.ts dist/release "$GITHUB_SHA"
+      - name: Download matching debug artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-computer-debug-artifacts
+          path: dist/sentry/computer
+      - name: Upload source maps before publishing
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: yasser-dx
+          SENTRY_PROJECT: shahi-web
+        run: |
+          test -n "$SENTRY_AUTH_TOKEN"
+          node node_modules/@sentry/cli/bin/sentry-cli sourcemaps upload --release "shahi-web@$GITHUB_SHA" dist/sentry/computer
       - name: Publish immutable computer package and signed channel catalog
         env:
           GH_TOKEN: ${{ github.token }}
