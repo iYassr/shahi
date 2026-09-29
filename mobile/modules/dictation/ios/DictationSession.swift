@@ -82,16 +82,21 @@ import UIKit
   func start(_ id: String) async throws {
     guard lease == nil else { throw DictationFailure(message: "Dictation is already running in another conversation.") }
     lease = id
+    var preparing: LiveTranscription?
     do {
       guard SpeechTranscriber.isAvailable, let locale = await LiveTranscription.englishLocale() else { throw unavailable }
+      try check(id)
       guard await AVAudioApplication.requestRecordPermission() else {
         throw DictationFailure(message: "Microphone access is off. Turn it on for Shahi in Settings to dictate.")
       }
       try check(id)
       let transcription = LiveTranscription(locale: locale)
+      preparing = transcription
       // iOS can remove a model nobody used for a while; the JavaScript side
       // installs it again when it hears this.
-      guard await transcription.installed() else { throw DictationFailure(message: "Apple's English speech model needs to be downloaded again.") }
+      let installed = await transcription.installed()
+      try check(id)
+      guard installed else { throw DictationFailure(message: "Apple's English speech model needs to be downloaded again.") }
       let send = self.send
       transcription.onText = { finalized, volatile in
         Task { @MainActor in send(["id": id, "kind": "text", "finalized": finalized, "volatile": volatile]) }
@@ -131,6 +136,9 @@ import UIKit
       // A cancelled permission/prepare request may resume after another
       // conversation has started recording. Only clean up this request's lease.
       if lease == id { await discard() }
+      // Cancellation can run while begin() is suspended. Once it returns,
+      // finish this detached analyzer too, without touching the new microphone.
+      else { await preparing?.cancel() }
       throw error is CancellationError ? DictationFailure(message: "Dictation was cancelled.") : error
     }
   }
@@ -151,8 +159,8 @@ import UIKit
   }
 
   func close() {
-    guard lease != nil else { return }
-    Task { await discard() }
+    guard let id = lease else { return }
+    Task { await cancel(id) }
   }
 
   private func stopOnItsOwn(_ id: String, reason: String) async {
@@ -163,9 +171,12 @@ import UIKit
 
   private func discard() async {
     stopAudio()
-    await live?.cancel()
+    let cancelled = live
     live = nil
     lease = nil
+    // Detach before suspension: a second cancel must not later erase a new
+    // session that started while the first analyzer was finishing.
+    await cancelled?.cancel()
   }
 
   private func stopAudio() {
