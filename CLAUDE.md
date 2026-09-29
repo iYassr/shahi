@@ -600,6 +600,12 @@ can trigger the SSH server’s lockout.
 
 ## What is not done
 
+- **Live dictation needs physical-device acceptance before release.** It uses
+  Apple's SpeechTranscriber on supported iOS 26+ iPhones, currently in English.
+  Tests of synthesized speech on a Mac and component tests do not prove iPhone
+  microphone capture, interruption recovery, recognition quality or battery use.
+  See `docs/voice-input.md` for the device checklist.
+
 - **Terminal input already queued before a shell starts an agent cannot be inspected.**
   The sidecar checks the foreground process before typing and the screen before
   Enter. A command still waiting in the terminal input queue can pass both checks
@@ -1066,7 +1072,16 @@ relay stores nothing.
 Hosted browser releases use `bun run build:site` and the existing Cloudflare
 site configuration. Keep /pwa routing and service-worker scope isolated from
 marketing assets; every same-origin page remains in the browser trust boundary.
-Never add third-party scripts or cache decrypted session data. Browser pairing
+Do not load third-party scripts or cache decrypted session data. The reviewed,
+bundled Sentry SDK is the sole client diagnostics exception: it must pass the
+allowlist in shared/src/diagnostics.ts before transport, and native crashes must
+pass mobile/plugins/sentry-native.swift. Keep replay, screenshots, breadcrumbs,
+console capture, automatic tracing and metrics disabled. Settings opt-out must
+apply to native and JavaScript reports. Never attach conversation content, raw
+errors, paths, account IDs, connection IDs or credentials. Reader incidents
+are deduplicated and gated on an active connected view. Upload debug artifacts
+from the exact shipped build and keep the scoped token in the releases
+environment; see docs/observability.md. Browser pairing
 is session-only unless remembering is explicitly selected.
 
 **Relay recovery must survive suspended timers.** The computer's relay watchdog
@@ -1340,6 +1355,68 @@ disclosure state even when it reuses message IDs. A busy-to-finished transition
 collapses activity once; the user can reopen it afterward. One current activity
 status replaces the duplicate working footer. Unknown tools get neutral status,
 never guessed prose or fabricated results.
+
+## Claude Reader setup, September 28
+
+herdr's terminal detection names an agent but not its session; only the
+agent's integration hook reports that, and Reader needs it. The managed service
+keeps the integrations of Reader's agents installed (`herdr-integrations.ts`):
+once per start, after herdr answers, it installs a missing one for an agent
+present on the computer and updates an outdated one. Nobody types a command.
+It lives in the service, not the plugin's startup hook, because "Update
+computer" replaces the service and only a plugin reinstall replaces the hook.
+It runs only with `SHAHI_MANAGER_ROOT` and a connected herdr, because the live
+suite and the release smoke tests start the sidecar with the developer's real
+home, and an install writes the agent's real settings. An integration once
+seen installed and later missing was removed by someone; it stays removed.
+Discovery asks about every manifest kind: `installedAgents` caches one answer
+for the New Agent sheet as well.
+
+A Claude that started before its integration was installed never reports a
+session, and nothing on the computer identifies its transcript exactly: Claude
+holds no transcript open, and `sessions/<pid>.json` is undocumented and not
+written by every process (measured on 2.1.284: none for fresh processes, even
+after a prompt). Its one disagreement with the hook was a conversation parked
+as a background job: the record keeps its old `sessionId` and names the job in
+`parkedJobId`, whose `jobs/<id>/state.json` has the right session. Followed
+that way it named the right conversation for all six live panes. So the
+person names it (`claude-choice.ts`, capability
+`conversation-choice`): `GET /api/panes/:id/conversations` lists the
+transcripts in Claude's folder for the process's cwd (every non-alphanumeric
+character becomes `-`), newest first, minus sessions other panes hold, with
+the pid record's session marked `likely` as a hint only; `POST
+/api/panes/:id/conversation` accepts only an offered id. The choice is held in
+memory against that pane's terminal id and Claude pid, and ends when either
+changes or the hook reports; `chosenSession` checks the pid in the pane's
+foreground processes, not only ones named claude, because a tool shares its
+group. The page says `chosen: true`, part of its ETag, so clients offer
+"Choose another". Never pick from the folder without the person.
+
+Missing identity and a missing transcript have distinct 404 codes. Neither is
+an error in either client: every new Claude conversation has no transcript
+until its first message (none after 12s at the prompt, measured on 2.1.284),
+so both are a waiting state that keeps polling. The plain 404 from older
+servers remains supported. The plugin must carry `CLAUDE_CONFIG_DIR` into the
+launchd/systemd environment; `.env` keys reach `loadConfig`, not `process.env`.
+An explicit private `.env` value wins over the setup shell, including an empty
+value that restores Claude's default folder. Restart regenerates the service
+definition; this startup change requires an updated plugin installation.
+Exercise Reader messages and images in fresh processes launched with rendered
+service environments, not only tests setting `process.env` directly.
+
+Conversation previews expose content before a choice is made, so they must use
+the same canonical transcript lookup as Reader. Reject root escapes, leaf
+aliases for another UUID, and distinct copies of one UUID before reading the
+preview. Directory aliases naming the same canonical transcript remain valid.
+
+Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
+2.1.283 process had a matching process start time but an older session than its
+SessionStart hook, because it had parked the conversation as a background job.
+This metadata cannot safely replace hook identity; it only marks a choice likely.
+
+Codex's transcript index must name an existing file with the exact session UUID;
+stale entries fall through to the UUID-only search, never a working-directory
+or most-recent-session guess.
 
 ## Dictation, September 29
 
