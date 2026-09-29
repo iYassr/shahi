@@ -76,6 +76,12 @@ the written answer, questions and failed steps stay visible, while routine
 activity expands on demand, without horizontal overflow. Antigravity's herdr
 kind `agy` is normalized for Reader availability and diagnostics.
 
+The combined Reader, ordering and resilience browser matrix then ran on the
+Ubuntu x86-64 VM in Chromium and WebKit: **52 passed, one intentionally skipped**
+in 6.9 minutes. The skipped case is offline navigation with a service worker,
+which this WebKit harness cannot emulate; Chromium covered it. The run used the
+tracked archive at `62a9373`; later changes were native-only and documentation.
+
 During test preparation, assigning an entire SessionLog where the stub expects
 its message array produced a 500. Correcting that fixture restored the check;
 this was not a product defect. A hidden browser tab also paused Reader polling
@@ -104,7 +110,7 @@ See [client-updates.md](client-updates.md) before activating a requirement.
   [voice-input.md](voice-input.md). Its iOS Swift sources typecheck, but this
   review Mac could not run SpeechTranscriber and no microphone result is claimed.
 - The Mac's new Xcode and browser processes exited during OS startup before
-  compilation/test execution. The browser matrix is being run in the disposable
+  compilation/test execution. The browser matrix passed in the disposable
   Linux VM instead. This is not counted as a passed native build or device test.
 - Native-only gestures, Dynamic Type layout and VoiceOver require device checks;
   component tests and a phone-sized browser do not substitute for them.
