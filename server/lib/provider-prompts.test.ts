@@ -7,11 +7,12 @@ import { TranscriptStore } from "./transcript";
 import type { HerdrClient } from "./herdr-client";
 import type { SessionStore } from "./state";
 
-import { CODEX_TRUST, CURSOR_TRUST, AGY_TRUST, CURSOR_COMMAND, AGY_EDIT, AGY_COMMAND } from "../fixtures/provider-menus";
+import { CODEX_TRUST, CODEX_TRUST_EMBEDDED, CURSOR_TRUST, AGY_TRUST, CURSOR_COMMAND, AGY_EDIT, AGY_COMMAND } from "../fixtures/provider-menus";
 
 const cases = [
   { kind: "agy", screen: AGY_COMMAND, question: "Run this command?", keys: [["1"], ["2"], ["3"], ["4"]] },
   { kind: "codex", screen: CODEX_TRUST, question: "Trust this folder?", keys: [["1", "Enter"], ["2", "Enter"]] },
+  { kind: "codex", screen: CODEX_TRUST_EMBEDDED, question: "Trust this folder?", keys: [["1", "Enter"], ["2", "Enter"]] },
   { kind: "cursor", screen: CURSOR_TRUST, question: "Do you trust", keys: [["a"], ["q"]] },
   { kind: "agy", screen: AGY_TRUST, question: "Do you trust", keys: [["Enter"], ["Down", "Enter"]] },
   { kind: "cursor", screen: CURSOR_COMMAND, question: "Run this command?", keys: [["y"], ["Tab"], ["shift+tab"], ["n"]] },
@@ -64,6 +65,10 @@ describe("current provider menus", () => {
     const altered = [
       CODEX_TRUST.replace("enter continue · esc back", "Enter something"),
       CODEX_TRUST.replace("2. Back", "1. Back"),
+      CODEX_TRUST.replace("enter continue · esc back", "enter continue · esc quit"),
+      CODEX_TRUST_EMBEDDED.replace("enter continue · esc quit", "enter continue · esc back"),
+      CODEX_TRUST_EMBEDDED.replace("› 1.", "1."),
+      CODEX_TRUST_EMBEDDED.replace("  2. Quit", "› 2. Quit"),
       CURSOR_TRUST.replace("[q] Quit", "[q] Trust this workspace"),
       CURSOR_TRUST.replace("Use arrow keys", "Use other keys"),
       CURSOR_COMMAND.replace("────────────────────────────────────────", "command example"),

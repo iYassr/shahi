@@ -26,11 +26,15 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
 
   // The new Codex folder picker is near the top, above an otherwise empty
   // terminal. The folder and footer distinguish it from quoted menu prose.
+  // Embedded Codex 0.158 exits with Quit; daemon sessions return to the Agent
+  // Command Center. Match each label to its measured footer, not either alone.
   const folder = plain.lastIndexOf("Folder access");
   const trust = plain.findIndex((line, i) => i > folder && line.startsWith("Trust this folder? Codex can read, edit, and run files here"));
   const codexRows = plain.filter(line => /^[›❯>»▶]?\s*[12]\.\s/.test(line));
-  const codex = options(codexRows, ["Trust and continue", "Back to Agent Command Center"], "digit");
-  if (folder >= 0 && trust > folder && plain[folder + 1]?.startsWith("/") && plain.at(-1) === "enter continue · esc back" && codex) {
+  const codexExit = plain.at(-1) === "enter continue · esc back" ? "Back to Agent Command Center"
+    : plain.at(-1) === "enter continue · esc quit" ? "Quit" : null;
+  const codex = codexExit ? options(codexRows, ["Trust and continue", codexExit], "digit") : null;
+  if (folder >= 0 && trust > folder && plain[folder + 1]?.startsWith("/") && codex) {
     const end = plain.findIndex((line, i) => i > trust && /^[›❯>»▶]?\s*1\./.test(line));
     return { agent: "codex", prompt: { question: plain.slice(trust, end).filter(Boolean).join(" "), answer: "digit", confirm: true, options: codex, context: [plain[folder + 1]!] } };
   }

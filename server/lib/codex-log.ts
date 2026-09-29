@@ -4,8 +4,8 @@
  * codex stores things quite differently, and two of the differences matter:
  *
  * **The session id has to be earned.** herdr populates `agent_session` for
- * Claude panes out of the box; for codex it only does so once its codex
- * integration is installed, because that is what puts a SessionStart hook in
+ * Claude panes once its Claude integration is installed; Codex also needs its
+ * integration installed, because that is what puts a SessionStart hook in
  * `~/.codex/hooks.json` to report the id. Where the id is there, it is the best
  * answer available and it outlives the process. Where it is not, the pane's
  * foreground process is asked what file it has open: herdr's
@@ -33,6 +33,7 @@
  * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
 import { Database } from "bun:sqlite";
+import { statSync } from "node:fs";
 import { mkdtemp, readFile, rm, open, readdir, readlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -84,7 +85,8 @@ const STATE_DB = join(CODEX_HOME, "state_5.sqlite");
  * process reports, so neither is this server's to trust with a path. The
  * `/proc` route already required a rollout under the sessions directory;
  * this holds the two index routes to the same rule, so the worst a doctored
- * `rollout_path` can do is name a different rollout.
+ * `rollout_path` cannot escape the sessions directory. The session lookup
+ * additionally checks the filename's ID and that the file still exists.
  */
 export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR): string | null {
   if (typeof path !== "string" || !path.endsWith(".jsonl")) return null;
@@ -139,12 +141,14 @@ function rolloutFromSessionId(sessionId: string): string | null {
 
   try {
     const db = new Database(STATE_DB, { readonly: true });
-    const row = db
-      .query<{ rollout_path: string }, [string]>("SELECT rollout_path FROM threads WHERE id = ?")
-      .get(sessionId);
-    db.close();
+    let row: { rollout_path: string } | null;
+    try {
+      row = db.query<{ rollout_path: string }, [string]>("SELECT rollout_path FROM threads WHERE id = ?").get(sessionId);
+    } finally { db.close(); }
     const indexed = rolloutWithinSessions(row?.rollout_path);
-    if (indexed) return indexed;
+    // Restoring or moving Codex history can leave the index behind. A stale
+    // filename must not hide the exact rollout or substitute another session.
+    if (indexed && basename(indexed).toLowerCase().endsWith(`-${sessionId.toLowerCase()}.jsonl`) && statSync(indexed).isFile()) return indexed;
   } catch {
     // A migrated or missing index is not fatal — fall through to the glob.
   }
@@ -153,7 +157,7 @@ function rolloutFromSessionId(sessionId: string): string | null {
     const matches = new Map<string, string>();
     for (const match of new Bun.Glob(`**/rollout-*-${sessionId}.jsonl`).scanSync(SESSIONS_DIR)) {
       const path = rolloutWithinSessions(join(SESSIONS_DIR, match));
-      if (path) matches.set(realpathIfExists(path), path);
+      if (path && statSync(path).isFile()) matches.set(realpathIfExists(path), path);
     }
     // A duplicate copy with the same id is not resolved by picking whichever
     // timestamp sorts last. Only the database or an exact process can choose.
