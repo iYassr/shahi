@@ -10,6 +10,11 @@ export const CODEX_TRUST = `  Folder access
   2. Back to Agent Command Center
 
   enter continue · esc back` + "\n ".repeat(30);
+// Codex 0.158.0's embedded server, measured on clean Ubuntu ARM64 without
+// integrations. The daemon variant above returns to its command center.
+export const CODEX_TRUST_EMBEDDED = CODEX_TRUST
+  .replace("2. Back to Agent Command Center", "2. Quit")
+  .replace("enter continue · esc back", "enter continue · esc quit");
 export const CURSOR_TRUST = `│ ⚠ Workspace Trust Required │
 │ Cursor Agent can execute code and access files in this directory. │
 │ Do you trust the contents of this directory? │
