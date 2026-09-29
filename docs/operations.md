@@ -241,8 +241,8 @@ not begun; consult [its pricing page](https://developers.cloudflare.com/analytic
 and [Workers Logs pricing](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
 for current terms. Traffic is aggregated before recording.
 
-These are server-side operational metrics. The hosted client has no third-party
-analytics SDK. HTML responses send `Cache-Control: public, no-transform` to
+These are server-side operational metrics. Optional client crash and Reader
+diagnostics use bundled Sentry SDKs; see [client observability](observability.md). HTML responses send `Cache-Control: public, no-transform` to
 prevent Cloudflare's automatic beacon injection, alongside the PWA's
 `script-src 'self'` policy. The same directive disables Cloudflare's
 compression, so the hashed app assets and the site's own CSS, JavaScript and SVG
