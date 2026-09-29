@@ -28,6 +28,8 @@ const notice = (name: string) => NATIVE_NOTICES.find((n) => n.name === name)!;
 
 test("the app carries the license files of the native libraries CocoaPods builds into it, word for word", () => {
   const upstream: Record<string, string> = {
+
+    "Sentry Cocoa LICENSE.md": "1784335a04bbe8014b9bf0f6a373f7b3804855792545702199dbdd6e2c5b6ad1",
     "Folly LICENSE": "2206c00af7013581ae0d7c8c8a0089f02fab621913daac019b32336bd4d1e1db",
     "glog COPYING": "0fc497129c5c69ff6f22da6933c7e4aaef082fde8437fd57680c2780100772a4",
     "double-conversion LICENSE": "4af93c12062c58058378de2397dc1c92bbff9ddfb1d583a01c84127557ce97ca",
@@ -119,4 +121,10 @@ test("React Navigation's licence travels with the copy of it expo-router carries
   const shown = rows.flatMap((row) => row.kind === "text" && row.key.startsWith("vendored:React Navigation:0:") ? [row] : [])
     .map((row, i) => `${i && row.paragraph ? "\n\n" : i ? "\n" : ""}${row.text}`).join("");
   expect(shown).toBe(nav!.files[0]!.text.replace(/^\s*\n/, "").trimEnd().replace(/\n(?:[ \t]*\n)+/g, "\n\n"));
+});
+
+
+test("the Sentry Cocoa notice follows the framework pinned by React Native", () => {
+  const version = read("node_modules/@sentry/react-native/RNSentry.podspec").match(/sentry_cocoa_version = '([^']+)'/)?.[1];
+  expect(notice("Sentry Cocoa").version).toBe(version);
 });

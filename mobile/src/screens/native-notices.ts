@@ -1120,7 +1120,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 `;
 
+export const SENTRY_COCOA_LICENSE = "The MIT License (MIT)\n\nCopyright (c) 2015 Sentry\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n";
+
 export const NATIVE_NOTICES: NativeNotice[] = [
+  { name: "Sentry Cocoa", version: "9.29.0", license: "MIT License", in: "Sentry native crash reporting framework", repository: "https://github.com/getsentry/sentry-cocoa", tag: "9.29.0", files: [{ path: "LICENSE.md", text: SENTRY_COCOA_LICENSE }] },
   {
     name: "Folly", version: "2024.11.18.00", license: "Apache License 2.0",
     in: "React Native’s ReactNativeDependencies framework",
@@ -1258,5 +1261,6 @@ export const EXTERNAL_PODS: Record<string, string> = {
   sqlite3: "not linked: expo-updates adds it only when the Podfile property expo.updates.useThirdPartySQLitePod is true, and Shahi does not set it",
   "React-jsc": "not linked: the JavaScriptCore engine, and Shahi runs Hermes",
   ExpoModulesTestCore: "not linked: a dependency of test specs only",
+  "React-Codegen": "generated bridge code; React Native codegen is covered by the react-native MIT notice",
   ReactAppDependencyProvider: "not third-party: React Native's codegen writes it from Shahi's own app during pod install",
 };

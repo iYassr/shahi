@@ -21,6 +21,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,7 +31,7 @@ import {
   type NativeScrollEvent,
 } from "react-native";
 import { Text, useLargeText } from "@/components/text";
-import { router, Stack, useIsFocused } from "expo-router";
+import { router, Stack } from "expo-router";
 import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
 // wholesale, so a separately installed @react-navigation/elements would carry
@@ -52,7 +53,13 @@ import { committed, refused } from "@/lib/feel";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, theme } from "@/lib/theme";
 import { Markdown } from "@/components/markdown";
+import { ReaderHealth, readerFailure, readerProvider } from "@shahi/shared/diagnostics";
+import { diagnosticsEnabled, reportReaderIncident } from "@/lib/diagnostics";
+import { AppState } from "react-native";
+import { useIsFocused } from "expo-router";
+import { ConversationPicker } from "@/components/conversation-picker";
 import { DictationButton, DictationPanel, useDictation } from "@/components/dictation";
+import { useClientUpdateRequired } from "@/components/client-update-gate";
 import { appendDictation } from "@/lib/dictation";
 
 /** How often to pull while open. The server caches on file size. */
@@ -265,6 +272,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    * a word (pre-release bug hunt).
    */
   const [logError, setLogError] = useState<{ message: string; unreachable: boolean } | null>(null);
+  /** Why there is nothing to read yet, in the computer's words, when it says. */
+  const [readerNote, setReaderNote] = useState<string | null>(null);
+  /** herdr cannot say which conversation this is, and the person may (ConversationPicker). */
+  const [unidentified, setUnidentified] = useState(false);
+  /** What is shown is the conversation the person chose, not one Claude reported. */
+  const [chosen, setChosen] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   /** While `Date.now()` is under this, polls leave the transcript alone (see TOO_LARGE_PAUSE_MS). */
   const logPausedUntil = useRef(0);
   const [draft, setDraftState] = useState(savedDraft.text);
@@ -281,6 +295,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
   const focused = useIsFocused();
+  const updateRequired = useClientUpdateRequired();
   const draftGeneration = savedDraft.generation;
   // A detached dictation can finish into its original draft, but never into
   // a replacement occupant or a revoked computer's cleared store.
@@ -288,7 +303,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     if (savedDraft.generation !== draftGeneration || nativeDraft(api, paneId) !== savedDraft) return;
     savedDraft.text = appendDictation(savedDraft.text, text);
     notifyNativeDraft(savedDraft);
-  }, { active: focused && !gone, owner: savedDraft });
+  }, { active: focused && !gone && !updateRequired, owner: savedDraft });
   const [screen, setScreen] = useState<string | null>(null);
   /**
    * Reader or raw screen.
@@ -591,6 +606,18 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
+  const diagnosticContext = useRef({ provider: pane?.agent, eligible: false, historyKnown: false, transport: "direct" as "relay" | "ssh" | "direct", computerVersion: undefined as string | undefined, herdrVersion: undefined as string | undefined });
+  diagnosticContext.current = { provider: pane?.agent, eligible: focused && view === "reader" && !cannotWrite,
+    historyKnown: !!pane?.lastMessageAt || !!pane?.preview || messagesRef.current.length > 0 || pending.length > 0,
+    transport: connection.relay ? "relay" : "ssh", computerVersion: control?.handshake?.update?.current, herdrVersion: session?.version };
+  const readerHealth = useRef<ReaderHealth | null>(null);
+  readerHealth.current ??= new ReaderHealth(incident => reportReaderIncident(incident, diagnosticContext.current));
+  useEffect(() => { readerHealth.current?.reset(); }, [paneId, pane?.instanceId, pane?.agent, activeComputerId, focused, view, link]);
+  useEffect(() => {
+    const listener = AppState.addEventListener("change", state => { if (state !== "active") readerHealth.current?.reset(); });
+    return () => listener.remove();
+  }, []);
+  const canChoose = supports(control?.handshake ?? null, "conversation-choice");
   const title = pane ? paneTitle(pane) : paneId;
   // A later snapshot listing it means the 404 raced its creation: look again.
   const listed = !!pane;
@@ -734,7 +761,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           return kept.length === prev.length ? prev : kept;
         });
         setReadable(true);
+        const d = diagnosticContext.current;
+        readerHealth.current?.observe(readerProvider(d.provider), log.messages.length === 0 && d.historyKnown && !switched ? "empty_result" : null,
+          d.eligible && diagnosticsEnabled() && AppState.currentState === "active");
         setLogError(null);
+        setReaderNote(null);
+        setUnidentified(false);
+        setChosen(!!log.chosen);
         setLoading(false);
       } catch (e) {
         // An expired cookie has to sign out, not be swallowed as "no transcript".
@@ -744,7 +777,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         // audit.) The computer makes the call: a poll that raced an SSH
         // re-login is not an expired cookie (pre-release review).
         if (!stillActive()) return;
-        if (e instanceof UnauthorizedError) return unauthorized();
+        if (e instanceof UnauthorizedError) { readerHealth.current?.reset(); return unauthorized(); }
         // No transcript *yet* is the server's 404. A just-started agent has not
         // written one, so this keeps polling rather than latching — the reader
         // fills in by itself the moment the agent says something. Any other
@@ -752,7 +785,18 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         // A failed refresh must not replace a known conversation with an empty
         // state. Keep cached messages (and the mounted list's reading position).
         const missing = e instanceof ApiError && e.status === 404;
+        const d = diagnosticContext.current;
+        const failure = readerFailure(e instanceof ApiError ? e.status : undefined, e instanceof ApiError ? e.code : undefined);
+        readerHealth.current?.observe(readerProvider(d.provider), failure,
+          !!failure && (!missing || d.historyKnown) && d.eligible && diagnosticsEnabled() && AppState.currentState === "active" && !(e instanceof UnreachableError));
         if (e instanceof ApiError && e.status === 413) logPausedUntil.current = Date.now() + TOO_LARGE_PAUSE_MS;
+        // A computer that knows why there is nothing yet says so. Neither
+        // reason is a failure, and the next poll recovers either: every new
+        // Claude conversation is `reader_transcript_missing` until its first
+        // message, which an error and a Try again made look broken.
+        const explained = missing && (e.code === "reader_session_missing" || e.code === "reader_transcript_missing");
+        setReaderNote(explained ? e.message : null);
+        setUnidentified(missing && e.code === "reader_session_missing");
         setLogError(missing ? null : {
           message: e instanceof Error ? e.message : "The conversation could not be loaded.",
           unreachable: e instanceof UnreachableError,
@@ -1094,7 +1138,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           {logError ? (
             <>
               <Text style={styles.dim}>The conversation could not be loaded.</Text>
-              <Text style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
+              <Text selectable style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
               <Pressable accessibilityRole="button" style={styles.ghost} onPress={retryLog}>
                 <Text style={styles.ghostText}>Try again</Text>
               </Pressable>
@@ -1104,10 +1148,18 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
               <Text style={styles.dim}>
                 Nothing to read yet.
               </Text>
-              <Text style={styles.dim}>
-                A readable conversation is not available yet. You can follow this
-                agent in Screen.
+              <Text selectable style={styles.dim}>
+                {readerNote ?? "A readable conversation is not available yet. You can follow this agent in Screen."}
               </Text>
+              {unidentified && canChoose && (
+                <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setChoosing(true)}>
+                  <Text style={styles.ghostText}>Choose the conversation</Text>
+                </Pressable>
+              )}
+              {/* An older computer says only 404, and does not set up herdr's integration itself. */}
+              {!readerNote && pane?.agent === "claude" && <Text selectable style={styles.dim}>
+                If Claude already has messages, updating Shahi on the computer lets Reader find its conversations.
+              </Text>}
             </>
           )}
           <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>
@@ -1118,6 +1170,14 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         <View style={styles.body}>
         {/* The conversation stays, and says why it stopped updating. An
             outage is already said by the connection banner above, once. */}
+        {view === "reader" && chosen && canChoose && (
+          <View style={styles.logNotice}>
+            <Text style={styles.logNoticeText}>You chose this conversation.</Text>
+            <Pressable accessibilityRole="button" style={styles.logRetry} onPress={() => setChoosing(true)}>
+              <Text style={styles.ghostText}>Choose another</Text>
+            </Pressable>
+          </View>
+        )}
         {view === "reader" && logError && !(logError.unreachable && link !== "live") && (
           <View style={styles.logNotice}>
             <Text style={styles.logNoticeText} accessibilityRole="alert">{logError.message}</Text>
@@ -1310,6 +1370,10 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       )}
 
       {viewing && <FileView file={viewing} onClose={() => setViewing(null)} />}
+      {choosing && (
+        <ConversationPicker paneId={paneId} instanceId={pane?.instanceId}
+          onChosen={() => { setChoosing(false); retryLog(); }} onClose={() => setChoosing(false)} />
+      )}
 
       <View style={styles.compose}>
         {(savedDraft.attachments ?? []).filter(path => draft.includes(path)).map(path => (
