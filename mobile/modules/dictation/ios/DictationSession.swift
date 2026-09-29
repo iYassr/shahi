@@ -128,7 +128,9 @@ import UIKit
         await self?.stopOnItsOwn(id, reason: "limit")
       }
     } catch {
-      await discard()
+      // A cancelled permission/prepare request may resume after another
+      // conversation has started recording. Only clean up this request's lease.
+      if lease == id { await discard() }
       throw error is CancellationError ? DictationFailure(message: "Dictation was cancelled.") : error
     }
   }
@@ -138,7 +140,7 @@ import UIKit
     guard lease == id, let live else { throw DictationFailure(message: "There is no dictation to finish.") }
     stopAudio()
     self.live = nil
-    defer { lease = nil }
+    defer { if lease == id { lease = nil } }
     do { return try await live.finish() }
     catch { throw DictationFailure(message: "What you said could not be transcribed. Please try again.") }
   }
@@ -174,7 +176,7 @@ import UIKit
   }
 
   private func check(_ id: String) throws {
-    guard lease == id else { throw CancellationError() }
+    guard lease == id, UIApplication.shared.applicationState != .background else { throw CancellationError() }
   }
 
   private var unavailable: DictationFailure {
