@@ -1340,3 +1340,18 @@ disclosure state even when it reuses message IDs. A busy-to-finished transition
 collapses activity once; the user can reopen it afterward. One current activity
 status replaces the duplicate working footer. Unknown tools get neutral status,
 never guessed prose or fabricated results.
+
+## Dictation, September 29
+
+`docs/voice-input.md` is the design and its measurements. Dictation uses only
+Apple's SpeechTranscriber (iOS 26), streamed live from the microphone; an
+iPhone that cannot run it gets no microphone button. Do not add a fallback
+engine, DictationTranscriber or a downloaded model without new measurements:
+the older Apple model measured several times the error rate, and the Whisper
+build downloaded 191 MB for worse accuracy and no live text. SpeechTranscriber
+accepts no custom vocabulary. `fastResults` is on (first live words 4.1 s → 1.0 s,
+final text unchanged, `modules/dictation/tests/run.sh`). Everything that ends a
+dictation keeps its words in the draft (interruptions, background, the time
+limit, leaving the screen); nothing sends. Audio is never written to disk.
+`LiveTranscription.swift` stays platform-neutral so the Mac harness drives the
+real engine; iOS audio lives in `DictationSession.swift`.

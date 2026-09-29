@@ -1,4 +1,4 @@
-import { clearNativeDrafts } from "@/lib/drafts";
+import { clearNativeDrafts, forgetNativeDraft } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor, within } from "@testing-library/react-native";
 import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
@@ -83,11 +83,29 @@ jest.mock("@/lib/api", () => {
   };
 });
 
+// Dictation's native module (mobile/src/lib/dictation.ts): absent unless a test
+// says the iPhone runs Apple's model, as every other test here assumes.
+const mockDictation = { available: false, listeners: new Set<(event: { id: string; kind: string }) => void>(), finish: jest.fn(async (_id: string) => "Ship it after the tests pass.") };
+jest.mock("@/lib/dictation", () => ({
+  ...jest.requireActual("@/lib/dictation"),
+  dictation: {
+    availability: async () => ({ available: mockDictation.available, installed: true }),
+    install: async () => {},
+    start: async () => {},
+    finish: (id: string) => mockDictation.finish(id),
+    cancel: async () => {},
+    listen: (listener: (event: { id: string; kind: string }) => void) => {
+      mockDictation.listeners.add(listener);
+      return { remove: () => { mockDictation.listeners.delete(listener); } };
+    },
+  },
+}));
+
 // Neither the native header nor the keyboard exists here, and the screen
 // options are set on a navigator this test does not mount. The last options
 // are kept, so a test can draw the header's title on its own.
 const mockStackOptions: { current: { headerTitle?: () => React.ReactElement } | null } = { current: null };
-jest.mock("expo-router", () => ({ Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
+jest.mock("expo-router", () => ({ useIsFocused: () => true, Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
@@ -449,12 +467,31 @@ describe("loading", () => {
     connection.cookie = "computer-a";
     const pending = deferred<never>();
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hello")]));
-    mocked[route].mockReturnValue(pending.promise);
+    // Only computer A's first request is late. A render after the switch
+    // (dictation's availability check is one) loads again for computer B, and
+    // handing that request A's promise too made B's own call look like A's.
+    mocked[route].mockReturnValueOnce(pending.promise);
     const view = render(<Pane paneId={PANE} />);
     connection.cookie = "computer-b";
     await act(async () => { pending.reject(new UnauthorizedError()); });
     expect(mockSession.unauthorized).not.toHaveBeenCalled();
     view.unmount(); connection.cookie = previous;
+  });
+
+  test("dictating a reply puts the words in this conversation's reply box and sends nothing", async () => {
+    mockDictation.available = true;
+    try {
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Ready when you are.")]));
+      const view = render(<Pane paneId={PANE} />);
+      fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "Looks good.");
+      fireEvent.press(await view.findByLabelText("Dictate"));
+      await view.findByText(/Listening/);
+      await act(async () => { fireEvent.press(view.getByLabelText("Add to reply")); });
+      expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("Looks good. Ship it after the tests pass.");
+      expect(mocked.send).not.toHaveBeenCalled();
+    } finally {
+      mockDictation.available = false;
+    }
   });
 
   test("no transcript yet keeps polling rather than latching", async () => {
@@ -2181,4 +2218,21 @@ describe("grouped Reader activity", () => {
     expect(view.queryByText("private-command-0")).toBeNull();
     expect(view.UNSAFE_getByType(FlatList).props.data.map((row: { id: string }) => row.id).slice(0, 2)).toEqual(["request", "response"]);
   });
+});
+
+test("a replaced occupant never receives the previous agent's late dictation", async () => {
+  mockDictation.available = true;
+  const finishing = deferred<string>();
+  mockDictation.finish.mockReturnValueOnce(finishing.promise);
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("voice-occupant", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    const mic = await view.findByLabelText("Dictate");
+    await act(async () => fireEvent.press(mic));
+    await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+    act(() => forgetNativeDraft(api, PANE));
+    await act(async () => finishing.resolve("Old occupant's dictated command."));
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+    expect(mocked.send).not.toHaveBeenCalled();
+  } finally { mockDictation.available = false; }
 });

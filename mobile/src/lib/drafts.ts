@@ -1,5 +1,7 @@
 /** ComputerSession owns its API identity, so equal pane IDs cannot share a draft. */
 export interface NativeDraft {
+  /** Invalidates late dictation when this pane's occupant is replaced. */
+  generation: number;
   inFlight: boolean;
   listeners: Set<() => void>;
   text: string;
@@ -20,7 +22,7 @@ export function nativeDraft(owner: object, pane: string): NativeDraft {
     // the first entry the least recently used one.
     drafts.delete(pane);
   } else {
-    draft = { text: "", pending: null, inFlight: false, listeners: new Set() };
+    draft = { generation: 0, text: "", pending: null, inFlight: false, listeners: new Set() };
     // A loop, so a scope that grew past the limit while sends were uncertain
     // shrinks back once they settle.
     while (drafts.size >= LIMIT && evictOne(drafts));
@@ -66,7 +68,9 @@ export function clearNativeDrafts(owner: object) { scopes.delete(owner); }
  */
 export function forgetNativeDraft(owner: object, pane: string) {
   const draft = scopes.get(owner)?.get(pane);
-  if (!draft || (!draft.text && !draft.pending)) return;
+  if (!draft) return;
+  draft.generation++;
+  if (!draft.text && !draft.pending) return;
   draft.text = "";
   draft.attachments = [];
   draft.pending = null;
