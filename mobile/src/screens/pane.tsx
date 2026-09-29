@@ -30,7 +30,7 @@ import {
   type NativeScrollEvent,
 } from "react-native";
 import { Text, useLargeText } from "@/components/text";
-import { router, Stack } from "expo-router";
+import { router, Stack, useIsFocused } from "expo-router";
 import { randomUUID } from "expo-crypto";
 // The deep path is deliberate: SDK 57's expo-router vendors react-navigation
 // wholesale, so a separately installed @react-navigation/elements would carry
@@ -280,8 +280,15 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     return () => { savedDraft.listeners.delete(update); };
   }, [savedDraft]);
   const [attaching, setAttaching] = useState(false);
-  // Written through the draft store, so words said while leaving still land here.
-  const voice = useDictation((text) => setDraft((d) => appendDictation(d, text)));
+  const focused = useIsFocused();
+  const draftGeneration = savedDraft.generation;
+  // A detached dictation can finish into its original draft, but never into
+  // a replacement occupant or a revoked computer's cleared store.
+  const voice = useDictation((text) => {
+    if (savedDraft.generation !== draftGeneration || nativeDraft(api, paneId) !== savedDraft) return;
+    savedDraft.text = appendDictation(savedDraft.text, text);
+    notifyNativeDraft(savedDraft);
+  }, { active: focused && !gone, owner: savedDraft });
   const [screen, setScreen] = useState<string | null>(null);
   /**
    * Reader or raw screen.

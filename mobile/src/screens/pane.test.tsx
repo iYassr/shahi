@@ -1,4 +1,4 @@
-import { clearNativeDrafts } from "@/lib/drafts";
+import { clearNativeDrafts, forgetNativeDraft } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor, within } from "@testing-library/react-native";
 import { Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
@@ -105,7 +105,7 @@ jest.mock("@/lib/dictation", () => ({
 // options are set on a navigator this test does not mount. The last options
 // are kept, so a test can draw the header's title on its own.
 const mockStackOptions: { current: { headerTitle?: () => React.ReactElement } | null } = { current: null };
-jest.mock("expo-router", () => ({ Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
+jest.mock("expo-router", () => ({ useIsFocused: () => true, Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
@@ -2218,4 +2218,21 @@ describe("grouped Reader activity", () => {
     expect(view.queryByText("private-command-0")).toBeNull();
     expect(view.UNSAFE_getByType(FlatList).props.data.map((row: { id: string }) => row.id).slice(0, 2)).toEqual(["request", "response"]);
   });
+});
+
+test("a replaced occupant never receives the previous agent's late dictation", async () => {
+  mockDictation.available = true;
+  const finishing = deferred<string>();
+  mockDictation.finish.mockReturnValueOnce(finishing.promise);
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("voice-occupant", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    const mic = await view.findByLabelText("Dictate");
+    await act(async () => fireEvent.press(mic));
+    await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+    act(() => forgetNativeDraft(api, PANE));
+    await act(async () => finishing.resolve("Old occupant's dictated command."));
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
+    expect(mocked.send).not.toHaveBeenCalled();
+  } finally { mockDictation.available = false; }
 });
