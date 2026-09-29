@@ -27,6 +27,38 @@
   color: var(--muted);
 }
 
+/* A conversation herdr cannot identify, chosen by the person (ConversationPicker). */
+.reader__chosen { margin: 8px 0; color: var(--muted); font-size: 13px; }
+.choices { padding: 8px 0 16px; }
+.choices h3 { margin: 8px 0 4px; color: var(--text); font-size: 16px; }
+.choices p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.choices__list { list-style: none; margin: 8px 0 12px; padding: 0; }
+.choices__item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: left;
+  color: var(--text);
+}
+.choices__item:disabled { opacity: 0.6; }
+.choices__title { font-size: 14px; overflow-wrap: anywhere; }
+.choices__likely {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--working);
+}
+.choices__last { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.choices__when { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
 .msg {
   padding: 12px 0;
   border-bottom: 1px solid var(--line);
