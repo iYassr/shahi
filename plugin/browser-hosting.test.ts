@@ -32,7 +32,7 @@ describe("hosted browser cache boundary", () => {
     const pwa = headers.split(/\n\n/).find((block) => block.startsWith("/pwa/*\n"))!;
     expect(global).toContain("Cache-Control: public, no-transform");
     expect(pwa).toContain("script-src 'self';");
-    expect(pwa).toContain("connect-src 'self' wss:;");
+    expect(pwa).toContain("connect-src 'self' wss: https://o4512164542873600.ingest.de.sentry.io;");
   });
 
   test("never intercepts API, queries, authenticated requests or another app", () => {
