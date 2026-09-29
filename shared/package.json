@@ -14,7 +14,10 @@
     "./brand": "./src/brand.ts",
     "./artwork-notices": "./src/artwork-notices.ts",
     "./file-download": "./src/file-download.ts",
-    "./file-upload": "./src/file-upload.ts"
+    "./file-upload": "./src/file-upload.ts",
+    "./diagnostics": "./src/diagnostics.ts",
+    "./diagnostics-config": "./src/diagnostics-config.ts",
+    "./client-update": "./src/client-update.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",
