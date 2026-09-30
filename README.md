@@ -114,11 +114,21 @@ a uniquely identified process-owned transcript. They never select another
 conversation just because it shares a folder. Use Screen mode for other agents
 or output Reader cannot format.
 
-For OpenCode, run `herdr integration install opencode` on the computer and start
-or resume your session inside herdr. At OpenCode's empty home screen, its
-integration retains the previous session until the first prompt in a new one.
-For Codex, `herdr integration install codex` also keeps Reader available after
-the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
+Readers identify a conversation by the session id its agent reports through
+herdr's integration for that agent. Shahi's computer service installs the
+integration for each of these agents it finds on the computer, and updates
+outdated ones, whenever it starts: every herdr start and every update. It edits
+only what herdr's own
+`herdr integration install` edits (for Claude, a hook in `~/.claude/settings.json`),
+and an integration you remove stays removed. A Claude conversation that was
+already running when its integration was installed cannot report itself, so
+Reader asks you to choose it from the conversations saved for its folder; the
+choice lasts until that Claude exits. See [Reader troubleshooting](docs/reader-troubleshooting.md)
+if messages are missing.
+
+At OpenCode's empty home screen, its integration retains the previous session
+until the first prompt in a new one. The Codex integration also keeps Reader
+available after the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
 for tested versions and further limits.
 
 ## Quick start
@@ -381,7 +391,9 @@ browser app includes trusting its published code.
 It explains pairing, encryption, credential storage, metadata, revocation, and
 what the published security reviews do—and do not—establish. The project has
 not had an independent security audit. For data collection
-and retention, read the [privacy policy](docs/privacy-policy.md). Report security
+and retention, read the [privacy policy](docs/privacy-policy.md). Optional Sentry
+crash and Reader diagnostics can be disabled with **Share diagnostics** in
+Settings; reports exclude conversations, terminal text and credentials. Report security
 issues through [SECURITY.md](SECURITY.md).
 
 ## FAQ

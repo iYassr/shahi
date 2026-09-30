@@ -18,6 +18,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { reportRenderError } from "../diagnostics";
 
 interface Props {
   children: ReactNode;
@@ -59,6 +60,7 @@ class Catch extends Component<Props & { place: string; onHome: () => void }, Sta
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
+    reportRenderError(error);
     // Kept for the screen rather than only the console: the owner reads this on
     // a phone, where there is no console to open.
     this.setState({ where: info.componentStack?.split("\n").slice(1, 4).join("\n") ?? null, at: this.props.place });

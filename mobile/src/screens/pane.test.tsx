@@ -1,6 +1,6 @@
 import { clearNativeDrafts, forgetNativeDraft } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor, within } from "@testing-library/react-native";
-import { Dimensions, FlatList, StyleSheet, View } from "react-native";
+import { AppState, Dimensions, FlatList, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
@@ -29,6 +29,8 @@ jest.setTimeout(30_000);
  */
 
 const PANE = "w1:p1";
+const mockDiagnostics = { enabled: false, report: jest.fn() };
+jest.mock("@/lib/diagnostics", () => ({ diagnosticsEnabled: () => mockDiagnostics.enabled, reportReaderIncident: (...args: unknown[]) => mockDiagnostics.report(...args) }));
 
 /*
  * `mock`-prefixed on purpose: jest hoists `jest.mock` above the imports, so
@@ -44,6 +46,8 @@ const mockSession = {
   terminalWidth: 100,
   watch: jest.fn(),
   unauthorized: jest.fn(),
+  /** No handshake, as from a computer before control-v1: every additive capability but updates. */
+  control: undefined as { handshake: unknown; refresh: () => void } | undefined,
   onPaneFrame: (paneId: string, cb: () => void) => {
     let set = mockFrameListeners.get(paneId);
     if (!set) {
@@ -79,6 +83,8 @@ jest.mock("@/lib/api", () => {
       dirs: jest.fn(),
       answerPrompt: jest.fn(),
       transcriptImage: jest.fn(),
+      conversationChoices: jest.fn(),
+      chooseConversation: jest.fn(),
     },
   };
 });
@@ -105,7 +111,11 @@ jest.mock("@/lib/dictation", () => ({
 // options are set on a navigator this test does not mount. The last options
 // are kept, so a test can draw the header's title on its own.
 const mockStackOptions: { current: { headerTitle?: () => React.ReactElement } | null } = { current: null };
-jest.mock("expo-router", () => ({ useIsFocused: () => true, Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } } }));
+jest.mock("expo-router", () => ({
+  useIsFocused: () => true,
+  useFocusEffect: (effect: () => void) => require("react").useEffect(effect, [effect]),
+  Stack: { Screen: ({ options }: { options: never }) => { mockStackOptions.current = options; return null; } },
+}));
 jest.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 0 }));
 jest.mock("@/lib/keyboard", () => ({ useKeyboardHeight: () => 0 }));
 
@@ -115,6 +125,8 @@ const mocked = api as unknown as {
   send: jest.Mock;
   sendKeys: jest.Mock;
   transcriptImage: jest.Mock;
+  conversationChoices: jest.Mock;
+  chooseConversation: jest.Mock;
 };
 
 /** What the socket does when the server says this pane has something new. */
@@ -166,6 +178,8 @@ const noTranscript = () => new ApiError("no transcript for this pane", 404);
 const tooLarge = () => new ApiError("This conversation’s latest messages are too large to send through the relay.", 413);
 
 beforeEach(() => {
+  mockDiagnostics.enabled = false;
+  mockDiagnostics.report.mockReset();
   clearNativeDrafts(api);
   // The reader remembers each computer's conversations for the life of the
   // process, so a test starts from a pane this computer has never shown.
@@ -502,6 +516,7 @@ describe("loading", () => {
 
     const view = render(<Pane paneId={PANE} />);
     await view.findByText("Nothing to read yet.");
+    expect(view.getByText(/updating Shahi on the computer/)).toBeTruthy();
     expect(mockSession.unauthorized).not.toHaveBeenCalled();
     expect(mocked.sessionLog).toHaveBeenCalledTimes(1);
 
@@ -512,6 +527,64 @@ describe("loading", () => {
     await view.findByText(/First words\./);
     expect(view.queryByText("Nothing to read yet.")).toBeNull();
     expect(mocked.sessionLog.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Every new Claude conversation is `reader_transcript_missing` until its
+  // first message. An error with Try again and a folder to check made the
+  // normal first state of each one look broken.
+  test.each([
+    ["reader_transcript_missing", "Claude has not saved any messages in this conversation yet."],
+    ["reader_session_missing", "Shahi has not been told which Claude conversation this is. Claude says so when a conversation starts, so this one becomes readable the next time it starts in herdr."],
+  ])("a Claude conversation with nothing to read yet (%s) waits, rather than failing, and fills in by itself", async (code, words) => {
+    mocked.sessionLog.mockRejectedValueOnce(new ApiError(words, 404, code))
+      .mockResolvedValue(log([said("recovered", "agent", "Conversation restored.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(words);
+    expect(view.getByText("Nothing to read yet.")).toBeTruthy();
+    expect(view.queryByText("The conversation could not be loaded.")).toBeNull();
+    expect(view.queryByText("Try again")).toBeNull();
+    expect(view.queryByText(/updating Shahi on the computer/)).toBeNull();
+    await act(async () => { jest.advanceTimersByTime(3_000); });
+    await view.findByText(/Conversation restored\./);
+    expect(view.queryByText(words)).toBeNull();
+  });
+
+  // The TestFlight report: an existing Claude conversation that started before
+  // herdr's integration was installed reports no session, and Read was empty.
+  test("an existing Claude conversation herdr cannot identify is read once the person chooses it", async () => {
+    const said404 = "Shahi has not been told which Claude conversation this is. Claude says so when a conversation starts, so this one becomes readable the next time it starts in herdr.";
+    mocked.sessionLog.mockRejectedValue(new ApiError(said404, 404, "reader_session_missing"));
+    mocked.conversationChoices.mockResolvedValue({ choices: [
+      { sessionId: "11111111-1111-4111-8111-111111111111", firstPrompt: "Fix the flaky test", lastMessage: "Fixed it.", updatedAt: Date.now() - 60_000, likely: false },
+      { sessionId: "22222222-2222-4222-8222-222222222222", firstPrompt: "Summarise the quarterly report", lastMessage: "Here is the summary.", updatedAt: Date.now() - 3_600_000, likely: true },
+    ] });
+    mocked.chooseConversation.mockImplementation(async () => {
+      mocked.sessionLog.mockResolvedValue({ ...log([said("existing", "agent", "Here is the summary.")]), chosen: true });
+      return { ok: true };
+    });
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(said404);
+    fireEvent.press(view.getByText("Choose the conversation"));
+    await view.findByText("Summarise the quarterly report");
+    expect(view.getByText("Likely")).toBeTruthy();
+    await act(async () => { fireEvent.press(view.getByText("Summarise the quarterly report")); });
+    expect(mocked.chooseConversation).toHaveBeenCalledWith(PANE, "22222222-2222-4222-8222-222222222222", undefined);
+    await view.findByText(/Here is the summary./);
+    expect(view.getByText("You chose this conversation.")).toBeTruthy();
+    expect(view.getByText("Choose another")).toBeTruthy();
+    expect(view.queryByText("Which conversation is this?")).toBeNull();
+  });
+
+  test("a computer that cannot record a choice offers none", async () => {
+    mockSession.control = { handshake: { control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities: ["sessions"], backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: false, channel: "stable", phase: "idle", current: "0.3.14" } }, refresh: jest.fn() };
+    try {
+      mocked.sessionLog.mockRejectedValue(new ApiError("Shahi has not been told which Claude conversation this is.", 404, "reader_session_missing"));
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByText("Shahi has not been told which Claude conversation this is.");
+      expect(view.queryByText("Choose the conversation")).toBeNull();
+    } finally {
+      mockSession.control = undefined;
+    }
   });
 
   // One ~800 KB message among the last sixty put the window over the relay's
@@ -2217,6 +2290,41 @@ describe("grouped Reader activity", () => {
     expect(view.getByRole("button", { name: "Activity · 20 steps" })).toBeTruthy();
     expect(view.queryByText("private-command-0")).toBeNull();
     expect(view.UNSAFE_getByType(FlatList).props.data.map((row: { id: string }) => row.id).slice(0, 2)).toEqual(["request", "response"]);
+  });
+});
+
+
+describe("Reader incident reporting", () => {
+  const priorAppState = AppState.currentState;
+  afterEach(() => { Object.defineProperty(AppState, "currentState", { configurable: true, value: priorAppState }); mockSession.session.panes[0]!.agent = "claude"; mockSession.link = "live"; });
+  async function poll() { await act(async () => { jest.advanceTimersByTime(3_000); }); }
+  test.each(["claude", "codex", "cursor", "antigravity", "opencode"])("%s reports one persistent loss of existing history, then one recovery", async agent => {
+    mockDiagnostics.enabled = true;
+    Object.defineProperty(AppState, "currentState", { configurable: true, value: "active" });
+    mockSession.session.panes[0]!.agent = agent;
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Synthetic previous reply")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("Synthetic previous reply");
+    mocked.sessionLog.mockRejectedValue(noTranscript());
+    for (let i=0;i<16;i++) await poll();
+    expect(mockDiagnostics.report).toHaveBeenCalledTimes(1);
+    expect(mockDiagnostics.report.mock.calls[0]![0]).toMatchObject({ provider: agent, reason: "reader_unavailable", recovered: false });
+    expect(view.getByText("Synthetic previous reply")).toBeTruthy();
+    mocked.sessionLog.mockResolvedValue(log([said("a2", "agent", "Synthetic recovered reply")]));
+    await poll();
+    expect(mockDiagnostics.report).toHaveBeenCalledTimes(2);
+    expect(mockDiagnostics.report.mock.calls[1]![0]).toMatchObject({ provider: agent, recovered: true });
+    view.unmount();
+  });
+  test.each(["new conversation", "diagnostics off", "background", "offline"])("%s does not report an incident", async condition => {
+    mockDiagnostics.enabled = condition !== "diagnostics off";
+    Object.defineProperty(AppState, "currentState", { configurable: true, value: condition === "background" ? "background" : "active" });
+    if(condition === "offline") mockSession.link = "reconnecting";
+    mocked.sessionLog.mockRejectedValue(condition === "new conversation" ? noTranscript() : tooLarge());
+    const view = render(<Pane paneId={PANE} />);
+    for (let i=0;i<16;i++) await poll();
+    expect(mockDiagnostics.report).not.toHaveBeenCalled();
+    view.unmount();
   });
 });
 

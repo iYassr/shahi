@@ -87,3 +87,39 @@ test("a pane with no conversation any more stops reopening on the dead one", asy
   expect(output()).not.toContain("A: shall I roll back prod?");
   expect(output()).toContain("Reading the conversation");
 });
+
+for (const agent of ["claude", "codex", "cursor", "antigravity", "opencode"]) {
+  test(`${agent} stays in Reader through a missing transcript and recovers on the next change`, async () => {
+    let ready = false;
+    const fallback = mock();
+    const sessionLog = mock(async () => { if (!ready) throw new ApiError("no transcript", 404); return said("Recovered conversation"); });
+    await act(async () => { view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w3:p1" agent={agent} activity={null} onUnavailable={fallback} /></ApiContext.Provider>); });
+    expect(fallback).not.toHaveBeenCalled();
+    expect(output()).toContain("saved conversation");
+    ready = true;
+    await act(async () => { window.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w3:p1" })); });
+    expect(output()).toContain("Recovered conversation");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+}
+// On a clean Linux installation Codex can briefly have no uniquely owned
+// rollout during /new. Falling back unmounts Reader, so its timer can never
+// recover and a first-run permission card vanishes with the automatic switch.
+test.each(["claude", "codex", "cursor", "opencode", "agy"])("%s keeps Reader open and recovers after a missing transcript", async (agent) => {
+  let ready = false;
+  const unavailable = mock();
+  const sessionLog = mock(async () => {
+    if (!ready) throw new ApiError("no transcript", 404);
+    return said("The new conversation is ready.");
+  });
+  await act(async () => {
+    view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w3:p1" agent={agent} activity={null} onUnavailable={unavailable} /></ApiContext.Provider>);
+  });
+  expect(unavailable).not.toHaveBeenCalled();
+  expect(output()).toContain("No saved conversation is available yet.");
+  expect(output()).not.toContain("Reading the conversation");
+  ready = true;
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  expect(output()).toContain("The new conversation is ready.");
+  expect(output()).not.toContain("No saved conversation is available yet.");
+});

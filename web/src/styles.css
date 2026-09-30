@@ -7,3 +7,10 @@
 @import "./styles/conversation.css";
 @import "./styles/interface.css";
 @import "./styles/conversation-layout.css";
+
+/* An explicit reload keeps in-memory work until the person chooses it. */
+.client-update { position: fixed; inset: 0; z-index: 2147483646; display: grid; place-items: center; overflow: auto; padding: max(24px, env(safe-area-inset-top)) 24px; background: #0e0d0b; color: #ebe4d6; }
+.client-update__card { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 16px; }
+.client-update__card h1 { font-size: 28px; line-height: 1.2; }
+.client-update__card p { line-height: 1.5; }
+.client-update__card button { min-height: 48px; border-radius: 10px; padding: 10px 16px; }

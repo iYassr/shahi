@@ -496,6 +496,19 @@ describe("findCodexRollout, by session id", () => {
     expect(await findCodexRollout(noClient, "w1:p1", null, id)).toBe(rollout);
   });
 
+  test.each(["missing", "different session"])("a %s indexed path does not hide the exact existing rollout", async kind => {
+    const exactId = kind === "missing" ? "019f9bd1-1b6b-7f33-a046-a60cce4e6470" : "019f9bd1-1b6b-7f33-a046-a60cce4e6471";
+    const exact = join(dirname(rollout), `rollout-2026-07-26T00-00-00-${exactId}.jsonl`);
+    writeFileSync(exact, "");
+    const stale = kind === "missing" ? join(dirname(rollout), `rollout-old-${exactId}.jsonl`) : rollout;
+    const db = new Database(join(home, "state_5.sqlite"));
+    db.exec("CREATE TABLE IF NOT EXISTS threads (id TEXT, cwd TEXT, rollout_path TEXT, updated_at INTEGER)");
+    db.query("INSERT INTO threads VALUES (?, ?, ?, ?)").run(exactId, "/same/project", stale, Date.now());
+    db.close();
+    const { findCodexRollout } = await load();
+    expect(await findCodexRollout(noClient, "w1:p1", null, exactId)).toBe(exact);
+  });
+
   test("a new pane never borrows an existing conversation in the same folder", async () => {
     const db = new Database(join(home, "state_5.sqlite"));
     db.exec("CREATE TABLE IF NOT EXISTS threads (id TEXT, cwd TEXT, rollout_path TEXT, updated_at INTEGER)");

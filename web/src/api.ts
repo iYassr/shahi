@@ -23,6 +23,7 @@ export type {
   Activity,
   AgentStatus,
   ClientMessage,
+  ConversationChoice,
   DashboardPane,
   DirEntry,
   DirListing,
@@ -44,6 +45,7 @@ export type {
 
 import type {
   AgentStatus,
+  ConversationChoice,
   DirListing,
   PaneFrame,
   ParsedPrompt,
@@ -230,6 +232,16 @@ const api = {
       `/api/panes/${encodeURIComponent(paneId)}/session?${query.toString()}`,
     );
   },
+
+  /** Saved Claude conversations a person may name for a pane herdr cannot identify (`conversation-choice`). */
+  conversationChoices: (paneId: string) =>
+    request<{ choices: ConversationChoice[] }>(`/api/panes/${encodeURIComponent(paneId)}/conversations`),
+
+  chooseConversation: (paneId: string, sessionId: string, instanceId?: string) =>
+    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/conversation`, {
+      sessionId,
+      ...(instanceId ? { instanceId } : {}),
+    }),
 
   transcript: (paneId: string, before?: number) =>
     request<{ paneId: string; lines: TranscriptLine[]; total: number }>(

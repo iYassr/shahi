@@ -25,6 +25,7 @@ import { theme } from "@/lib/theme";
 import { Icon, type IconName } from "@/components/icons";
 import { PairedDevices } from "@/components/paired-devices";
 import { PrivacyLinks } from "@/components/privacy-links";
+import { diagnosticsEnabled, setDiagnosticsEnabled } from "@/lib/diagnostics";
 
 const TERMINAL_WIDTHS = [60, 100, 146];
 
@@ -33,6 +34,7 @@ export function Settings() {
     useSession();
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(diagnosticsEnabled);
   // Whether notifications are on came from this screen's own memory, so every
   // relaunch read "Off" while the computer kept notifying, and "On" disabled
   // the row, leaving iOS Settings the only way to stop them (pre-release bug
@@ -212,6 +214,10 @@ export function Settings() {
         <Separator />
         <Row icon="info" tint={theme.dim} label="App" value={Constants.expoConfig?.version ?? "dev"} />
         <Separator />
+        <Row icon="activity" tint={theme.dim} label="Share diagnostics" value={diagnostics ? "On" : "Off"} checked={diagnostics}
+          hint="Help fix crashes and conversations that fail to load. Sends error categories, app versions and code locations to Sentry, without conversation text or screenshots."
+          onPress={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }} />
+        <Separator />
         <Row icon="file-text" tint={theme.dim} label="Open-source licenses" onPress={() => router.push("/licenses")} />
       </View>
 
@@ -276,6 +282,7 @@ function Row({
   value,
   hint,
   disabled,
+  checked,
   onPress,
 }: {
   icon: IconName;
@@ -285,6 +292,7 @@ function Row({
   value?: string;
   hint?: string;
   disabled?: boolean;
+  checked?: boolean;
   onPress?: () => void;
 }) {
   // At accessibility sizes the value goes under the label. Side by side, the
@@ -306,7 +314,7 @@ function Row({
   );
   if (!onPress) return <View style={styles.row}>{body}</View>;
   return (
-    <Pressable accessibilityRole="button" style={styles.row} disabled={disabled} onPress={onPress}>
+    <Pressable accessibilityRole={checked === undefined ? "button" : "switch"} accessibilityState={checked === undefined ? undefined : { checked }} style={styles.row} disabled={disabled} onPress={onPress}>
       {body}
     </Pressable>
   );

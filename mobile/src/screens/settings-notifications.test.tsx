@@ -13,7 +13,7 @@
  * faked; a "relaunch" is the screen mounting again after the session points
  * registration at the saved computer, which is what a cold launch does.
  */
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react-native";
 import * as SecureStore from "expo-secure-store";
 import type { ComputerConnection } from "@/lib/computers";
 
@@ -80,14 +80,15 @@ function launch() {
 }
 
 const row = () => screen.getByText("Notifications");
+const state = (value: string) => within(screen.getByRole("button", { name: /Notifications/ })).getByText(value);
 async function turnOn() {
   fireEvent.press(row());
-  await waitFor(() => expect(screen.getByText("On")).toBeTruthy());
+  await waitFor(() => expect(state("On")).toBeTruthy());
 }
 
 test("notifications turned on for a relay computer still read On after a relaunch", async () => {
   let ui = launch();
-  expect(screen.getByText("Off")).toBeTruthy();
+  expect(state("Off")).toBeTruthy();
   await turnOn();
   expect(mockApi.registerPush).toHaveBeenCalledWith("ExponentPushToken[phone]");
   ui.unmount();
@@ -103,13 +104,13 @@ test("notifications can be turned off from Settings, and stay off after a relaun
   await turnOn();
 
   await act(async () => { fireEvent.press(row()); });
-  await waitFor(() => expect(screen.getByText("Off")).toBeTruthy());
+  await waitFor(() => expect(state("Off")).toBeTruthy());
   expect(mockApi.unregisterPush).toHaveBeenCalledWith("ExponentPushToken[phone]");
   ui.unmount();
 
   ui = launch();
   await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
-  expect(screen.getByText("Off")).toBeTruthy();
+  expect(state("Off")).toBeTruthy();
   ui.unmount();
 });
 
@@ -120,7 +121,7 @@ test("a turn-off the computer never heard about still reads On, and says why", a
 
   await act(async () => { fireEvent.press(row()); });
   await waitFor(() => expect(screen.getByText(/^Still on\./)).toBeTruthy());
-  expect(screen.getByText("On")).toBeTruthy();
+  expect(state("On")).toBeTruthy();
   ui.unmount();
 });
 
@@ -133,6 +134,6 @@ test("a saved registration with the permission withdrawn reads Off", async () =>
   (Notifications.getPermissionsAsync as jest.Mock).mockImplementation(async () => ({ granted: false }));
   ui = launch();
   await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
-  expect(screen.getByText("Off")).toBeTruthy();
+  expect(state("Off")).toBeTruthy();
   ui.unmount();
 });

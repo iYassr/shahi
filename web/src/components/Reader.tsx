@@ -20,6 +20,10 @@ import { ApiError, useApi, type Activity, type LogBlock, type LogMessage, type S
 import { forgetReaderPlace, readerWasAway, useReaderScroll } from "../reader-scroll";
 import { FileView } from "./FileView";
 import { Markdown } from "./Markdown";
+import { ReaderHealth, readerFailure, readerProvider } from "@shahi/shared/diagnostics";
+import { diagnosticsEnabled, reportReaderIncident } from "../diagnostics";
+import { hosted } from "../connection";
+import { ConversationPicker } from "./ConversationPicker";
 
 /** How often to pull while the tab is open. The server caches on file size. */
 const POLL_MS = 2_500;
@@ -91,6 +95,14 @@ interface Props {
   activity: Activity | null;
   /** Called when this pane has no transcript, so the caller can fall back. */
   onUnavailable: () => void;
+  connected?: boolean;
+  historyKnown?: boolean;
+  computerVersion?: string;
+  herdrVersion?: string;
+  /** The computer can list and record a person's choice of conversation (`conversation-choice`). */
+  canChoose?: boolean;
+  /** Who holds the pane (`DashboardPane.instanceId`), so a choice cannot land on the next occupant. */
+  instanceId?: string;
 }
 
 /**
@@ -124,14 +136,31 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
-export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) {
+export function Reader({ paneId, agent, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId }: Props) {
   const api = useApi();
+  const diagnosticContext = useRef({ agent, connected, historyKnown, computerVersion, herdrVersion });
+  diagnosticContext.current = { agent, connected, historyKnown, computerVersion, herdrVersion };
+  const readerHealth = useRef<ReaderHealth | null>(null);
+  readerHealth.current ??= new ReaderHealth(incident => reportReaderIncident(incident, { ...diagnosticContext.current, transport: hosted ? "relay" : "direct" }));
+  useEffect(() => { readerHealth.current?.reset(); }, [paneId, agent, connected]);
+  useEffect(() => {
+    const reset = () => { if (document.hidden) readerHealth.current?.reset(); };
+    document.addEventListener("visibilitychange", reset);
+    return () => document.removeEventListener("visibilitychange", reset);
+  }, []);
   const mounted = useRef(true);
   const generation = useRef(memoryGeneration);
   const active = () => mounted.current && generation.current === memoryGeneration;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [messages, setMessages] = useState<LogMessage[]>(() => remembered.get(paneId) ?? []);
   const [error, setError] = useState("");
+  /** Why there is nothing to read yet, when that is all it is. */
+  const [notice, setNotice] = useState("");
+  /** herdr cannot say which conversation this is, and the person may (ConversationPicker). */
+  const [unidentified, setUnidentified] = useState(false);
+  /** What is shown is the conversation the person chose, not one Claude reported. */
+  const [chosen, setChosen] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [offset, setOffset] = useState(() => rememberedOffsets.get(paneId) ?? 0);
   const busy = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -218,6 +247,9 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
         reading.goLatest();
       }
       setError("");
+      setNotice("");
+      setUnidentified(false);
+      setChosen(!!log.chosen);
 
       // And nothing re-renders unless something actually changed. A quiet
       // session polled every 2.5s otherwise rebuilt the entire conversation on
@@ -239,12 +271,32 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       knownTotal.current = log.total;
 
       setLoading(false);
+      const d = diagnosticContext.current;
+      readerHealth.current?.observe(readerProvider(d.agent), log.messages.length === 0 && (d.historyKnown || held > 0) && !switched ? "empty_result" : null,
+        d.connected && diagnosticsEnabled() && !document.hidden);
     } catch (err) {
       if (!active()) return;
-      if (err instanceof ApiError && err.status === 404) { forgetReaderMemory(paneId); onUnavailable(); }
-      else { setError(err instanceof Error ? err.message : "Could not read conversation"); setLoading(false); }
+      const d = diagnosticContext.current;
+      const missing = err instanceof ApiError && err.status === 404;
+      const failure = readerFailure(err instanceof ApiError ? err.status : undefined, err instanceof ApiError ? err.code : undefined);
+      readerHealth.current?.observe(readerProvider(d.agent), failure,
+        !!failure && (!missing || d.historyKnown || shown.current.length > 0) && d.connected && diagnosticsEnabled() && !document.hidden && err instanceof ApiError);
+      const explained = missing && (err.code === "reader_session_missing" || err.code === "reader_transcript_missing");
+      if (missing && !explained && !readerProvider(agent)) { forgetReaderMemory(paneId); onUnavailable(); }
+      else {
+        // A new conversation (or Codex switching /new without hooks) may not
+        // have a uniquely owned transcript yet. Keep polling: switching to
+        // Screen unmounts Reader and prevents it from ever recovering.
+        const waiting = "No saved conversation is available yet.";
+        setNotice(!missing ? "" : explained ? err.message : agent === "claude"
+          ? `${waiting} If Claude already has messages, updating Shahi on the computer lets Reader find its conversations.`
+          : `${waiting} Reader will update when this agent saves its conversation.`);
+        setError(missing ? "" : err instanceof Error ? err.message : "Could not read conversation");
+        setUnidentified(missing && err.code === "reader_session_missing");
+        setLoading(false);
+      }
     } finally { busy.current = false; }
-  }, [paneId, onUnavailable]);
+  }, [paneId, agent, onUnavailable]);
 
   // Starting on a different pane is the only reason to throw away what is on
   // screen. Deliberately not part of the polling effect below: tying them
@@ -322,6 +374,19 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable }: Props) 
       onScroll={reading.onScroll}
     >
       {error && <p role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
+      {choosing ? (
+        <ConversationPicker paneId={paneId} instanceId={instanceId} onChosen={() => { setChoosing(false); void load(); }} onCancel={() => setChoosing(false)} />
+      ) : (
+        <>
+          {notice && !error && <p role="status">{notice}</p>}
+          {canChoose && (unidentified || chosen) && (
+            <p className="reader__chosen">
+              {chosen && "You chose this conversation. "}
+              <button className="empty__action" onClick={() => setChoosing(true)}>{chosen ? "Choose another" : "Choose the conversation"}</button>
+            </p>
+          )}
+        </>
+      )}
       {hasOlder && (
         <button className="reader__more" onClick={() => void loadOlder()} disabled={loadingOlder}>
           {loadingOlder ? "Loading…" : `Load earlier (${offset} more)`}

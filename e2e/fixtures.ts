@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test as base, expect } from "@playwright/test";
+import { parseEnvelope, type Envelope } from "@sentry/core";
+import { SENTRY_WEB_DSN } from "../shared/src/diagnostics-config";
 
 /**
  * A fuse, after a test suite typed into somebody's live agents.
@@ -21,6 +23,7 @@ import { test as base, expect } from "@playwright/test";
 const WRITES = /\/api\//;
 
 const FALLBACK_URL = "http://127.0.0.1:7272";
+const diagnostics = new URL(SENTRY_WEB_DSN);
 
 /**
  * Why the stub is checked for a pulse around every test.
@@ -64,7 +67,13 @@ function serverGone(): string | null {
   }
 }
 
-export const test = base.extend<{ serverAlive: void; freshStub: void; noStrayWrites: void }>({
+export const test = base.extend<{
+  serverAlive: void;
+  freshStub: void;
+  noStrayWrites: void;
+  diagnosticEnvelopes: Envelope[];
+}>({
+  diagnosticEnvelopes: async ({}, use) => { await use([]); },
   serverAlive: [
     async ({ baseURL }, use, testInfo) => {
       const url = baseURL ?? FALLBACK_URL;
@@ -124,7 +133,7 @@ export const test = base.extend<{ serverAlive: void; freshStub: void; noStrayWri
     { auto: true },
   ],
   noStrayWrites: [
-    async ({ context, baseURL }, use) => {
+    async ({ context, baseURL, diagnosticEnvelopes }, use) => {
       const escaped: string[] = [];
       const safe = new URL(baseURL ?? "http://127.0.0.1:7272").host;
 
@@ -137,6 +146,18 @@ export const test = base.extend<{ serverAlive: void; freshStub: void; noStrayWri
         // performing them, which is the whole point of running against it.
         if (target.host === safe) {
           await route.continue();
+          return;
+        }
+
+        // The deliberate render failure exercises the real production SDK.
+        // Capture its wire payload here: sending synthetic incidents to the
+        // production project pollutes diagnostics and consumes its free quota.
+        // Every other external write still trips the fuse below.
+        if (request.method() === "POST" && target.origin === diagnostics.origin &&
+            target.pathname === `/api${diagnostics.pathname}/envelope/` &&
+            target.searchParams.get("sentry_key") === diagnostics.username) {
+          diagnosticEnvelopes.push(parseEnvelope(request.postDataBuffer() ?? new Uint8Array()));
+          await route.fulfill({ json: {}, headers: { "access-control-allow-origin": "*" } });
           return;
         }
 

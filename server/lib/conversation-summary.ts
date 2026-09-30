@@ -16,6 +16,7 @@ import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log"
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
 import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
+import { choiceHeld, chosenSession } from "./claude-choice";
 import { fitPage } from "./session-window";
 import type { TranscriptWatchSource } from "./transcript-watch";
 
@@ -46,7 +47,8 @@ const sourceKey = (source: TranscriptSource): string => typeof source === "strin
 const locations = new Map<string, { key: string; at: number; source: Promise<TranscriptSource | null> }>();
 const LOCATION_MAX_AGE_MS = 15_000;
 
-const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane), pane.agent_status]);
+// A person's choice counts as a session here, so choosing one is looked up at once.
+const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane.pane_id), pane.agent_status]);
 
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
 export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource | null> {
@@ -56,9 +58,15 @@ export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promi
     : pane.agent === "codex" ? (client ? findCodexRollout(client, pane.pane_id, pane.cwd ?? null, id) : Promise.resolve(null))
     : pane.agent === "agy" ? (client ? antigravityTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
     : pane.agent === "opencode" ? (id ? findOpenCodeTranscript(id) : Promise.resolve(null))
-    : pane.agent === "claude" && id ? findTranscript(id) : Promise.resolve(null);
+    : pane.agent === "claude" ? claudeTranscriptFor(pane, client, id) : Promise.resolve(null);
   locations.set(pane.pane_id, { key: locationKey(pane), at: Date.now(), source: source.catch(() => null) });
   return source;
+}
+
+/** Claude's reported session, or failing that the one a person chose for this process (claude-choice.ts). */
+async function claudeTranscriptFor(pane: PaneInfo, client: HerdrClient | undefined, id: string | null): Promise<string | null> {
+  const session = id ?? await chosenSession(client, pane);
+  return session ? findTranscript(session) : null;
 }
 
 /** File-only compatibility for callers that need actual bytes, such as Codex images. */

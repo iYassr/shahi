@@ -21,7 +21,7 @@
       <img class="wordmark" src="/wordmark.svg" alt="" width="114" height="48">
     </a>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated 26 September 2026.</p>
+    <p class="updated">Last updated 28 September 2026.</p>
   </header>
 
 <main>
@@ -63,7 +63,10 @@
 
 <p>On your computer, the sidecar keeps private operational JSON logs: route <strong>templates</strong> (without IDs or query values), method, status, timings, counts, resource usage and fixed error categories. These stay on your computer and rotate across four files of up to 5 MiB each. Terminal text, prompts, file contents, credentials, filenames and raw error messages are excluded. Request metrics reset when the sidecar restarts. The diagnostic API requires a valid Shahi session. Local alerts stay in these logs; the public service monitor does not collect individual computers' local diagnostics.</p>
 
-<p>The native and web clients contain no advertising or third-party tracking SDKs. Relay operational telemetry is separate from client analytics.</p>
+<h2>Optional client diagnostics</h2>
+<p>The iPhone app and web client use Sentry to report crashes, application errors and persistent Reader failures. <strong>Share diagnostics</strong> is on by default and can be turned off in Settings. It is independent of relay operational telemetry. Reports contain fixed failure categories, app and computer software versions, agent provider, connection type, retry counts and elapsed time, and code locations needed to diagnose an error. Native crash reports may include device model, operating-system information and binary identifiers.</p>
+<p>Shahi removes conversation text, prompts, terminal output, file paths, raw error messages, credentials and connection identifiers before sending a report. We do not enable session replay, screenshots, console capture, advertising or cross-app tracking. Reports do not contain a Shahi user or device identifier. IP-address storage is disabled in our Sentry projects; Sentry still processes network information to receive requests. Our Sentry organization uses its EU region. Diagnostic access and retention follow our Sentry plan and <a href="https://sentry.io/privacy/">Sentry's privacy policy</a>.</p>
+<p>Turning diagnostics off stops new client reports. It does not remove reports already received, Apple's TestFlight diagnostics or the separate operational records described above. Contact <a href="mailto:support@getshahi.dev">support@getshahi.dev</a> about removal; without a user identifier we may need an approximate time and app version to locate a report.</p>
 
 <h2>Push notifications</h2>
 
@@ -81,6 +84,8 @@
 
 <h2>Voice dictation</h2>
 <p>On an iPhone with iOS 26 that supports Apple's on-device speech model, you can dictate a reply. The microphone opens only after you tap the microphone button, and stops when you finish, cancel, leave the app or receive a call. Your voice is turned into text on the iPhone by Apple's Speech framework: the audio is not recorded to a file and is not sent to your computer, the relay, Shahi or anyone else. The text goes into your reply draft and is sent only when you tap Send. The first time, iOS downloads Apple's English speech model from Apple; iOS stores and updates that model and may share it with other apps. You can turn microphone access off in iOS Settings at any time.</p>
+
+<p>Earlier TestFlight builds used Whisper and Silero models downloaded from Hugging Face and its download providers. Those downloads revealed ordinary connection information, including IP addresses, but no voice recordings. Those builds transcribed locally and deleted temporary recordings after use.</p>
 
 <h2>App updates and service providers</h2>
 <p>The iPhone app checks Expo for signed app updates when it opens. Expo receives network information and update-request metadata, such as the app version, platform and runtime version, and update-related crash or launch diagnostics. Updates do not send your conversations or SSH credentials to Expo. Cloudflare hosts the website and relay. The website serves its own fonts, so no font provider receives your visit. These providers may process data outside your country under their own privacy policies. The AI assistants you run on your computer use their own providers; their handling of prompts and files is separate from Shahi.</p>

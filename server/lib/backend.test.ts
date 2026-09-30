@@ -4,7 +4,10 @@ test("herdr adapter accepts only release-tested combinations", () => {
   expect(herdrCompatibility("0.9.0", 22).state).toBe("connected");
   expect(herdrCompatibility("0.9.1", 22).state).toBe("connected");
   expect(herdrCompatibility("0.9.1", 23).state).toBe("service-update-required");
-  expect(herdrCompatibility("0.9.2", 22).state).toBe("service-update-required");
+  expect(herdrCompatibility("0.9.2", 22).state).toBe("connected");
+  expect(herdrCompatibility("0.9.3", 22).state).toBe("connected");
+  expect(herdrCompatibility("0.9.3", 23).state).toBe("service-update-required");
+  expect(herdrCompatibility("0.9.4", 22).state).toBe("service-update-required");
   expect(herdrCompatibility("0.8.2", 20).state).toBe("update-required");
   expect(herdrCompatibility("0.10.0", 23).state).toBe("service-update-required");
 });

@@ -149,21 +149,22 @@ test.describe("when something breaks", () => {
    * are not an array. The app trusts the shape of what the server sends, which
    * is exactly the assumption that breaks in the field.
    */
-  test("a render error offers a way out instead of a blank screen", async ({ page }) => {
+  test("a render error offers a way out instead of a blank screen", async ({ page, diagnosticEnvelopes }) => {
+    const privateMarker = "diagnostics-private-reader-marker";
     await page.route("**/api/panes/*/session*", (route) =>
       route.fulfill({
         json: {
-          sessionId: "s",
-          path: "/x",
+          sessionId: privateMarker,
+          path: `/private/${privateMarker}/conversation.jsonl`,
           offset: 0,
           total: 1,
-          messages: [{ id: "bad", role: "agent", at: 0, blocks: "not an array" }],
+          messages: [{ id: privateMarker, role: "agent", at: 0, blocks: "not an array" }],
         },
       }),
     );
 
     await scenario(page, "busy");
-    await page.goto("/");
+    await page.goto(`/?private_test=${privateMarker}`);
     await tap(page, page.locator(".row").first());
 
     // Either the reader coped or the boundary caught it — but never a blank
@@ -184,5 +185,31 @@ test.describe("when something breaks", () => {
     await expect
       .poll(async () => (await shown.innerText()).trim().length)
       .toBeGreaterThan(0);
+
+    // Check the actual SDK envelope after beforeSend, not only the sanitizer's
+    // unit output. SDK processing must not reattach the page URL, session,
+    // transcript, raw exception message or user identity before transmission.
+    await expect.poll(() => diagnosticEnvelopes.length).toBeGreaterThan(0);
+    const wire = JSON.stringify(diagnosticEnvelopes);
+    expect(wire).not.toContain(privateMarker);
+    expect(wire).not.toContain("/api/panes/");
+    expect(wire).not.toContain(new URL(page.url()).origin);
+    for (const [, items] of diagnosticEnvelopes) {
+      expect(items.length).toBeGreaterThan(0);
+      for (const [header, payload] of items) {
+        expect(header.type).toBe("event");
+        expect(payload).toMatchObject({
+          tags: { client: "web" },
+          user: { ip_address: "0.0.0.0" },
+          exception: { values: expect.arrayContaining([
+            expect.objectContaining({ value: "Application error (message omitted for privacy)" }),
+          ]) },
+        });
+        expect((payload as { user: unknown }).user).toEqual({ ip_address: "0.0.0.0" });
+        for (const field of ["request", "breadcrumbs", "message", "transaction", "logentry"]) {
+          expect(payload).not.toHaveProperty(field);
+        }
+      }
+    }
   });
 });

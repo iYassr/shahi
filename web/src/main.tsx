@@ -1,14 +1,17 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { ClientUpdateGate } from "./components/ClientUpdateGate";
 import { App } from "./App";
 import { takePairingFragment } from "./connection";
 import { Boundary } from "./components/Boundary";
 import "./styles.css";
 import { trackViewport } from "./viewport";
+import { initializeDiagnostics } from "./diagnostics";
 
 // Consume the secret once, before StrictMode can initialize components twice.
 const pairingCode = takePairingFragment();
+initializeDiagnostics();
 
 // Before first paint, so the app is never briefly sized to the wrong viewport.
 trackViewport();
@@ -34,9 +37,11 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       {/* Outside the router, so a screen that throws does not take the app with
           it and leave a blank page — the shape of "I have to refresh a lot". */}
+      <ClientUpdateGate>
       <Boundary>
         <App initialPairingCode={pairingCode} />
       </Boundary>
+      </ClientUpdateGate>
     </BrowserRouter>
   </StrictMode>,
 );

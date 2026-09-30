@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 26 September 2026. Published at
+_Last updated: 28 September 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -110,8 +110,30 @@ metrics reset when the sidecar restarts. The diagnostic API requires a valid
 Shahi session. Local alerts stay in these logs; the public service monitor does
 not collect individual computers' local diagnostics.
 
-The native and web clients contain no advertising or third-party tracking
-SDKs. Relay operational telemetry is separate from client analytics.
+## Optional client diagnostics
+
+The iPhone app and web client use Sentry to report crashes, application errors
+and persistent Reader failures. **Share diagnostics** is on by default and can
+be turned off in Settings. It is independent of relay operational telemetry.
+Reports contain fixed failure categories, app and computer software versions,
+agent provider, connection type, retry counts and elapsed time, and code
+locations needed to diagnose an error. Native crash reports may include device
+model, operating-system information and binary identifiers.
+
+Shahi removes conversation text, prompts, terminal output, file paths, raw error
+messages, credentials and connection identifiers before sending a report. We do
+not enable session replay, screenshots, console capture, advertising or
+cross-app tracking. Reports do not contain a Shahi user or device identifier.
+IP-address storage is disabled in our Sentry projects; Sentry still processes
+network information to receive requests. Our Sentry organization uses its EU
+region. Diagnostic access and retention follow our Sentry plan and
+[Sentry's privacy policy](https://sentry.io/privacy/).
+
+Turning diagnostics off stops new client reports. It does not remove reports
+already received, Apple's TestFlight diagnostics or the separate operational
+records described above. Contact support@getshahi.dev about removal; without a
+user identifier we may need an approximate time and app version to locate a
+report.
 
 ## Push notifications
 
@@ -160,6 +182,8 @@ Shahi or anyone else. The text goes into your reply draft and is sent only
 when you tap Send. The first time, iOS downloads Apple's English speech model
 from Apple; iOS stores and updates that model and may share it with other apps.
 You can turn microphone access off in iOS Settings at any time.
+
+Earlier TestFlight builds used Whisper and Silero models downloaded from Hugging Face and its download providers. Those downloads revealed ordinary connection information, including IP addresses, but no voice recordings. Those builds transcribed locally and deleted temporary recordings after use.
 
 ## App updates and service providers
 

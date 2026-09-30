@@ -76,7 +76,7 @@ them.
 The docs are wrong in places. These were established against herdr 0.7.5,
 protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
 an afternoon. Most are also asserted by `server/lib/herdr-live.test.ts`
-against a real herdr on every push — 0.9.0 and 0.9.1, protocol 22, and
+against a real herdr on every push — 0.9.0 through 0.9.3, protocol 22, and
 whatever is current (see Testing) — so the next drift is a red job rather than
 a report from a phone. Restart/id-reuse, agent-lifetime, request-size and
 plugin-registry measurements also include manual checks; the live suite does
@@ -600,6 +600,12 @@ can trigger the SSH server’s lockout.
 
 ## What is not done
 
+- **Live dictation needs physical-device acceptance before release.** It uses
+  Apple's SpeechTranscriber on supported iOS 26+ iPhones, currently in English.
+  Tests of synthesized speech on a Mac and component tests do not prove iPhone
+  microphone capture, interruption recovery, recognition quality or battery use.
+  See `docs/voice-input.md` for the device checklist.
+
 - **Terminal input already queued before a shell starts an agent cannot be inspected.**
   The sidecar checks the foreground process before typing and the screen before
   Enter. A command still waiting in the terminal input queue can pass both checks
@@ -735,6 +741,11 @@ notice.
 **Never point the suite at the live server for anything that writes.** That
 mistake typed into somebody's session once already.
 
+The stray-write fixture also captures the configured Sentry envelope locally;
+it never forwards test incidents to the production project. The deliberate
+render-error test checks the real SDK payload after privacy filtering. Keep
+the exact ingest destination check and the fuse for every other external write.
+
 **A dead stub is reported as a dead stub.** Every test takes the server's pulse
 before it runs and again if it failed, because a run once produced one real
 failure followed by 78 connection errors and nothing said which was which. Now
@@ -765,8 +776,8 @@ sidecar against a headless herdr: the protocol pin, snapshot shapes, the
 mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back (including 260 KB), occupant
 identity, `pane.process_info`, every key-bar name, the event
-stream, and the HTTP routes including the 426 gate. CI runs it three times per
-push — against `v0.9.0`, the minimum supported release, and `v0.9.1`, both
+stream, and the HTTP routes including the 426 gate. CI runs it five times per
+push — against `v0.9.0`, the minimum supported release, through `v0.9.3`, all
 pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
 against whatever herdr's own installer hands out today, read from
 `herdr.dev/latest.json` (version and checksum) and cross-checked against
@@ -821,7 +832,9 @@ directory under `~/.config/herdr/sessions/` and starts with nothing in it.
 
 A newer stable protocol fails the pinned job on purpose: regenerate
 (`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.
-A pinned tag needs its digest beside it in the herdr matrix's `include`:
+A newly approved herdr profile needs a pinned job, even when it is also stable;
+the workflow policy test enforces this. A pinned tag needs its digest beside it
+in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
 Hosted tests default to 7472 and 7572, configurable through `HOSTED_PORT` and
@@ -1066,7 +1079,16 @@ relay stores nothing.
 Hosted browser releases use `bun run build:site` and the existing Cloudflare
 site configuration. Keep /pwa routing and service-worker scope isolated from
 marketing assets; every same-origin page remains in the browser trust boundary.
-Never add third-party scripts or cache decrypted session data. Browser pairing
+Do not load third-party scripts or cache decrypted session data. The reviewed,
+bundled Sentry SDK is the sole client diagnostics exception: it must pass the
+allowlist in shared/src/diagnostics.ts before transport, and native crashes must
+pass mobile/plugins/sentry-native.swift. Keep replay, screenshots, breadcrumbs,
+console capture, automatic tracing and metrics disabled. Settings opt-out must
+apply to native and JavaScript reports. Never attach conversation content, raw
+errors, paths, account IDs, connection IDs or credentials. Reader incidents
+are deduplicated and gated on an active connected view. Upload debug artifacts
+from the exact shipped build and keep the scoped token in the releases
+environment; see docs/observability.md. Browser pairing
 is session-only unless remembering is explicitly selected.
 
 **Relay recovery must survive suspended timers.** The computer's relay watchdog
@@ -1257,7 +1279,14 @@ close-code ownership. Keep these checks in `bun run test` and `test:relay`.
 Discover herdr's `cursor` through `cursor-agent`; `cursor` launches the editor.
 
 Current Codex folder trust can sit above 25 empty rows. Trim empty terminal
-padding before scanning. Cursor trust/commands have letter shortcuts, and
+padding before scanning. Its second choice depends on how Codex started
+(measured on 0.157.1, 2026-09-29): "Back to Agent Command Center" / `esc back`
+when attached to the shared daemon, "Quit" / `esc quit` on its own server,
+which is how Shahi starts every Codex. Codex also asks "Update available" before
+anything else whenever a newer release exists, with herdr reporting it idle.
+Both forms and the update menu are measured shapes in `provider-prompts.ts`;
+without them a phone-started Codex refused every message behind a menu it
+showed no card for. Cursor trust/commands have letter shortcuts, and
 OpenCode permission menus have horizontal choices whose cursor is a distinct
 background colour. Preserve ANSI through parsing and through both write guards;
 never assume OpenCode's first choice is still selected. Unknown highlight shapes
@@ -1340,6 +1369,68 @@ disclosure state even when it reuses message IDs. A busy-to-finished transition
 collapses activity once; the user can reopen it afterward. One current activity
 status replaces the duplicate working footer. Unknown tools get neutral status,
 never guessed prose or fabricated results.
+
+## Claude Reader setup, September 28
+
+herdr's terminal detection names an agent but not its session; only the
+agent's integration hook reports that, and Reader needs it. The managed service
+keeps the integrations of Reader's agents installed (`herdr-integrations.ts`):
+once per start, after herdr answers, it installs a missing one for an agent
+present on the computer and updates an outdated one. Nobody types a command.
+It lives in the service, not the plugin's startup hook, because "Update
+computer" replaces the service and only a plugin reinstall replaces the hook.
+It runs only with `SHAHI_MANAGER_ROOT` and a connected herdr, because the live
+suite and the release smoke tests start the sidecar with the developer's real
+home, and an install writes the agent's real settings. An integration once
+seen installed and later missing was removed by someone; it stays removed.
+Discovery asks about every manifest kind: `installedAgents` caches one answer
+for the New Agent sheet as well.
+
+A Claude that started before its integration was installed never reports a
+session, and nothing on the computer identifies its transcript exactly: Claude
+holds no transcript open, and `sessions/<pid>.json` is undocumented and not
+written by every process (measured on 2.1.284: none for fresh processes, even
+after a prompt). Its one disagreement with the hook was a conversation parked
+as a background job: the record keeps its old `sessionId` and names the job in
+`parkedJobId`, whose `jobs/<id>/state.json` has the right session. Followed
+that way it named the right conversation for all six live panes. So the
+person names it (`claude-choice.ts`, capability
+`conversation-choice`): `GET /api/panes/:id/conversations` lists the
+transcripts in Claude's folder for the process's cwd (every non-alphanumeric
+character becomes `-`), newest first, minus sessions other panes hold, with
+the pid record's session marked `likely` as a hint only; `POST
+/api/panes/:id/conversation` accepts only an offered id. The choice is held in
+memory against that pane's terminal id and Claude pid, and ends when either
+changes or the hook reports; `chosenSession` checks the pid in the pane's
+foreground processes, not only ones named claude, because a tool shares its
+group. The page says `chosen: true`, part of its ETag, so clients offer
+"Choose another". Never pick from the folder without the person.
+
+Missing identity and a missing transcript have distinct 404 codes. Neither is
+an error in either client: every new Claude conversation has no transcript
+until its first message (none after 12s at the prompt, measured on 2.1.284),
+so both are a waiting state that keeps polling. The plain 404 from older
+servers remains supported. The plugin must carry `CLAUDE_CONFIG_DIR` into the
+launchd/systemd environment; `.env` keys reach `loadConfig`, not `process.env`.
+An explicit private `.env` value wins over the setup shell, including an empty
+value that restores Claude's default folder. Restart regenerates the service
+definition; this startup change requires an updated plugin installation.
+Exercise Reader messages and images in fresh processes launched with rendered
+service environments, not only tests setting `process.env` directly.
+
+Conversation previews expose content before a choice is made, so they must use
+the same canonical transcript lookup as Reader. Reject root escapes, leaf
+aliases for another UUID, and distinct copies of one UUID before reading the
+preview. Directory aliases naming the same canonical transcript remain valid.
+
+Do not identify a Claude conversation from `sessions/<pid>.json` alone. A live
+2.1.283 process had a matching process start time but an older session than its
+SessionStart hook, because it had parked the conversation as a background job.
+This metadata cannot safely replace hook identity; it only marks a choice likely.
+
+Codex's transcript index must name an existing file with the exact session UUID;
+stale entries fall through to the UUID-only search, never a working-directory
+or most-recent-session guess.
 
 ## Dictation, September 29
 

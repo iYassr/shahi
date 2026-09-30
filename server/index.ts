@@ -16,6 +16,9 @@ import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
 import { HerdrClient, HerdrSubscriber } from "./lib/herdr-client";
 import { BackendMonitor, probeHerdr } from "./lib/backend";
+import { installedAgents } from "./lib/agents";
+import { herdrCli, keepReaderIntegrations } from "./lib/herdr-integrations";
+import { forgetChoice } from "./lib/claude-choice";
 import { PaneInstances } from "./lib/herdr-pane";
 import { ComputerControl } from "./lib/control";
 import { createServer, type ShahiServer } from "./lib/http";
@@ -94,6 +97,7 @@ store.on("changed", () => {
     if (!live.has(paneId)) {
       poller.forget(paneId);
       transcript.forget(paneId);
+      forgetChoice(paneId);
       trackedPanes.delete(paneId);
     }
   }
@@ -108,12 +112,38 @@ const subscriber = new HerdrSubscriber({
   onError: () => observability.event("subscriber.error"),
 });
 
+/**
+ * herdr's integrations for the agents Reader follows (herdr-integrations.ts),
+ * once per start, and only as the managed service talking to a real herdr:
+ * the live suite and the release smoke tests start this file with the
+ * developer's own home, and an integration install writes an agent's real
+ * settings. Neither those nor a development checkout has both.
+ */
+let integrationsChecked = false;
+function checkReaderIntegrations(): void {
+  if (integrationsChecked || !process.env.SHAHI_MANAGER_ROOT) return;
+  integrationsChecked = true;
+  const bin = process.env.HERDR_BIN_PATH ?? "herdr";
+  void keepReaderIntegrations({
+    herdr: (args) => herdrCli(bin, args),
+    // The same question the New Agent sheet asks, whose answer is cached for
+    // whoever asks next: asking about fewer kinds would hide the rest there.
+    installed: async (kinds) => {
+      const { manifests } = await client.rpc("server.agent_manifests", {});
+      const found = new Set((await installedAgents(manifests.map((m) => m.agent))).map((agent) => agent.kind));
+      return kinds.filter((kind) => found.has(kind));
+    },
+    seenPath: join(dirname(config.dataPath), "herdr-integrations.json"),
+  }).then((lines) => { for (const line of lines) console.log(`  ${line}`); });
+}
+
 const backend = new BackendMonitor(
   () => probeHerdr(() => client.rpc("ping", {}), store, () => backend.state.state === "connected"),
   async () => {
     await store.resync();
     if (!store.lastSyncOk) throw new Error("herdr snapshot unavailable");
     subscriber.start(); store.startSync(); poller.start();
+    checkReaderIntegrations();
   },
   () => { subscriber.stop(); store.stopSync(); poller.stop(); },
 );

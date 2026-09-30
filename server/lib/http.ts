@@ -35,6 +35,7 @@ import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf } from "./herdr-pane";
+import { choiceHeld, chooseConversation, chosenSession, conversationChoices } from "./claude-choice";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, submitPrompt } from "./prompt";
@@ -1413,7 +1414,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // reported by another provider must never select a Claude image.
           if (sub === "/image") {
             const pane = store.pane(paneId);
-            const sessionId = agentSessionOf(pane);
+            const sessionId = agentSessionOf(pane) ?? (pane?.agent === "claude" ? await chosenSession(client, pane) : null);
             const ref = url.searchParams.get("ref");
             if (!pane || !ref) return json({ error: "not found" }, { status: 404 });
             const source = pane.agent === "codex" || pane.agent === "opencode" ? await transcriptSourceFor(pane, client) : null;
@@ -1431,6 +1432,35 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             });
           }
 
+          // A Claude that started before herdr's integration was installed
+          // reports no session; the person names its conversation instead
+          // (claude-choice.ts). Sessions other panes hold are not offered.
+          const claimedBy = (paneId: string) => new Set(store.state.panes.filter((p) => p.pane_id !== paneId)
+            .flatMap((p) => { const held = agentSessionOf(p) ?? choiceHeld(p.pane_id); return held ? [held] : []; }));
+          if (sub === "/conversations" && req.method === "GET") {
+            const pane = store.pane(paneId);
+            if (!pane || pane.agent !== "claude") return json({ error: "not found" }, { status: 404 });
+            return json({ choices: await conversationChoices(client, pane, claimedBy(paneId)) });
+          }
+          if (sub === "/conversation" && req.method === "POST") {
+            const body = await jsonObject<{ sessionId: unknown; instanceId?: unknown }>(req);
+            if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
+            if (typeof body.sessionId !== "string") return json({ error: "sessionId is required" }, { status: 400 });
+            if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
+            if (replaced(paneId, body.instanceId)) return replacedResponse();
+            const pane = store.pane(paneId);
+            if (!pane || pane.agent !== "claude") return json({ error: "not found" }, { status: 404 });
+            if (agentSessionOf(pane)) {
+              return json({ error: "herdr already identifies this conversation.", code: "conversation_known" }, { status: 409 });
+            }
+            if (!(await chooseConversation(client, pane, body.sessionId, claimedBy(paneId)))) {
+              return json({ error: "That conversation is not one this pane can show any more. Choose again.", code: "conversation_not_offered" }, { status: 409 });
+            }
+            // The dashboard's cached location for this pane is out of date now.
+            await transcriptSourceFor(pane, client);
+            return json({ ok: true });
+          }
+
           if (sub === "/session") {
             const pane = store.pane(paneId);
             const limit = intParam(url.searchParams.get("limit"), 60, 1, 400);
@@ -1444,8 +1474,25 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const page = path ? await transcriptPage(paneId, path, pane!.agent, { limit, before }) : null;
 
             if (!page) {
+              const claude = pane?.agent === "claude";
+              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId);
+              // Neither is something to fix on the computer. The service
+              // installs herdr's integration, which reports the session when
+              // one starts (herdr-integrations.ts); one that started before it
+              // is named by the person (claude-choice.ts). And a Claude asked
+              // nothing has written no transcript: measured on 2.1.284, none
+              // after 12s at its prompt. That is the normal first state of
+              // every new conversation, not a fault.
               return json(
-                { error: "no transcript for this pane", messages: [] },
+                {
+                  error: missingSession
+                    ? "This Claude conversation started before Shahi could identify it. Choose which one it is, or resume it in Claude."
+                    : claude
+                      ? "Claude has not saved any messages in this conversation yet."
+                      : "no transcript for this pane",
+                  ...(claude ? { code: missingSession ? "reader_session_missing" : "reader_transcript_missing" } : {}),
+                  messages: [],
+                },
                 { status: 404 },
               );
             }
@@ -1462,13 +1509,17 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
              * computed when the page was read, so an unchanged transcript is
              * answered here without being read again.
              */
-            if (req.headers.get("if-none-match") === page.etag) {
+            // Said so the Reader can offer another choice, and part of the
+            // tag, so the hook taking over from a choice is not a 304.
+            const byChoice = pane!.agent === "claude" && !agentSessionOf(pane!);
+            const etag = byChoice ? page.etag.replace(/"$/, ':chosen"') : page.etag;
+            if (req.headers.get("if-none-match") === etag) {
               return new Response(null, {
                 status: 304,
-                headers: { etag: page.etag, "cache-control": "no-cache" },
+                headers: { etag, "cache-control": "no-cache" },
               });
             }
-            return json(page.log, { headers: { etag: page.etag, "cache-control": "no-cache" } });
+            return json(byChoice ? { ...page.log, chosen: true } : page.log, { headers: { etag, "cache-control": "no-cache" } });
           }
 
           if (sub === "/transcript") {
@@ -1715,7 +1766,7 @@ function harden(response: Response, pathname = ""): Response {
   // cookies included (pre-release bug hunt). A route that wants caching still
   // says so: the transcript's ETag revalidation, immutable images.
   if (pathname.startsWith("/api/") && !response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
-  response.headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  response.headers.set("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws: wss: https://o4512164542873600.ingest.de.sentry.io; worker-src 'self'; manifest-src 'self'; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   response.headers.set("x-content-type-options", "nosniff");
   response.headers.set("x-frame-options", "DENY");
   response.headers.set("referrer-policy", "same-origin");

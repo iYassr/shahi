@@ -18,6 +18,56 @@ const openReader = async (page: Page, paneId = READABLE) => {
 };
 
 test.describe("reader", () => {
+  // Every new Claude conversation has no transcript until its first message.
+  test("a Claude conversation with nothing to read yet waits in Read and fills in by itself", async ({ page }) => {
+    await scenario(page, "busy");
+    let ready = false;
+    await page.route("**/api/panes/*/session?*", async route => {
+      if (ready) return route.continue();
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({
+        code: "reader_transcript_missing", messages: [],
+        error: "Claude has not saved any messages in this conversation yet.",
+      }) });
+    });
+    await page.goto(`/pane/${encodeURIComponent(READABLE)}`);
+    await expect(page.locator('.reader p[role="status"]')).toContainText("Claude has not saved any messages");
+    await expect(page.locator(".reader").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute("aria-selected", "true");
+    ready = true;
+    await expect(page.locator(".reader .msg").first()).toBeVisible();
+    await expect(page.locator('.reader p[role="status"]')).toHaveCount(0);
+  });
+
+  // The TestFlight report: an existing Claude conversation that started before
+  // herdr's integration was installed reports no session, and Read was empty.
+  test("an existing Claude conversation herdr cannot identify is read once the person chooses it", async ({ page }) => {
+    await scenario(page, "busy");
+    const existing = "22222222-2222-4222-8222-222222222222";
+    let chosen: string | null = null;
+    await page.route("**/api/panes/*/session?*", async route => {
+      if (chosen) return route.continue();
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({
+        code: "reader_session_missing", messages: [],
+        error: "Shahi has not been told which Claude conversation this is.",
+      }) });
+    });
+    await page.route("**/api/panes/*/conversations", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ choices: [
+      { sessionId: "11111111-1111-4111-8111-111111111111", firstPrompt: "Fix the flaky test", lastMessage: "Fixed it.", updatedAt: Date.now() - 60_000, likely: false },
+      { sessionId: existing, firstPrompt: "Summarise the quarterly report", lastMessage: "Here is the summary.", updatedAt: Date.now() - 3_600_000, likely: true },
+    ] }) }));
+    await page.route("**/api/panes/*/conversation", async route => {
+      chosen = (route.request().postDataJSON() as { sessionId: string }).sessionId;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto(`/pane/${encodeURIComponent(READABLE)}`);
+    await page.getByRole("button", { name: "Choose the conversation" }).click();
+    await expect(page.getByText("Likely")).toBeVisible();
+    await page.getByRole("button", { name: /Summarise the quarterly report/ }).click();
+    expect(chosen).toBe(existing);
+    await expect(page.locator(".reader .msg").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Which conversation is this?" })).toHaveCount(0);
+  });
+
   test("shows the conversation", async ({ page }) => {
     const problems: string[] = [];
     page.on("pageerror", (e) => problems.push(String(e)));

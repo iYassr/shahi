@@ -1,3 +1,4 @@
+import { ClientUpdateGate } from "@/components/client-update-gate";
 import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "react-native";
@@ -12,6 +13,9 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { HostKeyCard } from "@/components/host-key-card";
 import { theme } from "@/lib/theme";
 import { navigationTheme } from "@/lib/navigation-theme";
+import { initializeDiagnostics } from "@/lib/diagnostics";
+
+initializeDiagnostics();
 
 /**
  * The root stack: a gate, the tabs, and a pane pushed on top.
@@ -29,15 +33,17 @@ export default function RootLayout() {
     // Above the router, so the mirror and the socket survive navigation.
     // The gesture root is what lets a row's swipe actions receive the drag.
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <ErrorBoundary>
     <TypographyProvider>
+    <ClientUpdateGate>
+    <ErrorBoundary>
     <ThemeProvider value={navigationTheme}>
       <SessionProvider>
         <Navigation />
       </SessionProvider>
     </ThemeProvider>
-    </TypographyProvider>
     </ErrorBoundary>
+    </ClientUpdateGate>
+    </TypographyProvider>
     </GestureHandlerRootView>
   );
 }

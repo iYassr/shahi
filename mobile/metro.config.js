@@ -11,13 +11,13 @@
  * deliberate: it is types only, so Metro erases it and there is nothing to
  * build, publish or keep in sync.
  */
-const { getDefaultConfig } = require("expo/metro-config");
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 const path = require("node:path");
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "..");
 
-const config = getDefaultConfig(projectRoot);
+const config = getSentryExpoConfig(projectRoot, { includeWebReplay: false, includeWebFeedback: false, optionsFile: false });
 
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [

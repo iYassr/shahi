@@ -36,9 +36,9 @@ guaranteed to be irreversibly anonymized before collection.
 | --- | --- | --- |
 | Device ID | App functionality, analytics | Push registrations and stable relay computer identifiers |
 | Product interaction | App functionality, analytics | Connection events, counts and session activity |
-| Crash data | App functionality | Expo Updates launch/crash diagnostics |
+| Crash data | App functionality | Sentry crash reports and Expo Updates launch/crash diagnostics |
 | Performance data | App functionality | Connection timing and traffic measurements |
-| Other diagnostic data | App functionality | Operational failures and close codes |
+| Other diagnostic data | App functionality | Sentry Reader failure categories, retries and versions; operational failures and close codes |
 
 User-controlled computers store conversations and uploads; the relay cannot
 decrypt them. Do not describe this as zero data collection: service providers

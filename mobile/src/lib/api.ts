@@ -31,6 +31,7 @@ import {
   type ServerInfo,
   type Session,
   type SessionLog,
+  type ConversationChoice,
   type SocketMessage,
   type StoredUpload,
 } from "@shahi/shared";
@@ -496,6 +497,16 @@ const api = {
   },
 
   /** Phones that paired by scanning a code. A passcode login is not among them. */
+  /** Saved Claude conversations a person may name for a pane herdr cannot identify (`conversation-choice`). */
+  conversationChoices: (paneId: string) =>
+    request<{ choices: ConversationChoice[] }>(`/api/panes/${encodeURIComponent(paneId)}/conversations`),
+
+  chooseConversation: (paneId: string, sessionId: string, instanceId?: string) =>
+    postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/conversation`, {
+      sessionId,
+      ...(instanceId ? { instanceId } : {}),
+    }),
+
   devices: () => request<DeviceList>("/api/devices"),
 
   /** Throws a paired phone out: its very next request is refused. */
