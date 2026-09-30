@@ -82,6 +82,15 @@ in 6.9 minutes. The skipped case is offline navigation with a service worker,
 which this WebKit harness cannot emulate; Chromium covered it. The run used the
 tracked archive at `62a9373`; later changes were native-only and documentation.
 
+The combined PR's full browser jobs exposed one shared fixture failure: the
+deliberate render crash attempted to send a Sentry report, which the external
+write fuse correctly blocked. Capturing that exact ingest request locally
+preserves the fuse and keeps synthetic incidents out of production diagnostics.
+The crash test now checks the actual SDK envelope for privacy filtering.
+The complete app spec then passed in both engines on the x86-64 VM:
+**21 passed in 1.3 minutes**, including sign-in setup. This focused rerun is
+separate from the full CI matrix.
+
 During test preparation, assigning an entire SessionLog where the stub expects
 its message array produced a 500. Correcting that fixture restored the check;
 this was not a product defect. A hidden browser tab also paused Reader polling
