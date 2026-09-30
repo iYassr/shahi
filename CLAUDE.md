@@ -741,6 +741,11 @@ notice.
 **Never point the suite at the live server for anything that writes.** That
 mistake typed into somebody's session once already.
 
+The stray-write fixture also captures the configured Sentry envelope locally;
+it never forwards test incidents to the production project. The deliberate
+render-error test checks the real SDK payload after privacy filtering. Keep
+the exact ingest destination check and the fuse for every other external write.
+
 **A dead stub is reported as a dead stub.** Every test takes the server's pulse
 before it runs and again if it failed, because a run once produced one real
 failure followed by 78 connection errors and nothing said which was which. Now
