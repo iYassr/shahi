@@ -387,11 +387,6 @@ export type PaneCopySearchDirection = "forward" | "backward";
 export type PaneDirection = "left" | "right" | "up" | "down";
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
- * via the `definition` "PaneGraphicsFormat".
- */
-export type PaneGraphicsFormat = "png" | "rgb" | "rgba" | "bgra";
-/**
- * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneRightClickTarget".
  */
 export type PaneRightClickTarget = "herdr" | "pane";
@@ -463,6 +458,10 @@ export type Request1 =
   | {
       method: "server.reload_config";
       params: EmptyParams;
+    }
+  | {
+      method: "server.ssh_agent.register";
+      params: ServerSshAgentRegisterParams;
     }
   | {
       method: "server.agent_manifests";
@@ -689,6 +688,10 @@ export type Request1 =
       params: PaneScrollParams;
     }
   | {
+      method: "pane.clear";
+      params: PaneTarget;
+    }
+  | {
       method: "pane.edit_scrollback";
       params: PaneTarget;
     }
@@ -751,18 +754,6 @@ export type Request1 =
   | {
       method: "pane.read";
       params: PaneReadParams;
-    }
-  | {
-      method: "pane.graphics.set";
-      params: PaneGraphicsSetParams;
-    }
-  | {
-      method: "pane.graphics.clear";
-      params: PaneGraphicsClearParams;
-    }
-  | {
-      method: "pane.graphics.info";
-      params: PaneTarget;
     }
   | {
       method: "pane.report_agent";
@@ -1284,31 +1275,6 @@ export type ResponseResult =
       type: "pane_copy_search";
     }
   | {
-      revision: number;
-      sequence: number;
-      type: "pane_graphics_frame_ack";
-    }
-  | {
-      cell_height_px: number;
-      cell_width_px: number;
-      /**
-       * Accepts damage metadata while still consuming a complete canonical file.
-       */
-      file_frame_damage?: boolean;
-      file_frame_direct_max_bytes?: number | null;
-      file_frame_directory?: string | null;
-      file_frame_formats?: string[];
-      file_frame_max_bytes?: number | null;
-      file_frame_transport?: string | null;
-      max_layers_per_pane?: number;
-      /**
-       * True only when this pane is on the currently rendered terminal surface.
-       */
-      pane_visible: boolean;
-      pixel_mouse?: boolean;
-      type: "pane_graphics_info";
-    }
-  | {
       explain: unknown;
       type: "agent_explain";
     }
@@ -1727,44 +1693,6 @@ export interface PaneFocusDirectionParams {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
- * via the `definition` "PaneGraphicsClearParams".
- */
-export interface PaneGraphicsClearParams {
-  layer_id?: string | null;
-  pane_id: string;
-}
-/**
- * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
- * via the `definition` "PaneGraphicsPlacementParams".
- */
-export interface PaneGraphicsPlacementParams {
-  grid_cols?: number;
-  grid_rows?: number;
-  viewport_col?: number;
-  viewport_row?: number;
-}
-/**
- * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
- * via the `definition` "PaneGraphicsSetParams".
- */
-export interface PaneGraphicsSetParams {
-  data_base64?: string;
-  format: PaneGraphicsFormat;
-  image_height: number;
-  image_width: number;
-  layer_id?: string | null;
-  pane_id: string;
-  placement?: PaneGraphicsPlacementParams1;
-  z_index?: number;
-}
-export interface PaneGraphicsPlacementParams1 {
-  grid_cols?: number;
-  grid_rows?: number;
-  viewport_col?: number;
-  viewport_row?: number;
-}
-/**
- * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "PaneInputSetParams".
  */
 export interface PaneInputSetParams {
@@ -1859,6 +1787,11 @@ export interface PaneReportAgentParams {
   agent_session_path?: string | null;
   message?: string | null;
   pane_id: string;
+  /**
+   * Command that resumes this agent's session after a Herdr restart. The
+   * first element must be a plain command name.
+   */
+  resume_argv?: string[] | null;
   seq?: number | null;
   source: string;
   state: PaneAgentState;
@@ -1872,6 +1805,11 @@ export interface PaneReportAgentSessionParams {
   agent_session_id?: string | null;
   agent_session_path?: string | null;
   pane_id: string;
+  /**
+   * Command that resumes this agent's session after a Herdr restart. The
+   * first element must be a plain command name.
+   */
+  resume_argv?: string[] | null;
   seq?: number | null;
   session_start_source?: string | null;
   source: string;
@@ -2158,6 +2096,16 @@ export interface ServerLiveHandoffParams {
 }
 /**
  * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
+ * via the `definition` "ServerSshAgentRegisterParams".
+ */
+export interface ServerSshAgentRegisterParams {
+  /**
+   * Absolute remote-host agent socket. Registration lasts until this API connection closes.
+   */
+  socket_path: string;
+}
+/**
+ * This interface was referenced by `HerdrApiSchemaRoot`'s JSON-Schema
  * via the `definition` "TabCreateParams".
  */
 export interface TabCreateParams {
@@ -2323,6 +2271,10 @@ export interface AgentInfo {
   agent?: string | null;
   agent_session?: AgentSessionInfo | null;
   agent_status: AgentStatus;
+  /**
+   * The current idle transition completed work, independently of who has viewed it.
+   */
+  completion_seq?: number | null;
   cwd?: string | null;
   display_agent?: string | null;
   focused: boolean;
@@ -2432,6 +2384,7 @@ export interface PaneInfo {
   foreground_cwd?: string | null;
   label?: string | null;
   pane_id: string;
+  restore_error?: string | null;
   revision: number;
   scroll?: PaneScrollInfo | null;
   state_labels?: {
@@ -2833,6 +2786,10 @@ export interface ServerCapabilities {
    */
   health_check?: boolean;
   live_handoff: boolean;
+  /**
+   * Supports connection-scoped `server.ssh_agent.register` on the local JSON API.
+   */
+  ssh_agent_registration?: boolean;
   /**
    * Whether this server supports explicit client-shell surface interest.
    */
