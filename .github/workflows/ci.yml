@@ -202,7 +202,7 @@ jobs:
       matrix:
         # The first is the minimum supported version — pinned by tag, so the
         # job means the same thing next month. Stable follows upstream releases.
-        herdr: [v0.9.0, v0.9.1, stable]
+        herdr: [v0.9.0, v0.9.1, v0.9.2, v0.9.3, stable]
         # A pinned tag is also a pinned binary: these are the SHA-256 digests
         # of herdr-linux-x86_64 in those immutable releases, and install-herdr.sh
         # refuses anything else. Add one alongside every new tag above.
@@ -211,6 +211,10 @@ jobs:
             sha256: 4fa1a01158dd8043da92d31b270780b0dcc10603038d9b61cac4d81ab63fb71f
           - herdr: v0.9.1
             sha256: 2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7
+          - herdr: v0.9.2
+            sha256: 74de34746f96236f76d599f8f5d2439f884351eabe25b7495e0edab75414064a
+          - herdr: v0.9.3
+            sha256: 18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
