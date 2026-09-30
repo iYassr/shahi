@@ -19,7 +19,7 @@ is operated by Shahi and SSH libraries travel inside the phone binary.
   herdr is offline or unsupported. It cannot bypass a revoked device grant.
 - The encrypted transport floor is 2. There is no insecure relay fallback.
   Supporting infrastructure must be deployed before clients need a new transport.
-- herdr 0.9.0 and 0.9.1 / protocol 22 are tested adapter profiles. A new herdr
+- herdr 0.9.0 through 0.9.3 / protocol 22 are tested adapter profiles. A new herdr
   version enters the approved list only after the live adapter suite passes.
   Unsupported herdr leaves recovery and pairing available, but refuses commands.
 
@@ -194,3 +194,21 @@ checked against `herdr.dev/latest.json` and GitHub's digest.
 These source changes need a new approved Shahi service release before managed
 installations accept herdr 0.9.1. Publishing the landing page alone does not
 update the computer service.
+
+### herdr 0.9.2 and 0.9.3 verification — 2026-09-30
+
+The stable CI job caught the new 0.9.3 release: its protocol still matched,
+but the adapter correctly refused an unapproved version. Both official Linux
+x86-64 binaries were checked against GitHub's asset digest and herdr's release
+manifest, then run in separate named sessions with fresh configuration roots
+on the preserved Ubuntu x86-64 QA machine. Each passed 23 live adapter checks;
+the two skips were the optional paid-agent check and the preview-only check.
+No user session or managed herdr installation was updated.
+
+The two release schemas are identical and retain protocol 22. New fields are
+optional; the removed `pane.graphics` API has no Shahi callers. Generated types
+now reflect this schema. CI retains 0.9.0 and 0.9.1 and permanently pins 0.9.2
+and 0.9.3 as well as following stable. Its policy test requires a pinned job for
+every approved release profile. A new approved computer release is still needed
+before installed services accept these versions; a phone update alone cannot
+change the computer adapter.
