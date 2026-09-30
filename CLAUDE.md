@@ -1279,7 +1279,14 @@ close-code ownership. Keep these checks in `bun run test` and `test:relay`.
 Discover herdr's `cursor` through `cursor-agent`; `cursor` launches the editor.
 
 Current Codex folder trust can sit above 25 empty rows. Trim empty terminal
-padding before scanning. Cursor trust/commands have letter shortcuts, and
+padding before scanning. Its second choice depends on how Codex started
+(measured on 0.157.1, 2026-09-29): "Back to Agent Command Center" / `esc back`
+when attached to the shared daemon, "Quit" / `esc quit` on its own server,
+which is how Shahi starts every Codex. Codex also asks "Update available" before
+anything else whenever a newer release exists, with herdr reporting it idle.
+Both forms and the update menu are measured shapes in `provider-prompts.ts`;
+without them a phone-started Codex refused every message behind a menu it
+showed no card for. Cursor trust/commands have letter shortcuts, and
 OpenCode permission menus have horizontal choices whose cursor is a distinct
 background colour. Preserve ANSI through parsing and through both write guards;
 never assume OpenCode's first choice is still selected. Unknown highlight shapes
