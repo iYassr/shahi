@@ -134,6 +134,10 @@ describe("herdr on the runners", () => {
     const matrix = herdr.job.strategy!.matrix!;
     const tags = matrix.herdr!.filter((tag) => tag !== "stable");
     expect(tags.length).toBeGreaterThan(0);
+    // Following stable is not lasting coverage for an approved release: the
+    // next upstream tag moves it. Every supported profile needs its own job.
+    const release = JSON.parse(read("plugin/releases/release.json")) as { herdr: { version: string }[] };
+    for (const profile of release.herdr) expect(tags).toContain(`v${profile.version}`);
     for (const tag of tags) {
       const pin = matrix.include?.find((entry) => entry.herdr === tag)?.sha256;
       expect({ tag, pin }).toEqual({ tag, pin: expect.stringMatching(/^[0-9a-f]{64}$/) });
