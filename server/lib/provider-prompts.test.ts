@@ -7,11 +7,14 @@ import { TranscriptStore } from "./transcript";
 import type { HerdrClient } from "./herdr-client";
 import type { SessionStore } from "./state";
 
-import { CODEX_TRUST, CURSOR_TRUST, AGY_TRUST, CURSOR_COMMAND, AGY_EDIT, AGY_COMMAND } from "../fixtures/provider-menus";
+import { CODEX_TRUST, CODEX_TRUST_OWN_SERVER, CODEX_UPDATE, CURSOR_TRUST, AGY_TRUST, CURSOR_COMMAND, AGY_EDIT, AGY_COMMAND } from "../fixtures/provider-menus";
 
 const cases = [
   { kind: "agy", screen: AGY_COMMAND, question: "Run this command?", keys: [["1"], ["2"], ["3"], ["4"]] },
   { kind: "codex", screen: CODEX_TRUST, question: "Trust this folder?", keys: [["1", "Enter"], ["2", "Enter"]] },
+  // Every Codex the phone starts asks this form: its second choice is Quit.
+  { kind: "codex", screen: CODEX_TRUST_OWN_SERVER, question: "Trust this folder?", keys: [["1", "Enter"], ["2", "Enter"]] },
+  { kind: "codex", screen: CODEX_UPDATE, question: "Update available · 0.157.1 → 0.158.0", keys: [["1", "Enter"], ["2", "Enter"], ["3", "Enter"]] },
   { kind: "cursor", screen: CURSOR_TRUST, question: "Do you trust", keys: [["a"], ["q"]] },
   { kind: "agy", screen: AGY_TRUST, question: "Do you trust", keys: [["Enter"], ["Down", "Enter"]] },
   { kind: "cursor", screen: CURSOR_COMMAND, question: "Run this command?", keys: [["y"], ["Tab"], ["shift+tab"], ["n"]] },
@@ -42,6 +45,19 @@ describe("current provider menus", () => {
     expect(parsed.context).toEqual(["/home/test/project"]);
     expect(parsed.question).toEndWith("decision will be saved.");
     expect(parsed.confirm).toBe(true);
+  });
+
+  test("Codex's update question keeps its release notes and every choice, and a trust form never mixes the two footers", () => {
+    const update = parsePrompt(CODEX_UPDATE)!;
+    expect(update.context).toEqual(["Release notes: https://github.com/openai/codex/releases/latest"]);
+    expect(update.options.map(option => option.label)).toEqual([
+      "Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version",
+    ]);
+    // A quoted update notice with the wrong footer, or options out of order, is prose.
+    expect(providerPrompt(CODEX_UPDATE.replace("esc skip", "esc back").split("\n"))).toBeNull();
+    expect(providerPrompt(CODEX_UPDATE.replace("2. Skip\n", "2. Skip it\n").split("\n"))).toBeNull();
+    expect(providerPrompt(CODEX_TRUST_OWN_SERVER.replace("esc quit", "esc back").split("\n"))).toBeNull();
+    expect(providerPrompt(CODEX_TRUST.replace("esc back", "esc quit").split("\n"))).toBeNull();
   });
 
   test("Cursor retains the command and the batch being approved", () => {

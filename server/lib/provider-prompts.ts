@@ -26,13 +26,32 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
 
   // The new Codex folder picker is near the top, above an otherwise empty
   // terminal. The folder and footer distinguish it from quoted menu prose.
+  // Its second choice depends on how Codex was started, measured on 0.157.1
+  // (2026-09-29): attached to the shared daemon it offers the Agent Command
+  // Center; on its own server, which is how Shahi starts every Codex
+  // (`approvals_reviewer` in modes.ts), it offers Quit. Missing that second
+  // form left every Codex started from the phone with no trust card.
   const folder = plain.lastIndexOf("Folder access");
   const trust = plain.findIndex((line, i) => i > folder && line.startsWith("Trust this folder? Codex can read, edit, and run files here"));
   const codexRows = plain.filter(line => /^[›❯>»▶]?\s*[12]\.\s/.test(line));
-  const codex = options(codexRows, ["Trust and continue", "Back to Agent Command Center"], "digit");
-  if (folder >= 0 && trust > folder && plain[folder + 1]?.startsWith("/") && plain.at(-1) === "enter continue · esc back" && codex) {
+  const codex = plain.at(-1) === "enter continue · esc back" ? options(codexRows, ["Trust and continue", "Back to Agent Command Center"], "digit")
+    : plain.at(-1) === "enter continue · esc quit" ? options(codexRows, ["Trust and continue", "Quit"], "digit") : null;
+  if (folder >= 0 && trust > folder && plain[folder + 1]?.startsWith("/") && codex) {
     const end = plain.findIndex((line, i) => i > trust && /^[›❯>»▶]?\s*1\./.test(line));
     return { agent: "codex", prompt: { question: plain.slice(trust, end).filter(Boolean).join(" "), answer: "digit", confirm: true, options: codex, context: [plain[folder + 1]!] } };
+  }
+
+  // Codex asks before starting whenever a newer release is out, and herdr
+  // reports it idle meanwhile, so without this every message was refused
+  // behind a menu the phone had no card for (measured on 0.157.1 → 0.158.0).
+  // "Update now" names the installer command it runs, which changes with the
+  // release, so only that label is matched by its start.
+  const update = plain.findIndex(line => /^Update available · \S+ → \S+$/.test(line));
+  if (update >= 0 && plain[update + 1]?.startsWith("Release notes: ") && plain.at(-1) === "enter continue · esc skip") {
+    const rows = plain.slice(update + 2).flatMap(line => { const m = line.match(/^([›❯>»▶])?\s*(\d)\.\s+(.+)$/u); return m ? [{ index: Number(m[2]), label: m[3]!, selected: !!m[1] }] : []; });
+    const shaped = rows.length === 3 && rows.every((row, i) => row.index === i + 1) && rows.filter(row => row.selected).length === 1 &&
+      rows[0]!.label.startsWith("Update now") && rows[1]!.label === "Skip" && rows[2]!.label === "Skip until next version";
+    if (shaped) return { agent: "codex", prompt: { question: plain[update]!, answer: "digit", confirm: true, options: rows, context: [plain[update + 1]!] } };
   }
 
   const agyQuestion = plain.indexOf("Do you trust the contents of this project?");

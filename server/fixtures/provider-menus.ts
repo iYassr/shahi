@@ -10,6 +10,31 @@ export const CODEX_TRUST = `  Folder access
   2. Back to Agent Command Center
 
   enter continue · esc back` + "\n ".repeat(30);
+// Codex 0.157.1 on its own server, as Shahi starts it (captured 2026-09-29).
+export const CODEX_TRUST_OWN_SERVER = `
+  Folder access
+  /home/test/project
+
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings
+  can run code automatically, even without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+
+› 1. Trust and continue
+  2. Quit
+
+  enter continue · esc quit`;
+
+// Codex 0.157.1 while 0.158.0 is out, before any other screen (captured 2026-09-29).
+export const CODEX_UPDATE = `
+  Update available · 0.157.1 → 0.158.0
+  Release notes: https://github.com/openai/codex/releases/latest
+
+› 1. Update now (runs \`sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'\`)
+  2. Skip
+  3. Skip until next version
+
+  enter continue · esc skip`;
+
 export const CURSOR_TRUST = `│ ⚠ Workspace Trust Required │
 │ Cursor Agent can execute code and access files in this directory. │
 │ Do you trust the contents of this directory? │
