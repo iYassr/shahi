@@ -39,6 +39,19 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
     return { agent: "codex", prompt: { question: plain.slice(trust, end).filter(Boolean).join(" "), answer: "digit", confirm: true, options: codex, context: [plain[folder + 1]!] } };
   }
 
+  // Codex asks before starting whenever a newer release is out, and herdr
+  // reports it idle meanwhile, so without this every message was refused
+  // behind a menu the phone had no card for (measured on 0.157.1 → 0.158.0).
+  // "Update now" names the installer command it runs, which changes with the
+  // release, so only that label is matched by its start.
+  const update = plain.findIndex(line => /^Update available · \S+ → \S+$/.test(line));
+  if (update >= 0 && plain[update + 1]?.startsWith("Release notes: ") && plain.at(-1) === "enter continue · esc skip") {
+    const rows = plain.slice(update + 2).flatMap(line => { const m = line.match(/^([›❯>»▶])?\s*(\d+)\.\s+(.+)$/u); return m ? [{ index: Number(m[2]), label: m[3]!, selected: !!m[1] }] : []; });
+    const shaped = rows.length === 3 && rows.every((row, i) => row.index === i + 1) && rows.filter(row => row.selected).length === 1 &&
+      /^Update now(?:$| \(runs )/.test(rows[0]!.label) && rows[1]!.label === "Skip" && rows[2]!.label === "Skip until next version";
+    if (shaped) return { agent: "codex", prompt: { question: plain[update]!, answer: "digit", confirm: true, options: rows, context: [plain[update + 1]!] } };
+  }
+
   const agyQuestion = plain.indexOf("Do you trust the contents of this project?");
   const agyRows = plain.filter(line => /^(?:[›❯>»▶]\s*)?(?:Yes, I trust this folder|No, exit)$/.test(line));
   const agy = options(agyRows, ["Yes, I trust this folder", "No, exit"], "cursor");
