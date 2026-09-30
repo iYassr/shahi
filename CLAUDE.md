@@ -76,7 +76,7 @@ them.
 The docs are wrong in places. These were established against herdr 0.7.5,
 protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
 an afternoon. Most are also asserted by `server/lib/herdr-live.test.ts`
-against a real herdr on every push — 0.9.0 and 0.9.1, protocol 22, and
+against a real herdr on every push — 0.9.0 through 0.9.3, protocol 22, and
 whatever is current (see Testing) — so the next drift is a red job rather than
 a report from a phone. Restart/id-reuse, agent-lifetime, request-size and
 plugin-registry measurements also include manual checks; the live suite does
@@ -776,8 +776,8 @@ sidecar against a headless herdr: the protocol pin, snapshot shapes, the
 mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back (including 260 KB), occupant
 identity, `pane.process_info`, every key-bar name, the event
-stream, and the HTTP routes including the 426 gate. CI runs it three times per
-push — against `v0.9.0`, the minimum supported release, and `v0.9.1`, both
+stream, and the HTTP routes including the 426 gate. CI runs it five times per
+push — against `v0.9.0`, the minimum supported release, through `v0.9.3`, all
 pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
 against whatever herdr's own installer hands out today, read from
 `herdr.dev/latest.json` (version and checksum) and cross-checked against
@@ -832,7 +832,9 @@ directory under `~/.config/herdr/sessions/` and starts with nothing in it.
 
 A newer stable protocol fails the pinned job on purpose: regenerate
 (`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.
-A pinned tag needs its digest beside it in the herdr matrix's `include`:
+A newly approved herdr profile needs a pinned job, even when it is also stable;
+the workflow policy test enforces this. A pinned tag needs its digest beside it
+in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
 Hosted tests default to 7472 and 7572, configurable through `HOSTED_PORT` and
