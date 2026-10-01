@@ -1331,6 +1331,35 @@ server. Without it Full auto and bypass attached to the shared daemon, losing
 this terminal's hook environment and exact process-file Reader lookup. Never
 repair that by selecting a rollout by working folder or modification time.
 
+## Read must match Screen, October 1
+
+Screen is the ground truth: whatever an agent drew, the person saw. Reader went
+months without the newest reply of a backgrounded conversation, Claude Code's
+task list, its subagents and every message typed mid-turn, all in files on the
+computer, because every test compared Reader with expectations its authors
+wrote. `docs/reader-parity-2026-10-01.md` has the evidence. So:
+
+- Every shape an agent writes has a decision in `transcript-shapes.ts` (shown,
+  state, followed, dropped, with the reason), held to the readers by its test.
+  `bun run server/scripts/transcript-census.ts --source` fails on any shape
+  without one: run it when an agent updates and before a release. "State" marks
+  what the agent keeps on Screen beyond the record (task list, subagents); ask
+  that question of every new tool, not only "can this record be displayed".
+- `bun run server/scripts/reader-parity.ts` compares Read with Screen for every
+  live agent pane: newest prose, task list, overall prose. Read-only, prints
+  counts; `--show` prints Screen lines Read lacks to the terminal, so use it
+  only on panes whose content you may read, and never redirect it to a file.
+  Run it before a release while an agent works through a multi-step task. A
+  Reader change is verified against Screen, on the simulator or the phone
+  (device check 23), not only against fixtures.
+- A Claude that parked its conversation as a background job shows that job:
+  Reader follows the process record's `parkedJobId` before herdr's session,
+  because the job reports itself with the daemon's `HERDR_PANE_ID`, which
+  belongs to whichever pane first started the daemon (`parkedSession`).
+- A message typed while Claude works is a `queued_command` attachment, not a
+  user row; it is the person's message. A `<task-notification>` row is never
+  the person's, status or not.
+
 ## Reader providers, September 27
 
 `docs/reader-providers-2026-09-27.md` records Reader coverage for the five

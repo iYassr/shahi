@@ -198,3 +198,14 @@ Restore connectivity and check that nothing sends automatically.
 **22. Notification opt-out survives a launch.** Enable notifications, then turn
 them off. The server’s registration disappears and Settings still says Off after
 relaunch. Physical push delivery and opt-out must be checked on the device.
+
+**23. Read says what Screen says.** Open a Claude conversation that is working
+through a task list, preferably one sent to the background, and one Codex
+conversation. Screenshot Read, switch to Screen, screenshot again. The newest
+reply on Screen must be Read's newest too; every task on Screen must be in
+Read's task card with the same mark; a running subagent must be its own row;
+a message typed while the agent worked must appear as yours. Anything on Screen
+that Read lacks is a finding, even if Read looks complete on its own: that is how
+a stale transcript, the task list and subagents went unnoticed until October
+2026. `bun run server/scripts/reader-parity.ts` on the computer makes the same
+comparison for every pane at once.
