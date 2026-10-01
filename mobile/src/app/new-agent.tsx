@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { NewAgent, PickSpace } from "@/screens/spaces";
+import { NewAgent, NewSpace, PickSpace } from "@/screens/spaces";
+import { Text } from "@/components/text";
+import { View } from "react-native";
+import { theme } from "@/lib/theme";
 import { useSession } from "@/lib/session";
 import { useOwnedRoute } from "@/lib/owned-route";
 
@@ -11,12 +14,22 @@ import { useOwnedRoute } from "@/lib/owned-route";
 export default function NewAgentRoute() {
   const { workspaceId } = useLocalSearchParams<{ workspaceId?: string }>();
   const [chosen, setChosen] = useState<string | null>(workspaceId ? String(workspaceId) : null);
+  /** A space made from "Choose a space", which goes on to its agent once the session lists it. */
+  const [making, setMaking] = useState(false);
+  const [made, setMade] = useState<string | null>(null);
   const { session, refresh, activeComputerId } = useSession();
   // A space's id, like a pane's, means something only on its own computer.
   const owned = useOwnedRoute();
   if (!session || !owned) return null;
+  if (making) {
+    return <NewSpace session={session} onCancel={() => setMaking(false)} onCreated={(id) => { setMaking(false); setMade(id); setChosen(id); void refresh(); }} />;
+  }
   const space = chosen ? session.workspaces.find((w) => w.workspaceId === chosen) : undefined;
-  if (!space) return <PickSpace session={session} onPick={(s) => setChosen(s.workspaceId)} />;
+  if (!space && chosen !== null && chosen === made) {
+    // The computer has made it; this session has not heard yet.
+    return <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><Text style={{ color: theme.dim }}>Opening the new space…</Text></View>;
+  }
+  if (!space) return <PickSpace session={session} onPick={(s) => setChosen(s.workspaceId)} onNewSpace={() => setMaking(true)} />;
   return (
     <NewAgent
       space={space}

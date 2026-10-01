@@ -2,7 +2,7 @@ import { render, screen, userEvent } from "@testing-library/react-native";
 import { modesFor, type Session } from "@shahi/shared";
 import { NewSpace, PickSpace } from "./spaces";
 
-jest.mock("@/lib/api", () => ({ api: { createWorkspace: jest.fn() } }));
+jest.mock("@/lib/api", () => ({ api: { createWorkspace: jest.fn(), dirs: jest.fn() } }));
 import { api } from "@/lib/api";
 
 jest.mock("expo-router", () => ({ router: { back: jest.fn(), push: jest.fn(), replace: jest.fn() }, Stack: { Screen: () => null } }));
@@ -80,22 +80,106 @@ describe("PickSpace", () => {
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "w2", label: "notes" }));
   });
 
+  test("offers a new space above the spaces that exist", async () => {
+    const onNewSpace = jest.fn();
+    render(<PickSpace session={session} onPick={jest.fn()} onNewSpace={onNewSpace} />);
+    await userEvent.press(screen.getByTestId("pick-new-space"));
+    expect(onNewSpace).toHaveBeenCalledTimes(1);
+  });
+
   test("with no spaces, offers to make one instead of an empty list", () => {
     render(<PickSpace session={{ ...session, workspaces: [] } as Session} onPick={jest.fn()} />);
     expect(screen.getByText(/make one first/)).toBeTruthy();
   });
 });
 
+/** The computer's home as `/api/dirs` lists it, folders only. */
+const HOME: Record<string, unknown> = {
+  "~": { path: "/home/you", display: "~", parent: null, entries: [
+    { name: "projects", path: "/home/you/projects", display: "~/projects", isDirectory: true },
+  ] },
+  "~/projects": { path: "/home/you/projects", display: "~/projects", parent: "~", entries: [
+    { name: "shahi", path: "/home/you/projects/shahi", display: "~/projects/shahi", isDirectory: true },
+  ] },
+  "~/projects/shahi": { path: "/home/you/projects/shahi", display: "~/projects/shahi", parent: "~/projects", entries: [] },
+  "~/work/app": { path: "/home/you/work/app", display: "~/work/app", parent: "~/work", entries: [] },
+};
+const empty = { workspaces: [], tabs: [], panes: [] } as unknown as Session;
+
 describe("NewSpace", () => {
-  test("a brand-new box can type its first folder and create a space", async () => {
+  beforeEach(() => {
+    (api.dirs as jest.Mock).mockReset().mockImplementation(async (path: string) => {
+      if (!HOME[path]) throw new Error("no such folder");
+      return HOME[path];
+    });
+    (api.createWorkspace as jest.Mock).mockReset();
+  });
+
+  // Device audit, build 28: the folder was a free-text absolute path, so a
+  // first space anywhere new meant typing "/Users/…/…" on a phone keyboard.
+  test("a folder is chosen by browsing, and the space is named after it", async () => {
+    const createWorkspace = api.createWorkspace as jest.Mock;
+    createWorkspace.mockResolvedValue({ workspaceId: "w9" });
+    const onCreated = jest.fn();
+    render(<NewSpace session={empty} onCreated={onCreated} />);
+
+    expect(screen.getByTestId("create-space").props.accessibilityState.disabled).toBe(true);
+    await userEvent.press(await screen.findByTestId("entry-projects"));
+    await userEvent.press(await screen.findByTestId("entry-shahi"));
+    await screen.findByText("No folders in here.");
+    await userEvent.press(screen.getByTestId("use-folder"));
+
+    expect(screen.getByTestId("chosen-folder")).toHaveTextContent(/~\/projects\/shahi/);
+    expect(screen.getByPlaceholderText("what you are working on").props.value).toBe("shahi");
+    await userEvent.press(screen.getByTestId("create-space"));
+    // The absolute path: herdr does not expand `~`.
+    expect(createWorkspace).toHaveBeenCalledWith({ label: "shahi", cwd: "/home/you/projects/shahi" });
+    expect(onCreated).toHaveBeenCalledWith("w9");
+  });
+
+  test("a name the person typed is kept when a folder is chosen", async () => {
+    render(<NewSpace session={empty} onCreated={jest.fn()} />);
+    await userEvent.type(screen.getByPlaceholderText("what you are working on"), "release QA");
+    await userEvent.press(await screen.findByTestId("entry-projects"));
+    await screen.findByTestId("entry-shahi");
+    await userEvent.press(screen.getByTestId("use-folder"));
+    expect(screen.getByPlaceholderText("what you are working on").props.value).toBe("release QA");
+  });
+
+  // The attach sheet climbed with a folder row named "~", which reads as a folder.
+  test("the way back is an Up row and a breadcrumb home, not a folder named ~", async () => {
+    render(<NewSpace session={empty} onCreated={jest.fn()} />);
+    await userEvent.press(await screen.findByTestId("entry-projects"));
+    await userEvent.press(await screen.findByTestId("entry-shahi"));
+    await screen.findByText("No folders in here.");
+    expect(screen.queryByText("~")).toBeNull();
+    await userEvent.press(screen.getByTestId("folder-up"));
+    expect(await screen.findByTestId("entry-shahi")).toBeTruthy();
+    await userEvent.press(screen.getByLabelText("Go to Home"));
+    expect(await screen.findByTestId("entry-projects")).toBeTruthy();
+    expect(screen.queryByTestId("folder-up")).toBeNull();
+  });
+
+  test("folders other spaces use are offered first, and open where they are", async () => {
+    const session = { workspaces: [{ workspaceId: "w1", label: "app", cwd: "~/work/app", cwdPath: "/home/you/work/app" }], tabs: [], panes: [] } as unknown as Session;
+    render(<NewSpace session={session} onCreated={jest.fn()} />);
+    await userEvent.press(await screen.findByTestId("recent-~/work/app"));
+    expect(api.dirs).toHaveBeenLastCalledWith("~/work/app", false);
+    await userEvent.press(await screen.findByTestId("use-folder"));
+    expect(screen.getByPlaceholderText("what you are working on").props.value).toBe("app");
+  });
+
+  test("a brand-new box can still type its first folder and create a space", async () => {
     const createWorkspace = api.createWorkspace as jest.Mock;
     createWorkspace.mockResolvedValue({ workspaceId: "w1" });
     const onCreated = jest.fn();
-    render(<NewSpace session={{ workspaces: [], tabs: [], panes: [] } as unknown as Session} onCreated={onCreated} />);
+    render(<NewSpace session={empty} onCreated={onCreated} />);
 
     expect(screen.getByTestId("create-space").props.accessibilityRole).toBe("button");
     expect(screen.getByTestId("create-space").props.accessibilityState.disabled).toBe(true);
+    await userEvent.press(screen.getByTestId("type-path"));
     await userEvent.type(screen.getByTestId("new-space-folder"), "/tmp/shahi-first-space");
+    await userEvent.clear(screen.getByPlaceholderText("what you are working on"));
     await userEvent.type(screen.getByPlaceholderText("what you are working on"), "production QA");
     await userEvent.press(screen.getByTestId("create-space"));
 
@@ -110,8 +194,9 @@ describe("NewSpace", () => {
     const createWorkspace = api.createWorkspace as jest.Mock;
     createWorkspace.mockRejectedValueOnce(new Error("That folder does not exist on this computer."));
     const onCreated = jest.fn();
-    render(<NewSpace session={{ workspaces: [], tabs: [], panes: [] } as unknown as Session} onCreated={onCreated} />);
+    render(<NewSpace session={empty} onCreated={onCreated} />);
 
+    await userEvent.press(screen.getByTestId("type-path"));
     await userEvent.type(screen.getByTestId("new-space-folder"), "/home/you/porject");
     await userEvent.press(screen.getByTestId("create-space"));
 

@@ -24,7 +24,7 @@ import { BackHandler, FlatList, ScrollView, Pressable, StyleSheet, TextInput, Vi
 import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
-import { modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
+import { folderName, modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { landed, refused } from "@/lib/feel";
 import { openPane, openSpace } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
@@ -33,6 +33,7 @@ import { agentLabel } from "@shahi/shared";
 import { Avatar } from "@/components/avatar";
 import { conversationLabel, paneTitle } from "@/components/conversation-label";
 import { Icon } from "@/components/icons";
+import { FolderBrowser, type FolderChoice } from "@/components/folder-browser";
 
 export function Spaces({ session }: { session: Session | null }) {
   // Same header furniture as the Agents tab — the two lists are siblings and
@@ -236,72 +237,92 @@ const PaneRow = memo(function PaneRow({
   );
 });
 
-export function NewSpace({ session, onCreated }: { session: Session; onCreated: () => void }) {
+export function NewSpace({ session, onCreated, onCancel }: { session: Session; onCreated: (workspaceId: string) => void; onCancel?: () => void }) {
   const { api } = useSession();
   const largeText = useLargeText();
   const [name, setName] = useState("");
+  /** The person typed the name: choosing a folder no longer renames the space. */
+  const named = useRef(false);
+  const [folder, setFolder] = useState<FolderChoice | null>(null);
+  /** The typed-path field, for a folder outside home or a power user. */
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A new space usually sits beside an existing one.
-  const suggestions = useMemo(
-    () => [...new Set(session.workspaces.map((w) => w.cwdPath).filter((p): p is string => !!p))],
-    [session],
-  );
-  const [cwd, setCwd] = useState(suggestions[0] ?? "");
+  const recent = useMemo(() => {
+    const seen = new Map<string, FolderChoice>();
+    for (const w of session.workspaces) if (w.cwdPath && !seen.has(w.cwdPath)) seen.set(w.cwdPath, { path: w.cwdPath, display: w.cwd ?? w.cwdPath });
+    return [...seen.values()];
+  }, [session]);
+  // Absolute only: herdr does not expand `~` and does not reject it either,
+  // it silently uses $HOME. The browser hands back the listing's absolute path.
+  const cwd = typing ? typed.trim() : folder?.path ?? "";
+
+  function nameAfter(path: string) {
+    if (!named.current) setName(folderName(path));
+  }
+
+  function choose(choice: FolderChoice) {
+    setFolder(choice);
+    setError(null);
+    nameAfter(choice.display);
+  }
 
   async function create() {
     setBusy(true);
     try {
-      // Absolute only: herdr does not expand `~` and does not reject it either,
-      // it silently uses $HOME.
-      await api.createWorkspace({ label: name.trim() || "new space", cwd: cwd.trim() });
-      onCreated();
+      const { workspaceId } = await api.createWorkspace({ label: name.trim() || "new space", cwd });
+      onCreated(workspaceId);
     } catch (e) {
+      // The computer says what is wrong with the folder in words (`folderProblem`).
       setError((e as Error).message);
       setBusy(false);
     }
   }
 
   return (
-    <SheetBody title="New space">
+    <SheetBody title="New space" fullScreen busy={busy} onClose={onCancel}>
+      <Text style={styles.label}>FOLDER</Text>
+      {!typing && (folder ? (
+        <View style={styles.chosen} testID="chosen-folder">
+          <Icon name="folder" size={18} color={theme.peach} />
+          <Text style={styles.chosenPath} numberOfLines={largeText ? 3 : 1} ellipsizeMode="head">{folder.display}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Change folder" style={styles.changeTarget} onPress={() => setFolder(null)}>
+            <Text style={styles.sheetClose}>Change</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FolderBrowser recent={recent} onChoose={choose} />
+      ))}
+      <Pressable accessibilityRole="button" style={styles.changeTarget} onPress={() => { setTyping((t) => !t); setError(null); }} testID="type-path">
+        <Text style={styles.sheetClose}>{typing ? "Browse folders instead" : "Type a path instead"}</Text>
+      </Pressable>
+      {typing && (
+        <TextInput
+          style={styles.input}
+          value={typed}
+          onChangeText={(text) => { setTyped(text); nameAfter(text); }}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          testID="new-space-folder"
+          placeholder="/home/you/project"
+          placeholderTextColor={theme.dim}
+          accessibilityLabel="Space folder"
+        />
+      )}
       <Text style={styles.label}>NAME</Text>
       <TextInput
         style={styles.input}
         value={name}
-        onChangeText={setName}
+        onChangeText={(text) => { named.current = true; setName(text); }}
         placeholder="what you are working on"
         placeholderTextColor={theme.dim}
         accessibilityLabel="Space name"
       />
-      <Text style={styles.label}>FOLDER</Text>
-      <TextInput
-        style={styles.input}
-        value={cwd}
-        onChangeText={setCwd}
-        autoCapitalize="none"
-        autoCorrect={false}
-        testID="new-space-folder"
-        placeholder="/home/you/project"
-        placeholderTextColor={theme.dim}
-        accessibilityLabel="Space folder"
-      />
-      {/* A wrapping row like the agent-kind chips: a FlatList cannot size
-          itself inside this fit-to-contents sheet, and the chips floated up
-          over the title. Existing paths are shortcuts; the editable field is
-          what makes the first space on a new box possible at all. */}
-      {/* Cut at the head, where sibling folders are alike, and as wide as the
-          row allows. Cut at the end inside a fixed 200pt, two siblings read
-          as the same "/Users/alex/Documents/projects/s…", and every home path
-          as "/home/x/…" from AX2 (pre-release bug hunt). */}
-      <View style={styles.kinds}>
-        {suggestions.map((item) => (
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: item === cwd }} key={item} style={[styles.chip, styles.folderChip, item === cwd && styles.chipOn]} onPress={() => setCwd(item)}>
-            <Text style={[styles.chipText, item === cwd && styles.chipTextOn]} numberOfLines={largeText ? 2 : 1} ellipsizeMode="head">{item}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {error && <Text style={styles.err}>{error}</Text>}
-      <Pressable accessibilityRole="button" style={[styles.go, (busy || !cwd.trim()) && styles.goOff]} disabled={busy || !cwd.trim()} onPress={() => void create()} testID="create-space">
+      {error && <Text accessibilityRole="alert" style={styles.err}>{error}</Text>}
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !cwd }} style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()} testID="create-space">
         <Text style={styles.goText}>{busy ? "Creating…" : "Create space"}</Text>
       </Pressable>
     </SheetBody>
@@ -314,15 +335,22 @@ export function NewSpace({ session, onCreated }: { session: Session; onCreated: 
  * a space's own "+ New agent" opens — the agent is the thing being made, and
  * where it lives is a choice, not a place you have to navigate to first.
  */
-export function PickSpace({ session, onPick }: { session: Session; onPick: (space: Space) => void }) {
+export function PickSpace({ session, onPick, onNewSpace }: { session: Session; onPick: (space: Space) => void; onNewSpace?: () => void }) {
+  // Making the space here continues to its agent; the standalone sheet is the fallback.
+  const newSpace = onNewSpace ?? (() => router.replace("/new-space"));
   return (
     <SheetBody title="Choose a space" fullScreen>
       {session.workspaces.length === 0 ? (
-        <Pressable accessibilityRole="button" style={styles.action} onPress={() => router.replace("/new-space")}>
+        <Pressable accessibilityRole="button" style={styles.action} onPress={newSpace}>
           <Text style={styles.actionText}>No spaces yet — make one first</Text>
         </Pressable>
       ) : (
         <View>
+          {/* A new agent often wants a new folder; on build 28 this list
+              offered only the spaces that already existed (device audit). */}
+          <Pressable accessibilityRole="button" style={[styles.action, styles.actionTop]} onPress={newSpace} testID="pick-new-space">
+            <Text style={styles.actionText}>+ New space</Text>
+          </Pressable>
           {session.workspaces.map((item, index) => (
             <Pressable accessibilityRole="button" key={item.workspaceId} style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
               <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
@@ -500,7 +528,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
  * A full screen with one scroll container avoids native fit-to-content sheet
  * measurement races and keeps the Start button reachable at large text sizes.
  */
-function SheetBody({ title, children, fullScreen = false, busy = false }: { title: string; children: React.ReactNode; fullScreen?: boolean; busy?: boolean }) {
+function SheetBody({ title, children, fullScreen = false, busy = false, onClose = () => router.back() }: { title: string; children: React.ReactNode; fullScreen?: boolean; busy?: boolean; onClose?: () => void }) {
   const content = (
     <View style={styles.sheet}>
       {/* react-native-screens requires a non-collapsible header beside a
@@ -512,7 +540,7 @@ function SheetBody({ title, children, fullScreen = false, busy = false }: { titl
         {/* A 44pt frame of its own rather than hitSlop: hitSlop widens where a
             finger lands but not the element VoiceOver and Switch Control
             focus, which measured 39×18pt on the simulator. */}
-        <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={() => router.back()} style={styles.sheetCloseTarget} testID="sheet-close">
+        <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={onClose} style={styles.sheetCloseTarget} testID="sheet-close">
           <Text style={styles.sheetClose}>Close</Text>
         </Pressable>
       </View>
@@ -557,6 +585,10 @@ const styles = StyleSheet.create({
   rowStatus: { fontSize: 10, letterSpacing: 0.5 },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 10 },
 
+  chosen: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 10, borderCurve: "continuous", paddingLeft: 12, minHeight: 48 },
+  chosenPath: { color: theme.fg, fontFamily: theme.mono, fontSize: 14, flex: 1 },
+  changeTarget: { minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: "center", alignSelf: "flex-start" },
+  actionTop: { marginHorizontal: 0, marginTop: 0 },
   action: { margin: 16, minHeight: 48, borderWidth: 1, borderStyle: "dashed", borderColor: theme.lineBright, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center" },
   actionText: { color: theme.peach, fontSize: 13 },
   actionPrimary: { backgroundColor: theme.peach, borderStyle: "solid", borderColor: theme.peach },

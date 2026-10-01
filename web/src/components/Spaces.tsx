@@ -8,10 +8,10 @@ import { AgentAvatar } from "./AgentAvatar";
  * view filters out, are reachable here: on the phone this is the only way to
  * get at roughly half the panes in a real session.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApi, type Session } from "../api";
-import { paneTitle } from "@shahi/shared";
+import { folderName, paneTitle } from "@shahi/shared";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
@@ -315,7 +315,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
 
 /* -------------------------------------------------------------------------- */
 
-function CreateSpace({
+export function CreateSpace({
   session,
   onClose,
   onToast,
@@ -328,8 +328,15 @@ function CreateSpace({
 }) {
   const api = useApi();
   const [name, setName] = useState("");
-  const [cwd, setCwd] = useState<DirChoice>(HOME_CHOICE);
+  /** The person typed the name: choosing a folder no longer renames the space. */
+  const [named, setNamed] = useState(false);
+  const [cwd, setCwdState] = useState<DirChoice>(HOME_CHOICE);
   const [busy, setBusy] = useState(false);
+  // A space is named after its folder unless the person named it.
+  const setCwd = useCallback((choice: DirChoice) => {
+    setCwdState(choice);
+    if (!named && choice.display !== HOME_CHOICE.display) setName(folderName(choice.display));
+  }, [named]);
 
   // A new space usually sits beside an existing one, so offer those first.
   const suggestions = useMemo(() => {
@@ -359,7 +366,7 @@ function CreateSpace({
         <span className="field__label">Name</span>
         <input
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => { setNamed(true); setName(e.target.value); }}
           placeholder="what you are working on"
           autoFocus
           enterKeyHint="done"
