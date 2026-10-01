@@ -1536,6 +1536,25 @@ describe("keeping your terminal place", () => {
     mocked.pane.mockResolvedValue(withScreen("top\nmiddle\nbottom\n"));
   });
 
+  // The Screen tab drew plain text: its comment said colour needed an
+  // emulator, but herdr sends the screen already laid out with SGR codes.
+  test("Screen draws the terminal's colours and weights", async () => {
+    const ansi = "\x1b[38;2;215;119;87mclaude\x1b[0m ready\n\x1b[1m\x1b[7mlit\x1b[0m\n";
+    mocked.pane.mockResolvedValue({ frame: { paneId: P, ansi, text: "claude ready\nlit\n", prompt: null, activity: null, at: 1 }, layout: null });
+    const visit = render(<Pane paneId={P} initialView="screen" />);
+    await settle();
+    const body = visit.getByTestId("terminal-body");
+    expect(body).toHaveTextContent(/claude ready\s+lit/);
+    const coloured = within(body).getByText("claude");
+    expect(StyleSheet.flatten(coloured.props.style).color).toBe("#D77757");
+    const lit = StyleSheet.flatten(within(body).getByText("lit").props.style);
+    expect(lit.fontWeight).toBe("700");
+    // Inverse: the default background as text, on the default foreground.
+    expect(lit.backgroundColor).toBeTruthy();
+    expect(lit.color).toBeTruthy();
+    visit.unmount();
+  });
+
   test("Screen displays the terminal while its transcript request is still pending", async () => {
     const transcript = deferred<SessionLog>();
     mocked.sessionLog.mockReturnValue(transcript.promise);
