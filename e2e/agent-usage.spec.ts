@@ -29,7 +29,12 @@ test("a computer that offers plan usage shows Codex's limits and a switch for Cl
   await expect(codexSection).toContainText("Pro");
   const claude = page.getByRole("region", { name: "Claude Code plan usage" });
   await expect(claude).toContainText("hides its footer hints");
-  await claude.getByRole("switch", { name: "Show plan usage" }).check();
+  // The switch shows what the computer answered, as the phone's does, so it turns
+  // on only after the request returns. `check()` demands the new state at the
+  // moment of the click: WebKit's route answered in time, Chromium's did not.
+  const toggle = claude.getByRole("switch", { name: "Show plan usage" });
+  await toggle.click();
+  await expect(toggle).toBeChecked();
   await expect(claude.getByRole("meter", { name: "5-hour limit" })).toHaveAttribute("aria-valuetext", "24% used");
   expect(switched).toEqual([{ enabled: true }]);
 });
