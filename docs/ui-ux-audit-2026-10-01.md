@@ -31,7 +31,7 @@ TestFlight build 29, or why it waits.
 | C4 | A message refused behind a menu showed "Delivery not confirmed". | A refusal before typing is final, and the next send is a new message. Web too. |
 | C5 | The attach sheet mixed uploading from the phone with naming a file on the computer, opened the computer at home, and offered the way back as a row named "~". | "From this phone" and "From the computer", each saying what it does; opens in the agent's folder with Home and Agent's folder shortcuts; the parent row is "Up". |
 | C6 | Screen: tiny at the default width; its keys had no digits for numbered menus. | 1, 2 and 3 join the keys, in both apps. The text size waits for a pinch-to-zoom terminal. |
-| C7 | After returning from another app, a full "Computer disconnected" card with other computers to open, for about ten seconds, though nothing was wrong. | A quiet "Reconnecting…" first; the full card only if the link stays down. |
+| C7 | After returning from another app, a full "Computer disconnected" card with other computers to open, for about ten seconds, though nothing was wrong. | "Reconnecting to Mac…" on one line for seven seconds after a live link drops or the app returns, then the full card if it has not recovered. Offline, refused access, version mismatches and host-key changes show at once. Web too. |
 | C8 | A refusal's banner stays after the agent has moved on. | Waits: it can be dismissed, and clearing it on a screen change risks hiding a refusal the person has not read. |
 
 ## Spaces
@@ -47,9 +47,9 @@ TestFlight build 29, or why it waits.
 | # | Seen | Now |
 |---|---|---|
 | K1 | Each computer card had loose "Rename" and red "Revoke this phone's access" links under it, a mis-tap away. | Behind a "…" menu, with a confirmation that names the computer. |
-| K2 | Cards led with the relay host and id, and said nothing about waiting agents. | Status first, waiting count where known, the host and id as one small line. The header switcher shows waiting counts too. |
-| T1 | Settings mixed this computer's settings with the app's. | A section for the computer (status, Shahi and herdr versions, updates, release channel, devices, sign out) and one for the app (notifications, terminal width, pins, diagnostics, version with build, licences, help). |
-| T2 | "Last update · 74s ago" did not say what it measured; the app version had no build number; the release channel read as two links. | "Last refreshed"; "1.0.0 (29)"; a segmented control with its explanation. |
+| K2 | Cards led with the relay host and id, and said nothing about waiting agents. | Status and waiting count first, the host and id as one small line beneath. The header switcher already showed waiting counts; they now come before the address. Web's Computers page keeps its explicit buttons, which already confirm. |
+| T1 | Settings mixed this computer's settings with the app's. | "This computer": status, Shahi and herdr versions, last refreshed, computers, updates and release channel, notifications and pinned conversations (both are kept per computer), devices, sign out. "This app": terminal width, diagnostics, version with build, licences, privacy and help. Web shows the computer's versions too. |
+| T2 | "Last update · 74s ago" did not say what it measured; the app version had no build number; the release channel read as two links. | "Last refreshed"; the version with its build, "1.0.0 (29)"; a Stable/Beta segmented control with its explanation. |
 
 ## Not covered
 
