@@ -314,7 +314,8 @@ test.describe("the key bar", () => {
     await openPane(page);
     await page.getByRole("tab", { name: "Screen" }).click();
 
-    await expect(page.locator(".keys button")).toHaveCount(7);
+    // Seven terminal keys and three digits for numbered menus.
+    await expect(page.locator(".keys button")).toHaveCount(10);
   });
 
   /** EOF, one mis-tap from ending the shell, with nothing to undo. */

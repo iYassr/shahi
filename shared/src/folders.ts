@@ -14,6 +14,8 @@ export function breadcrumb(display: string): { label: string; display: string }[
 
 /** What a space in `path` is called unless the person names it: its folder's name. */
 export function folderName(path: string): string {
-  const name = path.replace(/\/+$/, "").split("/").pop() ?? "";
+  // Split rather than trim with /\/+$/, which backtracks quadratically over a
+  // long run of slashes that does not reach the end (CodeQL, js/polynomial-redos).
+  const name = path.split("/").filter(Boolean).pop() ?? "";
   return name === "~" ? "home" : name;
 }
