@@ -435,7 +435,8 @@ describe("normaliseCodex, codex 0.151+ items", () => {
   });
 
   // 43 of 517 captured UserMessages were subagent reports and 17 were replies to
-  // an agent's question, all shown as XML the person had typed.
+  // an agent's question, all shown as XML the person had typed. A report is
+  // a notice, not the person's (October 2026); a reply is the person's answer.
   test("codex subagent reports and question replies are unwrapped, not shown as XML the person typed", () => {
     const texts = normaliseCodex([
       userMessage("<task-notification>\n<task-id>a1</task-id>\n<event>completed</event>\n<summary>Subagent finished the audit</summary>\n</task-notification>"),
@@ -445,7 +446,7 @@ describe("normaliseCodex, codex 0.151+ items", () => {
       userMessage("<send_user_message_question_reply>not json</send_user_message_question_reply>"),
     ]).map((m) => [m.role, m.blocks[0]]);
     expect(texts).toEqual([
-      ["you", { kind: "text", text: "Subagent finished the audit" }],
+      ["system", { kind: "text", text: "Subagent finished the audit", notice: { status: "event" } }],
       ["you", { kind: "text", text: "SQLite" }],
       ["you", { kind: "text", text: "Which database?: SQLite\nDeploy now?: Later" }],
       ["you", { kind: "text", text: "! ls" }],

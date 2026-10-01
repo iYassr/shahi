@@ -579,7 +579,9 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
   for (const [index, row] of rows.entries()) {
     if (!isRecord(row)) continue;
-    const type = row.type;
+    // A message typed while Claude was working is an attachment row; it reads
+    // as the person's message, as Claude Code draws it (see `queuedPrompt`).
+    const type = row.type === "attachment" && queuedPrompt(row) !== undefined ? "user" : row.type;
     const id = stringOr(row.uuid, `row-${index}`);
     const at = Date.parse(stringOr(row.timestamp, "")) || 0;
 
@@ -613,7 +615,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     // A row that produced only chrome (a model switch) reads as a system note,
     // not as the agent speaking.
     let onlyNotes = true;
-    const content = isRecord(row.message) ? row.message.content : undefined;
+    const content = contentOf(row);
 
     if (typeof content === "string") {
       const rendered = renderUserText(content);
@@ -695,8 +697,33 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
 /** The row's content blocks that are objects; a `null` or a bare string in the list is skipped. */
 function blocksOf(row: Record<string, unknown>): RawBlock[] {
-  const content = isRecord(row.message) ? row.message.content : undefined;
+  const content = contentOf(row);
   return Array.isArray(content) ? content.filter(isRecord) : [];
+}
+
+/** What a row says, as `message.content` does: a string or a list of blocks. */
+function contentOf(row: Record<string, unknown>): unknown {
+  if (row.type === "attachment") return queuedPrompt(row);
+  return isRecord(row.message) ? row.message.content : undefined;
+}
+
+/**
+ * A message the person typed while Claude was working. Claude Code does not
+ * write it as a user row: it queues it and hands it to the model mid-turn as
+ * an attachment, `{type: "queued_command", commandMode: "prompt", prompt}`,
+ * where `prompt` is the text or a list of text and image blocks. A background
+ * task's report arrives the same way, with `commandMode: "task-notification"`.
+ * Of 128 typed messages in the October 2026 census of 38 transcripts, 125
+ * existed only as these rows, and Reader dropped every one, so a reply typed
+ * mid-turn appeared on Screen and never in Read. A message from another
+ * session (`origin.kind: "peer"`) is marked `isMeta`, written for the model,
+ * and stays dropped like every other `isMeta` row.
+ */
+function queuedPrompt(row: Record<string, unknown>): unknown {
+  const queued = isRecord(row.attachment) ? row.attachment : undefined;
+  if (queued?.type !== "queued_command" || queued.isMeta === true) return undefined;
+  if (queued.commandMode !== "prompt" && queued.commandMode !== "task-notification") return undefined;
+  return typeof queued.prompt === "string" || Array.isArray(queued.prompt) ? queued.prompt : undefined;
 }
 
 /**
@@ -732,9 +759,12 @@ export function renderUserText(raw: string): LogBlock | null {
     // Only a row that is the notification itself, not prose that quotes one.
     // The id ties a subagent's report to its call; background commands and
     // monitors report too, some with no call id at all.
+    // A monitor's event carries no status: it is still a report, never the
+    // person's words (10 of 125 queued reports in the October 2026 census),
+    // and with no status it is not tied to a call whose state it would set.
     const toolUseId = inner("tool-use-id");
-    const notice = text.startsWith("<task-notification>") && status
-      ? { status, ...(toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId } : {}) }
+    const notice = text.startsWith("<task-notification>")
+      ? { status: status ?? "event", ...(status && toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId } : {}) }
       : undefined;
     return {
       kind: "text",
