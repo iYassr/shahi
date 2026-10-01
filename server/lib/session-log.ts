@@ -34,7 +34,7 @@
  */
 import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
 import { createHash, type Hash } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { realPath } from "./real-path";
@@ -91,6 +91,67 @@ export async function findTranscript(sessionId: string, projectsDir = join(claud
   // A moved session or directory alias can name the same canonical file twice.
   // Two distinct copies are ambiguous; directory order is not ownership.
   return matches.size === 1 ? [...matches][0]! : null;
+}
+
+/** How much of a transcript's end is read for a `continued-in` row, and how many to follow. */
+const CONTINUATION_TAIL_BYTES = 16 * 1024;
+const CONTINUATION_HOPS = 8;
+
+/**
+ * The transcript a conversation continued in, when Claude Code moved it.
+ *
+ * Sending a conversation to the background starts a new session and ends the
+ * old transcript with `{"type":"continued-in","continuedInSessionId":…}`;
+ * the conversation goes on in the new file. The pane's own Claude process
+ * keeps the old session id, which herdr's hook reported, so Reader showed the
+ * old file's last message, hours stale, while the terminal showed the live
+ * conversation (measured on Claude Code 2.1.286, October 2026). A row of the
+ * conversation after the marker means it resumed here, and nothing is
+ * followed; a continuation whose file cannot be found keeps the original.
+ */
+export async function continuedTranscript(path: string, projectsDir = join(claudeConfigDir(), "projects")): Promise<string> {
+  let current = path;
+  const seen = new Set([current]);
+  for (let hop = 0; hop < CONTINUATION_HOPS; hop++) {
+    const next = await continuedIn(current);
+    if (!next) return current;
+    const found = await findTranscript(next, projectsDir);
+    if (!found || seen.has(found)) return current;
+    seen.add(found);
+    current = found;
+  }
+  return current;
+}
+
+/** The session the transcript at `path` says it continued in, if its last conversation row says so. */
+async function continuedIn(path: string): Promise<string | null> {
+  let text: string;
+  try {
+    const file = await open(path, "r");
+    try {
+      const { size } = await file.stat();
+      const length = Math.min(size, CONTINUATION_TAIL_BYTES);
+      const bytes = Buffer.alloc(length);
+      await file.read(bytes, 0, length, size - length);
+      text = bytes.toString("utf8");
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+  // The first line may be cut by the window; a row that does not parse is skipped.
+  const rows = text.split("\n").reverse();
+  for (const line of rows) {
+    if (!line.trim()) continue;
+    let row: { type?: unknown; continuedInSessionId?: unknown };
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row.type === "continued-in") {
+      return typeof row.continuedInSessionId === "string" && /^[0-9a-f-]{16,64}$/i.test(row.continuedInSessionId) ? row.continuedInSessionId : null;
+    }
+    if (row.type === "user" || row.type === "assistant") return null;
+  }
+  return null;
 }
 
 /**

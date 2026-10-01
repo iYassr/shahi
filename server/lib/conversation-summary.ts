@@ -14,7 +14,7 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log";
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
-import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
+import { continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
 import { choiceHeld, chosenSession } from "./claude-choice";
 import { fitPage } from "./session-window";
@@ -66,7 +66,8 @@ export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promi
 /** Claude's reported session, or failing that the one a person chose for this process (claude-choice.ts). */
 async function claudeTranscriptFor(pane: PaneInfo, client: HerdrClient | undefined, id: string | null): Promise<string | null> {
   const session = id ?? await chosenSession(client, pane);
-  return session ? findTranscript(session) : null;
+  const path = session ? await findTranscript(session) : null;
+  return path ? continuedTranscript(path) : null;
 }
 
 /** File-only compatibility for callers that need actual bytes, such as Codex images. */
