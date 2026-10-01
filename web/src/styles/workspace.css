@@ -355,6 +355,34 @@
   overflow-y: auto;
 }
 
+.picker__crumbs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.picker__crumb {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+span.picker__crumb {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.picker__crumbsep {
+  color: var(--muted);
+}
+
 .picker__row {
   display: flex;
   align-items: center;

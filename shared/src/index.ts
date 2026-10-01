@@ -487,4 +487,5 @@ export { agentLabel } from "./agent-label";
 export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";
 export { paneTitle } from "./pane-title";
 export { isWebUrl, webLinks, type WebLink } from "./web-links";
+export { breadcrumb, folderName } from "./folders";
 export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";

@@ -11,7 +11,8 @@ const pane: DashboardPane = {
 };
 const session = { workspaces: [space], tabs: [{ tabId: "t1", workspaceId: "w1", label: "1" }], panes: [pane] } as unknown as Session;
 
-jest.mock("@/lib/session", () => ({ useSession: () => ({ api: {}, session: null, link: "live" }) }));
+// The folder browser lists the computer's home; here it never answers.
+jest.mock("@/lib/session", () => ({ useSession: () => ({ api: { dirs: () => new Promise(() => {}) }, session: null, link: "live" }) }));
 jest.mock("@/components/avatar", () => ({ Avatar: () => null }));
 jest.mock("@/components/connection-health", () => ({ ConnectionHealth: () => null }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));
@@ -57,15 +58,16 @@ describe("a space's conversation rows at accessibility text sizes", () => {
 // Sibling folders differ at the end of the path, and the chips cut the end:
 // inside a fixed 200pt, "/Users/alex/Documents/projects/shahi-mobile" and
 // "…/shahi-server" both read "/Users/alex/Documents/projects/s…" at the
-// default size, and "/home/x/…" from AX2 (pre-release bug hunt).
-describe("New space's folder suggestions", () => {
+// default size, and "/home/x/…" from AX2 (pre-release bug hunt). The chips
+// are the folder browser's Recent rows now, and keep the rule.
+describe("New space's recent folders", () => {
   const window = Dimensions.get("window");
   const screen = Dimensions.get("screen");
   afterEach(() => act(() => Dimensions.set({ window, screen })));
   const siblings = {
     workspaces: [
-      { ...space, workspaceId: "w1", cwdPath: "/Users/alex/Documents/projects/shahi-mobile" },
-      { ...space, workspaceId: "w2", cwdPath: "/Users/alex/Documents/projects/shahi-server" },
+      { ...space, workspaceId: "w1", cwd: "/Users/alex/Documents/projects/shahi-mobile", cwdPath: "/Users/alex/Documents/projects/shahi-mobile" },
+      { ...space, workspaceId: "w2", cwd: "/Users/alex/Documents/projects/shahi-server", cwdPath: "/Users/alex/Documents/projects/shahi-server" },
     ],
     tabs: [],
     panes: [],
@@ -80,7 +82,8 @@ describe("New space's folder suggestions", () => {
       expect(text.props.numberOfLines).toBe(lines);
       // Bounded by the row, not by a fixed width that the text outgrows.
       expect(flat(text).maxWidth).toBeUndefined();
-      expect(flat(view.getByRole("button", { name: path })).maxWidth).toBe("100%");
+      // Outside home it cannot be browsed, only used as it is.
+      expect(flat(view.getByRole("button", { name: `Use ${path}` })).maxWidth).toBeUndefined();
     }
   });
 });
