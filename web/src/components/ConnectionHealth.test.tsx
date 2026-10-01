@@ -14,8 +14,8 @@ beforeEach(() => {
     Object.defineProperty(globalThis, key, { configurable: true, value });
   }
 });
-afterEach(async () => {
-  if (view) await act(async () => view!.unmount());
+afterEach(() => {
+  if (view) act(() => view!.unmount());
   view = undefined;
   jest.useRealTimers();
   for (const [key, descriptor] of originals) {
@@ -29,21 +29,22 @@ const text = () => JSON.stringify(view!.toJSON());
 // The phone's finding, kept the same on the web: a live link that drops for a
 // moment showed the full disconnected notice over a computer that came back
 // by itself (build 28, October 2026).
-test("a live link that drops shows one quiet line, and the full notice only after the grace", async () => {
-  await act(async () => { view = create(tree("live", null)); });
-  // A millisecond of the fake clock flushes the update: once another test
-  // file has loaded React, its scheduler waits on these timers (seen when
-  // PaneView.test.tsx ran first).
-  await act(async () => { view!.update(tree("lost", new UnreachableError("box", "relay", "offline"))); jest.advanceTimersByTime(1); });
+test("a live link that drops shows one quiet line, and the full notice only after the grace", () => {
+  // Synchronous act throughout. The async form ends by waiting on a macrotask,
+  // and under fake timers that wait depended on scheduling: in the full suite
+  // the assertion sometimes ran after Bun had finished the test, reported
+  // "between tests" against a tree that had not updated (October 2026).
+  act(() => { view = create(tree("live", null)); });
+  act(() => { view!.update(tree("lost", new UnreachableError("box", "relay", "offline"))); });
   expect(text()).toContain("Reconnecting to your computer…");
   expect(text()).not.toContain("Computer disconnected");
   expect(text()).not.toContain("Retry connection");
-  await act(async () => { jest.advanceTimersByTime(7_000); });
+  act(() => { jest.advanceTimersByTime(7_000); });
   expect(text()).toContain("Computer disconnected");
   expect(text()).toContain("Retry connection");
 });
 
-test("a page opened on a computer already gone shows the full notice at once", async () => {
-  await act(async () => { view = create(tree("lost", new UnreachableError("box", "relay", "offline"))); });
+test("a page opened on a computer already gone shows the full notice at once", () => {
+  act(() => { view = create(tree("lost", new UnreachableError("box", "relay", "offline"))); });
   expect(text()).toContain("Computer disconnected");
 });
