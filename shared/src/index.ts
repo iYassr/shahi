@@ -230,6 +230,15 @@ export interface PaneFrame {
   /** Same screen with escapes stripped. */
   text: string;
   prompt: ParsedPrompt | null;
+  /**
+   * herdr says the agent is waiting, and nothing on its screen was recognised
+   * as a menu or a text field: a startup screen, a dialog drawn some new way.
+   * A message is refused rather than typed into it (409
+   * `prompt_unrecognised`), because a menu's cursor moves with letters and
+   * Enter picks its lit row. A client shows the screen and keys instead.
+   * Absent when false, and from older servers.
+   */
+  unrecognised?: true;
   activity: Activity | null;
   at: number;
 }
@@ -478,3 +487,4 @@ export { agentLabel } from "./agent-label";
 export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";
 export { paneTitle } from "./pane-title";
 export { isWebUrl, webLinks, type WebLink } from "./web-links";
+export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";

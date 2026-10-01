@@ -253,7 +253,15 @@ the wrong row, and the trust menu's wrong row exits the agent. The question
 and context are compared because index and label are not enough: every Claude
 permission offers "1. Yes". An older client that sends only index and label is
 still answered on those two. A 409 with `prompt_gone` or `prompt_changed` is
-the answer when the screen moved on; nothing is pressed.
+the answer when the screen moved on; nothing is pressed. Enter is never sent
+with the keys that move to a row: the moves (or a digit that only highlights)
+go first, and Enter follows once a fresh read shows that row lit under the same
+question. Claude Code refuses a key within 150ms of a menu opening and puts the
+cursor back on its default, "No, exit" on trust and bypass, and before 2.1.283
+it could take an arrow and Enter sent together against the old cursor (its
+source and changelog). A row never reached is `prompt_changed`, Enter unsent.
+A screen that moved on to another question took the selection as the answer
+itself — codex's update offer acts on its digit — and gets no Enter.
 
 Content cannot tell one appearance of a prompt from the next: the same command
 asked for twice draws the same card. So every read of a pane, the poller's and
@@ -291,7 +299,12 @@ after the trust menu is drawn. So a pane neither calls an agent skips the
 read only when its shell alone has the terminal — `pane.process_info`'s
 foreground process group is the shell's pid and holds nothing else; a
 program has a group of its own within 50ms of Enter (measured on 0.9.1).
-Any other program holding the terminal is read like an agent. That shell's
+Any other program holding the terminal is read like an agent. An agent herdr
+calls `blocked` whose screen shows nothing the parser recognises is not typed
+at either: 409 `prompt_unrecognised`, since most of what an agent waits on is a
+menu, and Claude Code's unnumbered ones move on `j`/`k` in the text while Enter
+takes the lit row. The frame says so (`PaneFrame.unrecognised`) and both
+clients show the screen with keys (`screen-card.ts`). That shell's
 Enter waits on the same question asked again after the pause, so a program
 started as the message arrived does not receive it. Text typed ahead of a
 command the shell has not read yet cannot be told apart, since only the
@@ -1293,9 +1306,21 @@ never assume OpenCode's first choice is still selected. Unknown highlight shapes
 remain unparsed. Existing clients send index/label; fresh server reads choose keys.
 
 herdr 0.9.1 can report idle/done while current Codex, Cursor or Antigravity menus
-wait. Only the exact measured provider shapes in `provider-prompts.ts` override
-that status; generic numbered prose still requires herdr's blocked state. The
+wait, and reports Codex's startup menus (update, model migration, hooks review)
+idle. The write guard refuses a message behind any menu the parser finds, so an
+agent's menu gets its answer buttons unless herdr says the agent is working
+(`Poller.#asks`); a pane herdr names no agent in still needs its `blocked`, as
+a shell may show a menu an earlier program left. The exact measured provider
+shapes in `provider-prompts.ts` still count as blocked outright. The
 dashboard projects those cards as waiting, and clears them when the screen changes.
+Until a new agent has a conversation, both clients show its screen with keys in
+Read, since its startup screens (sign-in, terms, trust) come before any transcript.
+`docs/agent-screens.md` lists every screen Claude Code and codex draw outside a
+conversation and what Shahi does with each; `server/fixtures/startup/` holds the
+captures and `agent-screens.test.ts` holds each to "a refused message always has
+something to answer with". When either agent updates, run
+`bun run server/scripts/screen-census.ts`: it redraws them in a scratch named
+session with scratch agent configuration and exits 1 on any card that changed.
 Cursor's Skip opens a feedback field. Typing replaces its entire hint. Before
 Enter, verify the exact replacement and unchanged screen above it. Wrapped or
 multiline feedback stays conservative and may require Enter from the key bar.

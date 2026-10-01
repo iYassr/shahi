@@ -30,6 +30,8 @@ export interface Scenario {
   prompts: Record<string, ParsedPrompt>;
   /** Raw screens by pane, for the terminal tab. */
   screens: Record<string, string>;
+  /** Panes whose agent waits on a screen no parser recognised (`PaneFrame.unrecognised`). */
+  unrecognised?: string[];
 }
 
 const space = (over: Partial<Space> & { workspaceId: string; label: string }): Space => ({

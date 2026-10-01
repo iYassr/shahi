@@ -71,8 +71,13 @@ const CURSOR_ROW_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s+)?(?<label>\S.*
 
 /** The line Claude Code prints under a cursor menu; a numbered prompt has no such line. */
 const CONFIRM_HINT_RE = /\bEnter to confirm\b/;
-/** Codex's numbered folder-trust menu selects a row, then waits for Enter. */
-const DIGIT_CONFIRM_HINT_RE = /\bPress enter to continue\b/i;
+/**
+ * Codex's numbered menus that select a row and then wait for Enter: its
+ * folder trust, and in 0.150 "Use ↑/↓ to move, press enter to confirm"
+ * (captured, October 2026). Not Claude Code's "Enter to confirm", whose digits
+ * answer at once and whose text rows would take the Enter as their content.
+ */
+const DIGIT_CONFIRM_HINT_RE = /\bpress enter to (?:continue|confirm)\b/i;
 
 /** Box-drawing, block, and arrow glyphs Claude Code and herdr use for chrome. */
 const CHROME_ONLY_RE = /^[\s─-╿▀-▟←-⇿■-◿·—–-]*$/u;
@@ -299,6 +304,11 @@ function findCursorMenu(lines: string[]): OptionRun | null {
   }
   if (rows.length < 2) return null;
   if (rows.filter((r) => r.selected).length !== 1) return null;
+  // Checkboxes are not a choice of one row. Claude Code 2.1.200 draws its
+  // project MCP servers as ticked boxes over "Space to select · Enter to
+  // confirm · Esc to reject all" (captured, October 2026), and a card made of
+  // them pressed Enter on a box: every ticked server enabled.
+  if (rows.some((r) => /^\[[ ✔✓xX×]\]\s/u.test(r.label))) return null;
 
   return {
     answer: "cursor",
@@ -382,7 +392,7 @@ function findQuestion(
   // guess, as before.
   const ended = joined.findIndex((p) => p.endsWith("?") && !LABELLED_RE.test(p));
   const asked = ended >= 0 ? ended : joined.findIndex((p) => p.includes("?"));
-  if (asked < 0) return { text: joined[0] ?? "", context: [] };
+  if (asked < 0) return titled(lines, optionStart) ?? { text: joined[0] ?? "", context: [] };
 
   /*
    * Claude Code lays a permission out the other way round from codex: the
@@ -421,6 +431,21 @@ function findQuestion(
     text: joined[asked]!,
     context,
   };
+}
+
+/**
+ * A Claude Code dialog that asks nothing is known by its title, the first
+ * line under its top rule, and the rest of the dialog is its context. The
+ * bypass-permissions warning, a new project MCP server and Settings Error ask
+ * no question, and the nearest block made their cards read as the security
+ * link, the MCP boilerplate and the fine print (captured on 2.1.286, October
+ * 2026). Without a rule on screen, nothing says where the dialog begins.
+ */
+function titled(lines: string[], optionStart: number): { text: string; context: string[] } | null {
+  const dialog = dialogAbove(lines, optionStart);
+  const [title, ...rest] = dialog[0]?.split("\n") ?? [];
+  if (!title?.trim()) return null;
+  return { text: title.trim(), context: [...(rest.length ? [dedent(rest)] : []), ...dialog.slice(1)] };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PromptMoved, PromptOpen, promptTarget, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
 
@@ -56,21 +56,24 @@ describe("submitPrompt", () => {
   });
 
   // herdr 0.8.2: "If the agent is already blocked, submission is rejected with
-  // agent_blocked before any input is sent." Typing an answer into a waiting
-  // agent is what the composer is for, so blocked means the terminal path.
-  test("a blocked agent is typed at, not prompted", async () => {
-    const { rpc, calls } = fakeRpc();
-    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "blocked", shellAlone: false }, "yes", sleep);
-    expect(path).toBe("terminal");
-    // The screen is read first and again before Enter: see the describes below.
-    expect(calls.map((c) => c.method)).toEqual(["pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
+  // agent_blocked before any input is sent." What a blocked agent waits on is
+  // typed into only when the parser knows it as a field (the describes below);
+  // anything it cannot read may be a menu that takes letters as cursor moves.
+  test("a blocked agent waiting on a screen nothing recognises is not typed at", async () => {
+    const { rpc, calls } = fakeRpc({}, "Security notes:\n\n1. Claude can make mistakes.\n\nPress Enter to continue…");
+    await expect(
+      submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "blocked", shellAlone: false }, "yes", sleep),
+    ).rejects.toBeInstanceOf(PromptUnrecognised);
+    expect(calls.map((c) => c.method)).toEqual(["pane.read"]);
   });
 
-  test("agent_blocked from herdr falls back to the terminal path", async () => {
+  test("agent_blocked from herdr is refused the same way when the screen shows nothing recognised", async () => {
     const { rpc, calls } = fakeRpc({ "agent.prompt": "agent_blocked" });
-    const path = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "yes", sleep);
-    expect(path).toBe("terminal");
-    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read", "pane.send_text", "pane.read", "pane.send_keys"]);
+    await expect(
+      submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "yes", sleep),
+    ).rejects.toBeInstanceOf(PromptUnrecognised);
+    // herdr refused before acting, and the screen was only read: nothing reached the pane.
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt", "pane.read"]);
   });
 
   test("any other agent.prompt failure is the caller's to report", async () => {
@@ -229,9 +232,12 @@ describe("a message whose screen changes before its Enter", () => {
     expect(calls).toEqual(["pane.read", "pane.send_text", "pane.read"]);
   });
 
+  // A program holding the terminal that herdr does not call an agent: an
+  // agent waiting on a blank screen is not typed at in the first place.
   test("a menu drawn during the submit delay: Enter is not pressed", async () => {
     const { rpc, calls } = changing("", fixture("blocked__claude-bash__text.txt"));
-    await expect(submitPrompt(rpc, blocked, "carry on", sleep)).rejects.toBeInstanceOf(PromptMoved);
+    const program = { paneId: "w1:p1", isAgent: false, status: null, shellAlone: false };
+    await expect(submitPrompt(rpc, program, "carry on", sleep)).rejects.toBeInstanceOf(PromptMoved);
     expect(calls).not.toContain("pane.send_keys");
   });
 

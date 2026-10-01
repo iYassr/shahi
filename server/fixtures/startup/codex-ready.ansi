@@ -1,0 +1,40 @@
+[0m[2m╭───────────────────────────────────────────────────────────────╮[0m
+[0m[2m│ [0m[1m[38;2;99;168;248m✨ Update available![0m [0m[1m0.157.1 -> 0.159.3[0m[2m                       │[0m
+[0m[2m│ [0mSee [0m[4m[38;2;99;168;248mhttps://github.com/openai/codex[0m for installation options.[0m[2m │[0m
+[0m[2m│                                                               │[0m
+[0m[2m│ [0mSee full release notes:[0m[2m                                       │[0m
+[0m[2m│ [0m[4m[38;2;99;168;248mhttps://github.com/openai/codex/releases/latest[0m[2m               │[0m
+[0m[2m╰───────────────────────────────────────────────────────────────╯[0m
+ 
+[0m[2m╭───────────────────────────────────────────╮[0m
+[0m[2m│ >_ [0m[1mOpenAI Codex[0m[2m (v0.157.1)                │[0m
+[0m[2m│                                           │[0m
+[0m[2m│ model:     [0mGPT-6-Astra[0m[2m   [0m[38;2;99;168;248m/model[0m[2m to change │[0m
+[0m[2m│ directory: [0m/private/tmp/shc.rMwr/proj/x5[0m[2m  │[0m
+[0m[2m╰───────────────────────────────────────────╯[0m
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ [0m[1mTip: [0mWhen worktree support is available, use [0m[1m/worktree [0mto start or continue a conversation in a separate Git worktree.
+
+[0m[1m› [0m[2mAsk Codex to do anything[0m
+
+  [0m[38;2;246;226;183mGPT-6-Astra default [0m· [0m[38;2;171;223;167m/private/tmp/shc.rMwr/proj/x5[0m
+  [0m[1m? [0mfor shortcuts                                                                              ⚠ [0m[38;2;196;167;103m1 warning [0m· [0m[1mf2 [0mto view

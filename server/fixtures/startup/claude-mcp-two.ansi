@@ -1,0 +1,15 @@
+[0m[38;5;76m❯[0m [0m[38;5;3mexport[0m CLAUDE_CONFIG_DIR=/tmp/shc.rMwr/cc/c7b ANTHROPIC_API_KEY=sk-fake-key--FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE01234
+56789
+[0m[38;5;76m❯[0m [0m[38;5;2mclaude[0m --permission-mode manual
+
+[0m[38;2;255;193;7m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;2;255;193;7m2 new MCP servers found in this project[0m
+  [0m[38;2;153;153;153mSelect any you wish to enable.[0m
+
+  MCP servers may execute code or access system resources. All tool calls require approval. Learn more in the MCP
+  documentation.
+
+  [0m[38;2;177;185;249m❯ [0m[38;2;78;186;101m[✔] [0m[38;2;177;185;249mscratch-one[0m
+    [0m[38;2;78;186;101m[✔] [0mscratch-two
+       [0m[1mEnable selected[0m
+ [0m[3m[38;2;153;153;153mSpace to select · Esc to reject all[0m

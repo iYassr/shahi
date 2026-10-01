@@ -32,6 +32,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt } from "./Prompt";
 import { Reader } from "./Reader";
+import { ScreenCard } from "./ScreenCard";
 import { fitScale } from "../termfit";
 
 /**
@@ -146,6 +147,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
   // Keep Read available so a transcript created later can be opened.
   const [tab, setTab] = useState<Tab>("read");
   const [readable, setReadable] = useState(true);
+  /** The Reader has no conversation to show yet; see `ScreenCard`. */
+  const [readerEmpty, setReaderEmpty] = useState(false);
   const ids = useId();
   const tabButtons = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
   function chooseTab(next: Tab) {
@@ -452,6 +455,16 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         {loadError}
         <button className="empty__action" onClick={() => retryPane.current()}>Try again</button>
       </div>}
+      {!prompt && tab !== "screen" && frame && known?.agent && (frame.unrecognised || (tab === "read" && readerEmpty)) && (
+        <ScreenCard
+          text={frame.text}
+          waiting={frame.unrecognised === true}
+          disabled={!available || sending}
+          onKeys={(keys, label) => void send(() => api.sendKeys(paneId, keys, instanceId), `${label} not sent`)}
+          onOpenScreen={() => chooseTab("screen")}
+        />
+      )}
+
       {prompt && tab !== "screen" && (
         <section className="blocked" style={{ marginBottom: 0 }}>
           <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
@@ -504,7 +517,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack}
           connected={available} historyKnown={!!known?.lastMessageAt || !!known?.preview || !!echo}
           computerVersion={control?.handshake?.update?.current} herdrVersion={session?.version}
-          canChoose={supports(control?.handshake ?? null, "conversation-choice")} instanceId={known?.instanceId} />
+          canChoose={supports(control?.handshake ?? null, "conversation-choice")} instanceId={known?.instanceId} onEmpty={setReaderEmpty} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>

@@ -61,3 +61,19 @@ call, `pane.read` of the visible screen, then Escape. The MCP dialog came from a
 one-tool stdio server passed with `--strict-mcp-config --mcp-config`. The
 account's plan name in the welcome banner was replaced with `[redacted]`, the
 same length.
+
+## `startup/`
+
+Screens an agent draws outside its conversation, captured from Claude Code
+2.1.286 and codex 0.157.1 under herdr 0.9.1 (October 2026) with
+`pane.read {source: "visible", format: "ansi"}`, in a scratch named herdr
+session with scratch agent configuration and fake keys: nothing personal is
+in them. The fake key's `sk-ant-api03-` prefix was replaced with the
+equal-length `sk-fake-key--`, so no scanner takes it for a key.
+`claude-failed-start` is a stand-in `claude` printing 2.1.286's
+minimum-version words. The `codex-0.130-*`, `codex-0.150-*` and
+`claude-2.1.2xx-*` screens came from those releases installed with npm in a
+disposable OrbStack machine under herdr 0.9.3; its shell prompt's user was
+replaced at equal length with `testuser`. `docs/agent-screens.md` lists every screen, and
+`server/scripts/screen-census.ts` draws them again on a newer agent and
+compares them with these.

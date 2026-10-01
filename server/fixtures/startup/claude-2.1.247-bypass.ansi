@@ -1,0 +1,20 @@
+[0m[1m[38;5;2mtestuser@shahi-screens[0m:[0m[1m[38;5;4m/tmp/shc.dkd0zB/claude-bypass/project[0m$ export CLAUDE_CONFIG_DIR=/tmp/shc.dkd0zB/claude-bypass/hom
+e ANTHROPIC_API_KEY=sk-fake-key--FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE0123456789
+[0m[1m[38;5;2mtestuser@shahi-screens[0m:[0m[1m[38;5;4m/tmp/shc.dkd0zB/claude-bypass/project[0m$ claude --dangerously-skip-permissions
+
+[0m[38;2;255;107;128m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;2;255;107;128mWARNING: Claude Code running in Bypass Permissions mode[0m
+
+  In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous
+  commands.
+  This mode should only be used in a sandboxed container/VM that has restricted internet access and can easily be
+  restored if damaged.
+
+  By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.
+
+  https://code.claude.com/docs/en/security
+
+  [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mNo, exit[0m
+    [0m[38;2;153;153;153m2. [0mYes, I accept
+
+  [0m[3m[38;2;153;153;153mEnter to confirm · Esc to cancel[0m

@@ -1,0 +1,15 @@
+[0m[38;5;76m❯[0m [0m[38;5;3mexport[0m CLAUDE_CONFIG_DIR=/tmp/shc.rMwr/cc/c4 ANTHROPIC_API_KEY=sk-fake-key--FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE012345
+6789
+[0m[38;5;76m❯[0m [0m[38;5;2mclaude[0m --permission-mode manual
+
+[0m[38;2;255;193;7m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;2;255;193;7mDetected a custom API key in your environment[0m
+
+  [0m[1mANTHROPIC_API_KEY[0m: sk-ant-...KEFAKEFAKE0123456789
+
+  Do you want to use this API key?
+
+    Yes
+  [0m[38;2;177;185;249m❯ No ([0m[1m[38;2;177;185;249mrecommended[0m[38;2;177;185;249m)[0m
+
+  [0m[3m[38;2;153;153;153mEnter to confirm · Esc to cancel[0m

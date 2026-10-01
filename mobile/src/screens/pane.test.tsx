@@ -2344,3 +2344,60 @@ test("a replaced occupant never receives the previous agent's late dictation", a
     expect(mocked.send).not.toHaveBeenCalled();
   } finally { mockDictation.available = false; }
 });
+
+/**
+ * An agent waiting on something no parser recognised, and a new agent before
+ * its first message: messages are refused there, so the pane shows the screen
+ * and the keys instead. The web pane's `ScreenCard` is the same card.
+ */
+describe("the screen card", () => {
+  const SCREEN = ["", "Security notes:", "", "1. Claude can make mistakes.", "", "Press Enter to continue…", "", ""].join("\n");
+  const frame = (over: object = {}) => ({ ...detail(), frame: { paneId: PANE, ansi: SCREEN, text: SCREEN, prompt: null, activity: null, at: 1, ...over } });
+
+  test("shows an unrecognised wait as the terminal has it, and answers with its keys", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Before the question.")]));
+    mocked.pane.mockResolvedValue(frame({ unrecognised: true }));
+    mocked.sendKeys.mockResolvedValue(undefined);
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("Waiting on something Shahi cannot read");
+    // The rows as drawn, padding gone, nothing re-labelled.
+    expect(view.getByText("Security notes:\n\n1. Claude can make mistakes.\n\nPress Enter to continue…")).toBeTruthy();
+    expect(view.getByText(/Before the question\./)).toBeTruthy();
+    fireEvent.press(view.getByLabelText("Enter"));
+    await settle();
+    expect(mocked.sendKeys).toHaveBeenCalledWith(PANE, ["Enter"], undefined);
+    view.unmount();
+  });
+
+  test("shows a new agent's screen while it has no conversation, and not once it has one", async () => {
+    mocked.sessionLog.mockRejectedValueOnce(noTranscript()).mockResolvedValue(log([said("a1", "agent", "First words.")]));
+    mocked.pane.mockResolvedValue(frame());
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("On the computer's screen");
+    await act(async () => { jest.advanceTimersByTime(3_000); });
+    await view.findByText(/First words\./);
+    expect(view.queryByText("On the computer's screen")).toBeNull();
+    view.unmount();
+  });
+
+  test("gives way to a recognised question's buttons", async () => {
+    const prompt = { question: "Do you want to proceed?", answer: "digit" as const, options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }] };
+    mocked.sessionLog.mockRejectedValue(noTranscript());
+    mocked.pane.mockResolvedValue(frame({ prompt }));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("Do you want to proceed?");
+    expect(view.queryByText("On the computer's screen")).toBeNull();
+    view.unmount();
+  });
+
+  test("Open Screen shows the terminal itself, without the card", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Before the question.")]));
+    mocked.pane.mockResolvedValue(frame({ unrecognised: true }));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("Waiting on something Shahi cannot read");
+    fireEvent.press(view.getByText("Open Screen"));
+    await settle();
+    expect(view.queryByTestId("screen-card")).toBeNull();
+    view.unmount();
+  });
+});

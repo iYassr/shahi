@@ -109,9 +109,23 @@ export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
   return [...moves, "Enter"];
 }
 
+/**
+ * The keys that pick the row were pressed, and a fresh read never showed that
+ * row lit under the same question, so Enter was not pressed. The code is
+ * `prompt_changed`: the card closes and the screen as it is now is offered.
+ */
+export class PromptNotReached extends PromptChanged {
+  constructor(paneId: string) {
+    super(paneId);
+    this.message = "The agent's menu did not move to that choice, so it was not confirmed. Check the question and choose again.";
+  }
+}
+
 /** How long an answer holds its pane for the agent to draw what follows, and how often it looks. */
 export const SETTLE_MS = 1_500;
 const SETTLE_POLL_MS = 25;
+/** How long a moved cursor has to show on screen before Enter is withheld. */
+export const REACH_MS = 1_000;
 
 export interface AnswerOptions {
   /** Every read of the pane, the poller's included, observed in one place. */
@@ -154,20 +168,69 @@ export async function answerPrompt(
 
   const keys = keysFor(prompt, target);
   if (keys.length === 0) return keys;
-  await rpc("pane.send_keys", { pane_id: paneId, keys });
-  // A text field's digit only puts the cursor in it: the question is still
-  // open, waiting for what is typed there.
-  if (isTextField(prompt, target)) return keys;
+  // Enter confirms whichever row is lit when it lands, so the keys that move
+  // the cursor go first and Enter only once a fresh read shows them landed.
+  // Claude Code refuses a key within 150ms of a menu opening and puts the
+  // cursor back on its default row, which on the trust and bypass menus is
+  // "No, exit"; its versions before 2.1.283 could take an arrow and an Enter
+  // sent together against the cursor as it was (read from its source and
+  // changelog, September 2026). A lost move then confirmed the wrong row.
+  const moves = keys.at(-1) === "Enter" ? keys.slice(0, -1) : [];
+  let answered = screen;
+  if (moves.length > 0) {
+    await rpc("pane.send_keys", { pane_id: paneId, keys: moves });
+    const reached = await reach(rpc, paneId, instances, prompt, target, screen, sleep);
+    if (reached === "answered") return moves;
+    await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
+    answered = reached;
+  } else {
+    await rpc("pane.send_keys", { pane_id: paneId, keys });
+    // A text field's digit only puts the cursor in it: the question is still
+    // open, waiting for what is typed there.
+    if (isTextField(prompt, target)) return keys;
+  }
 
-  instances.answered(paneId, screen);
+  instances.answered(paneId, answered);
   // Counted in polls rather than against the clock, so each wait is a poll
   // interval plus one read, and a test's sleep can stand in for it.
   for (let waited = 0; waited < settleMs; waited += SETTLE_POLL_MS) {
     await sleep(SETTLE_POLL_MS);
     const now = await look(rpc, paneId, instances).catch(() => null);
-    if (!now || now.screen !== screen) break;
+    if (!now || now.screen !== answered) break;
   }
   return keys;
+}
+
+/**
+ * Waits for the pane to show `target` lit under the question it was chosen
+ * from, and returns that screen for Enter to confirm.
+ *
+ * Some menus act on the key that selects: codex's update offer takes its
+ * digits at once (codex source, 0.158). When the question is gone from a
+ * changed screen, the selection was the answer, and Enter is not pressed,
+ * since it would land on whatever the agent drew next.
+ */
+async function reach(
+  rpc: AnswerRpc,
+  paneId: string,
+  instances: PromptInstances,
+  prompt: ParsedPrompt,
+  target: PromptOption,
+  before: string,
+  sleep: (ms: number) => Promise<void>,
+): Promise<string | "answered"> {
+  for (let waited = 0; ; waited += SETTLE_POLL_MS) {
+    const now = await look(rpc, paneId, instances).catch(() => null);
+    if (now?.prompt && sameQuestion(now.prompt, { ...target, question: prompt.question, context: prompt.context })) {
+      const lit = now.prompt.options.find((option) => option.selected);
+      if (lit?.index === target.index && lit.label === target.label) return now.screen;
+    } else if (now && now.screen !== before) {
+      instances.answered(paneId, before);
+      return "answered";
+    }
+    if (waited >= REACH_MS) throw new PromptNotReached(paneId);
+    await sleep(SETTLE_POLL_MS);
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { agentLabel, argsForMode, modesFor, type InstalledAgent } from "@shahi/shared";
+import { agentLabel, argsForMode, modesFor, screenTail, type InstalledAgent } from "@shahi/shared";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -238,7 +238,7 @@ export async function startAgentInTab(
         await wait(START_RETRY_MS);
         continue;
       }
-      throw await undoCertainFailure(rpc, err, created.tab?.tab_id, options.kind);
+      throw await undoCertainFailure(rpc, err, created.tab?.tab_id, options.kind, { paneId, launch: args.join(" ") });
     }
   }
 }
@@ -260,8 +260,12 @@ async function undoCertainFailure(
   err: unknown,
   tabId: string | undefined,
   kind: string,
+  launched: { paneId: string; launch: string },
 ): Promise<unknown> {
   if (!(err instanceof HerdrError) || !refusedBeforeDelivery(err) || !tabId) return err;
+  const exited = err.code === "agent_not_found" && err.method === "agent.get";
+  // Read before the tab goes, since what the agent printed goes with it.
+  const said = exited ? await lastWords(rpc, launched) : "";
   try {
     await rpc("tab.close", { tab_id: tabId });
   } catch {
@@ -270,10 +274,55 @@ async function undoCertainFailure(
   }
   const name = agentLabel(kind);
   return new AgentStartFailed(
-    err.code === "agent_not_found" && err.method === "agent.get"
-      ? `${name} exited while it was starting, so its tab was closed. Run it in a terminal in this space to see why.`
+    exited
+      ? said
+        ? `${name} exited while it was starting, so its tab was closed. It printed: “${said}”`
+        : `${name} exited while it was starting, so its tab was closed. Run it in a terminal in this space to see why.`
       : `herdr could not start ${name} (${err.code}), so its tab was closed.`,
   );
+}
+
+/** Enough of what an agent printed to say why it stopped, and no more. */
+const LAST_WORDS_CHARS = 400;
+
+/**
+ * What an agent printed before exiting at startup, from its pane's screen.
+ *
+ * An outdated Claude Code prints "It looks like your version of Claude Code
+ * (X) needs an update … To update, please run: claude update" and exits,
+ * with no menu to answer (Claude Code 2.1.286's source); 1.0.128 refuses the
+ * launch itself, "argument 'manual' is invalid" (captured, October 2026). herdr reports the
+ * agent gone about 30s later, and the words were still on the screen then
+ * (measured on herdr 0.9.1, September 2026), above the shell's prompt, which
+ * is the last row and is left out. Only the rows below herdr's launch command
+ * are the agent's; when that line is not on screen, the rows above the prompt
+ * are taken. Returned to the person who started it, never logged: it is
+ * terminal output.
+ */
+async function lastWords(
+  rpc: <T>(method: string, params: unknown, options?: { timeoutMs?: number }) => Promise<T>,
+  { paneId, launch }: { paneId: string; launch: string },
+): Promise<string> {
+  // Unwrapped first: the terminal wraps a long error mid-word ("bypassPermission
+  // / s, default, plan." on 120 columns), and herdr's `recent_unwrapped` gives
+  // the line as printed (measured on 0.9.3, October 2026).
+  let text = "";
+  for (const source of ["recent_unwrapped", "visible"]) {
+    try {
+      ({ read: { text } } = await rpc<{ read: { text: string } }>("pane.read", { pane_id: paneId, source, ...(source === "visible" ? {} : { lines: 40 }), format: "text", strip_ansi: true }));
+      break;
+    } catch {
+      // The next source, or nothing to quote.
+    }
+  }
+  if (!text) return "";
+  const rows = screenTail(text, 24);
+  const echoed = launch ? rows.findLastIndex((row) => row.includes(launch)) : -1;
+  const printed = rows.slice(echoed + 1, -1).map((row) => row.trim()).filter(Boolean);
+  const words = (echoed >= 0 ? printed : printed.slice(-6)).join(" ");
+  // By code point, so an emoji is never cut in half.
+  const chars = Array.from(words);
+  return chars.length > LAST_WORDS_CHARS ? `${chars.slice(0, LAST_WORDS_CHARS - 1).join("")}…` : words;
 }
 
 /** Long enough for a shell to appear (~5s), short enough to still feel like one action. */

@@ -11,13 +11,18 @@ for (const selected of [0, 1, 2]) {
     expect(parsed.options.findIndex(option => option.selected)).toBe(selected);
     expect(parsed.context).toEqual(["→ Edit denied.txt\n\n 1 + DENIED_WRITE"]);
     const writes: unknown[] = [];
-    const rpc = async (method: string, params: unknown) => {
-      if (method === "pane.read") return { read: { text: screen } };
+    // The highlight follows each Right, and Enter closes the menu.
+    let shown = screen;
+    const rpc = async (method: string, params: { keys?: string[] }) => {
+      if (method === "pane.read") return { read: { text: shown } };
       writes.push(params);
+      shown = params.keys?.includes("Enter") ? "" : openCodeMenu(Math.min(2, selected + (params.keys?.length ?? 0)));
     };
-    const keys = Array.from({ length: 2 - selected }, () => "Right").concat("Enter");
-    expect(await answerPrompt(rpc, "w1:p1", { index: 3, label: "Reject" }, { settleMs: 0 })).toEqual(keys);
-    expect(writes).toEqual([{ pane_id: "w1:p1", keys }]);
+    const moves = Array.from({ length: 2 - selected }, () => "Right");
+    const keys = moves.concat("Enter");
+    expect(await answerPrompt(rpc, "w1:p1", { index: 3, label: "Reject" }, { settleMs: 0, sleep: async () => {} })).toEqual(keys);
+    // Enter only once the highlight was seen on Reject.
+    expect(writes).toEqual(moves.length > 0 ? [{ pane_id: "w1:p1", keys: moves }, { pane_id: "w1:p1", keys: ["Enter"] }] : [{ pane_id: "w1:p1", keys }]);
     expect(keysFor(parsed, parsed.options[0]!)).toEqual(Array.from({ length: selected }, () => "Left").concat("Enter"));
   });
 }

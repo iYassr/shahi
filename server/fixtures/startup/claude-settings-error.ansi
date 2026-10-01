@@ -1,0 +1,25 @@
+export CLAUDE_CONFIG_DIR=/tmp/shc.rMwr/cc/c9 ANTHROPIC_API_KEY=sk-fake-key--FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE01234567
+89[0m[1m[7m%[0m                                                                                                                     
+  
+[0m[38;5;76m❯[0m [0m[38;5;3mexport[0m CLAUDE_CONFIG_DIR=/tmp/shc.rMwr/cc/c9 ANTHROPIC_API_KEY=sk-fake-key--FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE012345
+6789
+[0m[38;5;76m❯[0m [0m[38;5;2mclaude[0m --permission-mode manual
+
+[0m[38;2;255;193;7m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[1m[38;2;255;193;7mSettings Error[0m
+
+  /private/tmp/shc.rMwr/proj/c9/.claude/settings.json
+  [0m[38;2;153;153;153m└ [0mpermissions.allow: [0m[38;2;153;153;153mExpected array, but received number[0m
+
+  [0m[38;2;153;153;153mPermission rules must be in an array. Format: ["Tool(specifier)"]. Examples: ["Bash(npm run build)",[0m
+  [0m[38;2;153;153;153m"Edit(docs/**)", "Read(~/.zshrc)"]. Use * for wildcards.[0m
+  [0m[38;2;153;153;153mLearn more: https://code.claude.com/docs/en/iam#configuring-permissions[0m
+
+
+  [0m[38;2;153;153;153mFiles with errors are skipped entirely, not just the invalid settings.[0m
+
+  [0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m1. [0m[38;2;177;185;249mFix with Claude[0m
+    [0m[38;2;153;153;153m2. [0mExit and fix manually
+    [0m[38;2;153;153;153m3. [0mContinue without these settings
+
+  [0m[3m[38;2;153;153;153mEnter to confirm · Esc to cancel[0m

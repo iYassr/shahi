@@ -38,7 +38,7 @@ import { agentSessionOf } from "./herdr-pane";
 import { choiceHeld, chooseConversation, chosenSession, conversationChoices } from "./claude-choice";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
-import { PromptMoved, PromptOpen, promptTarget, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
 import { PaneWrites } from "./pane-writes";
 import { OperationError, Operations } from "./operations";
 import { trackDelivery } from "./herdr-delivery";
@@ -1335,6 +1335,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               // person (see `prompt.ts`). The message says what to use instead,
               // so every client, old ones included, shows it as it stands.
               if (err instanceof PromptOpen) return json({ error: err.message, code: err.code }, { status: 409 });
+              // Nothing was typed either: the agent waits on a screen the
+              // parser does not know, which may be a menu.
+              if (err instanceof PromptUnrecognised) return json({ error: err.message, code: err.code }, { status: 409 });
               // Typed, but the screen moved under it before Enter; the message
               // says so, and a retry under this id is handed the same answer.
               if (err instanceof PromptMoved) return json({ error: err.message, code: err.code }, { status: 409 });
@@ -1671,7 +1674,7 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
     workspaceId: pane.workspace_id,
     workspaceLabel: store.workspace(pane.workspace_id)?.label ?? pane.workspace_id,
     tabId: pane.tab_id,
-    status: poller.frame(pane.pane_id)?.prompt ? "blocked" : pane.agent_status,
+    status: poller.frame(pane.pane_id)?.prompt || poller.frame(pane.pane_id)?.unrecognised ? "blocked" : pane.agent_status,
     agent: pane.display_agent ?? pane.agent ?? null,
     title: paneTitle(pane),
     cwd: pane.cwd ?? null,

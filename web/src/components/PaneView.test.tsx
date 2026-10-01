@@ -397,3 +397,62 @@ test("offline controls preserve a draft without sending or replaying on recovery
   await act(async () => submit().props.onClick());
   expect(send).toHaveBeenCalledTimes(1);
 });
+
+/**
+ * An agent waiting on something no parser recognised, and a new agent before
+ * its first message: the phone refuses to type there, so it shows the screen
+ * and the keys instead (`ScreenCard`).
+ */
+describe("the screen card", () => {
+  const SCREEN = ["", "Security notes:", "", "1. Claude can make mistakes.", "", "Press Enter to continue…", "", "", ""].join("\n");
+  const frameOf = (over: object = {}) => ({ ansi: SCREEN, text: SCREEN, prompt: null, activity: null, at: 1, ...over });
+  // Each test its own pane: the Reader remembers what it read per pane id.
+  let opened = 0;
+  async function open(frame: object, sessionLog: () => Promise<unknown>) {
+    const paneId = `w9:p${++opened}`;
+    const session = { panes: [{ paneId, title: "Conversation", isAgent: true, agent: "claude", status: "blocked", instanceId: "i1" }] } as any;
+    const sendKeys = mock(async () => {});
+    const scoped = { ...api, pane: mock().mockResolvedValue({ ...detail, pane: { ...detail.pane, pane_id: paneId } }), sessionLog: mock(sessionLog), sendKeys };
+    await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={[`/pane/${paneId}`]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{ [paneId]: { paneId, ...frame } as any }} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
+    return { sendKeys, paneId };
+  }
+  const conversation = async () => ({ sessionId: "s", path: "p", total: 1, offset: 0, messages: [{ id: "a", role: "agent", at: 1, blocks: [{ kind: "text", text: "Hello." }] }] });
+
+  test("shows an unrecognised wait as the terminal has it, and answers with its keys", async () => {
+    const { sendKeys, paneId } = await open(frameOf({ unrecognised: true }), conversation);
+    expect(output()).toContain("Waiting on something Shahi cannot read");
+    const screen = view!.root.findByProps({ "aria-label": "Terminal screen" });
+    // The rows as drawn, padding gone, nothing re-labelled.
+    expect(screen.children.join("")).toBe("Security notes:\n\n1. Claude can make mistakes.\n\nPress Enter to continue…");
+    await act(async () => view!.root.findByProps({ "aria-label": "Enter" }).props.onClick());
+    expect(sendKeys).toHaveBeenCalledWith(paneId, ["Enter"], "i1");
+    // The conversation is still there under it.
+    expect(output()).toContain("Hello.");
+  });
+
+  test("shows a new agent's screen while it has no conversation, and not once it has one", async () => {
+    let saved = false;
+    const { paneId } = await open(frameOf(), async () => {
+      if (!saved) throw new ApiError("Claude has not saved any messages in this conversation yet.", 404, "reader_transcript_missing");
+      return conversation();
+    });
+    expect(output()).toContain("On the computer's screen");
+    saved = true;
+    await act(async () => { window.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: paneId })); });
+    expect(output()).toContain("Hello.");
+    expect(output()).not.toContain("On the computer's screen");
+  });
+
+  test("gives way to a recognised question's buttons", async () => {
+    const prompt = { question: "Do you want to proceed?", answer: "digit", options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }] };
+    await open(frameOf({ prompt }), async () => { throw new ApiError("nothing yet", 404, "reader_transcript_missing"); });
+    expect(output()).toContain("Do you want to proceed?");
+    expect(output()).not.toContain("On the computer's screen");
+  });
+
+  test("is not shown on Screen, where the terminal itself is", async () => {
+    await open(frameOf({ unrecognised: true }), conversation);
+    await act(async () => view!.root.findAllByType("button").find((b) => b.children.join("") === "Open Screen")!.props.onClick());
+    expect(output()).not.toContain("Waiting on something Shahi cannot read");
+  });
+});

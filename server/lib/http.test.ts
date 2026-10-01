@@ -37,7 +37,7 @@ let screen = "";
  * question it was answering. Without it an answer waits out its full settle
  * time for a screen that never changes.
  */
-let afterKeys: string | null = "";
+let afterKeys: string | null | ((keys: string[], screen: string) => string) = "";
 /** Set before a boot() to make the fake pane an agent in that state. */
 let agentStatus: string | null = null;
 /**
@@ -108,7 +108,8 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
         case "session.snapshot":
           return { snapshot: structuredClone(snapshot) };
         case "pane.send_keys":
-          if (afterKeys !== null) screen = afterKeys;
+          if (typeof afterKeys === "function") screen = afterKeys((params as { keys: string[] }).keys, screen);
+          else if (afterKeys !== null) screen = afterKeys;
           return {};
         case "pane.send_text":
           return {};
@@ -425,11 +426,15 @@ describe("answering a prompt", () => {
   const pressed = (from: number) =>
     s.calls.slice(from).filter((c) => c.method === "pane.send_keys").map((c) => (c.params as { keys: string[] }).keys);
 
-  test("walks a cursor menu from the lit row and confirms, in one send", async () => {
+  test("walks a cursor menu from the lit row, and confirms once the moved cursor shows", async () => {
     screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
-    const before = s.calls.length;
-    expect((await post({ index: 1, label: "No, exit" })).status).toBe(200);
-    expect(pressed(before)).toEqual([["Up", "Enter"]]);
+    afterKeys = (keys, now) => keys.includes("Enter") ? ""
+      : now.replace("   No, exit", " ❯ No, exit").replace(" ❯ Yes, I trust this folder", "   Yes, I trust this folder");
+    try {
+      const before = s.calls.length;
+      expect((await post({ index: 1, label: "No, exit" })).status).toBe(200);
+      expect(pressed(before)).toEqual([["Up"], ["Enter"]]);
+    } finally { afterKeys = ""; }
   });
 
   test("presses the digit of a numbered menu", async () => {
@@ -1218,6 +1223,20 @@ describe("a message to an agent waiting on a menu", () => {
     expect(typed(before)).toEqual([]);
   });
 
+  // Waiting on something nothing here recognises: typed text could move a
+  // menu's cursor, and the Enter after it would pick the lit row.
+  test("is a 409 prompt_unrecognised when the screen shows no recognised menu, and types nothing", async () => {
+    screen = ["Security notes:", "", "1. Claude can make mistakes.", "", "Press Enter to continue…"].join("\n");
+    const before = app.calls.length;
+    const res = await send("carry on", "unrecognised-1");
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe("prompt_unrecognised");
+    // Old clients show the words as they are: they say where to answer it.
+    expect(body.error).toContain("Open Screen");
+    expect(typed(before)).toEqual([]);
+  });
+
   test("is typed when the question asks for text", async () => {
     screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__claude-ask-type__text.txt"), "utf8");
     const before = app.calls.length;
@@ -1957,8 +1976,12 @@ test("OpenCode's coloured approval rejects typing and answers the fresh horizont
     });
     expect((await post("prompt", { text: "no", clientMessageId: "opencode-no" })).status).toBe(409);
     screen = openCodeMenu(1); // The user moves right after the phone draws.
+    afterKeys = (keys) => keys.includes("Enter") ? "" : openCodeMenu(2);
     const before = app.calls.length;
     expect((await post("answer", { index: 3, label: "Reject", question: "Permission required", context: app.poller.frame(PANE)!.prompt!.context })).status).toBe(200);
-    expect(app.calls.slice(before).filter(c => WRITES.has(c.method))).toEqual([{ method: "pane.send_keys", params: { pane_id: PANE, keys: ["Right", "Enter"] } }]);
-  } finally { app.stop(); agentStatus = null; screen = ""; }
+    expect(app.calls.slice(before).filter(c => WRITES.has(c.method))).toEqual([
+      { method: "pane.send_keys", params: { pane_id: PANE, keys: ["Right"] } },
+      { method: "pane.send_keys", params: { pane_id: PANE, keys: ["Enter"] } },
+    ]);
+  } finally { app.stop(); agentStatus = null; screen = ""; afterKeys = ""; }
 });
