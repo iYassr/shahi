@@ -10,6 +10,7 @@ import { confirmSwitch, registerPush, unregisterPush } from "./PushPrompt";
 import { InstallApp } from "./InstallApp";
 import { noticesUrl } from "../notices";
 import { diagnosticsEnabled, setDiagnosticsEnabled } from "../diagnostics";
+import { useComputerControl } from "./ComputerUpdate";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
   const api = useApi();
@@ -17,6 +18,9 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [diagnostics, setDiagnostics] = useState(diagnosticsEnabled);
+  // What runs on the computer, as the phone's Settings shows it (device audit, build 28).
+  const handshake = useComputerControl()?.handshake;
+  const versions = handshake ? [`Shahi ${handshake.update.current}`, handshake.backend.version && `herdr ${handshake.backend.version}`].filter(Boolean).join(" · ") : "";
   const mounted = useRef(true);
   const request = useRef(0);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current++; }; }, []);
@@ -43,7 +47,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
         <button className="empty__action" role="switch" aria-checked={diagnostics} onClick={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }}>Share diagnostics: {diagnostics ? "On" : "Off"}</button>
       </section>
       {hosted && <section><h2><UiIcon name="computer" /> Computers</h2><p>Move between your connected computers. They stay connected while Shahi is open.</p><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}
-      <section><h2><UiIcon name="shield" /> Connection</h2>{hosted ? <><p>Your messages are protected by encryption between this device and your computer.</p><details className="settings__details"><summary>Connection details</summary><p>{browserConnection().identity?.relay}</p></details><p>{browserConnection().remembered ? "This browser is remembered on this device." : "You’ll need a new connection code if you refresh or close this page."} Sign out to remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
+      <section><h2><UiIcon name="shield" /> Connection</h2>{versions && <p className="settings__versions">{versions}</p>}{hosted ? <><p>Your messages are protected by encryption between this device and your computer.</p><details className="settings__details"><summary>Connection details</summary><p>{browserConnection().identity?.relay}</p></details><p>{browserConnection().remembered ? "This browser is remembered on this device." : "You’ll need a new connection code if you refresh or close this page."} Sign out to remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
       <section><h2><UiIcon name="bell" /> Notifications</h2><p>Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.</p>
         {hosted && <p>{browserConnection().remembered ? "Turn on notifications below to hear when this computer needs you." : "To receive notifications, connect again and select Remember this browser."}</p>}
         <button className="empty__action" disabled={busy || (hosted && !browserConnection().remembered)} onClick={() => void run(async () => {
