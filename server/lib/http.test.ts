@@ -1650,6 +1650,45 @@ test("a new Claude at its trust dialog is a conversation with nothing saved, not
   }
 });
 
+// Testing a fresh install, October 2026: Claude 2.1.287 writes no
+// `sessions/<pid>.json` at its trust dialog, so the record above is gone and
+// every new agent opened on "started before Shahi could identify it", with an
+// older conversation from the same folder offered to choose. The menu on the
+// screen says what the files no longer do.
+test("a new Claude at its trust dialog with nothing recorded is not offered old conversations", async () => {
+  const config = mkdtempSync(join(tmpdir(), "shahi-http-trust-"));
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = config;
+  const cwd = "/private/tmp/trust-probe.vt9D";
+  const folder = join(config, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "44444444-4444-4444-8444-444444444444.jsonl"), JSON.stringify({ type: "user", uuid: "u1", message: { role: "user", content: "An older task in this folder" } }) + "\n");
+  occupant = { agent: "claude", agent_session: null, cwd, terminal_id: "term_trust" };
+  programInForeground = true;
+  agentStatus = "blocked";
+  screen = readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__trust-folder__text.txt"), "utf8");
+  const app = await boot();
+  const headers = { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) };
+  const base = `${app.base}/api/panes/${encodeURIComponent(PANE)}`;
+  try {
+    await app.poller.refresh(PANE);
+    expect(app.poller.frame(PANE)?.prompt?.options.map((option) => option.label)).toContain("Yes, I trust this folder");
+    const res = await fetch(`${base}/session`, { headers });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ code: "reader_transcript_missing", error: "Claude has not saved any messages in this conversation yet." });
+    expect(((await (await fetch(`${base}/conversations`, { headers })).json()) as { choices: unknown[] }).choices).toEqual([]);
+  } finally {
+    app.stop();
+    occupant = {};
+    programInForeground = false;
+    agentStatus = null;
+    screen = "";
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+    rmSync(config, { recursive: true, force: true });
+  }
+});
+
 // The TestFlight report: a Claude conversation that started before herdr's
 // integration was installed reports no session, and Reader stayed empty.
 test("a Claude conversation herdr cannot identify becomes readable once the person names it", async () => {

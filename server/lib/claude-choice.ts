@@ -19,7 +19,7 @@
  * terminal or a session id from the hook ends it, and the hook always wins.
  * The folder only lists candidates; nothing is chosen without the person.
  */
-import type { ConversationChoice } from "@shahi/shared";
+import type { ConversationChoice, ParsedPrompt } from "@shahi/shared";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { HerdrClient } from "./herdr-client";
@@ -191,17 +191,30 @@ export async function conversationChoices(client: Rpc, pane: Pane, claimed: Read
 }
 
 /**
+ * Whether the pane's Claude is still asking to trust its folder, read from the
+ * menu the poller parsed off the screen.
+ *
+ * Claude has started no conversation at that menu, so there is none to
+ * identify or choose. herdr learns a session from Claude's SessionStart hook,
+ * which waits for trust, and Claude 2.1.287 writes no `sessions/<pid>.json`
+ * there either (measured 2026-10-02: none after ten seconds at the menu, so
+ * `unsavedSession` could not tell). Every new agent opened on "started before
+ * Shahi could identify it" with old conversations to choose from, found
+ * testing a fresh install. The screen does not depend on Claude's files.
+ */
+export function atFolderTrust(prompt: ParsedPrompt | null | undefined): boolean {
+  return prompt?.options.some((option) => option.label === "Yes, I trust this folder") ?? false;
+}
+
+/**
  * Whether the pane's Claude is a new conversation that has saved nothing yet,
  * rather than one Shahi could not identify.
  *
- * herdr learns a Claude's session from its SessionStart hook, and Claude runs
- * hooks only once its folder is trusted. So a new agent at its trust dialog
- * had no session, and Reader said it "started before Shahi could identify it"
- * and offered old conversations to choose from (found on an iPhone, October
- * 2026). Claude has recorded its new session by then: measured on 2.1.286,
- * `sessions/<pid>.json` names it at the trust dialog, before any transcript.
- * herdr not answering, no record, or a record with a transcript keeps the
- * old answer.
+ * A `sessions/<pid>.json` record whose session has no transcript is a
+ * conversation asked nothing yet (found on an iPhone, October 2026; on 2.1.286
+ * the record existed at the trust dialog, which 2.1.287 no longer writes there,
+ * so that case is `atFolderTrust`'s). herdr not answering, no record, or a
+ * record with a transcript keeps the old answer.
  */
 export async function unsavedSession(client: Rpc, pane: Pane): Promise<boolean> {
   if (pane.agent !== "claude" || agentSessionOf(pane)) return false;

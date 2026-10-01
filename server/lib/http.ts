@@ -37,7 +37,7 @@ import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf } from "./herdr-pane";
-import { choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
+import { atFolderTrust, choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
@@ -1463,6 +1463,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           if (sub === "/conversations" && req.method === "GET") {
             const pane = store.pane(paneId);
             if (!pane || pane.agent !== "claude") return json({ error: "not found" }, { status: 404 });
+            if (atFolderTrust(poller.frame(paneId)?.prompt)) return json({ choices: [] });
             return json({ choices: await conversationChoices(client, pane, claimedBy(paneId)) });
           }
           if (sub === "/conversation" && req.method === "POST") {
@@ -1498,9 +1499,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
             if (!page) {
               const claude = pane?.agent === "claude";
-              // A new Claude at its trust dialog has no session yet either
-              // (see `unsavedSession`), and is not one to choose for.
-              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId) && !(await unsavedSession(client, pane!));
+              // A new Claude at its trust dialog, or past it with nothing
+              // saved, has no session yet either and is not one to choose for
+              // (`atFolderTrust`, `unsavedSession`).
+              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId) &&
+                !atFolderTrust(poller.frame(paneId)?.prompt) && !(await unsavedSession(client, pane!));
               // Neither is something to fix on the computer. The service
               // installs herdr's integration, which reports the session when
               // one starts (herdr-integrations.ts); one that started before it
