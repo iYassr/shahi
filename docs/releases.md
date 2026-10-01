@@ -32,6 +32,8 @@ the upgrade suite. The independent live-herdr matrix uses a named test session.
 
 ## Approved computer releases
 
+Releases are made only when the owner asks to tag one (October 2026); pushing
+to master publishes nothing and starts no CI.
 `gh workflow run release.yml --ref master -f channel=beta|stable` publishes the
 version on master's HEAD after the `releases` environment approves it. A Stable
 release first runs the whole of CI on that commit; a Beta release only builds

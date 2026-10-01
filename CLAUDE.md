@@ -770,12 +770,15 @@ goes with it.
 
 **When CI runs is the owner's policy (October 2026).** Changes are committed
 and pushed straight to master, without pull requests, after `bun run typecheck`
-and `bun run test` locally; CI does not run on push. The whole suite runs where
-a release needs it: a Stable computer release (`release.yml` calls it on the
-exact commit), every signed phone update (`mobile-update.yml`), and by hand
-(`gh workflow run ci.yml --ref master`) on the exact commit before an App Store
-production submission. A Beta computer release only builds and smoke-tests its
-package; promoting it to Stable runs everything and re-verifies that package.
+and `bun run test` locally; CI does not run on push. Nothing is released and no
+CI is started until the owner asks to tag a release: a computer release (Beta or
+Stable), a TestFlight upload, or an App Store submission. When they do, the
+whole suite runs where that release needs it: a Stable computer release
+(`release.yml` calls it on the exact commit), every signed phone update
+(`mobile-update.yml`), and by hand (`gh workflow run ci.yml --ref master`) on the
+exact commit before an App Store production submission. A Beta computer release
+only builds and smoke-tests its package; promoting it to Stable runs everything
+and re-verifies that package.
 Pull requests do not start it either (Dependabot rebases its PRs on every push
 to master, and each rebase was a full run): `gh workflow run ci.yml --ref
 <branch>` before merging one.
