@@ -1972,6 +1972,20 @@ describe("transcript images", () => {
     expect(image.props.source).toEqual({ uri: png });
   });
 
+  // Device audit of build 28: tapping a picture did nothing, and the
+  // thumbnail was the only size it came in.
+  test("tapping an image opens it full screen, to zoom, and Done closes it", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    mocked.sessionLog.mockResolvedValue(log([withImage]));
+    mocked.transcriptImage.mockResolvedValue({ uri: png });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(await view.findByTestId("transcript-image-button"));
+    const zoom = await view.findByTestId("zoomable-image");
+    expect(zoom.props.source).toEqual({ uri: png });
+    fireEvent.press(view.getByLabelText("Close image"));
+    await waitFor(() => expect(view.queryByTestId("zoomable-image")).toBeNull());
+  });
+
   test("an image that cannot come through says why in its place", async () => {
     mocked.sessionLog.mockResolvedValue(log([withImage]));
     mocked.transcriptImage.mockRejectedValue(new Error("This image is too large to show through the relay. Connect over SSH, or open it on your computer."));
@@ -2419,4 +2433,16 @@ describe("the screen card", () => {
     expect(view.queryByTestId("screen-card")).toBeNull();
     view.unmount();
   });
+});
+
+// Reader showed only "11:45 AM", so last week's reply looked like this
+// morning's (device audit of build 28).
+test("a message from an earlier day says which day", async () => {
+  const lastWeek = new Date(2026, 8, 12, 11, 45).getTime();
+  mocked.sessionLog.mockResolvedValue(log([{ ...said("a1", "agent", "An old reply."), at: lastWeek }]));
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/An old reply\./);
+  const day = new Date(lastWeek).toLocaleDateString([], { month: "short", day: "numeric" });
+  expect(view.getByText(new RegExp(`^${day}, `))).toBeTruthy();
+  view.unmount();
 });

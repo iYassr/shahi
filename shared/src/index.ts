@@ -488,3 +488,4 @@ export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./
 export { paneTitle } from "./pane-title";
 export { isWebUrl, webLinks, type WebLink } from "./web-links";
 export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";
+export { messageTime } from "./message-time";

@@ -83,6 +83,10 @@ const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = 
   { label: "↑", keys: ["Up"] },
   { label: "↓", keys: ["Down"] },
   { label: "⏎", keys: ["Enter"] },
+  // Digits answer a numbered menu from the screen (device audit of build 28).
+  { label: "1", keys: ["1"] },
+  { label: "2", keys: ["2"] },
+  { label: "3", keys: ["3"] },
 ];
 
 /*
