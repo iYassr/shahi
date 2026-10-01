@@ -2,7 +2,8 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { choiceHeld, chooseConversation, chosenSession, conversationChoices, forgetChoice, projectFolder, unsavedSession } from "./claude-choice";
+import { transcriptSourceFor } from "./conversation-summary";
+import { choiceHeld, chooseConversation, chosenSession, conversationChoices, forgetChoice, parkedSession, projectFolder, unsavedSession } from "./claude-choice";
 
 const root = mkdtempSync(join(tmpdir(), "shahi-claude-choice-"));
 const previous = process.env.CLAUDE_CONFIG_DIR;
@@ -208,5 +209,51 @@ describe("choosing a conversation herdr cannot identify", () => {
     await chooseConversation(client, pane(), OLDER, new Set());
     expect(await chosenSession(client, pane({ agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: NEWER } }))).toBeNull();
     expect(choiceHeld("w1:p1")).toBeNull();
+  });
+});
+
+// A conversation backgrounded as a job keeps showing in its pane, but the job
+// reports itself through herdr with the daemon's HERDR_PANE_ID, which is the
+// pane that first started the daemon: wJ:p1 read another pane's job on
+// 2.1.286 (October 2026). The process record names the job the pane shows.
+describe("a conversation parked as a background job", () => {
+  const park = (job: string, session: string) => {
+    mkdirSync(join(root, "sessions"), { recursive: true });
+    mkdirSync(join(root, "jobs", job), { recursive: true });
+    writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID, sessionId: NEWER, kind: "interactive", parkedJobId: job }));
+    writeFileSync(join(root, "jobs", job, "state.json"), JSON.stringify({ state: "idle", sessionId: session }));
+  };
+
+  test("is the job's session, whatever herdr reports for the pane", async () => {
+    park("9ec2cbc1", OLDER);
+    expect(await parkedSession(client, pane({ agent_session: { value: RECORDED } }))).toBe(OLDER);
+  });
+
+  test("is nothing for a Claude that parked nothing, so herdr's report stands", async () => {
+    mkdirSync(join(root, "sessions"), { recursive: true });
+    writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID, sessionId: NEWER }));
+    expect(await parkedSession(client, pane())).toBeNull();
+  });
+
+  test("is nothing when the record is another process's, the job id is a path, or herdr is not answering", async () => {
+    park("9ec2cbc1", OLDER);
+    writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID + 1, parkedJobId: "9ec2cbc1" }));
+    expect(await parkedSession(client, pane())).toBeNull();
+    writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID, parkedJobId: "../sessions" }));
+    expect(await parkedSession(client, pane())).toBeNull();
+    park("9ec2cbc1", OLDER);
+    herdrDown = true;
+    expect(await parkedSession(client, pane())).toBeNull();
+  });
+
+  test("is what Reader reads for the pane, in place of herdr's session", async () => {
+    park("9ec2cbc1", OLDER);
+    const source = await transcriptSourceFor(pane({ agent_session: { agent: "claude", value: RECORDED } }), client);
+    expect(String(source).endsWith(`${OLDER}.jsonl`)).toBe(true);
+  });
+
+  test("is nothing for an agent that is not Claude", async () => {
+    park("9ec2cbc1", OLDER);
+    expect(await parkedSession(client, pane({ agent: "codex" }))).toBeNull();
   });
 });

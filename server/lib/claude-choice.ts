@@ -9,6 +9,8 @@
  * Claude's own `sessions/<pid>.json` is undocumented, disagreed with the hook
  * for one of six live panes (2026-09-28), and is not written by every process.
  * A TestFlight tester's existing conversation stayed empty in Reader this way.
+ * (That disagreement was a parked background job, the one case where the
+ * record is now trusted over the hook: see `parkedSession`.)
  *
  * So the person says which it is. The phone lists the conversations Claude
  * saved for the folder that Claude runs in, newest first, with the one
@@ -62,21 +64,48 @@ const readRecord = async (...path: string[]) => JSON.parse(await readFile(join(c
 /**
  * The session Claude's own record names for a process: a hint, never a choice.
  * A process that parked its conversation as a background job keeps its old
- * `sessionId` and names the job in `parkedJobId` (`9ec2cbc1`), whose
- * `jobs/<id>/state.json` holds the conversation's session: measured on
- * 2.1.283, where the foreground record's own session disagreed with herdr's
- * hook and the job's agreed. That was the one mismatch in six live panes.
+ * `sessionId` and names the job in `parkedJobId` (see `parkedJob`).
  */
 async function recordedSession(pid: number): Promise<string | null> {
   try {
     const row = await readRecord("sessions", `${pid}.json`);
     if (row.pid !== pid) return null;
-    if (row.parkedJobId !== undefined && row.parkedJobId !== null) {
-      if (typeof row.parkedJobId !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(row.parkedJobId)) return null;
-      const job = await readRecord("jobs", row.parkedJobId, "state.json");
-      return typeof job.sessionId === "string" ? job.sessionId : null;
-    }
+    if (row.parkedJobId !== undefined && row.parkedJobId !== null) return await parkedJob(row.parkedJobId);
     return typeof row.sessionId === "string" ? row.sessionId : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The session of a parked background job, from `jobs/<id>/state.json`. */
+async function parkedJob(jobId: unknown): Promise<string | null> {
+  if (typeof jobId !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(jobId)) return null;
+  const job = await readRecord("jobs", jobId, "state.json");
+  return typeof job.sessionId === "string" && UUID.test(job.sessionId) ? job.sessionId : null;
+}
+
+/**
+ * The conversation a pane shows when its Claude has parked its own as a
+ * background job, which herdr's hook cannot be trusted to name.
+ *
+ * Backgrounding a conversation (Claude Code 2.1.28x) moves it into a job run
+ * by Claude's daemon, and the pane goes on showing that job: the foreground
+ * process's record names it in `parkedJobId`, and the job's `state.json` holds
+ * its session. The job reports its session through the integration hook with
+ * the daemon's environment, and the daemon keeps the `HERDR_PANE_ID` of
+ * whichever pane first started it. Measured on 2.1.286 (October 2026): a job
+ * parked from w3:p1 reported itself as wJ:p1's session, so wJ:p1's Read showed
+ * that conversation while its Screen showed the job wJ:p1 had parked, and
+ * every line on its screen was in that job's transcript. The record agreed
+ * with Screen in all eleven live Claude panes; the hook in ten.
+ */
+export async function parkedSession(client: Rpc | undefined, pane: Pick<PaneInfo, "pane_id" | "agent">): Promise<string | null> {
+  if (!client || pane.agent !== "claude") return null;
+  try {
+    const process = (await foreground(client, pane.pane_id)).find(isClaude);
+    if (!process) return null;
+    const row = await readRecord("sessions", `${process.pid}.json`);
+    return row.pid === process.pid && row.parkedJobId !== undefined && row.parkedJobId !== null ? await parkedJob(row.parkedJobId) : null;
   } catch {
     return null;
   }
