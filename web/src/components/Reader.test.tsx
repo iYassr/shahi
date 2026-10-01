@@ -290,3 +290,84 @@ describe("more messages than a poll's tail", () => {
     expectAllOf(15);
   });
 });
+
+// Device report, October 2026: the reader showed neither Claude's task list
+// nor its subagents, which sat as one more collapsed step of activity.
+describe("tasks and subagents", () => {
+  let view: ReactTestRenderer | undefined;
+  let events: EventTarget;
+  const originals = new Map<string, PropertyDescriptor | undefined>();
+  beforeEach(() => {
+    clearReaderMemory();
+    events = new EventTarget();
+    for (const [key, value] of Object.entries({ window: events, document: Object.assign(new EventTarget(), { hidden: false }) })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    }
+  });
+  afterEach(async () => {
+    if (view) await act(async () => view!.unmount());
+    view = undefined;
+    clearReaderMemory();
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+  const render = (sessionLog: typeof api.sessionLog) => act(async () => {
+    view = create(<ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} /></ApiContext.Provider>);
+  });
+  const logChanged = () => act(async () => { events.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w1:p1" })); });
+  const log = (messages: LogMessage[], extra: Partial<SessionLog> = {}): SessionLog => ({
+    sessionId: "s1", path: "/home/me/.claude/projects/p/s1.jsonl", messages, total: messages.length, offset: 0, ...extra,
+  });
+  const call: LogMessage = { id: "a1", role: "agent", at: 1, blocks: [{
+    kind: "tool", name: "Agent", summary: "Survey the fixtures",
+    subagent: { id: "toolu_1", description: "Survey the fixtures", type: "Explore", background: true },
+    result: { text: "Started in the background.", isError: false, truncated: false, images: [] },
+  }] };
+  const report = (status: string): LogMessage => ({ id: "s1", role: "system", at: 2, blocks: [{
+    kind: "text", text: `Agent "Survey the fixtures" finished (${status})\nFound three fixtures.`, notice: { toolUseId: "toolu_1", status },
+  }] });
+  const head = () => view!.root.findByProps({ className: "subagent__head" });
+
+  test("a background subagent is its own row, running until its report arrives, then done with it", async () => {
+    let current = log([call]);
+    await render(async () => current);
+    expect(head().props["aria-label"]).toBe("Subagent, Survey the fixtures, Explore, Running…");
+    expect(view!.root.findAllByProps({ className: "reader-activity__head" })).toHaveLength(0);
+    current = log([call, report("completed")]);
+    await logChanged();
+    expect(head().props["aria-label"]).toBe("Subagent, Survey the fixtures, Explore, Done");
+    const shown = JSON.stringify(view!.toJSON());
+    expect(shown).toContain("Found three fixtures.");
+    // Folded into the row, not repeated as a system note.
+    expect(shown).not.toContain("System");
+    expect(head().props["aria-expanded"]).toBe(false);
+    await act(async () => head().props.onClick());
+    expect(head().props["aria-expanded"]).toBe(true);
+  });
+
+  test("a stopped background subagent says so", async () => {
+    await render(async () => log([call, report("killed")]));
+    expect(head().props["aria-label"]).toBe("Subagent, Survey the fixtures, Explore, Stopped");
+  });
+
+  test("the task list sits at the end, counted like Claude Code's, with the task under way showing", async () => {
+    await render(async () => log([message("m1", "Working through it.")], { tasks: [
+      { id: "1", subject: "Read the census", status: "completed" },
+      { id: "2", subject: "Write the reader", status: "in_progress", activeForm: "Writing the reader" },
+      { id: "3", subject: "Ship it", status: "pending" },
+    ] }));
+    const tasksHead = () => view!.root.findByProps({ className: "tasks__head" });
+    const texts = () => view!.root.findAllByProps({ className: "tasks__text" }).map(node => node.children.join(""));
+    expect(JSON.stringify(tasksHead().children.map(child => typeof child === "string" ? child : child.children))).toContain("3 tasks (1 done, 1 in progress, 1 open)");
+    expect(texts()).toEqual(["Writing the reader"]);
+    await act(async () => tasksHead().props.onClick());
+    expect(texts()).toEqual(["Read the census", "Write the reader", "Ship it"]);
+  });
+
+  test("no tasks, no card", async () => {
+    await render(async () => log([message("m1", "Done.")]));
+    expect(view!.root.findAllByProps({ className: "tasks" })).toHaveLength(0);
+  });
+});

@@ -1,4 +1,4 @@
-import type { LogBlock, LogMessage } from "./index";
+import type { BackgroundNotice, LogBlock, LogMessage, ReaderTask, SessionLog } from "./index";
 
 export type ActivityStep = { id: string; at: number; block: Extract<LogBlock, { kind: "tool" | "thinking" }> };
 export interface ReaderActivity {
@@ -19,6 +19,16 @@ export interface ReaderRow extends LogMessage {
  */
 export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): ReaderRow[] {
   const rows: ReaderRow[] = [];
+  // A client holds a contiguous tail of the transcript, so every subagent call
+  // it holds has its later notices too. The last one wins: a resumed agent
+  // reports again under the same call.
+  const notices = new Map<string, { text: string; notice: BackgroundNotice }>();
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind === "text" && block.notice?.toolUseId) notices.set(block.notice.toolUseId, { text: block.text, notice: block.notice });
+    }
+  }
+  const called = new Set(messages.flatMap(message => message.blocks.flatMap(block => block.kind === "tool" && block.subagent ? [block.subagent.id] : [])));
   const old = new Map(previous.map(row => [row.id, row]));
   const activityIds = new Map(previous.flatMap(row => row.activity?.steps.map(step => [step.id, row.id] as const) ?? []));
   const append = (row: ReaderRow) => {
@@ -37,7 +47,10 @@ export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): 
   for (let start = 0; start < messages.length;) {
     const first = messages[start]!;
     if (first.role !== "agent") {
-      append({ ...first, showHeader: true });
+      // A report folded into the row of the subagent it reports on is not
+      // said again on its own; one about anything else stays a note.
+      const kept = first.blocks.filter(block => !(block.kind === "text" && block.notice?.toolUseId && called.has(block.notice.toolUseId)));
+      if (kept.length) append(kept.length === first.blocks.length ? { ...first, showHeader: true } : { ...first, blocks: kept, showHeader: true });
       start++;
       continue;
     }
@@ -50,6 +63,12 @@ export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): 
       const message = messages[end++]!;
       const blocks: LogBlock[] = [];
       message.blocks.forEach((block, index) => {
+        if (block.kind === "tool" && block.subagent) {
+          // A subagent is work the person asked for, often for minutes, and
+          // was buried in the collapsed activity as one more tool call.
+          blocks.push(subagentView(block, block.subagent.id ? notices.get(block.subagent.id) : undefined));
+          return;
+        }
         if (block.kind === "thinking" || block.kind === "tool" && !block.questions?.length && !block.result?.isError) {
           steps.push({ id: JSON.stringify([message.id, index]), at: message.at, block });
           if (block.kind === "tool") {
@@ -93,4 +112,72 @@ export function readerActivityLabel(activity: ReaderActivity, working: boolean):
     }
   }
   return `${label} · ${activity.steps.length} ${activity.steps.length === 1 ? "step" : "steps"}`;
+}
+
+type ToolBlock = Extract<LogBlock, { kind: "tool" }>;
+const views = new WeakMap<ToolBlock, { notice: string | undefined; view: ToolBlock }>();
+
+/**
+ * The subagent call with its state and report filled in: from its notice when
+ * it ran in the background, from its own result otherwise. The same object
+ * while neither changes, so unchanged rows are reused (see `append`).
+ */
+function subagentView(block: ToolBlock, notice: { text: string; notice: BackgroundNotice } | undefined): ToolBlock {
+  const key = notice ? `${notice.notice.status}\n${notice.text}` : undefined;
+  const held = views.get(block);
+  if (held && held.notice === key) return held.view;
+  const call = block.subagent!;
+  let state: NonNullable<typeof call.state> = "running";
+  let report: string | undefined;
+  if (call.background) {
+    if (notice) {
+      state = notice.notice.status === "completed" ? "done" : notice.notice.status === "killed" ? "stopped" : "failed";
+      // The note's first line is its headline ("Agent … finished (completed)").
+      report = notice.text.split("\n").slice(1).join("\n").trim() || undefined;
+    }
+  } else if (block.result) {
+    state = block.result.isError ? "failed" : "done";
+    report = block.result.text.trim() || undefined;
+  }
+  const view: ToolBlock = { ...block, subagent: { ...call, state, ...(report ? { report } : {}) } };
+  views.set(block, { notice: key, view });
+  return view;
+}
+
+/** A task list and how far along it is, as Claude Code heads its own: "5 tasks (4 done, 1 in progress, 0 open)". */
+export interface ReaderTaskList {
+  tasks: ReaderTask[];
+  done: number;
+  inProgress: number;
+  open: number;
+}
+
+/**
+ * The conversation's task list: the server's copy of the agent's own store
+ * when it sent one, which holds every task whatever page is loaded; otherwise
+ * the latest `TodoWrite` among the loaded messages, which carries its whole
+ * list in each call. Null when there is neither, or nothing in it.
+ */
+export function readerTasks(log: Pick<SessionLog, "tasks"> | null | undefined, messages: LogMessage[]): ReaderTaskList | null {
+  let tasks = log?.tasks;
+  if (!tasks) {
+    for (let m = messages.length - 1; m >= 0 && !tasks; m--) {
+      const blocks = messages[m]!.blocks;
+      for (let b = blocks.length - 1; b >= 0; b--) {
+        const block = blocks[b]!;
+        if (block.kind === "tool" && block.todos) {
+          tasks = block.todos.map((todo, i) => ({ id: String(i + 1), subject: todo.content, status: todo.status }));
+          break;
+        }
+      }
+    }
+  }
+  if (!tasks?.length) return null;
+  const count = (status: ReaderTask["status"]) => tasks!.filter(task => task.status === status).length;
+  return { tasks, done: count("completed"), inProgress: count("in_progress"), open: count("pending") };
+}
+
+/** "5 tasks (4 done, 1 in progress, 0 open)". */
+export function readerTasksLabel(list: ReaderTaskList): string {
+  return `${list.tasks.length} ${list.tasks.length === 1 ? "task" : "tasks"} (${list.done} done, ${list.inProgress} in progress, ${list.open} open)`;
 }

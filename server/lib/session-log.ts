@@ -32,7 +32,7 @@
  * store in their own format, and plain shells have no transcript at all — so
  * the terminal view remains the universal fallback rather than a legacy one.
  */
-import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
+import type { LogBlock, LogMessage, ReaderTask, SessionLog, SubagentCall } from "@shahi/shared";
 import { createHash, type Hash } from "node:crypto";
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -560,12 +560,17 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     string,
     { text: string; isError: boolean; truncated: boolean; images: string[] }
   >();
+  // Subagents started in the background, whose result is only Claude Code's
+  // launch receipt: ids and an output path the model is told never to quote.
+  const launched = new Set<string>();
   for (const row of rows) {
     if (!isRecord(row)) continue;
     let resultImage = 0;
+    const receipt = isRecord(row.toolUseResult) && (row.toolUseResult.status === "async_launched" || row.toolUseResult.isAsync === true);
     for (const block of blocksOf(row)) {
       if (block.type === "tool_result" && typeof block.tool_use_id === "string" && block.tool_use_id) {
         results.set(block.tool_use_id, flattenResult(block, stringOr(row.uuid, null), () => resultImage++));
+        if (receipt) launched.add(block.tool_use_id);
       }
     }
   }
@@ -627,13 +632,21 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
           case "tool_use": {
             const name = stringOr(block.name, null);
             const input = isRecord(block.input) ? block.input : {};
+            const callId = typeof block.id === "string" ? block.id : "";
+            const subagent = subagentOf(name ?? "", callId, input, launched.has(callId));
             blocks.push({
               kind: "tool",
               name: name ?? "tool",
               summary: summariseToolInput(name ?? "", input),
               ...fileOf(input),
               ...questionsOf(name ?? "", input),
-              result: (typeof block.id === "string" && results.get(block.id)) || null,
+              ...(subagent ? { subagent } : {}),
+              ...todosOf(name ?? "", input),
+              // The launch receipt says nothing a person needs, and an older
+              // client would show it; the subagent's report comes later.
+              result: subagent?.background && results.has(callId)
+                ? { text: "Started in the background.", isError: false, truncated: false, images: [] }
+                : results.get(callId) || null,
             });
             onlyNotes = false;
             break;
@@ -667,9 +680,11 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     if (blocks.length === 0) continue;
 
+    // A background task's report is written as a user row, but nobody typed it.
+    const reported = type === "user" && blocks.every(block => block.kind === "text" && block.notice);
     messages.push({
       id,
-      role: onlyNotes && type === "assistant" ? "system" : type === "assistant" ? "agent" : "you",
+      role: (onlyNotes && type === "assistant") || reported ? "system" : type === "assistant" ? "agent" : "you",
       at,
       blocks,
     });
@@ -714,9 +729,17 @@ export function renderUserText(raw: string): LogBlock | null {
     const status = inner("status");
     const result = inner("result");
     const headline = summary ?? "Background task";
+    // Only a row that is the notification itself, not prose that quotes one.
+    // The id ties a subagent's report to its call; background commands and
+    // monitors report too, some with no call id at all.
+    const toolUseId = inner("tool-use-id");
+    const notice = text.startsWith("<task-notification>") && status
+      ? { status, ...(toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId } : {}) }
+      : undefined;
     return {
       kind: "text",
       text: [status ? `${headline} (${status})` : headline, result].filter(Boolean).join("\n"),
+      ...(notice ? { notice } : {}),
     };
   }
 
@@ -836,6 +859,38 @@ export function questionsOf(
  * knowing where the agent was standing, and offering to open something the
  * server would then fail to find is worse than offering nothing.
  */
+/**
+ * A subagent call, so the reader can show it as its own row rather than one
+ * more step of activity (device report, October 2026). Claude Code names the
+ * tool `Agent`, formerly `Task`; both take a description and a prompt. Every
+ * call in the September 2026 corpus (31) ran in the background, and its result
+ * is a launch receipt, so `background` is read from that receipt as well as
+ * from `run_in_background`.
+ */
+export function subagentOf(name: string, id: string, input: Record<string, unknown>, launched: boolean): SubagentCall | undefined {
+  if ((name !== "Agent" && name !== "Task") || !id) return undefined;
+  const description = typeof input.description === "string" ? input.description.trim() : "";
+  if (!description || typeof input.prompt !== "string") return undefined;
+  const type = typeof input.subagent_type === "string" && input.subagent_type.trim() ? input.subagent_type.trim() : undefined;
+  return { id, description, ...(type ? { type } : {}), background: launched || input.run_in_background === true };
+}
+
+const TODO_STATUSES = new Set(["pending", "in_progress", "completed"]);
+
+/**
+ * TodoWrite's whole list, the older way Claude Code kept a task list; the
+ * reader shows the latest one when the server has no task store to send. A
+ * list with anything it does not recognise is not shown at all.
+ */
+export function todosOf(name: string, input: Record<string, unknown>): { todos?: { content: string; status: ReaderTask["status"] }[] } {
+  if (name !== "TodoWrite" || !Array.isArray(input.todos)) return {};
+  const todos = input.todos.map(todo =>
+    isRecord(todo) && typeof todo.content === "string" && todo.content.trim() && TODO_STATUSES.has(todo.status as string)
+      ? { content: todo.content.trim(), status: todo.status as ReaderTask["status"] }
+      : null);
+  return todos.every(Boolean) ? { todos: todos as { content: string; status: ReaderTask["status"] }[] } : {};
+}
+
 export function fileOf(input: Record<string, unknown>): { file?: { path: string; name: string } } {
   for (const key of ["file_path", "notebook_path", "path"]) {
     const value = input[key];

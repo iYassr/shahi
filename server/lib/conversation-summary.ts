@@ -18,6 +18,7 @@ import { continuedTranscript, findTranscript, previewOf, readWindow, type Sessio
 import { agentSessionOf } from "./herdr-pane";
 import { choiceHeld, chosenSession } from "./claude-choice";
 import { fitPage } from "./session-window";
+import { claudeTasks } from "./claude-tasks";
 import type { TranscriptWatchSource } from "./transcript-watch";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
@@ -195,10 +196,13 @@ export async function transcriptPage(paneId: string, path: TranscriptSource, kin
   }
   const read = await readTranscript(path, kind, window);
   if (!read) return null;
+  // Claude's task list rides on the tail, the page every poll asks for; an
+  // earlier page is history, and a list on it would be the current one anyway.
+  const tasks = (kind ?? "claude") === "claude" && window.before === undefined && read.sessionId ? await claudeTasks(read.sessionId) : undefined;
   // Bounded in bytes as well as messages, or one huge message in the window
   // is a 413 through the relay on every poll (`fitPage`). Before the ETag, so
   // the tag names what is sent.
-  const log = fitPage(read);
+  const log = fitPage(tasks?.length ? { ...read, tasks } : read);
   const page = { log, etag: `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"` };
   // Kept only if no newer version of the file replaced the entry meanwhile.
   if (pages.get(paneId) === held) {

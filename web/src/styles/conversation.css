@@ -608,3 +608,28 @@
 .reader-activity__file { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; max-width: 100%; }
 .reader-activity__file > button, .reader-activity__file > a { min-height: 44px; display: flex; align-items: center; overflow-wrap: anywhere; min-width: 0; }
 .msg__who time { color: var(--muted); letter-spacing: 0; }
+
+/* A subagent is its own row, not a step of collapsed activity. */
+.subagent { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 8px; margin: 6px 0; }
+.subagent__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 0; text-align: left; }
+.subagent__head:disabled { cursor: default; opacity: 1; }
+.subagent__title { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.subagent__name { color: var(--text); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.subagent__detail { color: var(--muted); font-size: 12px; }
+.subagent__state { flex: none; font-size: 12px; color: var(--muted); }
+.subagent[data-state="running"] .subagent__state { color: var(--working); }
+.subagent[data-state="done"] .subagent__state { color: var(--success); }
+.subagent[data-state="failed"] .subagent__state { color: var(--danger); }
+.subagent__report { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subagent__report[data-open="false"] { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* The agent's task list, at the end of the conversation like Claude Code's. */
+.tasks { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 6px; margin: 8px 0; }
+.tasks__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; color: var(--muted); font-size: 13px; text-align: left; }
+.tasks__list { list-style: none; margin: 0; padding: 0; }
+.tasks__task { display: flex; gap: 8px; padding: 3px 0; font-size: 14px; color: var(--text); }
+.tasks__mark { flex: none; width: 16px; text-align: center; color: var(--muted); }
+.tasks__task[data-status="completed"] .tasks__mark { color: var(--success); }
+.tasks__task[data-status="completed"] .tasks__text { color: var(--muted); text-decoration: line-through; }
+.tasks__task[data-status="in_progress"] .tasks__mark { color: var(--working); }
+.tasks__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }

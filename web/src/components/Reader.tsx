@@ -1,4 +1,4 @@
-import { messageTime, readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { messageTime, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { agentColor } from "./AgentIcon";
 import type { CSSProperties } from "react";
 import { Download, RemoteImage } from "./RemoteMedia";
@@ -167,6 +167,8 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
   /** What is shown is the conversation the person chose, not one Claude reported. */
   const [chosen, setChosen] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  /** Claude's task list as the computer read it; older computers send none (see `readerTasks`). */
+  const [serverTasks, setServerTasks] = useState<ReaderTask[] | undefined>(undefined);
   const [offset, setOffset] = useState(() => rememberedOffsets.get(paneId) ?? 0);
   const busy = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -193,6 +195,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
   const previousRows = useRef<ReaderRow[]>([]);
   const rows = useMemo(() => readerRows(messages, previousRows.current), [messages]);
   previousRows.current = rows;
+  const taskList = useMemo(() => readerTasks(serverTasks ? { tasks: serverTasks } : undefined, messages), [serverTasks, messages]);
 
   const empty = !loading && messages.length === 0;
   useEffect(() => { onEmpty?.(empty); }, [empty, onEmpty]);
@@ -260,6 +263,8 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
       setNotice("");
       setUnidentified(false);
       setChosen(!!log.chosen);
+      // Sent again on every poll; an unchanged list keeps its identity.
+      setServerTasks(previous => JSON.stringify(previous) === JSON.stringify(log.tasks) ? previous : log.tasks);
 
       // And nothing re-renders unless something actually changed. A quiet
       // session polled every 2.5s otherwise rebuilt the entire conversation on
@@ -408,6 +413,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
       ))}
 
       {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
+      {taskList && <TasksCard list={taskList} />}
       {activity && (echoVisible || !rows.at(-1)?.activity) && <Working activity={activity} />}
 
       <div />
@@ -534,6 +540,66 @@ function Working({ activity }: { activity: Activity }) {
   );
 }
 
+const SUBAGENT_STATE = { running: "Running…", done: "Done", failed: "Failed", stopped: "Stopped" } as const;
+
+/**
+ * A subagent the agent started: its own row, never a step of collapsed
+ * activity, because it is often most of the work (device report, October
+ * 2026). Its report shows its first lines until opened; a background one's
+ * report is the notification `readerRows` matched to it by call id.
+ */
+function SubagentView({ call }: { call: NonNullable<Extract<LogBlock, { kind: "tool" }>["subagent"]> }) {
+  const [open, setOpen] = useState(false);
+  const state = call.state ?? "running";
+  const detail = [call.type, call.background ? "background" : null].filter(Boolean).join(" · ");
+  return (
+    <div className="subagent" data-state={state}>
+      <button
+        className="subagent__head"
+        aria-label={["Subagent", call.description, call.type, SUBAGENT_STATE[state]].filter(Boolean).join(", ")}
+        aria-expanded={call.report ? open : undefined}
+        disabled={!call.report}
+        onClick={() => setOpen(value => !value)}
+      >
+        <span className="subagent__title">
+          <span className="subagent__name">Subagent · {call.description}</span>
+          {detail && <span className="subagent__detail">{detail}</span>}
+        </span>
+        <span className="subagent__state">{SUBAGENT_STATE[state]}</span>
+      </button>
+      {call.report && <p className="subagent__report" data-open={open}>{call.report}</p>}
+    </div>
+  );
+}
+
+const TASK_MARK = { completed: "✓", in_progress: "■", pending: "☐" } as const;
+const TASK_SPOKEN = { completed: "done", in_progress: "in progress", pending: "open" } as const;
+
+/**
+ * The agent's task list, as Claude Code draws it under its own composer:
+ * one line of counts, the task under way while closed, and every task open.
+ */
+function TasksCard({ list }: { list: ReaderTaskList }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? list.tasks : list.tasks.filter(task => task.status === "in_progress");
+  return (
+    <section className="tasks" aria-label="Tasks">
+      <button className="tasks__head" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+        <span>{readerTasksLabel(list)}</span><span aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {shown.length > 0 && <ul className="tasks__list">
+        {shown.map(task => (
+          <li key={task.id} className="tasks__task" data-status={task.status}>
+            <span className="tasks__mark" aria-hidden="true">{TASK_MARK[task.status]}</span>
+            <span className="tasks__text">{!open && task.activeForm ? task.activeForm : task.subject}</span>
+            <span className="visually-hidden">, {TASK_SPOKEN[task.status]}</span>
+          </li>
+        ))}
+      </ul>}
+    </section>
+  );
+}
+
 function BlockView({ block, paneId, attachments = true }: { block: LogBlock; paneId: string; attachments?: boolean }) {
   const api = useApi();
   const [open, setOpen] = useState(false);
@@ -605,6 +671,7 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
     }
 
     case "tool":
+      if (block.subagent) return <SubagentView call={block.subagent} />;
       return (
         <div className="tool">
           <button className="tool__head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>

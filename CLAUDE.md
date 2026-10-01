@@ -1395,6 +1395,17 @@ collapses activity once; the user can reopen it afterward. One current activity
 status replaces the duplicate working footer. Unknown tools get neutral status,
 never guessed prose or fabricated results.
 
+Subagents are rows of their own, never activity steps (`subagent` on an `Agent`
+or `Task` call with a description and prompt). A background call's launch
+receipt is internal metadata, so the server sends "Started in the background."
+in its place; its `<task-notification>` row is a system note carrying
+`notice.toolUseId`, and `readerRows` folds a notice into the call with that id
+for its state and report. Unmatched notices — background commands, monitors —
+stay notes. Claude's task list comes from its own store,
+`<config>/tasks/<sessionId>/<n>.json` (`claude-tasks.ts`), on tail pages only,
+because rebuilding it from TaskCreate/TaskUpdate fails whenever a task predates
+the loaded page; without one, clients use the latest loaded TodoWrite.
+
 ## Claude Reader setup, September 28
 
 herdr's terminal detection names an agent but not its session; only the
