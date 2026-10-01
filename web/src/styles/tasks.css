@@ -636,3 +636,37 @@
 .inbox-reviewed { min-height: 44px; padding: 0 12px; color: var(--success); flex: none; }
 
 .mode__caution { color: var(--danger); font-size: 13px; font-weight: 600; }
+
+/* ---------------------------------------------------------- screen card -- */
+
+/*
+ * A waiting agent's screen when no menu on it was recognised, and a new
+ * agent's startup screens. The rows keep their columns: scrolled, not wrapped.
+ */
+.screencard__hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.screencard__screen {
+  max-height: 260px;
+  margin: 0 16px;
+  padding: 8px 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 8px;
+  background: var(--void);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre;
+}
+
+.screencard__keys {
+  padding: 10px 16px 14px;
+}
+
+.screencard__open {
+  margin-left: auto;
+}

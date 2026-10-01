@@ -26,7 +26,7 @@ import { parseActivity } from "./activity";
 
 export type { PaneFrame };
 import { parsePrompt, stripAnsi, type ParsedPrompt } from "./prompt-parser";
-import { providerIsWaiting } from "./provider-prompts";
+import { providerIsWaiting, providerWaitingScreen } from "./provider-prompts";
 import { PromptInstances, screenId } from "./prompt-instances";
 import type { SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
@@ -267,11 +267,18 @@ export class Poller extends EventEmitter<PollerEvents> {
       const current = existing.frame.prompt;
       const stale = current !== null && promptId !== undefined && current.promptId !== promptId &&
         !this.prompts.alreadyAnswered(paneId, hash);
-      if (stale || (existing.parsed && !current && (await this.#status(paneId, existing.parsed, existing.frame.text)) === "blocked")) {
+      // Only while the answer could change what is shown: a menu without its
+      // buttons, or a screen with no menu, which may be waiting on something
+      // unrecognised. A card already shown stays until the screen changes.
+      const asks = !stale && !(existing.parsed && current) ? await this.#asks(paneId, existing.parsed, existing.frame.text) : null;
+      const offer = stale || (asks?.offer ?? false);
+      const unrecognised = asks?.unrecognised ?? existing.frame.unrecognised === true;
+      if (offer || unrecognised !== (existing.frame.unrecognised === true)) {
         // A read that finished meanwhile holds a newer screen; keep that.
         const latest = this.#records.get(paneId);
         if (latest !== existing) return latest?.frame;
-        existing.frame = { ...existing.frame, prompt: withId(existing.parsed!, promptId), at: now };
+        const { unrecognised: _, ...rest } = existing.frame;
+        existing.frame = { ...rest, prompt: offer ? withId(existing.parsed!, promptId) : current, ...(unrecognised ? { unrecognised: true } : {}), at: now };
         this.emit("frame", existing.frame);
       }
       return existing.frame;
@@ -283,15 +290,14 @@ export class Poller extends EventEmitter<PollerEvents> {
     const text = stripAnsi(read.text);
     const parsed = parsePrompt(read.text);
     const promptId = this.prompts.observe(paneId, ticket, parsed, hash);
-    const status = await this.#status(paneId, parsed, text);
+    const { offer, unrecognised } = await this.#asks(paneId, parsed, text);
 
     const frame: PaneFrame = {
       paneId,
       ansi: read.text,
       text,
-      // Require herdr's blocked state, or a measured provider-specific menu
-      // whose exact renderer is missing from herdr's current detection rules.
-      prompt: status === "blocked" && parsed ? withId(parsed, promptId) : null,
+      prompt: offer && parsed ? withId(parsed, promptId) : null,
+      ...(unrecognised ? { unrecognised: true } : {}),
       // Deliberately not gated on herdr's `agent_status`. Its working-state
       // detection is tuned for Claude Code: a codex pane displaying
       // `• Working (5s • esc to interrupt)` is still reported as `idle`, so
@@ -313,36 +319,53 @@ export class Poller extends EventEmitter<PollerEvents> {
   }
 
   /**
-   * The pane's status, confirmed with herdr when the screen disagrees.
+   * What the screen asks of the person: the answer buttons for the menu the
+   * parser found (`offer`), or the screen itself (`unrecognised`) when an
+   * agent waits and no menu was recognised: herdr says it is blocked, or the
+   * screen is one measured to wait with nothing to choose.
+   *
+   * The buttons follow the write guard in `prompt.ts`, which refuses a
+   * message whenever the parser finds a menu on an agent's screen, whatever
+   * herdr says. They used to wait for herdr's `blocked` as well, and herdr
+   * 0.9.1 reports Codex's startup menus — its update offer, a model
+   * migration, a hooks review — `idle`: the message was refused and nothing
+   * was offered to answer it with. So an agent gets them for any menu while
+   * herdr does not say it is working. A numbered list in a turn still being
+   * written is asked of nobody, and a menu mid-turn is known by herdr's
+   * `blocked`. A pane herdr names no agent in keeps the old rule: its shell
+   * may be showing a menu some earlier program left behind.
    *
    * The mirror is re-snapshotted every 3 seconds, which is fine for a list and
    * too slow for the pane you are looking at: the screen arrives in 400ms with
    * a question on it, and the answer buttons wait for the mirror to notice.
    * (Status transitions are not on `pane.updated`; they are only announced per
    * pane on `pane.agent_status_changed`, which is why the mirror re-snapshots
-   * rather than subscribing — see `state.ts`.)
-   *
-   * So when the parser finds a menu and the mirror says the agent is not
-   * waiting, ask. One extra RPC, in the one window where the mirror is likely
-   * to be behind, rate-limited so a screen the parser mis-reads cannot turn
-   * every frame into two calls.
+   * rather than subscribing — see `state.ts`.) So when the mirror's word would
+   * withhold the buttons, or show the screen for a wait herdr may have ended,
+   * ask. One extra RPC, rate-limited so a screen the parser mis-reads cannot
+   * turn every frame into two calls.
    */
-  async #status(paneId: string, parsed: ParsedPrompt | null, text: string): Promise<string | undefined> {
-    const pane = this.store.pane(paneId);
-    const mirrored = pane?.agent_status;
-    if (providerIsWaiting(pane?.agent, text, parsed)) return "blocked";
-    const screenLooksBlocked = parsed !== null;
-    if (!screenLooksBlocked || mirrored === "blocked") return mirrored;
+  async #asks(paneId: string, parsed: ParsedPrompt | null, text: string): Promise<{ offer: boolean; unrecognised: boolean }> {
+    const mirrored = this.store.pane(paneId);
+    if (providerIsWaiting(mirrored?.agent, text, parsed)) return { offer: true, unrecognised: false };
+    // A measured screen that waits with nothing to choose waits whatever herdr says.
+    const waiting = parsed === null && providerWaitingScreen(text);
+    const decide = (pane: { agent?: string | null; agent_status?: string | null } | undefined) => ({
+      offer: parsed !== null && (pane?.agent_status === "blocked" || (!!pane?.agent && pane.agent_status !== "working")),
+      unrecognised: parsed === null && !!pane?.agent && (pane.agent_status === "blocked" || waiting),
+    });
+    const guess = decide(mirrored);
+    if (parsed ? guess.offer : !guess.unrecognised || waiting) return guess;
 
     const now = Date.now();
-    if (now - (this.#confirmedAt.get(paneId) ?? 0) < CONFIRM_INTERVAL_MS) return mirrored;
+    if (now - (this.#confirmedAt.get(paneId) ?? 0) < CONFIRM_INTERVAL_MS) return guess;
     this.#confirmedAt.set(paneId, now);
 
     try {
       const { pane } = await this.client.rpc("pane.get", { pane_id: paneId });
-      return pane?.agent_status ?? mirrored;
+      return decide({ ...mirrored, ...pane });
     } catch {
-      return mirrored;
+      return guess;
     }
   }
 

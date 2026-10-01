@@ -133,6 +133,7 @@ function frameOf(paneId: string) {
     ansi: screen,
     text: screen.replace(/\x1b\[[0-9;]*m/g, ""),
     prompt: scenario.prompts[paneId] ?? null,
+    ...(scenario.unrecognised?.includes(paneId) ? { unrecognised: true } : {}),
     activity:
       known.status === "working"
         ? { verb: "Baking", elapsed: "8m 34s", detail: "26.0k tokens" }

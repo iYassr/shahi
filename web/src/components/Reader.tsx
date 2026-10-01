@@ -103,6 +103,12 @@ interface Props {
   canChoose?: boolean;
   /** Who holds the pane (`DashboardPane.instanceId`), so a choice cannot land on the next occupant. */
   instanceId?: string;
+  /**
+   * Told whether there is a conversation to read. Until there is, the pane
+   * shows its screen: a new agent's startup screens come before any
+   * transcript. Must be stable, like `onUnavailable`.
+   */
+  onEmpty?: (empty: boolean) => void;
 }
 
 /**
@@ -136,7 +142,7 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
-export function Reader({ paneId, agent, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId }: Props) {
+export function Reader({ paneId, agent, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId, onEmpty }: Props) {
   const api = useApi();
   const diagnosticContext = useRef({ agent, connected, historyKnown, computerVersion, herdrVersion });
   diagnosticContext.current = { agent, connected, historyKnown, computerVersion, herdrVersion };
@@ -187,6 +193,10 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
   const previousRows = useRef<ReaderRow[]>([]);
   const rows = useMemo(() => readerRows(messages, previousRows.current), [messages]);
   previousRows.current = rows;
+
+  const empty = !loading && messages.length === 0;
+  useEffect(() => { onEmpty?.(empty); }, [empty, onEmpty]);
+  useEffect(() => () => onEmpty?.(false), [onEmpty]);
 
   const reading = useReaderScroll({ paneId, scroller, ready: !loading, revision: messages, following: pinnedToBottom,
     onPosition: bottom => { setAway(!bottom); if (bottom) setUnseen(0); } });

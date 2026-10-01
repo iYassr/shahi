@@ -355,6 +355,19 @@ describe("a start that fails", () => {
     expect(calls.at(-1)).toEqual({ method: "tab.close", params: { tab_id: "w1:t2" } });
   });
 
+  // An outdated Claude Code prints why and exits, with no menu to answer. The
+  // screen is a capture (herdr 0.9.1, a stand-in `claude` printing 2.1.286's
+  // words): herdr's launch line, the agent's words, then the shell's prompt.
+  test("quotes what an agent printed before it exited, not the shell's prompt or the launch", async () => {
+    const screen = readFileSync(join(import.meta.dir, "..", "fixtures", "startup", "claude-failed-start.ansi"), "utf8")
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+    const { rpc, calls } = herdr((method) => method === "pane.read" ? { read: { text: screen } } : exits(method));
+    const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);
+    expect(failure.message).toBe("Claude exited while it was starting, so its tab was closed. It printed: “It looks like your version of Claude Code (2.1.100) needs an update. A newer version (2.1.200 or higher) is required to continue. To update, please run: claude update”");
+    // Read before the tab and its screen went.
+    expect(calls.map((c) => c.method).slice(-2)).toEqual(["pane.read", "tab.close"]);
+  });
+
   test("closes the tab when herdr refuses to start the agent", async () => {
     const { rpc, calls } = herdr(() => { throw new HerdrError("invalid_args", "unknown flag", "agent.start"); });
     const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);

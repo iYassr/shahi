@@ -15,8 +15,9 @@
  *    150ms sufficed, 200ms is the margin). Blocked agents take this path
  *    because `agent.prompt` refuses them — "If the agent is already blocked,
  *    submission is rejected with agent_blocked before any input is sent"
- *    (herdr 0.8.2) — and typing an answer into a waiting agent is exactly what
- *    the composer is for when the prompt parser has nothing better to offer.
+ *    (herdr 0.8.2). A blocked agent is typed into only where the parser
+ *    recognises what it waits on as a field; otherwise the message is refused
+ *    with `prompt_unrecognised`, since a menu takes letters as cursor moves.
  *
  * `wait` is deliberately never supplied: the phone wants a receipt, and the
  * reply arrives through the transcript.
@@ -41,7 +42,7 @@
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
-import { cursorFeedbackTyped } from "./provider-prompts";
+import { cursorFeedbackTyped, providerWaitingScreen } from "./provider-prompts";
 
 /** The herdr calls this module is allowed to make, typed loosely so a test can fake them. */
 export type PromptRpc = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -53,6 +54,21 @@ export class PromptOpen extends Error {
     super(
       "This agent is waiting on a choice. Answer it with the option buttons or the keys; " +
         "a message sent now would press Enter on the highlighted option.",
+    );
+  }
+}
+
+/**
+ * The agent is waiting, herdr says so or its screen is one measured to wait
+ * with nothing to choose, and nothing on it is a menu or a field the parser
+ * knows, so nothing was typed.
+ */
+export class PromptUnrecognised extends Error {
+  readonly code = "prompt_unrecognised";
+  constructor() {
+    super(
+      "This agent is waiting on something Shahi cannot read, so nothing was typed. " +
+        "Open Screen to see it and answer with the keys.",
     );
   }
 }
@@ -123,8 +139,9 @@ export async function submitPrompt(
   // shell with no read: Claude Code quit 6 times in 6. A menu on screen means
   // the program holding the terminal is waiting on it, so it takes the
   // terminal path, and only into a text field.
-  let menu = await openMenu(rpc, paneId);
-  if (target.isAgent && !menu && target.status !== "blocked") {
+  let menu = await openMenu(rpc, paneId, { agent: target.isAgent });
+  let blocked = target.isAgent && target.status === "blocked";
+  if (target.isAgent && !menu && !blocked) {
     try {
       await rpc("agent.prompt", { target: paneId, text });
       return "agent";
@@ -134,8 +151,16 @@ export async function submitPrompt(
       // would have been chosen with fresher information.
       if (!(err instanceof Error && err.message.includes("agent_blocked"))) throw err;
     }
-    menu = await openMenu(rpc, paneId);
+    blocked = true;
+    menu = await openMenu(rpc, paneId, { agent: true });
   }
+  // Waiting, on something the parser does not know. The terminal path used
+  // to type here anyway, and most of what an agent waits on is a menu: Claude
+  // Code's unnumbered ones move their cursor on `j` and `k` and take Enter as
+  // the lit row, and codex's model migration takes Enter as "Try new model"
+  // (both read from their source, October 2026). What it waits on takes
+  // text only in a field the parser recognises, which `menu` is.
+  if (blocked && !menu) throw new PromptUnrecognised();
   await rpc("pane.send_text", { pane_id: paneId, text });
   await sleep(SUBMIT_DELAY_MS);
   // Read again before Enter. Other phones' writes wait their turn, but a
@@ -169,7 +194,7 @@ function sameSpot(before: Spot | null, after: Spot | null): boolean {
  * would not take typed text is refused with `PromptOpen`, unless `refuse` is
  * false, when it is returned like any other.
  */
-async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previous, typed }: { refuse?: boolean; previous?: Spot | null; typed?: string } = {}): Promise<Spot | null> {
+async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previous, typed, agent = false }: { refuse?: boolean; previous?: Spot | null; typed?: string; agent?: boolean } = {}): Promise<Spot | null> {
   // The same read the poller and `answer.ts` make, so the menu found here is
   // the one the phone was offered buttons for.
   const { read } = (await rpc("pane.read", {
@@ -180,6 +205,9 @@ async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previou
   })) as { read: { text: string } };
   const menu = parsePrompt(read.text);
   if (!menu && previous?.feedbackScreen && typed !== undefined && cursorFeedbackTyped(previous.feedbackScreen, stripAnsi(read.text), typed)) return previous;
+  // An agent waiting where there is nothing to choose, which herdr calls idle:
+  // its Enter would dismiss the screen, or press "Enable selected".
+  if (!menu && refuse && agent && providerWaitingScreen(stripAnsi(read.text))) throw new PromptUnrecognised();
   if (!menu) return null;
   const lit = menu.options.find((option) => option.selected);
   if (refuse && (!lit || !isTextField(menu, lit))) throw new PromptOpen();

@@ -76,3 +76,22 @@ test("the screen's text reaches a screen reader", async ({ page }) => {
   await expect(screen).toContainText("x@host:~/project (main)");
   await expect(page.getByRole("textbox", { name: "Terminal input" })).toHaveCount(0);
 });
+
+// An agent waiting on something no parser recognised: messages are refused,
+// so Read shows the screen as the terminal has it, with the keys to answer.
+test("an unrecognised wait shows its screen in Read, and its keys reach the pane", async ({ page }) => {
+  await scenario(page, "busy");
+  const screen = ["", "Security notes:", "", "1. Claude can make mistakes.", "", "Press Enter to continue…", "", ""].join("\n");
+  // A codex pane with no question on the session, so only the screen asks.
+  const patched = await page.request.post("/__stub/scenario", { data: { patch: { unrecognised: ["w2:p1"], screens: { "w2:p1": screen } } } });
+  expect(patched.ok()).toBe(true);
+  await page.goto("/pane/w2%3Ap1");
+  const card = page.getByRole("region", { name: "Waiting on something Shahi cannot read" });
+  await expect(card).toBeVisible();
+  await expect(card.getByLabel("Terminal screen")).toHaveText("Security notes:\n\n1. Claude can make mistakes.\n\nPress Enter to continue…");
+  await card.getByRole("button", { name: "Enter", exact: true }).click();
+  await expect.poll(async () => (await writes(page)).filter((w) => w.path === "/api/panes/w2%3Ap1/keys").map((w) => (w.body as { keys: string[] }).keys)).toEqual([["Enter"]]);
+  await card.getByRole("button", { name: "Open Screen", exact: true }).click();
+  await expect(page.locator(".xterm")).toBeVisible();
+  await expect(card).toBeHidden();
+});

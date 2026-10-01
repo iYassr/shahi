@@ -382,7 +382,7 @@ function findQuestion(
   // guess, as before.
   const ended = joined.findIndex((p) => p.endsWith("?") && !LABELLED_RE.test(p));
   const asked = ended >= 0 ? ended : joined.findIndex((p) => p.includes("?"));
-  if (asked < 0) return { text: joined[0] ?? "", context: [] };
+  if (asked < 0) return titled(lines, optionStart) ?? { text: joined[0] ?? "", context: [] };
 
   /*
    * Claude Code lays a permission out the other way round from codex: the
@@ -421,6 +421,21 @@ function findQuestion(
     text: joined[asked]!,
     context,
   };
+}
+
+/**
+ * A Claude Code dialog that asks nothing is known by its title, the first
+ * line under its top rule, and the rest of the dialog is its context. The
+ * bypass-permissions warning, a new project MCP server and Settings Error ask
+ * no question, and the nearest block made their cards read as the security
+ * link, the MCP boilerplate and the fine print (captured on 2.1.286, October
+ * 2026). Without a rule on screen, nothing says where the dialog begins.
+ */
+function titled(lines: string[], optionStart: number): { text: string; context: string[] } | null {
+  const dialog = dialogAbove(lines, optionStart);
+  const [title, ...rest] = dialog[0]?.split("\n") ?? [];
+  if (!title?.trim()) return null;
+  return { text: title.trim(), context: [...(rest.length ? [dedent(rest)] : []), ...dialog.slice(1)] };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { answerPrompt, keysFor, PromptChanged, PromptGone } from "./answer";
+import { answerPrompt, keysFor, PromptChanged, PromptGone, PromptNotReached } from "./answer";
 import { PaneWrites } from "./pane-writes";
 import { PromptInstances, screenId } from "./prompt-instances";
 import { parsePrompt } from "./prompt-parser";
@@ -28,6 +28,36 @@ function fakeHerdr(screen: string, { next = "", paintMs = 0 } = {}) {
   };
   return { rpc, pressed, pane };
 }
+
+/**
+ * A herdr whose pane redraws after each press as `redraw` says, recording what
+ * is pressed: for menus whose cursor moves before anything is chosen.
+ */
+function scriptedHerdr(screen: string, redraw: (keys: string[], screen: string) => string) {
+  const pressed: string[][] = [];
+  const pane = { screen };
+  const rpc = async (method: string, params: Record<string, unknown>) => {
+    if (method === "pane.read") return { read: { text: pane.screen } };
+    if (method === "pane.send_keys") {
+      pressed.push(params.keys as string[]);
+      pane.screen = redraw(params.keys as string[], pane.screen);
+      return {};
+    }
+    throw new Error(`unexpected ${method}`);
+  };
+  return { rpc, pressed, pane };
+}
+
+/** Claude Code's trust menu, cursor on its second row. `Up` moves it unless the menu refuses keys; Enter closes it. */
+function trustMenu({ refuses = false } = {}) {
+  return scriptedHerdr(fixture("blocked__trust-folder__text.txt"), (keys, screen) => {
+    if (keys.includes("Enter")) return "";
+    if (refuses || !keys.includes("Up")) return screen;
+    return screen.replace("   No, exit", " ❯ No, exit").replace(" ❯ Yes, I trust this folder", "   Yes, I trust this folder");
+  });
+}
+
+const fast = async () => {};
 
 describe("keysFor", () => {
   test("a numbered menu is answered by its digit, wherever the cursor is", () => {
@@ -83,9 +113,10 @@ describe("keysFor", () => {
 
 describe("answerPrompt", () => {
   test("re-reads the screen and presses what the fresh parse says", async () => {
-    const { rpc, pressed } = fakeHerdr(fixture("blocked__trust-folder__text.txt"));
-    await expect(answerPrompt(rpc, "w4:p2", { index: 1, label: "No, exit" })).resolves.toEqual(["Up", "Enter"]);
-    expect(pressed).toEqual([["Up", "Enter"]]);
+    const { rpc, pressed } = trustMenu();
+    await expect(answerPrompt(rpc, "w4:p2", { index: 1, label: "No, exit" }, { sleep: fast })).resolves.toEqual(["Up", "Enter"]);
+    // The move, then Enter once the moved cursor was on screen.
+    expect(pressed).toEqual([["Up"], ["Enter"]]);
   });
 
   test("answering Red from a typed text field chooses Red, and nothing is typed into the field", async () => {
@@ -253,5 +284,41 @@ describe("a card drawn before the agent asked the same question again", () => {
     };
     await answerPrompt(rpc, "w1:p1", phone, { instances });
     expect(pressed).toEqual([["1"]]);
+  });
+});
+
+/**
+ * Enter confirms whichever row is lit when it lands. Claude Code refuses a key
+ * within 150ms of a menu opening and puts the cursor back on its default, "No,
+ * exit" on the trust menu, and versions before 2.1.283 could take an arrow and
+ * an Enter sent together against the old cursor (its source and changelog).
+ */
+describe("confirming only the row that was reached", () => {
+  test("a move the menu did not take is never confirmed", async () => {
+    const { rpc, pressed } = trustMenu({ refuses: true });
+    const refused = answerPrompt(rpc, "w4:p2", { index: 1, label: "No, exit" }, { sleep: fast });
+    await expect(refused).rejects.toBeInstanceOf(PromptNotReached);
+    // Refused like any card whose question moved on, so clients close it.
+    await expect(refused).rejects.toMatchObject({ code: "prompt_changed" });
+    expect(pressed).toEqual([["Up"]]);
+  });
+
+  test("a numbered menu that only highlights on its digit gets Enter once the digit shows", async () => {
+    const { CODEX_TRUST_OWN_SERVER } = await import("../fixtures/provider-menus");
+    const moved = CODEX_TRUST_OWN_SERVER.replace("› 1. Trust and continue", "  1. Trust and continue").replace("  2. Quit", "› 2. Quit");
+    const { rpc, pressed } = scriptedHerdr(moved, (keys, screen) =>
+      keys.includes("Enter") ? "" : keys.includes("1") ? CODEX_TRUST_OWN_SERVER : screen);
+    await answerPrompt(rpc, "w1:p1", { index: 1, label: "Trust and continue" }, { sleep: fast });
+    expect(pressed).toEqual([["1"], ["Enter"]]);
+  });
+
+  // Codex's update offer takes its digits at once (codex source, 0.158). An
+  // Enter after it would land on the folder-trust menu drawn next, whose lit
+  // row trusts the folder.
+  test("a digit that answers by itself is not followed by an Enter", async () => {
+    const { CODEX_UPDATE, CODEX_TRUST_OWN_SERVER } = await import("../fixtures/provider-menus");
+    const { rpc, pressed } = scriptedHerdr(CODEX_UPDATE, (keys, screen) => (keys.includes("2") ? CODEX_TRUST_OWN_SERVER : screen));
+    await expect(answerPrompt(rpc, "w1:p1", { index: 2, label: "Skip" }, { sleep: fast })).resolves.toEqual(["2"]);
+    expect(pressed).toEqual([["2"]]);
   });
 });

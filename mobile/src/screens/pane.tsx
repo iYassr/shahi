@@ -50,6 +50,7 @@ import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells } from "@/lib/scroll-cells";
 import { memoryOf } from "@/lib/reader-memory";
 import { committed, refused } from "@/lib/feel";
+import { ScreenCard } from "@/components/screen-card";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, theme } from "@/lib/theme";
 import { Markdown } from "@/components/markdown";
@@ -305,6 +306,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     notifyNativeDraft(savedDraft);
   }, { active: focused && !gone && !updateRequired, owner: savedDraft });
   const [screen, setScreen] = useState<string | null>(null);
+  /** herdr says the agent is waiting on a screen no parser recognised (`PaneFrame.unrecognised`). */
+  const [unrecognised, setUnrecognised] = useState(false);
   /**
    * Reader or raw screen.
    *
@@ -814,6 +817,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         const act = detail.frame?.activity ?? null;
         setActivity(act);
         setScreen(detail.frame?.text ?? null);
+        setUnrecognised(detail.frame?.unrecognised === true);
         if (act) {
           // A working agent means a reply is imminent: keep polling fast so it
           // surfaces the instant it is written, not on the next idle tick.
@@ -1125,6 +1129,24 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           </Pressable>
         )}
 
+        {/* Messages are refused while an agent waits on something no parser
+            knows, and a new agent's startup screens come before any
+            conversation: either way the screen itself is shown, with keys. */}
+        {!prompt && view === "reader" && !!screen && !!pane?.agent && (unrecognised || (!readable && !loading && !logError)) && (
+          <ScreenCard
+            text={screen}
+            waiting={unrecognised}
+            disabled={cannotWrite || sending}
+            onKeys={(keys) => {
+              committed();
+              api.sendKeys(paneId, keys, pane?.instanceId).then(chase, (e: Error) => {
+                refused();
+                showError(e);
+              });
+            }}
+            onOpenScreen={() => setView("screen")}
+          />
+        )}
         {prompt && view === "reader" && <Prompt key={prompt.promptId ?? prompt.question} prompt={prompt} onAnswer={answer} disabled={cannotWrite} compact={keyboard > 0} />}
       </ScrollView>
 

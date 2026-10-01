@@ -187,6 +187,112 @@ describe("answering sooner than the mirror knows", () => {
     });
   });
 
+  // herdr 0.9.1 reports Codex's startup menus idle. The write guard refused a
+  // message behind one, and the phone had nothing to answer it with.
+  describe("a menu on an agent herdr does not call blocked", () => {
+    const MIGRATION = [
+      "Codex just got an upgrade. Introducing GPT-6 Sol.",
+      "",
+      "We recommend switching from gpt-5.4 to gpt-6-sol.",
+      "",
+      "› 1. Try new model",
+      "  2. Use existing model",
+      "",
+      "enter/esc confirm · ctrl+c quit",
+    ].join("\n");
+    const agentSaying = (agent_status: string) =>
+      ({ pane: () => ({ agent: "codex", agent_status }), instance: () => undefined }) as unknown as SessionStore;
+
+    test("gets its buttons while herdr says the agent is idle", async () => {
+      const { client, calls } = herdrSaying("idle", MIGRATION);
+      const frame = await new Poller(client, agentSaying("idle"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.prompt?.options.map((option) => option.label)).toEqual(["Try new model", "Use existing model"]);
+      // The mirror already says enough; nothing is asked.
+      expect(calls).not.toContain("pane.get");
+    });
+
+    test("and while herdr cannot yet say what the agent is doing", async () => {
+      const { client } = herdrSaying("unknown", MIGRATION);
+      const frame = await new Poller(client, agentSaying("unknown"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.prompt?.options).toHaveLength(2);
+    });
+
+    test("gets none while herdr says the agent is working", async () => {
+      const { client, calls } = herdrSaying("working", MENU);
+      const frame = await new Poller(client, agentSaying("working"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.prompt).toBe(null);
+      // Asked, in case the mirror is behind a menu that has since appeared.
+      expect(calls).toContain("pane.get");
+    });
+  });
+
+  // A dialog nothing here recognises: typing into it could move its cursor
+  // and pick a row, so the message is refused and the phone shows the screen.
+  describe("an agent waiting on a screen with no recognised menu", () => {
+    // Drawn some way no parser knows.
+    const SCREEN = ["─".repeat(40), "  A dialog drawn some new way", "    [✔] first thing", "    [ ] second thing", "  Space to toggle · Enter to finish"].join("\n");
+    const claude = (agent_status: string) =>
+      ({ pane: () => ({ agent: "claude", agent_status }), instance: () => undefined }) as unknown as SessionStore;
+
+    test("is marked unrecognised, with no buttons", async () => {
+      const { client } = herdrSaying("blocked", SCREEN);
+      const frame = await new Poller(client, claude("blocked"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.prompt).toBe(null);
+      expect(frame?.unrecognised).toBe(true);
+    });
+
+    test("is not, once herdr says the wait is over though the mirror has not caught up", async () => {
+      const { client, calls } = herdrSaying("working", SCREEN);
+      const frame = await new Poller(client, claude("blocked"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(calls).toContain("pane.get");
+      expect(frame?.unrecognised).toBeUndefined();
+    });
+
+    test("is not for an agent that is not waiting, and costs no extra call", async () => {
+      const { client, calls } = herdrSaying("idle", SCREEN);
+      const frame = await new Poller(client, claude("idle"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.unrecognised).toBeUndefined();
+      expect(calls).not.toContain("pane.get");
+    });
+
+    // Measured where herdr calls the pane idle: Claude Code's security notes
+    // take only Enter, which a message's Enter would press unread.
+    test("is marked for a screen that waits with nothing to choose, though herdr says idle", async () => {
+      const notes = ["Security notes:", "", "1. Claude can make mistakes.", "", "Press Enter to continue…"].join("\n");
+      const { client, calls } = herdrSaying("idle", notes);
+      const frame = await new Poller(client, claude("idle"), new TranscriptStore(":memory:")).refresh("w1:p1");
+
+      expect(frame?.unrecognised).toBe(true);
+      expect(calls).not.toContain("pane.get");
+    });
+
+    test("follows herdr on a screen that never changes", async () => {
+      const herdr = { status: "idle" };
+      const client = {
+        rpc: async (method: string) => (method === "pane.get" ? { pane: { agent: "claude", agent_status: herdr.status } } : { read: { text: SCREEN } }),
+      } as unknown as HerdrClient;
+      const mirror = { pane: () => ({ agent: "claude", agent_status: herdr.status }), instance: () => undefined } as unknown as SessionStore;
+      const poller = new Poller(client, mirror, new TranscriptStore(":memory:"));
+      const flags: (boolean | undefined)[] = [];
+      poller.on("frame", (frame) => flags.push(frame.unrecognised));
+
+      expect((await poller.refresh("w1:p1"))?.unrecognised).toBeUndefined();
+      herdr.status = "blocked";
+      expect((await poller.refresh("w1:p1"))?.unrecognised).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 1_050)); // past the confirmation limiter
+      herdr.status = "working";
+      expect((await poller.refresh("w1:p1"))?.unrecognised).toBeUndefined();
+      // Each change went out to watchers.
+      expect(flags).toEqual([undefined, true, undefined]);
+    });
+  });
+
   test("does not ask at all for a screen with no menu on it", async () => {
     const { client, calls } = herdrSaying("blocked", lines(0, 10));
     await new Poller(client, store, new TranscriptStore(":memory:")).refresh("w1:p1");
