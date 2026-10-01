@@ -31,7 +31,10 @@ const text = () => JSON.stringify(view!.toJSON());
 // by itself (build 28, October 2026).
 test("a live link that drops shows one quiet line, and the full notice only after the grace", async () => {
   await act(async () => { view = create(tree("live", null)); });
-  await act(async () => view!.update(tree("lost", new UnreachableError("box", "relay", "offline"))));
+  // A millisecond of the fake clock flushes the update: once another test
+  // file has loaded React, its scheduler waits on these timers (seen when
+  // PaneView.test.tsx ran first).
+  await act(async () => { view!.update(tree("lost", new UnreachableError("box", "relay", "offline"))); jest.advanceTimersByTime(1); });
   expect(text()).toContain("Reconnecting to your computer…");
   expect(text()).not.toContain("Computer disconnected");
   expect(text()).not.toContain("Retry connection");
