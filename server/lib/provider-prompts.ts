@@ -64,7 +64,10 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
   // confirms it; "1" and "3" act on the digit (codex source, 0.158), so the
   // answer presses Enter only when the row is still lit.
   const hooks = plain.indexOf("Hooks need review");
-  if (hooks >= 0 && /^\d+ hooks? (?:is|are) new or changed\.$/.test(plain[hooks + 1] ?? "") && plain.at(-1) === "enter confirm · esc skip") {
+  // 0.150's footer is "Press enter to confirm or esc to go back" (captured on
+  // an npm install, October 2026).
+  if (hooks >= 0 && /^\d+ hooks? (?:is|are) new or changed\.$/.test(plain[hooks + 1] ?? "") &&
+    (plain.at(-1) === "enter confirm · esc skip" || plain.at(-1) === "Press enter to confirm or esc to go back")) {
     const rows = options(plain.filter(line => /^[›❯>»▶]?\s*\d\.\s/.test(line)), ["Review hooks", "Trust all and continue", "Continue without trusting (hooks won't run)"], "digit");
     const top = plain.findIndex(line => /^[›❯>»▶]?\s*1\.\s/.test(line));
     if (rows) return { agent: "codex", prompt: { question: plain[hooks]!, context: plain.slice(hooks + 1, top).filter(Boolean), answer: "digit", confirm: true, options: rows } };
@@ -74,12 +77,16 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
   // the composer, and idle to herdr (captured on 0.157.1). Its title is its
   // first line, "GPT-5.4 is no longer available"; the question the generic
   // parser found was the sentence under it. The digits act at once, and Esc
-  // accepts the new model (codex source, 0.158).
-  if (plain.at(-1) === "enter/esc confirm · ctrl+c quit") {
+  // accepts the new model (codex source, 0.158), so the Enter that follows a
+  // digit is never pressed there.
+  // Codex 0.150 draws it over "Use ↑/↓ to move, press enter to confirm"
+  // (captured on an npm install, October 2026), where a digit may only move
+  // the cursor; Enter follows only if the row is still lit (`answer.ts`).
+  if (plain.at(-1) === "enter/esc confirm · ctrl+c quit" || plain.at(-1) === "Use ↑/↓ to move, press enter to confirm") {
     const rows = options(plain.filter(line => /^[›❯>»▶]?\s*\d\.\s/.test(line)), ["Try new model", "Use existing model"], "digit");
     const first = plain.findIndex(Boolean);
     const top = plain.findIndex(line => /^[›❯>»▶]?\s*1\.\s/.test(line));
-    if (rows && first < top) return { agent: "codex", prompt: { question: plain[first]!, context: plain.slice(first + 1, top).filter(Boolean), answer: "digit", options: rows } };
+    if (rows && first < top) return { agent: "codex", prompt: { question: plain[first]!, context: plain.slice(first + 1, top).filter(Boolean), answer: "digit", confirm: true, options: rows } };
   }
 
   // Claude Code's first-run theme picker: unnumbered rows with no confirm

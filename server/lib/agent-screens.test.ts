@@ -45,7 +45,7 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "codex-trust": { herdr: "idle", agent: "codex", expect: { card: { question: "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.", answer: "digit", confirm: true, labels: ["Trust and continue", "Quit"] } } },
   "codex-update": { herdr: "idle", agent: "codex", expect: { card: { question: "Update available · 0.157.1 → 0.159.3", answer: "digit", confirm: true,
     labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
-  "codex-migration": { herdr: "idle", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", labels: ["Try new model", "Use existing model"] } } },
+  "codex-migration": { herdr: "idle", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", confirm: true, labels: ["Try new model", "Use existing model"] } } },
   "codex-hooks": { herdr: "idle", agent: "codex", expect: { card: { question: "Hooks need review", answer: "digit", confirm: true,
     labels: ["Review hooks", "Trust all and continue", "Continue without trusting (hooks won't run)"] } } },
   "codex-ready": { herdr: "idle", agent: "codex", expect: { ready: true } },
@@ -55,6 +55,10 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
     labels: ["Update now (runs `bun install -g @openai/codex`)", "Skip", "Skip until next version"] } } },
   "codex-0.130-trust": { herdr: "unknown", agent: "codex", expect: { card: { question: "Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection. Trusting the directory allows project-local config, hooks, and exec policies to load.", answer: "digit", confirm: true,
     labels: ["Yes, continue", "No, quit"] } } },
+  "codex-0.150-hooks": { herdr: "unknown", agent: "codex", expect: { card: { question: "Hooks need review", answer: "digit", confirm: true,
+    labels: ["Review hooks", "Trust all and continue", "Continue without trusting (hooks won't run)"] } } },
+  "codex-0.150-migration": { herdr: "unknown", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", confirm: true,
+    labels: ["Try new model", "Use existing model"] } } },
 };
 
 const screen = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "startup", `${name}.ansi`), "utf8");

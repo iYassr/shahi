@@ -71,8 +71,13 @@ const CURSOR_ROW_RE = /^(?<indent>\s*)(?<marker>[❯›>»▶]\s+)?(?<label>\S.*
 
 /** The line Claude Code prints under a cursor menu; a numbered prompt has no such line. */
 const CONFIRM_HINT_RE = /\bEnter to confirm\b/;
-/** Codex's numbered folder-trust menu selects a row, then waits for Enter. */
-const DIGIT_CONFIRM_HINT_RE = /\bPress enter to continue\b/i;
+/**
+ * Codex's numbered menus that select a row and then wait for Enter: its
+ * folder trust, and in 0.150 "Use ↑/↓ to move, press enter to confirm"
+ * (captured, October 2026). Not Claude Code's "Enter to confirm", whose digits
+ * answer at once and whose text rows would take the Enter as their content.
+ */
+const DIGIT_CONFIRM_HINT_RE = /\bpress enter to (?:continue|confirm)\b/i;
 
 /** Box-drawing, block, and arrow glyphs Claude Code and herdr use for chrome. */
 const CHROME_ONLY_RE = /^[\s─-╿▀-▟←-⇿■-◿·—–-]*$/u;
