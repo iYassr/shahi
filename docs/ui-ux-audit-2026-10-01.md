@@ -56,3 +56,22 @@ TestFlight build 29, or why it waits.
 Pairing a new device (it would have added one to the owner's computer),
 notifications (off on this phone), dictation, accessibility text sizes, and
 the web client beyond the parity items above.
+
+## On build 29
+
+Checked on the phone after release. Row times, "No messages yet", Mark all
+reviewed, the attach sheet's sections and agent folder, the folder browser and
+its breadcrumb, "+ New space" in Choose a space, the Computers menu and the
+grouped Settings all behaved as described. Four things did not, and were
+fixed in build 30:
+
+- The image viewer's Done and Save / Share sat under the status bar, where a
+  tap reached iOS's "◀ TestFlight" link: a modal is a native root of its own,
+  and the app's safe-area provider did not reach it.
+- Wide images ran past the right edge of their message: a percentage width
+  with `aspectRatio` and `maxHeight` let Yoga size them from the height cap.
+  Their height now comes from the measured width.
+- Settings showed "1.0.0" without its build: `Constants.nativeBuildVersion` is
+  empty in expo-constants 57, so it is read from expo-application.
+- Thirteen recent folders filled the new-space browser; it shows five and
+  "Show all". The attach sheet's folder reads `~/…`.

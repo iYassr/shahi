@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import Constants from "expo-constants";
+import * as Application from "expo-application";
 import { router, Stack, useIsFocused } from "expo-router";
 import { preparePushLogout, unregisterPushRegistration } from "@/lib/push-registration";
 import { enablePush, pushEnabled } from "@/lib/push";
@@ -79,7 +80,10 @@ export function Settings() {
   const handshake = control?.handshake;
   const herdr = handshake?.backend.version ?? session?.version;
   const versions = [handshake && `Shahi ${handshake.update.current}`, herdr && `herdr ${herdr}`].filter(Boolean).join(" · ");
-  const build = Constants.nativeBuildVersion;
+  // The installed binary's own CFBundleVersion. Constants.nativeBuildVersion
+  // came back empty on build 29 (expo-constants 57), and Settings showed
+  // "1.0.0" with no build to tell TestFlight builds apart.
+  const build = Application.nativeBuildVersion;
   const appVersion = `${Constants.expoConfig?.version ?? "dev"}${build ? ` (${build})` : ""}`;
 
   return (

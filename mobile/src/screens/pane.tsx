@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, messageTime, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { agentLabel, backendUnavailable, homePath, messageTime, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -1847,6 +1847,13 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
    * screenshot; the box now takes the image's shape, up to a height cap.
    */
   const [aspect, setAspect] = useState<number | null>(null);
+  /**
+   * The box's own width, measured. A percentage width with `aspectRatio`
+   * and `maxHeight` let Yoga size wide contact sheets from the height cap, and
+   * they ran off the right edge of the message (build 29 on a phone); the
+   * height is now computed from the measured width instead.
+   */
+  const [boxWidth, setBoxWidth] = useState(0);
   useEffect(() => {
     let live = true;
     setSource(null);
@@ -1872,12 +1879,13 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
         testID="transcript-image-button"
         accessibilityRole="imagebutton"
         accessibilityLabel="Image from the conversation. Opens full screen."
+        onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}
         onPress={() => setViewing(true)}
       >
         <Image
           testID="transcript-image"
           source={source}
-          style={[styles.image, aspect ? { height: undefined, aspectRatio: aspect, maxHeight: 420 } : null]}
+          style={[styles.image, aspect && boxWidth ? { height: Math.min(boxWidth / aspect, 420) } : null]}
           resizeMode="contain"
           onLoad={(e) => {
             const { width, height } = e.nativeEvent.source ?? {};
@@ -2196,7 +2204,7 @@ export function FilePicker({
 
       <Text accessibilityRole="header" style={styles.sheetSection}>From the computer</Text>
       <View style={styles.sheetPlace}>
-        <Text style={[styles.sheetPath, { flex: 1 }]} numberOfLines={1} ellipsizeMode="head">{path}</Text>
+        <Text style={[styles.sheetPath, { flex: 1 }]} numberOfLines={1} ellipsizeMode="head">{homePath(path)}</Text>
         {path !== "~" && (
           <Pressable accessibilityRole="button" accessibilityLabel="Open the home folder" hitSlop={8} style={styles.sheetJump} onPress={() => setPath("~")}>
             <Text style={styles.phoneButtonText}>Home</Text>
