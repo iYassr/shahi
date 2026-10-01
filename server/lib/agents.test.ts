@@ -368,6 +368,20 @@ describe("a start that fails", () => {
     expect(calls.map((c) => c.method).slice(-2)).toEqual(["pane.read", "tab.close"]);
   });
 
+  // Claude Code 1.0.128 knows no "manual" permission mode, and its error was
+  // wrapped by the terminal mid-word; herdr's unwrapped read has it whole.
+  test("quotes an old agent's refusal of its launch, read unwrapped", async () => {
+    const unwrapped = [
+      "testuser@shahi-screens:/tmp/project$ claude --permission-mode manual",
+      "error: option '--permission-mode <mode>' argument 'manual' is invalid. Allowed choices are acceptEdits, bypassPermissions, default, plan.",
+      "testuser@shahi-screens:/tmp/project$",
+    ].join("\n");
+    const { rpc, calls } = herdr((method) => method === "pane.read" ? { read: { text: unwrapped } } : exits(method));
+    const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);
+    expect(failure.message).toBe("Claude exited while it was starting, so its tab was closed. It printed: “error: option '--permission-mode <mode>' argument 'manual' is invalid. Allowed choices are acceptEdits, bypassPermissions, default, plan.”");
+    expect(calls.find((c) => c.method === "pane.read")?.params).toMatchObject({ source: "recent_unwrapped" });
+  });
+
   test("closes the tab when herdr refuses to start the agent", async () => {
     const { rpc, calls } = herdr(() => { throw new HerdrError("invalid_args", "unknown flag", "agent.start"); });
     const failure = await startAgentInTab(rpc, options, async () => {}).catch((err) => err);

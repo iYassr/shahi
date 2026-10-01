@@ -304,6 +304,11 @@ function findCursorMenu(lines: string[]): OptionRun | null {
   }
   if (rows.length < 2) return null;
   if (rows.filter((r) => r.selected).length !== 1) return null;
+  // Checkboxes are not a choice of one row. Claude Code 2.1.200 draws its
+  // project MCP servers as ticked boxes over "Space to select · Enter to
+  // confirm · Esc to reject all" (captured, October 2026), and a card made of
+  // them pressed Enter on a box: every ticked server enabled.
+  if (rows.some((r) => /^\[[ ✔✓xX×]\]\s/u.test(r.label))) return null;
 
   return {
     answer: "cursor",

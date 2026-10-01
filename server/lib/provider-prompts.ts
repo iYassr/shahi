@@ -150,7 +150,8 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
  * the screen and its keys (`PaneFrame.unrecognised`).
  *
  * - Claude Code's multi-server project MCP approval: every server ticked and
- *   an "Enable selected" button, which Enter can press (2.1.286).
+ *   an "Enable selected" button, which Enter can press (2.1.286), or in
+ *   2.1.200 just the ticked boxes, confirmed by Enter.
  * - "Press Enter to continue…": Claude Code's security notes and sign-in,
  *   codex's sign-in success. A message's Enter would dismiss them unread.
  * - Codex's model notice with nothing left to choose, which Enter or Esc
@@ -158,7 +159,7 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
  */
 export function providerWaitingScreen(text: string): boolean {
   const last = text.trimEnd().split("\n").map(line => line.trim()).filter(Boolean).at(-1) ?? "";
-  return last === "Space to select · Esc to reject all" ||
+  return /^Space to select · (?:Enter to confirm · )?Esc to reject all$/.test(last) ||
     /^Press Enter to (?:continue|start your trial)(?:…|\.\.\.)?$/i.test(last) ||
     last === "enter/esc continue · ctrl+c quit";
 }

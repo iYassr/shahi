@@ -55,6 +55,10 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
     labels: ["Update now (runs `bun install -g @openai/codex`)", "Skip", "Skip until next version"] } } },
   "codex-0.130-trust": { herdr: "unknown", agent: "codex", expect: { card: { question: "Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection. Trusting the directory allows project-local config, hooks, and exec policies to load.", answer: "digit", confirm: true,
     labels: ["Yes, continue", "No, quit"] } } },
+  // Before 2.1.248 the safety dialogs were numbered, Yes first.
+  "claude-2.1.247-trust": { herdr: "blocked", agent: "claude", expect: { card: { question: "Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not, take a moment to review what's in this folder first.", answer: "digit", labels: ["Yes, I trust this folder", "No, exit"] } } },
+  "claude-2.1.247-bypass": { herdr: "blocked", agent: "claude", expect: { card: { question: "WARNING: Claude Code running in Bypass Permissions mode", answer: "digit", labels: ["No, exit", "Yes, I accept"] } } },
+  "claude-2.1.200-mcp-two": { herdr: "idle", agent: "claude", expect: { waits: true } },
   "codex-0.150-hooks": { herdr: "unknown", agent: "codex", expect: { card: { question: "Hooks need review", answer: "digit", confirm: true,
     labels: ["Review hooks", "Trust all and continue", "Continue without trusting (hooks won't run)"] } } },
   "codex-0.150-migration": { herdr: "unknown", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", confirm: true,

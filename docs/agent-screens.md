@@ -94,6 +94,25 @@ Mid-session, codex's approvals, MCP forms and questions are numbered menus
 the generic parser reads; its asynchronous questions do not block the
 composer.
 
+## Older versions
+
+Checked in a disposable OrbStack machine with npm installs (October 2026):
+
+- **Codex 0.130 and 0.150** draw the same startup screens in older words:
+  trust as "Do you trust the contents of this directory?" (Yes, continue / No,
+  quit), the update offer as "✨ Update available! 0.130.0 -> …" over "Press
+  enter to continue", and in 0.150 the model change and hooks review over
+  "press enter to confirm" footers, where a digit may only move the cursor.
+  All are cards. 0.130 has no hooks or migration screen: it starts at the
+  composer with an inline note.
+- **Claude Code 2.1.200 and 2.1.247** number their safety dialogs, Yes first,
+  and digits answer them. All are cards, except 2.1.200's multi-server MCP list,
+  ticked boxes over "Space to select · Enter to confirm · Esc to reject all",
+  which is a screen card: Enter there enables every ticked server.
+- **Claude Code 1.0.128** refuses Shahi's launch outright: `error: option
+  '--permission-mode <mode>' argument 'manual' is invalid`. The failed start
+  quotes that line, read unwrapped; updating Claude Code is the fix.
+
 ## Checking a new version
 
 ```sh
@@ -104,8 +123,12 @@ bun run server/scripts/screen-census.ts codex-hooks claude-trust
 It draws each screen above that can be reproduced offline in a scratch named
 herdr session with scratch agent configuration and fake keys, and compares
 each card with its fixture. A difference exits 1 and names the screen; update
-the fixture and its parser together. The update offer, the Consumer Terms and
-the mid-session menus cannot be drawn this way.
+the fixture and its parser together. Put an older agent first on `PATH` to
+check it, preferably in a disposable machine: its cards will differ from the
+fixtures, and what matters is that no screen but the ready composer reads "no
+menu". Codex's update offer appears only for an install codex recognises
+(npm, bun, Homebrew); the Consumer Terms and the mid-session menus cannot be
+drawn this way.
 
 ## Deliberately not done
 
