@@ -776,6 +776,9 @@ exact commit), every signed phone update (`mobile-update.yml`), and by hand
 (`gh workflow run ci.yml --ref master`) on the exact commit before an App Store
 production submission. A Beta computer release only builds and smoke-tests its
 package; promoting it to Stable runs everything and re-verifies that package.
+Pull requests do not start it either (Dependabot rebases its PRs on every push
+to master, and each rebase was a full run): `gh workflow run ci.yml --ref
+<branch>` before merging one.
 
 The suite: `bun run typecheck` — which
 includes the Expo app, the only automatic check that the two clients have not

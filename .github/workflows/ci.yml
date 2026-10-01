@@ -1,12 +1,13 @@
 name: CI
 
-# Not on every push: changes go straight to master, and the whole suite runs
-# where a release needs it (the owner's policy, October 2026). A Stable
-# computer release and every signed phone update call it; run it by hand on
-# the exact commit before an App Store production submission. Pull requests,
-# which are rare now, still get it so the CI required check can pass.
+# Not on every push or pull request: changes go straight to master, and the
+# whole suite runs where a release needs it (the owner's policy, October
+# 2026). A Stable computer release and every signed phone update call it; run
+# it by hand on the exact commit before an App Store production submission.
+# Dependabot rebases its open pull requests on every push to master, and each
+# rebase started a full run, so a pull request to merge gets one by hand too:
+# gh workflow run ci.yml --ref <branch>.
 on:
-  pull_request:
   workflow_dispatch:
   workflow_call:
 

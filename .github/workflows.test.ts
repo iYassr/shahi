@@ -243,7 +243,7 @@ describe("required CI coverage", () => {
     expect(release.jobs.publish!.environment).toBe("releases");
   });
 
-  test("CI runs for releases, by hand and on pull requests, not on every push", () => {
-    expect(Object.keys((ci as { on: Record<string, unknown> }).on).sort()).toEqual(["pull_request", "workflow_call", "workflow_dispatch"]);
+  test("CI runs for releases and by hand, not on every push or pull request", () => {
+    expect(Object.keys((ci as { on: Record<string, unknown> }).on).sort()).toEqual(["workflow_call", "workflow_dispatch"]);
   });
 });

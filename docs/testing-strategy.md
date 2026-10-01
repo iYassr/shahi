@@ -339,7 +339,7 @@ UI becomes current without manual refresh.
 ## 3. CI and release gates
 
 Owner's policy, October 2026: changes go straight to master and CI does not run
-on push. The full suite gates Stable computer releases, signed phone updates and
+on push or on pull requests. The full suite gates Stable computer releases, signed phone updates and
 App Store production submissions; a Beta computer release builds and
 smoke-tests its package only. The table below is the target model and predates
 that policy.
