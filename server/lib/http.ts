@@ -31,6 +31,8 @@ import { HerdrError, SLOW_METHODS, type HerdrClient, type Method, type ParamsFor
 import { AgentStartFailed, forgetInstalledAgents, installedAgents, startAgentInTab } from "./agents";
 import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
+import { dirname } from "node:path";
+import { ClaudeSettingsError, planUsage, setClaudePlanUsage } from "./plan-usage";
 import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
@@ -362,6 +364,7 @@ export interface ServerOptions {
 
 export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploadDir }: ServerOptions = {}): ShahiServer {
   const { config, auth, client, store, poller, transcript, push, pairing, devices, serverId } = deps;
+  const planPaths = { dataDir: dirname(config.dataPath), bun: process.execPath };
   const clients = new Set<StreamClient>();
   const metrics = deps.observability ?? new Observability();
   let fileRequests = 0;
@@ -930,6 +933,23 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             return json({ error: "a paired device cannot mint pairing codes" }, { status: 403 });
           }
           return json(pairing.mint());
+        }
+
+        // Plan usage for Settings (capability `plan-usage`, see plan-usage.ts).
+        if (pathname === "/api/plan-usage" && req.method === "GET") {
+          return json(await planUsage(planPaths));
+        }
+        if (pathname === "/api/plan-usage/claude" && req.method === "POST") {
+          const body: unknown = await req.json().catch(() => null);
+          const enabled = typeof body === "object" && body !== null ? (body as { enabled?: unknown }).enabled : undefined;
+          if (typeof enabled !== "boolean") return json({ error: "Say whether Claude's plan usage should be on." }, { status: 400 });
+          try {
+            await setClaudePlanUsage(planPaths, enabled);
+          } catch (err) {
+            if (err instanceof ClaudeSettingsError) return json({ error: err.message, code: "claude_settings_unreadable" }, { status: 409 });
+            throw err;
+          }
+          return json(await planUsage(planPaths));
         }
 
         if (pathname === "/api/devices" && req.method === "GET") {

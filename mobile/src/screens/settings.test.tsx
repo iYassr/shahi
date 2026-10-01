@@ -18,6 +18,7 @@ jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { 
 jest.mock("expo-application", () => ({ nativeBuildVersion: "28" }));
 jest.mock("@/lib/push", () => ({ enablePush: jest.fn(), pushEnabled: jest.fn(async () => false) }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
+jest.mock("@/components/agent-usage", () => ({ AgentUsage: () => null }));
 let mockControl: unknown = undefined;
 jest.mock("@/lib/session", () => ({
   useLastUpdate: () => Date.now(),
@@ -143,6 +144,18 @@ describe("what belongs to the computer and what to the app", () => {
     expect(view.queryByText("Last update")).toBeNull();
     // Notifications are registered with this computer, and say so.
     expect(view.getByText("Get notified when an agent on test-box needs your reply.")).toBeTruthy();
+  });
+
+  // Agent plan usage (October 2026) is a section of its own, offered only by
+  // a computer that can answer it.
+  test("an Agents section sits between the computer's and the app's, when the computer offers it", () => {
+    const handshake = { control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities: ["computer-updates", "plan-usage"],
+      backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: true, channel: "beta", phase: "idle", current: "0.3.19" } };
+    mockControl = { pending: false, error: null, request: jest.fn(), handshake };
+    const headings = () => render(<Settings />).getAllByRole("header").map((node) => node.props.children);
+    expect(headings()).toEqual(["This computer", "Agents", "This app"]);
+    mockControl = { pending: false, error: null, request: jest.fn(), handshake: { ...handshake, capabilities: ["computer-updates"] } };
+    expect(headings()).toEqual(["This computer", "This app"]);
   });
 
   test("the release channel is one control whose current choice is selected, not two links", () => {

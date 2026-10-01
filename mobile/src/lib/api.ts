@@ -23,6 +23,7 @@ import {
   type DirListing,
   type InstalledAgent,
   type PairedDevice,
+  type PlanUsage,
   RELAY_LIMITS,
   type PaneFrame,
   type ParsedPrompt,
@@ -508,6 +509,11 @@ const api = {
     }),
 
   devices: () => request<DeviceList>("/api/devices"),
+
+  /** Claude Code's and Codex's plan limits (capability `plan-usage`). */
+  planUsage: () => request<PlanUsage>("/api/plan-usage"),
+  /** Installs or removes the status line that reports Claude Code's limits. */
+  setClaudePlanUsage: (enabled: boolean) => postJson<PlanUsage>("/api/plan-usage/claude", { enabled }),
 
   /** Throws a paired phone out: its very next request is refused. */
   revokeDevice: (id: string) =>

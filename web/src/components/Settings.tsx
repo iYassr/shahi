@@ -11,6 +11,8 @@ import { InstallApp } from "./InstallApp";
 import { noticesUrl } from "../notices";
 import { diagnosticsEnabled, setDiagnosticsEnabled } from "../diagnostics";
 import { useComputerControl } from "./ComputerUpdate";
+import { AgentUsage } from "./AgentUsage";
+import { supports } from "@shahi/shared";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
   const api = useApi();
@@ -62,6 +64,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
           preferences.set("shahi.push.dismissed", "1"); onToast("Notifications off");
         })}>Disable notifications</button>
       </section>
+      {supports(handshake ?? null, "plan-usage") && <AgentUsage computer="this computer" />}
       <section><h2><UiIcon name="shield" /> Devices with access</h2><p>These devices can access the current computer. Revoking a device disconnects it and stops its notifications. Passcode logins do not appear in this list.</p>
         {error && <p className="settings__error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></p>}
         {!devices && !error && <p>Loading devices…</p>}

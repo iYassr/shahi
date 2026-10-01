@@ -5,7 +5,7 @@ import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
 import { ApiError, IncompatibleServerError } from "@shahi/shared/errors";
-import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PromptReceipt } from "@shahi/shared";
+import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PlanUsage, type PromptReceipt } from "@shahi/shared";
 /**
  * Client for the Shahi server.
  *
@@ -249,6 +249,10 @@ const api = {
     ),
 
   devices: () => request<DeviceList>("/api/devices"),
+  /** Claude Code's and Codex's plan limits (capability `plan-usage`). */
+  planUsage: () => request<PlanUsage>("/api/plan-usage"),
+  /** Installs or removes the status line that reports Claude Code's limits. */
+  setClaudePlanUsage: (enabled: boolean) => postJson<PlanUsage>("/api/plan-usage/claude", { enabled }),
   revokeDevice: (id: string) => request(`/api/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   /**
    * The card's question and context go with the option: every Claude

@@ -1,3 +1,4 @@
+import { AgentUsage } from "@/components/agent-usage";
 import { ComputerUpdate } from "@/components/computer-update";
 import { ConnectionHealth } from "@/components/connection-health";
 import { ComputerSwitcher } from "@/components/computer-switcher";
@@ -7,8 +8,9 @@ import { plainHeaderRight } from "@/lib/header-controls";
  * sections of icon-led rows, under two headings. "This computer" holds what
  * belongs to the computer on screen — its identity and versions, updates,
  * notifications and pins (both kept per computer), devices with access and
- * the way out, in red. "This app" holds what is the phone's alone. Mixed in
- * one list, nothing said which was which (device audit, build 28).
+ * the way out, in red. "Agents" shows the Claude Code and Codex plan limits
+ * of the agents on that computer. "This app" holds what is the phone's alone.
+ * Mixed in one list, nothing said which was which (device audit, build 28).
  *
  * The identity here is the server, not a person — this app has no account,
  * it has a machine you trust. Signing out was unreachable before this
@@ -29,6 +31,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { PairedDevices } from "@/components/paired-devices";
 import { PrivacyLinks } from "@/components/privacy-links";
 import { diagnosticsEnabled, setDiagnosticsEnabled } from "@/lib/diagnostics";
+import { supports } from "@shahi/shared";
 
 const TERMINAL_WIDTHS = [60, 100, 146];
 
@@ -239,6 +242,15 @@ export function Settings() {
           }
         />
       </View>
+
+      {/* Plan limits from the agents on this computer; a computer without the
+          capability shows nothing rather than an error. */}
+      {supports(handshake ?? null, "plan-usage") && (
+        <>
+          <SectionHeading title="Agents" />
+          <AgentUsage api={api} focused={focused} live={link === "live"} computer={name} />
+        </>
+      )}
 
       <SectionHeading title="This app" />
       <View style={styles.group}>

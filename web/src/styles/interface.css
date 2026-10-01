@@ -287,3 +287,16 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .setup-command__line button { flex: none; display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 1px solid var(--line-bright); border-radius: 8px; color: var(--accent); }
 .setup-command__status { display: block; min-height: 1.5em; color: var(--muted); font-size: 13px; }
 .pair-browser__jump { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; }
+
+/* Settings' Claude Code and Codex plan usage (AgentUsage.tsx). */
+.agent-usage h2 { display: flex; align-items: center; gap: 8px; }
+.agent-usage__plan { margin-left: auto; color: var(--muted); font-size: 13px; font-weight: 400; }
+.agent-usage__window { margin: 10px 0; }
+.agent-usage__line { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.agent-usage__line span:last-child { color: var(--muted); }
+.agent-usage__track { height: 6px; margin-top: 4px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.agent-usage__fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.agent-usage__fill--high { background: var(--danger); }
+.agent-usage__reset, .agent-usage__updated { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.agent-usage__switch { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 15px; cursor: pointer; }
+.agent-usage__switch input { width: 20px; height: 20px; accent-color: var(--accent); }

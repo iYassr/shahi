@@ -1408,6 +1408,23 @@ with a scratch `XDG_CONFIG_HOME`. Do not use it to prepare isolated tests. Copy
 only the required integration files to the disposable provider config; never
 copy herdr's plugin registry or restart a user's service.
 
+## Agent plan usage, October 2026
+
+Settings' Agents section shows Claude Code's and Codex's 5-hour and weekly
+limits (`/api/plan-usage`, capability `plan-usage`, `server/lib/plan-usage.ts`).
+Codex writes `rate_limits` into every `token_count` event, so the newest rollout
+reading is the account's; label windows by `window_minutes`, since a Pro plan
+reported only a weekly window as its primary. Claude Code writes its limits
+nowhere on disk; its documented status line input carries them, so Shahi
+installs a status line only when the person turns the switch on, keeps only
+the limits and the time, runs the status line they had before with the same
+input, and puts that one back when switched off. Never read Claude's
+credentials or call its usage endpoint instead. A status line hides Claude
+Code's footer hints; herdr's working, blocked and done states were measured
+identical with and without one (2.1.286, herdr 0.9.1). Tests that turn it on
+must point `CLAUDE_CONFIG_DIR` at a scratch folder. A reading from before its
+window reset is shown as reset, not as current.
+
 ## Private operations statistics
 
 The private operations dashboard's concurrency values are five-minute sampled

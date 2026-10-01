@@ -7,7 +7,7 @@
  * server is the real `createServer`; only herdr is faked, with the three
  * methods these routes reach.
  */
-import { SHAHI_API_VERSION, type Session } from "@shahi/shared";
+import { SHAHI_API_VERSION, type PlanUsage, type Session } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
@@ -2013,4 +2013,41 @@ test("OpenCode's coloured approval rejects typing and answers the fresh horizont
       { method: "pane.send_keys", params: { pane_id: PANE, keys: ["Enter"] } },
     ]);
   } finally { app.stop(); agentStatus = null; screen = ""; afterKeys = ""; }
+});
+
+// Settings' Agents section (October 2026). The status line is written into
+// Claude Code's settings, so the configuration directories are scratch ones:
+// a test must never change the person's own.
+describe("plan usage", () => {
+  test("reads both agents, refuses a vague switch, and turns Claude Code's status line on and off", async () => {
+    const claude = join(scratch, "plan-claude"), codex = join(scratch, "plan-codex");
+    mkdirSync(claude, { recursive: true });
+    const before = { claude: process.env.CLAUDE_CONFIG_DIR, codex: process.env.CODEX_HOME };
+    process.env.CLAUDE_CONFIG_DIR = claude;
+    process.env.CODEX_HOME = codex;
+    const app = await boot();
+    try {
+      const headers = { cookie: app.cookie, "x-shahi-api": "5", "content-type": "application/json" };
+      const read = await fetch(`${app.base}/api/plan-usage`, { headers });
+      expect(read.status).toBe(200);
+      expect(await read.json()).toMatchObject({ claude: { enabled: false, usage: null }, codex: { usage: null } });
+
+      const vague = await fetch(`${app.base}/api/plan-usage/claude`, { method: "POST", headers, body: JSON.stringify({ enabled: "yes" }) });
+      expect(vague.status).toBe(400);
+      expect(existsSync(join(claude, "settings.json"))).toBe(false);
+
+      const on = await fetch(`${app.base}/api/plan-usage/claude`, { method: "POST", headers, body: JSON.stringify({ enabled: true }) });
+      expect(((await on.json()) as PlanUsage).claude.enabled).toBe(true);
+      expect(JSON.parse(readFileSync(join(claude, "settings.json"), "utf8")).statusLine.command).toContain("claude-statusline.mjs");
+
+      const off = await fetch(`${app.base}/api/plan-usage/claude`, { method: "POST", headers, body: JSON.stringify({ enabled: false }) });
+      expect(((await off.json()) as PlanUsage).claude.enabled).toBe(false);
+      expect(JSON.parse(readFileSync(join(claude, "settings.json"), "utf8"))).toEqual({});
+    } finally {
+      app.stop();
+      for (const [key, value] of [["CLAUDE_CONFIG_DIR", before.claude], ["CODEX_HOME", before.codex]] as const) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  });
 });

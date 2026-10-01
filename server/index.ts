@@ -11,6 +11,7 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { refreshClaudeStatusLine } from "./lib/plan-usage";
 import { Observability, rotatingLog } from "./lib/observability";
 import { Auth } from "./lib/auth";
 import { loadConfig } from "./lib/config";
@@ -68,6 +69,9 @@ const db = orExit(() => {
 });
 
 const observability = new Observability(rotatingLog(join(dataDir, "operations.jsonl")));
+// An update can move Bun or rewrite the status line script Claude Code runs
+// for plan usage; only an installed one is touched (plan-usage.ts).
+void refreshClaudeStatusLine({ dataDir, bun: process.execPath }).catch(() => {});
 const store = new SessionStore(client, new PaneInstances(db));
 const transcript = new TranscriptStore(config.dataPath);
 const poller = new Poller(client, store, transcript);
