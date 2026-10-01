@@ -169,6 +169,17 @@ describe("NewSpace", () => {
     expect(screen.getByPlaceholderText("what you are working on").props.value).toBe("app");
   });
 
+  // Build 29 on a phone: thirteen recent folders filled the screen and pushed
+  // the folders to browse out of sight.
+  test("only five recent folders show until the person asks for all of them", async () => {
+    const workspaces = Array.from({ length: 8 }, (_, i) => ({ workspaceId: `w${i}`, label: `s${i}`, cwd: `~/work/s${i}`, cwdPath: `/home/you/work/s${i}` }));
+    render(<NewSpace session={{ workspaces, tabs: [], panes: [] } as unknown as Session} onCreated={jest.fn()} />);
+    await screen.findByTestId("entry-projects");
+    expect(screen.getAllByTestId(/^recent-/)).toHaveLength(5);
+    await userEvent.press(screen.getByLabelText("Show all 8 recent folders"));
+    expect(screen.getAllByTestId(/^recent-/)).toHaveLength(8);
+  });
+
   test("a brand-new box can still type its first folder and create a space", async () => {
     const createWorkspace = api.createWorkspace as jest.Mock;
     createWorkspace.mockResolvedValue({ workspaceId: "w1" });

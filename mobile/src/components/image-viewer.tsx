@@ -9,7 +9,7 @@
  */
 import { useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { initialWindowMetrics, SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { shareFile } from "@/components/pdf-view";
 import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
@@ -27,6 +27,8 @@ async function imageBase64(source: ImageSource): Promise<{ base64: string; type:
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return { type: (res.headers.get("content-type") ?? "image/png").split(";")[0]!.trim(), base64: btoa(binary) };
 }
+
+const NO_INSETS = { frame: { x: 0, y: 0, width: 0, height: 0 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
 
 const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic" };
 
@@ -53,6 +55,13 @@ export function ImageViewer({ source, onClose }: { source: ImageSource; onClose:
   const [error, setError] = useState<string | null>(null);
   return (
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      {/* A modal is a native root of its own, and the app's provider does not
+          reach it: without one here the insets were zero, and Done and
+          Save / Share sat under the status bar, where a tap went to its
+          "◀ TestFlight" link instead (build 29 on a phone, October 2026). */}
+      {/* Seeded with the window's insets as the app started, so the viewer
+          draws at once rather than after its first native measurement. */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics ?? NO_INSETS}>
       <SafeAreaView style={styles.viewer}>
         <View style={styles.bar}>
           <Pressable accessibilityRole="button" accessibilityLabel="Close image" hitSlop={12} style={styles.barButton} onPress={onClose}>
@@ -83,6 +92,7 @@ export function ImageViewer({ source, onClose }: { source: ImageSource; onClose:
         {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         <ZoomableImage source={source} label="Image from the conversation. Pinch to zoom." />
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

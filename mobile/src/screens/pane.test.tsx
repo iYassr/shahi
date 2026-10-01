@@ -1986,6 +1986,23 @@ describe("transcript images", () => {
     await waitFor(() => expect(view.queryByTestId("zoomable-image")).toBeNull());
   });
 
+  // Build 29 on a phone: a wide contact sheet sized itself from the height
+  // cap and ran past the right edge of its message.
+  test("a wide image is as wide as its message and no wider", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    mocked.sessionLog.mockResolvedValue(log([withImage]));
+    mocked.transcriptImage.mockResolvedValue({ uri: png });
+    const view = render(<Pane paneId={PANE} />);
+    const button = await view.findByTestId("transcript-image-button");
+    act(() => { button.props.onLayout({ nativeEvent: { layout: { width: 300, height: 220, x: 0, y: 0 } } }); });
+    const image = view.getByTestId("transcript-image");
+    act(() => { image.props.onLoad({ nativeEvent: { source: { width: 1200, height: 300 } } }); });
+    const style = StyleSheet.flatten(view.getByTestId("transcript-image").props.style);
+    expect(style.width).toBe("100%");
+    expect(style.height).toBe(75);
+    expect(style.aspectRatio).toBeUndefined();
+  });
+
   test("an image that cannot come through says why in its place", async () => {
     mocked.sessionLog.mockResolvedValue(log([withImage]));
     mocked.transcriptImage.mockRejectedValue(new Error("This image is too large to show through the relay. Connect over SSH, or open it on your computer."));

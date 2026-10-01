@@ -12,7 +12,10 @@ jest.mock("expo-router", () => ({
   useIsFocused: () => true,
   Stack: { Screen: ({ options }: { options: unknown }) => { mockStackOptions(options); return null; } },
 }));
-jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" }, nativeBuildVersion: "28" } }));
+jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
+// The build comes from the binary's CFBundleVersion: expo-constants 57 left
+// nativeBuildVersion empty on build 29.
+jest.mock("expo-application", () => ({ nativeBuildVersion: "28" }));
 jest.mock("@/lib/push", () => ({ enablePush: jest.fn(), pushEnabled: jest.fn(async () => false) }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
 let mockControl: unknown = undefined;

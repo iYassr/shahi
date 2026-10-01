@@ -33,6 +33,9 @@ export interface FolderChoice {
   display: string;
 }
 
+/** Recent folders listed before "Show all". */
+const RECENT_SHOWN = 5;
+
 export function FolderBrowser({
   start = "~",
   recent = [],
@@ -74,7 +77,12 @@ export function FolderBrowser({
   const lines = largeText ? 2 : 1;
   const crumbs = breadcrumb(listing?.display ?? at);
   const atHome = (listing?.display ?? at) === "~";
-  const shownRecent = atHome ? recent.filter((r) => r.display !== "~") : [];
+  const allRecent = atHome ? recent.filter((r) => r.display !== "~") : [];
+  // Five, then "Show all": on a computer with thirteen spaces the recent
+  // folders filled the screen and pushed browsing out of sight (build 29 on
+  // a phone, October 2026).
+  const [allShown, setAllShown] = useState(false);
+  const shownRecent = allShown ? allRecent : allRecent.slice(0, RECENT_SHOWN);
 
   return (
     <View style={styles.browser} testID="folder-browser">
@@ -110,6 +118,11 @@ export function FolderBrowser({
             <Text style={styles.rowText} numberOfLines={lines} ellipsizeMode="head">{choice.display}</Text>
           </Pressable>
         ))}
+        {allRecent.length > shownRecent.length && (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Show all ${allRecent.length} recent folders`} style={styles.row} onPress={() => setAllShown(true)}>
+            <Text style={styles.crumbText}>Show all {allRecent.length}</Text>
+          </Pressable>
+        )}
         <Text style={styles.section}>IN HOME</Text>
       </>}
 
