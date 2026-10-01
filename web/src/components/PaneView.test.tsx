@@ -159,6 +159,22 @@ test("a send receipt preserves newer draft edits and duplicate taps send only on
   expect(view!.root.findByType("textarea").props.value).toBe("next message");
 });
 
+// Found on an iPhone, October 2026: a message refused behind a menu was
+// followed by "Delivery not confirmed", though nothing had been typed.
+test.each(["prompt_open", "prompt_unrecognised"])("a message refused behind a menu is not reported as unconfirmed (%s)", async (code) => {
+  const send = mock().mockRejectedValueOnce(new ApiError("This agent is waiting on a choice.", 409, code)).mockResolvedValueOnce({ accepted: true });
+  const scoped = { ...api, send, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+  await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={null} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
+  await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: "after the menu" } }));
+  const submit = () => view!.root.findAllByType("button").find(b => b.props.className === "compose__send")!.props.onClick();
+  await act(async () => { await submit(); });
+  expect(output()).not.toContain("Delivery not confirmed");
+  await act(async () => { await submit(); });
+  expect(send).toHaveBeenCalledTimes(2);
+  // A new attempt, not a replay of a request the server never kept.
+  expect(send.mock.calls[1]![2]).not.toBe(send.mock.calls[0]![2]);
+});
+
 test("a send failure arriving after leaving a computer does not show a stale toast", async () => {
   let reject!: (error: Error) => void;
   const send = mock(() => new Promise<any>((_done, fail) => { reject = fail; }));

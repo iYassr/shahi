@@ -155,7 +155,53 @@ export async function conversationChoices(client: Rpc, pane: Pane, claimed: Read
   let claude: Foreground[];
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return []; }
   const cwd = claude[0]?.cwd ?? pane.cwd;
-  return claude.length === 1 && cwd ? listFor(claude[0]!.pid, cwd, claimed) : [];
+  if (claude.length !== 1 || !cwd) return [];
+  // A new conversation is not offered an old one to become.
+  if (await unsaved(claude[0]!.pid)) return [];
+  return listFor(claude[0]!.pid, cwd, claimed);
+}
+
+/**
+ * Whether the pane's Claude is a new conversation that has saved nothing yet,
+ * rather than one Shahi could not identify.
+ *
+ * herdr learns a Claude's session from its SessionStart hook, and Claude runs
+ * hooks only once its folder is trusted. So a new agent at its trust dialog
+ * had no session, and Reader said it "started before Shahi could identify it"
+ * and offered old conversations to choose from (found on an iPhone, October
+ * 2026). Claude has recorded its new session by then: measured on 2.1.286,
+ * `sessions/<pid>.json` names it at the trust dialog, before any transcript.
+ * herdr not answering, no record, or a record with a transcript keeps the
+ * old answer.
+ */
+export async function unsavedSession(client: Rpc, pane: Pane): Promise<boolean> {
+  if (pane.agent !== "claude" || agentSessionOf(pane)) return false;
+  let claude: Foreground[];
+  try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return false; }
+  return claude.length === 1 && unsaved(claude[0]!.pid);
+}
+
+async function unsaved(pid: number): Promise<boolean> {
+  const session = await recordedSession(pid);
+  if (!session || !UUID.test(session)) return false;
+  const root = join(claudeConfigDir(), "projects");
+  let projects: string[];
+  try {
+    projects = await readdir(root);
+  } catch (err) {
+    // No projects folder at all is a Claude that has saved nothing anywhere.
+    return (err as NodeJS.ErrnoException).code === "ENOENT";
+  }
+  // Any copy counts as saved: existence is the question here, not which copy
+  // Reader may read (`findTranscript` refuses ambiguous ones).
+  for (const project of projects) {
+    try {
+      if ((await stat(join(root, project, `${session}.jsonl`))).isFile()) return false;
+    } catch {
+      // Not in this project.
+    }
+  }
+  return true;
 }
 
 /** Records a person's choice, if it is one of the pane's choices now. */
@@ -165,6 +211,7 @@ export async function chooseConversation(client: Rpc, pane: Pane, sessionId: str
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return false; }
   const cwd = claude[0]?.cwd ?? pane.cwd;
   if (claude.length !== 1 || !cwd) return false;
+  if (await unsaved(claude[0]!.pid)) return false;
   if (!(await listFor(claude[0]!.pid, cwd, claimed)).some((choice) => choice.sessionId === sessionId)) return false;
   // One canonical file under the projects root; a copy elsewhere is refused.
   if (!(await findTranscript(sessionId))) return false;

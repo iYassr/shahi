@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, supports, readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { agentLabel, backendUnavailable, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -983,7 +983,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       beginAwaiting();
       committed();
     } catch (e) {
-      if (e instanceof ApiError && e.code === "pane_replaced") {
+      if (sendRefusedBeforeTyping(e)) {
         savedDraft.pending = null;
         promptAttempt.current = null;
       }

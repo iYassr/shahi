@@ -1705,6 +1705,25 @@ test("draft and uncertain send identity survive leaving and returning to a conve
   expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
 });
 
+// Found on an iPhone, October 2026: a message refused behind the trust menu
+// was followed by "Delivery not confirmed", though nothing had been typed.
+test.each(["prompt_open", "prompt_unrecognised"])("a message refused behind a menu is not reported as unconfirmed (%s)", async (code) => {
+  mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
+  mocked.send.mockRejectedValueOnce(new ApiError("This agent is waiting on a choice.", 409, code)).mockResolvedValueOnce(receipt);
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "after the menu");
+  fireEvent.press(view.getByText("Send"));
+  await view.findByText("This agent is waiting on a choice.");
+  // The words stay to send again, as a new attempt.
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("after the menu");
+  expect(view.queryByTestId("unconfirmed-send")).toBeNull();
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  expect(mocked.send.mock.calls[1]![2]).not.toBe(mocked.send.mock.calls[0]![2]);
+  view.unmount();
+});
+
 test("an early missing-pane response recovers when the new agent’s next frame arrives", async () => {
   mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
   mocked.pane.mockRejectedValueOnce(new Error("not mirrored yet")).mockResolvedValue({ ...detail(), frame: { paneId: PANE, text: "New agent is ready", ansi: "", prompt: null, activity: null, at: 1 } });

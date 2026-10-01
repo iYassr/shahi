@@ -1621,6 +1621,35 @@ test("a Claude pane with no Reader yet says why without asking anyone to type a 
   }
 });
 
+// Found on an iPhone, October 2026: a new Claude waiting at its folder-trust
+// dialog has reported no session (its hooks wait for trust), and Reader called
+// it a conversation Shahi could not identify. Claude has recorded it, unsaved.
+test("a new Claude at its trust dialog is a conversation with nothing saved, not one to choose", async () => {
+  const config = mkdtempSync(join(tmpdir(), "shahi-http-new-claude-"));
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = config;
+  mkdirSync(join(config, "sessions"), { recursive: true });
+  writeFileSync(join(config, "sessions", "200.json"), JSON.stringify({ pid: 200, sessionId: "77777777-7777-4777-8777-777777777777" }));
+  occupant = { agent: "claude", agent_session: null, cwd: "/Users/me/new-project", terminal_id: "term_new" };
+  programInForeground = true;
+  const app = await boot();
+  const headers = { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) };
+  const base = `${app.base}/api/panes/${encodeURIComponent(PANE)}`;
+  try {
+    const res = await fetch(`${base}/session`, { headers });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ code: "reader_transcript_missing", error: "Claude has not saved any messages in this conversation yet." });
+    expect(((await (await fetch(`${base}/conversations`, { headers })).json()) as { choices: unknown[] }).choices).toEqual([]);
+  } finally {
+    app.stop();
+    occupant = {};
+    programInForeground = false;
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+    rmSync(config, { recursive: true, force: true });
+  }
+});
+
 // The TestFlight report: a Claude conversation that started before herdr's
 // integration was installed reports no session, and Reader stayed empty.
 test("a Claude conversation herdr cannot identify becomes readable once the person names it", async () => {

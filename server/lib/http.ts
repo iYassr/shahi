@@ -35,7 +35,7 @@ import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf } from "./herdr-pane";
-import { choiceHeld, chooseConversation, chosenSession, conversationChoices } from "./claude-choice";
+import { choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
@@ -1478,7 +1478,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
             if (!page) {
               const claude = pane?.agent === "claude";
-              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId);
+              // A new Claude at its trust dialog has no session yet either
+              // (see `unsavedSession`), and is not one to choose for.
+              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId) && !(await unsavedSession(client, pane!));
               // Neither is something to fix on the computer. The service
               // installs herdr's integration, which reports the session when
               // one starts (herdr-integrations.ts); one that started before it
