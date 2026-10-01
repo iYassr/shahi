@@ -30,7 +30,7 @@ test("a conversation sent to the background is read from the session it continue
   file(OLD, [say(OLD, "Still open: the old summary."), JSON.stringify({ type: "cost-state" }), moved(OLD, NEW)]);
   file(NEW, [say(NEW, "The live reply.")]);
   const old = await findTranscript(OLD, projects);
-  expect(await continuedTranscript(old!, projects)).toBe(await findTranscript(NEW, projects));
+  expect(await continuedTranscript(old!, projects)).toBe(real(NEW));
 });
 
 test("a conversation that went on after the marker stays where it is", async () => {
