@@ -63,6 +63,12 @@ test("uncertain prompt retry retains its id and submitted draft", async ({ page 
     else await route.fulfill({ json: { accepted: true, clientMessageId: body.clientMessageId, acceptedAt: Date.now() } });
   });
   await page.goto("/pane/w1%3Ap1");
+  // Typed within ~50ms of the composer first drawing, before the pane's
+  // conversation arrived, the text was sometimes gone by the click: 2 of 2
+  // WebKit runs of the 0.3.17 promotion, 1 in 6 locally after the new-agent
+  // tests, never with logging added (0 in 96). This test is about the retry,
+  // so it types into the pane as a person meets it, loaded.
+  await expect(page.locator(".reader .msg").first()).toBeVisible();
   await page.locator("textarea").fill("one request only");
   await page.locator(".compose__send").click();
   await expect(page.locator("textarea")).toHaveValue("one request only");
