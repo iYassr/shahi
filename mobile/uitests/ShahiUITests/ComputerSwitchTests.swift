@@ -158,11 +158,14 @@ final class ComputerSwitchTests: XCTestCase {
             XCTAssertEqual(counts["handshakes"] as? Int, 1, "Switching must reuse the encrypted connection")
         }
         computers(app)
+        // Revoking sits behind the card's "•••" menu, not under the card.
+        let more = app.buttons["computer-actions-" + computerIDs[secondary]!]
+        for _ in 0..<6 { if more.exists && more.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
         let revoke = app.buttons["revoke-computer-" + computerIDs[secondary]!]
-        for _ in 0..<6 { if revoke.exists && revoke.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(revoke.waitForExistence(timeout: 10)); revoke.tap()
+        XCTAssertTrue(revoke.waitForExistence(timeout: 5)); revoke.tap()
         app.alerts.buttons["Revoke access"].tap()
-        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: revoke)
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: more)
         XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 15), .completed)
         XCTAssertEqual(try fixture(secondary, "connections", method: "GET")["live"] as? Int, 0)
         XCTAssertEqual(try fixture(secondary, "device-count", method: "GET")["count"] as? Int, 0)

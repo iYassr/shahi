@@ -193,6 +193,9 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .connection-health p { margin: 4px 0; font-size: 13px; }
 .connection-health small { color: var(--muted); }
 .connection-health button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; flex: none; }
+/* A reconnect that usually recovers by itself: one quiet line for the grace
+   period before the full notice (shared/src/connection-health.ts). */
+.connection-health--brief { padding: 6px var(--gutter); color: var(--muted); font-size: 13px; background: none; }
 @media (max-width: 480px) { .connection-health { align-items: flex-start; flex-direction: column; gap: 6px; } }
 
 .access-ended { margin: 12px var(--gutter) 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 14px; line-height: 1.45; flex: none; }

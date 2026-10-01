@@ -3,15 +3,17 @@ import { ConnectionHealth } from "@/components/connection-health";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { plainHeaderRight } from "@/lib/header-controls";
 /**
- * Settings, in the settings grammar everyone already knows: an identity card
- * up top, then inset-grouped sections of icon-led rows, the way out in red
- * at the bottom.
+ * Settings, in the settings grammar everyone already knows: inset-grouped
+ * sections of icon-led rows, under two headings. "This computer" holds what
+ * belongs to the computer on screen — its identity and versions, updates,
+ * notifications and pins (both kept per computer), devices with access and
+ * the way out, in red. "This app" holds what is the phone's alone. Mixed in
+ * one list, nothing said which was which (device audit, build 28).
  *
  * The identity here is the server, not a person — this app has no account,
  * it has a machine you trust. Signing out was unreachable before this
- * screen existed; switching servers meant deleting the app. Diagnostics
- * carries the one number that tells a frozen screen from a dead link: how
- * long ago the last update arrived.
+ * screen existed; switching servers meant deleting the app. "Last refreshed"
+ * is the one number that tells a frozen screen from a dead link.
  */
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -30,7 +32,7 @@ import { diagnosticsEnabled, setDiagnosticsEnabled } from "@/lib/diagnostics";
 const TERMINAL_WIDTHS = [60, 100, 146];
 
 export function Settings() {
-  const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server, computers = [], activeComputerId } =
+  const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server, computers = [], activeComputerId, control } =
     useSession();
   const lastUpdateAt = useLastUpdate();
   const [signingOut, setSigningOut] = useState(false);
@@ -73,6 +75,12 @@ export function Settings() {
   const name = computers.find(c => c.id === activeComputerId)?.name ?? session?.serverName ?? host;
   const status = link === "live" ? "Connected" : link === "lost" ? "Offline" : "Connecting…";
   const [showReach, setShowReach] = useState(false);
+  // What runs there, from the computer's own account of itself.
+  const handshake = control?.handshake;
+  const herdr = handshake?.backend.version ?? session?.version;
+  const versions = [handshake && `Shahi ${handshake.update.current}`, herdr && `herdr ${herdr}`].filter(Boolean).join(" · ");
+  const build = Constants.nativeBuildVersion;
+  const appVersion = `${Constants.expoConfig?.version ?? "dev"}${build ? ` (${build})` : ""}`;
 
   return (
     <ScrollView
@@ -94,6 +102,7 @@ export function Settings() {
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />
+      <SectionHeading title="This computer" />
       <View style={styles.group}>
         <Pressable
           style={styles.profile}
@@ -124,6 +133,14 @@ export function Settings() {
           </View>
           <Icon name={showReach ? "chevron-up" : "chevron-down"} color={theme.dim} size={16} />
         </Pressable>
+        {!!versions && <><Separator /><Row icon="info" tint={theme.dim} label="Versions" value={versions} /></>}
+        <Separator />
+        <Row
+          icon="activity"
+          tint={age !== null && age > 15 ? theme.peach : theme.mint}
+          label="Last refreshed"
+          value={age === null ? "never" : age < 60 ? `${age}s ago` : `${Math.floor(age / 60)} min ago`}
+        />
         <Separator />
         <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
       </View>
@@ -148,30 +165,8 @@ export function Settings() {
             setPush({ on: false, busy: true });
             void enablePush(api).then((r) => setPush(r.ok ? { on: true } : { on: false, note: r.reason }));
           }}
-          hint={push.note ?? (push.on ? "Tap to stop notifications from this computer." : "Get notified when an agent needs your reply.")}
+          hint={push.note ?? (push.on ? `Tap to stop notifications from ${name}.` : `Get notified when an agent on ${name} needs your reply.`)}
         />
-        <Separator />
-        <View style={styles.row}>
-          <View style={styles.rowLine}>
-            <IconBadge name="terminal" tint={theme.mint} />
-            <Text style={styles.rowLabel}>Terminal width</Text>
-          </View>
-          <View style={styles.widths}>
-            {TERMINAL_WIDTHS.map((w) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: w === terminalWidth }}
-                key={w}
-                style={[styles.width, w === terminalWidth && styles.widthOn]}
-                onPress={() => setTerminalWidth(w)}
-              >
-                <Text style={[styles.widthText, w === terminalWidth && styles.widthTextOn]}>
-                  {w === 146 ? "fit" : `${w}c`}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
         <Separator />
         <Row
           icon="pin"
@@ -202,23 +197,6 @@ export function Settings() {
             router.replace("/connect");
           }}
         />
-      </View>
-
-      <View style={styles.group}>
-        <Row
-          icon="activity"
-          tint={age !== null && age > 15 ? theme.peach : theme.mint}
-          label="Last update"
-          value={age === null ? "never" : `${age}s ago`}
-        />
-        <Separator />
-        <Row icon="info" tint={theme.dim} label="App" value={Constants.expoConfig?.version ?? "dev"} />
-        <Separator />
-        <Row icon="activity" tint={theme.dim} label="Share diagnostics" value={diagnostics ? "On" : "Off"} checked={diagnostics}
-          hint="Help fix crashes and conversations that fail to load. Sends error categories, app versions and code locations to Sentry, without conversation text or screenshots."
-          onPress={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }} />
-        <Separator />
-        <Row icon="file-text" tint={theme.dim} label="Open-source licenses" onPress={() => router.push("/licenses")} />
       </View>
 
       <View style={styles.group}>
@@ -257,9 +235,46 @@ export function Settings() {
           }
         />
       </View>
+
+      <SectionHeading title="This app" />
+      <View style={styles.group}>
+        <View style={styles.row}>
+          <View style={styles.rowLine}>
+            <IconBadge name="terminal" tint={theme.mint} />
+            <Text style={styles.rowLabel}>Terminal width</Text>
+          </View>
+          <View style={styles.widths}>
+            {TERMINAL_WIDTHS.map((w) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: w === terminalWidth }}
+                key={w}
+                style={[styles.width, w === terminalWidth && styles.widthOn]}
+                onPress={() => setTerminalWidth(w)}
+              >
+                <Text style={[styles.widthText, w === terminalWidth && styles.widthTextOn]}>
+                  {w === 146 ? "fit" : `${w}c`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <Separator />
+        <Row icon="activity" tint={theme.dim} label="Share diagnostics" value={diagnostics ? "On" : "Off"} checked={diagnostics}
+          hint="Help fix crashes and conversations that fail to load. Sends error categories, app versions and code locations to Sentry, without conversation text or screenshots."
+          onPress={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }} />
+        <Separator />
+        <Row icon="info" tint={theme.dim} label="Version" value={appVersion} />
+        <Separator />
+        <Row icon="file-text" tint={theme.dim} label="Open-source licenses" onPress={() => router.push("/licenses")} />
+      </View>
       <PrivacyLinks />
     </ScrollView>
   );
+}
+
+function SectionHeading({ title }: { title: string }) {
+  return <Text accessibilityRole="header" style={styles.section}>{title}</Text>;
 }
 
 function IconBadge({ name, tint }: { name: IconName; tint: string }) {
@@ -336,6 +351,8 @@ const styles = StyleSheet.create({
     marginTop: 16,
     overflow: "hidden",
   },
+  // The heading over each half, as iOS settings label their groups.
+  section: { color: theme.dim, fontSize: 13, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.6, marginHorizontal: 30, marginTop: 24, marginBottom: -6 },
   profile: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
   profileIcon: {
     width: 52,

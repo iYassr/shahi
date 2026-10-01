@@ -51,8 +51,9 @@ export function ComputerSwitcher() {
               void switchComputer(c.id).then(() => { setOpen(false); showComputerHome(); }).catch(e => setError(e.message));
             }}>
               <Text style={styles.title}>{c.id === activeComputerId ? "✓ " : ""}{c.name}</Text>
-              <Text style={{ color: theme.dim, fontSize: 12 }}>{c.address}</Text>
-              <Text style={{ color: (c.available ?? c.link === "live") ? theme.mint : theme.peach }}>{status}{waiting}</Text>
+              {/* What it is doing first, how it is reached second (device audit, build 28). */}
+              <Text style={{ color: (c.available ?? c.link === "live") ? theme.mint : theme.peach, fontSize: 15 }}>{status}{waiting}</Text>
+              <Text style={styles.address} numberOfLines={1}>{c.address}</Text>
             </Pressable>;
           })}
         </ScrollView>
@@ -70,4 +71,5 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "#0009", justifyContent: "center", padding: 24 },
   sheet: { maxHeight: "80%", backgroundColor: theme.surface, borderRadius: 18, padding: 20 },
   row: { minHeight: 44, justifyContent: "center", paddingVertical: 14, gap: 5 }, action: { color: theme.peach, fontSize: 16 },
+  address: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
 });
