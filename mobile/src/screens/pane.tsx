@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, homePath, messageTime, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, spanColours, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -29,6 +29,7 @@ import {
   useWindowDimensions,
   View,
   type NativeScrollEvent,
+  type TextStyle,
 } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import { router, Stack } from "expo-router";
@@ -313,6 +314,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     notifyNativeDraft(savedDraft);
   }, { active: focused && !gone && !updateRequired, owner: savedDraft });
   const [screen, setScreen] = useState<string | null>(null);
+  /** The same screen with its colours (`PaneFrame.ansi`), for the Screen tab. */
+  const [screenAnsi, setScreenAnsi] = useState<string | null>(null);
   /** herdr says the agent is waiting on a screen no parser recognised (`PaneFrame.unrecognised`). */
   const [unrecognised, setUnrecognised] = useState(false);
   /**
@@ -824,6 +827,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         const act = detail.frame?.activity ?? null;
         setActivity(act);
         setScreen(detail.frame?.text ?? null);
+        setScreenAnsi(detail.frame?.ansi || null);
         setUnrecognised(detail.frame?.unrecognised === true);
         if (act) {
           // A working agent means a reply is imminent: keep polling fast so it
@@ -1392,7 +1396,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             lose the scroll position. */}
         {view === "screen" && (
           <View style={styles.screenOverlay} testID="screen-overlay">
-            <Screen paneId={paneId} text={screen} columns={columns} onColumns={setColumns} />
+            <Screen paneId={paneId} text={screen} ansi={screenAnsi} columns={columns} onColumns={setColumns} />
           </View>
         )}
         </View>
@@ -1908,20 +1912,28 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
  * fits a chosen number of columns across the phone, so "all of it" is one tap
  * away even when that means small.
  *
- * Colour is dropped. Reproducing ANSI attributes would mean an emulator in a
- * WebView, and the thing worth seeing on a phone is the words.
+ * In colour. This said colour would need an emulator in a WebView, but herdr
+ * does not send a byte stream to replay: `pane.read {format: "ansi"}` is the
+ * visible screen already laid out, one row per line, with only SGR between
+ * the characters (every escape in the captured fixtures, October 2026). So
+ * the rows are read into styled runs (`ansiLines`) and drawn as nested text,
+ * each row memoised so a frame redraws only the rows that changed. A computer
+ * that sends no `ansi` gets the plain text, as before.
  */
 function Screen({
   paneId,
   text,
+  ansi,
   columns,
   onColumns,
 }: {
   paneId: string;
   text: string | null;
+  ansi: string | null;
   columns: number;
   onColumns: (columns: number) => void;
 }) {
+  const lines = useMemo(() => (ansi ? ansiLines(ansi) : null), [ansi]);
   const width = useWindowDimensions().width;
   const { terminalPlace } = memoryOf(useSession().api);
   const [aspect, setAspect] = useState(CHAR_ASPECT_GUESS);
@@ -1999,7 +2011,7 @@ function Screen({
                 },
               ]}
             >
-              {body}
+              {lines ? lines.map((line, i) => <ScreenLine key={i} line={line} last={i === lines.length - 1} />) : body}
             </Text>
           </ScrollView>
         </ScrollView>
@@ -2029,6 +2041,35 @@ function Screen({
     </View>
   );
 }
+
+/** What a run is drawn in on the screen; null for one drawn plainly. */
+function spanStyle(span: AnsiSpan): TextStyle | null {
+  if (!span.fg && !span.bg && !span.bold && !span.dim && !span.italic && !span.underline && !span.inverse) return null;
+  const { color, backgroundColor } = spanColours(span, SCREEN_COLOURS);
+  return {
+    // Nested text takes no opacity, so dim is the colour made translucent.
+    ...(span.dim ? { color: `${color ?? SCREEN_COLOURS.fg}99` } : color ? { color } : {}),
+    ...(backgroundColor ? { backgroundColor } : {}),
+    ...(span.bold ? { fontWeight: "700" as const } : {}),
+    ...(span.italic ? { fontStyle: "italic" as const } : {}),
+    ...(span.underline ? { textDecorationLine: "underline" as const } : {}),
+  };
+}
+
+const SCREEN_COLOURS = { fg: theme.fg, bg: theme.void };
+
+/** One row of the screen. `line` keeps its identity while the row is unchanged, so memo skips it. */
+const ScreenLine = memo(function ScreenLine({ line, last }: { line: AnsiLine; last: boolean }) {
+  return (
+    <>
+      {line.map((span, i) => {
+        const style = spanStyle(span);
+        return style ? <Text key={i} style={style}>{span.text}</Text> : span.text;
+      })}
+      {last ? null : "\n"}
+    </>
+  );
+});
 
 /** The optimistic "working" shown between tapping send and the first poll. */
 const AWAITING_ACTIVITY: Activity = { verb: "Working", elapsed: "", detail: null };
