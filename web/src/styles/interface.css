@@ -43,6 +43,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .agent-filters { overflow-x: auto; flex-shrink: 0; }
 .agent-filters button { flex-shrink: 0; min-height: 40px; }
 .row__preview { display: block; color: var(--muted); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; line-height: 1.5; }
+/* An agent that has said nothing yet: said quietly, not in the agent's state colour. */
+.row .row__preview--quiet { color: var(--muted); font-style: italic; }
+.row__time { white-space: nowrap; }
 
 .pair-browser { min-height: 100dvh; display: grid; align-items: center; gap: 48px; max-width: 1040px; margin: auto; padding: 48px 28px; box-sizing: border-box; }
 .pair-browser__intro h1 { font-size: clamp(32px, 4vw, 54px); line-height: 1.1; letter-spacing: -.04em; }
