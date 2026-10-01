@@ -768,7 +768,16 @@ nothing. The marker is a file (`e2e/.server-gone`, cleared by `global-setup.ts`)
 because Playwright replaces the worker process after a failure and module state
 goes with it.
 
-CI runs all of this on every push and pull request: `bun run typecheck` — which
+**When CI runs is the owner's policy (October 2026).** Changes are committed
+and pushed straight to master, without pull requests, after `bun run typecheck`
+and `bun run test` locally; CI does not run on push. The whole suite runs where
+a release needs it: a Stable computer release (`release.yml` calls it on the
+exact commit), every signed phone update (`mobile-update.yml`), and by hand
+(`gh workflow run ci.yml --ref master`) on the exact commit before an App Store
+production submission. A Beta computer release only builds and smoke-tests its
+package; promoting it to Stable runs everything and re-verifies that package.
+
+The suite: `bun run typecheck` — which
 includes the Expo app, the only automatic check that the two clients have not
 drifted apart — then the unit tests, the relay suite (`test:relay`) and the
 app's own (`test:mobile`), then a web build and the stub, hosted and PWA

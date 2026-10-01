@@ -218,12 +218,32 @@ describe("required CI coverage", () => {
   });
 
   test("publishing requires successful checks, master and the protected release environment", () => {
-    for (const file of ["release.yml", "mobile-update.yml"]) {
-      const workflow = workflows.find(w => w.file === file)!.workflow;
-      expect(workflow.jobs.tested!.uses).toBe("./.github/workflows/ci.yml");
-      expect(workflow.jobs.publish!.needs).toBe("tested");
-      expect(workflow.jobs.publish!.if).toBe("github.ref == 'refs/heads/master'");
-      expect(workflow.jobs.publish!.environment).toBe("releases");
-    }
+    const phone = workflows.find(w => w.file === "mobile-update.yml")!.workflow;
+    expect(phone.jobs.tested!.uses).toBe("./.github/workflows/ci.yml");
+    expect(phone.jobs.publish!.needs).toBe("tested");
+    expect(phone.jobs.publish!.if).toBe("github.ref == 'refs/heads/master'");
+    expect(phone.jobs.publish!.environment).toBe("releases");
+  });
+
+  // The owner's policy (October 2026): the whole suite gates Stable, a Beta
+  // only builds and smoke-tests its package.
+  test("a Stable computer release runs the whole of CI first, and a Beta builds its package", () => {
+    const release = workflows.find(w => w.file === "release.yml")!.workflow;
+    expect(release.jobs.tested!.uses).toBe("./.github/workflows/ci.yml");
+    expect(release.jobs.tested!.if).toBe("inputs.channel == 'stable'");
+    expect(release.jobs.packaged!.if).toBe("inputs.channel == 'beta'");
+    const built = release.jobs.packaged!.steps!.map(s => s.run).filter(Boolean);
+    for (const step of ["bun test plugin/releases", "bun plugin/releases/build.ts", "bun plugin/releases/compatibility-smoke.ts", "bun plugin/releases/manager-smoke.ts"]) expect(built).toContain(step);
+    expect(release.jobs.packaged!.steps!.find(s => s.with?.name === "tested-computer-package")).toBeDefined();
+    const gate = String(release.jobs.publish!.if).replace(/\s+/g, " ");
+    expect(gate).toContain("github.ref == 'refs/heads/master'");
+    expect(gate).toContain("(inputs.channel == 'stable' && needs.tested.result == 'success')");
+    expect(gate).toContain("(inputs.channel == 'beta' && needs.packaged.result == 'success')");
+    expect(release.jobs.publish!.needs).toEqual(["tested", "packaged"]);
+    expect(release.jobs.publish!.environment).toBe("releases");
+  });
+
+  test("CI runs for releases, by hand and on pull requests, not on every push", () => {
+    expect(Object.keys((ci as { on: Record<string, unknown> }).on).sort()).toEqual(["pull_request", "workflow_call", "workflow_dispatch"]);
   });
 });

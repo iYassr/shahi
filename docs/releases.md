@@ -32,6 +32,15 @@ the upgrade suite. The independent live-herdr matrix uses a named test session.
 
 ## Approved computer releases
 
+`gh workflow run release.yml --ref master -f channel=beta|stable` publishes the
+version on master's HEAD after the `releases` environment approves it. A Stable
+release first runs the whole of CI on that commit; a Beta release only builds
+the package and runs its tests and upgrade smoke checks (owner's policy,
+October 2026). Promoting a Beta version to Stable rebuilds it under full CI and
+publishes only if the rebuilt package matches the Beta package byte for byte.
+Before an App Store production submission, run `gh workflow run ci.yml --ref
+master` on the exact commit of the build and submit only when it is green.
+
 The plugin selects the signed Stable catalog on first install. Reinstallation
 restarts the supervisor and requests the latest compatible approved release.
 Running code comes from the verified package, never the mutable plugin checkout.

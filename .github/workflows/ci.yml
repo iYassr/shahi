@@ -1,8 +1,11 @@
 name: CI
 
+# Not on every push: changes go straight to master, and the whole suite runs
+# where a release needs it (the owner's policy, October 2026). A Stable
+# computer release and every signed phone update call it; run it by hand on
+# the exact commit before an App Store production submission. Pull requests,
+# which are rare now, still get it so the CI required check can pass.
 on:
-  push:
-    branches: [master]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -11,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Release approval calls this workflow too. A normal push must not cancel or
+  # Release approval calls this workflow too. A manual run must not cancel or
   # hold up that release's mandatory checks through a shared concurrency key.
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

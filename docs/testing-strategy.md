@@ -338,9 +338,15 @@ UI becomes current without manual refresh.
 
 ## 3. CI and release gates
 
+Owner's policy, October 2026: changes go straight to master and CI does not run
+on push. The full suite gates Stable computer releases, signed phone updates and
+App Store production submissions; a Beta computer release builds and
+smoke-tests its package only. The table below is the target model and predates
+that policy.
+
 | Gate | Trigger | Must pass |
 |---|---|---|
-| Fast | every push/PR | static, typecheck, unit/component, short property tests |
+| Fast | before every push, locally | static, typecheck, unit/component, short property tests |
 | Integration | every PR | sidecar external API/WS, Workers runtime, web reference |
 | Compatibility | every PR | minimum + stable herdr live suite |
 | Mobile | mobile-affecting PR | exact-commit simulator build + smoke/full Maestro |
