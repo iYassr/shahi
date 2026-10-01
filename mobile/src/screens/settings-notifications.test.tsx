@@ -95,7 +95,7 @@ test("notifications turned on for a relay computer still read On after a relaunc
 
   ui = launch();
   expect(await screen.findByText("On")).toBeTruthy();
-  expect(screen.getByText("Tap to stop notifications from this computer.")).toBeTruthy();
+  expect(screen.getByText("Tap to stop notifications from test-box.")).toBeTruthy();
   ui.unmount();
 });
 

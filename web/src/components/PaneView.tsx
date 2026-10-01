@@ -3,7 +3,7 @@ import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
 import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
-import { paneTitle, supports } from "@shahi/shared";
+import { paneTitle, sendRefusedBeforeTyping, supports } from "@shahi/shared";
 /**
  * A single pane: its prompt, its live screen, its recorded history, and a way
  * to type into it.
@@ -83,6 +83,10 @@ const KEY_BAR: Array<{ label: string; keys: string[]; everywhere?: boolean }> = 
   { label: "↑", keys: ["Up"] },
   { label: "↓", keys: ["Down"] },
   { label: "⏎", keys: ["Enter"] },
+  // Digits answer a numbered menu from the screen (device audit of build 28).
+  { label: "1", keys: ["1"] },
+  { label: "2", keys: ["2"] },
+  { label: "3", keys: ["3"] },
 ];
 
 /*
@@ -353,7 +357,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         savedDraft.attachments = savedDraft.attachments.filter(file => !attachments.some(sent => sent.path === file.path));
         if (mounted.current) setEcho({ text: body, at: Date.now() });
       } catch (error) {
-        if (error instanceof ApiError && error.code === "pane_replaced") {
+        if (sendRefusedBeforeTyping(error)) {
           savedDraft.pending = null;
           pending.current = null;
         }

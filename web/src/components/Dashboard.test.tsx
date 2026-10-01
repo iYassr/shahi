@@ -199,3 +199,39 @@ describe("what a conversation is called", () => {
     expect(text("blocked__task").every(label => label.includes("Claude"))).toBe(true);
   });
 });
+
+// The build 28 audit on a phone: rows had no time, and a new agent's row
+// showed its whole working folder. The web rows say the same as the phone's.
+describe("what a row says about when and what", () => {
+  let view: ReactTestRenderer | undefined;
+  afterEach(async () => { if (view) await act(async () => view!.unmount()); view = undefined; });
+  const text = (node: ReactTestInstance): string => node.children.map((child) => (typeof child === "string" ? child : text(child))).join("");
+  async function render(panes: DashboardPane[], reviewed = {}, onReviewed = mock()) {
+    const session = { panes, workspaces: [] } as unknown as Session;
+    await act(async () => { view = create(<MemoryRouter><Dashboard session={session} prompts={{}} reviewed={reviewed} onReviewed={onReviewed} onAnswer={mock()} /></MemoryRouter>); });
+  }
+
+  test("a row says when it last moved, and a new agent says it has no messages instead of its folder", async () => {
+    await render([
+      pane({ paneId: "a", title: "Recent", preview: "Fixed it.", lastMessageAt: Date.now() - 5 * 60_000 }),
+      pane({ paneId: "b", title: "New", cwd: "/Users/me/shahi-device-test/claude-new" }),
+    ]);
+    const times = view!.root.findAll((node) => node.type === "time");
+    expect(times.map(text)).toEqual(["5m"]);
+    expect(times[0]!.props["aria-label"]).toBe("last active 5m ago");
+    const previews = view!.root.findAll((node) => node.type === "span" && typeof node.props.className === "string" && node.props.className.startsWith("row__preview"));
+    expect(previews.map(text)).toContain("No messages yet");
+    expect(previews.map(text).join(" ")).not.toContain("shahi-device-test");
+  });
+
+  test("Mark all reviewed reviews every finished conversation in the inbox", async () => {
+    const reviewed = mock();
+    await render([
+      pane({ paneId: "a", title: "One", status: "done", preview: "1" }),
+      pane({ paneId: "b", title: "Two", status: "done", preview: "2" }),
+    ], {}, reviewed);
+    await act(async () => view!.root.find((node) => node.type === "button" && node.props["aria-label"] === "Inbox 2").props.onClick());
+    await act(async () => view!.root.find((node) => node.type === "button" && text(node) === "Mark all reviewed").props.onClick());
+    expect(reviewed).toHaveBeenCalledTimes(2);
+  });
+});

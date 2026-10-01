@@ -87,6 +87,20 @@ export function promptAnswered(current: PromptState, paneId: string, shown: Pars
   return { prompts, answered: { ...current.answered, [paneId]: { identity, outcome } } };
 }
 
+/**
+ * Codes the message route gives when it reached nothing, so the server keeps
+ * no outcome and a retry is a fresh attempt: the pane changed hands, or a
+ * menu or a screen Shahi cannot read stood in front of the composer. Both
+ * clients forget the message's request id for these. They used to keep it
+ * for the last two as well, and said "Delivery not confirmed" under a message
+ * the server had plainly refused (found on an iPhone, October 2026). Not
+ * `prompt_changed`: its text was typed before the screen moved.
+ */
+export function sendRefusedBeforeTyping(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "pane_replaced" || code === "prompt_open" || code === "prompt_unrecognised";
+}
+
 /** Codes the answer route gives when the screen moved on and nothing was pressed. */
 export function answerRefused(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;

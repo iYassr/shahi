@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, supports, readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { agentLabel, backendUnavailable, messageTime, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -50,6 +50,7 @@ import { coalesce } from "@/lib/coalesce";
 import { anchorAt, useScrollCells } from "@/lib/scroll-cells";
 import { memoryOf } from "@/lib/reader-memory";
 import { committed, refused } from "@/lib/feel";
+import { ImageViewer, ZoomableImage } from "@/components/image-viewer";
 import { ScreenCard } from "@/components/screen-card";
 import { useSession } from "@/lib/session";
 import { AGENT_COLORS, theme } from "@/lib/theme";
@@ -123,6 +124,12 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
   { label: "↑", spoken: "Up arrow", keys: ["Up"] },
   { label: "↓", spoken: "Down arrow", keys: ["Down"] },
   { label: "Enter", spoken: "Return", keys: ["Enter"] },
+  // Digits answer a numbered menu straight from the screen; the screen card
+  // in Read had them and Screen did not (device audit of build 28). The same
+  // names `/answer` presses, so herdr already takes them.
+  { label: "1", spoken: "1", keys: ["1"] },
+  { label: "2", spoken: "2", keys: ["2"] },
+  { label: "3", spoken: "3", keys: ["3"] },
   { label: "Ctrl+C", spoken: "Control C", keys: ["C-c"] },
 ];
 
@@ -983,7 +990,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       beginAwaiting();
       committed();
     } catch (e) {
-      if (e instanceof ApiError && e.code === "pane_replaced") {
+      if (sendRefusedBeforeTyping(e)) {
         savedDraft.pending = null;
         promptAttempt.current = null;
       }
@@ -1473,6 +1480,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
 
       {attaching && (
         <FilePicker
+          start={pane?.cwd ?? undefined}
           onClose={() => setAttaching(false)}
           onPick={(path) => {
             // Attachments become paths on their own line, the same as the web
@@ -1570,7 +1578,7 @@ const Message = memo(function Message({
           <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
             {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
           </Text>
-          {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
+          {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{messageTime(message.at)}</Text>}
         </>}
         </View>
         {message.blocks.some((block) => block.kind === "text") && (
@@ -1609,7 +1617,7 @@ function ActivityGroup({ activity, working, paneId, onOpenFile }: {
     </Pressable>
     {open && <View style={styles.activityDetails}>
       {activity.steps.map(step => <View key={step.id}>
-        {!!step.at && <Text style={styles.activityTime}>{new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
+        {!!step.at && <Text style={styles.activityTime}>{messageTime(step.at)}</Text>}
         <Block block={step.block} paneId={paneId} onOpenFile={onOpenFile} attachments={false} />
       </View>)}
     </View>}
@@ -1802,13 +1810,12 @@ function FileView({
         ) : "pdfBase64" in body ? (
           <PDFView base64={body.pdfBase64} onError={() => setError("This PDF cannot be previewed. Save it to open in another app.")} />
         ) : "imageUrl" in body ? (
-          <Image
+          <ZoomableImage
             source={{
               uri: body.imageUrl,
               headers: connection.cookie ? { cookie: connection.cookie } : undefined,
             }}
-            style={styles.fileImage}
-            resizeMode="contain"
+            label={`${file.name}. Pinch to zoom.`}
           />
         ) : (
           <ScrollView style={styles.fileBody}>
@@ -1833,6 +1840,13 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
   const { api } = useSession();
   const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const [viewing, setViewing] = useState(false);
+  /**
+   * Width over height, once the image has loaded. A fixed 220pt box
+   * letterboxed every wide contact sheet and pillarboxed every phone
+   * screenshot; the box now takes the image's shape, up to a height cap.
+   */
+  const [aspect, setAspect] = useState<number | null>(null);
   useEffect(() => {
     let live = true;
     setSource(null);
@@ -1850,15 +1864,30 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
       </View>
     );
   }
+  // A button, not a pressable image: iOS does not reliably deliver taps to
+  // non-interactive elements (CLAUDE.md, "Things that only appear on a phone").
   return (
-    <Image
-      testID="transcript-image"
-      accessibilityLabel="Image from the conversation"
-      source={source}
-      style={styles.image}
-      resizeMode="contain"
-      onError={() => { setSource(null); setFailed("This image could not be loaded."); }}
-    />
+    <>
+      <Pressable
+        testID="transcript-image-button"
+        accessibilityRole="imagebutton"
+        accessibilityLabel="Image from the conversation. Opens full screen."
+        onPress={() => setViewing(true)}
+      >
+        <Image
+          testID="transcript-image"
+          source={source}
+          style={[styles.image, aspect ? { height: undefined, aspectRatio: aspect, maxHeight: 420 } : null]}
+          resizeMode="contain"
+          onLoad={(e) => {
+            const { width, height } = e.nativeEvent.source ?? {};
+            if (width && height) setAspect(width / height);
+          }}
+          onError={() => { setSource(null); setFailed("This image could not be loaded."); }}
+        />
+      </Pressable>
+      {viewing && <ImageViewer source={source} onClose={() => setViewing(false)} />}
+    </>
   );
 }
 
@@ -2019,14 +2048,21 @@ function Working({ activity }: { activity: Activity }) {
  * cannot receive a file, but an agent can read one off disk.
  */
 export function FilePicker({
+  start,
   onClose,
   onPick,
 }: {
+  /**
+   * Where the computer's files open: the agent's own folder. They opened at
+   * home, and the file a person means is nearly always in the project the
+   * agent works in (device audit of build 28, October 2026).
+   */
+  start?: string;
   onClose: () => void;
   onPick: (path: string) => void;
 }) {
   const { api } = useSession();
-  const [path, setPath] = useState("~");
+  const [path, setPath] = useState(start ?? "~");
   const [entries, setEntries] = useState<
     { name: string; path: string; display: string; isDirectory: boolean }[]
   >([]);
@@ -2053,9 +2089,9 @@ export function FilePicker({
     setChoosing(false);
     setUploading(false);
     setError(null);
-    setPath("~");
+    setPath(start ?? "~");
     return () => { owner.current++; uploadAbort.current?.abort(); };
-  }, [api]);
+  }, [api, start]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2130,6 +2166,9 @@ export function FilePicker({
     }
   }
 
+  // The two halves of this sheet do different things, and nothing said so:
+  // a phone's photo or file is copied up to the computer, a computer's file
+  // is only named. Each now has its heading and says what it does.
   return (
     <View style={styles.sheet}>
       <View style={styles.sheetHead}>
@@ -2139,6 +2178,7 @@ export function FilePicker({
         </Pressable>
       </View>
 
+      <Text accessibilityRole="header" style={styles.sheetSection}>From this phone</Text>
       <View style={styles.fromPhone}>
         <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={choosing} onPress={() => void pickFromPhone("photos")}>
           <Text style={styles.phoneButtonText}>Photo</Text>
@@ -2147,13 +2187,27 @@ export function FilePicker({
           <Text style={styles.phoneButtonText}>File on phone</Text>
         </Pressable>
       </View>
+      <Text style={styles.sheetHint}>A copy is uploaded to the computer for the agent to read.</Text>
       {uploading && <>
         <Text style={styles.sheetNote}>{uploadProgress === null ? "Uploading…" : `Uploading ${uploadProgress}%`}</Text>
         <Pressable accessibilityRole="button" onPress={() => uploadAbort.current?.abort()}><Text style={styles.phoneButtonText}>Cancel upload</Text></Pressable>
       </>}
       {error && <Text style={styles.uploadErr}>{error}</Text>}
 
-      <Text style={styles.sheetPath} numberOfLines={1}>{path}</Text>
+      <Text accessibilityRole="header" style={styles.sheetSection}>From the computer</Text>
+      <View style={styles.sheetPlace}>
+        <Text style={[styles.sheetPath, { flex: 1 }]} numberOfLines={1} ellipsizeMode="head">{path}</Text>
+        {path !== "~" && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Open the home folder" hitSlop={8} style={styles.sheetJump} onPress={() => setPath("~")}>
+            <Text style={styles.phoneButtonText}>Home</Text>
+          </Pressable>
+        )}
+        {start && path !== start && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Open the agent's folder" hitSlop={8} style={styles.sheetJump} onPress={() => setPath(start)}>
+            <Text style={styles.phoneButtonText}>Agent's folder</Text>
+          </Pressable>
+        )}
+      </View>
       {directoryError && <View>
         <Text accessibilityRole="alert" style={styles.uploadErr}>{directoryError}</Text>
         <Pressable accessibilityRole="button" style={styles.phoneButton} onPress={() => setDirectoryAttempt(n => n + 1)}>
@@ -2162,22 +2216,25 @@ export function FilePicker({
       </View>}
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
-        data={parent ? [{ name: parent, path: parent, display: parent, isDirectory: true }, ...entries] : entries}
+        data={parent ? [{ name: parent, path: parent, display: parent, isDirectory: true, up: true }, ...entries] : entries}
         keyExtractor={(e) => e.path}
-        style={{ maxHeight: 320 }}
+        style={{ maxHeight: 380 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
+          // The parent was a row named after it, "~", which read as one more
+          // folder rather than the way back.
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={"up" in item ? `Up to ${item.display}` : item.isDirectory ? `Folder ${item.name}` : `Attach ${item.name}`}
             style={styles.fileRow}
             onPress={() => (item.isDirectory ? setPath(item.display) : onPick(item.path))}
           >
-            <Icon name={item.isDirectory ? "folder" : "file-text"} size={18} color={theme.dim} />
-            <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+            <Icon name={"up" in item ? "chevron-up" : item.isDirectory ? "folder" : "file-text"} size={18} color={theme.dim} />
+            <Text style={styles.fileName} numberOfLines={1}>{"up" in item ? "Up" : item.name}</Text>
           </Pressable>
         )}
       />
-      <Text style={styles.sheetNote}>Tap a file on your computer to attach it. Tap a folder to open it.</Text>
+      <Text style={styles.sheetNote}>Tap a file to attach its path; the agent reads it on the computer.</Text>
     </View>
   );
 }
@@ -2328,7 +2385,6 @@ const styles = StyleSheet.create({
   fileWait: { marginTop: 32 },
   fileBody: { flex: 1, borderTopWidth: 1, borderTopColor: theme.line },
   fileText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, padding: 16 },
-  fileImage: { flex: 1, width: "100%" },
 
   tool: { marginBottom: 6 },
   toolHead: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 44 },
@@ -2462,6 +2518,10 @@ const styles = StyleSheet.create({
   phoneButtonText: { color: theme.peach, fontSize: 13 },
   uploadErr: { color: theme.rose, fontSize: 12 },
   sheetPath: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
+  sheetSection: { color: theme.dim, fontSize: 12, fontWeight: "600", letterSpacing: 0.5, textTransform: "uppercase", marginTop: 4 },
+  sheetHint: { color: theme.dim, fontSize: 12 },
+  sheetPlace: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 44 },
+  sheetJump: { minHeight: 44, justifyContent: "center" },
   sheetNote: { color: theme.dim, fontSize: 12, textAlign: "center" },
   fileRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 4 },
   fileGlyph: { color: theme.dim, fontFamily: theme.mono, fontSize: 13 },

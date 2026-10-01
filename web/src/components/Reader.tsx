@@ -1,4 +1,4 @@
-import { readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { messageTime, readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity } from "@shahi/shared";
 import { agentColor } from "./AgentIcon";
 import type { CSSProperties } from "react";
 import { Download, RemoteImage } from "./RemoteMedia";
@@ -444,7 +444,7 @@ const MessageView = memo(function MessageView({ message, working, paneId, onCopy
   const text = message.blocks.flatMap(block => block.kind === "text" ? [block.text] : []).join("\n\n");
   return (
         <article className={`msg msg--${message.role}`} data-message-id={message.id}>
-          {message.showHeader && <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}{!!message.at && <time dateTime={new Date(message.at).toISOString()}> · {new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}</div>}
+          {message.showHeader && <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}{!!message.at && <time dateTime={new Date(message.at).toISOString()}> · {messageTime(message.at)}</time>}</div>}
           {text && <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(text).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>}
           {message.blocks.map((block, index) => (
             <BlockView key={index} block={block} paneId={paneId} />
@@ -478,7 +478,7 @@ function ActivityGroup({ id, activity, working, paneId }: {
     </button>
     {open && <div className="reader-activity__details">
       {activity.steps.map(step => <div className="reader-activity__step" key={step.id}>
-        {!!step.at && <time dateTime={new Date(step.at).toISOString()}>{new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
+        {!!step.at && <time dateTime={new Date(step.at).toISOString()}>{messageTime(step.at)}</time>}
         <BlockView block={step.block} paneId={paneId} attachments={false} />
       </div>)}
     </div>}

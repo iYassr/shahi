@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { choiceHeld, chooseConversation, chosenSession, conversationChoices, forgetChoice, projectFolder } from "./claude-choice";
+import { choiceHeld, chooseConversation, chosenSession, conversationChoices, forgetChoice, projectFolder, unsavedSession } from "./claude-choice";
 
 const root = mkdtempSync(join(tmpdir(), "shahi-claude-choice-"));
 const previous = process.env.CLAUDE_CONFIG_DIR;
@@ -151,6 +151,38 @@ describe("choosing a conversation herdr cannot identify", () => {
     symlinkSync(join(root, "projects", projectFolder(CWD)), join(root, "projects", "alias"));
     expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).toEqual([NEWER, RECORDED, OLDER]);
     expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
+  });
+
+  // Found on an iPhone, October 2026: a new Claude at its folder-trust
+  // dialog has reported no session (its hooks wait for trust), and Reader
+  // said it "started before Shahi could identify it", offering old ones.
+  // Claude 2.1.286 has already recorded its new session there, unsaved.
+  describe("a new Claude that has saved nothing yet", () => {
+    const FRESH = "55555555-5555-4555-8555-555555555555";
+    const record = (sessionId: string) => {
+      mkdirSync(join(root, "sessions"), { recursive: true });
+      writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID, sessionId }));
+    };
+
+    test("is new rather than unidentified, and is offered no old conversation", async () => {
+      record(FRESH);
+      expect(await unsavedSession(client, pane())).toBe(true);
+      expect(await conversationChoices(client, pane(), new Set())).toEqual([]);
+      expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+    });
+
+    test("is not, once its recorded session has a transcript", async () => {
+      record(RECORDED);
+      expect(await unsavedSession(client, pane())).toBe(false);
+      expect((await conversationChoices(client, pane(), new Set())).length).toBeGreaterThan(0);
+    });
+
+    test("is not when Claude kept no record, or herdr does not answer: the old answer stands", async () => {
+      expect(await unsavedSession(client, pane())).toBe(false);
+      record(FRESH);
+      herdrDown = true;
+      expect(await unsavedSession(client, pane())).toBe(false);
+    });
   });
 
   test("a choice holds while that Claude runs there, including through a tool it runs", async () => {

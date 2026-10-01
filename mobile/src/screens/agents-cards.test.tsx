@@ -139,7 +139,8 @@ test("a pane whose title is only spaces is named by its pane id, on screen and a
   mockState.session = { panes: [...panes, blank] };
   try {
     const view = render(<Agents onOpenPane={jest.fn()} />);
-    expect(view.getByTestId("row-w1:p3").props.accessibilityLabel).toBe("w1:p3, Claude, idle, project");
+    // An agent that has said nothing says so, aloud as on screen.
+    expect(view.getByTestId("row-w1:p3").props.accessibilityLabel).toBe("w1:p3, Claude, idle, project, No messages yet");
     expect(view.getByText("w1:p3")).toBeTruthy();
   } finally {
     mockState.session = { panes };

@@ -1,8 +1,8 @@
 export { latestConversations } from "./conversation-order";
 export { readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity, type ActivityStep } from "./reader-rows";
-export { backendUnavailable, connectionHealth } from "./connection-health";
+export { backendUnavailable, connectionHealth, graceUntil, RECONNECT_GRACE_MS, type ConnectionNotice } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
-export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, type AnsweredPrompt, type PromptState } from "./prompts";
+export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, sendRefusedBeforeTyping, type AnsweredPrompt, type PromptState } from "./prompts";
 /**
  * The contract between the server and its clients.
  *
@@ -485,6 +485,8 @@ export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch
 
 export { agentLabel } from "./agent-label";
 export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";
-export { paneTitle } from "./pane-title";
+export { homePath, paneTitle, rowPreview } from "./pane-title";
 export { isWebUrl, webLinks, type WebLink } from "./web-links";
+export { breadcrumb, folderName } from "./folders";
 export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";
+export { messageTime } from "./message-time";

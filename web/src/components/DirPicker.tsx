@@ -11,6 +11,7 @@
  * without so much as an error.
  */
 import { useEffect, useState } from "react";
+import { breadcrumb } from "@shahi/shared";
 import { useApi, type DirListing } from "../api";
 
 export interface DirChoice {
@@ -92,9 +93,27 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
           {error && <p className="picker__error" role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>Try again</button></p>}
           {!listing && !error && <p className="picker__empty" role="status">Opening folder…</p>}
 
+          {/* Each folder on the way home is a way back to it. A display path
+              is enough: the effect above resolves it to its absolute form. */}
+          {listing && (
+            <nav className="picker__crumbs" aria-label="Folder path">
+              {breadcrumb(listing.display).map((crumb, i, all) => (
+                <span key={crumb.display}>
+                  {i > 0 && <span className="picker__crumbsep" aria-hidden="true">›</span>}
+                  {i === all.length - 1
+                    ? <span className="picker__crumb" aria-current="location">{crumb.label}</span>
+                    : <button className="picker__crumb" onClick={() => onChange({ path: crumb.display, display: crumb.display })}>{crumb.label}</button>}
+                </span>
+              ))}
+            </nav>
+          )}
+
+          {/* "Up", not the parent's path: a row reading "~" looked like a
+              folder named ~ (device audit, October 2026). */}
           {listing && listing.parent !== null && (
             <button
               className="picker__row"
+              aria-label={`Up to ${breadcrumb(listing.parent).at(-1)!.label}`}
               onClick={() =>
                 onChange({
                   // The listing's own path minus its last segment, so the
@@ -104,7 +123,7 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
                 })
               }
             >
-              <span className="picker__glyph">↰</span> {listing.parent}
+              <span className="picker__glyph">↑</span> Up
             </button>
           )}
 

@@ -1705,6 +1705,25 @@ test("draft and uncertain send identity survive leaving and returning to a conve
   expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("");
 });
 
+// Found on an iPhone, October 2026: a message refused behind the trust menu
+// was followed by "Delivery not confirmed", though nothing had been typed.
+test.each(["prompt_open", "prompt_unrecognised"])("a message refused behind a menu is not reported as unconfirmed (%s)", async (code) => {
+  mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
+  mocked.send.mockRejectedValueOnce(new ApiError("This agent is waiting on a choice.", 409, code)).mockResolvedValueOnce(receipt);
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/Ready\./);
+  fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "after the menu");
+  fireEvent.press(view.getByText("Send"));
+  await view.findByText("This agent is waiting on a choice.");
+  // The words stay to send again, as a new attempt.
+  expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("after the menu");
+  expect(view.queryByTestId("unconfirmed-send")).toBeNull();
+  fireEvent.press(view.getByText("Send"));
+  await settle();
+  expect(mocked.send.mock.calls[1]![2]).not.toBe(mocked.send.mock.calls[0]![2]);
+  view.unmount();
+});
+
 test("an early missing-pane response recovers when the new agent’s next frame arrives", async () => {
   mocked.sessionLog.mockResolvedValue(log([said("ready", "agent", "Ready.")]));
   mocked.pane.mockRejectedValueOnce(new Error("not mirrored yet")).mockResolvedValue({ ...detail(), frame: { paneId: PANE, text: "New agent is ready", ansi: "", prompt: null, activity: null, at: 1 } });
@@ -1951,6 +1970,20 @@ describe("transcript images", () => {
     const image = await view.findByTestId("transcript-image");
     expect(mocked.transcriptImage).toHaveBeenCalledWith(PANE, "uuid-1:0");
     expect(image.props.source).toEqual({ uri: png });
+  });
+
+  // Device audit of build 28: tapping a picture did nothing, and the
+  // thumbnail was the only size it came in.
+  test("tapping an image opens it full screen, to zoom, and Done closes it", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    mocked.sessionLog.mockResolvedValue(log([withImage]));
+    mocked.transcriptImage.mockResolvedValue({ uri: png });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(await view.findByTestId("transcript-image-button"));
+    const zoom = await view.findByTestId("zoomable-image");
+    expect(zoom.props.source).toEqual({ uri: png });
+    fireEvent.press(view.getByLabelText("Close image"));
+    await waitFor(() => expect(view.queryByTestId("zoomable-image")).toBeNull());
   });
 
   test("an image that cannot come through says why in its place", async () => {
@@ -2400,4 +2433,16 @@ describe("the screen card", () => {
     expect(view.queryByTestId("screen-card")).toBeNull();
     view.unmount();
   });
+});
+
+// Reader showed only "11:45 AM", so last week's reply looked like this
+// morning's (device audit of build 28).
+test("a message from an earlier day says which day", async () => {
+  const lastWeek = new Date(2026, 8, 12, 11, 45).getTime();
+  mocked.sessionLog.mockResolvedValue(log([{ ...said("a1", "agent", "An old reply."), at: lastWeek }]));
+  const view = render(<Pane paneId={PANE} />);
+  await view.findByText(/An old reply\./);
+  const day = new Date(lastWeek).toLocaleDateString([], { month: "short", day: "numeric" });
+  expect(view.getByText(new RegExp(`^${day}, `))).toBeTruthy();
+  view.unmount();
 });

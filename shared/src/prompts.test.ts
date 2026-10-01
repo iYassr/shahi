@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { DashboardPane, ParsedPrompt } from "./index";
-import { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, type PromptState } from "./prompts";
+import { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, sendRefusedBeforeTyping, type PromptState } from "./prompts";
 
 const ask = (question: string, labels = ["Yes", "No"]): ParsedPrompt => ({
   question, answer: "digit", options: labels.map((label, i) => ({ index: i + 1, label, selected: i === 0 })),
@@ -73,4 +73,10 @@ test("an identical question asked again has a new identity even without an inter
   expect(promptPushed(answered, "w1:p1", first).prompts).toEqual({});
   expect(promptPushed(answered, "w1:p1", repeated).prompts["w1:p1"]).toEqual(repeated);
   expect(promptsFromSession([pane("blocked", repeated)], answered).answered).toEqual({});
+});
+
+test("a message refused before anything was typed is a fresh attempt next time; one typed into a moved screen is not", () => {
+  for (const code of ["pane_replaced", "prompt_open", "prompt_unrecognised"]) expect(sendRefusedBeforeTyping({ code })).toBe(true);
+  for (const code of ["prompt_changed", undefined]) expect(sendRefusedBeforeTyping({ code })).toBe(false);
+  expect(sendRefusedBeforeTyping(new Error("connection interrupted"))).toBe(false);
 });

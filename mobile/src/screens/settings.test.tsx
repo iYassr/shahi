@@ -12,12 +12,14 @@ jest.mock("expo-router", () => ({
   useIsFocused: () => true,
   Stack: { Screen: ({ options }: { options: unknown }) => { mockStackOptions(options); return null; } },
 }));
-jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
+jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" }, nativeBuildVersion: "28" } }));
 jest.mock("@/lib/push", () => ({ enablePush: jest.fn(), pushEnabled: jest.fn(async () => false) }));
 jest.mock("@/components/paired-devices", () => ({ PairedDevices: () => null }));
+let mockControl: unknown = undefined;
 jest.mock("@/lib/session", () => ({
   useLastUpdate: () => Date.now(),
   useSession: () => ({
+    control: mockControl,
     api: require("@/lib/api").api, transport: require("@/lib/api").connection, computers: [],
     session: { serverName: "test-box", version: "0.8.2", protocol: 20 },
     link: "live",
@@ -114,5 +116,49 @@ describe("at accessibility text sizes", () => {
     expect(StyleSheet.flatten(hostParent(view.getByText("Computers")).props.style).flexDirection).toBe("row");
     act(() => Dimensions.set({ window: { ...window, fontScale: 3.12 }, screen: screenSize }));
     expectValueUnderLabel(view);
+  });
+});
+
+// Device audit, build 28: one list mixed the computer's settings with the
+// app's, the computer's version was nowhere, the app's had no build number,
+// and "Last update · 74s ago" did not say of what.
+describe("what belongs to the computer and what to the app", () => {
+  afterEach(() => { mockControl = undefined; });
+
+  test("two headed sections, the computer's first, with its versions and the app's build", () => {
+    mockControl = { pending: false, error: null, request: jest.fn(), handshake: {
+      control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities: ["computer-updates"],
+      backend: { state: "connected", version: "0.9.1", protocol: 22 },
+      update: { managed: true, channel: "beta", phase: "idle", current: "0.3.16" },
+    } };
+    const view = render(<Settings />);
+    const headings = view.getAllByRole("header").map((node) => node.props.children);
+    expect(headings).toEqual(["This computer", "This app"]);
+    expect(view.getByText("Shahi 0.3.16 · herdr 0.9.1")).toBeTruthy();
+    expect(view.getByText("1.0.0 (28)")).toBeTruthy();
+    expect(view.getByText("Last refreshed")).toBeTruthy();
+    expect(view.queryByText("Last update")).toBeNull();
+    // Notifications are registered with this computer, and say so.
+    expect(view.getByText("Get notified when an agent on test-box needs your reply.")).toBeTruthy();
+  });
+
+  test("the release channel is one control whose current choice is selected, not two links", () => {
+    const request = jest.fn();
+    mockControl = { pending: false, error: null, request, handshake: {
+      control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities: ["computer-updates"],
+      backend: { state: "connected", version: "0.9.1", protocol: 22 },
+      update: { managed: true, channel: "beta", phase: "idle", current: "0.3.16" },
+    } };
+    const view = render(<Settings />);
+    expect(view.getByLabelText("Beta channel").props.accessibilityState.selected).toBe(true);
+    expect(view.getByLabelText("Stable channel").props.accessibilityState.selected).toBe(false);
+    fireEvent.press(view.getByLabelText("Beta channel"));
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText("Stable channel"));
+    expect(request).toHaveBeenCalledWith("check", "stable");
+  });
+
+  test("without the computer's account of itself, herdr's version still shows", () => {
+    expect(render(<Settings />).getByText("herdr 0.8.2")).toBeTruthy();
   });
 });

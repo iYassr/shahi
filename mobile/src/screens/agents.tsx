@@ -5,7 +5,7 @@ import { LinkBadge } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { OtherComputers } from "@/components/other-computers";
-import { agentLabel, answerRefused, backendUnavailable, inboxPanes, latestConversations, promptIdentity as identityOf, type AnsweredPrompt } from "@shahi/shared";
+import { agentLabel, answerRefused, backendUnavailable, inboxKind, inboxPanes, latestConversations, promptIdentity as identityOf, reviewKey, rowPreview, rowTime, type AnsweredPrompt, type LogMessage } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -15,14 +15,15 @@ import { RectButton } from "react-native-gesture-handler";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, Stack } from "expo-router";
 import type { DashboardPane, ParsedPrompt, PromptOption } from "@shahi/shared";
-import { landed, refused } from "@/lib/feel";
+import { committed, landed, refused } from "@/lib/feel";
 import { openScreen } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { GreetingLogo } from "@/components/greeting-logo";
 import { theme, statusColor } from "@/lib/theme";
 import { AgentIcon, Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
-import { conversationLabel, paneTitle } from "@/components/conversation-label";
+import { conversationLabel, paneTitle, rowAt } from "@/components/conversation-label";
+import * as Clipboard from "expo-clipboard";
 import { PromptContext } from "@/components/prompt-context";
 import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
@@ -52,7 +53,36 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   /** The row a long-press opened actions for. */
   const [acting, setActing] = useState<DashboardPane | null>(null);
   useEffect(() => { if (!focused) setActing(null); }, [focused]);
+  // Rows say how long ago they moved; a minute's tick keeps "5m" from staying
+  // "5m" for an hour on a list nothing else changed. Only while on screen.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!focused) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [focused]);
   const openScreenHere = useCallback((paneId: string) => openScreen(paneId, activeComputerId), [activeComputerId]);
+
+  /**
+   * The whole of the agent's last written reply, from its transcript: the
+   * row's preview is cut at 160 characters and stripped of Markdown, so
+   * copying it would hand over less than was said.
+   */
+  async function copyLastReply(pane: DashboardPane) {
+    try {
+      const page = await api.sessionLog(pane.paneId, 12);
+      const reply = [...page.messages].reverse().find((message: LogMessage) => message.role === "agent" && message.blocks.some((block) => block.kind === "text" && block.text.trim()));
+      const text = reply?.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n\n").trim();
+      if (!text) { refused(); AccessibilityInfo.announceForAccessibility("No reply to copy yet"); return; }
+      await Clipboard.setStringAsync(text);
+      committed();
+      AccessibilityInfo.announceForAccessibility("Last reply copied");
+    } catch {
+      refused();
+      AccessibilityInfo.announceForAccessibility("Could not copy the last reply");
+    }
+  }
 
   // Rejects on failure so the card that asked can say why and offer its
   // options again: a relay timeout is an ordinary outcome, not an exception
@@ -238,6 +268,14 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
               <Text style={styles.newAgentText}>+ New agent</Text>
             </Pressable>
             {active === "inbox" && <View style={styles.inboxHeading}><Text style={styles.inboxTitle}>What needs me?</Text><Text style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</Text></View>}
+            {/* One tap for a morning's finished work, rather than one per row.
+                Nothing is lost: new activity brings a conversation back. */}
+            {active === "inbox" && rest.filter((pane) => inboxKind(pane) === "review").length > 1 && (
+              <Pressable accessibilityRole="button" style={styles.reviewAll} testID="mark-all-reviewed"
+                onPress={() => { for (const pane of rest) if (inboxKind(pane) === "review") markReviewed(pane); committed(); }}>
+                <Text style={styles.reviewedText}>Mark all reviewed</Text>
+              </Pressable>
+            )}
             {blocked.map((pane) => (
               <BlockedCard
                 key={`${pane.paneId}\u0000${promptIdentity(prompts[pane.paneId])}`}
@@ -270,6 +308,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             onPin={togglePin}
             onActions={setActing}
             onSwipe={rememberSwipe}
+            now={now}
           />}
           {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${paneTitle(item)} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Mark reviewed</Text></Pressable>}
           </View>
@@ -331,6 +370,33 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                 <Icon name="terminal" color={theme.mint} size={16} />
                 <Text style={styles.sheetItemText}>Open screen</Text>
               </Pressable>
+              {inboxKind(acting) === "review" && reviewed[acting.paneId] !== reviewKey(acting) && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.sheetItem}
+                  onPress={() => {
+                    markReviewed(acting);
+                    setActing(null);
+                  }}
+                >
+                  <Icon name="check" color={theme.mint} size={16} />
+                  <Text style={styles.sheetItemText}>Mark reviewed</Text>
+                </Pressable>
+              )}
+              {acting.isAgent && !!acting.preview && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.sheetItem}
+                  onPress={() => {
+                    const pane = acting;
+                    setActing(null);
+                    void copyLastReply(pane);
+                  }}
+                >
+                  <Icon name="copy" color={theme.dim} size={16} />
+                  <Text style={styles.sheetItemText}>Copy last reply</Text>
+                </Pressable>
+              )}
               <Pressable accessibilityRole="button" style={styles.sheetItem} onPress={() => setActing(null)}>
                 <Text style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</Text>
               </Pressable>
@@ -359,9 +425,12 @@ const Row = memo(function Row({
   onPin,
   onActions,
   onSwipe,
+  now,
 }: {
   pane: DashboardPane;
   pinned: boolean;
+  /** The list's minute tick, so a row's age is redrawn as it grows. */
+  now: number;
   // Stable callbacks that take the pane, so memo actually holds: inline
   // closures would give every row a new identity on each list render.
   onPress: (paneId: string) => void;
@@ -372,10 +441,12 @@ const Row = memo(function Row({
 }) {
   const largeText = useLargeText();
   const swipe = useRef<SwipeableMethods | null>(null);
+  const at = rowAt(pane);
+  const said = rowPreview(pane);
   const row = (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={conversationLabel(pane, pane.workspaceLabel, pinned)}
+        accessibilityLabel={conversationLabel(pane, pane.workspaceLabel, pinned, now)}
         style={styles.row}
         // The pinned state rides in the row's own id: children of a pressable
         // flatten into one accessibility element, so a marker inside it is
@@ -403,12 +474,15 @@ const Row = memo(function Row({
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.workspaceLabel}</Text>
+            {/* Last, and never shortened: a cut "Yester…" says nothing. */}
+            {at !== null && <Text style={styles.rowTime} testID={`time-${pane.paneId}`}>{rowTime(at, now)}</Text>}
             </View>
           </View>
-          {/* A quiet agent's second line is where it is working, not a
-              "No conversation yet." filler — the path answers "which one is
-              this" while saying nothing twenty-six times was the crowding. */}
-          {(pane.activity || pane.preview || pane.cwd) && (
+          {/* The last thing said; for an agent that has said nothing, that it
+              has not, dimmed; for a shell, its folder from home. The full
+              working folder stood here once, and repeated what the space tag
+              already said while pushing the rest off the row (build 28 audit). */}
+          {(pane.activity || said) && (
             <View style={styles.rowLine}>
               {pane.activity ? (
                 // What "typing…" means when the other party is an agent.
@@ -416,8 +490,8 @@ const Row = memo(function Row({
                   {pane.activity.verb}… {pane.activity.elapsed}
                 </Text>
               ) : (
-                <Text style={styles.rowSaid} numberOfLines={1}>
-                  {pane.preview ?? pane.cwd}
+                <Text style={[styles.rowSaid, !pane.preview && pane.isAgent && styles.rowQuiet]} numberOfLines={1}>
+                  {said}
                 </Text>
               )}
             </View>
@@ -701,6 +775,9 @@ const styles = StyleSheet.create({
   rowTyping: { color: theme.working, fontStyle: "italic" },
   rowMeta: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },
   rowStatus: { fontSize: 12, letterSpacing: 0.5 },
+  rowTime: { color: theme.dim, fontSize: 12, flexShrink: 0 },
+  rowQuiet: { fontStyle: "italic", opacity: 0.8 },
+  reviewAll: { alignSelf: "flex-end", paddingHorizontal: 20, minHeight: 44, justifyContent: "center" },
 
   blocked: {
     margin: 16,

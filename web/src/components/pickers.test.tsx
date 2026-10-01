@@ -239,3 +239,33 @@ test("conversation sidebar follows latest messages, including waiting conversati
     expect(titles()[0]).toBe(agent);
   }
 });
+
+// Device audit, October 2026: climbing was a row reading "~" (the parent's
+// path), which looks like a folder named ~, and there was no way straight home.
+test("a folder is climbed with an Up row and a breadcrumb home, not a row named ~", async () => {
+  const dirs = mock(async (path: string) => path.startsWith("/home/you/projects/shahi") || path === "~/projects/shahi"
+    ? { path: "/home/you/projects/shahi", display: "~/projects/shahi", parent: "~/projects", entries: [] }
+    : { path: "/home/you", display: "~", parent: null, entries: [directory("projects")] });
+  const onChange = mock();
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, dirs }}><DirPicker value={{ path: "/home/you/projects/shahi", display: "~/projects/shahi" }} onChange={onChange} /></ApiContext.Provider>); });
+  await act(async () => button("Change").props.onClick());
+  const up = view.root.findAllByType("button").find((b) => b.props["aria-label"] === "Up to projects")!;
+  expect(up.children.join("")).toContain("Up");
+  expect(JSON.stringify(view.toJSON())).not.toContain("↰");
+  await act(async () => button("Home").props.onClick());
+  // A display path; the picker resolves it to the absolute one.
+  expect(onChange).toHaveBeenCalledWith({ path: "~", display: "~" });
+});
+
+test("a new space is named after the folder chosen, unless the person named it", async () => {
+  const { CreateSpace } = await import("./Spaces");
+  const dirs = mock(async (path: string) => ({ path: path === "~" ? "/home/you" : "/home/you/projects", display: path === "~" ? "~" : "~/projects", parent: null, entries: [] }));
+  const session = { workspaces: [{ workspaceId: "w1", label: "projects", cwd: "~/projects", cwdPath: "/home/you/projects" }], tabs: [], panes: [] } as any;
+  await act(async () => { view = create(<ApiContext.Provider value={{ ...api, dirs }}><CreateSpace session={session} onClose={mock()} onToast={mock()} onCreated={mock()} /></ApiContext.Provider>); });
+  const name = () => view.root.findAllByType("input")[0]!;
+  await act(async () => button("~/projects").props.onClick());
+  expect(name().props.value).toBe("projects");
+  await act(async () => name().props.onChange({ target: { value: "release QA" } }));
+  await act(async () => button("~/projects").props.onClick());
+  expect(name().props.value).toBe("release QA");
+});

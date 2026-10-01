@@ -45,3 +45,16 @@ test("the current computer is announced as selected, not by a spoken tick", () =
   expect(other.props.accessibilityState).toMatchObject({ selected: false });
   expect(other.props.accessibilityLabel).toBe("laptop, ssh://me@laptop, Offline · retrying");
 });
+
+// Device audit, build 28: which computer needs you is the reason to open this
+// list, so each row says it beside its status, ahead of how it is reached.
+test("each computer's waiting count shows beside its status", () => {
+  mockState.computers = [
+    { id: "a", name: "stub-box", address: "relay.example", link: "live" },
+    { id: "b", name: "laptop", address: "relay.example · b", link: "live", waiting: 3 } as never,
+  ];
+  mockState.activeComputerId = "a";
+  const view = render(<ComputerSwitcher />);
+  fireEvent.press(view.getByTestId("computer-switcher"));
+  expect(view.getByText("Connected · 3 waiting")).toBeTruthy();
+});

@@ -145,3 +145,19 @@ test("a cancelled upload is never attached, even when it finishes anyway", async
   expect(view.getByText("Upload cancelled.")).toBeTruthy();
   expect(view.queryByText("Cancel upload")).toBeNull();
 });
+
+// Device audit of build 28: the computer's files opened at home, and the way
+// back was a row named "~" that read as one more folder.
+test("the computer's files open in the agent's folder, with a way up and a way home", async () => {
+  mockApi.dirs.mockResolvedValue({ entries: [file("README.md")], parent: "~/projects" });
+  const view = render(<FilePicker start="~/projects/app" onPick={jest.fn()} onClose={jest.fn()} />);
+  await waitFor(() => view.getByText("README.md"));
+  expect(mockApi.dirs).toHaveBeenCalledWith("~/projects/app", true);
+  expect(view.getByLabelText("Up to ~/projects")).toBeTruthy();
+  expect(view.getByText("From this phone")).toBeTruthy();
+  expect(view.getByText("From the computer")).toBeTruthy();
+  fireEvent.press(view.getByLabelText("Open the home folder"));
+  await waitFor(() => expect(mockApi.dirs).toHaveBeenLastCalledWith("~", true));
+  fireEvent.press(view.getByLabelText("Open the agent's folder"));
+  await waitFor(() => expect(mockApi.dirs).toHaveBeenLastCalledWith("~/projects/app", true));
+});

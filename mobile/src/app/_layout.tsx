@@ -109,13 +109,14 @@ function Navigation() {
         {/* Real sheets: the presentation owns the card, the dimming,
             drag-to-dismiss and staying clear of the keyboard — all things the
             old absolutely-positioned sheet had to fake. */}
+        {/* A screen, like new-agent: its folder browser grows with the
+            folder, and a fit-to-contents sheet measured against a changing
+            list is the race SheetBody's full-screen form exists to avoid. */}
         <Stack.Screen
           name="new-space"
           options={{
-            presentation: "formSheet",
+            presentation: "card",
             headerShown: false,
-            sheetAllowedDetents: "fitToContents",
-            sheetGrabberVisible: true,
             contentStyle: { backgroundColor: theme.surface },
           }}
         />
