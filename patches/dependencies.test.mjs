@@ -7,9 +7,12 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 function checkInChild(script) {
   // A missing patch must fail a bounded child, never hang or exhaust the runner.
+  // 1.5 s was too tight to start Node and load image-size on a busy runner: the
+  // 0.3.15 release run failed with spawnSync ETIMEDOUT after ~1.5 s while the
+  // same commit had passed (2026-09-30). A hang still ends at the bound.
   const result = spawnSync(process.execPath, ["--max-old-space-size=32", "-e", script], {
     cwd: root,
-    timeout: 1500,
+    timeout: 10_000,
     encoding: "utf8",
   });
   assert.deepEqual({ status: result.status, error: result.error?.message, stderr: result.stderr }, {
