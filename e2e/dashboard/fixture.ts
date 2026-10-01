@@ -2,13 +2,14 @@ export function fixture(range = '1h') {
   const now = new Date().toISOString();
   const seconds = range === '7d' ? 604800 : range === '24h' ? 86400 : 3600;
   const bucketSeconds = range === '7d' ? 21600 : range === '24h' ? 3600 : 300;
-  const checks = Object.fromEntries(['website', 'browser_app', 'signup_api', 'relay_http', 'relay_tunnel', 'analytics', 'signup_delivery_errors', 'relay_errors', 'connection_rejections', 'authentication_failures', 'reconnect_storm', 'service_latency'].map(k => [k, { healthy: true, durationMs: 40 }]));
+  const checks = Object.fromEntries(['website', 'browser_app', 'signup_api', 'relay_http', 'relay_tunnel', 'analytics', 'signup_delivery_errors', 'relay_errors', 'connection_rejections', 'authentication_failures', 'reconnect_storm', 'usage_analytics', 'relay_alarm_loop', 'relay_message_storm', 'service_latency'].map(k => [k, { healthy: true, durationMs: 40 }]));
   return {
     errors: [], generatedAt: now,
     usage: { since: new Date(Date.now() - 7 * 86400000).toISOString(), until: now, generatedAt: now,
       shahi: { workerRequests: 12300, workerCpuMs: 5400, durableRequests: 33200, durableDurationGbSeconds: 4400, rowsRead: 200, rowsWritten: 300 },
       account: { workerRequests: 22300, workerCpuMs: 9400, durableRequests: 83200, durableDurationGbSeconds: 9400, rowsRead: 400, rowsWritten: 800 },
-      model: { totalUsd: 17.5, costs: { subscription: 5, workerRequests: 0, workerCpu: 0, durableRequests: 0, durableDuration: 12.5, rowsRead: 0, rowsWritten: 0 } },
+      containers: { memoryGibSeconds: 2419200, diskGbSeconds: 4838400, cpuSeconds: 30000 },
+      model: { totalUsd: 17.5, containers: 'included', costs: { subscription: 5, workerRequests: 0, workerCpu: 0, durableRequests: 0, durableDuration: 12.5, rowsRead: 0, rowsWritten: 0, containerMemory: 25.7, containerCpu: 1.4, containerDisk: 1.4 } },
       workers: [{ name: 'shahi-relay', requests: 12300, cpuMs: 5400, errors: 0 }] },
     monitor: { checkedAt: now, checks, incidents: {}, deliveryFailures: 0 },
     stats: { range, seconds, bucketSeconds, generatedAt: now, boxesOnlineEstimate: 142,

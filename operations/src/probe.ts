@@ -1,4 +1,5 @@
 import { BOX_AUTH_PREFIX } from "../../shared/src/relay";
+import { withDeadline } from "./deadline";
 
 const b64 = (bytes: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 
@@ -10,7 +11,7 @@ export async function probeTunnel(origin: string, token: string): Promise<void> 
   const sockets: WebSocket[] = [];
   const encoder = new TextEncoder();
   async function connect(role: string) {
-    const response = await fetch(`${origin}/v1/${role}/${id}`, { headers: { upgrade: "websocket", "x-shahi-probe": token }, signal: AbortSignal.timeout(10_000) });
+    const response = await withDeadline(10_000, (signal) => fetch(`${origin}/v1/${role}/${id}`, { headers: { upgrade: "websocket", "x-shahi-probe": token }, signal }));
     const ws = response.webSocket;
     if (response.status !== 101 || !ws) throw new Error("upgrade failed");
     ws.binaryType = "arraybuffer";

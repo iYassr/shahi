@@ -26,7 +26,7 @@ import {
   type RelayToBox,
 } from "@shahi/shared/relay";
 import { hstsHeaders } from "./hsts.ts";
-import { EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
+import { ALARM_FLOOR_MS, EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
 
@@ -100,6 +100,8 @@ const encoder = new TextEncoder();
 export class RelayBox extends DurableObject<unknown> {
   #env: TelemetryEnv;
   #synthetic = false;
+  /** When the last alarm ran in this instance; ALARM_FLOOR_MS is measured from it. */
+  #lastAlarm = 0;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
@@ -420,19 +422,27 @@ export class RelayBox extends DurableObject<unknown> {
    * write per frame. Deadlines only ever move later, so an alarm that fires
    * and finds its socket fresh simply re-arms at the new time: a box that
    * pings wakes this object once per BOX_SILENCE_MS, and nothing else does.
+   * Never sooner than ALARM_FLOOR_MS after the last alarm, whatever is due.
    */
-  private async schedule(): Promise<void> {
+  private async schedule(alarmAt?: number): Promise<void> {
     let next = Infinity;
+    let overdue: Attachment | null = null;
     for (const ws of this.ctx.getWebSockets()) {
       const deadline = this.deadline(ws);
-      if (deadline !== null && deadline < next) next = deadline;
+      if (deadline === null) continue;
+      if (deadline < next) next = deadline;
+      if (alarmAt !== undefined && deadline <= alarmAt) overdue ??= ws.deserializeAttachment() as Attachment;
     }
+    // The alarm closes everything due by the time it ran, so a socket still due
+    // is a close that did not take: the shape of the September alarm storm.
+    if (overdue) this.record({ kind: "internal_error", serverId: overdue.serverId, detail: "alarm overdue" });
     if (next === Infinity) await this.ctx.storage.deleteAlarm();
-    else await this.ctx.storage.setAlarm(next);
+    else await this.ctx.storage.setAlarm(Math.max(next, this.#lastAlarm + ALARM_FLOOR_MS));
   }
 
   async alarm(): Promise<void> {
     const now = Date.now();
+    this.#lastAlarm = now;
     for (const phone of this.phones()) {
       const state = phone.deserializeAttachment() as PhoneState;
       this.traffic(state);
@@ -450,7 +460,7 @@ export class RelayBox extends DurableObject<unknown> {
     // as online by the same alarm that just closed it.
     const box = this.readyBox();
     if (box) this.record({ kind: "box_presence", serverId: (box.deserializeAttachment() as BoxState).serverId, value: this.phones().length });
-    await this.schedule();
+    await this.schedule(now);
   }
 
   /** When this socket is due to be closed if nothing happens, or null if it is already closing. */

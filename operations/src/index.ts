@@ -1,5 +1,7 @@
 import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
+import { withDeadline } from "./deadline";
+import { hotspotChecks } from "./hotspots";
 import { advance, notification, type Incident } from "./incidents";
 import { probeTunnel } from "./probe";
 import { StatsCache, validRange } from "./stats-cache";
@@ -29,24 +31,25 @@ async function sendAlert(env: Env, subject: string, text: string): Promise<void>
 
 export class Monitor extends DurableObject<Env> {
   #running: Promise<State> | null = null;
+  #relayStats = (query: string, failure: string) => withDeadline(15_000, async (signal) => {
+    const response = await fetch(`${RELAY}/stats?${query}`, { headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal });
+    if (!response.ok) throw new Error(failure);
+    return await response.json() as unknown;
+  });
   #stats = new StatsCache(async (range) => {
-    const response = await fetch(`${RELAY}/stats?window=${range}`, {
-      headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error("analytics unavailable");
-    const data = await response.json();
+    const data = await this.#relayStats(`window=${range}`, "analytics unavailable");
     if (!data || typeof data !== "object" || !("generatedAt" in data) || !("eventsByKind" in data)) throw new Error("invalid analytics");
     return data;
   });
   #usage = new StatsCache(async () => {
-    const response = await fetch(`${RELAY}/stats?view=usage`, {
-      headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error("usage unavailable");
-    const data = await response.json();
+    const data = await this.#relayStats("view=usage", "usage unavailable");
     if (!data || typeof data !== "object" || !("model" in data) || !("until" in data)) throw new Error("invalid usage");
     return data;
   }, Date.now, 900_000);
+  // Cached for five minutes only while the object stays in memory. Now that checks
+  // no longer hold it awake it is usually evicted between them, so in practice this
+  // reads once a minute, which GraphQL's rate limit and pricing both allow.
+  #hotspots = new StatsCache(() => this.#relayStats("view=hotspots", "hotspots unavailable"), Date.now, 300_000);
   async dashboard(range: string): Promise<unknown> {
     const [monitor, stats, usage] = await Promise.allSettled([this.status(), this.#stats.get(range), this.#usage.get("1h")]);
     return {
@@ -73,19 +76,17 @@ export class Monitor extends DurableObject<Env> {
       try { await task(); checks[name] = { healthy: true, durationMs: Date.now() - start }; }
       catch { checks[name] = { healthy: false, durationMs: Date.now() - start }; }
     };
-    const http = async (url: string, status = 200) => {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: "manual", headers: { "cache-control": "no-cache" } });
+    const http = (url: string, status = 200) => withDeadline(10_000, async (signal) => {
+      const res = await fetch(url, { signal, redirect: "manual", headers: { "cache-control": "no-cache" } });
       await res.body?.cancel();
       if (res.status !== status) throw new Error("unexpected status");
-    };
+    });
     await Promise.all([
       run("website", () => http(SITE)), run("browser_app", () => http(`${SITE}/pwa/`)),
       run("signup_api", () => http(`${SITE}/api/ios-beta`, 405)),
       run("relay_http", () => http(`${RELAY}/health`)), run("relay_tunnel", () => probeTunnel(RELAY, this.env.STATS_TOKEN)),
       run("analytics", async () => {
-        const res = await fetch(`${RELAY}/stats`, { headers: { authorization: `Bearer ${this.env.STATS_TOKEN}` }, signal: AbortSignal.timeout(15_000) });
-        if (!res.ok) throw new Error("stats unavailable");
-        const body = await res.json() as { alerts?: Record<string, number>; site?: { status: number; n: number }[] };
+        const body = await this.#relayStats("view=alerts", "stats unavailable") as { alerts?: Record<string, number>; site?: { status: number; n: number }[] };
         if (!body.alerts) throw new Error("missing metrics");
         const m = body.alerts;
         checks.signup_delivery_errors = { healthy: (body.site ?? []).filter((row) => Number(row.status) >= 500).reduce((n, row) => n + Number(row.n), 0) < 3, durationMs: 0 };
@@ -94,6 +95,9 @@ export class Monitor extends DurableObject<Env> {
         checks.connection_rejections = { healthy: (m.rate_limited ?? 0) < 100 || (m.rate_limited ?? 0) / Math.max(1, connections + (m.rate_limited ?? 0)) < 0.2, durationMs: 0 };
         checks.authentication_failures = { healthy: (m.auth_failed ?? 0) < 50, durationMs: 0 };
         checks.reconnect_storm = { healthy: (m.box_gone ?? 0) < 100, durationMs: 0 };
+      }),
+      run("usage_analytics", async () => {
+        for (const [name, healthy] of Object.entries(hotspotChecks(await this.#hotspots.get("1h")))) checks[name] = { healthy, durationMs: 0 };
       }),
     ]);
     checks.service_latency = { healthy: Object.values(checks).every((c) => !c.healthy || c.durationMs <= 3000), durationMs: 0 };

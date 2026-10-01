@@ -1428,6 +1428,19 @@ identical with and without one (2.1.286, herdr 0.9.1). Tests that turn it on
 must point `CLAUDE_CONFIG_DIR` at a scratch folder. A reading from before its
 window reset is shown as reset, not as current.
 
+## Runaway usage, October 2026
+
+**A Durable Object is billed while anything in it is pending.** Never use
+`AbortSignal.timeout` in one: its timer outlives the request it guarded, and the
+monitor was billed 15 s for every half-second check (`operations/src/deadline.ts`).
+The relay's alarms stay `ALARM_FLOOR_MS` apart, measured from the last alarm and
+not from now, so neither a loop nor a busy object can spin or starve them; see
+`relay/src/limits.ts` for the September storm that made this a rule. The monitor's
+relay rate incidents read Cloudflare's invocation counts, not relay code. Durable
+Object overage bills in whole millions, so one GB-s over the allowance is $12.50.
+The review container is billed as allocated around the clock; `basic` starves its
+CPU (measured in `demo/wrangler.toml`), so size it by CPU, not memory.
+
 ## Private operations statistics
 
 The private operations dashboard's concurrency values are five-minute sampled

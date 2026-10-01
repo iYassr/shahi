@@ -234,7 +234,9 @@ individual computers do not upload them to the fleet monitor.
 Cloudflare Workers Observability for `shahi-relay` contains structured
 connection, refusal, authentication, traffic and duration events. Filter by
 `event`, `detail`, `colo` or the stable pseudonymous `serverId`. Invocation logs
-and automatic tracing are off. Workers Logs retain seven days on the paid plan;
+and automatic tracing are off. `box_presence`, written every five minutes for
+every connected computer, goes to Analytics Engine only: as a log line it alone
+would pass the 20 million included lines a month at about 2,300 computers. Workers Logs retain seven days on the paid plan;
 Analytics Engine retains three months. Workers Logs have usage charges beyond the plan's included allowance. Analytics
 Engine publishes usage-based allowances/prices but currently says billing has
 not begun; consult [its pricing page](https://developers.cloudflare.com/analytics/analytics-engine/pricing/)
@@ -287,16 +289,23 @@ other projects because allowances are shared; only Shahi Worker names are return
 
 The cost panel is a **30-day planning subtotal**, extrapolated from those seven days
 on Workers Standard. It includes the base subscription, Worker invocations/CPU,
-Durable Object requests/duration, and SQLite row operations with included allowances.
+Durable Object requests/duration, SQLite row operations and containers with included
+allowances. Containers are account-wide (analytics names an application, not a
+Worker) and priced as allocated while running; they are read by a separate query,
+and a token that cannot read them shows the line as unavailable, never as $0. Until
+1 October 2026 the panel left containers out, while the review container was 85%
+of September's usage charges. Durable Object overage is billed in whole millions:
+one GB-s over the 400,000 included costs a full $12.50.
 Hibernation events are conservatively counted at full request weight because the
 API does not distinguish all billable messages from close/error callbacks. Incoming
 non-hibernating WebSocket messages use the documented 20:1 ratio. Service invocations
 can also overcount billable requests. Logs, stored data, Analytics Engine, other
 products and taxes are excluded; this is neither an invoice nor a spending ceiling.
 The optional budget comparison lives only in the open page and sends no email.
-Rates and rounding were checked on 28 September 2026 against
-[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and
-[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+Rates and rounding were checked on 1 October 2026 against
+[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/),
+[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/) and
+[Containers pricing](https://developers.cloudflare.com/containers/pricing/).
 Recheck these sources before changing the calculation. Growth/retention, crashes,
 feature usage and per-device reconnect recovery require separate instrumentation.
 
@@ -304,7 +313,17 @@ The independent `shahi-operations` Worker has no public route, `workers.dev`, or
 preview URL. A cron runs every minute. It checks the public website, browser
 app, signup API (without submitting an email), relay HTTP health, and a real
 bidirectional relay path using a fresh synthetic box identity. It also checks
-analytics availability. A private Durable Object retains only the latest check
+analytics availability, reading the relay's two-query `/stats?view=alerts` rather
+than the fourteen-query dashboard view, and reads the busiest relay object's last
+hour of alarms and socket messages (`/stats?view=hotspots`) from Cloudflare's own
+invocation counts. That read is cached for five minutes in memory, but the monitor's
+object is now usually evicted between checks, so it runs about once a minute.
+
+Every timeout in the monitor goes through `withDeadline`, which clears its timer
+when the check ends. `AbortSignal.timeout` leaves its timer pending, and a pending
+timer keeps a Durable Object awake: until 1 October 2026 each half-second check
+was billed for 15 seconds, 83,000 GB-s a month. Measured after the fix, the
+object was awake 2 seconds in five minutes, down from 75. A private Durable Object retains only the latest check
 and fixed set of incident states. The relay's protected `/ops/status` and
 `POST /ops/check` expose the monitor through a service binding.
 
@@ -317,6 +336,17 @@ and fixed set of incident states. The relay's protected `/ops/status` and
 | Connection rejections | At least 100 and at least 20% of connection attempts in 5 minutes |
 | Authentication failures | At least 50 box connections in 5 minutes that ended before authenticating: a wrong key, ten seconds without `auth`, leaving or an oversized control first, or a pending box closed for a newcomer (before the pre-release bug hunt's B107, only a wrong key counted) |
 | Reconnect storm | At least 100 box disconnects in 5 minutes |
+| Usage analytics | The hourly per-object usage read fails |
+| Relay alarm rate | One relay object ran more than 240 alarms in the last hour (healthy peak: 26) |
+| Relay message rate | One relay object handled more than 100,000 socket messages in the last hour (healthy peak: 22,828) |
+
+The two relay rate incidents exist because of the alarm storm of 3–9 September
+2026: closing sockets kept a deadline in the past, eight relay objects re-armed
+their alarms continuously, and 3.6 million alarms ran over a week with no alert
+until the bill. The relay now keeps alarms at least `ALARM_FLOOR_MS` (ten seconds)
+apart and records `internal_error` ("alarm overdue") when a closed socket is still
+due, which the relay-errors incident catches; the rate incidents catch any other
+shape of runaway from outside the relay's code.
 
 Three consecutive unhealthy samples send an incident email, two healthy
 samples send recovery, and an ongoing incident is reminded hourly. Delivery

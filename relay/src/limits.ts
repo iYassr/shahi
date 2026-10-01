@@ -93,3 +93,21 @@ export function connectLimitKey(ip: string): string {
   if (groups.length !== 8 || !groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return ip;
   return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
 }
+
+/**
+ * The least time between two alarms on one object. On 3–9 September 2026,
+ * closing sockets the runtime still listed kept a deadline in the past; each
+ * alarm re-armed itself for that deadline, fired at once, and eight objects
+ * ran 3.6 million alarms, up to 360,000 in one hour. That cause is fixed
+ * (`closed`, and `deadline` skipping sockets that are not open), but this
+ * bounds the next cause of the same shape to 360 alarms an hour per object,
+ * and such an alarm records `internal_error` ("alarm overdue") so the
+ * monitor's relay error incident fires within minutes.
+ *
+ * The floor is measured from the last alarm, not from now: arming on every
+ * connect or close relative to now would let a busy object push an overdue
+ * deadline back forever. Ten seconds is the shortest deadline
+ * (`boxAuthTimeoutMs`), so only an overdue socket is closed late, by at most
+ * this long, and authentication enforces its own deadline anyway.
+ */
+export const ALARM_FLOOR_MS = 10_000;

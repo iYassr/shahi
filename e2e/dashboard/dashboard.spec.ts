@@ -68,6 +68,8 @@ test('reliability, concurrency and cost models explain their units and budget co
   await expect(page.locator('#performance')).toContainText('Handshake p95510 ms');
   await expect(page.locator('#capacity')).toContainText('6 / 8 phone slots');
   await expect(page.locator('#cost')).toContainText('$17.50');
+  await expect(page.locator('#cost')).toContainText('Containers$28.50');
+  await expect(page.locator('#usage')).toContainText('2,419,200');
   await expect(page.locator('#usage')).toContainText('12,300');
   await page.getByLabel('Planning budget').fill('20');
   await expect(page.locator('#budget-state')).toContainText('87.5%');
@@ -99,4 +101,14 @@ test('stale usage cannot report a safe budget even while connection statistics a
   await expect(page.locator('#budget-state')).toContainText('unknown');
   await expect(page.getByRole('alert')).toContainText('Cloudflare usage is stale');
   await expect(page.locator('#phones')).toHaveText('642');
+});
+
+test('container usage the relay could not read is unavailable, never a free line', async ({ page }) => {
+  const data = fixture();
+  data.usage.containers = null as never;
+  data.usage.model = { ...data.usage.model, containers: 'unavailable', costs: { ...data.usage.model.costs, containerMemory: undefined, containerCpu: undefined, containerDisk: undefined } } as never;
+  await page.route('**/api/dashboard?*', route => route.fulfill({ json: data }));
+  await page.goto('/statistics');
+  await expect(page.locator('#cost')).toContainText('ContainersUnavailable');
+  await expect(page.locator('#usage')).toContainText('Unavailable');
 });

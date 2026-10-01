@@ -19,7 +19,15 @@ REVIEW_EXPIRES_AT = "2026-12-31T23:59:59Z"
 class_name = "ReviewContainer"
 image = "registry.cloudflare.com/1d38f6aa36607ed18d2e5039b0608526/shahi-review-demo@sha256:8e8ffefc935ff1f0d2ca9973da6f258a1904d55e68ca8089aa231472d7097f8a"
 max_instances = 1
-instance_type = "standard-1"
+# Measured 1 October 2026: the programs use 250–320 MB (production's reported
+# 700–833 MB is mostly reclaimable file cache), so memory is not the limit. CPU
+# is: at `basic`'s quarter vCPU the demo's own Codex tool server missed its 15 s
+# start two boots out of two and a turn took 22 s against 10. Custom types need
+# one vCPU and 3 GiB at least; that is 25% less allocated memory than
+# `standard-1` (4 GiB, half a vCPU), which is what a container that never sleeps
+# is billed for, and twice the CPU, which is billed only when used. The disk
+# holds the 1.46 GB image with room to spare.
+instance_type = { vcpu = 1, memory_mib = 3072, disk_mb = 4000 }
 
 [[durable_objects.bindings]]
 name = "DEMO"

@@ -37,7 +37,10 @@ rather than replacing the server identity. Sudden failure can lose changes since
 the last successful snapshot; this is a review environment, not production data
 backup. Health reports the last successful checkpoint and checkpoint failure.
 
-One `standard-1` instance is kept available by a five-minute health schedule.
+One instance (1 vCPU, 3 GiB; see `wrangler.toml` for why not smaller) is kept available by a five-minute health schedule, so it is billed around the clock, about $21 a month. Changing the instance
+type stops the running container, and nothing starts the new one until the next
+health schedule: on 1 October 2026 the demo was offline for eight minutes
+(23:37–23:45 UTC). Change it between reviews, not during one.
 The schedule can recover a lost container within five minutes; opening the
 pairing page also wakes it. On restart, herdr restores the layout and a fresh, labeled demo conversation
 is started if no agent is active. Do not promise uninterrupted in-flight work across a host

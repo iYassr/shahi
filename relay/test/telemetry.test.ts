@@ -130,3 +130,32 @@ describe('dashboard time windows', () => {
     } finally { globalThis.fetch = real; }
   });
 });
+
+describe('monitor reads and log volume', () => {
+  const env: TelemetryEnv = { STATS_TOKEN: 'secret', CF_ACCOUNT_ID: 'account', CF_ANALYTICS_TOKEN: 'analytics' };
+  test('the alerts view runs two five-minute queries, not the full dashboard', async () => {
+    const real = globalThis.fetch; const queries: string[] = [];
+    globalThis.fetch = (async (_url: unknown, options: RequestInit) => { queries.push(String(options.body)); return Response.json({ data: [{ kind: 'internal_error', n: 3 }] }); }) as unknown as typeof fetch;
+    try {
+      const r = (await handleStats(new Request('https://relay/stats?view=alerts', { headers: { authorization: 'Bearer secret' } }), env))!;
+      const body = await r.json() as { alerts: Record<string, number>; site: unknown[] };
+      expect(r.status).toBe(200);
+      expect(queries).toHaveLength(2);
+      expect(queries.every(q => q.includes("INTERVAL '5' MINUTE"))).toBe(true);
+      expect(body.alerts.internal_error).toBe(3);
+      expect(Array.isArray(body.site)).toBe(true);
+      expect((await handleStats(new Request('https://relay/stats?view=alerts'), env))!.status).toBe(401);
+    } finally { globalThis.fetch = real; }
+  });
+  test('presence is written to Analytics Engine but not to Workers Logs', () => {
+    const { env: telemetry, points } = capturing();
+    const real = console.log; const lines: unknown[] = [];
+    console.log = (line: unknown) => { lines.push(line); };
+    try {
+      record(telemetry, { kind: 'box_presence', serverId: 'a'.repeat(43), value: 1 });
+      record(telemetry, { kind: 'box_gone', serverId: 'a'.repeat(43), detail: 'silent' });
+    } finally { console.log = real; }
+    expect(points.map(p => p.blobs?.[0])).toEqual(['box_presence', 'box_gone']);
+    expect(lines.map(l => (l as { event: string }).event)).toEqual(['box_gone']);
+  });
+});

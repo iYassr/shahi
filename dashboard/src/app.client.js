@@ -28,10 +28,10 @@ function table(id, labels, items, missing = false) {
   t.append(body); root.append(t);
 }
 const names = {
-  website: 'Public website', browser_app: 'Browser app', signup_api: 'Beta signup API', relay_http: 'Relay endpoint', relay_tunnel: 'Encrypted tunnel round trip', analytics: 'Analytics', signup_delivery_errors: 'Signup delivery', relay_errors: 'Relay errors', connection_rejections: 'Connection rate limits', authentication_failures: 'Computer authentication', reconnect_storm: 'Reconnect activity', service_latency: 'Service response times',
+  website: 'Public website', browser_app: 'Browser app', signup_api: 'Beta signup API', relay_http: 'Relay endpoint', relay_tunnel: 'Encrypted tunnel round trip', analytics: 'Analytics', signup_delivery_errors: 'Signup delivery', relay_errors: 'Relay errors', connection_rejections: 'Connection rate limits', authentication_failures: 'Computer authentication', reconnect_storm: 'Reconnect activity', usage_analytics: 'Usage analytics', relay_alarm_loop: 'Relay alarm rate', relay_message_storm: 'Relay message rate', service_latency: 'Service response times',
   box_auth: 'Computer authenticated', box_gone: 'Computer disconnected', box_presence: 'Computer presence', phone_open: 'Phone opened', phone_close: 'Phone closed', refused: 'Refused', connect: 'Connection attempt', rate_limited: 'Front-door rate limit', traffic: 'Traffic batch', auth_failed: 'Authentication failed', internal_error: 'Internal error',
 };
-const expected = ['website', 'browser_app', 'signup_api', 'relay_http', 'relay_tunnel', 'analytics', 'signup_delivery_errors', 'relay_errors', 'connection_rejections', 'authentication_failures', 'reconnect_storm', 'service_latency'];
+const expected = ['website', 'browser_app', 'signup_api', 'relay_http', 'relay_tunnel', 'analytics', 'signup_delivery_errors', 'relay_errors', 'connection_rejections', 'authentication_failures', 'reconnect_storm', 'usage_analytics', 'relay_alarm_loop', 'relay_message_storm', 'service_latency'];
 let data = null;
 let active = null;
 let selected = '1h';
@@ -81,13 +81,17 @@ function usage() {
     ['DO request units (planning)', count(u.shahi.durableRequests), count(u.account.durableRequests)],
     ['DO duration (GB-s)', count(u.shahi.durableDurationGbSeconds), count(u.account.durableDurationGbSeconds)],
     ['SQLite rows read', count(u.shahi.rowsRead), count(u.account.rowsRead)], ['SQLite rows written', count(u.shahi.rowsWritten), count(u.account.rowsWritten)],
+    ['Container memory (GiB-s)', '—', u.containers ? count(u.containers.memoryGibSeconds) : 'Unavailable'],
   ] : [], !u);
   table('worker-usage', ['Worker', 'Invocations', 'CPU (ms)', 'Errors'], (u?.workers ?? []).map(r => [r.name, count(r.requests), count(r.cpuMs), count(r.errors)]), !u);
   const costs = u?.model?.costs;
   rows('cost', [['Projected 30-day subtotal', usd(u?.model?.totalUsd)], ['Base subscription', usd(costs?.subscription)],
     ['Worker requests & CPU', usd(costs ? costs.workerRequests + costs.workerCpu : null)],
     ['Durable Object requests & duration', usd(costs ? costs.durableRequests + costs.durableDuration : null)],
-    ['SQLite row operations', usd(costs ? costs.rowsRead + costs.rowsWritten : null)]]);
+    ['SQLite row operations', usd(costs ? costs.rowsRead + costs.rowsWritten : null)],
+    // Containers are billed as allocated while they run, and were most of the bill
+    // before this row existed. Unavailable is shown as such, never as $0.
+    ['Containers', u?.model?.containers === 'included' ? usd(costs.containerMemory + costs.containerCpu + costs.containerDisk) : u ? 'Unavailable' : '—']]);
   budget();
 }
 $('budget').addEventListener('input', budget);

@@ -23,7 +23,7 @@
  * telemetry.ts typechecks under any project that imports it (the test project
  * does not load @cloudflare/workers-types).
  */
-import { readUsage } from "./usage";
+import { readHotspots, readUsage } from "./usage";
 
 export interface Dataset {
   writeDataPoint(point: { blobs?: (string | ArrayBuffer)[]; doubles?: number[]; indexes?: (string | ArrayBuffer)[] }): void;
@@ -71,13 +71,16 @@ export interface Event {
 export function record(env: TelemetryEnv, e: Event): void {
   const allowed = new Set(["box_auth", "box_gone", "box_presence", "phone_open", "phone_close", "refused", "connect", "rate_limited", "traffic", "auth_failed", "internal_error"]);
   if (!allowed.has(e.kind)) return;
-  const detail = new Set(["box", "phone", "rate", "frame too large", "control too large", "too many phones", "too many pending boxes", "box offline", "closed by box", "gone", "replaced", "idle", "no hello", "silent", "auth timeout", "unauthorized", "send failed", "socket handler", "control send"]).has(e.detail ?? "") ? e.detail! : "";
+  const detail = new Set(["box", "phone", "rate", "frame too large", "control too large", "too many phones", "too many pending boxes", "box offline", "closed by box", "gone", "replaced", "idle", "no hello", "silent", "auth timeout", "unauthorized", "send failed", "socket handler", "control send", "alarm overdue"]).has(e.detail ?? "") ? e.detail! : "";
   const numbers = [e.value ?? 1, e.upBytes ?? 0, e.downBytes ?? 0, e.upFrames ?? 0, e.downFrames ?? 0, e.durationMs ?? 0].map((n) => Number.isFinite(n) ? Math.max(0, n) : 0);
   const serverId = /^[A-Za-z0-9_-]{43}$/.test(e.serverId) ? e.serverId : "";
   const colo = /^[A-Z]{3}$/.test(e.colo ?? "") ? e.colo! : "";
   // Invocation logs are disabled. Never log incoming URLs, headers, frames or exception text.
   // Traffic is aggregated in socket attachments and emitted at alarm/close, never per frame.
-  if (env.TELEMETRY) {
+  // Presence repeats every five minutes for every connected computer, which at
+  // ten thousand computers is 86 million log lines a month, past the included
+  // 20 million. The Analytics Engine point below is what the dashboard reads.
+  if (env.TELEMETRY && e.kind !== "box_presence") {
     try { console.log({ service: "shahi-relay", event: e.kind, serverId, detail, colo, synthetic: e.synthetic === true, value: numbers[0],
       upBytes: numbers[1], downBytes: numbers[2], upFrames: numbers[3], downFrames: numbers[4], durationMs: numbers[5] }); } catch {}
   }
@@ -127,7 +130,15 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
     );
   }
   try {
-    if (new URL(request.url).searchParams.get("view") === "usage") return json(await readUsage(env));
+    const view = new URL(request.url).searchParams.get("view");
+    if (view === "usage") return json(await readUsage(env));
+    if (view === "hotspots") return json(await readHotspots(env));
+    // The monitor's once-a-minute read: two queries, where the full view below
+    // runs fourteen, and the monitor read only these two of its answers.
+    if (view === "alerts") {
+      const [alerts, site] = await Promise.all([alertMetrics(env), siteStatus(env, "INTERVAL '5' MINUTE")]);
+      return json({ alerts, site, generatedAt: new Date().toISOString() });
+    }
     const [boxesOnline, byKind, closeCodes, refusals, byColo, traffic, handshake, timeline, alerts, site, signupWindow, capacity, outcomes, durations] = await Promise.all([
       // Presence includes long-lived connections, with a ten-minute aging window.
       one(env, `SELECT COUNT(DISTINCT blob2) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND blob1 IN ('box_auth', 'box_presence') AND timestamp > NOW() - INTERVAL '10' MINUTE`),
@@ -139,8 +150,8 @@ export async function handleStats(request: Request, env: TelemetryEnv): Promise<
       rows(env, `SELECT SUM(_sample_interval) AS n, SUM(double6 * _sample_interval) / SUM(_sample_interval) AS meanMs, MAX(double6) AS maxMs, quantileExactWeighted(0.50)(double6, _sample_interval) AS p50Ms, quantileExactWeighted(0.95)(double6, _sample_interval) AS p95Ms, quantileExactWeighted(0.99)(double6, _sample_interval) AS p99Ms FROM ${DATASET} WHERE blob5 != 'probe' AND blob1='box_auth' AND timestamp > NOW() - ${period.interval}`),
       rows(env, `SELECT toStartOfInterval(timestamp, ${period.bucket}) AS at, blob1 AS kind, SUM(_sample_interval) AS n FROM ${DATASET} WHERE blob5 != 'probe' AND timestamp > NOW() - ${period.interval} GROUP BY at, kind ORDER BY at`),
       alertMetrics(env),
-      rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - INTERVAL '5' MINUTE GROUP BY status`),
-      rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - ${period.interval} GROUP BY status`),
+      siteStatus(env, "INTERVAL '5' MINUTE"),
+      siteStatus(env, period.interval),
       // Last observation per computer per five-minute bucket, then sum. Never sum
       // each computer's maximum and call that a simultaneous fleet maximum. These
       // asynchronous, possibly sampled observations remain explicitly estimates.
@@ -189,6 +200,11 @@ async function one(env: TelemetryEnv, sql: string): Promise<number> {
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+}
+
+/** Signup responses by status over a constant interval fragment, never request text. */
+function siteStatus(env: TelemetryEnv, interval: string): Promise<Record<string, unknown>[]> {
+  return rows(env, `SELECT double1 AS status, SUM(_sample_interval) AS n, SUM(double2 * _sample_interval) / SUM(_sample_interval) AS meanMs FROM shahi_site WHERE timestamp > NOW() - ${interval} GROUP BY status`);
 }
 
 /** Five-minute fleet signals; failures throw so missing analytics cannot appear healthy. */

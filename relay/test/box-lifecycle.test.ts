@@ -1,10 +1,10 @@
 /** Closing sockets can remain in getWebSockets and deliver late messages.
  * Model that documented runtime behavior without waiting for a TCP timeout. */
-import { expect, mock, test } from "bun:test";
+import { expect, mock, setSystemTime, test } from "bun:test";
 import { RELAY_LIMITS } from "@shahi/shared";
 import { newBox, signAuth } from "./harness";
 import { STRICT_TRANSPORT_SECURITY } from "../src/hsts";
-import { EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "../src/limits";
+import { ALARM_FLOOR_MS, EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "../src/limits";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(readonly ctx: unknown) {} } }));
 const { RelayBox } = await import(new URL("../src/box.ts", import.meta.url).href);
@@ -486,4 +486,57 @@ test("a pending box closed to make room is recorded once, and a newcomer refused
   await young.connect();
   expect(t.of("refused")).toEqual([{ detail: "too many pending boxes", value: 4429 }]);
   expect(t.of("auth_failed")).toHaveLength(1);
+});
+
+test("a close that does not take wakes the object once per ALARM_FLOOR_MS, and says so", async () => {
+  // 3–9 September 2026: closing sockets kept a deadline in the past, each alarm
+  // re-armed for it and fired at once, and eight objects ran 3.6 million alarms.
+  // Model any close that does not take, whatever its cause, and fire the alarm
+  // the way the runtime does for one simulated hour.
+  const t = telemetry(), f = fixture(t.env), start = Date.now();
+  setSystemTime(new Date(start));
+  const stuck = f.box(true, start - 600_000);
+  stuck.close = () => {};
+  stuck.serializeAttachment = () => {};
+  let fired = 0;
+  try {
+    let last = start;
+    await f.relay.alarm();
+    for (;;) {
+      const next = f.alarm();
+      expect(next).not.toBeNull();
+      expect(next!).toBeGreaterThanOrEqual(last + ALARM_FLOOR_MS);
+      if (next! > start + 3_600_000) break;
+      setSystemTime(new Date(next!));
+      await f.relay.alarm();
+      last = next!;
+      fired++;
+    }
+  } finally { setSystemTime(); }
+  expect(fired).toBeLessThanOrEqual(3_600_000 / ALARM_FLOOR_MS);
+  expect(t.of("internal_error")).toHaveLength(fired + 1);
+  expect(new Set(t.of("internal_error").map(e => e.detail))).toEqual(new Set(["alarm overdue"]));
+});
+
+test("the alarm floor never delays a deadline that is not yet due", async () => {
+  const t = telemetry(), f = fixture(t.env), start = Date.now();
+  setSystemTime(new Date(start));
+  try {
+    // With no alarm yet, a fresh socket is armed for exactly its own deadline.
+    const pending = await f.connect();
+    expect(f.alarm()).toBe(pending.state.since + RELAY_LIMITS.boxAuthTimeoutMs);
+    // A busy object must not push an overdue alarm back: arming after an alarm is
+    // measured from that alarm, not from each later connect.
+    const stuck = f.box(true, start - 600_000);
+    stuck.close = () => {};
+    stuck.serializeAttachment = () => {};
+    await f.relay.alarm();
+    const armed = f.alarm()!;
+    expect(armed).toBe(start + ALARM_FLOOR_MS);
+    setSystemTime(new Date(start + ALARM_FLOOR_MS / 2));
+    expect((await f.phone()).tags).toContain("phone");
+    expect(f.alarm()).toBe(armed);
+    // A healthy alarm reports nothing.
+    expect(t.of("internal_error")).toHaveLength(1);
+  } finally { setSystemTime(); }
 });
