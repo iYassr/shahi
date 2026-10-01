@@ -416,6 +416,68 @@ describe("sending a reply", () => {
   });
 });
 
+// Device report, October 2026: the reader showed neither Claude's task list
+// nor its subagents, which sat as one more collapsed step of activity.
+describe("tasks and subagents", () => {
+  const subagent = (state: "background" | "foreground"): LogMessage => ({
+    id: "a1", role: "agent", at: 1, blocks: [{
+      kind: "tool", name: "Agent", summary: "Survey the fixtures",
+      subagent: { id: "toolu_1", description: "Survey the fixtures", type: "Explore", background: state === "background" },
+      result: { text: state === "background" ? "Started in the background." : "Three fixtures.", isError: false, truncated: false, images: [] },
+    }],
+  });
+  const report = (status: string): LogMessage => ({
+    id: "s1", role: "system", at: 2,
+    blocks: [{ kind: "text", text: `Agent "Survey the fixtures" finished (${status})\nFound three fixtures.\nAll synthetic.`, notice: { toolUseId: "toolu_1", status } }],
+  });
+
+  test("a background subagent is its own row, running until its report arrives, then done with the report", async () => {
+    mocked.sessionLog.mockResolvedValue(log([subagent("background")]));
+    const view = render(<Pane paneId={PANE} />);
+    const row = await view.findByLabelText("Subagent, Survey the fixtures, Explore, Running…");
+    expect(within(row).getByText("Running…")).toBeTruthy();
+    expect(view.queryByText(/Started in the background/)).toBeNull();
+
+    mocked.sessionLog.mockResolvedValue(log([subagent("background"), report("completed")]));
+    logChanged();
+    const done = await view.findByLabelText("Subagent, Survey the fixtures, Explore, Done");
+    // The report is folded into the row, not repeated as a system note.
+    expect(view.queryByText("SYSTEM")).toBeNull();
+    expect(view.getByText(/Found three fixtures/)).toBeTruthy();
+    expect(done.props.accessibilityState).toMatchObject({ expanded: false });
+    fireEvent.press(done);
+    expect(done.props.accessibilityState).toMatchObject({ expanded: true });
+  });
+
+  test("a failed background subagent says so", async () => {
+    mocked.sessionLog.mockResolvedValue(log([subagent("background"), report("failed")]));
+    const view = render(<Pane paneId={PANE} />);
+    expect(await view.findByLabelText("Subagent, Survey the fixtures, Explore, Failed")).toBeTruthy();
+  });
+
+  test("the task list sits at the end, counted like Claude Code's, with the task under way showing", async () => {
+    mocked.sessionLog.mockResolvedValue({ ...log([said("a1", "agent", "Working through it.")]), tasks: [
+      { id: "1", subject: "Read the census", status: "completed" },
+      { id: "2", subject: "Write the reader", status: "in_progress", activeForm: "Writing the reader" },
+      { id: "3", subject: "Ship it", status: "pending" },
+    ] });
+    const view = render(<Pane paneId={PANE} />);
+    const head = await view.findByLabelText("3 tasks (1 done, 1 in progress, 1 open)");
+    expect(view.getByLabelText("Write the reader, in progress")).toBeTruthy();
+    expect(view.queryByLabelText("Ship it, open")).toBeNull();
+    fireEvent.press(head);
+    expect(view.getByLabelText("Read the census, done")).toBeTruthy();
+    expect(view.getByLabelText("Ship it, open")).toBeTruthy();
+  });
+
+  test("no tasks, no card", async () => {
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "Done.")]));
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("Done.");
+    expect(view.queryByTestId("tasks-card")).toBeNull();
+  });
+});
+
 describe("loading", () => {
   test("a log_changed during an in-flight load triggers exactly one refresh, however many arrive", async () => {
     const first = deferred<SessionLog>();
@@ -1534,6 +1596,25 @@ describe("keeping your terminal place", () => {
     forgetPaneMemory(api, P);
     mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "hi")]));
     mocked.pane.mockResolvedValue(withScreen("top\nmiddle\nbottom\n"));
+  });
+
+  // The Screen tab drew plain text: its comment said colour needed an
+  // emulator, but herdr sends the screen already laid out with SGR codes.
+  test("Screen draws the terminal's colours and weights", async () => {
+    const ansi = "\x1b[38;2;215;119;87mclaude\x1b[0m ready\n\x1b[1m\x1b[7mlit\x1b[0m\n";
+    mocked.pane.mockResolvedValue({ frame: { paneId: P, ansi, text: "claude ready\nlit\n", prompt: null, activity: null, at: 1 }, layout: null });
+    const visit = render(<Pane paneId={P} initialView="screen" />);
+    await settle();
+    const body = visit.getByTestId("terminal-body");
+    expect(body).toHaveTextContent(/claude ready\s+lit/);
+    const coloured = within(body).getByText("claude");
+    expect(StyleSheet.flatten(coloured.props.style).color).toBe("#D77757");
+    const lit = StyleSheet.flatten(within(body).getByText("lit").props.style);
+    expect(lit.fontWeight).toBe("700");
+    // Inverse: the default background as text, on the default foreground.
+    expect(lit.backgroundColor).toBeTruthy();
+    expect(lit.color).toBeTruthy();
+    visit.unmount();
   });
 
   test("Screen displays the terminal while its transcript request is still pending", async () => {

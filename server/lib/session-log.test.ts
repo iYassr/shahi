@@ -306,7 +306,19 @@ describe("machine-generated user records", () => {
     expect(messages[0]!.blocks[0]).toEqual({
       kind: "text",
       text: 'Agent "Patch unclear gaps" finished (completed)\nAll 7 gaps fixed',
+      notice: { status: "completed", toolUseId: "toolu_01L" },
     });
+    // Nobody typed it, so it is not "you".
+    expect(messages[0]!.role).toBe("system");
+  });
+
+  test("a report with no call id is still a system note, and prose quoting one is still the person", () => {
+    const report = userText('<task-notification><task-id>k1</task-id><status>completed</status><summary>Monitor stopped</summary></task-notification>');
+    expect(report[0]).toMatchObject({ role: "system", blocks: [{ notice: { status: "completed" } }] });
+    expect((report[0]!.blocks[0] as { notice?: { toolUseId?: string } }).notice!.toolUseId).toBeUndefined();
+    const quoted = userText('Why does <task-notification><status>failed</status></task-notification> show?');
+    expect(quoted[0]!.role).toBe("you");
+    expect(quoted[0]!.blocks[0]).not.toHaveProperty("notice");
   });
 
   test("never leaks raw tags into a rendered message", () => {
@@ -717,5 +729,50 @@ describe("imageMediaType", () => {
     for (const type of ["text/html", "image/svg+xml", "application/xhtml+xml", "text/html; charset=utf-8", "", 42, undefined]) {
       expect(imageMediaType(type)).toBe("application/octet-stream");
     }
+  });
+});
+
+// Synthetic rows in the shapes Claude Code 2.1 writes (October 2026 census:
+// every Agent call ran in the background; no TodoWrite in the local corpus).
+describe("subagents and task lists", () => {
+  const agentCall = (id: string, input: Record<string, unknown>) =>
+    assistant([{ type: "tool_use", id, name: "Agent", input: { description: "Survey the fixtures", prompt: "Look at the fixtures.", subagent_type: "Explore", ...input } }]);
+  const result = (id: string, text: string, toolUseResult?: unknown) =>
+    user([{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text }] }], toolUseResult ? { toolUseResult } : {});
+
+  test("a background subagent says it started, never its launch receipt", () => {
+    const messages = normalise([
+      agentCall("toolu_bg", { run_in_background: true }),
+      result("toolu_bg", "Async agent launched successfully. agentId: a1 (internal metadata)", { isAsync: true, status: "async_launched", agentId: "a1", outputFile: "/tmp/a1.output" }),
+    ]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.blocks[0]).toMatchObject({
+      kind: "tool", name: "Agent",
+      subagent: { id: "toolu_bg", description: "Survey the fixtures", type: "Explore", background: true },
+      result: { text: "Started in the background.", isError: false },
+    });
+    expect(JSON.stringify(messages)).not.toContain("agentId");
+  });
+
+  test("the launch receipt alone marks a background subagent", () => {
+    const messages = normalise([agentCall("toolu_bg", {}), result("toolu_bg", "Async agent launched successfully.", { status: "async_launched" })]);
+    expect(messages[0]!.blocks[0]).toMatchObject({ subagent: { background: true }, result: { text: "Started in the background." } });
+  });
+
+  test("a subagent that answered in its call keeps its answer", () => {
+    const messages = normalise([agentCall("toolu_fg", {}), result("toolu_fg", "Three fixtures.")]);
+    expect(messages[0]!.blocks[0]).toMatchObject({ subagent: { id: "toolu_fg", background: false }, result: { text: "Three fixtures." } });
+  });
+
+  test("an Agent call without its description or prompt is an ordinary tool", () => {
+    const messages = normalise([assistant([{ type: "tool_use", id: "toolu_x", name: "Agent", input: { prompt: "p" } }])]);
+    expect(messages[0]!.blocks[0]).not.toHaveProperty("subagent");
+  });
+
+  test("TodoWrite carries its list, and a list it cannot read carries none", () => {
+    const todo = (todos: unknown) => normalise([assistant([{ type: "tool_use", id: "t", name: "TodoWrite", input: { todos } }])])[0]!.blocks[0];
+    expect(todo([{ content: "Read", status: "completed", activeForm: "Reading" }, { content: "Write", status: "in_progress" }]))
+      .toMatchObject({ todos: [{ content: "Read", status: "completed" }, { content: "Write", status: "in_progress" }] });
+    expect(todo([{ content: "Read", status: "blocked" }])).not.toHaveProperty("todos");
   });
 });

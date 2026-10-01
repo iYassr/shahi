@@ -1,5 +1,5 @@
 export { latestConversations } from "./conversation-order";
-export { readerRows, readerActivityLabel, type ReaderRow, type ReaderActivity, type ActivityStep } from "./reader-rows";
+export { readerRows, readerActivityLabel, readerTasks, readerTasksLabel, type ReaderRow, type ReaderActivity, type ActivityStep, type ReaderTaskList } from "./reader-rows";
 export { backendUnavailable, connectionHealth, graceUntil, RECONNECT_GRACE_MS, type ConnectionNotice } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
 export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, sendRefusedBeforeTyping, type AnsweredPrompt, type PromptState } from "./prompts";
@@ -331,8 +331,46 @@ export interface Session {
 
 /* ----------------------------------------------------------------- reading */
 
+/**
+ * A background task reporting in, on the note that carries its report: a
+ * subagent or a background command finishing (Claude Code's
+ * `<task-notification>` rows). `toolUseId` names the call that started it, so
+ * the reader can fold the report into that call's row.
+ */
+export interface BackgroundNotice {
+  toolUseId?: string;
+  /** As Claude Code writes it: measured `completed`, `failed` and `killed`. */
+  status: string;
+}
+
+/**
+ * A subagent started by the conversation (Claude Code's `Agent` tool, `Task`
+ * in older versions). `background` agents report later through a
+ * `BackgroundNotice`; the others answer in the call's own result.
+ */
+export interface SubagentCall {
+  /** The tool call's id, which a later notice names. */
+  id: string;
+  description: string;
+  type?: string;
+  background: boolean;
+  /** Set by `readerRows` from the call's result or its notice, never by a server. */
+  state?: "running" | "done" | "failed" | "stopped";
+  /** The report, from the result or the notice: set by `readerRows`. */
+  report?: string;
+}
+
+/** One entry of a conversation's task list, as the agent keeps it. */
+export interface ReaderTask {
+  id: string;
+  subject: string;
+  status: "pending" | "in_progress" | "completed";
+  /** The present-tense form an agent shows while the task is in progress. */
+  activeForm?: string;
+}
+
 export type LogBlock =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; notice?: BackgroundNotice }
   | { kind: "thinking"; text: string }
   | {
       kind: "image";
@@ -366,6 +404,10 @@ export type LogBlock =
        * did not name a file — a shell command, a search.
        */
       file?: { path: string; name: string };
+      /** Present when the call started a subagent. */
+      subagent?: SubagentCall;
+      /** A `TodoWrite` call's whole list, when its shape is the documented one. */
+      todos?: { content: string; status: ReaderTask["status"] }[];
       result: {
         text: string;
         isError: boolean;
@@ -394,6 +436,12 @@ export interface SessionLog {
    * without the `conversation-choice` capability.
    */
   chosen?: boolean;
+  /**
+   * The conversation's task list as the agent keeps it now, independent of
+   * which page this is: Claude Code's own store, which is what its terminal
+   * list shows. Absent when the agent keeps none, and from older servers.
+   */
+  tasks?: ReaderTask[];
 }
 
 /**
@@ -490,3 +538,4 @@ export { isWebUrl, webLinks, type WebLink } from "./web-links";
 export { breadcrumb, folderName } from "./folders";
 export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";
 export { messageTime } from "./message-time";
+export { ansiLines, colour256, spanColours, type AnsiLine, type AnsiSpan } from "./ansi-spans";

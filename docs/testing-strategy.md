@@ -158,6 +158,17 @@ drops `isCompactSummary` rows, `server/lib/session-log.test.ts`), and the codex
 local rollouts found. They are still hand-written shapes, not the versioned,
 sanitized recordings this section asks for.
 
+Status, 1 October 2026: unknown records are counted now, as a decision table
+rather than test diagnostics. `server/lib/transcript-shapes.ts` gives every
+record, block, attachment, tool and Codex item a decision (shown, state,
+followed, dropped) and its test holds the readers to it;
+`server/scripts/transcript-census.ts --source` fails on any shape this
+computer's transcripts or the installed Codex source hold without one. A
+record-by-record census was not enough on its own: what Claude Code draws (a
+task list, a parked job's conversation) is state across records and files, so
+`server/scripts/reader-parity.ts` compares Read with Screen on live panes. See
+`docs/reader-parity-2026-10-01.md`.
+
 Run the corpus against both the indexed/windowed reader and a deliberately
 simple reference implementation. Their normalized output must match. Unknown
 records should be counted in test diagnostics even when production safely drops

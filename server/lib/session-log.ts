@@ -32,9 +32,9 @@
  * store in their own format, and plain shells have no transcript at all — so
  * the terminal view remains the universal fallback rather than a legacy one.
  */
-import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
+import type { LogBlock, LogMessage, ReaderTask, SessionLog, SubagentCall } from "@shahi/shared";
 import { createHash, type Hash } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { realPath } from "./real-path";
@@ -91,6 +91,67 @@ export async function findTranscript(sessionId: string, projectsDir = join(claud
   // A moved session or directory alias can name the same canonical file twice.
   // Two distinct copies are ambiguous; directory order is not ownership.
   return matches.size === 1 ? [...matches][0]! : null;
+}
+
+/** How much of a transcript's end is read for a `continued-in` row, and how many to follow. */
+const CONTINUATION_TAIL_BYTES = 16 * 1024;
+const CONTINUATION_HOPS = 8;
+
+/**
+ * The transcript a conversation continued in, when Claude Code moved it.
+ *
+ * Sending a conversation to the background starts a new session and ends the
+ * old transcript with `{"type":"continued-in","continuedInSessionId":…}`;
+ * the conversation goes on in the new file. The pane's own Claude process
+ * keeps the old session id, which herdr's hook reported, so Reader showed the
+ * old file's last message, hours stale, while the terminal showed the live
+ * conversation (measured on Claude Code 2.1.286, October 2026). A row of the
+ * conversation after the marker means it resumed here, and nothing is
+ * followed; a continuation whose file cannot be found keeps the original.
+ */
+export async function continuedTranscript(path: string, projectsDir = join(claudeConfigDir(), "projects")): Promise<string> {
+  let current = path;
+  const seen = new Set([current]);
+  for (let hop = 0; hop < CONTINUATION_HOPS; hop++) {
+    const next = await continuedIn(current);
+    if (!next) return current;
+    const found = await findTranscript(next, projectsDir);
+    if (!found || seen.has(found)) return current;
+    seen.add(found);
+    current = found;
+  }
+  return current;
+}
+
+/** The session the transcript at `path` says it continued in, if its last conversation row says so. */
+async function continuedIn(path: string): Promise<string | null> {
+  let text: string;
+  try {
+    const file = await open(path, "r");
+    try {
+      const { size } = await file.stat();
+      const length = Math.min(size, CONTINUATION_TAIL_BYTES);
+      const bytes = Buffer.alloc(length);
+      await file.read(bytes, 0, length, size - length);
+      text = bytes.toString("utf8");
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+  // The first line may be cut by the window; a row that does not parse is skipped.
+  const rows = text.split("\n").reverse();
+  for (const line of rows) {
+    if (!line.trim()) continue;
+    let row: { type?: unknown; continuedInSessionId?: unknown };
+    try { row = JSON.parse(line); } catch { continue; }
+    if (row.type === "continued-in") {
+      return typeof row.continuedInSessionId === "string" && /^[0-9a-f-]{16,64}$/i.test(row.continuedInSessionId) ? row.continuedInSessionId : null;
+    }
+    if (row.type === "user" || row.type === "assistant") return null;
+  }
+  return null;
 }
 
 /**
@@ -499,12 +560,17 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     string,
     { text: string; isError: boolean; truncated: boolean; images: string[] }
   >();
+  // Subagents started in the background, whose result is only Claude Code's
+  // launch receipt: ids and an output path the model is told never to quote.
+  const launched = new Set<string>();
   for (const row of rows) {
     if (!isRecord(row)) continue;
     let resultImage = 0;
+    const receipt = isRecord(row.toolUseResult) && (row.toolUseResult.status === "async_launched" || row.toolUseResult.isAsync === true);
     for (const block of blocksOf(row)) {
       if (block.type === "tool_result" && typeof block.tool_use_id === "string" && block.tool_use_id) {
         results.set(block.tool_use_id, flattenResult(block, stringOr(row.uuid, null), () => resultImage++));
+        if (receipt) launched.add(block.tool_use_id);
       }
     }
   }
@@ -513,7 +579,9 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
   for (const [index, row] of rows.entries()) {
     if (!isRecord(row)) continue;
-    const type = row.type;
+    // A message typed while Claude was working is an attachment row; it reads
+    // as the person's message, as Claude Code draws it (see `queuedPrompt`).
+    const type = row.type === "attachment" && queuedPrompt(row) !== undefined ? "user" : row.type;
     const id = stringOr(row.uuid, `row-${index}`);
     const at = Date.parse(stringOr(row.timestamp, "")) || 0;
 
@@ -547,7 +615,7 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     // A row that produced only chrome (a model switch) reads as a system note,
     // not as the agent speaking.
     let onlyNotes = true;
-    const content = isRecord(row.message) ? row.message.content : undefined;
+    const content = contentOf(row);
 
     if (typeof content === "string") {
       const rendered = renderUserText(content);
@@ -566,13 +634,21 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
           case "tool_use": {
             const name = stringOr(block.name, null);
             const input = isRecord(block.input) ? block.input : {};
+            const callId = typeof block.id === "string" ? block.id : "";
+            const subagent = subagentOf(name ?? "", callId, input, launched.has(callId));
             blocks.push({
               kind: "tool",
               name: name ?? "tool",
               summary: summariseToolInput(name ?? "", input),
               ...fileOf(input),
               ...questionsOf(name ?? "", input),
-              result: (typeof block.id === "string" && results.get(block.id)) || null,
+              ...(subagent ? { subagent } : {}),
+              ...todosOf(name ?? "", input),
+              // The launch receipt says nothing a person needs, and an older
+              // client would show it; the subagent's report comes later.
+              result: subagent?.background && results.has(callId)
+                ? { text: "Started in the background.", isError: false, truncated: false, images: [] }
+                : results.get(callId) || null,
             });
             onlyNotes = false;
             break;
@@ -606,9 +682,11 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
     if (blocks.length === 0) continue;
 
+    // A background task's report is written as a user row, but nobody typed it.
+    const reported = type === "user" && blocks.every(block => block.kind === "text" && block.notice);
     messages.push({
       id,
-      role: onlyNotes && type === "assistant" ? "system" : type === "assistant" ? "agent" : "you",
+      role: (onlyNotes && type === "assistant") || reported ? "system" : type === "assistant" ? "agent" : "you",
       at,
       blocks,
     });
@@ -619,8 +697,33 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
 
 /** The row's content blocks that are objects; a `null` or a bare string in the list is skipped. */
 function blocksOf(row: Record<string, unknown>): RawBlock[] {
-  const content = isRecord(row.message) ? row.message.content : undefined;
+  const content = contentOf(row);
   return Array.isArray(content) ? content.filter(isRecord) : [];
+}
+
+/** What a row says, as `message.content` does: a string or a list of blocks. */
+function contentOf(row: Record<string, unknown>): unknown {
+  if (row.type === "attachment") return queuedPrompt(row);
+  return isRecord(row.message) ? row.message.content : undefined;
+}
+
+/**
+ * A message the person typed while Claude was working. Claude Code does not
+ * write it as a user row: it queues it and hands it to the model mid-turn as
+ * an attachment, `{type: "queued_command", commandMode: "prompt", prompt}`,
+ * where `prompt` is the text or a list of text and image blocks. A background
+ * task's report arrives the same way, with `commandMode: "task-notification"`.
+ * Of 128 typed messages in the October 2026 census of 38 transcripts, 125
+ * existed only as these rows, and Reader dropped every one, so a reply typed
+ * mid-turn appeared on Screen and never in Read. A message from another
+ * session (`origin.kind: "peer"`) is marked `isMeta`, written for the model,
+ * and stays dropped like every other `isMeta` row.
+ */
+function queuedPrompt(row: Record<string, unknown>): unknown {
+  const queued = isRecord(row.attachment) ? row.attachment : undefined;
+  if (queued?.type !== "queued_command" || queued.isMeta === true) return undefined;
+  if (queued.commandMode !== "prompt" && queued.commandMode !== "task-notification") return undefined;
+  return typeof queued.prompt === "string" || Array.isArray(queued.prompt) ? queued.prompt : undefined;
 }
 
 /**
@@ -653,9 +756,20 @@ export function renderUserText(raw: string): LogBlock | null {
     const status = inner("status");
     const result = inner("result");
     const headline = summary ?? "Background task";
+    // Only a row that is the notification itself, not prose that quotes one.
+    // The id ties a subagent's report to its call; background commands and
+    // monitors report too, some with no call id at all.
+    // A monitor's event carries no status: it is still a report, never the
+    // person's words (10 of 125 queued reports in the October 2026 census),
+    // and with no status it is not tied to a call whose state it would set.
+    const toolUseId = inner("tool-use-id");
+    const notice = text.startsWith("<task-notification>")
+      ? { status: status ?? "event", ...(status && toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId } : {}) }
+      : undefined;
     return {
       kind: "text",
       text: [status ? `${headline} (${status})` : headline, result].filter(Boolean).join("\n"),
+      ...(notice ? { notice } : {}),
     };
   }
 
@@ -775,6 +889,38 @@ export function questionsOf(
  * knowing where the agent was standing, and offering to open something the
  * server would then fail to find is worse than offering nothing.
  */
+/**
+ * A subagent call, so the reader can show it as its own row rather than one
+ * more step of activity (device report, October 2026). Claude Code names the
+ * tool `Agent`, formerly `Task`; both take a description and a prompt. Every
+ * call in the September 2026 corpus (31) ran in the background, and its result
+ * is a launch receipt, so `background` is read from that receipt as well as
+ * from `run_in_background`.
+ */
+export function subagentOf(name: string, id: string, input: Record<string, unknown>, launched: boolean): SubagentCall | undefined {
+  if ((name !== "Agent" && name !== "Task") || !id) return undefined;
+  const description = typeof input.description === "string" ? input.description.trim() : "";
+  if (!description || typeof input.prompt !== "string") return undefined;
+  const type = typeof input.subagent_type === "string" && input.subagent_type.trim() ? input.subagent_type.trim() : undefined;
+  return { id, description, ...(type ? { type } : {}), background: launched || input.run_in_background === true };
+}
+
+const TODO_STATUSES = new Set(["pending", "in_progress", "completed"]);
+
+/**
+ * TodoWrite's whole list, the older way Claude Code kept a task list; the
+ * reader shows the latest one when the server has no task store to send. A
+ * list with anything it does not recognise is not shown at all.
+ */
+export function todosOf(name: string, input: Record<string, unknown>): { todos?: { content: string; status: ReaderTask["status"] }[] } {
+  if (name !== "TodoWrite" || !Array.isArray(input.todos)) return {};
+  const todos = input.todos.map(todo =>
+    isRecord(todo) && typeof todo.content === "string" && todo.content.trim() && TODO_STATUSES.has(todo.status as string)
+      ? { content: todo.content.trim(), status: todo.status as ReaderTask["status"] }
+      : null);
+  return todos.every(Boolean) ? { todos: todos as { content: string; status: ReaderTask["status"] }[] } : {};
+}
+
 export function fileOf(input: Record<string, unknown>): { file?: { path: string; name: string } } {
   for (const key of ["file_path", "notebook_path", "path"]) {
     const value = input[key];

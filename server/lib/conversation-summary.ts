@@ -14,10 +14,11 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log";
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
-import { findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
+import { continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
-import { choiceHeld, chosenSession } from "./claude-choice";
+import { choiceHeld, chosenSession, parkedSession } from "./claude-choice";
 import { fitPage } from "./session-window";
+import { claudeTasks } from "./claude-tasks";
 import type { TranscriptWatchSource } from "./transcript-watch";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
@@ -63,10 +64,15 @@ export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promi
   return source;
 }
 
-/** Claude's reported session, or failing that the one a person chose for this process (claude-choice.ts). */
+/**
+ * The background job the pane's Claude parked its conversation in, which the
+ * pane shows (claude-choice.ts, `parkedSession`); then Claude's reported
+ * session; then the one a person chose for this process.
+ */
 async function claudeTranscriptFor(pane: PaneInfo, client: HerdrClient | undefined, id: string | null): Promise<string | null> {
-  const session = id ?? await chosenSession(client, pane);
-  return session ? findTranscript(session) : null;
+  const session = await parkedSession(client, pane) ?? id ?? await chosenSession(client, pane);
+  const path = session ? await findTranscript(session) : null;
+  return path ? continuedTranscript(path) : null;
 }
 
 /** File-only compatibility for callers that need actual bytes, such as Codex images. */
@@ -194,10 +200,13 @@ export async function transcriptPage(paneId: string, path: TranscriptSource, kin
   }
   const read = await readTranscript(path, kind, window);
   if (!read) return null;
+  // Claude's task list rides on the tail, the page every poll asks for; an
+  // earlier page is history, and a list on it would be the current one anyway.
+  const tasks = (kind ?? "claude") === "claude" && window.before === undefined && read.sessionId ? await claudeTasks(read.sessionId) : undefined;
   // Bounded in bytes as well as messages, or one huge message in the window
   // is a 413 through the relay on every poll (`fitPage`). Before the ETag, so
   // the tag names what is sent.
-  const log = fitPage(read);
+  const log = fitPage(tasks?.length ? { ...read, tasks } : read);
   const page = { log, etag: `W/"${Bun.hash(JSON.stringify(log)).toString(36)}"` };
   // Kept only if no newer version of the file replaced the entry meanwhile.
   if (pages.get(paneId) === held) {

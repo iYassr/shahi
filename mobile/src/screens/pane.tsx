@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, backendUnavailable, homePath, messageTime, supports, readerRows, readerActivityLabel, sendRefusedBeforeTyping, type ReaderRow, type ReaderActivity } from "@shahi/shared";
+import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, spanColours, supports, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -29,6 +29,7 @@ import {
   useWindowDimensions,
   View,
   type NativeScrollEvent,
+  type TextStyle,
 } from "react-native";
 import { Text, useLargeText } from "@/components/text";
 import { router, Stack } from "expo-router";
@@ -286,6 +287,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const [unidentified, setUnidentified] = useState(false);
   /** What is shown is the conversation the person chose, not one Claude reported. */
   const [chosen, setChosen] = useState(false);
+  /** Claude's task list as the computer read it; older computers send none (see `readerTasks`). */
+  const [serverTasks, setServerTasks] = useState<ReaderTask[] | undefined>(undefined);
+  const taskList = useMemo(() => readerTasks(serverTasks ? { tasks: serverTasks } : undefined, messages), [serverTasks, messages]);
   const [choosing, setChoosing] = useState(false);
   /** While `Date.now()` is under this, polls leave the transcript alone (see TOO_LARGE_PAUSE_MS). */
   const logPausedUntil = useRef(0);
@@ -313,6 +317,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     notifyNativeDraft(savedDraft);
   }, { active: focused && !gone && !updateRequired, owner: savedDraft });
   const [screen, setScreen] = useState<string | null>(null);
+  /** The same screen with its colours (`PaneFrame.ansi`), for the Screen tab. */
+  const [screenAnsi, setScreenAnsi] = useState<string | null>(null);
   /** herdr says the agent is waiting on a screen no parser recognised (`PaneFrame.unrecognised`). */
   const [unrecognised, setUnrecognised] = useState(false);
   /**
@@ -778,6 +784,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         setReaderNote(null);
         setUnidentified(false);
         setChosen(!!log.chosen);
+        // Every poll sends the list again; an unchanged one keeps its identity
+        // so the footer does not redraw on a timer.
+        setServerTasks(previous => JSON.stringify(previous) === JSON.stringify(log.tasks) ? previous : log.tasks);
         setLoading(false);
       } catch (e) {
         // An expired cookie has to sign out, not be swallowed as "no transcript".
@@ -824,6 +833,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         const act = detail.frame?.activity ?? null;
         setActivity(act);
         setScreen(detail.frame?.text ?? null);
+        setScreenAnsi(detail.frame?.ansi || null);
         setUnrecognised(detail.frame?.unrecognised === true);
         if (act) {
           // A working agent means a reply is imminent: keep polling fast so it
@@ -1363,13 +1373,14 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             }
             if (following.current) scrollToTail();
           }}
-          ListFooterComponent={
-            sending ? <Text style={styles.dim}>Sending…</Text> : prompt || readerData.at(-1)?.activity ? null : activity ? (
+          ListFooterComponent={<>
+            {taskList && <TasksCard list={taskList} />}
+            {sending ? <Text style={styles.dim}>Sending…</Text> : prompt || readerData.at(-1)?.activity ? null : activity ? (
               <Working activity={activity} />
             ) : awaiting ? (
               <Working activity={AWAITING_ACTIVITY} />
-            ) : null
-          }
+            ) : null}
+          </>}
         />
 
         {view === "reader" && away && (
@@ -1392,7 +1403,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             lose the scroll position. */}
         {view === "screen" && (
           <View style={styles.screenOverlay} testID="screen-overlay">
-            <Screen paneId={paneId} text={screen} columns={columns} onColumns={setColumns} />
+            <Screen paneId={paneId} text={screen} ansi={screenAnsi} columns={columns} onColumns={setColumns} />
           </View>
         )}
         </View>
@@ -1661,6 +1672,8 @@ export function Block({
 
   if (block.kind === "image") return <TranscriptImage paneId={paneId} imageRef={block.ref} />;
 
+  if (block.subagent) return <SubagentBlock call={block.subagent} />;
+
   // Tool calls dominate a real transcript; collapsed, they stop drowning it.
   return (
     <View style={styles.tool}>
@@ -1740,6 +1753,72 @@ export function Block({
       {/* No result yet. The web reader has always said this; the native one
           rendered an empty expansion instead. */}
       {open && !block.result && <Text style={styles.toolAside}>{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</Text>}
+    </View>
+  );
+}
+
+const SUBAGENT_STATE = { running: "Running…", done: "Done", failed: "Failed", stopped: "Stopped" } as const;
+
+/**
+ * A subagent the agent started: its own row, never a step of collapsed
+ * activity, because it is often most of the work (device report, October
+ * 2026). Its report shows its first lines until opened; a background one's
+ * report is the notification `readerRows` matched to it by call id.
+ */
+function SubagentBlock({ call }: { call: NonNullable<Extract<LogBlock, { kind: "tool" }>["subagent"]> }) {
+  const [open, setOpen] = useState(false);
+  const state = call.state ?? "running";
+  const color = state === "done" ? theme.mint : state === "failed" ? theme.rose : state === "running" ? theme.working : theme.dim;
+  const detail = [call.type, call.background ? "background" : null].filter(Boolean).join(" · ");
+  return (
+    <View style={styles.subagent} testID="subagent">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={["Subagent", call.description, call.type, SUBAGENT_STATE[state]].filter(Boolean).join(", ")}
+        accessibilityState={call.report ? { expanded: open } : undefined}
+        disabled={!call.report}
+        style={styles.subagentHead}
+        onPress={() => setOpen(value => !value)}
+      >
+        <View style={styles.subagentTitle}>
+          <Text style={styles.subagentName} numberOfLines={2}>Subagent · {call.description}</Text>
+          {!!detail && <Text style={styles.subagentDetail} numberOfLines={1}>{detail}</Text>}
+        </View>
+        {state === "running" && <ActivityIndicator size="small" color={theme.working} />}
+        <Text style={[styles.subagentState, { color }]}>{SUBAGENT_STATE[state]}</Text>
+      </Pressable>
+      {!!call.report && (open
+        ? <CopyOnHold text={call.report}><Text style={styles.subagentReport} selectable>{call.report}</Text></CopyOnHold>
+        : <Text style={styles.subagentReport} numberOfLines={3}>{call.report}</Text>)}
+    </View>
+  );
+}
+
+const TASK_MARK = { completed: "✓", in_progress: "■", pending: "☐" } as const;
+const TASK_SPOKEN = { completed: "done", in_progress: "in progress", pending: "open" } as const;
+
+/**
+ * The agent's task list, as Claude Code draws it under its own composer:
+ * one line of counts, the task under way while closed, and every task open.
+ */
+function TasksCard({ list }: { list: ReaderTaskList }) {
+  const [open, setOpen] = useState(false);
+  const label = readerTasksLabel(list);
+  const current = list.tasks.filter(task => task.status === "in_progress");
+  return (
+    <View style={styles.tasks} testID="tasks-card">
+      <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} style={styles.tasksHead} onPress={() => setOpen(value => !value)}>
+        <Text style={styles.tasksLabel}>{label}</Text>
+        <Text style={styles.tasksLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</Text>
+      </Pressable>
+      {(open ? list.tasks : current).map(task => (
+        <View key={task.id} style={styles.task} accessible accessibilityLabel={`${task.subject}, ${TASK_SPOKEN[task.status]}`}>
+          <Text style={[styles.taskMark, task.status === "completed" && { color: theme.mint }, task.status === "in_progress" && { color: theme.working }]}>{TASK_MARK[task.status]}</Text>
+          <Text style={[styles.taskText, task.status === "completed" && styles.taskDone]}>
+            {!open && task.activeForm ? task.activeForm : task.subject}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -1908,20 +1987,28 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
  * fits a chosen number of columns across the phone, so "all of it" is one tap
  * away even when that means small.
  *
- * Colour is dropped. Reproducing ANSI attributes would mean an emulator in a
- * WebView, and the thing worth seeing on a phone is the words.
+ * In colour. This said colour would need an emulator in a WebView, but herdr
+ * does not send a byte stream to replay: `pane.read {format: "ansi"}` is the
+ * visible screen already laid out, one row per line, with only SGR between
+ * the characters (every escape in the captured fixtures, October 2026). So
+ * the rows are read into styled runs (`ansiLines`) and drawn as nested text,
+ * each row memoised so a frame redraws only the rows that changed. A computer
+ * that sends no `ansi` gets the plain text, as before.
  */
 function Screen({
   paneId,
   text,
+  ansi,
   columns,
   onColumns,
 }: {
   paneId: string;
   text: string | null;
+  ansi: string | null;
   columns: number;
   onColumns: (columns: number) => void;
 }) {
+  const lines = useMemo(() => (ansi ? ansiLines(ansi) : null), [ansi]);
   const width = useWindowDimensions().width;
   const { terminalPlace } = memoryOf(useSession().api);
   const [aspect, setAspect] = useState(CHAR_ASPECT_GUESS);
@@ -1999,7 +2086,7 @@ function Screen({
                 },
               ]}
             >
-              {body}
+              {lines ? lines.map((line, i) => <ScreenLine key={i} line={line} last={i === lines.length - 1} />) : body}
             </Text>
           </ScrollView>
         </ScrollView>
@@ -2029,6 +2116,35 @@ function Screen({
     </View>
   );
 }
+
+/** What a run is drawn in on the screen; null for one drawn plainly. */
+function spanStyle(span: AnsiSpan): TextStyle | null {
+  if (!span.fg && !span.bg && !span.bold && !span.dim && !span.italic && !span.underline && !span.inverse) return null;
+  const { color, backgroundColor } = spanColours(span, SCREEN_COLOURS);
+  return {
+    // Nested text takes no opacity, so dim is the colour made translucent.
+    ...(span.dim ? { color: `${color ?? SCREEN_COLOURS.fg}99` } : color ? { color } : {}),
+    ...(backgroundColor ? { backgroundColor } : {}),
+    ...(span.bold ? { fontWeight: "700" as const } : {}),
+    ...(span.italic ? { fontStyle: "italic" as const } : {}),
+    ...(span.underline ? { textDecorationLine: "underline" as const } : {}),
+  };
+}
+
+const SCREEN_COLOURS = { fg: theme.fg, bg: theme.void };
+
+/** One row of the screen. `line` keeps its identity while the row is unchanged, so memo skips it. */
+const ScreenLine = memo(function ScreenLine({ line, last }: { line: AnsiLine; last: boolean }) {
+  return (
+    <>
+      {line.map((span, i) => {
+        const style = spanStyle(span);
+        return style ? <Text key={i} style={style}>{span.text}</Text> : span.text;
+      })}
+      {last ? null : "\n"}
+    </>
+  );
+});
 
 /** The optimistic "working" shown between tapping send and the first poll. */
 const AWAITING_ACTIVITY: Activity = { verb: "Working", elapsed: "", detail: null };
@@ -2395,6 +2511,20 @@ const styles = StyleSheet.create({
   fileText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, padding: 16 },
 
   tool: { marginBottom: 6 },
+  subagent: { borderWidth: 1, borderColor: theme.line, borderRadius: 10, borderCurve: "continuous", paddingHorizontal: 12, paddingBottom: 8, marginVertical: 6 },
+  subagentHead: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44, paddingVertical: 6 },
+  subagentTitle: { flex: 1, gap: 2 },
+  subagentName: { color: theme.fg, fontSize: 14, fontWeight: "600" },
+  subagentDetail: { color: theme.dim, fontSize: 12 },
+  subagentState: { fontSize: 12 },
+  subagentReport: { color: theme.dim, fontSize: 13, lineHeight: 19 },
+  tasks: { borderWidth: 1, borderColor: theme.line, borderRadius: 10, borderCurve: "continuous", paddingHorizontal: 12, paddingBottom: 6, marginTop: 8 },
+  tasksHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 44 },
+  tasksLabel: { color: theme.dim, fontSize: 13 },
+  task: { flexDirection: "row", gap: 8, paddingVertical: 3 },
+  taskMark: { color: theme.dim, fontSize: 14, width: 16, textAlign: "center" },
+  taskText: { color: theme.fg, fontSize: 14, flex: 1 },
+  taskDone: { color: theme.dim, textDecorationLine: "line-through" },
   toolHead: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 44 },
   toolCaret: { color: theme.lineBright, fontFamily: theme.mono, fontSize: 12 },
   toolName: { color: theme.dim, fontFamily: theme.mono, fontSize: 12 },

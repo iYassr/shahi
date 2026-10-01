@@ -523,7 +523,9 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
               .trim();
             const block = text ? item.type === "UserMessage" ? codexUserText(text) : { kind: "text" as const, text } : null;
             const blocks = [...(block ? [block] : []), ...(item.type === "UserMessage" ? codexInputAttachments(content) : codexQuestions(item))];
-            if (blocks.length) messages.push({ id, role: item.type === "UserMessage" ? "you" : "agent", at, blocks });
+            // A subagent's report arrives as a UserMessage, but nobody typed it.
+            const reported = blocks.every(b => b.kind === "text" && b.notice);
+            if (blocks.length) messages.push({ id, role: item.type !== "UserMessage" ? "agent" : reported ? "system" : "you", at, blocks });
             break;
           }
           case "Reasoning":
