@@ -1,5 +1,5 @@
 import { useComputerControl } from "./ComputerUpdate";
-import { agentLabel, inboxPanes, latestConversations, paneTitle, pinnedPanes, retainPins, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
+import { agentLabel, inboxKind, inboxPanes, latestConversations, paneTitle, pinnedPanes, relativeTime, retainPins, rowPreview, rowTime, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 import { preferences } from "../preferences";
@@ -71,6 +71,14 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
   const effective: Grouping =
     grouping ?? "priority";
 
+  // Rows say how long ago they moved; a minute's tick keeps that true on a
+  // list nothing else changed (the native list does the same).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   if (!session) {
     return (
       <div className="empty">
@@ -109,7 +117,8 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
           : chip.id.startsWith("kind:") || chip.id === "shells" ? <><span aria-hidden="true"><AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /></span>{chip.id === active && <span>{chip.label}</span>}</>
           : chip.label}
       </button>)}</div>
-      {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p></div>}
+      {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p>
+        {rest.filter((pane) => inboxKind(pane) === "review").length > 1 && <button className="inbox-reviewed" onClick={() => { for (const pane of rest) if (inboxKind(pane) === "review") onReviewed(pane); }}>Mark all reviewed</button>}</div>}
       {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</button>}</div>}
 
       <div className="agent-sidebar__requests">{blocked.map((pane) => (
@@ -162,8 +171,8 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-                  <span className="row__title">{paneTitle(pane)}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className="row__preview">{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : pane.preview ?? pane.cwd ?? ""}</span></span>
-                  <span className="row__meta">{subtitle(pane, effective)}</span>
+                  <span className="row__title">{paneTitle(pane)}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className={`row__preview${!pane.preview && pane.isAgent && pane.status !== "blocked" && pane.status !== "working" ? " row__preview--quiet" : ""}`}>{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : rowPreview(pane) ?? ""}</span></span>
+                  <span className="row__meta">{subtitle(pane, effective)}<RowTime pane={pane} now={now} /></span>
                 </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${paneTitle(pane)} reviewed`} onClick={() => onReviewed(pane)}>Mark reviewed</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={`${pins.has(pane.paneId) ? "Unpin" : "Pin"} ${paneTitle(pane)}`} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
             </section>
@@ -172,6 +181,17 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
       )}
     </div>
   );
+}
+
+/**
+ * When a conversation last moved — its latest message, or before it has one,
+ * when it started — in a row's corner. Nothing when an older computer sends
+ * neither, rather than a time invented from a repaint.
+ */
+function RowTime({ pane, now }: { pane: DashboardPane; now: number }) {
+  const at = pane.lastMessageAt ?? pane.startedAt ?? null;
+  if (at === null) return null;
+  return <> · <time className="row__time" dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()} aria-label={`last active ${relativeTime(at, now)}`}>{rowTime(at, now)}</time></>;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { agentLabel, paneTitle, type DashboardPane } from "@shahi/shared";
+import { agentLabel, paneTitle, relativeTime, rowPreview, type DashboardPane } from "@shahi/shared";
 
 // Shared with the web client, so the two cannot name one pane differently.
 export { paneTitle };
@@ -12,10 +12,20 @@ export { paneTitle };
  * September 2026 review. The title comes first because it is what tells two
  * agents apart; every other fact is said once.
  */
-export function conversationLabel(pane: DashboardPane, where?: string | null, pinned = false): string {
+export function conversationLabel(pane: DashboardPane, where?: string | null, pinned = false, now = Date.now()): string {
   const kind = pane.isAgent ? agentLabel(pane.agent ?? "agent") : "shell";
-  const said = pane.activity ? `${pane.activity.verb}… ${pane.activity.elapsed}` : pane.preview ?? pane.cwd;
-  return [paneTitle(pane), kind, pane.status, where, said, pinned ? "pinned" : null]
+  const said = pane.activity ? `${pane.activity.verb}… ${pane.activity.elapsed}` : rowPreview(pane);
+  const at = rowAt(pane);
+  return [paneTitle(pane), kind, pane.status, where, said, at ? `last active ${relativeTime(at, now)}` : null, pinned ? "pinned" : null]
     .filter((part): part is string => !!part)
     .join(", ");
+}
+
+/**
+ * When a row last moved: its latest message, or, before it has one, when it
+ * started. Neither is known on an older computer, and then no time is shown
+ * rather than one invented from a repaint (CLAUDE.md, conversation order).
+ */
+export function rowAt(pane: DashboardPane): number | null {
+  return pane.lastMessageAt ?? pane.startedAt ?? null;
 }
