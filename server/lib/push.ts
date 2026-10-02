@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import webpush, { type PushSubscription } from "web-push";
 import type { Config } from "./config";
 import { paneTitle, type SessionStore, type StatusChange } from "./state";
+import { paneTitle as conversationTitle } from "@shahi/shared";
 
 /** How long a repeat notification for the same pane is held back. */
 const DEBOUNCE_MS = 5_000;
@@ -316,9 +317,11 @@ export class PushService {
     const instanceId = store.instance(change.paneId);
     await this.send({
       title: fitText(workspaceLabel, MAX_TITLE_BYTES - suffix.length) + suffix,
-      // The dashboard's title for the pane, so the notification names what the
-      // list does: a labelled pane with no terminal title read as its raw id.
-      body: fitText((pane && paneTitle(pane)) ?? change.paneId, MAX_BODY_BYTES),
+      // What the clients call the pane, through the same helper, so the
+      // notification names what the list does: a labelled pane with no
+      // terminal title read as its raw id, and a new agent's first question
+      // as its launch command (simulator run of build 32, October 2026).
+      body: fitText(pane ? conversationTitle({ paneId: change.paneId, title: paneTitle(pane), agent: pane.display_agent ?? pane.agent ?? null }) : change.paneId, MAX_BODY_BYTES),
       paneId: change.paneId,
       ...(instanceId ? { instanceId } : {}),
     });

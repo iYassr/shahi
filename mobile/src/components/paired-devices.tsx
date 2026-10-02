@@ -89,8 +89,15 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
     );
   };
 
-  if (!live) return <Text style={styles.note}>Devices will be available when this computer reconnects.</Text>;
-  if (error) {
+  /*
+   * Offline, a list already read stays where it was, its buttons off. Swapping
+   * it for one line shrank the section under the person's thumb and Settings
+   * scrolled by itself when the computer dropped (simulator run of build 32,
+   * October 2026). Only a list never read has nothing to keep.
+   */
+  const offline = !live;
+  if (offline && !list) return <Text style={styles.note}>Devices will be available when this computer reconnects.</Text>;
+  if (error && !offline) {
     return (
       <View style={styles.retryBlock}>
         <Text style={styles.note}>Couldn't read the device list: {error}</Text>
@@ -123,21 +130,25 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={device.id === list.thisDeviceId ? `Sign out ${device.name}` : `Revoke ${device.name}`}
+                accessibilityState={{ disabled: offline }}
+                disabled={offline}
                 onPress={() => revoke(device)}
                 hitSlop={8}
                 testID={`revoke-${device.id}`}
               >
-                <Text style={styles.revoke}>{device.id === list.thisDeviceId ? "Sign out" : "Revoke"}</Text>
+                <Text style={[styles.revoke, offline && styles.revokeOff]}>{device.id === list.thisDeviceId ? "Sign out" : "Revoke"}</Text>
               </Pressable>
             </View>
           </View>
         ))
       )}
       <Text style={styles.note}>
-        {list.thisDeviceId === null
-          ? "This phone signed in with a passcode. Use Sign out below to disconnect it. "
-          : "Only devices connected with a pairing code appear here. "}
-        Removing a device ends its access to this computer.
+        {offline
+          ? "As of the last connection. Devices can be removed when this computer reconnects."
+          : <>{list.thisDeviceId === null
+            ? "This phone signed in with a passcode. Use Sign out below to disconnect it. "
+            : "Only devices connected with a pairing code appear here. "}
+          Removing a device ends its access to this computer.</>}
       </Text>
     </View>
   );
@@ -150,6 +161,7 @@ const styles = StyleSheet.create({
   self: { color: theme.mint, fontFamily: theme.mono, fontSize: 12 },
   sub: { color: theme.dim, fontFamily: theme.mono, fontSize: 11 },
   revoke: { color: theme.rose, fontSize: 14, fontWeight: "600", minHeight: 32, lineHeight: 32 },
+  revokeOff: { color: theme.dim },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line, marginLeft: 12 },
   note: { color: theme.dim, fontSize: 12, lineHeight: 17, paddingHorizontal: 12, paddingVertical: 10 },
   retryBlock: { paddingBottom: 10 },

@@ -90,6 +90,8 @@ export function transcriptOf(log: Pick<SessionLog, "sessionId" | "path">): strin
 interface Props {
   paneId: string;
   agent?: string | null;
+  /** The pane's working folder, which activity steps name files from (`readerRows`). */
+  cwd?: string | null;
   echo?: { text: string; at: number } | null;
   /** Live status from the pane's screen; null when the agent is not mid-turn. */
   activity: Activity | null;
@@ -142,7 +144,7 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
   return next.length === current.length && next.every((message, i) => message === current[i]) ? current : next;
 }
 
-export function Reader({ paneId, agent, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId, onEmpty }: Props) {
+export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId, onEmpty }: Props) {
   const api = useApi();
   const diagnosticContext = useRef({ agent, connected, historyKnown, computerVersion, herdrVersion });
   diagnosticContext.current = { agent, connected, historyKnown, computerVersion, herdrVersion };
@@ -193,7 +195,7 @@ export function Reader({ paneId, agent, activity, echo, onUnavailable, connected
   /** Mirrors `total` for the poll, which must not close over a stale value. */
   const knownTotal = useRef(0);
   const previousRows = useRef<ReaderRow[]>([]);
-  const rows = useMemo(() => readerRows(messages, previousRows.current), [messages]);
+  const rows = useMemo(() => readerRows(messages, previousRows.current, cwd), [messages, cwd]);
   previousRows.current = rows;
   const taskList = useMemo(() => readerTasks(serverTasks ? { tasks: serverTasks } : undefined, messages), [serverTasks, messages]);
 
@@ -484,7 +486,7 @@ function ActivityGroup({ id, activity, working, paneId }: {
     </button>
     {open && <div className="reader-activity__details">
       {activity.steps.map(step => <div className="reader-activity__step" key={step.id}>
-        {!!step.at && <time dateTime={new Date(step.at).toISOString()}>{messageTime(step.at)}</time>}
+        {step.showTime && <time dateTime={new Date(step.at).toISOString()}>{messageTime(step.at)}</time>}
         <BlockView block={step.block} paneId={paneId} attachments={false} />
       </div>)}
     </div>}

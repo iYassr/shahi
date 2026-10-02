@@ -1,5 +1,6 @@
 import { render, screen, userEvent } from "@testing-library/react-native";
 import { modesFor, type Session } from "@shahi/shared";
+import { router } from "expo-router";
 import { NewSpace, PickSpace } from "./spaces";
 
 jest.mock("@/lib/api", () => ({ api: { createWorkspace: jest.fn(), dirs: jest.fn() } }));
@@ -87,9 +88,19 @@ describe("PickSpace", () => {
     expect(onNewSpace).toHaveBeenCalledTimes(1);
   });
 
-  test("with no spaces, offers to make one instead of an empty list", () => {
-    render(<PickSpace session={{ ...session, workspaces: [] } as Session} onPick={jest.fn()} />);
-    expect(screen.getByText(/make one first/)).toBeTruthy();
+  // Simulator run of build 32: VoiceOver read "1, tip-calc, ~/ShahiFresh/tip-calc".
+  test("a space is named by its label and folder, not herdr's number", () => {
+    render(<PickSpace session={session} onPick={jest.fn()} />);
+    expect(screen.getByTestId("pick-w1").props.accessibilityLabel).toBe("project, ~/project");
+    expect(screen.queryByText("1")).toBeNull();
+    expect(screen.queryByText("2")).toBeNull();
+  });
+
+  test("with no spaces left, making one is still offered", async () => {
+    const onNewSpace = jest.fn();
+    render(<PickSpace session={{ ...session, workspaces: [] } as Session} onPick={jest.fn()} onNewSpace={onNewSpace} />);
+    await userEvent.press(screen.getByTestId("pick-new-space"));
+    expect(onNewSpace).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -135,6 +146,38 @@ describe("NewSpace", () => {
     // The absolute path: herdr does not expand `~`.
     expect(createWorkspace).toHaveBeenCalledWith({ label: "shahi", cwd: "/home/you/projects/shahi" });
     expect(onCreated).toHaveBeenCalledWith("w9");
+  });
+
+  // Simulator run of build 32: inside a folder, "Use this folder" under its
+  // contents read as if the folder were already chosen.
+  test("the choose button names the folder being viewed", async () => {
+    render(<NewSpace session={empty} onCreated={jest.fn()} />);
+    expect(await screen.findByText("Use your home folder")).toBeTruthy();
+    await userEvent.press(await screen.findByTestId("entry-projects"));
+    await screen.findByTestId("entry-shahi");
+    expect(screen.getByTestId("use-folder")).toHaveTextContent(/Use projects/);
+    expect(screen.getByTestId("create-space").props.accessibilityState.disabled).toBe(true);
+  });
+
+  // Simulator run of build 32: below a long home folder it was out of sight.
+  test("typing a path is offered above the folder list, not below it", async () => {
+    render(<NewSpace session={empty} onCreated={jest.fn()} />);
+    await screen.findByTestId("entry-projects");
+    const order = screen.root.findAll((node) => node.props.testID === "type-path" || node.props.testID === "folder-browser").map((node) => node.props.testID);
+    expect(order[0]).toBe("type-path");
+  });
+
+  // Simulator run of build 32: New agent on a computer with no spaces met
+  // the word "space" before anything said what it was.
+  test("opened for a new agent, it says what a space is and that the agent comes next", async () => {
+    render(<NewSpace session={empty} onCreated={jest.fn()} forAgent />);
+    expect(screen.getByText("New agent")).toBeTruthy();
+    expect(screen.getByText(/a folder on your computer/)).toBeTruthy();
+    expect(screen.getByTestId("create-space")).toHaveTextContent("Create space and continue");
+    // Nothing behind it to return to: Close leaves New agent.
+    await userEvent.press(screen.getByTestId("sheet-close"));
+    expect(router.back).toHaveBeenCalled();
+    await screen.findByTestId("entry-projects");
   });
 
   test("a name the person typed is kept when a folder is chosen", async () => {

@@ -83,7 +83,17 @@ export async function resolveWithinHome(input: string): Promise<string> {
 }
 
 /**
- * Lists the contents of `path`, hiding dotfiles.
+ * Folders in home that hold tools rather than work: a stray global
+ * `node_modules`, and macOS's `Library`, which a Linux home only has if
+ * someone made it. Listed among the projects, the first folder a new person
+ * saw (simulator run of build 32, October 2026). Hidden at home only; inside
+ * a project they are still there to open.
+ */
+const NOT_WORK_AT_HOME = new Set(["node_modules", ...(process.platform === "darwin" ? ["Library"] : [])]);
+
+/**
+ * Lists the contents of `path`, hiding dotfiles, and at home the folders in
+ * `NOT_WORK_AT_HOME`.
  *
  * Directories only by default — choosing where a space lives. With
  * `includeFiles`, files come too, for attaching something already on the
@@ -94,12 +104,14 @@ export async function listDirectories(
   options: { includeFiles?: boolean } = {},
 ): Promise<DirListing> {
   const path = await resolveWithinHome(input);
+  const atHome = path === REAL_HOME;
 
   const entries = await readdir(path, { withFileTypes: true });
   const directories = (
     await Promise.all(
       entries
         .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => !(atHome && NOT_WORK_AT_HOME.has(entry.name)))
         .filter((entry) => entry.isDirectory() || (options.includeFiles && entry.isFile()))
         .map(async (entry) => {
           const full = join(path, entry.name);
@@ -126,7 +138,7 @@ export async function listDirectories(
     display: collapseHome(path),
     // No climbing above home, so the picker cannot strand you somewhere
     // you are not allowed to list.
-    parent: path === REAL_HOME ? null : collapseHome(resolve(path, "..")),
+    parent: atHome ? null : collapseHome(resolve(path, "..")),
     entries: directories,
   };
 }

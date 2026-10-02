@@ -416,6 +416,16 @@ describe("what a notification carries", () => {
     expect((requests[0] as { body: string }[])[0]!.body).toBe("Refactor billing");
   });
 
+  // Simulator run of build 32: a new agent's first question, often the folder
+  // trust menu, arrived titled by its launch command.
+  test("a new agent that has not named its conversation is named by its agent, as on the dashboard", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[abc]");
+    const requests = expoRequests();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ agent: "claude", terminal_title_stripped: "claude --permission-mode manual" })));
+    expect((requests[0] as { body: string }[])[0]!.body).toBe("Claude");
+  });
+
   // Pre-release bug hunt: Web Push went out with web-push's defaults, four
   // weeks and normal urgency, and Expo with none, so a phone offline for a
   // while was told about questions answered long ago.

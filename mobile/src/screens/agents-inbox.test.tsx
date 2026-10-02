@@ -45,6 +45,19 @@ test("Switch server on the offline screen opens computers without deleting the p
   } finally { mockState.session = previous; mockState.error = null; }
 });
 
+// Simulator run of build 32: unselected provider and shell chips were a logo
+// alone, with nothing in words to say what they filtered.
+test("provider and shell chips say what they filter in words, selected or not", () => {
+  const previous = mockState.session;
+  mockState.session = { panes: [pane("Codex task", "idle"), { ...pane("zsh", "idle"), isAgent: false, agent: null }] };
+  try {
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    expect(view.getByLabelText("Codex")).toHaveTextContent("Codex");
+    expect(view.getByLabelText("Shells")).toHaveTextContent("Shells");
+    expect(view.getByLabelText("Codex").props.accessibilityState.selected).toBe(false);
+  } finally { mockState.session = previous; }
+});
+
 test("provider chips use friendly names while filtering by the raw provider kind", () => {
   const previous = mockState.session;
   mockState.session = { panes: [{ ...pane("Antigravity task", "idle"), agent: "agy" }, pane("Codex task", "idle")] };

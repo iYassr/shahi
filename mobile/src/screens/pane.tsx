@@ -234,10 +234,12 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    */
   const [pending, setPending] = useState<{ message: LogMessage; youBaseline: number; at: number }[]>([]);
   const renderedRows = useRef<ReaderRow[]>([]);
+  // A string, so a snapshot that leaves it alone does not re-project the rows.
+  const cwd = session?.panes.find((p) => p.paneId === paneId)?.cwd ?? null;
   const readerData = useMemo(() => {
     const source = pending.length ? [...messages, ...pending.map(p => p.message)] : messages;
-    return readerRows(source, renderedRows.current);
-  }, [messages, pending]);
+    return readerRows(source, renderedRows.current, cwd);
+  }, [messages, pending, cwd]);
   renderedRows.current = readerData;
   const pendingSeq = useRef(0);
   const promptAttempt = useRef(savedDraft.pending);
@@ -1628,7 +1630,7 @@ function ActivityGroup({ activity, working, paneId, onOpenFile }: {
     </Pressable>
     {open && <View style={styles.activityDetails}>
       {activity.steps.map(step => <View key={step.id}>
-        {!!step.at && <Text style={styles.activityTime}>{messageTime(step.at)}</Text>}
+        {step.showTime && <Text style={styles.activityTime}>{messageTime(step.at)}</Text>}
         <Block block={step.block} paneId={paneId} onOpenFile={onOpenFile} attachments={false} />
       </View>)}
     </View>}

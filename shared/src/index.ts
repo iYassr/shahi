@@ -531,7 +531,7 @@ export type SocketMessage =
 /** What a client sends back. */
 export type ClientMessage = { type: "watch"; paneId: string } | { type: "unwatch" };
 
-export { agentLabel } from "./agent-label";
+export { agentCommand, agentLabel, defaultAgentKind } from "./agent-label";
 export { endedPanes, pinnedPanes, retainPins, sameOccupant, togglePin } from "./pane-instance";
 export { homePath, paneTitle, rowPreview } from "./pane-title";
 export { isWebUrl, webLinks, type WebLink } from "./web-links";

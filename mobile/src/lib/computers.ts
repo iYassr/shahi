@@ -12,6 +12,8 @@ export interface SavedComputer {
   pins: string[];
   /** Learned from an SSH computer once it is signed in; a relay code carries its own. */
   serverId?: string;
+  /** The agent kind last started on this computer from this phone, which New agent starts on. */
+  lastAgent?: string;
 }
 export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"]; waiting?: number; available?: boolean; status?: string };
 export const COMPUTERS_KEY = "shahi.computers";
@@ -58,7 +60,7 @@ export function computerAddress(connection: ComputerConnection): string {
 export function rememberComputer(computers: SavedComputer[], connection: ComputerConnection, name?: string, pins?: string[]): SavedComputer[] {
   const id = computerId(connection);
   const previous = computers.find((computer) => computer.id === id);
-  const saved: SavedComputer = { id, connection, name: previous?.customName || name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.customName && { customName: previous.customName }), ...(previous?.serverId && { serverId: previous.serverId }) };
+  const saved: SavedComputer = { id, connection, name: previous?.customName || name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.customName && { customName: previous.customName }), ...(previous?.serverId && { serverId: previous.serverId }), ...(previous?.lastAgent && { lastAgent: previous.lastAgent }) };
   return previous ? computers.map((computer) => computer.id === id ? saved : computer) : [...computers, saved];
 }
 

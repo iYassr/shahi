@@ -114,7 +114,9 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
       <div className="agent-search"><UiIcon name="search" /><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label="Clear search" onClick={() => setQuery("")}><UiIcon name="close" size={18} /></button>}</div>
       <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-label={chip.label} title={chip.label} aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>
         {chip.id === "inbox" ? <><UiIcon name="inbox" size={19} /><span className="agent-filter-count" aria-hidden="true">Inbox {inbox.length}</span></>
-          : chip.id.startsWith("kind:") || chip.id === "shells" ? <><span aria-hidden="true"><AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /></span>{chip.id === active && <span>{chip.label}</span>}</>
+          // Words as well as the logo, selected or not: a logo alone did not
+          // say what it filtered (simulator run of build 32, October 2026).
+          : chip.id.startsWith("kind:") || chip.id === "shells" ? <><span aria-hidden="true"><AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /></span><span>{chip.label}</span></>
           : chip.label}
       </button>)}</div>
       {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p>

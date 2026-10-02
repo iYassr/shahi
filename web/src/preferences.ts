@@ -1,5 +1,5 @@
 import { browserConnection, hosted } from "./connection";
-const scoped = (key: string) => hosted && browserConnection().identity && ["shahi.pins", "shahi.push.dismissed"].includes(key)
+const scoped = (key: string) => hosted && browserConnection().identity && ["shahi.pins", "shahi.push.dismissed", "shahi.last-agent"].includes(key)
   ? `${key}.${browserConnection().identity!.serverId}` : key;
 /** Non-sensitive preferences are optional, including in storage-blocked browsers. */
 export const preferences = {

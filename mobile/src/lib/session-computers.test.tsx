@@ -105,6 +105,26 @@ test("pins and late socket or HTTP replies cannot cross computers", async () => 
   expect(value.computers.map(c => c.id)).toEqual([computerId(a)]);
   ui.unmount();
 });
+// New agent starts on the agent last started on its computer (simulator run of
+// build 32): one computer's habit is not another's, and a relaunch or a fresh
+// pairing code for the same computer keeps it.
+test("the last agent started is remembered per computer, across a cold launch and re-pairing", async () => {
+  let ui = await mount(); await pairBoth();
+  act(() => value.rememberAgent("codex"));
+  expect(value.lastAgent).toBe("codex");
+  await act(async () => { await value.switchComputer(computerId(a)); });
+  expect(value.lastAgent).toBeNull();
+  act(() => value.rememberAgent("opencode"));
+  await act(async () => {});
+  ui.unmount(); ui = await mount();
+  expect(value.lastAgent).toBe("opencode");
+  await act(async () => { await value.switchComputer(computerId(b)); });
+  expect(value.lastAgent).toBe("codex");
+  act(() => value.signInRelay({ ...b, deviceId: "phone-b2", deviceSecret: "secret-bbbbb" }));
+  await act(async () => {});
+  expect(value.lastAgent).toBe("codex");
+  ui.unmount();
+});
 test("sign out forgets only the current computer", async () => {
   const ui = await mount(); await pairBoth();
   await act(async () => { value.signOut(); });

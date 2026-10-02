@@ -320,11 +320,14 @@ export function CreateSpace({
   onClose,
   onToast,
   onCreated,
+  forAgent = false,
 }: {
   session: Session;
   onClose: () => void;
   onToast: (message: string) => void;
   onCreated: (workspaceId: string) => void;
+  /** Opened by New agent: the space is where that agent will work, and its form comes next. */
+  forAgent?: boolean;
 }) {
   const api = useApi();
   const [name, setName] = useState("");
@@ -360,26 +363,32 @@ export function CreateSpace({
     }
   }
 
+  // Folder first, as on the phone: it is the one thing a space needs, and the
+  // name follows from it. What a space is is said where the word first
+  // appears; New agent on a computer with none met the word before anything
+  // said what it was (simulator run of build 32, October 2026).
   return (
-    <Sheet title="New space" onClose={onClose}>
+    <Sheet title={forAgent ? "New agent" : "New space"} onClose={onClose}>
+      <p className="sheet__intro">
+        {forAgent ? "Agents work in a space: a folder on your computer. Choose this one's folder, then the agent." : "A space is a folder on your computer that agents work in."}
+      </p>
+      <div className="field">
+        <span className="field__label">Folder</span>
+        <DirPicker value={cwd} onChange={setCwd} suggestions={suggestions} />
+      </div>
+
       <label className="field">
         <span className="field__label">Name</span>
         <input
           value={name}
           onChange={(e) => { setNamed(true); setName(e.target.value); }}
           placeholder="what you are working on"
-          autoFocus
           enterKeyHint="done"
         />
       </label>
 
-      <div className="field">
-        <span className="field__label">Folder</span>
-        <DirPicker value={cwd} onChange={setCwd} suggestions={suggestions} />
-      </div>
-
       <button className="sheet__go" onClick={() => void create()} disabled={busy}>
-        {busy ? "Creating…" : "Create space"}
+        {busy ? "Creating…" : forAgent ? "Create space and continue" : "Create space"}
       </button>
       <p className="sheet__note">
         Opens in the background. Your desktop view will not jump to it.

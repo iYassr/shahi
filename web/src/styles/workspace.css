@@ -176,6 +176,12 @@
   background: var(--surface);
 }
 
+/* Inside a sheet, which brings its own gutter. */
+.bigaction.sheet__new {
+  width: 100%;
+  margin: 0 0 8px;
+}
+
 /* -------------------------------------------------------------- sheets -- */
 
 .sheet {
@@ -251,6 +257,13 @@
   color: var(--muted);
   text-align: center;
   margin: 10px 0 0;
+}
+
+.sheet__intro {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin: 0 0 16px;
 }
 
 .field {
@@ -454,11 +467,20 @@ span.picker__crumb {
   color: var(--muted);
 }
 
+/* Marked three ways, accent edge, weight and a check, because a lighter fill
+   was all that told the chosen agent apart (simulator run of build 32). The
+   inset shadow thickens the edge without moving the chips beside it. */
 .kind[data-active="true"] {
-  border-color: var(--line-bright);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
   background: var(--raised);
   color: var(--text);
-  background: var(--raised);
+  font-weight: 600;
+}
+
+.kind__check {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .kind:disabled {

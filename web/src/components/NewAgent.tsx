@@ -11,8 +11,9 @@
  * full readiness timeout for a process that was never coming.
  */
 import { useEffect, useRef, useState } from "react";
-import { agentLabel, modesFor } from "@shahi/shared";
+import { agentLabel, defaultAgentKind, modesFor } from "@shahi/shared";
 import { useApi, requestId } from "../api";
+import { preferences } from "../preferences";
 import { AgentIcon } from "./AgentIcon";
 import { DirPicker, type DirChoice } from "./DirPicker";
 import { Sheet } from "./Sheet";
@@ -26,6 +27,9 @@ interface Props {
 }
 
 type Phase = "idle" | "creating" | "starting";
+
+/** The agent kind last started from this browser, per computer where it reaches several (`preferences`). */
+export const LAST_AGENT = "shahi.last-agent";
 
 export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const api = useApi();
@@ -66,7 +70,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       .then((d) => {
         if (!live) return;
         setAvailable(d.agents);
-        setKind((current) => current ?? d.agents[0]?.kind ?? null);
+        setKind((current) => current ?? defaultAgentKind(d.agents.map((agent) => agent.kind), preferences.get(LAST_AGENT)));
       })
       .catch(() => { if (live) onToast("Could not list agents"); });
     return () => { live = false; };
@@ -94,6 +98,8 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         pending.current.id,
         opened.label,
       );
+      // Started, whether or not this sheet is still open to see it.
+      preferences.set(LAST_AGENT, kind);
       if (mounted.current) onStarted(paneId);
     } catch (err) {
       if (!mounted.current) return;
@@ -123,6 +129,9 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
             No agents found on this machine. Install one and reopen this sheet.
           </p>
         ) : (
+          // The chosen agent is marked three ways, accent border, check and
+          // weight, because a lighter fill was all that told it apart
+          // (simulator run of build 32, October 2026).
           <div className="kinds" role="group" aria-label="Agent">
             {available.map((agent) => (
               <button
@@ -133,8 +142,9 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
                 onClick={() => setKind(agent.kind)}
                 disabled={busy}
               >
-                <span aria-hidden="true"><AgentIcon kind={agent.kind} size={15} /></span>
+                <span aria-hidden="true"><AgentIcon kind={agent.kind} size={18} /></span>
                 {agentLabel(agent.kind)}
+                {agent.kind === kind && <span className="kind__check" aria-hidden="true">✓</span>}
               </button>
             ))}
           </div>

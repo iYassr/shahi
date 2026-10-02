@@ -424,6 +424,16 @@ Bun.serve({
 
     if (pathname === "/api/workspaces" && req.method === "POST") {
       await record(req, pathname);
+      if (scenario.createAgents) {
+        // Listed as the real server lists it once created, so a flow that
+        // goes on to the new space's agent can be followed through.
+        const body = writes.at(-1)!.body as { label: string; cwd: string };
+        const workspaceId = `w${100 + scenario.session.workspaces.length}`;
+        scenario.session.workspaces.push({ workspaceId, label: body.label, status: "idle", paneCount: 0, tabCount: 0, focused: false,
+          cwd: body.cwd.replace(/^\/home\/x(?=\/|$)/, "~"), cwdPath: body.cwd });
+        broadcast({ type: "session", session: scenario.session });
+        return json({ workspaceId });
+      }
       return json({ workspaceId: "w9" });
     }
 
