@@ -192,6 +192,16 @@ describe("what a conversation is called", () => {
     expect(heading()).toBe("1 shell1");
   });
 
+  // Simulator run of build 32: unselected provider and shell chips were a
+  // logo alone, with nothing in words to say what they filtered.
+  test("provider and shell chips say what they filter in words, selected or not", async () => {
+    await render([pane({ paneId: "w1:p1", title: "Task", agent: "codex" }), pane({ paneId: "w1:p2", isAgent: false, agent: null })]);
+    const chip = (label: string) => view!.root.findAll((node) => node.type === "button" && node.props["aria-label"] === label)[0]!;
+    expect(chip("Codex").props["aria-pressed"]).toBe(false);
+    expect(textOf(chip("Codex"))).toBe("Codex");
+    expect(textOf(chip("Shells"))).toBe("Shells");
+  });
+
   // The waiting card said "untitled" for a pane its row called by its id.
   test("a waiting card with no title is named by its pane id, as its row is", async () => {
     await render([pane({ paneId: "w1:p1", status: "blocked", title: null }), pane({ paneId: "w1:p2", status: "blocked", title: "Fix the build" })]);

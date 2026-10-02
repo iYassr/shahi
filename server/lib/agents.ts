@@ -1,4 +1,4 @@
-import { agentLabel, argsForMode, modesFor, screenTail, type InstalledAgent } from "@shahi/shared";
+import { agentCommand, agentLabel, argsForMode, modesFor, screenTail, type InstalledAgent } from "@shahi/shared";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,7 +78,7 @@ async function discover(kinds: string[], now: () => number, timeoutMs: number): 
       // herdr's `cursor` kind launches cursor-agent. `cursor` is the editor's
       // launcher: requiring it hides a working CLI-only installation, while
       // finding the editor alone cannot establish that the agent will start.
-      const command = kind === "cursor" ? "cursor-agent" : kind;
+      const command = agentCommand(kind);
       return `p=$(command -v ${command} 2>/dev/null) && printf '%s\\t%s\\n' ${kind} "$p"`;
     })
     .join("; ");

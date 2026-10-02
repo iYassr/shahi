@@ -13,10 +13,12 @@ export { paneTitle };
  * agents apart; every other fact is said once.
  */
 export function conversationLabel(pane: DashboardPane, where?: string | null, pinned = false, now = Date.now()): string {
+  const title = paneTitle(pane);
+  // A new agent is called by its kind until it names its conversation; once is enough.
   const kind = pane.isAgent ? agentLabel(pane.agent ?? "agent") : "shell";
   const said = pane.activity ? `${pane.activity.verb}… ${pane.activity.elapsed}` : rowPreview(pane);
   const at = rowAt(pane);
-  return [paneTitle(pane), kind, pane.status, where, said, at ? `last active ${relativeTime(at, now)}` : null, pinned ? "pinned" : null]
+  return [title, kind === title ? null : kind, pane.status, where, said, at ? `last active ${relativeTime(at, now)}` : null, pinned ? "pinned" : null]
     .filter((part): part is string => !!part)
     .join(", ");
 }

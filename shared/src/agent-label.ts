@@ -10,3 +10,13 @@ const labels: Record<string, string> = {
 export function agentLabel(kind: string): string {
   return labels[kind.toLowerCase()] ?? kind;
 }
+
+/**
+ * The program herdr runs for an agent kind: the kind's own name, except
+ * Cursor, whose `cursor` kind launches `cursor-agent` (`cursor` opens the
+ * editor). Discovery looks for it, and a title that is only this command line
+ * is not a conversation's name (`paneTitle`).
+ */
+export function agentCommand(kind: string): string {
+  return kind === "cursor" ? "cursor-agent" : kind;
+}

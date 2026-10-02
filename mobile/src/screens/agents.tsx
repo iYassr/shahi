@@ -254,11 +254,13 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                   onPress={() => setFilter(chip.id)}
                 >
                   {chip.id.startsWith("kind:") || chip.id === "shells" ? <AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /> : chip.icon ? <Icon name={chip.icon} size={20} color={chip.id === active ? theme.fg : theme.dim} /> : null}
-                  {(!chip.id.startsWith("kind:") && chip.id !== "shells") || chip.id === active ? (
-                    <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
-                      {chip.label}
-                    </Text>
-                  ) : null}
+                  {/* Named in words as well as drawn. Unselected agent and
+                      shell chips were a logo alone, and a new person could not
+                      tell a terminal glyph from a filter (simulator run of
+                      build 32); the row scrolls, so the words cost nothing. */}
+                  <Text style={[styles.filterText, chip.id === active && styles.filterTextOn]}>
+                    {chip.label}
+                  </Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -593,7 +595,7 @@ function BlockedCard({
   const kind = agentLabel(pane.agent ?? "agent");
   return (
     <View style={styles.blocked}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Waiting on you, ${title}, ${pane.workspaceLabel}, ${kind}`} onPress={onOpen}>
+      <Pressable accessibilityRole="button" accessibilityLabel={["Waiting on you", title, pane.workspaceLabel, kind === title ? null : kind].filter(Boolean).join(", ")} onPress={onOpen}>
         <Text style={[styles.badge, answered && { color: theme.dim }]}>{answered ? "ANSWER SENT" : "● WAITING ON YOU"}</Text>
         {/* The title gets a line of its own, first: it is what tells two
             waiting agents in one space apart. It used to come last on one
