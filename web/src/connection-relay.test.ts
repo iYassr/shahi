@@ -101,6 +101,16 @@ function dashboard() {
   return { socket, scoped, seen };
 }
 
+// Build 32's native header read "… relay.getshahi.dev · y… CONNECTING" until
+// the first session named the computer; the browser saved the same address.
+test("a freshly paired computer is called your computer until it names itself, never by its relay address", async () => {
+  const device = await paired();
+  expect(browserComputers()[0]).toMatchObject({ name: "Your computer", named: false });
+  device.reply({ t: "ws", data: { type: "session", session: { panes: [], tabs: [], workspaces: [], serverName: "Mac" } } });
+  await settle();
+  expect(browserComputers()[0]).toMatchObject({ name: "Mac", named: true });
+});
+
 test("signing out of the selected computer does not reopen its relay link", async () => {
   await paired();
   const { socket, seen } = dashboard();

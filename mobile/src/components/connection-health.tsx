@@ -24,7 +24,9 @@ export function ConnectionHealth({ conversation = false }: { conversation?: bool
 
 function ComputerHealth({ session, conversation }: { session: ReturnType<typeof useSession>; conversation: boolean }) {
   const { link, error, server, reconnect, online = true, activeComputerId, computers, control } = session;
-  const computerName = computers?.find(computer => computer.id === activeComputerId)?.name;
+  // An unnamed computer is "your computer" in a sentence, not "Your computer".
+  const current = computers?.find(computer => computer.id === activeComputerId);
+  const computerName = current?.named === false ? undefined : current?.name;
   const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<Error | null>(null);
   const health = connectionHealth({ link, online, computerName, error: error ?? (link === "live" ? null : retryError), transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });

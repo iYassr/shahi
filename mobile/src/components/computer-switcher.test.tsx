@@ -2,17 +2,34 @@ import { fireEvent, render } from "@testing-library/react-native";
 import { ComputerSwitcher } from "./computer-switcher";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), replace: jest.fn() }, useFocusEffect: jest.fn() }));
-const mockState: { computers: { id: string; name: string; address: string; link: string }[]; activeComputerId: string | null } = {
+const mockState: { computers: { id: string; name: string; address: string; link: string; named?: boolean }[]; activeComputerId: string | null; session: { serverName?: string } | null } = {
   computers: [],
   activeComputerId: null,
+  session: { serverName: "stub-box" },
 };
 jest.mock("@/lib/session", () => ({
-  useSession: () => ({ ...mockState, session: { serverName: "stub-box" }, switchComputer: jest.fn() }),
+  useSession: () => ({ ...mockState, switchComputer: jest.fn() }),
 }));
 
 beforeEach(() => {
   mockState.computers = [];
   mockState.activeComputerId = null;
+  mockState.session = { serverName: "stub-box" };
+});
+
+// Build 32's header read "… relay.getshahi.dev · y… CONNECTING" while a
+// fresh pairing waited for its first session: a computer's name was its relay
+// address until then.
+test("a computer that has not said its name yet is not called by its relay address", () => {
+  mockState.computers = [{ id: "a", name: "Your computer", named: false, address: "relay.getshahi.dev · yxhmsPLw", link: "connecting" }];
+  mockState.activeComputerId = "a";
+  mockState.session = null;
+  const view = render(<ComputerSwitcher />);
+  expect(view.getByText("Your computer ▾")).toBeTruthy();
+  expect(view.queryByText(/relay\.getshahi\.dev/)).toBeNull();
+  mockState.session = { serverName: "Mac" };
+  view.rerender(<ComputerSwitcher />);
+  expect(view.getByText("Mac ▾")).toBeTruthy();
 });
 
 // At AX5 the name scaled inside a navigation bar that does not grow and read

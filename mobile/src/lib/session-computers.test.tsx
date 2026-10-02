@@ -7,6 +7,8 @@ import { openTunnel } from "./tunnel";
 import { AppState } from "react-native";
 import { addNetworkStateListener, getNetworkStateAsync } from "expo-network";
 import { RelayLink } from "./relay";
+import { linkLabel } from "@/components/link-badge";
+import { connectionHealth } from "@shahi/shared";
 
 const mockSockets: any[] = [];
 jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}), forgetHostKey: jest.fn(async () => {}) }));
@@ -119,7 +121,9 @@ test("sign out forgets only the current computer", async () => {
 // hunt).
 test("a computer removed because this phone was revoked says so, naming it; signing out does not", async () => {
   const ui = await mount(); await pairBoth();
+  await act(async () => { mockSockets.at(-1).message({ type: "session", session: { ...snapshot, serverName: "Studio" } }); });
   const name = value.computers.find(computer => computer.id === computerId(b))!.name;
+  expect(name).toBe("Studio");
   await act(async () => { mockSockets.at(-1).unauthorized(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
   expect(value.computers.map(computer => computer.id)).toEqual([computerId(a)]);
   expect(value.accessEnded).toBe(`This phone is no longer paired with ${name}. Show a new pairing code on that computer to connect again.`);
@@ -389,6 +393,46 @@ test("duplicate names are distinguished and aliases survive snapshots and a cold
   expect(value.computers.map(c => c.name)).toEqual(["Work laptop", "Laptop"]);
   ui.unmount(); ui = await mount();
   expect(value.computers.map(c => c.name)).toEqual(["Work laptop", "Laptop"]);
+  ui.unmount();
+});
+
+// An unsigned build 32 whose Keychain writes all failed: right after pairing
+// the header said NOT RESPONDING and a card "Reconnecting to Mac…", while the
+// Computers menu said Connected; on relaunch the pairing was gone.
+test("a Keychain that will not save the pairing says so, and never that the computer is not responding", async () => {
+  const ui = await mount();
+  (SecureStore.setItemAsync as jest.Mock).mockRejectedValue(new Error("errSecMissingEntitlement"));
+  act(() => value.signInRelay(a));
+  await act(async () => {
+    mockSockets[0].state("live");
+    mockSockets[0].message({ type: "session", session: snapshot });
+  });
+  expect(value.saveError?.message).toBe("Couldn't save your computers securely.");
+  expect(value.error).toBeNull();
+  expect(linkLabel({ link: value.link, error: value.error })).toEqual({ text: "LIVE", live: true });
+  expect(connectionHealth({ link: value.link, error: value.error, transport: "relay" })).toBeNull();
+  expect(value.computers[0]).toMatchObject({ available: true, status: "Connected" });
+  // Saving again, once the Keychain takes it, clears the notice.
+  (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (key, data, options) => { if (options?.keychainService) store.set(key, data); });
+  await act(async () => { await value.retrySave(); });
+  expect(value.saveError).toBeNull();
+  expect(bank()).toHaveLength(1);
+  ui.unmount();
+});
+
+// Build 32: "… relay.getshahi.dev · y… CONNECTING" in the Agents header, and
+// "Connecting to relay.getshahi.dev · y…" beneath it, until the first session.
+test("a freshly paired computer is called your computer until it names itself, never by its relay address", async () => {
+  const ui = await mount();
+  act(() => value.signInRelay(a));
+  await act(async () => {});
+  expect(value.computers[0]).toMatchObject({ name: "Your computer", named: false, address: "relay.test · computer" });
+  expect(value.computers[0]!.status).not.toContain("relay.test");
+  await act(async () => {
+    mockSockets[0].state("live");
+    mockSockets[0].message({ type: "session", session: { ...snapshot, serverName: "Mac" } });
+  });
+  expect(value.computers[0]).toMatchObject({ name: "Mac", named: true });
   ui.unmount();
 });
 

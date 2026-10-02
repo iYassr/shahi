@@ -12,15 +12,16 @@ export function ComputerControlProvider({ onRecovered, children }: { onRecovered
   useEffect(() => { control.start(); return () => control.stop(); }, [control]);
   return <ControlContext.Provider value={{ control }}>{children}</ControlContext.Provider>;
 }
-export function ComputerUpdate() {
+/** `linkDown`: the connection card is already saying this computer cannot be reached. */
+export function ComputerUpdate({ linkDown = false }: { linkDown?: boolean }) {
   const control = useComputerControl();
   const settings = useLocation().pathname === "/settings";
   const h = control?.handshake;
   if (!h || !control) return null;
   const busy = control.pending || updateInProgress(h.update.phase);
-  // herdr merely stopped is the connection banner's news; not said twice
-  // (see `controlNeedsAttention`).
-  if (!settings && !controlNeedsAttention(h, control)) return null;
+  // herdr merely stopped is the connection banner's news, and so is a
+  // computer that cannot be reached; not said twice (see `controlNeedsAttention`).
+  if (!settings && !controlNeedsAttention(h, control, linkDown)) return null;
   return <section className="computer-update" aria-live="polite">
     <strong>{h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : "This computer"}</strong>
     <p>{control.pending ? "Requesting update…" : control.error ? (updateInProgress(h.update.phase) ? "Reconnecting after the update…" : "Computer unavailable. Your pairing is saved.") : controlMessage(h)}</p>

@@ -13,7 +13,9 @@ export interface SavedComputer {
   /** Learned from an SSH computer once it is signed in; a relay code carries its own. */
   serverId?: string;
 }
-export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"]; waiting?: number; available?: boolean; status?: string };
+export type ComputerSummary = Pick<SavedComputer, "id" | "name"> & { address: string;
+  /** False until the computer has said its name: `name` is then `UNNAMED_COMPUTER`, not the relay's internals. */
+  named?: boolean; serverId?: string; link?: "connecting" | "live" | "lost"; kind: ComputerConnection["kind"]; waiting?: number; available?: boolean; status?: string };
 export const COMPUTERS_KEY = "shahi.computers";
 
 export function computerId(connection: ComputerConnection): string {
@@ -60,6 +62,19 @@ export function rememberComputer(computers: SavedComputer[], connection: Compute
   const previous = computers.find((computer) => computer.id === id);
   const saved: SavedComputer = { id, connection, name: previous?.customName || name || previous?.name || computerAddress(connection), pins: pins ?? previous?.pins ?? [], ...(previous?.customName && { customName: previous.customName }), ...(previous?.serverId && { serverId: previous.serverId }) };
   return previous ? computers.map((computer) => computer.id === id ? saved : computer) : [...computers, saved];
+}
+
+/** What an unnamed computer is called on screen (see `computerNamed`). */
+export const UNNAMED_COMPUTER = "Your computer";
+
+/**
+ * Whether a computer has a name a person would recognise. A relay pairing is
+ * saved under its address, `relay.getshahi.dev · yxhmsPLw`, until the first
+ * session says its hostname, and build 32's Agents header showed exactly that
+ * beside CONNECTING. An SSH computer's address is what the person typed.
+ */
+export function computerNamed(computer: Pick<SavedComputer, "name" | "customName" | "connection">): boolean {
+  return computer.connection.kind === "ssh" || !!computer.customName || computer.name !== computerAddress(computer.connection);
 }
 
 /** Same hostnames are common; saved order gives their labels a stable distinction. */

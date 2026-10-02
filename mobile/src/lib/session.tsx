@@ -25,9 +25,12 @@ import type { RelayIdentity } from "@/lib/relay";
 import { configurePushComputer, forgetPushRegistration } from "@/lib/push-registration";
 import type { SshProfile } from "@/lib/ssh";
 import { forgetHostKey, type HostKeyReview, type ReviewHostKey } from "@/lib/tunnel";
-import { COMPUTERS_KEY, computerAddress, computerDisplayName, computerId, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
+import { COMPUTERS_KEY, UNNAMED_COMPUTER, computerAddress, computerDisplayName, computerId, computerNamed, mergeSavedComputers, rememberComputer, type ComputerConnection, type ComputerSummary, type SavedComputer } from "./computers";
 
 const KEY = "shahi.connection";
+
+/** The app's own words for a Keychain that refused to keep the computers. */
+export const SAVE_FAILED = "Couldn't save your computers securely.";
 
 /**
  * What is kept in the keychain between launches.
@@ -72,6 +75,17 @@ interface SessionValue {
    * with a failure.
    */
   error: Error | null;
+  /**
+   * The Keychain refused to keep the saved computers, so what works now may
+   * be gone when the app closes. Its own field, never `error`: merged there,
+   * it read as a connection failure. Build 32, unsigned so every Keychain
+   * write failed, said NOT RESPONDING and "Reconnecting to Mac…" over a
+   * computer the Computers menu called Connected, and the pairing was gone on
+   * relaunch with nothing having said so.
+   */
+  saveError: Error | null;
+  /** Saves the computers again; settles once the outcome is known. */
+  retrySave: () => Promise<void>;
   /** Called by Connect after an SSH tunnel is open and login has succeeded, with the connection it signed in on. */
   signInSsh: (profile: SshProfile, connection: Connection) => void;
   /** Called by Connect once a pairing over a relay has answered with a device. */
@@ -194,7 +208,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const beforeAdding = useRef<string | null>(null);
   const [connectionKey, setConnectionKey] = useState(0);
   const [terminalWidth, setWidth] = useState(100);
-  const [storageError, setStorageError] = useState<Error | null>(null);
+  const [saveError, setSaveError] = useState<Error | null>(null);
   const [accessEnded, setAccessEnded] = useState<string | null>(null);
   const [hostKeyReview, setHostKeyReview] = useState<SessionValue["hostKeyReview"]>(null);
   const reviews = useRef<{ queue: Promise<unknown>; pending: ((trusted: boolean) => void) | null }>({ queue: Promise.resolve(), pending: null });
@@ -206,17 +220,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const write = useCallback((task: () => Promise<void>) => {
     const next = writes.current.catch(() => undefined).then(task);
     writes.current = next;
-    void next.catch(() => { if (mounted.current) setStorageError(new Error("Couldn't save your computers securely. Try again.")); });
+    void next.catch(() => { if (mounted.current) setSaveError(new Error(SAVE_FAILED)); });
     return next;
   }, []);
   const persist = useCallback(() => {
     const saved = JSON.stringify(bank.current);
     const current = bank.current.find(c => c.id === selected.current);
-    return write(async () => {
+    const done = write(async () => {
       await writeSecret(COMPUTERS_KEY, saved);
       if (current) await writeSecret(KEY, JSON.stringify(current.connection));
       else await deleteSecret(KEY);
     });
+    // Only a whole save clears the notice: the others write a part, and a
+    // switch that saved only its choice says nothing about the list.
+    void done.then(() => { if (mounted.current) setSaveError(null); }, () => {});
+    return done;
   }, [write]);
   const paint = useCallback(() => { if (mounted.current) render(n => n + 1); }, []);
   // Several saved computers can reconnect at once; their questions queue.
@@ -290,7 +308,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // computer used to vanish from the list with no word about why
       // (pre-release bug hunt).
       const lost = live.current.get(saved.id)?.saved ?? saved;
-      const lostName = computerDisplayName(lost, bank.current);
+      // Lower case in a sentence, and never the relay address it was saved under.
+      const lostName = computerNamed(lost) ? computerDisplayName(lost, bank.current) : UNNAMED_COMPUTER.toLowerCase();
       if (mounted.current) setAccessEnded(lost.connection.kind === "relay"
         ? `This phone is no longer paired with ${lostName}. Show a new pairing code on that computer to connect again.`
         : `${lostName} signed this phone out. Add it again with its Shahi passcode to connect.`);
@@ -397,8 +416,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     computers: bank.current.map(c => {
       const liveComputer = live.current.get(c.id);
       const link = liveComputer?.link ?? "connecting";
-      const health = connectionHealth({ link, online, error: liveComputer?.error, transport: c.connection.kind, computerName: c.name, backend: liveComputer?.control.handshake?.backend });
-      return { id: c.id, name: computerDisplayName(c, bank.current), serverId: c.connection.kind === "relay" ? c.connection.serverId : liveComputer?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link,
+      const named = computerNamed(c);
+      const health = connectionHealth({ link, online, error: liveComputer?.error, transport: c.connection.kind, computerName: named ? c.name : undefined, backend: liveComputer?.control.handshake?.backend });
+      return { id: c.id, name: named ? computerDisplayName(c, bank.current) : UNNAMED_COMPUTER, named, serverId: c.connection.kind === "relay" ? c.connection.serverId : liveComputer?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link,
         available: !health, status: health?.title ?? "Connected",
         waiting: liveComputer?.session?.panes.filter(p => p.isAgent && p.status === "blocked").length ?? 0 };
     }),
@@ -439,7 +459,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     },
     session: entry?.session ?? null, prompts: entry?.prompts ?? {}, answered: entry?.answered ?? {}, reviewed: entry?.reviewed ?? {},
     markReviewed: pane => entry?.markReviewed(pane),
-    link: entry?.link ?? "connecting", error: storageError ?? entry?.error ?? null,
+    link: entry?.link ?? "connecting", error: entry?.error ?? null,
+    saveError, retrySave: () => persist(),
     ...actions,
     pins: pinnedPanes(entry?.saved.pins ?? [], entry?.session?.panes ?? []),
     togglePin: pane => updatePins(togglePinOf(entry?.saved.pins ?? [], entry?.session?.panes.find(p => p.paneId === pane) ?? { paneId: pane })),

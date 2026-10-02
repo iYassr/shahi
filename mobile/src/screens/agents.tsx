@@ -5,6 +5,7 @@ import { LinkBadge } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { OtherComputers } from "@/components/other-computers";
+import { SaveProblem } from "@/components/save-problem";
 import { agentLabel, answerRefused, backendUnavailable, inboxKind, inboxPanes, latestConversations, promptIdentity as identityOf, reviewKey, rowPreview, rowTime, type AnsweredPrompt, type LogMessage } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -41,7 +42,8 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   // called conditionally; the rows are read lazily when the restore happens.
   const rows = useRef<DashboardPane[]>([]);
   const { api, reviewed, markReviewed, session, prompts, answered, link, error, answeredPrompt, refresh, pins, togglePin, server, reconnect, activeComputerId, control, computers = [], accessEnded } = useSession();
-  const computerName = computers.find(c => c.id === activeComputerId)?.name;
+  const current = computers.find(c => c.id === activeComputerId);
+  const computerName = current?.named === false ? undefined : current?.name;
   // Nothing a card offers can be answered while herdr is not running, though
   // the socket, and so the list, stays up (pre-release bug hunt).
   const backend = control?.handshake?.backend;
@@ -204,10 +206,14 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
 
   return (
     <View style={styles.screen}>
+      {/* No strip of its own above the list for an unavailable computer. It
+          stood here, fixed, to keep "unavailable" in sight once the card
+          scrolled away (review M5, September 2026), but the header's word
+          (OFFLINE, HERDR OFFLINE) stays in sight on every screen already,
+          and its "Other computers" is the header's switcher and the card's
+          Switch computer. On build 32 it was one of four things saying an
+          offline computer was offline, which pushed the agents off screen. */}
       {header}
-      {herdrAway && <Pressable accessibilityRole="button" accessibilityLabel="Computer unavailable. Choose another computer" style={{ minHeight: 44, paddingHorizontal: 16, justifyContent: "center", backgroundColor: theme.surface }} onPress={() => router.push("/computers")}>
-        <Text style={{ color: theme.peach, fontSize: 14 }}>{computerName || "Computer"} unavailable · Other computers ▾</Text>
-      </Pressable>}
       <FlatList
         {...agentScroll}
         onScrollBeginDrag={closeSwipe}
@@ -223,6 +229,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
         keyExtractor={(p) => p.paneId}
         ListHeaderComponent={
           <>
+            <SaveProblem />
             <ComputerUpdate />
             <ConnectionHealth />
             {accessEnded && <Text style={styles.notice} accessibilityRole="alert">{accessEnded}</Text>}

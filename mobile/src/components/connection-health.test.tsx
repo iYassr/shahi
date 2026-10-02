@@ -24,7 +24,9 @@ test("a relay-confirmed disconnected box tells the user to check the computer", 
   mockState.error = new UnreachableError("box", "relay", "offline");
   const view = render(<ConnectionHealth />);
   expect(view.getByText("Computer disconnected")).toBeTruthy();
-  expect(view.getByText(/Wake your computer/)).toBeTruthy();
+  expect(view.getByText(/Wake the computer and check that Shahi is running/)).toBeTruthy();
+  // The reason and the reassurance are this card's, not separate cards'.
+  expect(view.getByText(/isn’t connected to the relay.*Your pairing is saved/)).toBeTruthy();
 });
 
 test("switching from the disconnect banner opens saved computers", () => {

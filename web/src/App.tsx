@@ -471,7 +471,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
         <button onClick={() => setUpdateAvailable(false)}>Later</button>
       </div>}
       {computerButton}
-      <ComputerUpdate />
+      <ComputerUpdate linkDown={link !== "live" || !!healthError} />
       <ConnectionHealth link={link} error={healthError} relay={hosted} onRetry={retryConnection} />
       <div className={conversationLayout ? "conversation-layout" : "page-layout"} data-conversation-open={conversationOpen}>
       {conversationLayout && <aside className="agent-sidebar" aria-label="Agent conversations">

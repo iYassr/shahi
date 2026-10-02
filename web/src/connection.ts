@@ -16,18 +16,26 @@ const DB = "shahi-browser-device";
 interface Computer { identity: RelayIdentity; name: string; customName?: string; remembered: boolean }
 let computers: Computer[] = [];
 let restoredComputers: Computer[] = [];
+/**
+ * What a computer is saved as before its first session says its hostname.
+ * Never shown: build 32's native header read "… relay.getshahi.dev · y…
+ * CONNECTING" for exactly this, so an unnamed computer is "Your computer".
+ */
+const addressName = (item: RelayIdentity) => `${new URL(item.relay).host} · ${item.serverId.slice(0, 8)}`;
+export const UNNAMED_COMPUTER = "Your computer";
 export function browserComputers() {
-  return computers.map(({ identity: item, name, remembered }) => {
+  return computers.map(({ identity: item, name, customName, remembered }) => {
     const same = computers.filter(c => c.name === name);
     const entry = live.get(item.serverId);
-    return { id: item.serverId, name: same.length > 1 ? `${name} (${same.findIndex(c => c.identity.serverId === item.serverId) + 1})` : name,
-      remembered, address: new URL(item.relay).host, state: entry?.link.state ?? "lost",
+    const named = !!customName || name !== addressName(item);
+    return { id: item.serverId, name: !named ? UNNAMED_COMPUTER : same.length > 1 ? `${name} (${same.findIndex(c => c.identity.serverId === item.serverId) + 1})` : name,
+      named, remembered, address: new URL(item.relay).host, state: entry?.link.state ?? "lost",
       waiting: entry?.session?.panes.filter(p => p.isAgent && p.status === "blocked").length ?? 0 };
   });
 }
 function rememberComputer(next: RelayIdentity, saved: boolean) {
   const previous = computers.find(c => c.identity.serverId === next.serverId);
-  const computer = { identity: next, remembered: saved, name: previous?.name ?? `${new URL(next.relay).host} · ${next.serverId.slice(0, 8)}`, ...(previous?.customName && { customName: previous.customName }) };
+  const computer = { identity: next, remembered: saved, name: previous?.name ?? addressName(next), ...(previous?.customName && { customName: previous.customName }) };
   computers = previous ? computers.map(c => c === previous ? computer : c) : [...computers, computer];
 }
 

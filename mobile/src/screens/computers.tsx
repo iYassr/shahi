@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, View, Pressable, ScrollView, StyleSheet, TextInput } from "react-native";
 import { Text } from "@/components/text";
 import { Icon } from "@/components/icons";
+import { SaveProblem } from "@/components/save-problem";
 import { resetTo, showComputerHome } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
@@ -30,6 +31,7 @@ export function Computers() {
   return <View style={styles.screen}>
     <ScrollView contentContainerStyle={styles.content}>
     {accessEnded && <Text accessibilityRole="alert" testID="access-ended" style={styles.ended}>{accessEnded}</Text>}
+    <SaveProblem />
     <Text style={styles.note}>All your computers stay connected while Shahi is open. Choose one to view its agents.</Text>
     {computers.map((computer) => {
       const selected = connected && computer.id === activeComputerId;
