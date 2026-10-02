@@ -9,11 +9,9 @@
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { SCREEN_CARD_KEYS, screenTail } from "@shahi/shared";
 import { Text } from "@/components/text";
-import { theme } from "@/lib/theme";
+import { monoWidth, theme } from "@/lib/theme";
 
 const FONT = 11;
-/** Menlo's advance is 0.6 of its size; a little over keeps the last column whole. */
-const ADVANCE = 0.62;
 
 export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
   text: string;
@@ -39,7 +37,7 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
       <Text style={styles.heading}>{heading}</Text>
       {waiting && <Text style={styles.hint}>Messages are not sent until it is answered.</Text>}
       <ScrollView horizontal style={styles.screen} contentContainerStyle={styles.screenBody}>
-        <Text selectable accessibilityLabel={rows.join("\n")} style={[styles.rows, { width: Math.ceil(longest * FONT * ADVANCE * fontScale) + 4 }]}>
+        <Text selectable accessibilityLabel={rows.join("\n")} style={[styles.rows, { width: monoWidth(longest, FONT, fontScale) }]}>
           {rows.join("\n")}
         </Text>
       </ScrollView>

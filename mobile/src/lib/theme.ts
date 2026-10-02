@@ -25,6 +25,15 @@ export const theme = {
 
 export const AGENT_COLORS = agentColors;
 
+/**
+ * How wide `columns` characters of `theme.mono` are. Terminal rows are given
+ * this width inside a sideways scroll, or they wrap to the card and a menu's
+ * columns stop lining up. Menlo's advance is 0.6 of its size; a little over
+ * keeps the last column whole.
+ */
+export const monoWidth = (columns: number, fontSize: number, fontScale: number) =>
+  Math.ceil(columns * fontSize * 0.62 * fontScale) + 4;
+
 /** Status meaning is shared by every native agent and space surface. */
 export const statusColor = (status: string) =>
   status === "working" ? theme.working

@@ -2,7 +2,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, spanColours, supports, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
+import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, spanColours, supports, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, shownLabels, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
@@ -96,10 +96,11 @@ const PROBE_FONT = 12;
 const CHAR_ASPECT_GUESS = 0.6;
 const PROBE = "─".repeat(PROBE_CHARS);
 /**
- * The most of the window the connection banner, an error and a prompt card
- * may take together before they scroll inside their own area.
+ * The most of the window the connection banner, an error and the screen card
+ * may take together before they scroll inside their own area, so a strip of
+ * the conversation stays. A prompt card is not held to it: see `Pane`.
  */
-const PROMPT_SHARE = 0.4;
+const BANNER_SHARE = 0.4;
 /**
  * How long the reader waits before asking again for a transcript the relay
  * refused as too large. Asked on every poll and pushed frame it was twelve
@@ -645,6 +646,14 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const largeText = useLargeText();
   const windowHeight = useWindowDimensions().height;
   const literalInput = view === "screen" || (!!pane && !pane.isAgent);
+  // Which question the card shows, and whether the person has scrolled the
+  // area above the conversation since it appeared (see the area itself).
+  const promptKey = prompt && view === "reader" ? prompt.promptId ?? prompt.question : null;
+  const noticesRef = useRef<ScrollView>(null);
+  const noticesHeld = useRef<string | null>(null);
+  const showAnswers = useCallback(() => {
+    if (promptKey !== null && noticesHeld.current !== promptKey) noticesRef.current?.scrollToEnd({ animated: false });
+  }, [promptKey]);
 
   // Back should close the attachment sheet before it leaves the pane.
   useEffect(() => {
@@ -1120,17 +1129,35 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         </Pressable>
       </View>
 
-      {/* Everything that sits above the conversation, bounded together and
-          scrolling inside its own area. A four-option question at AX5 was
-          taller than the screen on its own; then the connection banner, a
-          fixed block above it, reached the same size offline, and at AX3 to
-          AX5 it pushed the prompt, the conversation, the composer and its
-          own buttons off screen with nothing scrollable (pre-release bug
-          hunt). */}
+      {/* Everything that sits above the conversation, scrolling inside its
+          own area, which gives way to the composer and nothing else. A
+          four-option question at AX5 was taller than the screen on its own;
+          then the connection banner, a fixed block above it, reached the
+          same size offline, and at AX3 to AX5 it pushed the prompt, the
+          conversation, the composer and its own buttons off screen with
+          nothing scrollable (pre-release bug hunt).
+
+          A question is not held to the banners' share of the window. It
+          was, and an edit approval's diff filled that share: "1. Yes … 3.
+          No" sat below its edge with no hint that it scrolled, a question
+          with no visible answer, and at that edge "3. No" ran into the
+          conversation's text, overprinted (first-task test of build 32,
+          October 2026). Now the context is bounded (`PromptContext`) and the
+          card takes the room it needs, on an opaque background, while the
+          conversation gives way. Where even that is too little, at the
+          largest text sizes, the area keeps itself scrolled to its end, the
+          answers, until the person scrolls it. One scroll, not a question
+          area shrinking above pinned answers: Yoga's sizing of nested
+          scrolls, simulated across text sizes, pushed the answers below the
+          card in some, with nothing left to scroll to them. */}
       <ScrollView
+        ref={noticesRef}
         testID="pane-notices"
-        style={[styles.notices, { maxHeight: Math.round(windowHeight * PROMPT_SHARE) }]}
+        style={[styles.notices, promptKey === null && { maxHeight: Math.round(windowHeight * BANNER_SHARE) }]}
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => { noticesHeld.current = promptKey; }}
+        onContentSizeChange={showAnswers}
+        onLayout={showAnswers}
       >
         <ConnectionHealth conversation />
         {/* Readable and dismissible, instead of one truncated line squeezed
@@ -1510,6 +1537,10 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
 /**
  * The answer list, rebuilt from the terminal's own — same numbering, same
  * cursor, sized for a thumb.
+ *
+ * The labels drop the terminal's key hints for display only: the parser's own
+ * label is what is sent, because the computer compares it with a fresh read
+ * of the screen before pressing anything.
  */
 function Prompt({
   prompt,
@@ -1525,21 +1556,23 @@ function Prompt({
   const [armed, setArmed] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
   if (compact && !expanded) return <Pressable accessibilityRole="button" accessibilityState={{ expanded: false }} style={styles.choice} onPress={() => setExpanded(true)}><Text style={styles.question}>Waiting: {prompt.question} ▾</Text></Pressable>;
+  const labels = shownLabels(prompt.options);
   return (
-    // Bounded by the notices area it sits in, which scrolls (see `Pane`).
+    // In the area above the conversation, which scrolls to it (see `Pane`).
     <View testID="prompt-card" style={[styles.promptCard, styles.promptBody]}>
       <Text style={styles.question}>{prompt.question}</Text>
       <PromptContext context={prompt.context} />
-      {prompt.options.map((option) => {
+      {prompt.options.map((option, i) => {
         const isArmed = armed === option.index;
         const current = isArmed || (armed === null && option.selected);
+        const label = labels[i];
         return (
           <Pressable
             accessibilityRole="button"
             // One clean sentence rather than the row's parts: the cursor glyph
             // and its blank placeholder were read aloud, and which row the
             // menu's cursor is on was only visible, never spoken.
-            accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail].filter(Boolean).join(". ")}
+            accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${label}` : label, option.detail].filter(Boolean).join(". ")}
             accessibilityState={{ selected: current, disabled: armed !== null || disabled }}
             key={option.index}
             style={[styles.choice, isArmed && styles.choiceArmed]}
@@ -1553,7 +1586,7 @@ function Prompt({
             {/* The digit is what the terminal takes; a cursor menu has none. */}
             {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
             <View style={styles.choiceBody}>
-              <Text style={styles.choiceLabel}>{option.label}</Text>
+              <Text style={styles.choiceLabel}>{label}</Text>
               {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
             </View>
           </Pressable>
@@ -2553,8 +2586,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface,
   },
   // A ScrollView grows to fill by default; this one is only as tall as what
-  // it holds, up to its share of the window, and gives way to the keyboard.
-  notices: { flexGrow: 0 },
+  // it holds, up to its limit, and gives way to the composer and keyboard.
+  // On the screen's own colour, so nothing behind can show through.
+  notices: { flexGrow: 0, flexShrink: 1, backgroundColor: theme.void },
   promptBody: { padding: 14 },
   question: { color: theme.fg, fontSize: 15, lineHeight: 21, marginBottom: 8 },
   choice: { flexDirection: "row", alignItems: "flex-start", gap: 8, minHeight: 44, paddingVertical: 10, borderRadius: 6, borderCurve: "continuous" },

@@ -5,7 +5,7 @@ import { LinkBadge } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { OtherComputers } from "@/components/other-computers";
-import { agentLabel, answerRefused, backendUnavailable, inboxKind, inboxPanes, latestConversations, promptIdentity as identityOf, reviewKey, rowPreview, rowTime, type AnsweredPrompt, type LogMessage } from "@shahi/shared";
+import { agentLabel, answerRefused, backendUnavailable, inboxKind, inboxPanes, latestConversations, promptIdentity as identityOf, reviewKey, rowPreview, rowTime, shownLabels, type AnsweredPrompt, type LogMessage } from "@shahi/shared";
 /** Conversations follow their latest message; Inbox remains an attention queue. */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -591,6 +591,7 @@ function BlockedCard({
 
   const title = paneTitle(pane);
   const kind = agentLabel(pane.agent ?? "agent");
+  const labels = prompt ? shownLabels(prompt.options) : [];
   return (
     <View style={styles.blocked}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Waiting on you, ${title}, ${pane.workspaceLabel}, ${kind}`} onPress={onOpen}>
@@ -613,16 +614,18 @@ function BlockedCard({
           <Text style={styles.question}>{prompt.question}</Text>
           <PromptContext context={prompt.context} />
           {stale && <Text style={styles.stale}>This question is as it was last seen. Answers are available when the computer reconnects.</Text>}
-          {prompt.options.map((option) => {
+          {prompt.options.map((option, i) => {
             const isArmed = armed === option.index;
             const lit = isArmed || (armed === null && !!option.selected);
+            // Shown without the terminal's key hints; `choose` sends the parser's own label.
+            const label = labels[i];
             return (
               <Pressable
                 accessibilityRole="button"
                 // The option's words, not its glyphs: VoiceOver used to read
                 // the cursor mark and the blank beside it ("❯, 1., Red").
                 // Where the terminal's cursor sits is a state, said as one.
-                accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${option.label}` : option.label, option.detail]
+                accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${label}` : label, option.detail]
                   .filter(Boolean).join(", ")}
                 accessibilityState={{ selected: lit, disabled: armed !== null || stale }}
                 key={option.index}
@@ -634,7 +637,7 @@ function BlockedCard({
                 {/* The digit is what the terminal takes; a cursor menu has none. */}
                 {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
                 <View style={styles.choiceBody}>
-                  <Text style={styles.choiceLabel}>{option.label}</Text>
+                  <Text style={styles.choiceLabel}>{label}</Text>
                   {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
                 </View>
               </Pressable>

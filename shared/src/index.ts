@@ -3,6 +3,7 @@ export { readerRows, readerActivityLabel, readerTasks, readerTasksLabel, type Re
 export { backendUnavailable, connectionHealth, graceUntil, RECONNECT_GRACE_MS, type ConnectionNotice } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";
 export { answerRefused, promptAnswered, promptIdentity, promptPushed, promptsFromSession, sendRefusedBeforeTyping, type AnsweredPrompt, type PromptState } from "./prompts";
+export { shownContext, shownLabels } from "./prompt-display";
 /**
  * The contract between the server and its clients.
  *

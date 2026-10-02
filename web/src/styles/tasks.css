@@ -398,6 +398,8 @@
  * Capped and scrollable: a codex approval carries the whole command line, which
  * is routinely longer than the screen, and letting it wrap pushed the answers
  * out of view — which is what "the permission prompt does not show" meant.
+ * Scrolled sideways rather than wrapped, as the terminal drew it: wrapped, a
+ * diff's line of code broke after its comma (see `PromptContext`).
  */
 .asked__context {
   max-height: 132px;
@@ -415,8 +417,7 @@
 
 .asked__context p {
   margin: 0 0 4px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
 }
 
 .asked__context p:last-child {
