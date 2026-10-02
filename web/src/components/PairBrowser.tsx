@@ -54,7 +54,7 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
   return <main className="pair-browser">
     <div className="pair-browser__intro">
       <div className="pair-browser__welcome"><span className="pair-browser__mark" aria-hidden="true"><Logo size={56} /></span><span>Welcome to Shahi</span></div>
-      <h1>Connect your computer</h1><p>Continue your work with Claude Code or Codex wherever you are. Start by connecting your computer.</p>
+      <h1>Connect your computer</h1><p>Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity wherever you are. Start by connecting your computer.</p>
       <p><a className="pair-browser__jump" href="#pair-browser-form" onClick={(event) => { event.preventDefault(); document.getElementById("pair-browser-form")?.scrollIntoView({ block: "start" }); document.getElementById("pairing-code")?.focus({ preventScroll: true }); }}>Already have a code? Connect now ↓</a></p>
       <section className="app-help pair-browser__setup" aria-labelledby="computer-setup">
         <h2 id="computer-setup">Set up Shahi in 3 steps</h2>

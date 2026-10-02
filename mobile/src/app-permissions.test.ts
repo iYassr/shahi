@@ -32,7 +32,8 @@ test("the built app declares dictation's microphone and speech purposes, no Face
   expect(plist.NSMicrophoneUsageDescription).toBe("Shahi listens while you dictate a reply. Your voice is turned into text on this iPhone and is never recorded or sent anywhere.");
   expect(plist.NSSpeechRecognitionUsageDescription).toBe("Shahi turns what you dictate into text with Apple's speech model, on this iPhone.");
   expect(plist).not.toHaveProperty("NSFaceIDUsageDescription");
-  expect(plist.NSCameraUsageDescription).toBe("Shahi uses the camera to scan the pairing code your server prints.");
+  // "Computer", as the app says everywhere else; it said "server" until build 32.
+  expect(plist.NSCameraUsageDescription).toBe("Shahi uses the camera to scan the pairing code your computer shows.");
   expect(plist.NSPhotoLibraryUsageDescription).toMatch(/^Shahi attaches a photo/);
   // No placeholder wording of any kind: every purpose string is Shahi's own.
   for (const [key, value] of Object.entries(plist)) if (key.endsWith("UsageDescription")) expect(value).not.toMatch(/\$\(PRODUCT_NAME\)/);
