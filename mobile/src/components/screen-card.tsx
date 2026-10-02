@@ -30,7 +30,12 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
   // lining up; the horizontal scroll is what reaches the rest.
   const longest = rows.reduce((most, row) => Math.max(most, row.length), 0);
   return (
-    <View testID="screen-card" style={styles.card}>
+    // Amber only when the agent is waiting on it. A new agent's first screen
+    // carried the same border as a question, and right after Claude's folder
+    // trust was answered an idle Claude, waiting for nothing but a first
+    // message, read as something that needed you (first-task test of build
+    // 32, October 2026).
+    <View testID="screen-card" style={[styles.card, waiting && styles.cardWaiting]}>
       <Text style={styles.heading}>{heading}</Text>
       {waiting && <Text style={styles.hint}>Messages are not sent until it is answered.</Text>}
       <ScrollView horizontal style={styles.screen} contentContainerStyle={styles.screenBody}>
@@ -66,10 +71,11 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
     borderWidth: 1,
-    borderColor: theme.peach,
+    borderColor: theme.lineBright,
     borderRadius: 10, borderCurve: "continuous",
     backgroundColor: theme.surface,
   },
+  cardWaiting: { borderColor: theme.peach },
   heading: { color: theme.fg, fontSize: 15, lineHeight: 21 },
   hint: { color: theme.dim, fontSize: 13 },
   // No height cap of its own: the notices area it sits in scrolls (see `Pane`).

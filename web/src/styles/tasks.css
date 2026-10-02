@@ -648,6 +648,11 @@
   font-size: 13px;
 }
 
+/* Not waiting on anything: information, not a question, so no amber. */
+.screencard--idle {
+  border-color: var(--line-bright);
+}
+
 .screencard__screen {
   max-height: 260px;
   margin: 0 16px;

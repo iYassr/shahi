@@ -6,6 +6,7 @@ import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } fr
 import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
+import { theme } from "@/lib/theme";
 import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
 
 // The first test in this file pays for loading the screen and its mocks under
@@ -2519,6 +2520,28 @@ describe("the screen card", () => {
     await view.findByText("Do you want to proceed?");
     expect(view.queryByText("On the computer's screen")).toBeNull();
     view.unmount();
+  });
+
+  // Right after its folder trust was answered, an idle Claude waiting for its
+  // first message showed this card with a question's amber border, and read
+  // as something that needed you (first-task test of build 32).
+  test("a new agent's screen is information, not an alarm, until the agent waits on it", async () => {
+    mocked.sessionLog.mockRejectedValue(noTranscript());
+    mocked.pane.mockResolvedValue(frame());
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("On the computer's screen");
+    const idle = StyleSheet.flatten(view.getByTestId("screen-card").props.style);
+    expect(idle.borderColor).not.toBe(theme.peach);
+    expect(view.getByLabelText("Enter")).toBeTruthy();
+    // Without a question the area keeps its share, and a strip of conversation.
+    expect(StyleSheet.flatten(view.getByTestId("pane-notices").props.style).maxHeight).toBeLessThanOrEqual(Dimensions.get("window").height / 2);
+    view.unmount();
+
+    mocked.pane.mockResolvedValue(frame({ unrecognised: true }));
+    const waiting = render(<Pane paneId={PANE} />);
+    await waiting.findByText("Waiting on something Shahi cannot read");
+    expect(StyleSheet.flatten(waiting.getByTestId("screen-card").props.style).borderColor).toBe(theme.peach);
+    waiting.unmount();
   });
 
   test("Open Screen shows the terminal itself, without the card", async () => {
