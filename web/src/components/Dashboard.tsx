@@ -9,7 +9,7 @@ import { useMatch, useNavigate } from "react-router-dom";
 import type { AgentStatus, DashboardPane, ParsedPrompt, Session } from "../api";
 import { AgentIcon } from "./AgentIcon";
 import { Logo } from "./Logo";
-import { Prompt } from "./Prompt";
+import { Prompt, PromptContext } from "./Prompt";
 import { useScrollMemory } from "../useScrollMemory";
 
 interface Props {
@@ -291,13 +291,7 @@ function BlockedCard({
       {prompt ? (
         <>
           <p className="blocked__question">{prompt.question}</p>
-          {prompt.context && prompt.context.length > 0 && (
-            <div className="asked__context">
-              {prompt.context.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
-            </div>
-          )}
+          <PromptContext context={prompt.context} />
           <Prompt key={prompt.promptId ?? JSON.stringify(prompt)} prompt={prompt} disabled={!available} onAnswer={onAnswer} />
         </>
       ) : answered ? (

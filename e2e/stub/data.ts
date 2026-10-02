@@ -108,14 +108,31 @@ export const approval = (): ParsedPrompt => ({
   ],
 });
 
-/** The prompt shape a permission request renders. */
+/**
+ * Claude Code's edit approval, as the first task of build 32 drew it: the
+ * diff between `╌` rules drawn the terminal's full width, and a second option
+ * carrying its keyboard shortcut. Held in a card capped at a share of the
+ * screen, the diff filled it and the answers sat below its edge.
+ */
 export const permission = (): ParsedPrompt => ({
-  question: "Do you want to make this edit to index.ts?",
+  question: "Do you want to make this edit to tip.py?",
   answer: "digit",
+  context: [
+    [
+      "Edit file",
+      "tip.py",
+      "╌".repeat(146),
+      "   1  def split(total, tip, people):",
+      "   2 -    return round((total + tip) / people, 2)",
+      "   2 +    return round((total * (1 + tip / 100)) / people, 2)",
+      ...Array.from({ length: 16 }, (_, i) => `  ${String(i + 3).padStart(2)}      # step ${i + 1} of the calculation, kept as it was`),
+      "╌".repeat(146),
+    ].join("\n"),
+  ],
   options: [
     { index: 1, label: "Yes", selected: true },
-    { index: 2, label: "Yes, and don't ask again this session", selected: false },
-    { index: 3, label: "No, and tell Claude what to do differently", selected: false },
+    { index: 2, label: "Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)", selected: false },
+    { index: 3, label: "No", selected: false },
   ],
 });
 

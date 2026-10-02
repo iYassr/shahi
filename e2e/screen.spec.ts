@@ -95,3 +95,37 @@ test("an unrecognised wait shows its screen in Read, and its keys reach the pane
   await expect(page.locator(".xterm")).toBeVisible();
   await expect(card).toBeHidden();
 });
+
+// Right after its folder trust was answered, an idle Claude waiting for its
+// first message showed this card with a question's amber border, and read as
+// something that needed you (first-task test of build 32, on the native app;
+// this card is the same).
+test("a new agent's screen is information, not an alarm, until the agent waits on it", async ({ page }) => {
+  await scenario(page, "busy");
+  const screen = ["", "╭───╮", "│ ✻ Welcome to Claude Code │", "╰───╯", "", "❯ Try \"fix the failing test\"", ""].join("\n");
+  // A conversation with nothing in it yet, so Read shows the screen.
+  const patched = await page.request.post("/__stub/scenario", { data: { patch: { transcripts: { "w2:p1": [] }, screens: { "w2:p1": screen } } } });
+  expect(patched.ok()).toBe(true);
+  const border = (card: import("@playwright/test").Locator) => card.evaluate((el) => {
+    const accent = document.createElement("span");
+    accent.style.color = "var(--accent)";
+    document.body.append(accent);
+    const amber = getComputedStyle(accent).color;
+    accent.remove();
+    return { border: getComputedStyle(el).borderTopColor, amber };
+  });
+
+  await page.goto("/pane/w2%3Ap1");
+  const idle = page.getByRole("region", { name: "On the computer's screen" });
+  await expect(idle).toBeVisible();
+  const quiet = await border(idle);
+  expect(quiet.border).not.toBe(quiet.amber);
+  await expect(idle.getByRole("button", { name: "Enter", exact: true })).toBeEnabled();
+
+  await page.request.post("/__stub/scenario", { data: { patch: { unrecognised: ["w2:p1"] } } });
+  await page.reload();
+  const waiting = page.getByRole("region", { name: "Waiting on something Shahi cannot read" });
+  await expect(waiting).toBeVisible();
+  const loud = await border(waiting);
+  expect(loud.border).toBe(loud.amber);
+});

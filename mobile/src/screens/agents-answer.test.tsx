@@ -52,3 +52,32 @@ test("a waiting card shows the command it would run above its options", () => {
   expect(view.getByText("Bash command")).toBeTruthy();
   expect(view.getByText(/rm -rf build dist/)).toBeTruthy();
 });
+
+// A key a phone does not have, read off the end of every codex choice ("(y)",
+// "(p)", "(esc)"). Shown without it; the answer still names the option as the
+// screen does, because the computer compares it with a fresh read before it
+// presses anything (first-task test of build 32).
+test("a waiting card shows its options without keyboard shortcuts, and answers with the label on screen", async () => {
+  const codex: ParsedPrompt = {
+    question: "Would you like to run the following command?",
+    answer: "digit",
+    options: [
+      { index: 1, label: "Yes, proceed (y)", selected: true },
+      { index: 2, label: "No, and tell Codex what to do differently (esc)", selected: false },
+    ],
+    context: ["$ ls"],
+  };
+  const saved = mockState.prompts["w1:p1"]!;
+  mockState.prompts["w1:p1"] = codex;
+  mockState.api.answerPrompt.mockClear();
+  try {
+    const view = render(<Agents onOpenPane={jest.fn()} />);
+    expect(view.queryByText(/\((y|esc)\)/)).toBeNull();
+    expect(view.getByRole("button", { name: "2. No, and tell Codex what to do differently" })).toBeTruthy();
+    fireEvent.press(view.getByText("Yes, proceed"));
+    await waitFor(() => expect(mockState.api.answerPrompt).toHaveBeenCalledTimes(1));
+    expect(mockState.api.answerPrompt).toHaveBeenCalledWith("w1:p1", codex.options[0], codex, undefined);
+  } finally {
+    mockState.prompts["w1:p1"] = saved;
+  }
+});

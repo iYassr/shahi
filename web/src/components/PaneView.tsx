@@ -3,7 +3,7 @@ import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
 import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
-import { paneTitle, sendRefusedBeforeTyping, supports } from "@shahi/shared";
+import { paneTitle, promptIdentity, sendRefusedBeforeTyping, supports } from "@shahi/shared";
 /**
  * A single pane: its prompt, its live screen, its recorded history, and a way
  * to type into it.
@@ -12,7 +12,7 @@ import { paneTitle, sendRefusedBeforeTyping, supports } from "@shahi/shared";
  * or shift+Tab, and agents ask for all four. Those go through herdr's
  * `pane.send_keys`, which names keys rather than sending bytes.
  */
-import { Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { lazyChunk } from "../lazy-chunk";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -30,7 +30,7 @@ import {
 } from "../api";
 import { AgentAvatar } from "./AgentAvatar";
 import { Attach, formatSize, type Attachment } from "./Attach";
-import { Prompt } from "./Prompt";
+import { Prompt, PromptContext } from "./Prompt";
 import { Reader } from "./Reader";
 import { ScreenCard } from "./ScreenCard";
 import { fitScale } from "../termfit";
@@ -217,6 +217,14 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
   const occupancy = useOccupancy(instanceId);
   const frame = frames[paneId] ?? detail?.frame ?? null;
   const prompt = prompts[paneId] ?? frame?.prompt ?? null;
+  // A question that does not fit opens at its answers, the end of its card:
+  // the question above is a scroll away, where the answers below once were
+  // (see `.blocked--ask`). Before paint, so it never shows the other end.
+  const askCard = useRef<HTMLElement>(null);
+  const asked = prompt ? promptIdentity(prompt) : null;
+  useLayoutEffect(() => {
+    if (askCard.current) askCard.current.scrollTop = askCard.current.scrollHeight;
+  }, [asked, tab]);
 
   useEffect(() => {
     onWatch(paneId);
@@ -469,20 +477,14 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         />
       )}
 
+      {/* Not held to a share of the column, and opened at its answers when
+          it scrolls: see `.blocked--ask` in session.css. */}
       {prompt && tab !== "screen" && (
-        <section className="blocked" style={{ marginBottom: 0 }}>
+        <section ref={askCard} className="blocked blocked--ask" style={{ marginBottom: 0 }}>
           <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
             {prompt.question}
           </p>
-          {/* The command and the reason behind it: monospace, because it is a
-              command, and scrollable rather than wrapped across the screen. */}
-          {prompt.context && prompt.context.length > 0 && (
-            <div className="asked__context">
-              {prompt.context.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
-            </div>
-          )}
+          <PromptContext context={prompt.context} />
           <Prompt
             key={prompt.promptId ?? JSON.stringify(prompt)}
             prompt={prompt}

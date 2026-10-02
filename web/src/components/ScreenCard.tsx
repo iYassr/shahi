@@ -19,8 +19,12 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: Pr
   const rows = screenTail(text);
   if (rows.length === 0) return null;
   const heading = waiting ? "Waiting on something Shahi cannot read" : "On the computer's screen";
+  // Amber only when the agent waits on it: an idle Claude after its folder
+  // trust, waiting for nothing but a first message, carried a question's
+  // border and read as something that needed you (first-task test of build
+  // 32, October 2026). The native card is the same.
   return (
-    <section className="blocked screencard" aria-label={heading}>
+    <section className={waiting ? "blocked screencard" : "blocked screencard screencard--idle"} aria-label={heading}>
       <p className="blocked__question" style={{ borderTop: "none" }}>
         {heading}
         {waiting && <span className="screencard__hint"> Messages are not sent until it is answered.</span>}

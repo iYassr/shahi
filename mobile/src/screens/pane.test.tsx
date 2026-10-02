@@ -1,11 +1,12 @@
 import { clearNativeDrafts, forgetNativeDraft } from "@/lib/drafts";
 import { act, fireEvent, render, waitFor, within } from "@testing-library/react-native";
-import { AppState, Dimensions, FlatList, StyleSheet, View } from "react-native";
+import { AppState, Dimensions, FlatList, ScrollView, StyleSheet, View } from "react-native";
 import { createElement } from "react";
 import type { LogBlock, LogMessage, ParsedPrompt, PromptReceipt, SessionLog } from "@shahi/shared";
 import { api, ApiError, connection, UnauthorizedError, UnreachableError } from "@/lib/api";
 import { FileDownloadError } from "@shahi/shared/file-download";
 import { forgetPaneMemory, paneScrollPlace, Pane } from "./pane";
+import { theme } from "@/lib/theme";
 import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
 
 // The first test in this file pays for loading the screen and its mocks under
@@ -1421,7 +1422,10 @@ describe("the largest text sizes", () => {
 
   // A four-option question at AX5 was taller than the screen: the reader was
   // squeezed to a sliver, the composer pushed off the bottom, and the last
-  // options were out of reach.
+  // options were out of reach. With a question the area is no longer held to
+  // a share of the window (40% hid an edit approval's answers under its diff,
+  // build 32): it is only as tall as it needs and gives way to the composer,
+  // which stays outside it, and it keeps the answers in view.
   test("a prompt card scrolls inside a bounded height instead of pushing the conversation and composer off screen", async () => {
     const prompt: ParsedPrompt = {
       question: "Which colour do you prefer?",
@@ -1438,14 +1442,37 @@ describe("the largest text sizes", () => {
     const view = render(<Pane paneId={PANE} />);
     const card = await view.findByTestId("prompt-card");
     const area = view.getByTestId("pane-notices");
-    const style = StyleSheet.flatten(area.props.style);
-    const { height } = Dimensions.get("window");
     expect(within(area).getByTestId("prompt-card")).toBe(card);
-    expect(style.maxHeight).toBeGreaterThan(0);
-    expect(style.maxHeight).toBeLessThanOrEqual(height / 2);
-    expect(style.flexGrow).toBe(0);
-    expect(view.getByText("Type something.")).toBeTruthy();
+    expect(StyleSheet.flatten(area.props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1 });
+    expect(StyleSheet.flatten(area.props.style).maxHeight).toBeUndefined();
+    expect(within(card).getByText("Type something.")).toBeTruthy();
+    expect(within(area).queryByPlaceholderText("Reply to this agent…")).toBeNull();
     expect(view.getByPlaceholderText("Reply to this agent…")).toBeTruthy();
+  });
+
+  // Where the card is taller than the room above the composer, the answers
+  // are its end: the area holds itself there as it is laid out, and lets go
+  // once the person scrolls it, to read the question above.
+  test("a question taller than its room opens at its answers, and stays where the person scrolls it", async () => {
+    const scrollToEnd = jest.spyOn(ScrollView.prototype, "scrollToEnd").mockImplementation(() => undefined);
+    try {
+      const prompt = { question: "Allow this edit?", answer: "digit", options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }] } as ParsedPrompt;
+      mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "May I?")]));
+      mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+      const view = render(<Pane paneId={PANE} />);
+      await view.findByTestId("prompt-card");
+      const area = view.getByTestId("pane-notices");
+      scrollToEnd.mockClear();
+      fireEvent(area, "contentSizeChange", 390, 900);
+      fireEvent(area, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 400 } } });
+      expect(scrollToEnd).toHaveBeenCalledTimes(2);
+      fireEvent(area, "scrollBeginDrag", { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+      fireEvent(area, "contentSizeChange", 390, 950);
+      expect(scrollToEnd).toHaveBeenCalledTimes(2);
+      view.unmount();
+    } finally {
+      scrollToEnd.mockRestore();
+    }
   });
 
   // Offline at AX1 to AX5, the connection banner above the prompt grew taller
@@ -1468,13 +1495,11 @@ describe("the largest text sizes", () => {
       const view = render(<Pane paneId={PANE} />);
       await view.findByTestId("prompt-card");
       const area = view.getByTestId("pane-notices");
-      // One bounded, scrolling area holds the banner, its buttons and the prompt...
+      // One scrolling area that gives way holds the banner, its buttons and the prompt...
       expect(within(area).getByText("Retry connection")).toBeTruthy();
       expect(within(area).getByText("Switch computer")).toBeTruthy();
       expect(within(area).getByTestId("prompt-card")).toBeTruthy();
-      const style = StyleSheet.flatten(area.props.style);
-      expect(style.flexGrow).toBe(0);
-      expect(style.maxHeight).toBeLessThanOrEqual(Dimensions.get("window").height / 2);
+      expect(StyleSheet.flatten(area.props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1 });
       // ...and the composer is not in it.
       expect(within(area).queryByText("Send")).toBeNull();
       expect(view.getByText("Offline")).toBeTruthy();
@@ -1925,6 +1950,71 @@ describe("an approval opened in the pane", () => {
     const card = await view.findByTestId("prompt-card");
     expect(within(card).getByText("$ sed -n '1,180p' e2e/stress.spec.ts")).toBeTruthy();
     expect(within(card).getByText(/Reason: May I inspect/)).toBeTruthy();
+  });
+
+  // Claude's edit approval as the first task of build 32 drew it. The diff
+  // filled the area the card shared with the banners, capped at 40% of the
+  // window: "1. Yes … 3. No" sat below its edge, unanswerable unless you
+  // found the scroll. The rules around the diff wrapped into three lines of
+  // dashes each, a line of code broke after its comma, and option 2 ended in
+  // "(shift+tab)", a key a phone does not have.
+  const diff = [
+    "Edit file\ntip.py",
+    [
+      "╌".repeat(146),
+      "   2 -    return round((total + tip) / people, 2)",
+      ...Array.from({ length: 30 }, (_, i) => `  ${i + 3}      # unchanged line ${i}`),
+      "╌".repeat(146),
+    ].join("\n"),
+  ];
+  const editApproval = {
+    question: "Do you want to make this edit to tip.py?",
+    answer: "digit",
+    context: diff,
+    options: [
+      { index: 1, label: "Yes", selected: true },
+      { index: 2, label: "Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)", selected: false },
+      { index: 3, label: "No", selected: false },
+    ],
+  } as ParsedPrompt;
+
+  test("an approval with a long diff keeps its answers on screen", async () => {
+    const view = blockedOn(editApproval);
+    const card = await view.findByTestId("prompt-card");
+    // The diff scrolls in a box of its own, a few lines tall at most...
+    const context = within(card).getByTestId("prompt-context");
+    expect(StyleSheet.flatten(context.props.style).maxHeight).toBeLessThanOrEqual(160);
+    // ...the answers are outside it, in the card itself...
+    expect(within(context).queryByText("No")).toBeNull();
+    for (const name of ["1. Yes", "2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session", "3. No"]) {
+      expect(within(card).getByRole("button", { name })).toBeTruthy();
+    }
+    // ...and the card is not held to a share of the window, on an area nothing shows through.
+    const area = StyleSheet.flatten(view.getByTestId("pane-notices").props.style);
+    expect(area.maxHeight).toBeUndefined();
+    expect(area.backgroundColor).toBe(theme.void);
+  });
+
+  test("an approval's diff loses its rules and keeps its code lines whole", async () => {
+    const view = blockedOn(editApproval);
+    const context = await view.findByTestId("prompt-context");
+    expect(within(context).queryByText(/╌/)).toBeNull();
+    const code = within(context).getByText(/return round\(\(total \+ tip\) \/ people, 2\)/);
+    // Given the width of its longest line, so the phone cannot wrap it.
+    const longest = "   2 -    return round((total + tip) / people, 2)".length;
+    expect(StyleSheet.flatten(code.props.style).width).toBeGreaterThanOrEqual(longest * 12 * 0.6);
+  });
+
+  test("an option shows no keyboard shortcut, and the answer still names it as the screen does", async () => {
+    const answerPrompt = (api as unknown as { answerPrompt: jest.Mock }).answerPrompt;
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = blockedOn(editApproval);
+    await view.findByTestId("prompt-card");
+    expect(view.queryByText(/shift\+tab/)).toBeNull();
+    fireEvent.press(view.getByText("Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session"));
+    await settle();
+    expect(answerPrompt).toHaveBeenCalledWith(PANE, editApproval.options[1], editApproval, undefined);
+    view.unmount();
   });
 });
 
@@ -2519,6 +2609,28 @@ describe("the screen card", () => {
     await view.findByText("Do you want to proceed?");
     expect(view.queryByText("On the computer's screen")).toBeNull();
     view.unmount();
+  });
+
+  // Right after its folder trust was answered, an idle Claude waiting for its
+  // first message showed this card with a question's amber border, and read
+  // as something that needed you (first-task test of build 32).
+  test("a new agent's screen is information, not an alarm, until the agent waits on it", async () => {
+    mocked.sessionLog.mockRejectedValue(noTranscript());
+    mocked.pane.mockResolvedValue(frame());
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText("On the computer's screen");
+    const idle = StyleSheet.flatten(view.getByTestId("screen-card").props.style);
+    expect(idle.borderColor).not.toBe(theme.peach);
+    expect(view.getByLabelText("Enter")).toBeTruthy();
+    // Without a question the area keeps its share, and a strip of conversation.
+    expect(StyleSheet.flatten(view.getByTestId("pane-notices").props.style).maxHeight).toBeLessThanOrEqual(Dimensions.get("window").height / 2);
+    view.unmount();
+
+    mocked.pane.mockResolvedValue(frame({ unrecognised: true }));
+    const waiting = render(<Pane paneId={PANE} />);
+    await waiting.findByText("Waiting on something Shahi cannot read");
+    expect(StyleSheet.flatten(waiting.getByTestId("screen-card").props.style).borderColor).toBe(theme.peach);
+    waiting.unmount();
   });
 
   test("Open Screen shows the terminal itself, without the card", async () => {

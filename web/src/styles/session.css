@@ -15,13 +15,30 @@
  * zoom or with the keyboard open, "3. No, and tell Claude…" was cut off, a
  * codex approval showed no options at all, and nothing scrolled to them
  * (pre-release bug hunt, 2026-09). Capped at half the column, so a strip of
- * the conversation stays in view wherever there is room for one.
+ * the conversation stays in view wherever there is room for one — the screen
+ * card still is; the question card no longer is, below.
  */
 .detail > .blocked {
   flex: 0 1 auto;
   max-height: 50%;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/*
+ * A question's answers are never what scrolls out of sight.
+ *
+ * Held to half the column, an edit approval's diff and question filled the
+ * card and "3. No" sat below its edge — a question with no visible answer
+ * (first-task test of build 32 on the native app, October 2026; this card
+ * had the same cap). So the question card is not capped: its context is
+ * bounded (`.asked__context`), and it gives way only to the composer and the
+ * tab row, as the conversation shrinks first. When even that is too little
+ * (landscape, the keyboard up, text zoomed far) the card scrolls as it did,
+ * and opens at its answers (`PaneView`). The native card is the same.
+ */
+.detail > .blocked--ask {
+  max-height: none;
 }
 
 /* The tabs' panel takes the column's space, as its contents did before it. */
