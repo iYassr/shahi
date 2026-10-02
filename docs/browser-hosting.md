@@ -237,6 +237,26 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 2 October 2026, the fresh-install fixes
+
+Published the site and hosted client from a clean checkout of `f6b6a33`
+(computer release 0.3.20) as Cloudflare version
+`effe02a6-b7f8-4e94-b07b-29c7b9c8db67`. It replaced
+`044822de-468c-43c6-bbb0-79745a6ed71a`, which is the version to roll back to.
+`/`, `/privacy`, `/pwa/`, `/pwa/sw.js` and `/og.png` answered 200 and an
+unknown path 404; the live `/pwa/` shell and service worker were
+byte-identical to the build.
+
+The relay was deployed from the same checkout as `shahi-relay` version
+`ff649b25-35c5-4934-90c8-f4f601757046`, for phones waiting on an offline
+computer (`docs/relay.md`, "Waiting for the box"). It replaced
+`ef06452c-faad-4084-ad5b-2adf15e167ad`, the version to roll back to.
+`/health` answered 200 and the owner's computer reported
+`relay.connected: true` at the first check after the deploy. On the
+simulator, against this relay code under `wrangler dev`, build 33 was LIVE
+within 6 seconds of its computer's service returning after 45 seconds away,
+where build 32 had taken 16 to 22.
+
 ## Verified deployment — 26 September 2026, review completion
 
 Published the site and hosted client from clean commit `5748ecb` as Cloudflare
