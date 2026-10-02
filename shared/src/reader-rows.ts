@@ -1,6 +1,18 @@
 import type { BackgroundNotice, LogBlock, LogMessage, ReaderTask, SessionLog } from "./index";
 
-export type ActivityStep = { id: string; at: number; block: Extract<LogBlock, { kind: "tool" | "thinking" }> };
+export type ActivityStep = {
+  id: string;
+  at: number;
+  /** As shown: a tool's summary names files in the pane's folder relative to it (`inFolder`). */
+  block: Extract<LogBlock, { kind: "tool" | "thinking" }>;
+  /**
+   * Whether the step's time says anything the step above it did not. Every
+   * step had its own line, and three steps read "2:10 AM" three times
+   * (simulator run of build 32, October 2026). Compared to the minute, which
+   * is what a reader prints.
+   */
+  showTime: boolean;
+};
 export interface ReaderActivity {
   steps: ActivityStep[];
   files: { path: string; name: string }[];
@@ -17,7 +29,7 @@ export interface ReaderRow extends LogMessage {
  * Questions and failed steps remain visible. No provider-specific prose is
  * guessed to be a final answer, a command, or an instruction to the person.
  */
-export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): ReaderRow[] {
+export function readerRows(messages: LogMessage[], previous: ReaderRow[] = [], cwd?: string | null): ReaderRow[] {
   const rows: ReaderRow[] = [];
   // A client holds a contiguous tail of the transcript, so every subagent call
   // it holds has its later notices too. The last one wins: a resumed agent
@@ -39,7 +51,7 @@ export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): 
         && before.activity.steps.length === row.activity.steps.length
         && before.activity.steps.every((step, i) => {
           const next = row.activity!.steps[i]!;
-          return step.id === next.id && step.at === next.at && step.block === next.block;
+          return step.id === next.id && step.at === next.at && step.block === next.block && step.showTime === next.showTime;
         }));
     rows.push(same ? before : row);
   };
@@ -70,7 +82,9 @@ export function readerRows(messages: LogMessage[], previous: ReaderRow[] = []): 
           return;
         }
         if (block.kind === "thinking" || block.kind === "tool" && !block.questions?.length && !block.result?.isError) {
-          steps.push({ id: JSON.stringify([message.id, index]), at: message.at, block });
+          const before = steps.at(-1)?.at;
+          steps.push({ id: JSON.stringify([message.id, index]), at: message.at, block: block.kind === "tool" ? inFolder(block, cwd) : block,
+            showTime: !!message.at && (!before || Math.floor(before / 60_000) !== Math.floor(message.at / 60_000)) });
           if (block.kind === "tool") {
             if (block.file) files.set(block.file.path, block.file);
             block.result?.images.forEach(ref => images.add(ref));
@@ -116,6 +130,27 @@ export function readerActivityLabel(activity: ReaderActivity, working: boolean):
 
 type ToolBlock = Extract<LogBlock, { kind: "tool" }>;
 const views = new WeakMap<ToolBlock, { notice: string | undefined; view: ToolBlock }>();
+const folderViews = new WeakMap<ToolBlock, { folder: string; view: ToolBlock }>();
+
+/**
+ * A step's summary with files inside the pane's working folder named from
+ * it: "Read tip.py", where every step said "Read /Users/me/ShahiFresh/
+ * tip-calc/tip.py" (simulator run of build 32). Only a path that begins at a
+ * word boundary and goes on past the folder is shortened, so a command's
+ * `cd` into the folder itself reads as written. Display only: the file to
+ * open keeps its absolute path, and the same object comes back while nothing
+ * changes, so unchanged rows are reused (see `append`).
+ */
+function inFolder(block: ToolBlock, cwd: string | null | undefined): ToolBlock {
+  const folder = cwd?.replace(/\/+$/, "");
+  if (!folder || !block.summary.includes(`${folder}/`)) return block;
+  const held = folderViews.get(block);
+  if (held?.folder === folder) return held.view;
+  const escaped = folder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const view: ToolBlock = { ...block, summary: block.summary.replace(new RegExp(`(^|[\\s"'=(:])${escaped}/(?=[^\\s/])`, "g"), "$1") };
+  folderViews.set(block, { folder, view });
+  return view;
+}
 
 /**
  * The subagent call with its state and report filled in: from its notice when

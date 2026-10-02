@@ -62,6 +62,44 @@ test("prepending history preserves existing prose anchors and the disclosure key
   expect(after.at(-1)!.activity!.steps).toHaveLength(2);
 });
 
+// Simulator run of build 32: three steps in one minute each printed "2:10 AM".
+test("an expanded activity shows a step's time only when it differs from the step above", () => {
+  const at = (id: string, minute: number, second = 0) => ({ ...message(id, [tool()]), at: Date.UTC(2026, 9, 2, 2, minute, second) });
+  const rows = readerRows([at("a", 10, 1), at("b", 10, 30), at("c", 10, 59), at("d", 11), at("e", 11, 5)]);
+  expect(rows[0]!.activity!.steps.map(step => step.showTime)).toEqual([true, false, false, true, false]);
+  // A message without a time has none to show.
+  expect(readerRows([{ ...message("x", [tool()]), at: 0 }])[0]!.activity!.steps[0]!.showTime).toBe(false);
+});
+
+test("a step's time is shown again when history loaded above it takes the minute", () => {
+  const at = (id: string, second: number) => ({ ...message(id, [tool()]), at: Date.UTC(2026, 9, 2, 2, 10, second) });
+  const before = readerRows([at("b", 30)]);
+  expect(before[0]!.activity!.steps[0]!.showTime).toBe(true);
+  const after = readerRows([at("a", 1), at("b", 30)], before);
+  expect(after[0]!.activity!.steps.map(step => step.showTime)).toEqual([true, false]);
+  expect(after[0]).not.toBe(before[0]);
+});
+
+// Simulator run of build 32: "Read /Users/yasserdo/ShahiFresh/tip-calc/tip.py".
+test("paths inside the pane's folder are shown from it, and only for display", () => {
+  const folder = "/Users/me/ShahiFresh/tip-calc";
+  const file = { path: `${folder}/tip.py`, name: "tip.py" };
+  const read: LogBlock = { kind: "tool", name: "Read", summary: `${folder}/tip.py`, file, result: null };
+  const run: LogBlock = { kind: "tool", name: "Bash", summary: `cd ${folder} && python ${folder}/tests/test_tip.py "${folder}/x"`, result: null };
+  const outside: LogBlock = { kind: "tool", name: "Read", summary: "/Users/me/ShahiFresh/tip-calc-old/tip.py", result: null };
+  const input = [message("a", [read, run, outside])];
+  const rows = readerRows(input, [], `${folder}/`);
+  const steps = rows[0]!.activity!.steps.map(step => step.block as Extract<LogBlock, { kind: "tool" }>);
+  expect(steps.map(step => step.summary)).toEqual(["tip.py", `cd ${folder} && python tests/test_tip.py "x"`, "/Users/me/ShahiFresh/tip-calc-old/tip.py"]);
+  // The file still opens where it is, and the transcript is unchanged.
+  expect(steps[0]!.file).toEqual(file);
+  expect(rows[0]!.activity!.files).toEqual([file]);
+  expect((input[0]!.blocks[0] as Extract<LogBlock, { kind: "tool" }>).summary).toBe(`${folder}/tip.py`);
+  // Without a folder, nothing changes; a quiet poll keeps every row.
+  expect(readerRows(input)[0]!.activity!.steps[0]!.block).toBe(read);
+  expect(readerRows(input, rows, folder)).toBe(rows);
+});
+
 test("live labels describe known operations without publishing command paths or inventing progress", () => {
   const activity = readerRows([message("x", [tool("Read")])])[0]!.activity!;
   expect(readerActivityLabel(activity, true)).toBe("Reading files… · 1 step");
