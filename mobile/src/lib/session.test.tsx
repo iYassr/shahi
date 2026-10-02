@@ -89,7 +89,7 @@ test("a remembered relay connection comes back as that device, through the relay
   expect(connection.baseUrl).toBe("");
   await waitFor(() => expect(FakeSocket.opened).toHaveLength(1));
   const ws = FakeSocket.opened[0]!;
-  expect(ws.url).toBe("wss://relay.example.dev/v1/phone/Zm9v-bar_baz");
+  expect(ws.url).toBe("wss://relay.example.dev/v1/phone/Zm9v-bar_baz?wait=1");
 
   // The box greets, keyed from the same device secret the keychain held.
   ws.readyState = 1;

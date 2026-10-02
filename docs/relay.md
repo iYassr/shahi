@@ -12,7 +12,8 @@ meet here, so every byte on the wire is specified below and the shared shapes
 live in `shared/src/relay.ts`. Change the protocol by changing this file and
 that module together, and by bumping `RELAY_PROTOCOL`. An addition that an
 older peer can ignore without harm — the sealed `bye`, the box's `proofs` and
-`proven` — is unversioned, and says so where it is described.
+`proven`, a phone's `?wait=1` — is unversioned, and says so where it is
+described.
 
 ## Who is who
 
@@ -63,7 +64,8 @@ secrets for phones:
   keep the real computer's reconnect out.
 - `wss://<relay>/v1/phone/<serverId>` — a phone's connection. If no box is
   connected the relay closes it at once with `4404` ("box offline"); the app
-  shows that in words. Otherwise the relay assigns a **link** number and tells
+  shows that in words. A phone that adds `?wait=1` is held instead, until the
+  box arrives (below, "Waiting for the box"). Otherwise the relay assigns a **link** number and tells
   the box `{"t":"open","link":n}`; when the phone goes it tells the box
   `{"t":"close","link":n}`; the box can end a link with the same message.
   Once a link has sent a sealed frame that opened on the box — proof that it
@@ -116,6 +118,40 @@ second. Phone text frames are charged and then dropped, never forwarded.
 The relay keeps no history: a frame that arrives while the box is disconnected
 is dropped and the phone's socket is closed with `4404`, which is honest — the
 phone reconnects and asks again.
+
+**Waiting for the box.** A refused phone retries on a backoff that reaches
+thirty seconds, so once a computer had been away for a minute its phones
+learned it was back up to thirty seconds late. Measured on build 32: the
+computer's service was on the relay again 1.1 s after a restart, and the app
+stayed OFFLINE for another 16–22 s. Polling faster would cost a relay request
+each time, for as long as the computer is away. So a phone may ask to wait, by
+dialling `wss://<relay>/v1/phone/<serverId>?wait=1`:
+
+- With a ready box, nothing changes: the phone gets a link.
+- With no ready box, the relay holds the socket and sends it the text frame
+  `{"t":"waiting"}` — the only text a relay sends a phone. The phone's hello,
+  sent on open before it could know, is dropped; any further frame closes the
+  socket with `4404`, as if it had not asked. The phone's `ping` is answered
+  `pong` by the runtime without waking the object, and the phone sends one
+  every twenty seconds, so its route stays open, and drops a waiting socket
+  that hears nothing for seventy seconds.
+- When the box authenticates, the relay closes every waiting socket with
+  `4200` ("box online"). The phone dials again at once, without its backoff,
+  and its hello reaches the box. A waiting socket closed by anything else
+  is retried on the ordinary backoff.
+
+A held socket hibernates and sets no alarm, so waiting costs one connection
+per wait instead of one per backoff interval. At most eight phones wait per
+box; a ninth closes the longest-waiting one that has waited at least a second,
+with `4404`, or is refused itself if none has. A waiting phone that is closed
+this way is back on the backoff, which is all any phone had before, so a
+stranger who knows the `serverId` cannot lock the owner's phone out this way.
+The relay records a held phone as the `refused` "box offline" it replaces.
+
+Additive and unversioned. An older relay reads only the path, ignores the
+query and refuses with `4404`; a phone that never asks is never held. Only a
+paired device asks: a pairing link lives for one claim and is closed on its
+first failure.
 
 ## What the box and phone do (end to end, opaque to the relay)
 
@@ -361,8 +397,9 @@ wakes it; an alarm every five minutes reads the timestamp of the last such
 answer and closes any box not heard from in five minutes (code `1000`,
 reason `silent`), which closes that box's phones with `4404`. A box that does
 not ping is therefore dropped every five minutes: the sidecar's relay client
-must ping. Phones may ping too and get the same `pong`, but nothing depends
-on it — an idle phone is closed after the ten-minute limit regardless.
+must ping. Phones may ping too and get the same `pong`. Only a phone waiting
+for its box depends on it, to keep its route open; a phone with a link is
+closed after the ten-minute idle limit regardless.
 
 **What it logs.** Nothing about frames. The relay records one **Workers
 Analytics Engine** data point per lifecycle event, and writes the same fields
@@ -516,7 +553,8 @@ ping, which lives in the sidecar, not here — a deliberate next step.
 | `4429` | `too many pending boxes` | box | a ninth unauthenticated box connection: the longest-waiting pending one (at least 1 s old) is closed, or the newcomer if all eight are younger |
 | `1000` | `silent`            | box   | five minutes without a frame or a `ping`          |
 | `4429` | `control too large` | either | a text frame over 4 KiB, counted in UTF-8 bytes   |
-| `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away |
+| `4404` | `box offline`       | phone | no ready box on connect, on send, or box went away; a waiting phone that sent more than its hello, or made room for a newer one |
+| `4200` | `box online`        | phone | a phone waiting with `?wait=1`, the moment its box authenticates: dial again now |
 | `4429` | `too many phones`   | phone | a ninth phone: the longest-silent phone open at least 1 s is closed with this, or else, on a box that sent `"proofs":true`, the longest-waiting one it has not reported `proven`; the newcomer if neither exists |
 | `4429` | `frame too large`   | phone | a data frame over 1 MiB, sent by the phone or by the box for this link; either way the box is told `close` for the link, and the box and its other phones stay connected |
 | `4429` | `rate`              | phone | the token bucket (64 KiB/s, 1 MiB burst) ran dry; every phone frame, text included, costs at least 256 bytes, so at most 256 frames/s sustained and 4,096 in a burst |

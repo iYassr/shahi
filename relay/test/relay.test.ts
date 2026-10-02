@@ -11,6 +11,7 @@ import {
   WS,
   connectBox,
   connectPhone,
+  connectWaitingPhone,
   newBox,
   signAuth,
   startRelay,
@@ -307,6 +308,83 @@ describe("phone", () => {
     phone.send("ping");
     expect(await phone.next()).toBe("pong");
     expect(await boxPeer.hears()).toBe(false);
+    phone.close();
+    boxPeer.close();
+  });
+});
+
+describe("a phone waiting for its box", () => {
+  // Build 32 on the simulator: the computer's service was back on the relay
+  // 1.1 s after a restart, and the app stayed OFFLINE for 16–22 s more,
+  // because a refused phone's retries were by then 15–30 s apart. A phone
+  // that asks to wait is held instead, and told the moment the box arrives.
+  test("a phone that asks to wait for an offline box is held and told so, not refused", async () => {
+    const box = newBox();
+    const phone = await connectWaitingPhone(box);
+    expect(JSON.parse(String(await phone.next()))).toEqual({ t: "waiting" });
+    // Its hello, sent before it could know, is dropped: there is no box.
+    phone.send(new TextEncoder().encode('{"t":"hello"}'));
+    const early = await Promise.race([phone.closed, Bun.sleep(800).then(() => null)]);
+    expect(early).toBeNull();
+    phone.close();
+  });
+
+  test("a waiting phone is closed with 4200 the moment its box is back, and its next dial is a link", async () => {
+    const box = newBox();
+    const phone = await connectWaitingPhone(box);
+    expect(JSON.parse(String(await phone.next()))).toEqual({ t: "waiting" });
+    const started = Date.now();
+    const boxPeer = await connectBox(box);
+    expect(await phone.closed).toEqual({ code: RELAY_CLOSE.boxOnline, reason: "box online" });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    const again = await connectWaitingPhone(box);
+    expect(await boxPeer.text()).toEqual({ t: "open", link: 1 });
+    again.close();
+    boxPeer.close();
+  });
+
+  test("a waiting phone's ping is answered by the relay alone", async () => {
+    const box = newBox();
+    const phone = await connectWaitingPhone(box);
+    await phone.next();
+    phone.send("ping");
+    expect(await phone.next()).toBe("pong");
+    phone.close();
+  });
+
+  test("a waiting phone that says more than its hello is refused as it always was", async () => {
+    const box = newBox();
+    const phone = await connectWaitingPhone(box);
+    await phone.next();
+    phone.send(new Uint8Array([1]));
+    phone.send(new Uint8Array([2]));
+    expect((await phone.closed).code).toBe(RELAY_CLOSE.boxOffline);
+  });
+
+  test("a ninth waiting phone takes the longest-waiting one's place once it has had its grace", async () => {
+    const box = newBox();
+    const waiting: Peer[] = [];
+    for (let i = 0; i < 8; i++) {
+      waiting.push(await connectWaitingPhone(box));
+      await waiting[i]!.next();
+    }
+    // Inside the grace the newcomer is the one refused, as phones are.
+    const early = await connectWaitingPhone(box);
+    expect((await early.closed).code).toBe(RELAY_CLOSE.boxOffline);
+    await Bun.sleep(1_100);
+    const ninth = await connectWaitingPhone(box);
+    expect(JSON.parse(String(await ninth.next()))).toEqual({ t: "waiting" });
+    expect((await waiting[0]!.closed).code).toBe(RELAY_CLOSE.boxOffline);
+    for (const p of [...waiting.slice(1), ninth]) p.close();
+  });
+
+  test("a phone that asks to wait for a box that is there gets a link at once", async () => {
+    const box = newBox();
+    const boxPeer = await connectBox(box);
+    const phone = await connectWaitingPhone(box);
+    expect(await boxPeer.text()).toEqual({ t: "open", link: 1 });
+    phone.send(new Uint8Array([5]));
+    expect(unframe(await boxPeer.binary())).toMatchObject({ link: 1 });
     phone.close();
     boxPeer.close();
   });

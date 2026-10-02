@@ -11,7 +11,8 @@
  * attachment on the box socket carries the nonce, whether it has proven
  * itself, whether it reports its links' proofs, and the next link number; a
  * phone's carries its link, its token bucket, when it was last heard from and
- * whether the box has vouched for it. Nothing is written to storage.
+ * whether the box has vouched for it; a phone waiting for an offline box
+ * carries only when it arrived. Nothing is written to storage.
  *
  * Nothing here logs a frame. The relay's whole point is that it cannot read
  * one, and a console.log of a payload would be the one way to break that.
@@ -22,11 +23,13 @@ import {
   LINK_PREFIX_BYTES,
   RELAY_CLOSE,
   RELAY_LIMITS,
+  RELAY_WAIT_QUERY,
   type BoxToRelay,
   type RelayToBox,
+  type RelayToPhone,
 } from "@shahi/shared/relay";
 import { hstsHeaders } from "./hsts.ts";
-import { ALARM_FLOOR_MS, EVICTION_GRACE_MS, MAX_PENDING_BOXES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
+import { ALARM_FLOOR_MS, EVICTION_GRACE_MS, MAX_PENDING_BOXES, MAX_WAITING_PHONES, PHONE_FRAME_MIN_BYTES } from "./limits.ts";
 import { ROUTE } from "./route.ts";
 import { record, type TelemetryEnv, type Event } from "./telemetry.ts";
 
@@ -90,7 +93,21 @@ interface PhoneState {
   measuredAt: number;
 }
 
-type Attachment = BoxState | PhoneState;
+/**
+ * The attachment on a phone socket held while its box is offline (`?wait=1`).
+ * It has no link: the box that would number one is not here.
+ */
+interface WaitingState {
+  role: "waiting";
+  serverId: string;
+  /** False once the relay has closed it, so it is closed exactly once. */
+  open: boolean;
+  since: number;
+  /** True once its hello has arrived, the one frame a waiting phone sends. */
+  spoke: boolean;
+}
+
+type Attachment = BoxState | PhoneState | WaitingState;
 
 /** `CloseEvent` codes the relay uses beside the protocol's own. */
 const CLOSE_NORMAL = 1000;
@@ -125,7 +142,7 @@ export class RelayBox extends DurableObject<unknown> {
     const client = pair[0];
     const server = pair[1];
     if (role === "box") await this.acceptBox(server, serverId);
-    else await this.acceptPhone(server, serverId);
+    else await this.acceptPhone(server, serverId, new URL(request.url).search === `?${RELAY_WAIT_QUERY}`);
     // Set here rather than by the Worker, which passes the upgrade through
     // untouched so its WebSocket is never re-wrapped (see hsts.ts).
     return new Response(null, { status: 101, webSocket: client, headers: hstsHeaders(request) });
@@ -159,9 +176,9 @@ export class RelayBox extends DurableObject<unknown> {
     await this.schedule();
   }
 
-  private async acceptPhone(ws: WebSocket, serverId: string): Promise<void> {
+  private async acceptPhone(ws: WebSocket, serverId: string, wait: boolean): Promise<void> {
     const box = this.readyBox();
-    if (!box) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
+    if (!box) return wait ? this.hold(ws, serverId) : this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
     const phones = this.phones();
     const boxState = box.deserializeAttachment() as BoxState;
     if (phones.length >= RELAY_LIMITS.maxPhonesPerBox) {
@@ -217,12 +234,59 @@ export class RelayBox extends DurableObject<unknown> {
     ws.close(code, reason);
   }
 
+  /**
+   * A phone that asked to wait for its offline box: held, told so, and closed
+   * with `boxOnline` when the box authenticates (see `MAX_WAITING_PHONES`).
+   * Recorded as the refusal it replaces, so the offline count means what it
+   * did. Nothing is scheduled: a held socket has no deadline, which is what
+   * keeps waiting free of alarms. It ends when the box arrives, when the phone
+   * leaves, or when a newcomer needs its slot; the phone pings to keep its
+   * route open and drops a socket that stops answering.
+   */
+  private hold(ws: WebSocket, serverId: string): void {
+    const waiting = this.waiting();
+    if (waiting.length >= MAX_WAITING_PHONES) {
+      const stale = longestWaiting(waiting);
+      if (!stale) return this.refuse(ws, RELAY_CLOSE.boxOffline, "box offline", serverId);
+      this.closeWaiting(stale, RELAY_CLOSE.boxOffline, "box offline");
+    }
+    this.ctx.acceptWebSocket(ws, ["waiting"]);
+    const state: WaitingState = { role: "waiting", serverId, open: true, since: Date.now(), spoke: false };
+    ws.serializeAttachment(state);
+    this.record({ kind: "refused", serverId, detail: "box offline", value: RELAY_CLOSE.boxOffline });
+    const notice: RelayToPhone = { t: "waiting" };
+    try { ws.send(JSON.stringify(notice)); } catch { this.closeWaiting(ws, RELAY_CLOSE.boxOffline, "box offline"); }
+  }
+
+  /**
+   * A waiting phone sends its hello the moment it opens, before it can know it
+   * is waiting; that one frame is dropped, since there is no box to give it
+   * to. Anything more is not waiting, and gets the refusal it would otherwise
+   * have had, so a held socket wakes this object at most twice. A `ping` never
+   * gets here: the runtime answers it.
+   */
+  private fromWaiting(ws: WebSocket, state: WaitingState, message: string | ArrayBuffer): void {
+    if (typeof message !== "string" && !state.spoke && message.byteLength <= RELAY_LIMITS.maxControlBytes) {
+      ws.serializeAttachment({ ...state, spoke: true });
+      return;
+    }
+    this.closeWaiting(ws, RELAY_CLOSE.boxOffline, "box offline");
+  }
+
+  private closeWaiting(ws: WebSocket, code: number, reason: string): void {
+    const state = ws.deserializeAttachment() as WaitingState;
+    if (!state.open) return;
+    ws.serializeAttachment({ ...state, open: false });
+    try { ws.close(code, reason); } catch { /* Already closing: there is nothing left to tell it. */ }
+  }
+
   /* -------------------------------------------------------------- frames */
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const state = ws.deserializeAttachment() as Attachment | null;
     if (!state) { ws.close(1002, "unexpected frame"); return; }
     if (ws.readyState !== WebSocket.OPEN || (state.role === "box" ? state.closed : !state.open)) return;
+    if (state.role === "waiting") { this.fromWaiting(ws, state, message); return; }
     // The limit is in bytes. `length` counts UTF-16 code units, so on its own
     // it let up to ~12 KB of three-byte characters through (pre-release bug
     // hunt, B105). A string's UTF-8 is never shorter than its length, so
@@ -343,6 +407,13 @@ export class RelayBox extends DurableObject<unknown> {
     ws.serializeAttachment({ ...state, ready: true, since: now, heard: now, proofs: auth.proofs === true });
     this.tell(ws, { t: "ready" });
     this.record({ kind: "box_auth", serverId: state.serverId, durationMs: now - state.since });
+    // Every phone held for this box dials again now, and finds it. Closed
+    // rather than turned into links: a socket's tags are fixed when it is
+    // accepted, and each phone needs a fresh hello for a box it has not met.
+    for (const phone of this.waiting()) {
+      phone.serializeAttachment({ ...(phone.deserializeAttachment() as WaitingState), open: false });
+      try { phone.close(RELAY_CLOSE.boxOnline, "box online"); } catch { /* Gone already: it dials when it can. */ }
+    }
     await this.schedule();
   }
 
@@ -363,7 +434,8 @@ export class RelayBox extends DurableObject<unknown> {
     // alarm for it is a storage write per refusal, and a phone whose box is
     // offline reconnects all day (measured: ~100k refusals per phone-day
     // before the app backed off properly). Nothing to schedule.
-    if (!state) return;
+    // A waiting phone held nothing and set no deadline either.
+    if (!state || state.role === "waiting") return;
     if (state.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, "gone");
     else if (state.role === "box") this.closeBox(ws, state, CLOSE_NORMAL, "gone");
     await this.schedule();
@@ -452,6 +524,8 @@ export class RelayBox extends DurableObject<unknown> {
       const deadline = this.deadline(ws);
       if (deadline === null || deadline > now) continue;
       const state = ws.deserializeAttachment() as Attachment;
+      // A waiting phone has no deadline, so `deadline` never lets one reach here.
+      if (state.role === "waiting") continue;
       if (state.role === "phone") this.closePhone(ws, state, CLOSE_NORMAL, state.spoke ? "idle" : "no hello");
       else if (state.ready) this.closeBox(ws, state, CLOSE_NORMAL, "silent");
       else this.closeBox(ws, state, RELAY_CLOSE.unauthorized, "auth timeout");
@@ -466,7 +540,7 @@ export class RelayBox extends DurableObject<unknown> {
   /** When this socket is due to be closed if nothing happens, or null if it is already closing. */
   private deadline(ws: WebSocket): number | null {
     const state = ws.deserializeAttachment() as Attachment | null;
-    if (!state || ws.readyState !== WebSocket.OPEN) return null;
+    if (!state || ws.readyState !== WebSocket.OPEN || state.role === "waiting") return null;
     if (state.role === "phone") {
       if (!state.open) return null;
       // A phone that has not spoken yet is on a short leash; once it has, the
@@ -501,6 +575,10 @@ export class RelayBox extends DurableObject<unknown> {
     return this.ctx
       .getWebSockets("phone")
       .filter((ws) => (ws.deserializeAttachment() as PhoneState).open);
+  }
+
+  private waiting(): WebSocket[] {
+    return this.ctx.getWebSockets("waiting").filter((ws) => ws.readyState === WebSocket.OPEN && (ws.deserializeAttachment() as WaitingState).open);
   }
 
   private phone(link: number): WebSocket | null {

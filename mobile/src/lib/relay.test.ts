@@ -247,7 +247,8 @@ describe("network interruption recovery", () => {
 describe("hello", () => {
   test("opens one socket at the relay's phone endpoint, greets as the device with a fresh key, and both ends derive the same session", async () => {
     const { link, socket, box } = await openLink();
-    expect(socket.url).toBe("wss://relay.example.dev/v1/phone/Zm9v-bar_baz");
+    // `wait=1`: held, not refused, while the box is away (docs/relay.md).
+    expect(socket.url).toBe("wss://relay.example.dev/v1/phone/Zm9v-bar_baz?wait=1");
     expect(socket.binaryType).toBe("arraybuffer");
     expect(box.hello).toMatchObject({ t: "hello", v: RELAY_PROTOCOL, auth: { kind: "device", deviceId: "dev-1" } });
     expect(fromBase64Url(box.hello!.pub)).toHaveLength(32);
@@ -456,6 +457,35 @@ describe("the relay's close codes", () => {
     expect(states).toEqual(["lost", "connecting", "lost"]);
     await sleep(600);
     expect(FakeSocket.opened).toHaveLength(2); // the box may come back
+  });
+
+  // Build 32 on the simulator: the computer was back on the relay 1.1 s after
+  // its service restarted, and the Agents list said OFFLINE for 16–22 s more,
+  // waiting out a retry 15–30 s away. Held by the relay instead, the link is
+  // told the moment the box arrives.
+  test("a computer that comes back is LIVE at once, without waiting out a retry", async () => {
+    const target = deviceTarget(identity);
+    connection.relay = target;
+    const states: string[] = [];
+    relayLink(target).subscribe({ onMessage: () => undefined, onLink: (s) => states.push(s) });
+    const first = api.session();
+    const held = FakeSocket.opened.at(-1)!;
+    held.accept();
+    held.text(JSON.stringify({ t: "waiting" }));
+    await expect(first).rejects.toMatchObject({ reason: "box", message: "Your computer is offline — its Shahi service is not connected to the relay." });
+    const waiting = api.session();
+    await sleep(1_100);
+    expect(FakeSocket.opened).toHaveLength(1);
+    held.drop(RELAY_CLOSE.boxOnline, "box online");
+    expect(FakeSocket.opened).toHaveLength(2);
+    const socket = FakeSocket.opened.at(-1)!;
+    socket.accept();
+    const box = new FakeBox(socket, secret);
+    box.handshake();
+    await tick();
+    box.answer(box.read()[0] as RelayRequest, 200, { panes: [] });
+    await expect(waiting).resolves.toMatchObject({ panes: [] });
+    expect(states).toEqual(["lost", "connecting", "lost", "connecting", "live"]);
   });
 
   test("4429 is the relay throttling this phone", async () => {

@@ -17,7 +17,7 @@ class FakeSocket {
   binaryType = "";
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: ((event: { code: number }) => void) | null = null;
+  onclose: ((event: { code: number; reason?: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: Uint8Array[] = [];
   constructor(readonly url: string) { FakeSocket.last = this; FakeSocket.count++; }
@@ -306,4 +306,95 @@ test("a request sent over a live link that goes unanswered still says the comput
   hello(FakeSocket.last);
   const reply = link.request({ method: "GET", path: "/api/slow", headers: {}, body: null }, 20);
   await expect(reply).rejects.toMatchObject({ reason: "timeout", message: expect.stringContaining("connected to the relay") });
+});
+
+/*
+ * Build 32 on the simulator: the computer's service was back on the relay
+ * 1.1 s after a restart and the app stayed OFFLINE for 16–22 s more, its
+ * retries by then 15–30 s apart. A device now asks the relay to hold it while
+ * the box is away (`docs/relay.md`, "Waiting for the box").
+ */
+function deviceLink() {
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  const link = new RelayLink({ relay: "https://relay.example", serverId: server, secret, auth: { kind: "device", deviceId: "test-device" } });
+  links.push(link);
+  return link;
+}
+const waitingNotice = (socket: FakeSocket) => socket.onmessage!({ data: JSON.stringify({ t: "waiting" }) });
+function later<T>(ms: number, run: () => T): T {
+  const now = Date.now;
+  const at = now() + ms;
+  Date.now = () => at;
+  try { return run(); } finally { Date.now = now; }
+}
+
+test("a device asks the relay to hold it while its box is away, and a pairing link does not", () => {
+  const link = deviceLink();
+  link.ensureConnected();
+  expect(FakeSocket.last.url).toBe(`wss://relay.example/v1/phone/${server}?wait=1`);
+  void connect().response.catch(() => {});
+  expect(FakeSocket.last.url).toBe(`wss://relay.example/v1/phone/${server}`);
+});
+
+test("a computer that is away shows as offline at once while its link waits for it, without redialling", async () => {
+  const link = deviceLink();
+  const first = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 5000);
+  const socket = FakeSocket.last;
+  socket.onopen!();
+  waitingNotice(socket);
+  await expect(first).rejects.toMatchObject({ reason: "box", message: expect.stringContaining("offline") });
+  expect(link.state).toBe("lost");
+  const opened = FakeSocket.count;
+  for (let i = 0; i < 100; i++) link.ensureConnected();
+  expect(FakeSocket.count).toBe(opened);
+  expect(socket.readyState).toBe(1);
+});
+
+test("the computer coming back is a live link straight away, carrying what waited for it", async () => {
+  const link = deviceLink();
+  link.ensureConnected();
+  const held = FakeSocket.last;
+  held.onopen!();
+  waitingNotice(held);
+  const reply = link.request({ method: "GET", path: "/api/session", headers: {}, body: null }, 5000);
+  const opened = FakeSocket.count;
+  later(1_500, () => held.onclose!({ code: RELAY_CLOSE.boxOnline, reason: "box online" }));
+  // Dialled again in the same turn, not after a backoff.
+  expect(FakeSocket.count).toBe(opened + 1);
+  const socket = FakeSocket.last;
+  socket.onopen!();
+  const box = hello(socket);
+  expect(link.state).toBe("live");
+  open(box, socket.sent[1]!); // the device's proof
+  const request = JSON.parse(new TextDecoder().decode(open(box, socket.sent[2]!)));
+  expect(request).toMatchObject({ t: "req", path: "/api/session" });
+  socket.receive(seal(box, new TextEncoder().encode(JSON.stringify({ t: "res", id: request.id, status: 200, headers: {}, body: null }))));
+  expect((await reply).status).toBe(200);
+});
+
+test("a relay that releases a waiting link at once cannot make it redial in a loop", () => {
+  const link = deviceLink();
+  link.ensureConnected();
+  const held = FakeSocket.last;
+  held.onopen!();
+  waitingNotice(held);
+  const opened = FakeSocket.count;
+  held.onclose!({ code: RELAY_CLOSE.boxOnline, reason: "box online" });
+  expect(FakeSocket.count).toBe(opened);
+  expect(link.state).toBe("lost");
+});
+
+test("a waiting link pings to keep its route open, and gives up on one that stops answering", () => {
+  const link = deviceLink();
+  link.ensureConnected();
+  const held = FakeSocket.last;
+  held.onopen!();
+  waitingNotice(held);
+  later(21_000, () => link.ensureConnected());
+  expect(held.sent.at(-1) as unknown).toBe("ping");
+  const opened = FakeSocket.count;
+  later(71_000, () => link.ensureConnected());
+  expect(held.readyState).toBe(3);
+  // Back on the ordinary backoff: a fresh socket is scheduled, not opened.
+  expect(FakeSocket.count).toBe(opened);
 });
