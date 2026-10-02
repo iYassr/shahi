@@ -21,7 +21,9 @@ export function ComputerUpdate({ linkDown = false }: { linkDown?: boolean }) {
   const busy = control.pending || updateInProgress(h.update.phase);
   // herdr merely stopped is the connection banner's news, and so is a
   // computer that cannot be reached; not said twice (see `controlNeedsAttention`).
-  if (!settings && !controlNeedsAttention(h, control, linkDown)) return null;
+  // Offline is read here, at render: WebKit keeps the socket "live" with the
+  // network gone, and the connection card says "You’re offline" from this.
+  if (!settings && !controlNeedsAttention(h, control, linkDown || !navigator.onLine)) return null;
   return <section className="computer-update" aria-live="polite">
     <strong>{h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : "This computer"}</strong>
     <p>{control.pending ? "Requesting update…" : control.error ? (updateInProgress(h.update.phase) ? "Reconnecting after the update…" : "Computer unavailable. Your pairing is saved.") : controlMessage(h)}</p>
