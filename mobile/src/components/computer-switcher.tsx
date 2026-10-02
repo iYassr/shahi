@@ -15,7 +15,11 @@ export function ComputerSwitcher() {
   // tapped (pre-release bug hunt). Whatever takes this screen's place closes it.
   useFocusEffect(useCallback(() => () => setOpen(false), []));
   const current = computers.find(c => c.id === activeComputerId);
-  const name = current?.name || session?.serverName || "Computers";
+  // Until the computer says its hostname a fresh pairing has only its relay
+  // address for a name, and build 32's header read "… relay.getshahi.dev · y…
+  // CONNECTING". The session's name, the moment there is one; a person's word
+  // for it until then.
+  const name = current?.named === false ? session?.serverName || current.name : current?.name || session?.serverName || "Computers";
   const waitingElsewhere = computers.filter(c => c.id !== activeComputerId && (c.available ?? c.link === "live")).reduce((sum, c) => sum + (c.waiting ?? 0), 0);
   return <>
     {/* A navigation-bar item, sized like one. The bar does not grow with

@@ -7,7 +7,7 @@ import { theme } from "@/lib/theme";
 const CHANNELS = [{ id: "stable", label: "Stable" }, { id: "beta", label: "Beta" }] as const;
 
 export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
-  const { control, server } = useSession();
+  const { control, server, link, error, online = true } = useSession();
   // What survives is the pairing for a relay computer, the saved login for an
   // SSH one; the card said "pairing" to SSH computers (pre-release bug hunt).
   const kept = server?.startsWith("ssh:") ? "Your SSH login is saved." : "Your pairing is saved.";
@@ -15,9 +15,9 @@ export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
   if (!control || !h) return null;
   const busy = control.pending || updateInProgress(h.update.phase);
   // herdr merely stopped is the connection banner's news, beside every other
-  // reason nothing can be done; here it would say the same thing twice (see
-  // `controlNeedsAttention`).
-  if (!settings && !controlNeedsAttention(h, control)) return null;
+  // reason nothing can be done, and so is a computer that cannot be reached;
+  // here either would be said twice (see `controlNeedsAttention`).
+  if (!settings && !controlNeedsAttention(h, control, link !== "live" || !!error || !online)) return null;
   const title = h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : settings ? "Updates" : "This computer";
   return <View style={[styles.box, settings && styles.group]} accessibilityLiveRegion="polite" testID="computer-update">
     <Text style={styles.title}>{title}</Text>

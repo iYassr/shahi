@@ -281,9 +281,11 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .push-offer button { display: inline-flex; align-items: center; width: auto; margin: 0; min-height: 44px; padding: 8px; }
 @media (max-width: 480px) { .push-offer p { flex-basis: calc(100% - 40px); } }
 
-/* Setup commands remain selectable when clipboard access is unavailable. */
+/* Setup commands remain selectable when clipboard access is unavailable.
+   Each stays on one line and scrolls sideways when it does not fit: wrapped,
+   one command read as two, as the phone's "these two lines" read as three. */
 .setup-command__line { display: flex; align-items: center; gap: 8px; }
-.setup-command__line code { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.setup-command__line code { flex: 1; min-width: 0; white-space: nowrap; overflow-x: auto; }
 .setup-command__line button { flex: none; display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 1px solid var(--line-bright); border-radius: 8px; color: var(--accent); }
 .setup-command__status { display: block; min-height: 1.5em; color: var(--muted); font-size: 13px; }
 .pair-browser__jump { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line-bright); border-radius: 8px; }

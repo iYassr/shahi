@@ -71,8 +71,16 @@ export function controlMessage(h: ControlHandshake): string {
  * herdr merely stopped is not one either: the connection banner says so,
  * beside every other reason nothing can be done, and the card said it a
  * second time (pre-release bug hunt).
+ *
+ * Nor is a read that failed because the computer cannot be reached, while
+ * the connection card is saying exactly that (`linkDown`). Build 32 showed an
+ * offline computer four times over on the Agents list, this card's "Computer
+ * unavailable. Your pairing is saved." with the transport's words beneath it
+ * among them. An update under way still says so: the computer is away
+ * because it is restarting, which the connection card cannot know.
  */
-export function controlNeedsAttention(h: ControlHandshake, control: { pending: boolean; error: string | null }): boolean {
+export function controlNeedsAttention(h: ControlHandshake, control: { pending: boolean; error: string | null }, linkDown = false): boolean {
+  if (linkDown && control.error && !control.pending && !updateInProgress(h.update.phase)) return false;
   const backendNews = h.backend.state !== "connected" && h.backend.state !== "offline";
   return control.pending || !!control.error || updateInProgress(h.update.phase) || backendNews || !!h.update.available || (h.update.managed && !!h.update.message);
 }

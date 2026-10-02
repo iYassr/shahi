@@ -24,11 +24,13 @@ import {
   RELAY_CLOSE,
   RELAY_LIMITS,
   RELAY_PROTOCOL,
+  RELAY_WAIT_QUERY,
   type BoxHello,
   type BoxToPhone,
   type PhoneHello,
   type PhoneToBox,
   type RelayResponse,
+  type RelayToPhone,
   type SocketMessage,
 } from "./index";
 import { clientSession, ephemeral, open, seal, type Ephemeral, type Session } from "./e2e";
@@ -117,6 +119,20 @@ const utf8 = { encode: (s: string) => new TextEncoder().encode(s), decode: (b: U
 const SILENCE_LIMIT_MS = 70_000;
 const WATCHDOG_INTERVAL_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 15_000;
+/**
+ * How often a socket waiting for its box pings the relay (`docs/relay.md`,
+ * "Waiting for the box"). Nothing else crosses a waiting socket, and a NAT
+ * that forgets an idle route would swallow the relay's "box online" close; the
+ * box keeps its own route open at the same rate. The runtime answers without
+ * waking the relay's object, and SILENCE_LIMIT_MS without a pong drops it.
+ */
+const WAITING_PING_MS = 20_000;
+/**
+ * How long a socket must have waited before "box online" redials at once.
+ * Anything quicker goes through the ordinary backoff, so a relay that holds
+ * and releases in a loop cannot turn this into a tight one.
+ */
+const WAITING_GRACE_MS = 1_000;
 
 interface Pending {
   id: number;
@@ -158,6 +174,9 @@ export class RelayLink {
   #watching: string | null = null;
   /** Why the link last went down, until it is up again; see `request`'s timer. */
   #dropped: Error | null = null;
+  /** When the relay began holding this socket for an offline box, or 0. */
+  #waitingSince = 0;
+  #pingedAt = 0;
   #subscribers = new Set<LinkSubscriber>();
   readonly host: string;
 
@@ -282,7 +301,11 @@ export class RelayLink {
     if (this.#closed) return;
     this.#setState("connecting");
 
-    const url = `${this.target.relay.replace(/^http/, "ws").replace(/\/+$/, "")}/v1/phone/${encodeURIComponent(this.target.serverId)}`;
+    // A paired device asks to be held while its box is away, so it hears the
+    // moment the box is back instead of on its next retry. A pairing link
+    // lives for one claim and is closed on its first failure: nothing to wait for.
+    const wait = this.target.auth.kind === "device" ? `?${RELAY_WAIT_QUERY}` : "";
+    const url = `${this.target.relay.replace(/^http/, "ws").replace(/\/+$/, "")}/v1/phone/${encodeURIComponent(this.target.serverId)}${wait}`;
     let socket: WebSocket;
     try { socket = new WebSocket(url); }
     catch { this.#dropped = this.#lost(); this.#rejectAll(this.#dropped); this.#retry(); this.#setState("lost"); return; }
@@ -320,7 +343,10 @@ export class RelayLink {
       if (this.#ws !== socket || this.#closed) return;
       this.#lastMessageAt = Date.now();
       if (typeof event.data === "string") {
-        // The relay sends phones no text; whatever this is, it is not ours.
+        // The relay's only text to a phone: the box is away and this socket
+        // is held until it is back (`docs/relay.md`, "Waiting for the box").
+        // Its `pong` and anything else are not ours, beyond proving the route.
+        if (!this.#session && !this.#waitingSince && this.target.auth.kind === "device" && isWaiting(event.data)) this.#wait();
         return;
       }
       if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > RELAY_LIMITS.maxFrameBytes) {
@@ -362,6 +388,15 @@ export class RelayLink {
       if (this.#ws !== socket) return;
       const code = event?.code ?? 0;
       const reason = event?.reason ?? "";
+      if (code === RELAY_CLOSE.boxOnline && this.#waitingSince) {
+        // The box is back. Requests made while waiting were never sent, so
+        // they stay to go out on the new link rather than failing.
+        const waited = Date.now() - this.#waitingSince;
+        this.#discard(socket);
+        if (waited >= WAITING_GRACE_MS) this.#open();
+        else this.#retry();
+        return;
+      }
       if (
         this.target.auth.kind === "pairing" &&
         (code === RELAY_CLOSE.unauthorized || code === RELAY_CLOSE.forbidden ||
@@ -408,6 +443,7 @@ export class RelayLink {
       return;
     }
     this.#session = clientSession(this.#self, pub, this.target.secret);
+    this.#waitingSince = 0;
     this.#receivedBytes = 0;
     this.#liveSince = Date.now();
     this.#self = null;
@@ -552,9 +588,32 @@ export class RelayLink {
     this.#subscribers.forEach((s) => s.onLink(state));
   }
 
+  /**
+   * The relay is holding this socket until the box is back. Said now as the
+   * refusal it replaces, so the person sees "offline" and waiting requests
+   * fail with why, as a 4404 did; but nothing is scheduled, and the
+   * handshake deadline is off, since the box hello it waited for cannot come.
+   */
+  #wait(): void {
+    this.#waitingSince = this.#pingedAt = Date.now();
+    clearTimeout(this.#handshakeTimer); this.#handshakeTimer = undefined;
+    this.#dropped = closeError(RELAY_CLOSE.boxOffline, "box offline", this.host);
+    this.#rejectAll(this.#dropped);
+    this.#setState("lost");
+  }
+
   #checkAlive(): void {
     if (this.#closed || !this.#ws) return;
     if (this.#ws.readyState > 1) { this.#drop(this.#ws, this.#lost()); return; }
+    if (this.#waitingSince) {
+      const now = Date.now();
+      if (now - this.#lastMessageAt >= SILENCE_LIMIT_MS) { this.#drop(this.#ws, this.#lost()); return; }
+      if (now - this.#pingedAt >= WAITING_PING_MS) {
+        this.#pingedAt = now;
+        try { this.#ws.send("ping"); } catch { this.#drop(this.#ws, this.#lost()); }
+      }
+      return;
+    }
     if (!this.#session) return;
     if (Date.now() - this.#lastMessageAt < SILENCE_LIMIT_MS) return;
     this.#drop(this.#ws, this.#lost());
@@ -572,7 +631,7 @@ export class RelayLink {
 
   #discard(socket: WebSocket): void {
     clearTimeout(this.#sendTimer); this.#sendTimer = undefined;
-    this.#ws = undefined; this.#session = null; this.#self = null; this.#confirmed = false;
+    this.#ws = undefined; this.#session = null; this.#self = null; this.#confirmed = false; this.#waitingSince = 0;
     clearTimeout(this.#handshakeTimer); this.#handshakeTimer = undefined;
     socket.onopen = null; socket.onmessage = null; socket.onclose = null; socket.onerror = null;
     try { socket.close(); } catch { /* Local recovery cannot depend on native close completing. */ }
@@ -625,6 +684,10 @@ function closeError(code: number, reason: string, host: string): UnreachableErro
     return new UnreachableError("relay", host, "The relay is throttling this phone. Wait a moment, then try again.");
   }
   return new UnreachableError("lost", host, `The connection through ${host} dropped. Try again.`);
+}
+
+function isWaiting(text: string): boolean {
+  try { return (JSON.parse(text) as Partial<RelayToPhone> | null)?.t === "waiting"; } catch { return false; }
 }
 
 /** Bytes as a person reads them: KB under a megabyte, so a cap of 783,360 is "765 KB" and not "0.7 MB". */

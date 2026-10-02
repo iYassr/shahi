@@ -25,7 +25,7 @@ import { Scanner } from "@/components/scanner";
 import { HostKeyCard } from "@/components/host-key-card";
 import { PrivacyLinks } from "@/components/privacy-links";
 import { parsePairingUrl } from "@/lib/pairing";
-import { dismissPairing, usePendingPairing } from "@/lib/incoming-pairing";
+import { dismissPairing, receivePairingLink, usePendingPairing } from "@/lib/incoming-pairing";
 import { openTunnel, closeTunnel, sshTunnelAvailable, type HostKeyReview } from "@/lib/tunnel";
 import { committed } from "@/lib/feel";
 import {
@@ -39,6 +39,15 @@ import { theme } from "@/lib/theme";
 /** The one-time server install, the thing the intro exists to hand over. */
 export const INSTALL_COMMAND =
   "herdr plugin install iYassr/shahi\nherdr plugin action invoke shahi.pair";
+
+/**
+ * Said when Paste found no pairing link. iOS answers an empty string both
+ * for an empty clipboard and for a paste the person refused, so this covers
+ * both. The pair command copies its link on the computer, and Universal
+ * Clipboard brings it to an iPhone on the same Apple Account.
+ */
+export const NO_PAIRING_LINK =
+  "The clipboard has no Shahi pairing link. On your computer, run herdr plugin action invoke shahi.pair: it copies one, and a Mac on your Apple Account shares it with this phone. Then paste again, and allow it if asked.";
 
 export function Connect({
   onConnectedSsh,
@@ -176,9 +185,25 @@ export function Connect({
     }
   }
 
+  /**
+   * A pairing link from the clipboard, for a phone that cannot scan: camera
+   * access refused, or no QR in reach. Before this a refused camera left no
+   * way to pair at all. The link is held exactly as an opened one is, so it
+   * reaches the same "Pair this phone?" card and nothing is sent until the
+   * person confirms there.
+   */
+  async function pasteLink() {
+    setError(null);
+    let text = "";
+    try { text = await Clipboard.getStringAsync(); } catch { /* Read as nothing pasted. */ }
+    setScanning(false);
+    if (!receivePairingLink(text)) setError(NO_PAIRING_LINK);
+  }
+
   if (scanning) {
     return (
       <Scanner
+        onPaste={() => void pasteLink()}
         onCancel={() => setScanning(false)}
         onScanned={(data) => {
           const payload = parsePairingUrl(data);
@@ -193,6 +218,7 @@ export function Connect({
 
   if (phase === "intro") return <Intro
     onScan={() => { setError(null); setScanning(true); }}
+    onPaste={() => void pasteLink()}
     onSsh={() => { setError(null); setPhase("form"); }}
     busy={busy}
     error={error}
@@ -311,7 +337,7 @@ export function Connect({
  * for an address they do not have — the onboarding cliff. It hands over the one
  * command and opens the scanner directly once the server has printed its QR code.
  */
-function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () => void; busy: boolean; error: string | null }) {
+function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; onPaste: () => void; onSsh: () => void; busy: boolean; error: string | null }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -330,16 +356,24 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
 
       <Text style={styles.lede}>Connect your computer</Text>
       <Text style={styles.introText}>
-        Continue your work with Claude Code or Codex from your phone. Set up Shahi on your computer, then scan the code it shows.
+        Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity from your phone. Set up Shahi on your computer, then scan the code it shows.
       </Text>
 
       <Text style={styles.step}>1 — Set up your computer.</Text>
-      <Pressable accessibilityRole="button" style={styles.command} onPress={() => void copy()} testID="copy-install">
-        <Text style={styles.commandText} selectable>
-          {INSTALL_COMMAND}
-        </Text>
-        <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
-      </Pressable>
+      {/* One line per command, whatever the width or text size. The second
+          wrapped on build 32, so "these two lines" showed as three; Copy now
+          sits above them to leave each line the box's full width, and a line
+          that still does not fit scrolls sideways rather than wrapping. */}
+      <View style={styles.command}>
+        <Pressable accessibilityRole="button" accessibilityLabel={copied ? "Copied both commands" : "Copy both commands"} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
+          <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
+        </Pressable>
+        {INSTALL_COMMAND.split("\n").map((line) => (
+          <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="install-line">
+            <Text style={styles.commandText} numberOfLines={1} selectable>{line}</Text>
+          </ScrollView>
+        ))}
+      </View>
       <Text style={styles.introText}>
         Paste these two lines into the terminal (the window where you type commands) on a Mac or Linux computer running{" "}
         <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
@@ -356,6 +390,10 @@ function Intro({ onScan, onSsh, busy, error }: { onScan: () => void; onSsh: () =
       {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
       <Pressable accessibilityRole="button" style={[styles.button, busy && styles.buttonOff]} disabled={busy} onPress={onScan} testID="intro-continue">
         <Text style={styles.buttonText}>{busy ? "Pairing…" : "Scan QR code"}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={onPaste} hitSlop={12} testID="paste-pairing-link"
+        accessibilityHint="Pairs with a link copied from your computer, after you confirm it">
+        <Text style={styles.link}>Paste pairing link</Text>
       </Pressable>
       <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
         <Text style={styles.link}>Want to use SSH?</Text>
@@ -550,17 +588,19 @@ const styles = StyleSheet.create({
   introText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
   step: { color: theme.peach, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
   command: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    gap: 6,
     backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.lineBright,
     borderRadius: 10,
     borderCurve: "continuous",
-    padding: 14,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
-  commandText: { flex: 1, color: theme.fg, fontFamily: theme.mono, fontSize: 12.5, lineHeight: 18 },
+  // 37 characters of 12.5pt monospace are about 278pt: they fit a 375pt
+  // phone with Copy above them, and did not with Copy beside them.
+  commandText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12.5, lineHeight: 18 },
+  copyButton: { alignSelf: "flex-end", minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "flex-end", marginBottom: -8 },
   copy: { color: theme.peach, fontSize: 13, fontWeight: "600" },
   linkInline: { color: theme.peach },
   link: { color: theme.dim, fontSize: 14, textAlign: "center", marginTop: 18, textDecorationLine: "underline" },

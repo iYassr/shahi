@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { BOX_AUTH_PREFIX, type BoxToRelay, type RelayToBox } from "@shahi/shared";
+import { BOX_AUTH_PREFIX, RELAY_WAIT_QUERY, type BoxToRelay, type RelayToBox } from "@shahi/shared";
 
 // Keep a running local app/relay intact when a regression run needs its own Worker.
 export const PORT = Number(process.env.SHAHI_TEST_RELAY_PORT ?? 8787);
@@ -298,6 +298,11 @@ export function signAuth(box: Box, nonce: string, serverId = box.serverId): BoxT
 
 export function connectPhone(box: Box): Promise<Peer> {
   return Peer.open(`${WS}/v1/phone/${box.serverId}`);
+}
+
+/** A phone that asks to be held while its box is offline, as current apps do. */
+export function connectWaitingPhone(box: Box): Promise<Peer> {
+  return Peer.open(`${WS}/v1/phone/${box.serverId}?${RELAY_WAIT_QUERY}`);
 }
 
 /** Splits a box-side data frame into its link number and payload. */

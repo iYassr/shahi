@@ -618,6 +618,24 @@ test("setup commands copy independently and the returning-user shortcut focuses 
   await expect(page.getByLabel("Pairing code", { exact: true })).toBeFocused();
 });
 
+// The phone's welcome screen wrapped the second command on build 32, so two
+// commands read as three lines; on a narrow screen the browser's did too.
+test("each setup command stays on one line, even on a narrow phone", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/pwa/");
+  for (const command of ["herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair"]) {
+    const code = page.locator(".setup-command__line code").filter({ hasText: command });
+    // A range has a box per line its text occupies.
+    const lines = await code.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+    });
+    expect(lines, command).toBe(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test("clipboard refusal offers a usable manual-copy fallback", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
     writeText: async () => { throw new Error("denied"); },

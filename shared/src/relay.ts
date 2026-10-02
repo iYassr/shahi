@@ -34,6 +34,21 @@ export type BoxToRelay =
   /** Link `link` sent a sealed frame that opened: it holds the secret its hello named. */
   | { t: "proven"; link: number };
 
+/* --------------------------------------------- relay → phone (text frames) */
+
+/**
+ * What the relay may say to a phone. Only a phone that asked to wait — its URL
+ * ends `?wait=1` — ever hears it: `waiting` means its box is offline and this
+ * socket is being held until the box arrives, when it is closed with
+ * `RELAY_CLOSE.boxOnline`. Additive and unversioned: an older relay ignores the
+ * query and refuses with `boxOffline` as it always did, and a phone that never
+ * asks is never held (`docs/relay.md`, "Waiting for the box").
+ */
+export type RelayToPhone = { t: "waiting" };
+
+/** The query a phone adds to its URL to be held, rather than refused, while its box is offline. */
+export const RELAY_WAIT_QUERY = "wait=1";
+
 /** Bytes prefixed to every data frame on the box side: the link number, big-endian. */
 export const LINK_PREFIX_BYTES = 4;
 
@@ -46,6 +61,8 @@ export const RELAY_CLOSE = {
   forbidden: 4403,
   /** No box is connected for this serverId. */
   boxOffline: 4404,
+  /** The box this waiting phone asked about has just authenticated: dial again now. */
+  boxOnline: 4200,
   /** A newer box connection replaced this one. */
   replaced: 4409,
   /** The relay's quota for this phone or box was exceeded. */

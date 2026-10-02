@@ -4,9 +4,10 @@ import type { ControlHandshake } from "@shahi/shared";
 const mockRequest = jest.fn();
 let mockControl: { handshake: ControlHandshake; pending: boolean; error: string | null; request: typeof mockRequest };
 let mockServer = "relay://relay.getshahi.dev";
-jest.mock("@/lib/session", () => ({ useSession: () => ({ control: mockControl, server: mockServer }) }));
+let mockLink: "live" | "lost" = "live";
+jest.mock("@/lib/session", () => ({ useSession: () => ({ control: mockControl, server: mockServer, link: mockLink, error: null }) }));
 beforeEach(() => {
-  mockRequest.mockClear(); mockServer = "relay://relay.getshahi.dev";
+  mockRequest.mockClear(); mockServer = "relay://relay.getshahi.dev"; mockLink = "live";
   mockControl = { pending: false, error: null, request: mockRequest, handshake: {
     control: 1, serverId: "computer-a", api: { min: 5, max: 5 }, capabilities: ["computer-updates"],
     backend: { state: "connected", version: "0.9.0", protocol: 22 },
@@ -53,4 +54,18 @@ test("an unreachable SSH computer is not said to keep a pairing", () => {
   expect(screen.queryByText(/pairing/)).toBeNull();
   mockServer = "relay://relay.getshahi.dev"; result.rerender(<ComputerUpdate />);
   expect(screen.getByText("Computer unavailable. Your pairing is saved.")).toBeTruthy();
+});
+
+// Build 32: an offline computer's Agents list carried this card's "Computer
+// unavailable. Your pairing is saved." beside the connection card saying the
+// same, and the two pushed the agents off the screen.
+test("an unreachable computer leaves its news to the connection card", () => {
+  mockControl.error = "Your computer is offline — its Shahi service is not connected to the relay.";
+  mockLink = "lost";
+  const result = render(<ComputerUpdate />);
+  expect(screen.queryByTestId("computer-update")).toBeNull();
+  // Restarting into an update is why it is away, which only this card knows.
+  mockControl.handshake.update.phase = "restarting";
+  result.rerender(<ComputerUpdate />);
+  expect(screen.getByText("Reconnecting after the update…")).toBeTruthy();
 });

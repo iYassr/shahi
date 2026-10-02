@@ -67,8 +67,13 @@ export function connectionHealth({ link, error, transport, online = true, comput
   // Retrying cannot help, and the refusal says what will.
   if (error instanceof HostKeyError) return { title: "Check this computer’s identity", detail: error.message };
   if (error instanceof AccessRefusedError) return { title: "Couldn’t sign in", detail: error.message };
+  // The one card for a computer that is away: why, that nothing was lost, and
+  // what happens next. These were four separate things on build 32's Agents
+  // list — the header word, a strip, the update card and this one — and
+  // together they pushed the agents off the screen.
   if (error instanceof UnreachableError && error.reason === "box") return {
-    title: "Computer disconnected", detail: "Wake your computer and check that Shahi is running. We’ll keep trying to reconnect.",
+    title: "Computer disconnected",
+    detail: `Shahi on ${computer} isn’t connected to the relay. Wake the computer and check that Shahi is running. Your pairing is saved, and Shahi reconnects as soon as it’s back.`,
     transient: true, brief,
   };
   if (error instanceof UnreachableError && error.reason === "relay") return {

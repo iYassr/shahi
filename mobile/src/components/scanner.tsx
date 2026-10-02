@@ -20,10 +20,13 @@ import { theme } from "@/lib/theme";
 export function Scanner({
   onScanned,
   onCancel,
+  onPaste,
 }: {
   /** True if the code was ours and is being acted on; false to keep looking. */
   onScanned: (data: string) => boolean;
   onCancel: () => void;
+  /** Pairs from a copied link instead: the way in when the camera is refused. */
+  onPaste?: () => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [rejected, setRejected] = useState(false);
@@ -67,6 +70,13 @@ export function Scanner({
         {!permission.canAskAgain && (
           <Pressable accessibilityRole="button" style={styles.button} onPress={() => void Linking.openSettings()} testID="open-settings">
             <Text style={styles.buttonText}>Open Settings</Text>
+          </Pressable>
+        )}
+        {/* With the camera refused this screen was a dead end: Open Settings
+            or Cancel, and no other way to pair (build 32). */}
+        {onPaste && (
+          <Pressable accessibilityRole="button" style={styles.secondary} onPress={onPaste} testID="scanner-paste">
+            <Text style={styles.secondaryText}>Paste pairing link instead</Text>
           </Pressable>
         )}
         <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={12} testID="scanner-cancel">
@@ -132,4 +142,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   buttonText: { color: theme.void, fontWeight: "600", fontSize: 16 },
+  secondary: { minHeight: 48, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", borderRadius: 8, borderCurve: "continuous", borderWidth: 1, borderColor: theme.peach },
+  secondaryText: { color: theme.peach, fontWeight: "600", fontSize: 16 },
 });

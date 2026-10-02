@@ -7,6 +7,15 @@ test("a confirmed disconnected computer is distinguished from a network outage",
   expect(connectionHealth({ ...args, online: false })?.title).toBe("You’re offline");
   expect(connectionHealth(args)?.title).toBe("Reconnecting to your computer…");
 });
+// Build 32's Agents list said this in four places; the card that remains
+// carries the reason, the reassurance and the next step on its own.
+test("an offline computer's one card says why, that the pairing is kept, and that it comes back by itself", () => {
+  const health = connectionHealth({ link: "lost", transport: "relay", computerName: "Mac", error: new UnreachableError("box", "relay", "offline") });
+  expect(health?.title).toBe("Computer disconnected");
+  expect(health?.detail).toContain("Shahi on Mac isn’t connected to the relay");
+  expect(health?.detail).toContain("Your pairing is saved");
+  expect(health?.detail).toContain("reconnects as soon as it’s back");
+});
 test("recovery instructions follow the actual transport and upgrade errors stay visible", () => {
   expect(connectionHealth({ link: "lost", transport: "ssh" })?.detail).toContain("reconnect securely");
   expect(connectionHealth({ link: "live", transport: "relay" })).toBeNull();

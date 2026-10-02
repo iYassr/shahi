@@ -42,3 +42,15 @@ test("an unmanaged computer's notice is not a reason to show the card outside Se
   expect(controlNeedsAttention(h, { pending: false, error: "Cannot reach this computer." })).toBe(true);
   expect(controlNeedsAttention(h, idle)).toBe(false);
 });
+
+// Build 32's Agents list said an offline computer was offline four times.
+test("an offline computer is the connection card's news, not the update card's too", () => {
+  const unreachable = { pending: false, error: "Your computer is offline — its Shahi service is not connected to the relay." };
+  expect(controlNeedsAttention(h, unreachable, true)).toBe(false);
+  expect(controlNeedsAttention({ ...h, update: { ...h.update, available: "0.3.1" } }, unreachable, true)).toBe(false);
+  // Away because it is restarting into an update: only this card knows why.
+  expect(controlNeedsAttention({ ...h, update: { ...h.update, phase: "restarting" } }, unreachable, true)).toBe(true);
+  expect(controlNeedsAttention(h, { pending: true, error: null }, true)).toBe(true);
+  // A computer that answers but whose control read failed has no other card.
+  expect(controlNeedsAttention(h, unreachable, false)).toBe(true);
+});

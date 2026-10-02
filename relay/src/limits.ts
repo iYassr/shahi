@@ -95,6 +95,26 @@ export function connectLimitKey(ip: string): string {
 }
 
 /**
+ * Phones that may wait at once for one offline box (`?wait=1`).
+ *
+ * A waiting phone is held instead of being refused with 4404, and closed with
+ * 4200 the moment its box authenticates, so it is back within a round trip
+ * of the box rather than one backoff interval later: measured on build 32, a
+ * phone refused while its computer's service restarted stayed OFFLINE 16–22
+ * seconds after the computer was back, because by then its retries were 15–30
+ * seconds apart. A held socket hibernates, answers the phone's `ping` without
+ * waking the object, and has no deadline, so waiting costs no alarm and no
+ * wake-up: one connection per wait, where the backoff knocked once or twice a
+ * minute. The count is the phone limit's, and the slots are taken the way
+ * those are: when all are full, the longest-waiting socket that has had its
+ * grace (EVICTION_GRACE_MS) is closed with 4404 for the newcomer, and falls
+ * back to retrying, which is all any phone did before. So a stranger who
+ * knows the serverId can at worst return the owner's phone to the old
+ * backoff, never lock it out.
+ */
+export const MAX_WAITING_PHONES = 8;
+
+/**
  * The least time between two alarms on one object. On 3–9 September 2026,
  * closing sockets the runtime still listed kept a deadline in the past; each
  * alarm re-armed itself for that deadline, fired at once, and eight objects
