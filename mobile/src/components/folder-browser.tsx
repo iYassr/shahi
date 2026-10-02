@@ -41,7 +41,7 @@ export function FolderBrowser({
   recent = [],
   onChoose,
   onPickFile,
-  chooseLabel = "Use this folder",
+  chooseLabel,
 }: {
   /** Where to open, as the computer names it (`~`, `~/x`, or absolute inside home). */
   start?: string;
@@ -51,6 +51,7 @@ export function FolderBrowser({
   onChoose?: (choice: FolderChoice) => void;
   /** Lists files too, and picks one when tapped. */
   onPickFile?: (entry: DirEntry) => void;
+  /** The choose button's words; by default it names the folder being viewed. */
   chooseLabel?: string;
 }) {
   const { api } = useSession();
@@ -155,6 +156,9 @@ export function FolderBrowser({
       ))}
       {listing?.entries.length === 0 && <Text style={styles.dim}>{onPickFile ? "Nothing in here." : "No folders in here."}</Text>}
 
+      {/* Opening a folder is not choosing it. The button names the folder
+          and is the one filled control, because "Use this folder" under a
+          folder's contents read as already done (simulator run of build 32). */}
       {onChoose && (
         <Pressable
           accessibilityRole="button"
@@ -164,7 +168,7 @@ export function FolderBrowser({
           onPress={() => listing && onChoose({ path: listing.path, display: listing.display })}
           testID="use-folder"
         >
-          <Text style={styles.chooseText}>{chooseLabel}</Text>
+          <Text style={styles.chooseText} numberOfLines={lines}>{chooseLabel ?? (atHome ? "Use your home folder" : `Use ${crumbs.at(-1)!.label}`)}</Text>
           <Text style={styles.chooseWhere} numberOfLines={lines} ellipsizeMode="head">{listing?.display ?? at}</Text>
         </Pressable>
       )}
@@ -189,8 +193,8 @@ const styles = StyleSheet.create({
   error: { color: theme.rose, fontSize: 13 },
   retry: { minHeight: 44, justifyContent: "center" },
   retryText: { color: theme.peach, fontSize: 14 },
-  choose: { margin: 10, minHeight: 48, borderWidth: 1, borderColor: theme.peach, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6 },
+  choose: { margin: 10, minHeight: 48, backgroundColor: theme.peach, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6 },
   chooseOff: { opacity: 0.35 },
-  chooseText: { color: theme.peach, fontSize: 15, fontWeight: "600" },
-  chooseWhere: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, marginTop: 2 },
+  chooseText: { color: theme.void, fontSize: 15, fontWeight: "600" },
+  chooseWhere: { color: theme.void, opacity: 0.75, fontFamily: theme.mono, fontSize: 11, marginTop: 2 },
 });

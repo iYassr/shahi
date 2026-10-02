@@ -43,14 +43,53 @@ test("new agent says which agent and which permissions are chosen", async ({ pag
   await page.locator(".sheet .row").first().click();
   const agents = page.getByRole("group", { name: "Agent", exact: true });
   const permissions = page.getByRole("group", { name: "Permissions", exact: true });
-  await expect(agents.getByRole("button", { pressed: true })).toHaveText("Claude");
+  await expect(agents.getByRole("button", { pressed: true })).toHaveAccessibleName("Claude");
   await agents.getByRole("button", { name: "Codex", exact: true }).click();
-  await expect(agents.getByRole("button", { pressed: true })).toHaveText("Codex");
+  await expect(agents.getByRole("button", { pressed: true })).toHaveAccessibleName("Codex");
   await expect(agents.getByRole("button", { name: "Claude", exact: true })).toHaveAttribute("aria-pressed", "false");
   await agents.getByRole("button", { name: "Claude", exact: true }).click();
   await permissions.getByRole("button", { name: /^Skip all permissions/ }).click();
   await expect(permissions.getByRole("button", { pressed: true })).toHaveCount(1);
   await expect(permissions.getByRole("button", { pressed: true })).toContainText("Skip all permissions");
+});
+
+// Simulator run of build 32: on a computer with no spaces, "+ New agent"
+// opened an empty "Choose a space" whose only control left for Spaces.
+test("a computer with no spaces starts a new agent at its folder, then the agent", async ({ page }) => {
+  await page.request.post("/__stub/scenario", { data: { name: "empty", patch: { agents: ["agy", "claude", "codex"], createAgents: true } } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ New agent" }).click();
+  const sheet = page.locator(".sheet");
+  await expect(sheet.locator(".sheet__title")).toHaveText("New agent");
+  await expect(sheet).toContainText("a folder on your computer");
+  await expect(sheet).not.toContainText("Choose a space");
+  await sheet.getByRole("button", { name: "Change" }).click();
+  await sheet.locator(".picker__row", { hasText: "project" }).click();
+  await sheet.getByRole("button", { name: "Create space and continue" }).click();
+  await expect(sheet.locator(".sheet__title")).toHaveText("New agent in project");
+  // Claude, not Antigravity, which only sorts first.
+  await expect(page.getByRole("group", { name: "Agent", exact: true }).getByRole("button", { pressed: true })).toHaveAccessibleName("Claude");
+  await page.getByRole("button", { name: "Start Claude", exact: true }).click();
+  await expect(page).toHaveURL(/\/pane\//);
+  const made = (await writes(page)).find((w) => w.path === "/api/workspaces");
+  expect(made?.body).toMatchObject({ label: "project", cwd: "/home/x/project" });
+  const start = (await writes(page)).find((w) => w.path === "/api/agents/start");
+  expect(start?.body).toMatchObject({ kind: "claude", workspaceId: "w100", workspaceLabel: "project" });
+});
+
+test("the next new agent starts on the agent last started on this computer", async ({ page }) => {
+  await page.request.post("/__stub/scenario", { data: { name: "busy", patch: { agents: ["claude", "codex"], createAgents: true } } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ New agent" }).click();
+  await page.locator(".sheet .row").first().click();
+  const agents = page.getByRole("group", { name: "Agent", exact: true });
+  await agents.getByRole("button", { name: "Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Start Codex", exact: true }).click();
+  await expect(page).toHaveURL(/\/pane\//);
+  await page.goto("/");
+  await page.getByRole("button", { name: "+ New agent" }).click();
+  await page.locator(".sheet .row").first().click();
+  await expect(agents.getByRole("button", { pressed: true })).toHaveAccessibleName("Codex");
 });
 
 test("uncertain prompt retry retains its id and submitted draft", async ({ page }) => {

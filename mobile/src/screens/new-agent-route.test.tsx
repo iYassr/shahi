@@ -23,9 +23,9 @@ jest.mock("@/screens/spaces", () => {
       {["w1", "w2"].map(workspaceId => <Button key={workspaceId} title={`Choose ${workspaceId}`} onPress={() => onPick({ workspaceId })} />)}
       <Button title="New space" onPress={onNewSpace} />
     </>,
-    NewSpace: ({ onCreated, onCancel }: any) => <>
-      <Button title="Create w3" onPress={() => onCreated("w3")} />
-      <Button title="Close new space" onPress={onCancel} />
+    NewSpace: ({ onCreated, onCancel, forAgent }: any) => <>
+      <Button title={forAgent ? "Create w3 for its agent" : "Create w3"} onPress={() => onCreated("w3")} />
+      {onCancel && <Button title="Close new space" onPress={onCancel} />}
     </>,
     NewAgent: ({ space, onStarted }: any) => <Button title={`Finish in ${space.workspaceId}`} onPress={() => onStarted(`${space.workspaceId}:p2`)} />,
   };
@@ -43,7 +43,7 @@ beforeEach(() => {
 test("a space made from Choose a space goes straight on to its agent form", () => {
   const view = render(<NewAgentRoute />);
   fireEvent.press(screen.getByText("New space"));
-  fireEvent.press(screen.getByText("Create w3"));
+  fireEvent.press(screen.getByText("Create w3 for its agent"));
   expect(mockRefresh).toHaveBeenCalledTimes(1);
   // Made on the computer, not yet in this session: not the space list again.
   expect(screen.getByText("Opening the new space…")).toBeTruthy();
@@ -52,6 +52,37 @@ test("a space made from Choose a space goes straight on to its agent form", () =
   view.rerender(<NewAgentRoute />);
   fireEvent.press(screen.getByText("Finish in w3"));
   expect(router.replace).toHaveBeenCalledWith({ pathname: "/pane/[paneId]", params: { paneId: "w3:p2", computer: "c1" } });
+});
+
+// Simulator run of build 32: a computer with no spaces opened New agent on an
+// empty "Choose a space", whose only control led to the folder anyway.
+test("with no spaces, New agent starts at the folder and goes on to the agent", () => {
+  mockSession.workspaces = [];
+  const view = render(<NewAgentRoute />);
+  expect(screen.queryByText("Choose w1")).toBeNull();
+  fireEvent.press(screen.getByText("Create w3 for its agent"));
+  expect(mockRefresh).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Opening the new space…")).toBeTruthy();
+  mockSession.workspaces = [{ workspaceId: "w3", label: "tip-calc" }];
+  view.rerender(<NewAgentRoute />);
+  fireEvent.press(screen.getByText("Finish in w3"));
+  expect(router.replace).toHaveBeenCalledWith({ pathname: "/pane/[paneId]", params: { paneId: "w3:p2", computer: "c1" } });
+});
+
+test("the first space's form closes New agent, since there is no list behind it", () => {
+  mockSession.workspaces = [];
+  render(<NewAgentRoute />);
+  // Its own Close, which falls back to leaving the route.
+  expect(screen.queryByText("Close new space")).toBeNull();
+});
+
+test("a space made elsewhere while the first folder is chosen does not swap the form away", () => {
+  mockSession.workspaces = [];
+  const view = render(<NewAgentRoute />);
+  mockSession.workspaces = [{ workspaceId: "w1", label: "Project" }];
+  view.rerender(<NewAgentRoute />);
+  expect(screen.getByText("Create w3 for its agent")).toBeTruthy();
+  expect(screen.queryByText("Choose w1")).toBeNull();
 });
 
 test("closing a space being made returns to the list, not out of new agent", () => {

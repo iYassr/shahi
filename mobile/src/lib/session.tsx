@@ -122,6 +122,9 @@ interface SessionValue {
   pins: Set<string>;
   togglePin: (paneId: string) => void;
   clearPins: () => void;
+  /** The agent kind last started on this computer from this phone, kept beside its pins. */
+  lastAgent: string | null;
+  rememberAgent: (kind: string) => void;
   /** Columns a pane's terminal opens at, before the fit buttons say otherwise. */
   terminalWidth: number;
   setTerminalWidth: (columns: number) => void;
@@ -383,6 +386,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     bank.current = bank.current.map(c => c.id === entry.saved.id ? entry.saved : c);
     void persist(); paint();
   };
+  // By the id of the computer the start was made on: the answer can arrive
+  // after a switch, and belongs to the computer that started the agent.
+  const rememberAgent = (kind: string) => {
+    const id = entry?.saved.id;
+    const current = id ? live.current.get(id) : undefined;
+    if (!current || current.saved.lastAgent === kind) return;
+    current.saved = { ...current.saved, lastAgent: kind };
+    bank.current = bank.current.map(c => c.id === id ? current.saved : c);
+    void persist(); paint();
+  };
   const actions = useMemo(() => ({
     refresh: () => entry?.refresh() ?? Promise.resolve(), reconnect: () => entry?.reconnect() ?? Promise.resolve(),
     watch: (pane: string | null) => entry?.watch(pane),
@@ -444,6 +457,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     pins: pinnedPanes(entry?.saved.pins ?? [], entry?.session?.panes ?? []),
     togglePin: pane => updatePins(togglePinOf(entry?.saved.pins ?? [], entry?.session?.panes.find(p => p.paneId === pane) ?? { paneId: pane })),
     clearPins: () => updatePins([]), terminalWidth,
+    lastAgent: entry?.saved.lastAgent ?? null, rememberAgent,
     setTerminalWidth: columns => { setWidth(columns); void writeSecret(WIDTH_KEY, String(columns)).catch(() => {}); },
     server: entry ? (entry.saved.connection.kind === "relay" ? relayLabel(entry.saved.connection) : `ssh://${entry.saved.connection.ssh.username}@${entry.saved.connection.ssh.host}`) : "",
   };

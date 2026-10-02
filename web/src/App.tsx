@@ -30,8 +30,7 @@ import { Login } from "./components/Login";
 import { PaneView } from "./components/PaneView";
 import { clearReaderMemory } from "./components/Reader";
 import { Settings } from "./components/Settings";
-import { NewAgent } from "./components/NewAgent";
-import { Sheet } from "./components/Sheet";
+import { NewAgentFlow } from "./components/NewAgentFlow";
 import { PushPrompt } from "./components/PushPrompt";
 import { SpaceDetail, Spaces } from "./components/Spaces";
 import { OwnedRoute } from "./components/OwnedRoute";
@@ -109,7 +108,6 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
   const [pairingCode, setPairingCode] = useState(initialPairingCode);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newAgent, setNewAgent] = useState(false);
-  const [selectedSpace, setSelectedSpace] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   /**
    * Whether the server answered at all.
@@ -151,12 +149,6 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
   const [frames, setFrames] = useState<Record<string, PaneFrame>>({});
   const [promptState, setPromptState] = useState<PromptState>({ prompts: {}, answered: {} });
   const prompts = promptState.prompts;
-  // A New agent sheet whose space closed goes back to choosing one, rather
-  // than reopening by itself for the next space herdr gives the same id
-  // (pre-release bug hunt, B43).
-  useEffect(() => {
-    if (selectedSpace && session && !session.workspaces.some((space) => space.workspaceId === selectedSpace)) setSelectedSpace(null);
-  }, [session, selectedSpace]);
   const [link, setLink] = useState<LinkState>("connecting");
   const [toast, setToast] = useState<string | null>(null);
   const socketRef = useRef<SessionSocket | null>(null);
@@ -531,12 +523,8 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       </main>
       </div>
 
-      {newAgent && (selectedSpace && session?.workspaces.find((s) => s.workspaceId === selectedSpace)
-        ? <NewAgent space={session.workspaces.find((s) => s.workspaceId === selectedSpace)!} onClose={() => { setNewAgent(false); setSelectedSpace(null); }} onToast={showToast} onStarted={(id) => { setNewAgent(false); setSelectedSpace(null); refresh(); navigate(`/pane/${encodeURIComponent(id)}`); }} />
-        : <Sheet title="Choose a space" onClose={() => setNewAgent(false)}>
-            {session?.workspaces.map((space) => <button className="row" key={space.workspaceId} onClick={() => setSelectedSpace(space.workspaceId)}>{space.label}</button>)}
-            {!session?.workspaces.length && <button className="sheet__go" onClick={() => { setNewAgent(false); navigate("/spaces"); }}>Create a space first</button>}
-          </Sheet>)}
+      {newAgent && session && <NewAgentFlow session={session} onClose={() => setNewAgent(false)} onToast={showToast} onChanged={refresh}
+        onStarted={(id) => { setNewAgent(false); refresh(); navigate(`/pane/${encodeURIComponent(id)}`); }} />}
       {!conversationLayout && <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div></ComputerControlProvider>

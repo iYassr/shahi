@@ -20,3 +20,16 @@ export function agentLabel(kind: string): string {
 export function agentCommand(kind: string): string {
   return kind === "cursor" ? "cursor-agent" : kind;
 }
+
+/**
+ * Which agent a New agent form starts on: the one this person last started on
+ * this computer, else Claude where it is installed, else the first. The form
+ * used to start on whichever installed kind sorted first, so a computer with
+ * Antigravity offered it to everyone (simulator run of build 32, October
+ * 2026).
+ */
+export function defaultAgentKind(kinds: readonly string[], last: string | null | undefined): string | null {
+  if (last && kinds.includes(last)) return last;
+  if (kinds.includes("claude")) return "claude";
+  return kinds[0] ?? null;
+}

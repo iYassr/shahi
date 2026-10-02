@@ -20,7 +20,7 @@ import type {
 } from "@shahi/shared";
 
 export interface Scenario {
-  /** Override discovery and simulate unique created panes for native creation tests. */
+  /** Override discovery and simulate unique created panes and spaces for creation tests. */
   agents?: string[];
   createAgents?: boolean;
   session: Session;

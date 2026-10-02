@@ -24,7 +24,7 @@ import { BackHandler, FlatList, ScrollView, Pressable, StyleSheet, TextInput, Vi
 import { Text, useLargeText } from "@/components/text";
 import { useRememberedScroll } from "@/lib/scroll-memory";
 import { router, Stack } from "expo-router";
-import { folderName, modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
+import { defaultAgentKind, folderName, modesFor, type DashboardPane, type Session, type Space } from "@shahi/shared";
 import { landed, refused } from "@/lib/feel";
 import { openPane, openSpace } from "@/lib/navigate";
 import { useSession } from "@/lib/session";
@@ -32,7 +32,7 @@ import { theme, statusColor } from "@/lib/theme";
 import { agentLabel } from "@shahi/shared";
 import { Avatar } from "@/components/avatar";
 import { conversationLabel, paneTitle } from "@/components/conversation-label";
-import { Icon } from "@/components/icons";
+import { AgentIcon, Icon } from "@/components/icons";
 import { FolderBrowser, type FolderChoice } from "@/components/folder-browser";
 
 export function Spaces({ session }: { session: Session | null }) {
@@ -237,7 +237,11 @@ const PaneRow = memo(function PaneRow({
   );
 });
 
-export function NewSpace({ session, onCreated, onCancel }: { session: Session; onCreated: (workspaceId: string) => void; onCancel?: () => void }) {
+export function NewSpace({ session, onCreated, onCancel, forAgent = false }: {
+  session: Session; onCreated: (workspaceId: string) => void; onCancel?: () => void;
+  /** Opened by New agent: the space is where that agent will work, and its form comes next. */
+  forAgent?: boolean;
+}) {
   const { api } = useSession();
   const largeText = useLargeText();
   const [name, setName] = useState("");
@@ -282,8 +286,21 @@ export function NewSpace({ session, onCreated, onCancel }: { session: Session; o
   }
 
   return (
-    <SheetBody title="New space" fullScreen busy={busy} onClose={onCancel}>
-      <Text style={styles.label}>FOLDER</Text>
+    <SheetBody title={forAgent ? "New agent" : "New space"} fullScreen busy={busy} onClose={onCancel}>
+      {/* What a space is, where the word first appears: a new person met
+          "Choose a space" before anything had said what one was (simulator
+          run of build 32). */}
+      <Text style={styles.intro}>
+        {forAgent ? "Agents work in a space: a folder on your computer. Choose this one's folder, then the agent." : "A space is a folder on your computer that agents work in."}
+      </Text>
+      {/* Beside the label rather than under the browser, where a long home
+          folder put it a screen or two out of sight (simulator run of build 32). */}
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>FOLDER</Text>
+        <Pressable accessibilityRole="button" style={styles.changeTarget} onPress={() => { setTyping((t) => !t); setError(null); }} testID="type-path">
+          <Text style={styles.sheetClose}>{typing ? "Browse folders instead" : "Type a path instead"}</Text>
+        </Pressable>
+      </View>
       {!typing && (folder ? (
         <View style={styles.chosen} testID="chosen-folder">
           <Icon name="folder" size={18} color={theme.peach} />
@@ -295,9 +312,6 @@ export function NewSpace({ session, onCreated, onCancel }: { session: Session; o
       ) : (
         <FolderBrowser recent={recent} onChoose={choose} />
       ))}
-      <Pressable accessibilityRole="button" style={styles.changeTarget} onPress={() => { setTyping((t) => !t); setError(null); }} testID="type-path">
-        <Text style={styles.sheetClose}>{typing ? "Browse folders instead" : "Type a path instead"}</Text>
-      </Pressable>
       {typing && (
         <TextInput
           style={styles.input}
@@ -323,7 +337,7 @@ export function NewSpace({ session, onCreated, onCancel }: { session: Session; o
       />
       {error && <Text accessibilityRole="alert" style={styles.err}>{error}</Text>}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !cwd }} style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()} testID="create-space">
-        <Text style={styles.goText}>{busy ? "Creating…" : "Create space"}</Text>
+        <Text style={styles.goText}>{busy ? "Creating…" : forAgent ? "Create space and continue" : "Create space"}</Text>
       </Pressable>
     </SheetBody>
   );
@@ -331,45 +345,46 @@ export function NewSpace({ session, onCreated, onCancel }: { session: Session; o
 
 /**
  * The first step of "new agent" when it starts from the Agents tab rather
- * than from inside a space: which space. The form under it is the same one
- * a space's own "+ New agent" opens — the agent is the thing being made, and
- * where it lives is a choice, not a place you have to navigate to first.
+ * than from inside a space, and there are spaces to choose from: which space.
+ * The form under it is the same one a space's own "+ New agent" opens — the
+ * agent is the thing being made, and where it lives is a choice, not a place
+ * you have to navigate to first. With no spaces at all, New agent starts at
+ * the folder instead (`app/new-agent.tsx`).
  */
 export function PickSpace({ session, onPick, onNewSpace }: { session: Session; onPick: (space: Space) => void; onNewSpace?: () => void }) {
   // Making the space here continues to its agent; the standalone sheet is the fallback.
   const newSpace = onNewSpace ?? (() => router.replace("/new-space"));
   return (
     <SheetBody title="Choose a space" fullScreen>
-      {session.workspaces.length === 0 ? (
-        <Pressable accessibilityRole="button" style={styles.action} onPress={newSpace}>
-          <Text style={styles.actionText}>No spaces yet — make one first</Text>
+      <View>
+        {/* A new agent often wants a new folder; on build 28 this list
+            offered only the spaces that already existed (device audit). */}
+        <Pressable accessibilityRole="button" style={[styles.action, styles.actionTop]} onPress={newSpace} testID="pick-new-space">
+          <Text style={styles.actionText}>+ New space</Text>
         </Pressable>
-      ) : (
-        <View>
-          {/* A new agent often wants a new folder; on build 28 this list
-              offered only the spaces that already existed (device audit). */}
-          <Pressable accessibilityRole="button" style={[styles.action, styles.actionTop]} onPress={newSpace} testID="pick-new-space">
-            <Text style={styles.actionText}>+ New space</Text>
+        {/* Named by label and folder. herdr's workspace number was drawn here
+            and read first, "1, tip-calc, ~/ShahiFresh/tip-calc", and means
+            nothing away from herdr's keyboard (simulator run of build 32). */}
+        {session.workspaces.map((item) => (
+          <Pressable accessibilityRole="button" accessibilityLabel={[item.label, item.cwd].filter(Boolean).join(", ")} key={item.workspaceId} style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
+            <View style={styles.avatar}>
+              <Icon name="folder" size={30} color={statusColor(item.status)} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.spaceName}>{item.label}</Text>
+              {!!item.cwd && <Text style={styles.spaceMeta} numberOfLines={1}>{item.cwd}</Text>}
+            </View>
           </Pressable>
-          {session.workspaces.map((item, index) => (
-            <Pressable accessibilityRole="button" key={item.workspaceId} style={styles.space} onPress={() => onPick(item)} testID={`pick-${item.workspaceId}`}>
-              <View style={[styles.avatar, { borderColor: statusColor(item.status) }]}>
-                <Text style={[styles.avatarNumber, { color: statusColor(item.status) }]}>{index + 1}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.spaceName}>{item.label}</Text>
-                <Text style={styles.spaceMeta} numberOfLines={1}>{item.cwd ?? item.workspaceId}</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
-      )}
+        ))}
+      </View>
     </SheetBody>
   );
 }
 
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
-  const { api } = useSession();
+  const { api, lastAgent, rememberAgent } = useSession();
+  // As it was when the form opened: what is remembered next is for the next form.
+  const [preferred] = useState(lastAgent);
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const [opened] = useState(() => ({ workspaceId: space.workspaceId, label: space.label }));
   const replaced = space.workspaceId !== opened.workspaceId || space.label !== opened.label;
@@ -416,7 +431,8 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       if (!active) return;
       const available = [...new Set(d.agents.map((a) => a.kind))];
       setKinds(available);
-      if (available[0]) chooseKind(available[0]);
+      const initial = defaultAgentKind(available, preferred);
+      if (initial) chooseKind(initial);
       else { setKind(null); setMode(null); }
     }).catch((e) => {
       if (active) setLoadError(e instanceof Error ? e.message : "Could not load agents.");
@@ -445,6 +461,8 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         name: `${kind.slice(0, 15)}-${attempt.current.id.replace(/-/g, "").slice(0, 16)}`,
         mode,
       });
+      // Started, whether or not this form is still open to see it.
+      rememberAgent(kind);
       if (!mounted.current) return;
       landed();
       onStarted(paneId);
@@ -474,10 +492,16 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       {loadError && <><Text style={styles.err}>{loadError}</Text><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><Text style={styles.actionText}>Try again</Text></Pressable></>}
       {!loading && !loadError && kinds.length === 0 && <Text style={styles.note}>No agents are installed on this computer yet.</Text>}
       <Text style={styles.label}>AGENT</Text>
+      {/* The chosen agent is marked three ways, accent border, check and
+          weight, because a slightly lighter fill was all that told it apart
+          (simulator run of build 32). Each wears the icon its conversations
+          have in the lists. */}
       <View style={styles.kinds}>
         {kinds.map((k) => (
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: k === kind }} key={k} style={[styles.chip, k === kind && styles.chipOn]} onPress={() => chooseKind(k)} testID={`agent-kind-${k}`} disabled={busy || loading}>
-            <Text style={[styles.chipText, k === kind && styles.chipTextOn]}>{agentLabel(k)}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={agentLabel(k)} accessibilityState={{ selected: k === kind }} key={k} style={[styles.agentChip, k === kind && styles.agentChipOn]} onPress={() => chooseKind(k)} testID={`agent-kind-${k}`} disabled={busy || loading}>
+            <AgentIcon kind={k} size={18} />
+            <Text style={[styles.agentChipText, k === kind && styles.chipTextOn]}>{agentLabel(k)}</Text>
+            {k === kind && <Text style={styles.agentChipCheck}>✓</Text>}
           </Pressable>
         ))}
       </View>
@@ -603,15 +627,17 @@ const styles = StyleSheet.create({
   sheetClose: { color: theme.peach, fontSize: 15 },
   sheetCloseTarget: { minWidth: 44, minHeight: 44, paddingLeft: 12, alignItems: "flex-end", justifyContent: "center" },
   label: { color: theme.dim, fontSize: 11, letterSpacing: 1.2 },
+  labelRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" },
+  intro: { color: theme.dim, fontSize: 14, lineHeight: 19 },
   input: { backgroundColor: theme.void, borderWidth: 1, borderColor: theme.lineBright, borderRadius: 8, borderCurve: "continuous", color: theme.fg, fontFamily: theme.mono, fontSize: 15, padding: 12, minHeight: 46 },
   kinds: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 12, minHeight: 44, justifyContent: "center", marginRight: 8 },
-  chipOn: { borderColor: theme.lineBright, backgroundColor: theme.raised },
-  chipText: { color: theme.dim, fontSize: 12 },
-  // As wide as the row and no wider: no margin of its own past the row's gap,
-  // which a full-width chip would push over the edge.
-  folderChip: { maxWidth: "100%", marginRight: 0 },
-  chipTextOn: { color: theme.fg },
+  chipTextOn: { color: theme.fg, fontWeight: "600" },
+  // A point less padding while selected pays for the wider border, so a chip
+  // grows by its check alone.
+  agentChip: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: theme.line, borderRadius: 999, paddingHorizontal: 14, minHeight: 44 },
+  agentChipOn: { borderWidth: 2, borderColor: theme.peach, backgroundColor: theme.raised, paddingHorizontal: 13 },
+  agentChipText: { color: theme.dim, fontSize: 14 },
+  agentChipCheck: { color: theme.peach, fontSize: 14, fontWeight: "700" },
   err: { color: theme.rose, fontSize: 13 },
   go: { backgroundColor: theme.peach, borderRadius: 10, borderCurve: "continuous", minHeight: 48, alignItems: "center", justifyContent: "center", marginTop: 4 },
   goOff: { opacity: 0.35 },

@@ -8,7 +8,8 @@ const mockStackOptions = jest.fn();
 const mockApi = { agents: jest.fn(), startAgent: jest.fn() };
 const mockSpace = { workspaceId: "w1", label: "Project", cwdPath: "/tmp/project", status: "idle" } as Space;
 const mockSession = { serverName: "My computer", workspaces: [mockSpace], panes: [], tabs: [] } as unknown as Session;
-jest.mock("@/lib/session", () => ({ useSession: () => ({ api: mockApi, session: mockSession, computers: [], link: "live", server: "relay:https://secret-relay.example" }) }));
+const mockRemembered = { lastAgent: null as string | null, rememberAgent: jest.fn() };
+jest.mock("@/lib/session", () => ({ useSession: () => ({ api: mockApi, session: mockSession, computers: [], link: "live", server: "relay:https://secret-relay.example", ...mockRemembered }) }));
 jest.mock("@/components/avatar", () => ({ Avatar: () => null }));
 jest.mock("@/components/connection-health", () => ({ ConnectionHealth: () => null }));
 jest.mock("@/lib/scroll-memory", () => ({ useRememberedScroll: () => ({}) }));
@@ -22,6 +23,7 @@ const choices = kinds.flatMap<[string, string | null]>(kind => {
 });
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRemembered.lastAgent = null;
   mockApi.agents.mockResolvedValue({ agents: kinds.map(kind => ({ kind })) });
   mockApi.startAgent.mockResolvedValue({ paneId: "w1:p-new", tabId: "w1:t-new" });
 });
@@ -41,6 +43,40 @@ test.each(choices)("starts %s with exactly the selected permission %s", async (k
   // after a restart, and the computer refuses a start whose name no longer
   // matches rather than put it in the wrong space (pre-release bug hunt, B43).
   expect(mockApi.startAgent).toHaveBeenCalledWith({ clientRequestId: expect.any(String), workspaceId: "w1", workspaceLabel: "Project", cwd: "/tmp/project", label: null, kind, name: expect.stringMatching(new RegExp(`^${kind}-[a-zA-Z0-9]+$`)), mode });
+});
+
+// Simulator run of build 32: the form started on Antigravity, first
+// alphabetically, and the chosen chip was only a shade lighter.
+test("with nothing remembered, Claude is chosen, not the first agent alphabetically", async () => {
+  mockApi.agents.mockResolvedValue({ agents: ["agy", "claude", "codex"].map(kind => ({ kind })) });
+  render(<NewAgent space={mockSpace} onStarted={jest.fn()} />);
+  await ready();
+  expect(screen.getByTestId("agent-kind-claude").props.accessibilityState.selected).toBe(true);
+  expect(screen.getByTestId("agent-kind-claude")).toHaveTextContent(/✓/);
+  expect(screen.getByTestId("agent-kind-agy").props.accessibilityState.selected).toBe(false);
+  expect(screen.getByTestId("agent-kind-agy").props.accessibilityLabel).toBe("Antigravity");
+  expect(screen.getByTestId("start-agent")).toHaveTextContent("Start Claude");
+});
+
+test("the agent last started on this computer is chosen, and a start is remembered for next time", async () => {
+  mockRemembered.lastAgent = "codex";
+  const onStarted = jest.fn();
+  render(<NewAgent space={mockSpace} onStarted={onStarted} />);
+  await ready();
+  expect(screen.getByTestId("agent-kind-codex").props.accessibilityState.selected).toBe(true);
+  fireEvent.press(screen.getByTestId("agent-kind-opencode"));
+  fireEvent.press(screen.getByTestId("start-agent"));
+  await waitFor(() => expect(onStarted).toHaveBeenCalled());
+  expect(mockRemembered.rememberAgent).toHaveBeenCalledWith("opencode");
+});
+
+test("a start that failed is not remembered", async () => {
+  mockApi.startAgent.mockRejectedValue(new Error("Not ready"));
+  render(<NewAgent space={mockSpace} onStarted={jest.fn()} />);
+  await ready();
+  fireEvent.press(screen.getByTestId("start-agent"));
+  await screen.findByText("Not ready");
+  expect(mockRemembered.rememberAgent).not.toHaveBeenCalled();
 });
 
 test("switching agent resets an unsafe mode before submission", async () => {
