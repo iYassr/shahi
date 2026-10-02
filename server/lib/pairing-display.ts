@@ -18,6 +18,20 @@ export const browserPairingLink = (url: string) => `https://getshahi.dev/pwa/#pa
 export type PairingView = "qr" | "text";
 
 const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
+
+/** Prose broken at spaces to fit `columns`; a word longer than that is cut. */
+function wrap(text: string, columns: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length <= columns) { line = next; continue; }
+    if (line) lines.push(line);
+    line = word.slice(0, columns);
+  }
+  if (line) lines.push(line);
+  return lines;
+}
 export async function pairingDisplay(url: string, expiresAt: number, copied: boolean) {
   const symbols = await Promise.all((["M", "L"] as const).map(async errorCorrectionLevel => {
     const lines = (await QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel })).split("\n");
@@ -63,8 +77,26 @@ export async function pairingDisplay(url: string, expiresAt: number, copied: boo
     }
     const pad = " ".repeat(Math.floor((columns - symbol.width) / 2));
     const center = (text: string) => " ".repeat(Math.max(0, Math.floor((columns - text.length) / 2))) + text;
+    // A QR the camera cannot read — glare, a lens out of focus — left the
+    // person a hint about a text view and nothing about the phone, and the
+    // owner asked for the code beside the QR (October 2026). Both go in rows
+    // the QR does not need: the help first, then the code itself, written
+    // whole and left to the terminal to wrap as in the text view, because a
+    // break of ours would travel with a copy. Neither ever shrinks the QR.
+    let spare = rows - (symbol.lines.length + 4);
+    const help = wrap(copied
+      ? "Can't scan? The code is copied: in Shahi, tap Paste pairing link."
+      : "Can't scan? Copy the code below, then in Shahi tap Paste pairing link.", columns);
+    const shown: string[] = [];
+    if (help.length <= spare) {
+      shown.push(...help.map(center));
+      spare -= help.length;
+      const code = Math.max(1, Math.ceil(url.length / columns));
+      if (1 + code <= spare) shown.push("", url);
+    }
     return [center("Scan with Shahi"), "", ...symbol.lines.map(line => pad + line),
       center(expiry),
+      ...shown,
       center(copied ? "Code copied · T+Enter: as text · Enter to close" : "T+Enter: code as text · Enter to close"),
     ].join("\n");
   };

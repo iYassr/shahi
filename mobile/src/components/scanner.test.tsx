@@ -15,3 +15,14 @@ test("a refused camera still leaves a way to pair, by pasting the link", () => {
   fireEvent.press(screen.getByTestId("scanner-paste"));
   expect(onPaste).toHaveBeenCalledTimes(1);
 });
+
+// The owner, October 2026: a QR the camera cannot read left only Cancel on
+// this screen, though the computer had copied the same code to its clipboard.
+test("a code the camera cannot read can be pasted from the scanning screen", () => {
+  mockPermission = { granted: true, canAskAgain: true };
+  const onPaste = jest.fn();
+  render(<Scanner onScanned={() => true} onCancel={jest.fn()} onPaste={onPaste} />);
+  expect(screen.getByText("Point at the code your computer printed.")).toBeTruthy();
+  fireEvent.press(screen.getByText("Can't scan? Paste pairing link"));
+  expect(onPaste).toHaveBeenCalledTimes(1);
+});

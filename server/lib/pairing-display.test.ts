@@ -11,11 +11,36 @@ test("the complete code and controls fit without wrapping or scrolling", async (
     const screen = strip(render(width!, height!));
     expect(screen).toContain("Scan with Shahi");
     expect(screen).toContain("Enter to close");
-    expect(screen).not.toContain(url);
-    expect(screen.split("\n").length).toBeLessThanOrEqual(height!);
-    for (const line of screen.split("\n")) expect(line.length).toBeLessThanOrEqual(width!);
+    // Only the code as text is long enough to wrap, and the terminal does it.
+    const rows = screen.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(line.length / width!)), 0);
+    expect(rows).toBeLessThanOrEqual(height!);
+    for (const line of screen.split("\n")) if (line !== url) expect(line.length).toBeLessThanOrEqual(width!);
     expect(screen).toMatch(/[▄▀█]/);
   }
+});
+
+// The owner, October 2026: "make sure the code is also added to the barcode,
+// in case the barcode doesn't work". The QR screen hinted at a text view and
+// said nothing about the phone; the code now sits under the QR, with what to
+// do with it, in rows the QR does not need.
+test("a QR the camera cannot read has the code and what to do with it beneath it", async () => {
+  const copied = strip((await pairingDisplay(url, Date.now() + 600000, true))(80, 40)).split("\n");
+  expect(copied.join("\n")).toContain("Can't scan? The code is copied: in Shahi, tap Paste pairing link.");
+  const code = copied.find(line => line.includes("pair#"));
+  expect(code).toBe(url);
+  expect(parsePairingUrl(code!)).toEqual(parsePairingUrl(url));
+  expect(copied.at(-1)).toContain("Enter to close");
+
+  const uncopied = strip((await pairingDisplay(url, Date.now() + 600000, false))(80, 40));
+  expect(uncopied).toContain("Can't scan? Copy the code below, then in Shahi tap Paste pairing link.");
+  expect(uncopied.split("\n")).toContain(url);
+
+  // A popup with room for the QR alone keeps the QR, whole and unchanged.
+  const symbol = strip(await QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel: "M" })).trimEnd().split("\n");
+  const tight = strip((await pairingDisplay(url, Date.now() + 600000, true))(80, symbol.length + 4));
+  expect(tight).toMatch(/[▄▀█]/);
+  expect(tight).not.toContain("Can't scan?");
+  expect(tight).not.toContain(url);
 });
 test("a short or narrow terminal shows a resize hint instead of a clipped code", async () => {
   const render = await pairingDisplay(url, Date.now() + 600000, false);

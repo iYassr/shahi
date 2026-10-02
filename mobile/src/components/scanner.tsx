@@ -25,7 +25,7 @@ export function Scanner({
   /** True if the code was ours and is being acted on; false to keep looking. */
   onScanned: (data: string) => boolean;
   onCancel: () => void;
-  /** Pairs from a copied link instead: the way in when the camera is refused. */
+  /** Pairs from a copied link instead: the way in when the camera is refused or cannot read the code. */
   onPaste?: () => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -99,9 +99,20 @@ export function Scanner({
           {rejected ? "That isn't a Shahi pairing code." : "Point at the code your computer printed."}
         </Text>
         <View style={styles.frame} />
-        <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">
-          <Text style={styles.cancel}>Cancel</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          {/* A code the camera cannot read — glare, a small popup, a lens out
+              of focus — left only Cancel, though the computer had already
+              copied the same code to its clipboard, which a Mac shares with
+              the phone. The owner asked for the code beside the QR. */}
+          {onPaste && (
+            <Pressable accessibilityRole="button" style={styles.pasteButton} onPress={onPaste} testID="scanner-paste">
+              <Text style={styles.paste}>Can't scan? Paste pairing link</Text>
+            </Pressable>
+          )}
+          <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">
+            <Text style={styles.cancel}>Cancel</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -128,6 +139,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderCurve: "continuous",
   },
+  actions: { alignItems: "center", gap: 12 },
+  // On the camera image, so it carries the hint's dark backing to stay legible.
+  pasteButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.peach,
+  },
+  paste: { color: theme.peach, fontSize: 16, fontWeight: "600" },
   cancelButton: { minHeight: 44, justifyContent: "center" },
   cancel: { color: theme.fg, fontSize: 16, textDecorationLine: "underline" },
   deniedTitle: { color: theme.fg, fontSize: 18, fontWeight: "600", textAlign: "center" },
