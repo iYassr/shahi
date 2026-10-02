@@ -66,6 +66,22 @@ describe("listDirectories", () => {
     expect(listing.entries.some((e) => e.name.startsWith("."))).toBe(false);
   });
 
+  // Simulator run of build 32: a new person's first folder list had Library
+  // and node_modules among their projects. Home's own copies go; a project's
+  // stay, since that is where one is worth opening.
+  test("home does not list node_modules or the Mac's Library, a project still does", async () => {
+    const home = (await listDirectories("~", { includeFiles: true })).entries.map((e) => e.name);
+    expect(home).not.toContain("node_modules");
+    if (process.platform === "darwin") expect(home).not.toContain("Library");
+    const fixture = mkdtempSync(join(HOME, "shahi-dirs-test-"));
+    try {
+      mkdirSync(join(fixture, "node_modules"));
+      mkdirSync(join(fixture, "Library"));
+      const inside = (await listDirectories(fixture)).entries.map((e) => e.name);
+      expect(inside).toEqual(["Library", "node_modules"]);
+    } finally { rmSync(fixture, { recursive: true, force: true }); }
+  });
+
   test("sorts naturally", async () => {
     const names = (await listDirectories("~")).entries.map((e) => e.name);
     const sorted = [...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
