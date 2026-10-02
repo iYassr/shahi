@@ -88,6 +88,24 @@ describe("paired devices", () => {
     await waitFor(() => expect(api.devices).toHaveBeenCalledTimes(3));
   });
 
+  // Simulator run of build 32: the list became one line when the computer
+  // dropped, and Settings scrolled by itself under the person.
+  test("a list already read stays in place while the computer is offline, with nothing to press", async () => {
+    api.devices.mockResolvedValue({ devices: [other, mine], thisDeviceId: "dev-me" });
+    const view = render(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
+    await waitFor(() => view.getByTestId("device-dev-old"));
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} focused live={false} />);
+    expect(view.getByTestId("device-dev-old")).toBeTruthy();
+    expect(view.getByTestId("device-dev-me")).toBeTruthy();
+    expect(view.getByText(/As of the last connection/)).toBeTruthy();
+    expect(view.getByTestId("revoke-dev-old").props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(view.getByTestId("revoke-dev-old"));
+    expect(Alert.alert).not.toHaveBeenCalled();
+    view.rerender(<PairedDevices onRevokedSelf={jest.fn()} focused live />);
+    await waitFor(() => expect(view.getByTestId("revoke-dev-old").props.accessibilityState.disabled).toBe(false));
+    expect(view.getByText(/Only devices connected with a pairing code/)).toBeTruthy();
+  });
+
   // There is no undo: the server refuses the revoked phone's next request.
   test("revoking another phone asks first, then removes it", async () => {
     api.devices
