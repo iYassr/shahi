@@ -8,6 +8,7 @@
  *
  *   bun run start          # or `bun run dev` to reload on change
  */
+import { loadComputerName } from "./lib/computer-name";
 import { Database } from "bun:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -154,6 +155,8 @@ const backend = new BackendMonitor(
 
 const identity = serverIdentity(db);
 // Listening is where a port another program holds fails.
+// Named before the first snapshot is built (computer-name.ts).
+await loadComputerName();
 const server: ShahiServer = orExit(() => createServer({
   control: new ComputerControl(identity.serverId, () => backend.state),
   config,

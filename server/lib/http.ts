@@ -40,8 +40,8 @@ import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf, paneFolder } from "./herdr-pane";
 import { ChangesError, fileDiff, paneChanges } from "./changes";
+import { computerName } from "./computer-name";
 import { atFolderTrust, choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
-import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
 import { PaneWrites } from "./pane-writes";
@@ -1758,9 +1758,10 @@ export async function dashboard(store: SessionStore, poller: Poller, defaultGrou
   return {
     version: state.version,
     protocol: state.protocol,
-    // The machine the phone is trusting, named. `hostname()` is cheap and the
-    // authenticated snapshot is the right place for it — see Session.serverName.
-    serverName: hostname(),
+    // The machine the phone is trusting, named as the person named it
+    // (computer-name.ts); the authenticated snapshot is the right place for it
+    // — see Session.serverName.
+    serverName: computerName(),
     // What herdr's own agent panel is set to, so the phone opens the way the
     // TUI already does. Null when no preference is stated.
     defaultGrouping,
