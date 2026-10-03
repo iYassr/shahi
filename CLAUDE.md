@@ -1278,6 +1278,25 @@ launch. A delivered notification is not withdrawn when the question is answered.
 `state_change_seq` is a session-wide snapshot counter measured on herdr 0.9.1;
 push uses status changes missed between samples without duplicating event notices.
 
+**Nothing between the computer and the phone reads a question.** With
+`push-actions`, a relay-paired phone sends a 32-byte push key with its Expo
+registration; the server keeps it only for a device, as a column of that row,
+so every path that drops the registration drops the key. Notifications for it
+are sealed (`push-seal.ts`: AES-256-GCM, random nonce, associated data binding
+the server and pane ids); Expo and Apple see only `CONTENT_FREE` words, the
+routing ids, the key id and the box. The Notification Service Extension
+(`mobile/plugins/notification-service`, added by a config plugin, entitled only
+to the shared keychain group) opens it, shows the question and offers up to
+three answers as actions; it strips any category or `answer` it did not open.
+Labels in the box are the parser's exact labels, because `/answer` compares
+them; what does not fit is dropped, never cut. Actions open the app
+(`.foreground`): background actions were measured to be killed or suspended
+before an answer could land. The app posts what a card posts, and the server's
+checks decide. SSH and passcode sessions keep the plain notification.
+`simctl push` runs no service extension (measured on iOS 26.5), so a sealed
+payload pushed that way shows the content-free words; the Swift is checked
+against the server's known-answer vector by `tests/run.sh`.
+
 **Retry outcomes differ.** An unwritten request can run again, as can a certain
 agent-start failure whose tab was closed. A `prompt_changed` after typing retains
 its outcome under the same id to prevent duplicate text. Folder/workspace refusals

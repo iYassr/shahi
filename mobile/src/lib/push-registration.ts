@@ -2,6 +2,7 @@ import { deleteSecret, readSecret, writeSecret } from "./keychain";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { api, type Api } from "./api";
 import type { ComputerConnection } from "./computers";
+import { deletePushKey, readPushKey, storePushKey, type PushKey } from "./push-keys";
 
 let key: string | null = null;
 let revision = 0;
@@ -26,27 +27,69 @@ export function pushKeyFor(connection: ComputerConnection | null): string | null
   return `shahi.push.${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/**
+ * Beside the token: the id of the push key this phone gave the computer for
+ * sealed notifications (`lib/push-keys.ts`), when it gave one. The key itself
+ * is in the group the notification extension reads; this says which one is
+ * this computer's, so registering again sends it and turning off removes it.
+ */
+const keyIdFor = (savedKey: string) => `${savedKey}.sealed`;
+
+async function savedSealKey(savedKey: string): Promise<PushKey | null> {
+  const id = await readSecret(keyIdFor(savedKey));
+  return id ? readPushKey(id) : null;
+}
+
+async function forgetSealKey(savedKey: string): Promise<void> {
+  const id = await readSecret(keyIdFor(savedKey)).catch(() => null);
+  if (id) await deletePushKey(id).catch(() => undefined);
+  await deleteSecret(keyIdFor(savedKey));
+}
+
+/** A registration sends its key only when it has one: an older computer reads the body as it always did. */
+const register = (client: Api, token: string, sealed: PushKey | null) =>
+  sealed ? client.registerPush(token, sealed.key) : client.registerPush(token);
+
 /** Points registration at the selected computer, or at none. */
 export function configurePushComputer(connection: ComputerConnection | null): void {
   const next = pushKeyFor(connection);
   if (next !== key) { key = next; revision++; }
 }
 
-export function preparePushRegistration(client: Api = api): (token: string) => Promise<void> {
+/**
+ * Registers `token`, and `sealed` with it when the computer offers sealed
+ * notifications. The key is stored before the computer hears of it, so the
+ * first notification sealed with it can be opened; a registration that fails
+ * takes its new key back out. A key the phone gave earlier is removed once
+ * the computer has the new one.
+ */
+export function preparePushRegistration(client: Api = api): (token: string, sealed?: PushKey | null) => Promise<void> {
   const savedKey = key;
   const current = revision;
-  return async token => {
+  return async (token, sealed = null) => {
     registration = registration.catch(() => undefined).then(async () => {
       if (current !== revision) return;
-      await client.registerPush(token);
-      if (savedKey && current === revision) await writeSecret(savedKey, token);
+      const earlier = savedKey ? await readSecret(keyIdFor(savedKey)).catch(() => null) : null;
+      if (sealed) await storePushKey(sealed);
+      try {
+        await register(client, token, sealed);
+      } catch (e) {
+        if (sealed) await deletePushKey(sealed.id).catch(() => undefined);
+        throw e;
+      }
+      if (savedKey && current === revision) {
+        await writeSecret(savedKey, token);
+        if (sealed) await writeSecret(keyIdFor(savedKey), sealed.id);
+        else await deleteSecret(keyIdFor(savedKey));
+        if (earlier && earlier !== sealed?.id) await deletePushKey(earlier).catch(() => undefined);
+      } else if (sealed) await deletePushKey(sealed.id).catch(() => undefined);
     });
     await registration;
   };
 }
 
-export async function registerEnabledPush(token: string): Promise<void> {
-  await preparePushRegistration()(token);
+export async function registerEnabledPush(token: string, sealed: PushKey | null = null): Promise<void> {
+  await preparePushRegistration()(token, sealed);
 }
 
 /** The token this phone registered with the selected computer, if it did. */
@@ -64,8 +107,10 @@ export async function restorePushRegistration(active: () => boolean, client: Api
   try {
     const token = await readSecret(savedKey);
     if (!token || !active() || current !== revision) return;
+    // Sent again with its key: a registration without one drops the key.
+    const sealed = await savedSealKey(savedKey).catch(() => null);
     registration = registration.catch(() => undefined).then(async () => {
-      if (active() && current === revision) await client.registerPush(token);
+      if (active() && current === revision) await register(client, token, sealed);
     });
     await registration;
   } catch {
@@ -108,9 +153,10 @@ export async function unregisterPushRegistration(client: Api = api): Promise<voi
   const run = registration.catch(() => undefined).then(async () => {
     const token = await readSecret(savedKey);
     if (!token) return;
-    await client.registerPush(token);
+    await register(client, token, await savedSealKey(savedKey).catch(() => null));
     await client.unregisterPush(token);
     await deleteSecret(savedKey);
+    await forgetSealKey(savedKey);
   });
   registration = run;
   await run;
@@ -121,7 +167,10 @@ export async function forgetPushRegistration(): Promise<void> {
   const savedKey = key;
   revision++;
   await registration.catch(() => undefined);
-  if (savedKey) await deleteSecret(savedKey).catch(() => undefined);
+  if (savedKey) {
+    await deleteSecret(savedKey).catch(() => undefined);
+    await forgetSealKey(savedKey).catch(() => undefined);
+  }
 }
 
 /** A prior reconnect may have failed to transfer the token's old session owner. */

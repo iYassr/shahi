@@ -1,9 +1,10 @@
 import { ClientUpdateGate } from "@/components/client-update-gate";
 import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "react-native";
+import { Alert, Modal } from "react-native";
 import { router, ThemeProvider } from "expo-router";
 import { onNotificationTapped, showNotificationsWhileOpen } from "@/lib/push";
+import { postNotificationAnswer, type NotificationAnswer } from "@/lib/notification-answer";
 import { openPane, showComputerHome } from "@/lib/navigate";
 import { Stack } from "expo-router/stack";
 import { StatusBar } from "expo-status-bar";
@@ -52,21 +53,22 @@ function Navigation() {
   const session = useSession();
   const { connectionKey, ready, activeComputerId, hostKeyReview } = session;
   const current = useRef(session); current.current = session;
-  const [pending, setPending] = useState<{ id: string; pane: string; switched: boolean; instance?: string } | null>(null);
+  const [pending, setPending] = useState<{ id: string; pane: string; switched: boolean; instance?: string; answer?: NotificationAnswer } | null>(null);
   // Above the remounting stack: a notification can select another computer.
   useEffect(() => {
     if (!ready) return;
-    return onNotificationTapped((pane, serverId, instance) => {
+    const route = (pane: string, serverId?: string, instance?: string, answer?: NotificationAnswer) => {
       const state = current.current;
       const target = serverId ? state.computers.find(c => c.serverId === serverId) :
         state.computers.length === 1 ? state.computers[0] : undefined;
       if (!target) { router.push("/computers"); return; }
       const switched = target.id !== state.activeComputerId;
-      setPending({ id: target.id, pane, switched, ...(instance && { instance }) });
+      setPending({ id: target.id, pane, switched, ...(instance && { instance }), ...(answer && { answer }) });
       if (switched) void state.switchComputer(target.id).catch(() => {
         setPending(null); router.push("/computers");
       });
-    });
+    };
+    return onNotificationTapped(route, ({ paneId, serverId, instanceId }, answer) => route(paneId, serverId, instanceId, answer));
   }, [ready]);
   useEffect(() => {
     if (!pending || pending.id !== activeComputerId) return;
@@ -76,6 +78,17 @@ function Navigation() {
       if (pending.switched) showComputerHome();
       if (pending.instance) openPane(pending.pane, pending.id, pending.instance);
       else openPane(pending.pane, pending.id);
+      // An answer chosen on the notification goes now, with its pane on
+      // screen to show what the agent does next — or the question still
+      // waiting, when the computer pressed nothing and says why.
+      if (pending.answer) {
+        const state = current.current;
+        void postNotificationAnswer(state.api, pending.pane, pending.answer, pending.instance).then((outcome) => {
+          if (outcome.sent) return;
+          if (outcome.unauthorized) state.unauthorized();
+          else Alert.alert("Not answered", outcome.message);
+        });
+      }
       setPending(null);
     });
     return () => cancelAnimationFrame(frame);

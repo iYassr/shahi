@@ -23,6 +23,8 @@ test("absent additive capabilities hide only their own feature", () => {
   expect(supports(null, "attachments")).toBe(true); expect(supports(null, "computer-updates")).toBe(false);
   // A computer from before the handshake has no Changes routes to show.
   expect(supports(null, "changes")).toBe(false); expect(supports({ ...h, capabilities: ["changes"] }, "changes")).toBe(true);
+  // A computer from before the control handshake cannot seal notifications.
+  expect(supports(null, "push-actions")).toBe(false);
 });
 
 // A development checkout's notice sat on the Agents list and in every

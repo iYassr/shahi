@@ -38,6 +38,11 @@ test("an unmanaged computer's handshake carries no message for a card on every s
   expect(h.update.message).toBeUndefined();
   expect(h.capabilities).not.toContain("computer-updates");
 });
+// A phone sends its push key only to a computer that says it seals with one.
+test("every computer says it can seal notifications and take their answers", () => {
+  const h = new ComputerControl("dev", () => ({ state: "connected", version: "0.9.1", protocol: 22 }), undefined).handshake();
+  expect(h.capabilities).toContain("push-actions");
+});
 test("a managed install before its manager's first status is managed and checking, not told to install itself", () => {
   const root = mkdtempSync(join(tmpdir(), "shahi-control-first-")); roots.push(root);
   const release = { version: "0.3.7", buildId: "b" };

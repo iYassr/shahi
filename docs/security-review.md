@@ -660,3 +660,84 @@ Repeat the checks in [relay operations](relay.md) after any zone change.
 terminal input queue can launch an agent’s trust menu after Shahi’s process and
 screen checks. The sidecar cannot inspect that queue; the checks narrow the race
 but do not prove it impossible.
+
+## Sealed notifications — 2026-10-03
+
+A new construction, for approving a waiting agent from its notification
+(`docs/notifications.md`, "Approving from the notification"). Reviewed by its
+author; not an independent audit.
+
+**What it protects.** A native notification crosses Expo's push service and
+Apple's. Before this, both could read the workspace name and conversation
+title in every notification. With an agent's question added — a command, a
+diff — the owner's requirement was that nothing between the computer and the
+phone can read it. Expo and APNs are treated as honest-but-curious carriers
+that may also drop, delay, replay or rewrite anything outside the box.
+
+**Key.** 32 bytes from the phone's CSPRNG (`expo-crypto` `getRandomBytes`),
+made each time notifications are turned on for a relay-paired computer whose
+handshake offers `push-actions`. It travels to the computer only inside the
+relay's end-to-end envelope (`shared/src/e2e.ts`), in the body of
+`POST /api/push/expo`. The computer accepts exactly 32 bytes of canonical
+base64 (`parsePushKey`), stores it only for a paired device's registration, in
+`device_expo_push_token.push_key` (the 0600 database in its 0700 directory),
+and never logs it; observability records only fixed outcomes. Being a column
+of the registration, it is deleted by every path that deletes or replaces the
+registration: revocation, sign-out, `DeviceNotRegistered`, the owner's new
+token, a registration sent again without a key. On the phone it is a keychain
+item in the access group `<team>.app.shahi.mobile.push`, protection class
+AfterFirstUnlockThisDeviceOnly (a notification must open on a locked phone;
+measured on the simulator: class `cku`), removed when notifications are turned
+off or the computer is signed out of. The app's entitlement lists its own
+group first, so every other item still lands in the app's own group (class
+`aku`, measured), and the Notification Service Extension is entitled to the
+shared group alone: it cannot read device secrets, SSH credentials or the
+passcode. A notification names its key by the first 8 bytes of the key's
+SHA-256, which says nothing about the key.
+
+**Box.** AES-256-GCM (`server/lib/push-seal.ts`, opened by CryptoKit in
+`PushEnvelope.swift`), a random 96-bit nonce from `node:crypto` per message, a
+128-bit tag, laid out as base64 of nonce ‖ ciphertext ‖ tag. At most one
+notification per pane per five seconds, so the random-nonce bound (2^32
+messages per key for a 2^-32 collision chance) is out of reach. The associated
+data is `shahi-push/1`, the server id and the pane id, each on its own line:
+the two routing fields that travel in clear, so a box replayed under another
+pane's or computer's routing fields does not open. A retried send repeats the
+same nonce with the same plaintext, which reveals nothing. A known-answer vector
+(`server/fixtures/push-seal-vector.json`) is checked by the Bun tests and by the
+extension's Swift on a Mac (`mobile/plugins/notification-service/tests/run.sh`),
+including tampering, another key, another pane and another computer.
+
+**What the carriers see.** The device token; fixed alert text ("An agent needs
+you / Tap to see what it is asking."); the pane id and server id; the format
+version; the key id; the box; and metadata: time, size and frequency. The box's
+length follows the length of the words inside it (bounded at 2 KB, not padded),
+so a carrier can tell a long question from a short one. The fallback text is
+chosen by the computer and contains no content, but a carrier that rewrites
+the clear part controls what a box that fails to open shows, as any push
+service always could; the app never asks for a credential from a notification.
+
+**What they cannot do.** Read or forge the content (no key; GCM authenticates
+it); move a box to another pane (associated data); add answer buttons or an
+answer: the extension removes any category and `answer` field it did not
+produce itself, and buttons come only from a category the extension registers
+for a box it opened. A replayed old notification displays an old question;
+answering it is refused by the computer, because `/answer` requires the
+prompt id to be the current appearance of the question, and reports
+`prompt_gone`.
+
+**The answer.** Actions are `.foreground` and `.authenticationRequired`: the
+phone must be unlocked, the app opens, selects the notification's computer
+and posts over the relay the same body a card does. The server's existing
+checks decide (prompt id current, label and, when it fitted, question and
+context identical to a fresh read, the occupant, the pane's write queue).
+Background actions were measured to be unreliable (`docs/notifications.md`)
+and are not used.
+
+**Not covered.** SSH computers and passcode sign-ins keep the plain
+notification, which Expo and Apple can read; the server refuses to store a key
+for them. A phone that turned notifications on before this feature keeps plain
+notifications until they are turned off and on. A stolen, unlocked-once phone
+yields the push keys, which open past notifications if the ciphertext was also
+captured, not access to the computer. There is no key rotation other than
+turning notifications off and on.
