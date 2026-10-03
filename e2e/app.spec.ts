@@ -201,8 +201,12 @@ test.describe("when something breaks", () => {
         expect(payload).toMatchObject({
           tags: { client: "web" },
           user: { ip_address: "0.0.0.0" },
+          // The error's own words, which name code, survive; the private
+          // marker above never does (redactErrorMessage, October 2026). The
+          // minifier names the variable, and WebKit appends the failing
+          // source (Shahi's own code), so only the start is fixed.
           exception: { values: expect.arrayContaining([
-            expect.objectContaining({ value: "Application error (message omitted for privacy)" }),
+            expect.objectContaining({ type: "TypeError", value: expect.stringMatching(/\bblocks\.flatMap is not a function\b/) }),
           ]) },
         });
         expect((payload as { user: unknown }).user).toEqual({ ip_address: "0.0.0.0" });
