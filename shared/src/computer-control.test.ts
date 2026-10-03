@@ -21,6 +21,8 @@ test("updates stay scoped and a changed running build reconnects once", async ()
 test("absent additive capabilities hide only their own feature", () => {
   expect(supports(h, "attachments")).toBe(false); expect(supports(h, "sessions")).toBe(true);
   expect(supports(null, "attachments")).toBe(true); expect(supports(null, "computer-updates")).toBe(false);
+  // A computer from before the control handshake cannot seal notifications.
+  expect(supports(null, "push-actions")).toBe(false);
 });
 
 // A development checkout's notice sat on the Agents list and in every

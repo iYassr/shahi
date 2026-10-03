@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import webpush from "web-push";
+import { createDecipheriv } from "node:crypto";
+import type { ParsedPrompt } from "@shahi/shared";
 import { Observability } from "./observability";
-import { PushService, type PushLog } from "./push";
+import { CONTENT_FREE, PushService, type PushLog } from "./push";
+import { associatedData, pushKeyId } from "./push-seal";
 import type { Config } from "./config";
 import type { HerdrClient } from "./herdr-client";
 import type { AgentInfo, PaneInfo, SessionSnapshot } from "./herdr-schema";
@@ -541,4 +544,137 @@ test("a question from a pane whose title is only spaces names the pane", async (
   } as unknown as SessionStore;
   await push.notifyStatusChange({ paneId: "w1:p1", workspaceId: "w1", from: "working", to: "blocked" }, store);
   expect(sent).toEqual([expect.objectContaining({ title: "one needs you", body: "w1:p1" })]);
+});
+
+/**
+ * The owner's constraint for approving from a notification: what an agent
+ * asks must not cross Expo or Apple in clear text. A paired phone gives a key
+ * with its registration, and its notifications are sealed with it.
+ */
+describe("a phone that gave a push key", () => {
+  const key = Buffer.alloc(32, 7).toString("base64");
+  const prompt: ParsedPrompt = {
+    question: "Do you want to proceed?",
+    answer: "digit",
+    context: ["Bash command", "python3 tip.py\nRun the tip calculator"],
+    options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "Yes, and don't ask again (shift+tab)", selected: false }, { index: 3, label: "No", selected: false }],
+    promptId: "prompt-1",
+  };
+  const asking = (p: ParsedPrompt | null = prompt) => async () => p;
+  type Sealed = { title: string; body: string; mutableContent?: boolean; data: { paneId: string; serverId: string; kid?: string; sealed?: string; v?: number } };
+
+  /** Opens a box as the phone's extension does (`PushEnvelope.swift`). */
+  const open = (message: Sealed) => {
+    const box = Buffer.from(message.data.sealed!, "base64");
+    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key, "base64"), box.subarray(0, 12));
+    decipher.setAAD(associatedData(message.data.serverId, message.data.paneId));
+    decipher.setAuthTag(box.subarray(box.length - 16));
+    return JSON.parse(Buffer.concat([decipher.update(box.subarray(12, box.length - 16)), decipher.final()]).toString("utf8"));
+  };
+
+  test("Expo and Apple carry content-free words and a box; the phone opens the question and its answers", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[sealed]", "device-a", null, key);
+    const requests = expoRequests();
+    const store = { ...storeWith(paneInfo({ terminal_title_stripped: "private title" }), "private space"), instance: () => "term_a" } as unknown as SessionStore;
+    await push.notifyStatusChange(blocked(), store, asking());
+
+    const message = (requests[0] as Sealed[])[0]!;
+    expect(message).toMatchObject({ ...CONTENT_FREE, mutableContent: true });
+    expect(Object.keys(message.data).sort()).toEqual(["kid", "paneId", "sealed", "serverId", "v"]);
+    expect(message.data.kid).toBe(pushKeyId(key));
+    const wire = JSON.stringify(message);
+    for (const secret of ["private", "python3", "proceed", "Yes", "term_a", "prompt-1"]) expect(wire).not.toContain(secret);
+
+    expect(open(message)).toEqual({
+      title: "private space needs you",
+      subtitle: "private title",
+      body: "Do you want to proceed?\nBash command\npython3 tip.py\nRun the tip calculator",
+      instanceId: "term_a",
+      answer: {
+        promptId: "prompt-1",
+        question: prompt.question,
+        context: prompt.context,
+        options: [{ index: 1, label: "Yes", title: "Yes" }, { index: 2, label: "Yes, and don't ask again (shift+tab)", title: "Yes, and don't ask again" }, { index: 3, label: "No", title: "No" }],
+      },
+    });
+  });
+
+  // APNs refuses a payload over 4 KB. Expo puts our data under `body` beside
+  // `aps` and adds its own ids; this is that shape, measured with room left.
+  test("a sealed notification for a huge diff stays inside APNs' 4 KB", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[sealed]", "device-a", null, key);
+    const requests = expoRequests();
+    const diff = Array.from({ length: 5_000 }, (_, i) => `+ ${i} ${"ش".repeat(80)}`).join("\n");
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ terminal_title_stripped: "👩🏽‍💻".repeat(600) }), "👩🏽‍💻".repeat(600)), asking({ ...prompt, context: ["Edit file", diff] }));
+    const message = (requests[0] as Sealed[])[0]!;
+    const apns = {
+      aps: { alert: { title: message.title, body: message.body }, sound: "default", "mutable-content": 1 },
+      body: message.data,
+      experienceId: "@yasserd99/shahi",
+      scopeKey: "@yasserd99/shahi",
+    };
+    expect(new TextEncoder().encode(JSON.stringify(apns)).length).toBeLessThan(3_600);
+    expect(open(message).answer.options.map((o: { label: string }) => o.label)).toEqual(["Yes", "Yes, and don't ask again (shift+tab)", "No"]);
+  });
+
+  test("with nothing parsed it is still sealed, names the conversation, and offers no buttons", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[sealed]", "device-a", null, key);
+    const requests = expoRequests();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ terminal_title_stripped: "private title" })), asking(null));
+    const message = (requests[0] as Sealed[])[0]!;
+    expect(message).toMatchObject(CONTENT_FREE);
+    expect(open(message)).toEqual({ title: "project needs you", body: "private title" });
+  });
+
+  test("a phone without a key keeps the plain notification it always had", async () => {
+    const push = service();
+    push.subscribeExpo("ExpoPushToken[sealed]", "device-a", null, key);
+    push.subscribeExpo("ExpoPushToken[plain]", "device-b");
+    const requests = expoRequests();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ label: "Refactor billing" })), asking());
+    const plain = (requests[0] as (Sealed & { to: string })[]).find((m) => m.to === "ExpoPushToken[plain]")!;
+    expect(plain).toMatchObject({ title: "project needs you", body: "Refactor billing", data: { paneId: "w1:p1" } });
+    expect(plain.mutableContent).toBeUndefined();
+    expect(JSON.stringify(plain)).not.toContain("proceed");
+  });
+
+  test("the key goes when its registration does", async () => {
+    const db = new Database(":memory:");
+    const push = new PushService(db, { vapid: null } as Config);
+    const keys = () => db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM device_expo_push_token WHERE push_key IS NOT NULL").get()!.n;
+
+    push.subscribeExpo("ExpoPushToken[revoked]", "device-a", null, key);
+    push.unsubscribeOwner("device-a");
+    expect(keys()).toBe(0);
+
+    push.subscribeExpo("ExpoPushToken[again]", "device-b", null, key);
+    push.subscribeExpo("ExpoPushToken[again]", "device-b");
+    expect(keys()).toBe(0);
+
+    push.subscribeExpo("ExpoPushToken[replaced]", "device-c", null, key);
+    push.subscribeExpo("ExpoPushToken[newer]", "device-c");
+    expect(keys()).toBe(0);
+
+    push.subscribeExpo("ExpoPushToken[gone]", "device-d", null, key);
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const messages = JSON.parse(String(init.body)) as { to: string }[];
+      return Response.json({ data: messages.map((m) => m.to === "ExpoPushToken[gone]" ? { status: "error", details: { error: "DeviceNotRegistered" } } : { status: "ok" }) });
+    }) as unknown as typeof fetch;
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo()), asking());
+    expect(keys()).toBe(0);
+  });
+
+  // Web Push is end-to-end encrypted to the browser by its own protocol, so
+  // the question can travel in it. A browser has no action buttons on iOS.
+  test("a browser is told the question too", async () => {
+    const { push, sends } = webService();
+    await push.notifyStatusChange(blocked(), storeWith(paneInfo({ label: "Refactor billing" })), asking());
+    const payload = JSON.parse(sends[0]!.payload) as { title: string; body: string };
+    expect(payload.title).toBe("project needs you");
+    expect(payload.body).toBe("Refactor billing\nDo you want to proceed?\nBash command\npython3 tip.py\nRun the tip calculator");
+    expect(Object.keys(payload).sort()).toEqual(["body", "paneId", "serverId", "title"]);
+  });
 });

@@ -55,6 +55,7 @@ import { RateLimiter, clientAddress, isRateLimitedPath } from "./ratelimit";
 import type { Devices, Pairing } from "./pairing";
 import type { PaneFrame, Poller } from "./poller";
 import type { PushService } from "./push";
+import { parsePushKey } from "./push-seal";
 import { paneTitle, type SessionState, type SessionStore } from "./state";
 import type { TranscriptStore } from "./transcript";
 import type { ComputerControl } from "./control";
@@ -571,7 +572,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
   store.on("status", (change) => {
     broadcast({ type: "status", change });
-    void push.notifyStatusChange(change, store);
+    // What the pane asks, read now and observed like the card's read, so a
+    // notification's answer carries the prompt id `/answer` holds current.
+    void push.notifyStatusChange(change, store, (paneId) => poller.refresh(paneId).then((frame) => frame?.prompt ?? null));
   });
 
   const server = Bun.serve<SocketData, never>({
@@ -1276,13 +1279,19 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         // The native app's channel. No VAPID, no service worker — Expo's push
         // service takes a token and hands the notification to FCM or APNs.
         if (pathname === "/api/push/expo" && req.method === "POST") {
-          const body = await jsonObject<{ token: unknown }>(req);
+          const body = await jsonObject<{ token: unknown; pushKey?: unknown }>(req);
           // Revocation can happen while a slow request body is still arriving.
           if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           if (!push.isExpoToken(body.token)) {
             return json({ error: "malformed expo push token" }, { status: 400 });
           }
-          push.subscribeExpo(body.token, pushOwner(req), pushExpiry(req));
+          // The key for sealed notifications (`push-seal.ts`), kept only for
+          // a paired device: its registration lasts until it is revoked, and
+          // its phone can reach this computer through the relay to answer.
+          // A passcode session's phone keeps the plain notification.
+          const pushKey = body.pushKey === undefined ? null : parsePushKey(body.pushKey);
+          if (body.pushKey !== undefined && !pushKey) return json({ error: "malformed push key" }, { status: 400 });
+          push.subscribeExpo(body.token, pushOwner(req), pushExpiry(req), identify(req)?.deviceId ? pushKey : null);
           return json({ ok: true });
         }
 

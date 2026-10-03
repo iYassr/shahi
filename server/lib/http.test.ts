@@ -162,6 +162,7 @@ interface Booted {
   cookie: string;
   calls: { method: string; params: unknown }[];
   push: PushService;
+  db: Database;
   dispatch: ReturnType<typeof createServer>["dispatch"];
   uploadDir: string;
   store: SessionStore;
@@ -255,7 +256,7 @@ async function boot({ sessionTtlMs = 60_000, heartbeatMs = 20_000, relay = false
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
-  return { base, cookie, calls, push, dispatch: server.dispatch, uploadDir, store, transcript, herdr: herdrSnapshot, poller, stop: () => server.stop(true) };
+  return { base, cookie, calls, push, db, dispatch: server.dispatch, uploadDir, store, transcript, herdr: herdrSnapshot, poller, stop: () => server.stop(true) };
 }
 
 /**
@@ -897,6 +898,42 @@ describe("writes and notification ownership", () => {
     expect((await post("/api/push/expo", { token: "ExpoPushToken[revoke]" }, a.cookie)).status).toBe(401);
     await post("/api/auth/logout", {}, b.cookie);
     expect(s.push.count()).toBe(baseline);
+  });
+
+  // Approve from the notification: a paired phone's key for sealed content is
+  // kept with its registration, and goes wherever the registration goes.
+  describe("a push key for sealed notifications", () => {
+    const pushKey = Buffer.alloc(32, 9).toString("base64");
+    const keyOf = (token: string) => s.db.query<{ push_key: string | null }, [string]>("SELECT push_key FROM device_expo_push_token WHERE token = ?").get(token)?.push_key;
+
+    test("is kept for a paired device, and dropped when it is revoked or signs out", async () => {
+      const a = await pair("Sealed revoked");
+      const b = await pair("Sealed signs out");
+      expect((await post("/api/push/expo", { token: "ExpoPushToken[sealed-a]", pushKey }, a.cookie)).status).toBe(200);
+      expect((await post("/api/push/expo", { token: "ExpoPushToken[sealed-b]", pushKey }, b.cookie)).status).toBe(200);
+      expect(keyOf("ExpoPushToken[sealed-a]")).toBe(pushKey);
+      expect((await fetch(`${s.base}/api/devices/${a.deviceId}`, { method: "DELETE", headers: { cookie: s.cookie } })).status).toBe(200);
+      expect(keyOf("ExpoPushToken[sealed-a]")).toBeUndefined();
+      await post("/api/auth/logout", {}, b.cookie);
+      expect(keyOf("ExpoPushToken[sealed-b]")).toBeUndefined();
+    });
+
+    // Only relay-paired devices: a passcode session's phone keeps the plain
+    // notification (docs/notifications.md).
+    test("is not kept for a passcode session", async () => {
+      expect((await post("/api/push/expo", { token: "ExpoPushToken[passcode]", pushKey })).status).toBe(200);
+      expect(keyOf("ExpoPushToken[passcode]")).toBeNull();
+      await post("/api/push/expo/unsubscribe", { token: "ExpoPushToken[passcode]" });
+    });
+
+    test("that is not 32 bytes of base64 is refused, and the registration with it", async () => {
+      const device = await pair("Bad key");
+      for (const bad of ["short", 42, Buffer.alloc(31).toString("base64")]) {
+        expect((await post("/api/push/expo", { token: "ExpoPushToken[bad-key]", pushKey: bad }, device.cookie)).status).toBe(400);
+      }
+      expect(keyOf("ExpoPushToken[bad-key]")).toBeUndefined();
+      await post("/api/auth/logout", {}, device.cookie);
+    });
   });
 
   test("a phone cannot unsubscribe a different owner's token", async () => {

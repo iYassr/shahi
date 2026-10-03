@@ -1,7 +1,7 @@
 /** App contracts and recovery are independent of herdr and transport versions. */
 export const API_SUPPORT = { min: 5, max: 5, securityFloor: 5, generations: 2 } as const;
 export const CONTROL_VERSION = 1;
-export const CAPABILITIES = ["sessions", "prompt-receipts", "attachments", "device-revocation", "computer-updates", "conversation-choice", "plan-usage"] as const;
+export const CAPABILITIES = ["sessions", "prompt-receipts", "attachments", "device-revocation", "computer-updates", "conversation-choice", "plan-usage", "push-actions"] as const;
 export type Capability = typeof CAPABILITIES[number];
 export type ReleaseChannel = "stable" | "beta";
 export type BackendState =
@@ -33,5 +33,5 @@ export const updateInProgress = (phase: UpdatePhase) => ["checking", "downloadin
 export function supports(handshake: ControlHandshake | null, capability: Capability): boolean {
   // API 5 before control-v1 shipped these features, but no managed updater,
   // and nothing that came after control-v1.
-  return handshake ? handshake.capabilities.includes(capability) : capability !== "computer-updates" && capability !== "plan-usage";
+  return handshake ? handshake.capabilities.includes(capability) : capability !== "computer-updates" && capability !== "plan-usage" && capability !== "push-actions";
 }

@@ -1,0 +1,9 @@
+{
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "kid": "630dcd2966c43366",
+  "nonce": "oKGio6Slpqeoqaqr",
+  "serverId": "Gx4mP2bq0N9yR7tLk3Vw8sZ1cE5hJ6uA",
+  "paneId": "w1:p2",
+  "plaintext": "{\"title\":\"tips needs you\",\"subtitle\":\"Claude\",\"body\":\"Do you want to proceed?\\nBash command\\npython3 tip.py\\nRun the tip calculator — ünïcødé ✓\",\"instanceId\":\"term_65c5ac306c4425\",\"answer\":{\"promptId\":\"0b4e7c1e-6a51-4c57-9a52-1f7b0f4f8e21\",\"question\":\"Do you want to proceed?\",\"context\":[\"Bash command\",\"python3 tip.py\\nRun the tip calculator\"],\"options\":[{\"index\":1,\"label\":\"Yes\",\"title\":\"Yes\"},{\"index\":2,\"label\":\"Yes, and don't ask again for python3 commands (shift+tab)\",\"title\":\"Yes, and don't ask again for python3 commands\"},{\"index\":3,\"label\":\"No\",\"title\":\"No\"}]}}",
+  "box": "oKGio6SlpqeoqaqrnToIRDGnZ51YR/O6dwngsBXJPWOyzi0ZviIE9QrJAWimGiLdlQAQUT7pYK0rVqGbKH8/aljyXhFhJ2QrhAfk3sCc8QAQ1ZaPl4eafLCSoviseMOEpq70F48bWsbf6jTg5+tFmCPa5uuwq38M69qYRgQkCcv+QfJMD6y/yNcgniyxfsJfMcIUN/TlkEi9KVJu7BoES1xMaa7R79Sb3LNVRaV9VtWUUGJi53hGfVnn1dQWRc6oNAWaCrC3VBV+43EkQ1M+61qqmZ2BMi2/PW1Wl2jL1IoLBu/b3KR10zzz60pcMgcWlFS4CvKRczl1aXAZP9v6WrtjUqtJ3NgPFkdB/Xkd86Wro4KZCdZ38gZVGPNMfiogydWgT50DKfjOkudC9Twj2lQgR5bHLy9fm4/lMbV6vztvRO+BAtkZxfrjhiOht2P+jgxpecGtBSnjbLGHD6r2MfUvW5Mtc/W+B0jmEG0xzSCiWEc2ieM5xwiBeqCpiXZzvwwu4shlL3WxxenLc67SGNlg4moMNMFKEY/xrmzFYbSqGewVTove6lZTXgHrICItIpXIqHocUNLvPuYOLd+h71DJ9xGQLKXamxNNy3TI2Z7cquyQtPmwf8lTbbakvocnQDSoBET0glXsKdmTf9qldu9sZuzoHkVk4RcKFyW92NxR/bJlxTM0gYu0MW0mVryiEDJwb5UBnfOH+7UgNIb15uD3B+ZgjQKO4aCMIg5SwJfi1IN/Ef7hOK9i/Ldz8tC+W8QQZctOP3ocjdeVcerK64zJTA/mZ+qlPGo6RxXyh0c="
+}

@@ -14,7 +14,9 @@
  * The native app cannot use Web Push at all — there is no service worker — so it
  * registers an Expo push token instead and the same notification goes out over
  * both channels. The two are independent: Web Push needs VAPID keys and Expo
- * push needs none, so either can be configured without the other.
+ * push needs none, so either can be configured without the other. A paired
+ * phone that gave a push key gets its notification sealed, with the question
+ * the agent asks and its answers inside (`push-seal.ts`).
  */
 import { serverIdentity } from "./identity";
 import { Database } from "bun:sqlite";
@@ -22,7 +24,8 @@ import { createHash } from "node:crypto";
 import webpush, { type PushSubscription } from "web-push";
 import type { Config } from "./config";
 import { paneTitle, type SessionStore, type StatusChange } from "./state";
-import { paneTitle as conversationTitle } from "@shahi/shared";
+import { paneTitle as conversationTitle, shownContext, type ParsedPrompt } from "@shahi/shared";
+import { fitLines, fitText, PUSH_SEAL_VERSION, pushKeyId, seal, sealedContent, type SealedContent } from "./push-seal";
 
 /** How long a repeat notification for the same pane is held back. */
 const DEBOUNCE_MS = 5_000;
@@ -84,33 +87,31 @@ export interface PushPayload {
    */
   instanceId?: string;
   serverId?: string;
+  /**
+   * The body a browser shows instead: the conversation, then what the agent
+   * asks. Web Push is encrypted to the browser by its own protocol (RFC
+   * 8291), so the question can travel in it; Expo's plain body cannot.
+   */
+  webBody?: string;
+  /** What a phone that gave this computer a push key sees, sealed for it (`push-seal.ts`). */
+  sealed?: SealedContent;
 }
+
+/** Reads what a pane asks now, for the notification to show and answer. */
+export type PromptReader = (paneId: string) => Promise<ParsedPrompt | null>;
+
+/**
+ * What a sealed notification says outside its box, where Expo and Apple can
+ * read it. Nothing about the agent, the question or the computer: these are
+ * the words shown when the phone cannot open the box (its key is gone, or the
+ * extension ran out of time), and a tap still opens the pane.
+ */
+export const CONTENT_FREE = { title: "An agent needs you", body: "Tap to see what it is asking." } as const;
 
 /** Where delivery outcomes go: `Observability.event`, which keeps only allowlisted fields. */
 export type PushLog = (event: "push.sent" | "push.failed", fields: { channel: "expo" | "web"; count: number; status?: number; reason?: string }) => void;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Printable text of at most `maxBytes` of UTF-8, cut between graphemes so an
- * emoji or a combining mark is never split. Control characters become spaces:
- * they mean nothing in a notification and JSON escapes each into six bytes.
- */
-export function fitText(text: string, maxBytes: number): string {
-  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
-  const encoder = new TextEncoder();
-  if (encoder.encode(clean).length <= maxBytes) return clean;
-  const budget = maxBytes - encoder.encode("…").length;
-  let out = "";
-  let used = 0;
-  for (const { segment } of new Intl.Segmenter().segment(clean)) {
-    const size = encoder.encode(segment).length;
-    if (used + size > budget) break;
-    out += segment;
-    used += size;
-  }
-  return `${out}…`;
-}
 
 export class PushService {
   readonly #db: Database;
@@ -168,6 +169,13 @@ export class PushService {
       if (columns.some((c) => c.name === "expires_at")) continue;
       this.#db.exec(`ALTER TABLE ${table} ADD COLUMN expires_at INTEGER`);
       this.#db.run(`UPDATE ${table} SET expires_at = ? WHERE owner LIKE 'session:%'`, [Date.now() + config.sessionTtlMs]);
+    }
+    // The key a paired phone gave for sealed notifications (`push-seal.ts`).
+    // A column of the registration, so every path that drops a registration
+    // — revocation, logout, DeviceNotRegistered, a replaced token — drops its
+    // key with it, and no key outlives the phone it was for.
+    if (!this.#db.query<{ name: string }, []>("PRAGMA table_info(device_expo_push_token)").all().some((c) => c.name === "push_key")) {
+      this.#db.exec("ALTER TABLE device_expo_push_token ADD COLUMN push_key TEXT");
     }
 
     this.#enabled = config.vapid !== null;
@@ -250,14 +258,18 @@ export class PushService {
     return typeof value === "string" && /^Expo(nent)?PushToken\[[^\]]{1,200}\]$/.test(value);
   }
 
-  /** One per owner, for the reason `subscribe` gives. */
-  subscribeExpo(token: string, owner = "local", expiresAt: number | null = null): void {
+  /**
+   * One per owner, for the reason `subscribe` gives. `pushKey` is what the
+   * phone gave for sealed notifications, already checked by `parsePushKey`;
+   * registering again without one, as an older app does, removes it.
+   */
+  subscribeExpo(token: string, owner = "local", expiresAt: number | null = null, pushKey: string | null = null): void {
     this.#db.transaction(() => {
       this.#db.run("DELETE FROM device_expo_push_token WHERE owner = ? AND token != ?", [owner, token]);
       this.#db.run(
-        `INSERT INTO device_expo_push_token (token, added_at, owner, expires_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(token) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at`,
-        [token, Date.now(), owner, expiresAt],
+        `INSERT INTO device_expo_push_token (token, added_at, owner, expires_at, push_key) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(token) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at, push_key = excluded.push_key`,
+        [token, Date.now(), owner, expiresAt, pushKey],
       );
     })();
   }
@@ -283,7 +295,7 @@ export class PushService {
    * Only `blocked` notifies. `done` was tempting, but a finished turn is not
    * urgent and firing on both would train you to ignore the notifications.
    */
-  async notifyStatusChange(change: StatusChange, store: SessionStore): Promise<void> {
+  async notifyStatusChange(change: StatusChange, store: SessionStore, readPrompt: PromptReader = async () => null): Promise<void> {
     if (change.to !== "blocked") return;
 
     // The first snapshot reports every pane's status. Waking a phone for
@@ -302,7 +314,7 @@ export class PushService {
       const timer = setTimeout(() => {
         this.#trailing.delete(change.paneId);
         if (store.pane(change.paneId)?.agent_status !== "blocked") return;
-        void this.notifyStatusChange(change, store);
+        void this.notifyStatusChange(change, store, readPrompt);
       }, wait);
       timer.unref?.();
       this.#trailing.set(change.paneId, timer);
@@ -313,17 +325,24 @@ export class PushService {
     const pane = store.pane(change.paneId);
     const workspaceLabel = store.workspace(change.workspaceId)?.label ?? change.workspaceId;
     const suffix = " needs you";
+    // What the clients call the pane, through the same helper, so the
+    // notification names what the list does: a labelled pane with no
+    // terminal title read as its raw id, and a new agent's first question
+    // as its launch command (simulator run of build 32, October 2026).
+    const conversation = pane ? conversationTitle({ paneId: change.paneId, title: paneTitle(pane), agent: pane.display_agent ?? pane.agent ?? null }) : change.paneId;
 
     const instanceId = store.instance(change.paneId);
+    // A fresh read rather than the poller's last frame, which can be from
+    // before the question was drawn; and the same read the card's is, so the
+    // prompt id an action sends back is the one `/answer` holds as current.
+    const prompt = await readPrompt(change.paneId).catch(() => null);
     await this.send({
       title: fitText(workspaceLabel, MAX_TITLE_BYTES - suffix.length) + suffix,
-      // What the clients call the pane, through the same helper, so the
-      // notification names what the list does: a labelled pane with no
-      // terminal title read as its raw id, and a new agent's first question
-      // as its launch command (simulator run of build 32, October 2026).
-      body: fitText(pane ? conversationTitle({ paneId: change.paneId, title: paneTitle(pane), agent: pane.display_agent ?? pane.agent ?? null }) : change.paneId, MAX_BODY_BYTES),
+      body: fitText(conversation, MAX_BODY_BYTES),
       paneId: change.paneId,
       ...(instanceId ? { instanceId } : {}),
+      ...(prompt ? { webBody: fitLines([conversation, prompt.question, ...shownContext(prompt.context)], MAX_BODY_BYTES) } : {}),
+      sealed: sealedContent({ workspaceLabel, conversation, prompt, ...(instanceId ? { instanceId } : {}) }),
     });
   }
 
@@ -351,29 +370,18 @@ export class PushService {
    * uninstalled or the token rotated, and keeping it means failing forever.
    */
   async #sendExpo(payload: PushPayload): Promise<number> {
-    const tokens = this.#db
-      .query<{ token: string }, []>("SELECT token FROM device_expo_push_token")
+    const messages = this.#db
+      .query<{ token: string; push_key: string | null }, []>("SELECT token, push_key FROM device_expo_push_token")
       .all()
-      .map((row) => row.token);
-    const batches: string[][] = [];
-    for (let i = 0; i < tokens.length; i += EXPO_BATCH) batches.push(tokens.slice(i, i + EXPO_BATCH));
-    const delivered = await Promise.all(batches.map((batch) => this.#sendExpoBatch(batch, payload)));
+      .map((row) => expoMessage(row.token, row.push_key, payload));
+    const batches: ExpoMessage[][] = [];
+    for (let i = 0; i < messages.length; i += EXPO_BATCH) batches.push(messages.slice(i, i + EXPO_BATCH));
+    const delivered = await Promise.all(batches.map((batch) => this.#sendExpoBatch(batch)));
     return delivered.reduce((sum, n) => sum + n, 0);
   }
 
-  async #sendExpoBatch(tokens: string[], payload: PushPayload): Promise<number> {
-    const messages = tokens.map((to) => ({
-      to,
-      title: payload.title,
-      body: payload.body,
-      data: { paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId },
-      sound: "default",
-      ttl: TTL_SECONDS,
-      priority: "high",
-      // Android needs a channel to make any sound at all; the app creates it.
-      channelId: "blocked",
-    }));
-
+  async #sendExpoBatch(messages: ExpoMessage[]): Promise<number> {
+    const tokens = messages.map((m) => m.to);
     const failed = (fields: { status?: number; reason: string }) => {
       this.#log("push.failed", { channel: "expo", count: tokens.length, ...fields });
       return 0;
@@ -431,7 +439,7 @@ export class PushService {
     // Exactly what the service worker reads, and nothing it does not. An
     // undefined instanceId (an older herdr, a pane with no occupant yet) is
     // left out by JSON itself.
-    const body = JSON.stringify({ title: payload.title, body: payload.body, paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId });
+    const body = JSON.stringify({ title: payload.title, body: payload.webBody ?? payload.body, paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId });
     const options = {
       TTL: TTL_SECONDS,
       urgency: "high" as const,
@@ -480,4 +488,44 @@ export class PushService {
     for (const r of results) if (!r.ok) this.#log("push.failed", { channel: "web", count: 1, reason: r.reason, ...(r.status ? { status: r.status } : {}) });
     return delivered;
   }
+}
+
+type ExpoMessage = ReturnType<typeof expoMessage>;
+
+/**
+ * One phone's message. A phone that gave a key gets the sealed content and
+ * `mutableContent`, which wakes its Notification Service Extension to open
+ * it; outside the box are only the content-free words and what a tap needs
+ * to route: the pane and the computer, both bound into the box's associated
+ * data. Every other phone gets the plain notification it always had.
+ */
+function expoMessage(to: string, pushKey: string | null, payload: PushPayload) {
+  const common = {
+    to,
+    sound: "default",
+    ttl: TTL_SECONDS,
+    priority: "high",
+    // Android needs a channel to make any sound at all; the app creates it.
+    channelId: "blocked",
+  };
+  if (pushKey && payload.sealed && payload.serverId) {
+    return {
+      ...common,
+      ...CONTENT_FREE,
+      mutableContent: true,
+      data: {
+        paneId: payload.paneId,
+        serverId: payload.serverId,
+        v: PUSH_SEAL_VERSION,
+        kid: pushKeyId(pushKey),
+        sealed: seal(pushKey, payload.serverId, payload.paneId, JSON.stringify(payload.sealed)),
+      },
+    };
+  }
+  return {
+    ...common,
+    title: payload.title,
+    body: payload.body,
+    data: { paneId: payload.paneId, instanceId: payload.instanceId, serverId: payload.serverId },
+  };
 }
