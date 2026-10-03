@@ -8,6 +8,8 @@
  * before any listener exists, which is the easy one to lose.
  */
 
+import { Buffer } from "buffer";
+
 jest.mock("expo-device", () => ({ isDevice: true }));
 
 jest.mock("expo-constants", () => ({
@@ -239,4 +241,77 @@ test("a notification tap names the conversation that was waiting, not only its p
   await flush();
   expect(open).toHaveBeenCalledWith("w3:p1", "computer-a", "term_a");
   cancel();
+});
+
+// Approving from the notification: the computer seals what an agent asks with
+// a key this phone gives it, and only a computer that offers it gets one.
+describe("a push key for sealed notifications", () => {
+  const withTeam = ({ Constants }: { Constants: { expoConfig: unknown } }) => {
+    Constants.expoConfig = { extra: { eas: { projectId: "proj-1" } }, ios: { appleTeamId: "6H24S2PL9V", bundleIdentifier: "app.shahi.mobile" } };
+  };
+
+  test("goes with the token only when the computer offers sealed notifications", async () => {
+    const push = load(withTeam);
+    const SecureStore = require("expo-secure-store");
+    const client = { registerPush: jest.fn(async () => {}) };
+
+    await push.enablePush(client as never);
+    expect(client.registerPush).toHaveBeenLastCalledWith("ExponentPushToken[abc]");
+    expect(client.registerPush.mock.calls[0]).toHaveLength(1);
+
+    await push.enablePush(client as never, { sealed: true });
+    const [token, key] = client.registerPush.mock.calls.at(-1)! as unknown as [string, string];
+    expect(token).toBe("ExponentPushToken[abc]");
+    expect(Buffer.from(key, "base64")).toHaveLength(32);
+    // Where the extension finds it: the shared group, named by the id the
+    // computer derives from it (`pushKeyId`), readable after first unlock.
+    const id = require("node:crypto").createHash("sha256").update(Buffer.from(key, "base64")).digest("hex").slice(0, 16);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(`shahi.push-key.${id}`, key, expect.objectContaining({
+      keychainService: "shahi.push-keys",
+      accessGroup: "6H24S2PL9V.app.shahi.mobile.push",
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    }));
+  });
+
+  test("a computer that refuses the registration leaves no key behind", async () => {
+    const push = load(withTeam);
+    const SecureStore = require("expo-secure-store");
+    const client = { registerPush: jest.fn(async () => { throw new Error("offline"); }) };
+    expect(await push.enablePush(client as never, { sealed: true })).toEqual({ ok: false, reason: "offline" });
+    const [name] = (SecureStore.setItemAsync as jest.Mock).mock.calls.find(([n]: [string]) => n.startsWith("shahi.push-key."))!;
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(name, expect.objectContaining({ accessGroup: "6H24S2PL9V.app.shahi.mobile.push" }));
+  });
+});
+
+describe("an answer chosen on a notification", () => {
+  const action = (identifier: string, actionIdentifier: string) => ({
+    actionIdentifier,
+    notification: { request: { identifier, content: { data: {
+      paneId: "w3:p1", serverId: "computer-a", instanceId: "term_a",
+      answer: { promptId: "prompt-1", question: "Do you want to proceed?", context: ["python3 tip.py"], options: [{ index: 1, label: "Yes", title: "Yes" }, { index: 3, label: "No", title: "No" }] },
+    } } } },
+  });
+
+  test("is handed on with its computer and occupant, once, though launch and listener both report it", async () => {
+    let listener!: (r: unknown) => void;
+    const push = load(({ Notifications }) => {
+      Notifications.getLastNotificationResponseAsync!.mockResolvedValue(action("n-1", "shahi.option.3"));
+      Notifications.addNotificationResponseReceivedListener!.mockImplementation((fn: (r: unknown) => void) => { listener = fn; return { remove: jest.fn() }; });
+    });
+    const open = jest.fn();
+    const answer = jest.fn();
+    push.onNotificationTapped(open, answer);
+    await flush();
+    listener(action("n-1", "shahi.option.3"));
+    expect(answer).toHaveBeenCalledTimes(1);
+    expect(answer).toHaveBeenCalledWith(
+      { paneId: "w3:p1", serverId: "computer-a", instanceId: "term_a" },
+      { index: 3, label: "No", promptId: "prompt-1", question: "Do you want to proceed?", context: ["python3 tip.py"] },
+    );
+    expect(open).not.toHaveBeenCalled();
+
+    // A tap on the same notification, not an action, opens the pane as always.
+    listener({ ...action("n-1", "expo.modules.notifications.actions.DEFAULT") });
+    expect(open).toHaveBeenCalledWith("w3:p1", "computer-a", "term_a");
+  });
 });

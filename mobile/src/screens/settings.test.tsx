@@ -32,9 +32,10 @@ jest.mock("@/lib/session", () => ({
     clearPins: jest.fn(),
     terminalWidth: 100,
     setTerminalWidth: jest.fn(),
-    server: "relay://relay.getshahi.dev",
+    server: mockServer,
   }),
 }));
+let mockServer = "relay://relay.getshahi.dev";
 import { router } from "expo-router";
 
 test("sign out warns before deleting the connection needed to return", async () => {
@@ -177,4 +178,34 @@ describe("what belongs to the computer and what to the app", () => {
   test("without the computer's account of itself, herdr's version still shows", () => {
     expect(render(<Settings />).getByText("herdr 0.8.2")).toBeTruthy();
   });
+});
+
+// Approving from the notification: a push key goes only to a computer that
+// says it seals with one, and only over the relay. An SSH computer keeps the
+// plain notification, and an older computer is never sent the field.
+test("notifications ask for sealed content only from a relay computer that offers it", async () => {
+  const { enablePush } = require("@/lib/push") as { enablePush: jest.Mock };
+  enablePush.mockResolvedValue({ ok: false, reason: "stop here" });
+  const handshake = (capabilities: string[]) => ({ pending: false, error: null, request: jest.fn(), handshake: {
+    control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities,
+    backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: false, channel: "stable", phase: "idle", current: "0.3.22" },
+  } });
+  const turnOn = async () => {
+    const view = render(<Settings />);
+    await act(async () => { fireEvent.press(view.getByText("Notifications")); });
+    view.unmount();
+    return enablePush.mock.calls.at(-1)![1];
+  };
+  try {
+    mockControl = handshake(["push-actions"]);
+    expect(await turnOn()).toEqual({ sealed: true });
+    mockControl = handshake([]);
+    expect(await turnOn()).toEqual({ sealed: false });
+    mockControl = handshake(["push-actions"]);
+    mockServer = "ssh://me@box.test";
+    expect(await turnOn()).toEqual({ sealed: false });
+  } finally {
+    mockControl = undefined;
+    mockServer = "relay://relay.getshahi.dev";
+  }
 });

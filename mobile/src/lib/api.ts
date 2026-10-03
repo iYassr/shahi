@@ -715,7 +715,9 @@ const api = {
   answerPrompt: (
     paneId: string,
     option: Pick<PromptOption, "index" | "label">,
-    shown?: Pick<ParsedPrompt, "question" | "context" | "promptId">,
+    // Partial for a notification's answer, which carries the question and
+    // context only when they fit beside the rest (`lib/notification-answer`).
+    shown?: Partial<Pick<ParsedPrompt, "question" | "context" | "promptId">>,
     instanceId?: string,
   ) =>
     postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/answer`, {
@@ -749,8 +751,13 @@ const api = {
   sendKeys: (paneId: string, keys: string[], instanceId?: string) =>
     postJson<{ ok: boolean }>(`/api/panes/${encodeURIComponent(paneId)}/keys`, { keys, ...(instanceId ? { instanceId } : {}) }),
 
-  /** Registers this device for notifications. See `lib/push`. */
-  registerPush: (token: string) => postJson<{ ok: boolean }>("/api/push/expo", { token }),
+  /**
+   * Registers this device for notifications. See `lib/push`. `pushKey` is
+   * the key a computer offering `push-actions` seals notifications with
+   * (`lib/push-keys`); a computer without it ignores the field.
+   */
+  registerPush: (token: string, pushKey?: string) =>
+    postJson<{ ok: boolean }>("/api/push/expo", { token, ...(pushKey ? { pushKey } : {}) }),
 
   unregisterPush: (token: string) =>
     postJson<{ ok: boolean }>("/api/push/expo/unsubscribe", { token }),

@@ -37,7 +37,8 @@ test("a cancelled reconnect does not register and logout waits for an in-flight 
   let release!: () => void;
   (api.registerPush as jest.Mock).mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
   const registering = restorePushRegistration(() => true);
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  // Until the registration is in flight: it reads the keychain first.
+  for (let i = 0; i < 100 && !release; i++) await Promise.resolve();
   let cleared = false;
   const logout = forgetPushRegistration().then(() => { cleared = true; });
   await Promise.resolve();
@@ -66,7 +67,7 @@ test("switching during logout cannot erase the next computer's notification opt-
   let release!: () => void;
   const client = { registerPush: jest.fn(() => new Promise<void>(r => { release = r; })) };
   const logout = preparePushLogout(client as never);
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  for (let i = 0; i < 100 && !release; i++) await Promise.resolve();
   configurePushComputer(ssh({ ...profile, host: "second.test" }));
   release();
   await logout;

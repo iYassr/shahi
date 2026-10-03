@@ -170,7 +170,10 @@ export function Settings() {
               return;
             }
             setPush({ on: false, busy: true });
-            void enablePush(api).then((r) => setPush(r.ok ? { on: true } : { on: false, note: r.reason }));
+            // Sealed content and answer actions need a computer that offers
+            // them, reached through the relay (see `enablePush`).
+            const sealed = !isSsh && supports(handshake ?? null, "push-actions");
+            void enablePush(api, { sealed }).then((r) => setPush(r.ok ? { on: true } : { on: false, note: r.reason }));
           }}
           hint={push.note ?? (push.on ? `Tap to stop notifications from ${name}.` : `Get notified when an agent on ${name} needs your reply.`)}
         />

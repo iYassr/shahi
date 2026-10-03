@@ -19,6 +19,8 @@
 import * as Device from "expo-device";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { preparePushRegistration, savedPushToken } from "@/lib/push-registration";
+import { newPushKey } from "@/lib/push-keys";
+import { chosenAnswer, type NotificationAnswer } from "@/lib/notification-answer";
 
 import { api, type Api } from "./api";
 
@@ -93,7 +95,14 @@ export async function pushEnabled(): Promise<boolean> {
   }
 }
 
-export async function enablePush(client: Api = api): Promise<PushResult> {
+/**
+ * `sealed`: the computer offers `push-actions` and is reached through the
+ * relay, so it gets a fresh push key of this phone's (`lib/push-keys`) and
+ * sends what an agent asks sealed, with its answers as actions. An SSH
+ * computer keeps the plain notification: an action has to reach the
+ * computer, and a tunnel is not something to rely on from a notification.
+ */
+export async function enablePush(client: Api = api, { sealed = false }: { sealed?: boolean } = {}): Promise<PushResult> {
   if (!Device.isDevice) {
     return { ok: false, reason: "Push needs a real device — an emulator has no transport for it." };
   }
@@ -130,12 +139,15 @@ export async function enablePush(client: Api = api): Promise<PushResult> {
     }
 
     const { data: token } = await notifications.getExpoPushTokenAsync({ projectId });
-    await register(token);
+    await register(token, sealed ? newPushKey() : null);
     return { ok: true, token };
   } catch (err) {
     return { ok: false, reason: (err as Error).message };
   }
 }
+
+/** Actions already handed on, for the life of the process; see `deliver`. */
+const answered = new Set<string>();
 
 /**
  * Routes a tapped notification to the pane it is about.
@@ -145,7 +157,15 @@ export async function enablePush(client: Api = api): Promise<PushResult> {
  * comes too, when the server named one: herdr reuses pane ids, and a tap after
  * the id changed hands opened the new conversation (pre-release bug hunt).
  */
-export function onNotificationTapped(open: (paneId: string, serverId?: string, instanceId?: string) => void): () => void {
+export function onNotificationTapped(
+  open: (paneId: string, serverId?: string, instanceId?: string) => void,
+  /**
+   * An action chose one of the prompt's answers (`lib/notification-answer`):
+   * open the pane and post it. Without this, an action opens the pane as a
+   * tap does.
+   */
+  answer?: (target: { paneId: string; serverId?: string; instanceId?: string }, chosen: NotificationAnswer) => void,
+): () => void {
   let remove: (() => void) | undefined;
   let cancelled = false;
 
@@ -158,7 +178,16 @@ export function onNotificationTapped(open: (paneId: string, serverId?: string, i
     const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
     const serverId = typeof data?.serverId === "string" ? data.serverId : undefined;
     const instanceId = text(data?.instanceId);
-    if (instanceId) open(paneId, serverId, instanceId);
+    const chosen = answer && response ? chosenAnswer(response.actionIdentifier, data) : undefined;
+    if (chosen && response) {
+      // The launching response and the live listener can both report one
+      // action; a second post would find the question answered and say
+      // nothing was pressed, after the first had pressed it.
+      const once = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+      if (answered.has(once)) return;
+      answered.add(once);
+      answer!({ paneId, ...(serverId !== undefined ? { serverId } : {}), ...(instanceId ? { instanceId } : {}) }, chosen);
+    } else if (instanceId) open(paneId, serverId, instanceId);
     else if (serverId !== undefined) open(paneId, serverId);
     else open(paneId);
   };
