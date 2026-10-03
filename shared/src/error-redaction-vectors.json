@@ -1,0 +1,23 @@
+[
+  ["-[__NSArrayM objectAtIndex:]: index 5 beyond bounds [0 .. 3]", "-[__NSArrayM objectAtIndex:]: index 5 beyond bounds [0 .. 3]"],
+  ["undefined is not an object (evaluating 'pane.title')", "undefined is not an object (evaluating 'pane.title')"],
+  ["Can't find variable: applicationDidFinishLaunchingWithOptions", "Can't find variable: applicationDidFinishLaunchingWithOptions"],
+  ["Property 'title' doesn't exist", "Property 'title' doesn't exist"],
+  ["Cannot read property 'length' of undefined", "Cannot read property 'length' of undefined"],
+  ["Could not load 'notes.txt'", "Could not load <text>"],
+  ["Unknown key 'SYNTHETIC_PRIVATE_CANARY'", "Unknown key <text>"],
+  ["Could not open /Users/yasserdo/secret/notes.txt for reading", "Could not open <path> for reading"],
+  ["Could not read ~/projects/app/.env", "Could not read <path>"],
+  ["Failed to fetch https://relay.getshahi.dev/v1/phone/abc?wait=1", "Failed to fetch <url>"],
+  ["Invalid sender yasser@example.com", "Invalid sender <email>"],
+  ["JSON Parse error: Unexpected identifier \"hello world secret\"", "JSON Parse error: Unexpected identifier <text>"],
+  ["Note “my private plan” could not be saved", "Note <text> could not be saved"],
+  ["token sk-ant-abcdefghijklmnopqrstuvwxyz0123 rejected", "token <id> rejected"],
+  ["pane 2E8D8C40-6DDD-47EC-A2C7-2A6AE43FCA57 missing", "pane <id> missing"],
+  ["session 12345678 expired", "session <number> expired"],
+  ["EXC_BAD_ACCESS at 0x0000000102a3b4c8", "EXC_BAD_ACCESS at 0x0000000102a3b4c8"],
+  ["pane w1:p1 not found", "pane w1:p1 not found"],
+  ["Error\n    at render (index.js:42)", "Error at render (index.js:42)"],
+  ["", "Application error"],
+  ["   ", "Application error"]
+]

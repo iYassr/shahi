@@ -63,10 +63,20 @@ private enum ShahiSentry {
     safe.environment = event.environment
     safe.tags = ["client": "ios"]
     let user = Sentry.User(); user.ipAddress = "0.0.0.0"; safe.user = user
+    // The type, the reason (signal, Mach exception, NSError domain and code)
+    // and the message with its private parts replaced (sentry-redaction.swift).
+    // All three were dropped, and a fatal crash reached Sentry as
+    // "NativeError: Native application error (message omitted for privacy)"
+    // with nothing to fix it from (the owner, October 2026).
     safe.exceptions = event.exceptions?.map { exception in
-      let knownTypes = ["EXC_BAD_ACCESS", "EXC_CRASH", "EXC_BREAKPOINT", "EXC_BAD_INSTRUCTION", "SIGABRT", "SIGSEGV", "NSInvalidArgumentException", "NSRangeException", "NSInternalInconsistencyException"]
-      let clean = Sentry.Exception(value: "Native application error (message omitted for privacy)", type: knownTypes.contains(exception.type ?? "") ? exception.type : "NativeError")
+      let clean = Sentry.Exception(value: ShahiRedaction.message(exception.value), type: ShahiRedaction.type(exception.type) ?? "NativeError")
       clean.threadId = exception.threadId
+      if let original = exception.mechanism {
+        let mechanism = Sentry.Mechanism(type: ShahiRedaction.type(original.type) ?? "generic")
+        mechanism.handled = original.handled
+        mechanism.meta = original.meta
+        clean.mechanism = mechanism
+      }
       clean.stacktrace = exception.stacktrace
       cleanStack(clean.stacktrace)
       return clean
@@ -85,7 +95,10 @@ private enum ShahiSentry {
   }
   static func cleanStack(_ stack: SentryStacktrace?) {
     for frame in stack?.frames ?? [] {
-      frame.fileName = nil; frame.package = nil; frame.vars = nil; frame.module = nil
+      // The binary's name ("Shahi", "UIKitCore") says where a frame is; its
+      // path holds the app container's per-install identifier.
+      frame.package = frame.package.map { ($0 as NSString).lastPathComponent }
+      frame.fileName = nil; frame.vars = nil; frame.module = nil
       frame.contextLine = nil; frame.preContext = nil; frame.postContext = nil
     }
   }

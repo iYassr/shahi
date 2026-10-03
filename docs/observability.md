@@ -23,8 +23,14 @@ already received or disable separate relay/Apple/Expo diagnostics.
 JavaScript events are rebuilt from an allowlist in `shared/src/diagnostics.ts`.
 Native crashes bypass JavaScript, so `mobile/plugins/sentry-native.swift`
 initializes Cocoa with its own filter. Keep both boundaries. No conversation
-text, terminal output, raw error messages, file paths, credentials, connection
-IDs, account IDs, console breadcrumbs, screenshots or replays are sent. Code
+text, terminal output, file paths, credentials, connection IDs, account IDs,
+console breadcrumbs, screenshots or replays are sent. An error keeps its type,
+its mechanism (signal, Mach exception, NSError domain and code) and its message
+with links, email addresses, paths, long numbers, long identifiers and quoted
+text replaced by placeholders (`redactErrorMessage`; `sentry-redaction.swift`,
+checked against the same vectors by `mobile/plugins/tests/run.sh`). Messages
+were once dropped whole, and a fatal crash reached Sentry as "Native
+application error (message omitted for privacy)" with nothing to act on. Code
 positions, software versions, fixed failure categories, retry counts and timing
 remain useful without that content. Sentry adds source code context from the
 release's uploaded maps; those contain Shahi's code, never customer transcripts.

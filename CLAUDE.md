@@ -1113,7 +1113,10 @@ allowlist in shared/src/diagnostics.ts before transport, and native crashes must
 pass mobile/plugins/sentry-native.swift. Keep replay, screenshots, breadcrumbs,
 console capture, automatic tracing and metrics disabled. Settings opt-out must
 apply to native and JavaScript reports. Never attach conversation content, raw
-errors, paths, account IDs, connection IDs or credentials. Reader incidents
+errors, paths, account IDs, connection IDs or credentials. An error's type and
+message are sent through `redactErrorMessage` (and its Swift twin,
+`sentry-redaction.swift`, held to the same `error-redaction-vectors.json`):
+dropping messages whole left a fatal crash with nothing to fix it from. Reader incidents
 are deduplicated and gated on an active connected view. Upload debug artifacts
 from the exact shipped build and keep the scoped token in the releases
 environment; see docs/observability.md. Browser pairing

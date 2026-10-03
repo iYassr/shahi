@@ -277,7 +277,7 @@ export function Settings() {
         </View>
         <Separator />
         <Row icon="activity" tint={theme.dim} label="Share diagnostics" value={diagnostics ? "On" : "Off"} checked={diagnostics}
-          hint="Help fix crashes and conversations that fail to load. Sends error categories, app versions and code locations to Sentry, without conversation text or screenshots."
+          hint="Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots."
           onPress={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }} />
         <Separator />
         <Row icon="info" tint={theme.dim} label="Version" value={appVersion} />

@@ -45,7 +45,7 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
     <div className="scroll settings">
       <div className="page-intro"><h2>Make Shahi yours</h2><p>Manage your computers, notifications, and who has access.</p></div>
       <InstallApp />
-      <section><h2><UiIcon name="shield" /> Diagnostics</h2><p>Help fix crashes and conversations that fail to load. Sends error categories, app versions and code locations to Sentry, without conversation text or screenshots.</p>
+      <section><h2><UiIcon name="shield" /> Diagnostics</h2><p>Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots.</p>
         <button className="empty__action" role="switch" aria-checked={diagnostics} onClick={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }}>Share diagnostics: {diagnostics ? "On" : "Off"}</button>
       </section>
       {hosted && <section><h2><UiIcon name="computer" /> Computers</h2><p>Move between your connected computers. They stay connected while Shahi is open.</p><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}

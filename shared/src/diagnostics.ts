@@ -68,6 +68,47 @@ function stack(value: unknown) {
   }) };
 }
 
+/**
+ * An error's message with what could be someone's own words taken out.
+ *
+ * Messages used to be dropped whole, and the owner found a fatal crash in
+ * Sentry that said only "Native application error (message omitted for
+ * privacy)", with no type and no reason: nothing to fix it from (October
+ * 2026). What makes a message private is its parts, not the message, so
+ * those are replaced: links, email addresses, paths (anything with two
+ * slashes), long numbers, long identifiers and tokens, and quoted text that
+ * is not code. A quoted identifier stays, because that is how engines name
+ * the code that failed: "undefined is not an object (evaluating 'pane.title')".
+ * Words in the message itself are the code's, not the person's. The same
+ * rules run in Swift for native crashes (`mobile/plugins/sentry-redaction.swift`),
+ * checked against the same vectors (`error-redaction-vectors.json`).
+ */
+export function redactErrorMessage(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "Application error";
+  const text = value.replace(/\s+/g, " ").trim()
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>]+/gi, "<url>")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>")
+    .replace(/(^|[\s(:=[,])(["'`“‘])([^"'`“”‘’]{0,200}?)(["'`”’])(?=$|[\s).,:;\]])/g,
+      (_, before: string, open: string, inner: string, close: string, at: number, whole: string) =>
+        before + (ENGINE_QUOTE.test(whole.slice(Math.max(0, at - 16), at + before.length)) && CODE.test(inner) ? open + inner + close : "<text>"))
+    .replace(/(?:~|\.{1,2})?\/[^\s"'`<>]*\/[^\s"'`<>]*/g, "<path>")
+    // Secrets and identifiers mix letters and digits; a long code name does not.
+    .replace(/[A-Za-z0-9+/_-]{24,}={0,2}/g, (word) => /\d/.test(word) && /[A-Za-z]/.test(word) ? "<id>" : word)
+    // Whole numbers only: a memory address such as 0x0000000102a3b4c8 is not one.
+    .replace(/\b\d{7,}\b/g, "<number>");
+  return [...text].slice(0, 300).join("");
+}
+/** An identifier or member chain, the way an engine quotes failing code. */
+const CODE = /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[\d+\])*(?:\(\))?$/;
+/**
+ * Where an engine quotes code: "(evaluating 'pane.title')", "Property 'title'
+ * doesn't exist". Anywhere else a quoted word may be the person's — a file
+ * name, a word from a transcript — so it is replaced even when it looks like code.
+ */
+const ENGINE_QUOTE = /(?:evaluating|property) ?$/i;
+/** An exception type is a name; anything else is not trusted to be one. */
+const EXCEPTION_TYPE = /^[A-Za-z_][A-Za-z0-9_.:]{0,79}$/;
+
 /** Rebuild from an allowlist. Future SDK fields are private until reviewed. */
 export function sanitizeDiagnosticEvent(input: unknown): (Row & { type: undefined }) | null {
   const e = row(input);
@@ -78,8 +119,8 @@ export function sanitizeDiagnosticEvent(input: unknown): (Row & { type: undefine
   const reader = provider && reason;
   const exceptions = list(row(e.exception).values).slice(0, 4).map(raw => {
     const x = row(raw), mechanism = row(x.mechanism);
-    return { type: label(x.type, ["Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "URIError", "EvalError", "AggregateError"]) ?? "Error",
-      value: "Application error (message omitted for privacy)", stacktrace: stack(x.stacktrace),
+    return { type: token(x.type, EXCEPTION_TYPE, 80) ?? "Error",
+      value: redactErrorMessage(x.value), stacktrace: stack(x.stacktrace),
       mechanism: { type: "generic", handled: mechanism.handled !== false } };
   });
   if (!reader && !exceptions.length && e.message !== "Shahi diagnostics verification") return null;

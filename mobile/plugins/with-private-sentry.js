@@ -26,7 +26,10 @@ module.exports = function withPrivateSentry(config, { dsn }) {
     const launch = /(func application\([^)]*\) -> Bool \{)\s*\n(\s*)/s;
     if (!launch.test(source)) throw new Error("Could not install Shahi's native Sentry privacy filter.");
     source = source.replace(launch, "$1\n$2ShahiSentry.install()\n$2");
-    mod.modResults.contents = "import Sentry\n" + source + readFileSync(join(__dirname, "sentry-native.swift"), "utf8");
+    // The redaction rules follow the filter, after the marker, so a second
+    // prebuild replaces both; its own Foundation import is the AppDelegate's.
+    const redaction = readFileSync(join(__dirname, "sentry-redaction.swift"), "utf8").replace(/^import Foundation\n/m, "");
+    mod.modResults.contents = "import Sentry\n" + source + readFileSync(join(__dirname, "sentry-native.swift"), "utf8") + "\n" + redaction;
     return mod;
   });
 };

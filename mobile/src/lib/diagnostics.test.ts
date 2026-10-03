@@ -34,8 +34,11 @@ test("a saved opt-out initializes no SDK; enabling starts it once and subsequent
 test("the SDK callback checks the current native preference and strips raw error content", () => {
   const { diagnostics, options } = start(true);
   diagnostics.initializeDiagnostics();
-  const event = { exception: { values: [{ type: "TypeError", value: "PRIVATE-CANARY" }] }, request: { url: "PRIVATE-CANARY" } };
-  expect(JSON.stringify(options().beforeSend(event))).not.toContain("PRIVATE-CANARY");
+  // A message keeps its words and loses its private parts (redactErrorMessage).
+  const event = { exception: { values: [{ type: "TypeError", value: "Cannot open \"PRIVATE-CANARY\" at /Users/me/PRIVATE-CANARY/a.md" }] }, request: { url: "PRIVATE-CANARY" } };
+  const sent = JSON.stringify(options().beforeSend(event));
+  expect(sent).not.toContain("PRIVATE-CANARY");
+  expect(sent).toContain("Cannot open <text> at <path>");
   diagnostics.setDiagnosticsEnabled(false);
   expect(options().beforeSend(event)).toBeNull();
 });

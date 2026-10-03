@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DiagnosticBudget, ReaderHealth, readerFailure, readerProvider, sanitizeDiagnosticEvent, type ReaderIncident } from "./diagnostics";
+import { DiagnosticBudget, ReaderHealth, readerFailure, readerProvider, redactErrorMessage, sanitizeDiagnosticEvent, type ReaderIncident } from "./diagnostics";
+import vectors from "./error-redaction-vectors.json";
 
 describe("Reader incidents", () => {
   const harness = () => { const events: ReaderIncident[] = []; return { events, health: new ReaderHealth(event => events.push(event)) }; };
@@ -64,13 +65,23 @@ describe("outbound privacy", () => {
       message: secret, user: { id: secret, email: secret, ip_address: secret }, request: { url: secret, headers: { Cookie: secret }, data: secret },
       breadcrumbs: [{ message: secret }], extra: { text: secret }, future_sdk_field: secret,
       contexts: { device: { name: secret, id: secret, model: "iPhone18,1" }, app: { app_name: secret, app_version: "1.2.3" }, arbitrary: { secret } },
-      exception: { values: [{ type: "TypeError", value: secret, mechanism: { data: { secret } }, stacktrace: { frames: [{ filename: "https://example.test/pwa/assets/index-abcdefgh.js?token=" + secret,
+      exception: { values: [{ type: "TypeError", value: `Cannot read "${secret}" from /Users/me/${secret}/notes.md`, mechanism: { data: { secret } }, stacktrace: { frames: [{ filename: "https://example.test/pwa/assets/index-abcdefgh.js?token=" + secret,
         function: "render", lineno: 42, colno: 10, vars: { secret }, context_line: secret, pre_context: [secret] }] } }] } };
     const safe = sanitizeDiagnosticEvent(event)!;
     expect(JSON.stringify(safe)).not.toContain(secret);
     expect(JSON.stringify(safe)).not.toContain("example.test");
-    expect(safe.exception).toMatchObject({ values: [{ type: "TypeError", stacktrace: { frames: [{ filename: "app:///index-abcdefgh.js", lineno: 42, colno: 10 }] } }] });
+    expect(safe.exception).toMatchObject({ values: [{ type: "TypeError", value: "Cannot read <text> from <path>", stacktrace: { frames: [{ filename: "app:///index-abcdefgh.js", lineno: 42, colno: 10 }] } }] });
     expect(event.message).toBe(secret);
+  });
+  // The owner, October 2026: a fatal crash reached Sentry as "Native application
+  // error (message omitted for privacy)", nothing to fix it from. Messages are
+  // now kept with their private parts replaced; Swift uses the same vectors.
+  test("an error keeps its type and message, with paths, links, quoted text and identifiers taken out", () => {
+    for (const [input, expected] of vectors as [string, string][]) expect(redactErrorMessage(input)).toBe(expected);
+    expect([...redactErrorMessage("x".repeat(1000))].length).toBe(300);
+    const event = (type: unknown) => ({ exception: { values: [{ type, value: "index 5 beyond bounds" }] } });
+    expect(sanitizeDiagnosticEvent(event("RCTFatalException"))?.exception).toMatchObject({ values: [{ type: "RCTFatalException", value: "index 5 beyond bounds" }] });
+    expect(sanitizeDiagnosticEvent(event("not a <type>"))?.exception).toMatchObject({ values: [{ type: "Error" }] });
   });
   test("keeps debug IDs and matching bundle names for source-map symbolication", () => {
     const event = { message: "Shahi diagnostics verification", debug_meta: { images: [{ type: "sourcemap", code_file: "https://getshahi.dev/pwa/assets/index-abcdefgh.js", debug_id: "2e8d8c40-6ddd-47ec-a2c7-2a6ae43fca57", extra: "PRIVATE" }] } };

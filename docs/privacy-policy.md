@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 28 September 2026. Published at
+_Last updated: 3 October 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -117,11 +117,14 @@ and persistent Reader failures. **Share diagnostics** is on by default and can
 be turned off in Settings. It is independent of relay operational telemetry.
 Reports contain fixed failure categories, app and computer software versions,
 agent provider, connection type, retry counts and elapsed time, and code
-locations needed to diagnose an error. Native crash reports may include device
+locations needed to diagnose an error, and error types and messages with private
+parts replaced (see below). Native crash reports may include device
 model, operating-system information and binary identifiers.
 
-Shahi removes conversation text, prompts, terminal output, file paths, raw error
-messages, credentials and connection identifiers before sending a report. We do
+Shahi removes conversation text, prompts, terminal output, credentials and
+connection identifiers before sending a report. Error messages are sent with
+file paths, links, email addresses, quoted text, long numbers and long
+identifiers replaced by placeholders. We do
 not enable session replay, screenshots, console capture, advertising or
 cross-app tracking. Reports do not contain a Shahi user or device identifier.
 IP-address storage is disabled in our Sentry projects; Sentry still processes
