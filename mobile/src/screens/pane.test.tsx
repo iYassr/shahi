@@ -86,6 +86,8 @@ jest.mock("@/lib/api", () => {
       transcriptImage: jest.fn(),
       conversationChoices: jest.fn(),
       chooseConversation: jest.fn(),
+      changes: jest.fn(),
+      fileDiff: jest.fn(),
     },
   };
 });
@@ -128,6 +130,8 @@ const mocked = api as unknown as {
   transcriptImage: jest.Mock;
   conversationChoices: jest.Mock;
   chooseConversation: jest.Mock;
+  changes: jest.Mock;
+  fileDiff: jest.Mock;
 };
 
 /** What the socket does when the server says this pane has something new. */
@@ -2642,6 +2646,71 @@ describe("the screen card", () => {
     await settle();
     expect(view.queryByTestId("screen-card")).toBeNull();
     view.unmount();
+  });
+});
+
+// The Changes view (October 2026): a third view beside Read and Screen, laid
+// over the reader as Screen is, on a computer that offers it.
+describe("the Changes view", () => {
+  const handshake = (capabilities: string[]) => ({ control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities,
+    backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: false, channel: "stable", phase: "idle", current: "0.3.22" } });
+  beforeEach(() => {
+    mockSession.control = { handshake: handshake(["sessions", "changes"]), refresh: jest.fn() };
+    mocked.changes.mockResolvedValue({ repository: { name: "shop", path: "~/shop", branch: "main", commit: "abc1234" }, files: [{ path: "src/cart.ts", status: "modified", added: 2, removed: 1 }], omitted: 0 });
+    mocked.sessionLog.mockResolvedValue(log([said("a1", "agent", "I changed the cart.")]));
+  });
+  afterEach(() => { mockSession.control = undefined; });
+
+  test("lies over the reader, which keeps its conversation, hidden from VoiceOver while covered, and is reopened where it was left", async () => {
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByText(/I changed the cart\./);
+    fireEvent.press(view.getByTestId("view-changes"));
+    await view.findByLabelText("src/cart.ts, modified, 2 lines added, 1 removed");
+    expect(view.getByTestId("view-changes").props.accessibilityState).toMatchObject({ selected: true });
+    // Still mounted under the overlay, so going back loses no place, and out
+    // of reach of the queries that, like VoiceOver, skip what is hidden.
+    expect(view.queryByTestId("conversation-list")).toBeNull();
+    expect(view.getByTestId("conversation-list", { includeHiddenElements: true }).props.accessibilityElementsHidden).toBe(true);
+    expect(view.getByText(/I changed the cart\./, { includeHiddenElements: true })).toBeTruthy();
+    fireEvent.press(view.getByTestId("view-read"));
+    expect(view.queryByTestId("changes-overlay")).toBeNull();
+    expect(view.getByTestId("conversation-list").props.accessibilityElementsHidden).toBe(false);
+    fireEvent.press(view.getByTestId("view-changes"));
+    view.unmount();
+
+    const again = render(<Pane paneId={PANE} />);
+    expect(again.getByTestId("changes-overlay")).toBeTruthy();
+    await again.findByLabelText("src/cart.ts, modified, 2 lines added, 1 removed");
+    again.unmount();
+  });
+
+  test("a question waiting on the person stays above the changes, since whether to approve an edit is what they are read for", async () => {
+    const prompt = { question: "Do you want to make this edit to cart.ts?", answer: "digit",
+      options: [{ index: 1, label: "Yes", selected: true }, { index: 2, label: "No", selected: false }] } as ParsedPrompt;
+    mocked.pane.mockResolvedValue({ frame: { paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1 }, layout: null });
+    const view = render(<Pane paneId={PANE} />);
+    await view.findByRole("button", { name: "1. Yes" });
+    fireEvent.press(view.getByTestId("view-changes"));
+    await view.findByLabelText("src/cart.ts, modified, 2 lines added, 1 removed");
+    expect(view.getByRole("button", { name: "1. Yes" })).toBeTruthy();
+    fireEvent.press(view.getByTestId("view-screen"));
+    expect(view.queryByRole("button", { name: "1. Yes" })).toBeNull();
+    view.unmount();
+  });
+
+  test("a computer that does not offer it shows Read and Screen alone, and a pane left on Changes opens on Read", async () => {
+    const offered = render(<Pane paneId={PANE} />);
+    await offered.findByText(/I changed the cart\./);
+    fireEvent.press(offered.getByTestId("view-changes"));
+    offered.unmount();
+
+    mockSession.control = { handshake: handshake(["sessions"]), refresh: jest.fn() };
+    const older = render(<Pane paneId={PANE} />);
+    await older.findByText(/I changed the cart\./);
+    expect(older.queryByTestId("view-changes")).toBeNull();
+    expect(older.queryByTestId("changes-overlay")).toBeNull();
+    expect(older.getByTestId("view-read").props.accessibilityState).toMatchObject({ selected: true });
+    older.unmount();
   });
 });
 

@@ -12,7 +12,9 @@
  */
 import type {
   DashboardPane,
+  FileDiff,
   LogMessage,
+  PaneChanges,
   ParsedPrompt,
   Session,
   Space,
@@ -32,7 +34,53 @@ export interface Scenario {
   screens: Record<string, string>;
   /** Panes whose agent waits on a screen no parser recognised (`PaneFrame.unrecognised`). */
   unrecognised?: string[];
+  /** What a pane's repository reports to the Changes view, where it is not `SAMPLE_CHANGES`. */
+  changes?: Record<string, RepositoryChanges>;
 }
+
+/** The Changes view's two answers for one pane: its list, and each listed file's diff by path. */
+export interface RepositoryChanges {
+  list: PaneChanges;
+  diffs: Record<string, FileDiff>;
+}
+
+/**
+ * What every pane's repository reports unless a scenario says otherwise: one
+ * of each kind of change, a line far wider than a phone, and a diff long
+ * enough to have been cut.
+ */
+export const SAMPLE_CHANGES: RepositoryChanges = {
+  list: {
+    repository: { name: "shop", path: "~/project/shop", branch: "feature/cart", commit: "4b1e2c9" },
+    files: [
+      { path: "docs/cart.md", status: "added", added: 3, removed: 0 },
+      { path: "src/cart.ts", status: "modified", added: 3, removed: 2 },
+      { path: "src/checkout/total.ts", from: "src/total.ts", status: "renamed", added: 1, removed: 1 },
+      { path: "src/legacy.ts", status: "deleted", added: 0, removed: 2 },
+      { path: "assets/logo.png", status: "untracked", added: null, removed: null },
+    ],
+    omitted: 0,
+  },
+  diffs: {
+    "docs/cart.md": { path: "docs/cart.md", status: "added", lines: ["@@ -0,0 +1,3 @@", "+# Cart", "+", "+Totals include tax."], omitted: 0 },
+    "src/cart.ts": {
+      path: "src/cart.ts", status: "modified", omitted: 1_234,
+      lines: [
+        "@@ -10,5 +10,6 @@ export function total(items: Item[]) {",
+        "   let sum = 0;",
+        "-  for (const item of items) sum += item.price;",
+        "+  for (const item of items) sum += item.price * item.quantity;",
+        `+  log("total", { items: items.map((item) => item.id), sum, ${"note: \"a line far wider than any phone\", ".repeat(6)}});`,
+        "-  return sum;",
+        "+  return Math.round(sum * 100) / 100;",
+        "\\ No newline at end of file",
+      ],
+    },
+    "src/checkout/total.ts": { path: "src/checkout/total.ts", from: "src/total.ts", status: "renamed", lines: ["@@ -1 +1 @@", "-export const TAX = 0.2;", "+export const TAX = 0.21;"], omitted: 0 },
+    "src/legacy.ts": { path: "src/legacy.ts", status: "deleted", lines: ["@@ -1,2 +0,0 @@", "-// Unused since the cart rewrite.", "-export {};"], omitted: 0 },
+    "assets/logo.png": { path: "assets/logo.png", status: "untracked", lines: [], omitted: 0, note: "This is a binary file, so there are no lines to show." },
+  },
+};
 
 const space = (over: Partial<Space> & { workspaceId: string; label: string }): Space => ({
   status: "idle",

@@ -47,11 +47,11 @@ interface ReaderMemory {
    */
   terminalPlace: Map<string, { x: number; y: number }>;
   /**
-   * Read-vs-screen, so leaving a pane on the terminal and coming back opens on
-   * the terminal — before this, every return snapped to the reader and you
-   * lost both the view and your place in it.
+   * Read, Screen or Changes, so leaving a pane on the terminal and coming
+   * back opens on the terminal — before this, every return snapped to the
+   * reader and you lost both the view and your place in it.
    */
-  terminalView: Map<string, "reader" | "screen">;
+  terminalView: Map<string, "reader" | "screen" | "changes">;
 }
 
 /**

@@ -21,7 +21,9 @@ import {
   type ClaimResult,
   type DeviceList,
   type DirListing,
+  type FileDiff,
   type InstalledAgent,
+  type PaneChanges,
   type PairedDevice,
   type PlanUsage,
   RELAY_LIMITS,
@@ -509,6 +511,12 @@ const api = {
     }),
 
   devices: () => request<DeviceList>("/api/devices"),
+
+  /** What changed in the pane's repository since the last commit (capability `changes`). */
+  changes: (paneId: string) => request<PaneChanges>(`/api/panes/${encodeURIComponent(paneId)}/changes`),
+  /** One listed file's diff; the computer refuses a path its own listing did not name. */
+  fileDiff: (paneId: string, path: string) =>
+    request<FileDiff>(`/api/panes/${encodeURIComponent(paneId)}/diff?path=${encodeURIComponent(path)}`),
 
   /** Claude Code's and Codex's plan limits (capability `plan-usage`). */
   planUsage: () => request<PlanUsage>("/api/plan-usage"),

@@ -61,6 +61,7 @@ import { diagnosticsEnabled, reportReaderIncident } from "@/lib/diagnostics";
 import { AppState } from "react-native";
 import { useIsFocused } from "expo-router";
 import { ConversationPicker } from "@/components/conversation-picker";
+import { ChangesView } from "@/components/changes-view";
 import { DictationButton, DictationPanel, useDictation } from "@/components/dictation";
 import { useClientUpdateRequired } from "@/components/client-update-gate";
 import { appendDictation } from "@/lib/dictation";
@@ -141,6 +142,14 @@ const KEY_BAR: { label: string; spoken: string; keys: string[] }[] = [
  * 0.86 exposes no smart-quotes or smart-dashes switch; those stay iOS's.
  */
 const LITERAL_INPUT = { autoCapitalize: "none", autoCorrect: false, spellCheck: false, smartInsertDelete: false } as const;
+
+/**
+ * How far the Read/Screen/Changes labels grow with Dynamic Type. By its
+ * width estimate a third of an iPhone holds "Changes" at twice its size and
+ * not at AX5's three times, where it would break inside the word (not yet
+ * seen on a device). Past this the large content viewer shows each whole.
+ */
+const TOGGLE_SCALE = 2;
 
 export { forgetPaneMemory, paneScrollPlace } from "@/lib/reader-memory";
 
@@ -333,11 +342,15 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    */
   // A swipe's Screen action (initialView "screen") is an explicit "open the
   // terminal" and wins; a plain tap defers to where you last left this pane.
-  const [view, setViewState] = useState<"reader" | "screen">(
+  const [chosenView, setViewState] = useState<"reader" | "screen" | "changes">(
     initialView === "screen" ? "screen" : terminalView.get(paneId) ?? "reader",
   );
+  // Changes only where the computer offers it (capability `changes`); one
+  // that stops, rolled back to an older release, opens on the reader.
+  const canChange = supports(control?.handshake ?? null, "changes");
+  const view = chosenView === "changes" && !canChange ? "reader" : chosenView;
   const setView = useCallback(
-    (v: "reader" | "screen") => {
+    (v: "reader" | "screen" | "changes") => {
       if (v === view) return;
       // The Screen key bar changes the reader's viewport even under its overlay.
       // Freeze the anchor before iOS emits its layout-related scroll events.
@@ -650,7 +663,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const literalInput = view === "screen" || (!!pane && !pane.isAgent);
   // Which question the card shows, and whether the person has scrolled the
   // area above the conversation since it appeared (see the area itself).
-  const promptKey = prompt && view === "reader" ? prompt.promptId ?? prompt.question : null;
+  // A question waits above Changes too: whether to approve an edit is what a
+  // diff is read for. Screen shows the menu itself.
+  const promptKey = prompt && view !== "screen" ? prompt.promptId ?? prompt.question : null;
   const noticesRef = useRef<ScrollView>(null);
   const noticesHeld = useRef<string | null>(null);
   const showAnswers = useCallback(() => {
@@ -1112,23 +1127,41 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Read"
+          accessibilityShowsLargeContentViewer
+          accessibilityLargeContentTitle="Read"
           accessibilityState={{ selected: view === "reader" }}
           testID="view-read"
           style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
           onPress={() => setView("reader")}
         >
-          <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]}>Read</Text>
+          <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Read</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Screen"
+          accessibilityShowsLargeContentViewer
+          accessibilityLargeContentTitle="Screen"
           accessibilityState={{ selected: view === "screen" }}
           testID="view-screen"
           style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
           onPress={() => setView("screen")}
         >
-          <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]}>Screen</Text>
+          <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Screen</Text>
         </Pressable>
+        {canChange && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Changes"
+            accessibilityShowsLargeContentViewer
+            accessibilityLargeContentTitle="Changes"
+            accessibilityState={{ selected: view === "changes" }}
+            testID="view-changes"
+            style={[styles.toggleItem, view === "changes" && styles.toggleOn]}
+            onPress={() => setView("changes")}
+          >
+            <Text style={[styles.toggleText, view === "changes" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Changes</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Everything that sits above the conversation, scrolling inside its
@@ -1193,7 +1226,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             onOpenScreen={() => setView("screen")}
           />
         )}
-        {prompt && view === "reader" && <Prompt key={prompt.promptId ?? prompt.question} prompt={prompt} onAnswer={answer} disabled={cannotWrite} compact={keyboard > 0} />}
+        {prompt && view !== "screen" && <Prompt key={prompt.promptId ?? prompt.question} prompt={prompt} onAnswer={answer} disabled={cannotWrite} compact={keyboard > 0} />}
       </ScrollView>
 
       {loading && view === "reader" ? (
@@ -1259,8 +1292,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           // Under the terminal the reader stays mounted (see the overlay
           // below), and it stayed in the accessibility tree too: VoiceOver read
           // a conversation that was not on screen (pre-release bug hunt).
-          accessibilityElementsHidden={view === "screen"}
-          importantForAccessibility={view === "screen" ? "no-hide-descendants" : "auto"}
+          accessibilityElementsHidden={view !== "reader"}
+          importantForAccessibility={view !== "reader" ? "no-hide-descendants" : "auto"}
           CellRendererComponent={cells.CellRendererComponent}
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
@@ -1433,6 +1466,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         {view === "screen" && (
           <View style={styles.screenOverlay} testID="screen-overlay">
             <Screen paneId={paneId} text={screen} ansi={screenAnsi} columns={columns} onColumns={setColumns} />
+          </View>
+        )}
+        {/* Over the reader for the same reason, and keyed to the occupant:
+            another program in this pane id has other changes to show. */}
+        {view === "changes" && (
+          <View style={styles.screenOverlay} testID="changes-overlay">
+            <ChangesView key={pane?.instanceId ?? paneId} paneId={paneId} status={pane?.status} />
           </View>
         )}
         </View>
