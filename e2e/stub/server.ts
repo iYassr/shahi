@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
-import { SCENARIOS, pane as makePane, type Scenario, type ScenarioName } from "./data";
+import { SAMPLE_CHANGES, SCENARIOS, pane as makePane, type Scenario, type ScenarioName } from "./data";
 
 const PORT = Number(process.env.PORT ?? 7272);
 const WEB_ROOT = process.env.STUB_WEB_ROOT ?? join(import.meta.dir, "../../web/dist");
@@ -398,6 +398,16 @@ Bun.serve({
       if (sub === "/commands") {
         if (!known) return json({ error: "no such pane" }, { status: 404 });
         return json({ commands: builtinCommands(known.agent) });
+      }
+
+      // The Changes view, as the real routes answer: a file the list did not
+      // name is refused, never looked for.
+      if (sub === "/changes" || sub === "/diff") {
+        if (!known) return json({ error: "no such pane" }, { status: 404 });
+        const changes = scenario.changes?.[paneId] ?? SAMPLE_CHANGES;
+        if (sub === "/changes") return json(changes.list);
+        const diff = changes.diffs[url.searchParams.get("path") ?? ""];
+        return diff ? json(diff) : json({ error: "That file has no changes any more. Refresh the list of changes.", code: "not_changed" }, { status: 404 });
       }
 
       if (!sub) {

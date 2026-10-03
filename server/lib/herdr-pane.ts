@@ -27,6 +27,16 @@ export function agentSessionOf(pane: Pick<PaneInfo, "agent" | "agent_session"> |
 }
 
 /**
+ * The folder a pane works in: its foreground program's when herdr reports
+ * one, else the shell's. They differ when an agent was started somewhere the
+ * shell is not — `(cd app && claude)`, `codex -C app` — and the agent's is
+ * the one its edits land in.
+ */
+export function paneFolder(pane: Pick<PaneInfo, "cwd" | "foreground_cwd"> | undefined): string | null {
+  return pane?.foreground_cwd || pane?.cwd || null;
+}
+
+/**
  * Which run of a program holds each pane id: its occupancy.
  *
  * herdr reuses pane ids. Measured on 0.9.1 in the pre-release bug hunt: ids

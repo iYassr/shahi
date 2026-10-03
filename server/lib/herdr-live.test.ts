@@ -52,7 +52,7 @@
  */
 import { SHAHI_API_VERSION } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HerdrClient, HerdrError, HerdrSubscriber, type AnyEvent } from "./herdr-client";
@@ -516,6 +516,22 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       await client.rpc("workspace.close", { workspace_id: created.workspaceId });
       const relative = await fetch(`${base}/api/workspaces`, { method: "POST", headers, body: JSON.stringify({ cwd: "~/x" }) });
       expect(relative.status).toBe(400);
+    });
+
+    // The Changes view reads the folder herdr reports for the pane: proven
+    // here against herdr's own `cwd` and `foreground_cwd`, not a fixture's.
+    test.skipIf(PREVIEW)("GET /api/panes/:id/changes reads the repository holding the pane's folder", async () => {
+      const headers = { "x-shahi-api": String(SHAHI_API_VERSION) };
+      const changes = () => fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/changes`, { headers }).then((r) => r.json()) as Promise<{ repository: unknown; note?: string; files: { path: string; status: string }[] }>;
+      expect((await changes()).note).toBe("This folder is not in a Git repository, so there are no changes to show.");
+      const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" };
+      expect(Bun.spawnSync(["git", "init", "-q", scratchDir], { env, stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+      writeFileSync(join(scratchDir, `changed-${nonce}.txt`), "one\ntwo\n");
+      const listed = await changes();
+      expect(listed.repository).not.toBeNull();
+      expect(listed.files).toContainEqual(expect.objectContaining({ path: `changed-${nonce}.txt`, status: "untracked" }));
+      const diff = await (await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/diff?path=${encodeURIComponent(`changed-${nonce}.txt`)}`, { headers })).json();
+      expect(diff).toMatchObject({ lines: ["@@ -0,0 +1,2 @@", "+one", "+two"] });
     });
   });
 });

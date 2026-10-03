@@ -2129,3 +2129,43 @@ describe("pane commands", () => {
     }
   });
 });
+
+// The Changes view (October 2026): the routes read the repository holding the
+// pane's folder, and the one path a client names must be one Git listed.
+describe("changes", () => {
+  test("lists the pane's changed files and diffs only a file Git listed", async () => {
+    const repo = join(scratch, "changes-repo");
+    mkdirSync(repo, { recursive: true });
+    const saved = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+    const setup = (...args: string[]) => {
+      const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+      expect(Bun.spawnSync(["git", ...args], { cwd: repo, env, stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+    };
+    setup("init", "-q", "-b", "main");
+    writeFileSync(join(repo, "a.txt"), "one\n");
+    setup("add", "a.txt");
+    setup("commit", "-q", "-m", "first");
+    writeFileSync(join(repo, "a.txt"), "two\n");
+    occupant = { cwd: repo };
+    const app = await boot();
+    try {
+      const get = (path: string) => fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/${path}`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+      const list = await get("changes");
+      expect(list.status).toBe(200);
+      expect(list.headers.get("cache-control")).toBe("no-store");
+      expect(await list.json()).toMatchObject({ repository: { name: "changes-repo", branch: "main" }, files: [{ path: "a.txt", status: "modified", added: 1, removed: 1 }] });
+      const diff = await get("diff?path=a.txt");
+      expect(await diff.json()).toMatchObject({ path: "a.txt", lines: ["@@ -1 +1 @@", "-one", "+two"] });
+      expect((await get("diff")).status).toBe(400);
+      const outside = await get(`diff?path=${encodeURIComponent("../../../../etc/passwd")}`);
+      expect(outside.status).toBe(404);
+      expect(await outside.json()).toMatchObject({ code: "not_changed" });
+      expect((await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/changes`)).status).toBe(401);
+    } finally {
+      app.stop();
+      occupant = {};
+      if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved;
+    }
+  });
+});

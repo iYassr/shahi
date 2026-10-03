@@ -5,7 +5,7 @@ import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
 import { ApiError, IncompatibleServerError } from "@shahi/shared/errors";
-import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PaneCommands, type PlanUsage, type PromptReceipt } from "@shahi/shared";
+import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type FileDiff, type PaneChanges, type PaneCommands, type PlanUsage, type PromptReceipt } from "@shahi/shared";
 /**
  * Client for the Shahi server.
  *
@@ -242,6 +242,12 @@ const api = {
       sessionId,
       ...(instanceId ? { instanceId } : {}),
     }),
+
+  /** What changed in the pane's repository since the last commit (capability `changes`). */
+  changes: (paneId: string) => request<PaneChanges>(`/api/panes/${encodeURIComponent(paneId)}/changes`),
+  /** One listed file's diff; the computer refuses a path its own listing did not name. */
+  fileDiff: (paneId: string, path: string) =>
+    request<FileDiff>(`/api/panes/${encodeURIComponent(paneId)}/diff?path=${encodeURIComponent(path)}`),
 
   transcript: (paneId: string, before?: number) =>
     request<{ paneId: string; lines: TranscriptLine[]; total: number }>(

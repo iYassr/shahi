@@ -199,6 +199,9 @@ export const ROOTS = [homedir(), tmpdir()].map((root) => {
 
 const within = (real: string, root: string) => real === root || real.startsWith(`${root}/`);
 
+/** Whether a path, already through realpath, lies inside the roots. The Changes view's repositories are held to the same ones. */
+export const insideRoots = (real: string) => ROOTS.some((root) => within(real, root));
+
 /**
  * Resolves a path, following symlinks first so none of them can point out.
  *
@@ -210,7 +213,7 @@ async function resolveReadable(input: string): Promise<string> {
   const absolute = isAbsolute(expanded) ? expanded : resolve(homedir(), expanded);
 
   const real = await realPath(absolute);
-  if (!ROOTS.some((root) => within(real, root))) throw new OutsideHomeError(input);
+  if (!insideRoots(real)) throw new OutsideHomeError(input);
   return real;
 }
 

@@ -1592,3 +1592,25 @@ dictation keeps its words in the draft (interruptions, background, the time
 limit, leaving the screen); nothing sends. Audio is never written to disk.
 `LiveTranscription.swift` stays platform-neutral so the Mac harness drives the
 real engine; iOS audio lives in `DictationSession.swift`.
+
+## Changes view, October 2026
+
+`server/lib/changes.ts` lists what changed since the last commit in the
+repository holding a pane's folder (`paneFolder`: herdr's `foreground_cwd`,
+else `cwd`) and diffs one listed file (capability `changes`). Read-only: never
+add commit, stage or discard without a new review. Opening the tab must run
+nothing the repository configured. Measured on Git 2.54, `status` and
+`diff HEAD` ran `core.fsmonitor`, a filter's `process`, a diff driver's
+`command` and the `post-index-change` hook; every call overrides those (filter
+drivers by the names non-global settings define), passes `--no-ext-diff
+--no-textconv`, refuses lazy fetches, runs with `GIT_OPTIONAL_LOCKS=0` so an
+agent's index lock is never taken, and gets a rebuilt environment. `-c
+diff.external=` without `--no-ext-diff` makes Git fail, so keep both. A client
+path reaches Git only after it matches Git's own fresh listing, with literal
+pathspecs. The top folder must pass the file viewer's roots. One 12-second
+deadline per request, output to a private file cut at a byte limit (piped
+children fail under `bun test` on macOS). Diffs are cut at 3,000 lines or
+256 KB and long lines at 1,000 characters, saying how much is missing; the
+native sheet also ends rows past 4,000 points (a precaution against iOS's
+largest bitmap, not measured). Never poll it: refresh on opening, on request
+and when the agent's turn ends.

@@ -33,6 +33,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt, PromptContext } from "./Prompt";
 import { Reader } from "./Reader";
+import { Changes } from "./Changes";
 import { ScreenCard } from "./ScreenCard";
 import { fitScale } from "../termfit";
 
@@ -42,11 +43,13 @@ import { fitScale } from "../termfit";
  */
 const Terminal = lazyChunk(() => import("./Terminal"));
 
-type Tab = "read" | "screen" | "history";
+type Tab = "read" | "screen" | "changes" | "history";
 
+/** Changes only where the computer offers it (capability `changes`). */
 const TABS: { id: Tab; label: string }[] = [
   { id: "read", label: "Read" },
   { id: "screen", label: "Screen" },
+  { id: "changes", label: "Changes" },
   { id: "history", label: "History" },
 ];
 
@@ -154,6 +157,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
   const [readable, setReadable] = useState(true);
   /** The Reader has no conversation to show yet; see `ScreenCard`. */
   const [readerEmpty, setReaderEmpty] = useState(false);
+  const canChange = supports(control?.handshake ?? null, "changes");
+  const tabs = canChange ? TABS : TABS.filter(({ id }) => id !== "changes");
+  // A computer that stops offering it, rolled back to an older release,
+  // takes the tab with it.
+  useEffect(() => { if (tab === "changes" && !canChange) setTab("read"); }, [tab, canChange]);
   const ids = useId();
   const tabButtons = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
   function chooseTab(next: Tab) {
@@ -161,11 +169,11 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     setTab(next);
   }
   function moveBetweenTabs(event: ReactKeyboardEvent<HTMLDivElement>) {
-    const at = TABS.findIndex(({ id }) => id === tab);
-    const to = { ArrowRight: at + 1, ArrowLeft: at - 1 + TABS.length, Home: 0, End: TABS.length - 1 }[event.key];
+    const at = tabs.findIndex(({ id }) => id === tab);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1 + tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
     if (to === undefined) return;
     event.preventDefault();
-    const next = TABS[to % TABS.length]!.id;
+    const next = tabs[to % tabs.length]!.id;
     chooseTab(next);
     tabButtons.current[next]?.focus();
   }
@@ -560,7 +568,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         * (pre-release bug hunt).
         */}
       <div className="tabs" role="tablist" aria-label="Conversation view" onKeyDown={moveBetweenTabs}>
-        {TABS.map(({ id, label }) => (
+        {tabs.map(({ id, label }) => (
           <button
             key={id}
             ref={(node) => { tabButtons.current[id] = node; }}
@@ -583,6 +591,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
           connected={available} historyKnown={!!known?.lastMessageAt || !!known?.preview || !!echo}
           computerVersion={control?.handshake?.update?.current} herdrVersion={session?.version}
           canChoose={supports(control?.handshake ?? null, "conversation-choice")} instanceId={known?.instanceId} onEmpty={setReaderEmpty} />
+      ) : tab === "changes" ? (
+        <Changes key={`${paneId}#${occupancy}`} paneId={paneId} status={known?.status} />
       ) : tab === "screen" ? (
         <>
           <div className="termwrap" ref={wrapRef}>

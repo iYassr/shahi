@@ -38,7 +38,8 @@ import { paneCommands } from "./slash-commands";
 import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
-import { agentSessionOf } from "./herdr-pane";
+import { agentSessionOf, paneFolder } from "./herdr-pane";
+import { ChangesError, fileDiff, paneChanges } from "./changes";
 import { atFolderTrust, choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
 import { hostname } from "node:os";
 import { isLoopback } from "./endpoint";
@@ -1495,6 +1496,21 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             const pane = store.pane(paneId);
             const commands = await paneCommands(pane?.agent, pane?.foreground_cwd ?? pane?.cwd);
             return json({ commands } satisfies PaneCommands);
+          }
+
+          // What has changed in the pane's repository since the last commit,
+          // and one file's diff (capability `changes`). Read-only; the one
+          // path a client names must be one Git has just listed (changes.ts).
+          if ((sub === "/changes" || sub === "/diff") && req.method === "GET") {
+            const folder = paneFolder(store.pane(paneId));
+            const path = url.searchParams.get("path");
+            if (sub === "/diff" && !path) return json({ error: "path is required" }, { status: 400 });
+            try {
+              return json(sub === "/changes" ? await paneChanges(folder) : await fileDiff(folder, path!));
+            } catch (err) {
+              if (err instanceof ChangesError) return json({ error: err.message, code: err.code }, { status: err.status });
+              throw err;
+            }
           }
 
           if (sub === "/session") {

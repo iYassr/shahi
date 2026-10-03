@@ -355,6 +355,28 @@ test("the view's tabs move with the arrow keys and control one panel", async () 
   expect(focused.at(-1)).toEndWith("-tab-read");
 });
 
+test("a computer that offers Changes gets a Changes tab beside Read and Screen, and one that does not, none", async () => {
+  const { ComputerControlProvider } = await import("./ComputerUpdate");
+  const handshake = (capabilities: string[]) => ({ control: 1, serverId: "s", api: { min: 5, max: 5 }, capabilities,
+    backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: false, channel: "stable", phase: "idle", current: "0.3.22" } });
+  const tabsFor = async (capabilities: string[]) => {
+    const changes = mock(async () => ({ repository: null, note: "This folder is not in a Git repository, so there are no changes to show.", files: [], omitted: 0 }));
+    const scoped = { ...api, control: mock(async () => handshake(capabilities)) as never, changes, pane: mock().mockResolvedValue(detail), sessionLog: mock(() => new Promise<never>(() => {})) };
+    await act(async () => {
+      view = create(<ApiContext.Provider value={scoped}><ComputerControlProvider onRecovered={() => {}}><MemoryRouter initialEntries={["/pane/w1:p1"]}><Routes><Route path="/pane/:paneId" element={<PaneView session={null} frames={{}} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ComputerControlProvider></ApiContext.Provider>);
+    });
+    const tabs = view!.root.findAll((node) => node.type === "button" && node.props.role === "tab");
+    return { labels: tabs.map((tab) => tab.children.at(-1)), tabs, changes };
+  };
+  const offered = await tabsFor(["sessions", "changes"]);
+  expect(offered.labels).toEqual(["Read", "Screen", "Changes", "History"]);
+  await act(async () => offered.tabs[2]!.props.onClick());
+  expect(offered.changes).toHaveBeenCalledWith("w1:p1");
+  expect(output()).toContain("This folder is not in a Git repository");
+  await act(async () => view!.unmount());
+  expect((await tabsFor(["sessions"])).labels).toEqual(["Read", "Screen", "History"]);
+});
+
 // A terminal title of only spaces titled the pane with nothing (pre-release
 // bug hunt); the pane id names it, as its row in the list does.
 test("a pane whose title is only spaces is titled by its pane id", async () => {

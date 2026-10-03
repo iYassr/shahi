@@ -543,3 +543,4 @@ export { ansiLines, colour256, spanColours, type AnsiLine, type AnsiSpan } from 
 export { planWindowLabel, planWindowNow, type PlanUsage, type PlanWindow, type ProviderUsage } from "./plan-usage";
 export { builtinCommands, matchCommands, mergeCommands, slashQuery, type CommandSource, type PaneCommands, type SlashCommand } from "./slash-commands";
 export { QUICK_REPLIES, REPLY_SETTLE_MS, waitingForReply, type ReplyMoment } from "./quick-replies";
+export { CHANGE_STATUS, changeSummary, diffRows, shownText, type ChangedFile, type ChangeStatus, type DiffRow, type FileDiff, type PaneChanges } from "./changes";

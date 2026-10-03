@@ -20,6 +20,15 @@ test("private request content cannot become a log field or unbounded metric labe
   expect([...metrics.requests.values()][0]!.errors).toBe(1000);
 });
 
+test("the Changes routes are counted by route alone, never by the file they name", () => {
+  const rows: object[] = [];
+  const metrics = new Observability((row) => rows.push(row));
+  metrics.request(new Request("http://localhost/api/panes/w1%3Ap1/changes"), "relay", 200, 40);
+  metrics.request(new Request("http://localhost/api/panes/w1%3Ap1/diff?path=private%2Fsecret.env"), "relay", 200, 60);
+  expect([...metrics.requests.keys()]).toEqual(["relay GET panes/:id/changes", "relay GET panes/:id/diff"]);
+  expect(JSON.stringify(rows)).not.toContain("secret");
+});
+
 test("local alerts fire on transitions and recover without repeating every tick", () => {
   const rows: object[] = [];
   const m = new Observability((r) => rows.push(r));
