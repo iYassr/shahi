@@ -91,6 +91,130 @@ routes in place without a reload, so drafts and session-only pairings survive;
 a page from an older release that does not answer within three seconds is
 navigated to the pane as before.
 
+## Approving from the notification
+
+On an iPhone paired with a computer through the relay, a notification for a
+waiting agent shows what it asks — "Do you want to proceed?", the command
+under it — and offers the answers as actions: press and hold the
+notification (or expand it on the lock screen) and choose one. Nothing in
+between can read the question. Competing apps have had this; the owner's
+constraint was that Expo and Apple must not see the prompt in clear text.
+
+How it works:
+
+1. **A key per registration.** When notifications are turned on for a relay
+   computer whose handshake offers `push-actions`, the app makes 32 random
+   bytes (`lib/push-keys.ts`) and sends them with the Expo token to
+   `/api/push/expo` as `pushKey`, over the already encrypted relay link. The
+   computer keeps it with that registration only when the registration
+   belongs to a paired device; every path that drops a registration —
+   revocation, sign-out, `DeviceNotRegistered`, a replaced token, a
+   registration sent again without a key — drops the key with it, because it
+   is a column of the same row. An older computer ignores the field; an older
+   app sends none and keeps the plain notification.
+2. **Sealed on the computer.** For a phone with a key, the notification's
+   words — the space, the conversation, the question with its context — and
+   the answers go inside an AES-256-GCM box (`server/lib/push-seal.ts`) with a
+   fresh nonce, whose associated data names the format, the computer and the
+   pane. Outside the box Expo and Apple carry only the content-free words "An
+   agent needs you / Tap to see what it is asking.", the pane id and server id
+   a tap routes by, a key id (the first 8 bytes of the key's SHA-256) and
+   `mutableContent`. The box is read from a fresh read of the pane when the
+   agent blocks, the same read the card's is, so its prompt id is the one
+   `/answer` holds current.
+3. **Opened on the phone.** The Notification Service Extension
+   (`mobile/plugins/notification-service`, added to the Xcode project by
+   `plugins/with-notification-service.cjs`) finds the key by its id in a
+   keychain access group it shares with the app and nothing else, opens the
+   box with CryptoKit, and replaces the words. The answers become a
+   notification category of their own, named by its buttons. If anything
+   about the box is wrong — no key, another key, a changed byte, a box moved
+   to another pane's notification — the content-free words are what shows,
+   with no buttons, and a tap opens the pane as before. The extension also
+   strips any category or answer that arrived outside the box, so a push
+   service cannot add buttons.
+4. **Answered by the server.** An action opens the app (see below), which
+   selects that computer, opens the pane and posts to `/api/panes/:id/answer`
+   exactly what a card posts: the option's index and the parser's own label,
+   the question and context when they fitted in the box, the prompt id and the
+   occupant. The server decides as it does for a card, against a fresh read of
+   the screen. When the question had already moved on (`prompt_gone`,
+   `prompt_changed`) nothing is pressed and the app says so in the computer's
+   words ("Not answered: …"), with the pane showing what is asked now.
+
+What is offered: up to three of the prompt's answers, labelled as the card
+labels them (`shownLabels`, so "Yes, proceed (y)" is "Yes, proceed"). Never an
+answer that opens a text field. Past three it is the first two and the last,
+because the agents measured put the plain approval first and the refusal last
+(Claude Code's Bash, WebFetch and MCP dialogs end in "No"). Anything else is a
+tap away in the app.
+
+### Why the actions open the app
+
+An action without `.foreground` wakes the app in the background to handle
+it. Measured on the iOS 26.5 simulator (build of 3 October 2026, a JavaScript
+category whose action does not open the app, beacons to the Mac):
+
+- **Suspended app:** the action reached JavaScript 0.2 s after the tap, and
+  the app was suspended again at once. Timers set for 1 to 28 s later ran
+  only when the app next came to the foreground, a minute later.
+  expo-notifications calls the system's completion handler as soon as it has
+  passed the response on, which is what tells iOS the app is done.
+- **Killed app:** nothing ran. No launch, no response, in the 33 s watched.
+
+An answer needs the relay link and up to a few seconds of the computer's
+time (it waits for the agent to repaint), so a background action would have
+answered sometimes, and sometimes only on the next launch, minutes later.
+The actions are `.foreground` and `.authenticationRequired`: one tap from the
+notification, after unlocking, and the person sees the answer land or be
+refused.
+
+### Who gets it, and limits
+
+- **Relay-paired phones only.** An SSH computer, or a passcode sign-in, keeps
+  the plain notification: its registration expires with the session, and an
+  action has to reach the computer, which for SSH means a tunnel that cannot
+  be assumed from a notification. The server stores no key for a passcode
+  session even if one is sent.
+- **Turning notifications on makes the key.** A phone that turned them on
+  before this feature keeps plain notifications until they are turned off
+  and on again.
+- **Size.** APNs allows 4 KB. The sealed text is held to 2 KB (about 3 KB on
+  the wire): the words are cut on character boundaries; the answer is never
+  cut, since `/answer` compares labels exactly, so for a prompt whose context
+  does not fit (an edit's diff) the question and context are left out of the
+  answer (the prompt id already names that appearance of the question), and
+  if the labels alone do not fit there are no buttons.
+- **Thirty-two sets of buttons** are kept registered; past that the older
+  ones are dropped and a notification still on screen from then loses its
+  buttons, not its tap.
+- **The key is readable after the first unlock**, so a notification that
+  arrives on a locked phone can be opened; it opens notifications and
+  nothing else. It is removed when notifications are turned off or the
+  computer is signed out of.
+- **Browsers** get the question and its context too, inside Web Push's own
+  encryption (RFC 8291), and no buttons: iOS shows none for web push.
+
+### Testing it
+
+`xcrun simctl push` does not run a Notification Service Extension: measured
+on the iOS 26.5 simulator (October 2026), SpringBoard adds the simulated
+request straight to its pipeline ("Adding notification request … to
+destinations") and no extension process starts, so a sealed payload pushed
+that way shows the content-free words. That simulator's push daemon also had
+no connection to APNs ("Connected on 0 interfaces"), so it got no device token
+and no real push. What was checked there instead: the extension embedded and
+registered, its entitlements naming only the shared group; the app writing
+the key into that group with the after-first-unlock class, and removing it
+when notifications are turned off; and the extension's own class, run in the
+app process on a real sealed payload, showing the question and offering its
+answers, and the content-free words with no buttons for a changed box, an
+unknown key and a category forged outside the box. An action then opened the
+app and answered the agent through the relay. The extension running in its
+own process on a real push needs a physical iPhone.
+`mobile/plugins/notification-service/tests/run.sh` opens the computer's
+known-answer vector with the extension's Swift on a Mac.
+
 ## The native app, and what is left to prove
 
 Native push is wired end to end: a Settings toggle calls `enablePush()`, which
@@ -145,8 +269,11 @@ Both channels send with a one-hour time-to-live and high priority, so a phone
 that was offline is not told about a question answered long ago; Web Push also
 sets a topic (a hash of the computer and pane) so a newer notification for a
 pane replaces one still queued for an offline browser. The title is the
-workspace label and the body the pane's dashboard title, each cut on a
-character boundary to stay well inside the 4 KB both services allow. Failures
+workspace label and the body the pane's dashboard title, followed in a
+browser's and a sealed notification by the question and its context, each
+cut on a character boundary to stay well inside the 4 KB both services allow.
+A phone that gave a push key gets those words sealed, with content-free words
+outside (see "Approving from the notification"). Failures
 are logged without content and counted in `/api/diagnostics`; see
 `docs/operations.md`.
 

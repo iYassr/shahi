@@ -19,7 +19,11 @@ relay address, server identifier and paired-device secret, or your SSH host,
 username, password or private key, passphrase, sidecar passcode and the SSH
 host keys you chose to trust. With notifications on, it also keeps the push
 token it registered with each computer, so it can say whether they are on and
-turn them off. It also stores local preferences such as pinned
+turn them off, and, for a computer paired through the relay that seals its
+notifications, the random key those notifications are encrypted with. That
+key is shared only with the app's own notification extension, which decrypts
+notifications on the phone, and it can be read after the phone's first unlock
+so a notification can be shown while the phone is locked. It also stores local preferences such as pinned
 conversations and terminal width. These Keychain items are kept on this device
 only: they are not restored to another device from a backup, so a restored
 iPhone must be paired or connected again.
@@ -147,18 +151,38 @@ notifications in iOS Settings stops display but does not itself delete the
 server registration.
 
 Native notifications travel through **Expo's push service** and then the
-platform push provider, such as Apple's Push Notification service. Their
-payloads include the workspace name, the terminal title or pane name, the pane
+platform push provider, such as Apple's Push Notification service.
+
+When the iPhone app is paired with a computer through the relay and that
+computer supports it, turning notifications on gives the computer a random
+key that the app made, over the end-to-end encrypted relay connection. The
+computer keeps that key with the registration and deletes it whenever the
+registration is removed. It encrypts each notification's content with the
+key: the workspace name, the conversation's name, what the agent is asking
+(its question and context, such as the command it wants to run), the answers
+offered, and the identifier of the program in the pane. Expo and the platform
+provider receive only that encrypted content, fixed wording ("An agent needs
+you"), the pane identifier to open, your computer's public server identifier
+(the same stable identifier the relay sees) and a short identifier of the key,
+along with delivery metadata such as the time and size of each notification.
+The app's notification extension decrypts the content on the phone. If it
+cannot, the phone shows the fixed wording.
+
+Otherwise — a computer reached over SSH or signed in with the passcode, a
+computer or app version without this feature — native notification payloads
+include the workspace name, the terminal title or pane name, the pane
 identifier to open, an opaque identifier for the program occupying that pane
-(herdr’s terminal id), and your computer's public server identifier, the same
-stable identifier the relay sees. Expo and the platform provider can read that
-content even though relay traffic is encrypted end to end. Browser
-notifications carry the same fields through the browser's push service,
-encrypted so that only your browser can read them; that service also sees a
-short hash of the computer and pane, used to replace an undelivered
-notification for the same pane. Notifications ask push providers to discard
-them if they cannot be delivered within an hour. Leave notifications off if you
-do not want that content sent through push providers.
+(herdr’s terminal id), and your computer's public server identifier, and Expo
+and the platform provider can read that content even though relay traffic is
+encrypted end to end.
+
+Browser notifications carry the same fields, and the question the agent is
+asking with its context, through the browser's push service, encrypted so that
+only your browser can read them; that service also sees a short hash of the
+computer and pane, used to replace an undelivered notification for the same
+pane. Notifications ask push providers to discard them if they cannot be
+delivered within an hour. Leave notifications off if you do not want that
+content sent through push providers.
 
 Your server stores original agent transcripts and uploaded files under your
 control. The relay does not store those contents.
