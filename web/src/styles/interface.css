@@ -136,7 +136,7 @@ button:focus-visible, a:focus-visible { outline-color: var(--accent); }
 .sheet__backdrop { animation: backdrop-arrive 180ms ease both; }
 .sheet__panel { animation: rise 280ms var(--settle); }
 @media (hover: hover) {
-  :where(.row, .space, .choice, .picker__row):hover:not(:disabled) { background-color: var(--raised); }
+  :where(.row, .space, .choice, .picker__row, .commands__option, .replies button):hover:not(:disabled) { background-color: var(--raised); }
   :where(.groupbar__opt, .keys button, .pin-button, .tabbar__item, .msg__copy):hover:not(:disabled) { background-color: var(--raised); color: var(--text); }
   :where(.login button, .sheet__go, .bigaction--primary, .pair-browser__connect):hover:not(:disabled) { box-shadow: 0 0 0 4px var(--focus-ring); }
   .reader__jump:hover { box-shadow: 0 4px 20px #00000030; }

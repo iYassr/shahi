@@ -69,6 +69,7 @@ describe("the test tooling cleans up after itself", () => {
       "server/lib/transcript-watch.test.ts",
       "server/lib/claude-queued.test.ts",
       "server/lib/plan-usage.test.ts",
+      "server/lib/slash-commands.test.ts",
     ];
     const left = await leftBehind([process.execPath, "test", ...files.map((file) => `./${file}`)], {}, async (child, log) => {
       if ((await child.exited) !== 0) throw new Error(`the files failed on their own:\n${readFileSync(log, "utf8").slice(-3000)}`);

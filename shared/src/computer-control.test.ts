@@ -54,3 +54,12 @@ test("an offline computer is the connection card's news, not the update card's t
   // A computer that answers but whose control read failed has no other card.
   expect(controlNeedsAttention(h, unreachable, false)).toBe(true);
 });
+
+// The composer's slash-command picker (October 2026): a computer that cannot
+// list a pane's custom commands is not asked, and the picker offers the
+// built-ins every client carries.
+test("only a computer that says so is asked for a pane's commands", () => {
+  expect(supports(null, "commands")).toBe(false);
+  expect(supports(h, "commands")).toBe(false);
+  expect(supports({ ...h, capabilities: ["sessions", "commands"] }, "commands")).toBe(true);
+});

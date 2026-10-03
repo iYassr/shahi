@@ -2,8 +2,9 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, spanColours, supports, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, shownLabels, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
+import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, REPLY_SETTLE_MS, slashQuery, spanColours, supports, waitingForReply, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, shownLabels, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
+import { CommandPicker, ReplyChips, usePaneCommands } from "@/components/composer-shortcuts";
 /**
  * A single pane: what the agent said, what it is asking, and a way to reply.
  *
@@ -648,6 +649,27 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const largeText = useLargeText();
   const windowHeight = useWindowDimensions().height;
   const literalInput = view === "screen" || (!!pane && !pane.isAgent);
+  // The composer's shortcuts (composer-shortcuts.tsx): commands while the
+  // draft is one `/word`, chips while the agent waits on the next message.
+  // Both are for a conversation, so neither appears on Screen or for a shell.
+  const conversing = view === "reader" && !!pane?.isAgent;
+  const slash = conversing ? slashQuery(draft) : null;
+  const commands = usePaneCommands(api, paneId, pane?.agent, {
+    capable: supports(control?.handshake ?? null, "commands"), open: slash !== null, onUnauthorized: unauthorized,
+  });
+  /** When the last message was accepted, until the agent is seen at work or `REPLY_SETTLE_MS` passes. */
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const status = pane?.status;
+  useEffect(() => {
+    if (sentAt === null) return;
+    if (status !== "idle" && status !== "done") { setSentAt(null); return; }
+    const settled = setTimeout(() => setSentAt(null), REPLY_SETTLE_MS);
+    return () => clearTimeout(settled);
+  }, [sentAt, status]);
+  const waiting = conversing && waitingForReply({
+    isAgent: true, status, prompt: !!prompt || !!pane?.hasPrompt || unrecognised, working: !!activity || awaiting || sentAt !== null,
+    drafted: draft.trim() !== "", sending, canWrite: !cannotWrite,
+  });
   // Which question the card shows, and whether the person has scrolled the
   // area above the conversation since it appeared (see the area itself).
   const promptKey = prompt && view === "reader" ? prompt.promptId ?? prompt.question : null;
@@ -970,11 +992,18 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     }
   }
 
-  async function submit() {
+  /**
+   * Sends the draft, or `chosen` — a quick reply — in its place. A chip is
+   * offered only while the draft is empty (`waitingForReply`), and goes the
+   * whole way a typed message goes: the echo, the operation id, and on a
+   * failure the text left in the composer, where Send retries it under the
+   * same id rather than sending it twice.
+   */
+  async function submit(chosen?: string) {
     // Leading blank lines and trailing whitespace only. Trimming the whole
     // draft took the first line's indentation and not the rest's, which broke
     // pasted Python and YAML (pre-release bug hunt).
-    const text = draft.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+    const text = (chosen ?? draft).replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
     if (!text || cannotWrite || promptInFlight.current || savedDraft.inFlight) return;
     promptInFlight.current = true;
     const key = JSON.stringify([paneId, text]);
@@ -1004,11 +1033,17 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     chase();
     try {
       await api.send(paneId, text, promptAttempt.current.id, promptAttempt.current.instanceId);
-      if (savedDraft.text === draft) savedDraft.text = "";
+      if (chosen === undefined && savedDraft.text === draft) savedDraft.text = "";
       savedDraft.pending = null;
       if (!stillActive()) return;
       promptAttempt.current = null;
-      beginAwaiting();
+      setSentAt(Date.now());
+      // A slash command is not a message awaiting a reply. Measured on Claude
+      // Code 2.1.288, `/context` prints at once and `/model` opens a menu,
+      // neither with a reply or any work, and the optimistic Working stayed
+      // for its ten-minute backstop. One that works, `/compact`, shows its
+      // own activity.
+      if (!text.startsWith("/")) beginAwaiting();
       committed();
     } catch (e) {
       if (sendRefusedBeforeTyping(e)) {
@@ -1019,7 +1054,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       // Delivery may have succeeded before the response was lost. Keep the
       // request id so retry asks for that outcome rather than sending twice.
       setPending((prev) => prev.filter((p) => p.message.id !== id));
-      setDraft(text);
+      if (chosen === undefined || savedDraft.text.trim() === "") setDraft(text);
       endAwaiting();
       refused();
       showError(e);
@@ -1490,6 +1525,17 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         </ScrollView>
         )}
         <DictationPanel voice={voice} />
+        {slash !== null ? (
+          <CommandPicker commands={commands} query={slash} onPick={(command) => { setDraft(`/${command.name} `); composer.current?.focus(); }} />
+        ) : waiting && (
+          <ReplyChips
+            slash={commands.length > 0}
+            // Nothing said yet is nothing to continue, agree with or explain.
+            replies={messages.length > 0}
+            onSlash={() => { setDraft("/"); composer.current?.focus(); }}
+            onReply={(text) => void submit(text)}
+          />
+        )}
         {/* At accessibility sizes the reply box takes a line of its own, with
             the buttons on the line under it. Beside them it was left a few
             characters wide and its placeholder was cut (AX5, September 2026

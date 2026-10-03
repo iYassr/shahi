@@ -7,7 +7,7 @@
  * server is the real `createServer`; only herdr is faked, with the three
  * methods these routes reach.
  */
-import { SHAHI_API_VERSION, type PlanUsage, type Session } from "@shahi/shared";
+import { SHAHI_API_VERSION, type PaneCommands, type PlanUsage, type Session } from "@shahi/shared";
 import { afterAll, beforeAll, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
@@ -2087,6 +2087,45 @@ describe("plan usage", () => {
       for (const [key, value] of [["CLAUDE_CONFIG_DIR", before.claude], ["CODEX_HOME", before.codex]] as const) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value;
       }
+    }
+  });
+});
+
+// The composer's slash-command picker (October 2026). The configuration and
+// project folders are scratch ones: a test must never read the person's own.
+describe("pane commands", () => {
+  test("an agent's pane lists its built-ins and the person's own commands from its folder; a shell's lists none", async () => {
+    const claude = join(scratch, "commands-claude"), project = join(scratch, "commands-project");
+    mkdirSync(join(claude, "commands"), { recursive: true });
+    mkdirSync(join(project, ".claude", "commands"), { recursive: true });
+    writeFileSync(join(claude, "commands", "mine.md"), "---\ndescription: My own\n---\nNever sent.\n");
+    writeFileSync(join(project, ".claude", "commands", "ours.md"), "---\ndescription: The project's\n---\nNever sent.\n");
+    const before = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = claude;
+    const app = await boot();
+    try {
+      const headers = { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) };
+      const url = (paneId: string) => `${app.base}/api/panes/${encodeURIComponent(paneId)}/commands`;
+      const shell = await fetch(url(PANE), { headers });
+      expect(shell.status).toBe(200);
+      expect(await shell.json()).toEqual({ commands: [] });
+
+      app.herdr.panes.push({ ...app.herdr.panes[0]!, pane_id: "w1:cmd", terminal_id: "term_cmd", agent: "claude", agent_status: "idle", cwd: "/tmp", foreground_cwd: project });
+      await app.store.resync();
+      const read = await fetch(url("w1:cmd"), { headers });
+      const { commands } = (await read.json()) as PaneCommands;
+      expect(commands.filter((c) => c.source !== "builtin")).toEqual([
+        { name: "mine", description: "My own", source: "user" },
+        { name: "ours", description: "The project's", source: "project" },
+      ]);
+      expect(commands.some((c) => c.name === "compact" && c.source === "builtin")).toBe(true);
+      expect(JSON.stringify(commands)).not.toContain("Never sent");
+
+      expect((await fetch(url("w9:none"), { headers })).status).toBe(404);
+      expect((await fetch(url("w1:cmd"))).status).toBe(401);
+    } finally {
+      app.stop();
+      if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
     }
   });
 });

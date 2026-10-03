@@ -329,6 +329,95 @@
   color: var(--text);
 }
 
+/*
+ * The slash-command picker and the quick-reply chips (ComposerShortcuts.tsx),
+ * directly above the reply box. The picker is bounded so the conversation
+ * keeps most of the column; the chips are one row that scrolls sideways at
+ * any zoom rather than wrapping into the conversation's room.
+ */
+.commands {
+  display: flex;
+  flex-direction: column;
+  max-height: 30vh;
+  overflow-y: auto;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.commands__option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.commands__option:last-child {
+  border-bottom: none;
+}
+
+.commands__option[aria-selected="true"],
+.commands__option:active {
+  background: var(--raised);
+}
+
+.commands__name {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.commands__source {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.commands__description {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.replies {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.replies::-webkit-scrollbar {
+  display: none;
+}
+
+.replies button {
+  flex: none;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.replies button:active {
+  background: var(--raised);
+}
+
+.replies .replies__slash {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--accent);
+}
+
 /* ---------------------------------------------------------------- login -- */
 
 .login {
