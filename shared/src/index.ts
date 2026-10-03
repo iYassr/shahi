@@ -541,3 +541,4 @@ export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";
 export { messageTime } from "./message-time";
 export { ansiLines, colour256, spanColours, type AnsiLine, type AnsiSpan } from "./ansi-spans";
 export { planWindowLabel, planWindowNow, type PlanUsage, type PlanWindow, type ProviderUsage } from "./plan-usage";
+export { CHANGE_STATUS, changeSummary, diffRows, shownText, type ChangedFile, type ChangeStatus, type DiffRow, type FileDiff, type PaneChanges } from "./changes";
