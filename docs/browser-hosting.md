@@ -237,6 +237,16 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 3 October 2026, Changes, sealed notifications and slash commands
+
+Published the site and hosted client from a clean checkout of `76a177f`
+(computer release 0.3.23) as Cloudflare version
+`d7ce91d2-b28e-48e9-be87-32009625f7ac`. It replaced
+`a6226e84-249c-4679-a81e-49dafc3e7edd`, the version to roll back to. `/`,
+`/privacy`, `/pwa/` and `/pwa/sw.js` answered 200; the live privacy policy and
+the `/pwa/` shell were byte-identical to the build. No relay deployment: the
+relay is unchanged since `f6b6a33`.
+
 ## Verified deployment — 3 October 2026, redacted crash messages
 
 Published the site and hosted client from a clean checkout of `e92b32e`
