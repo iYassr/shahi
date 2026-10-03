@@ -3,7 +3,8 @@ import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
 import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { UiIcon } from "./UiIcon";
 import { useComputerControl } from "./ComputerUpdate";
-import { paneTitle, promptIdentity, sendRefusedBeforeTyping, supports } from "@shahi/shared";
+import { matchCommands, paneTitle, promptIdentity, REPLY_SETTLE_MS, sendRefusedBeforeTyping, slashQuery, supports, waitingForReply, type SlashCommand } from "@shahi/shared";
+import { CommandPicker, ReplyChips, usePaneCommands } from "./ComposerShortcuts";
 /**
  * A single pane: its prompt, its live screen, its recorded history, and a way
  * to type into it.
@@ -337,18 +338,74 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     [onToast, available],
   );
 
-  async function submit() {
+  // The composer's shortcuts (ComposerShortcuts.tsx): commands while the
+  // draft is one `/word`, chips while the agent waits on the next message.
+  // Both are for a conversation, so neither appears on Screen or for a shell.
+  const conversing = tab === "read" && (known ? known.isAgent : !!detail?.agent);
+  const slash = conversing ? slashQuery(draft) : null;
+  const commands = usePaneCommands(paneId, known?.agent ?? detail?.pane?.agent, {
+    capable: supports(control?.handshake ?? null, "commands"), open: slash !== null,
+  });
+  /** The draft Escape closed the picker on; typing anything else opens it again. */
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  /** The option the arrow keys have reached for this query; another query starts unlit. */
+  const [active, setActive] = useState<{ query: string | null; index: number }>({ query: null, index: -1 });
+  const matches = slash !== null && dismissed !== draft ? matchCommands(commands, slash) : [];
+  const highlighted = active.query === slash && active.index < matches.length ? active.index : -1;
+  const pickerId = `${ids}-commands`;
+  function pickCommand(command: SlashCommand) {
+    setDraft(`/${command.name} `);
+    composer.current?.focus();
+  }
+  function moveInPicker(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (matches.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const last = matches.length - 1;
+      setActive({ query: slash, index: event.key === "ArrowDown" ? (highlighted >= last ? 0 : highlighted + 1) : (highlighted <= 0 ? last : highlighted - 1) });
+    } else if (event.key === "Enter" && !event.shiftKey && highlighted >= 0) {
+      // Enter is a new line in this composer; it chooses only once an option is lit.
+      event.preventDefault();
+      pickCommand(matches[highlighted]!);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDismissed(draft);
+    }
+  }
+  /** When the last message was accepted, until the agent is seen at work or `REPLY_SETTLE_MS` passes. */
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const status = known?.status ?? detail?.pane?.agent_status;
+  useEffect(() => {
+    if (sentAt === null) return;
+    if (status !== "idle" && status !== "done") { setSentAt(null); return; }
+    const settled = setTimeout(() => setSentAt(null), REPLY_SETTLE_MS);
+    return () => clearTimeout(settled);
+  }, [sentAt, status]);
+  const waiting = conversing && waitingForReply({
+    isAgent: true, status, prompt: !!prompt || !!known?.hasPrompt || frame?.unrecognised === true,
+    working: !!frame?.activity || sentAt !== null, drafted: draft.trim() !== "" || attachments.length > 0, sending, canWrite: available,
+  });
+
+  /**
+   * Sends the draft and its attachments, or `chosen` — a quick reply — in
+   * their place. A chip is offered only while both are empty
+   * (`waitingForReply`), and goes the whole way a typed message goes: the
+   * operation id, the echo, and on a failure the text left in the composer,
+   * where Send retries it under the same id rather than sending it twice.
+   */
+  async function submit(chosen?: string) {
     // Leading blank lines and trailing whitespace only. Trimming the whole
     // draft took the first line's indentation and not the rest's, so a pasted
     // "    def f():" over "        return 1" broke Python and YAML (pre-release
     // bug hunt). The phone's composer sends the same.
-    const text = draft.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
-    if (!text && attachments.length === 0) return;
+    const text = (chosen ?? draft).replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+    const files = chosen === undefined ? attachments : [];
+    if (!text && files.length === 0) return;
 
     // Attachments become paths on their own lines. An agent cannot receive a
     // file over a terminal, but it can read one off disk, and a bare absolute
     // path is the least ambiguous way to point at it.
-    const body = [...attachments.map((a) => a.path), text].filter(Boolean).join("\n");
+    const body = [...files.map((a) => a.path), text].filter(Boolean).join("\n");
 
     if (!available || actionInFlight.current || savedDraft.inFlight || !mounted.current) return;
     // The occupant rides with the operation id, so a retry is refused (409
@@ -361,14 +418,16 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
       try {
         await api.send(paneId, body, savedDraft.pending!.id, savedDraft.pending!.instanceId);
         savedDraft.pending = null;
-        if (savedDraft.text === draft) savedDraft.text = "";
-        savedDraft.attachments = savedDraft.attachments.filter(file => !attachments.some(sent => sent.path === file.path));
-        if (mounted.current) setEcho({ text: body, at: Date.now() });
+        if (chosen === undefined && savedDraft.text === draft) savedDraft.text = "";
+        savedDraft.attachments = savedDraft.attachments.filter(file => !files.some(sent => sent.path === file.path));
+        if (mounted.current) { setEcho({ text: body, at: Date.now() }); setSentAt(Date.now()); }
       } catch (error) {
         if (sendRefusedBeforeTyping(error)) {
           savedDraft.pending = null;
           pending.current = null;
         }
+        // Where a typed message would have stayed, so Send can retry it.
+        if (chosen !== undefined && savedDraft.text.trim() === "") savedDraft.text = text;
         throw error;
       } finally {
         savedDraft.inFlight = false;
@@ -618,6 +677,18 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
           </div>
         )}
 
+        {matches.length > 0 ? (
+          <CommandPicker id={pickerId} commands={matches} active={highlighted} onPick={pickCommand} />
+        ) : waiting && (
+          <ReplyChips
+            slash={commands.length > 0}
+            // Nothing said yet is nothing to continue, agree with or explain.
+            replies={!readerEmpty && (!!known?.lastMessageAt || !!known?.preview || !!echo)}
+            onSlash={() => { setDraft("/"); setDismissed(null); composer.current?.focus(); }}
+            onReply={(text) => void submit(text)}
+          />
+        )}
+
         <div className="compose__row">
           <button
             hidden={!supports(control?.handshake ?? null, "attachments")}
@@ -639,6 +710,10 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
               placeholder={placeholder}
               rows={1}
               aria-label="Message"
+              aria-autocomplete={conversing ? "list" : undefined}
+              aria-controls={matches.length > 0 ? pickerId : undefined}
+              aria-activedescendant={highlighted >= 0 ? `${pickerId}-${highlighted}` : undefined}
+              onKeyDown={moveInPicker}
               autoCapitalize={literal ? "off" : undefined}
               autoCorrect={literal ? "off" : undefined}
               spellCheck={literal ? false : undefined}

@@ -21,7 +21,7 @@ import type { ControlHandshake } from "@shahi/shared";
  * Tests drive it through `/__stub/*`: set a scenario, read back what the app
  * tried to write, or push an event down the socket.
  */
-import { SHAHI_API_VERSION } from "@shahi/shared";
+import { builtinCommands, SHAHI_API_VERSION } from "@shahi/shared";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -391,6 +391,13 @@ Bun.serve({
 
       if (sub === "/image") {
         return new Response(PNG, { headers: { "content-type": "image/png" } });
+      }
+
+      // The composer's picker (capability `commands`). A real computer adds
+      // the person's own Claude commands from disk; the stub has none.
+      if (sub === "/commands") {
+        if (!known) return json({ error: "no such pane" }, { status: 404 });
+        return json({ commands: builtinCommands(known.agent) });
       }
 
       if (!sub) {

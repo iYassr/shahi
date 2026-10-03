@@ -17,6 +17,7 @@ import {
   type DashboardPane,
   type DeviceList,
   type PairedDevice,
+  type PaneCommands,
   type PromptReceipt,
   type ServerInfo,
 } from "@shahi/shared";
@@ -33,6 +34,7 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { dirname } from "node:path";
 import { ClaudeSettingsError, planUsage, setClaudePlanUsage } from "./plan-usage";
+import { paneCommands } from "./slash-commands";
 import { readSessionImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
@@ -1483,6 +1485,16 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             // The dashboard's cached location for this pane is out of date now.
             await transcriptSourceFor(pane, client);
             return json({ ok: true });
+          }
+
+          // The composer's slash-command picker (capability `commands`): the
+          // agent's built-ins and the person's own commands, names and
+          // descriptions only (slash-commands.ts). The folder is the
+          // agent's, where Claude Code looks for a project's commands.
+          if (sub === "/commands" && req.method === "GET") {
+            const pane = store.pane(paneId);
+            const commands = await paneCommands(pane?.agent, pane?.foreground_cwd ?? pane?.cwd);
+            return json({ commands } satisfies PaneCommands);
           }
 
           if (sub === "/session") {

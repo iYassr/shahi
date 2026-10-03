@@ -5,7 +5,7 @@ import { createContext, useContext } from "react";
 import { browserConnection, forgetBrowser, hosted, keepBlob } from "./connection";
 import type { RelayLink, LinkSubscriber } from "@shahi/shared/relay-client";
 import { ApiError, IncompatibleServerError } from "@shahi/shared/errors";
-import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PlanUsage, type PromptReceipt } from "@shahi/shared";
+import { SHAHI_API_VERSION, START_AGENT_TIMEOUT_MS, RELAY_LIMITS, type DeviceList, type PaneCommands, type PlanUsage, type PromptReceipt } from "@shahi/shared";
 /**
  * Client for the Shahi server.
  *
@@ -249,6 +249,8 @@ const api = {
     ),
 
   devices: () => request<DeviceList>("/api/devices"),
+  /** The pane's agent's slash commands, built-in and the person's own (capability `commands`). */
+  paneCommands: (paneId: string) => request<PaneCommands>(`/api/panes/${encodeURIComponent(paneId)}/commands`),
   /** Claude Code's and Codex's plan limits (capability `plan-usage`). */
   planUsage: () => request<PlanUsage>("/api/plan-usage"),
   /** Installs or removes the status line that reports Claude Code's limits. */

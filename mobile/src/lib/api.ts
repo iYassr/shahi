@@ -23,6 +23,7 @@ import {
   type DirListing,
   type InstalledAgent,
   type PairedDevice,
+  type PaneCommands,
   type PlanUsage,
   RELAY_LIMITS,
   type PaneFrame,
@@ -509,6 +510,9 @@ const api = {
     }),
 
   devices: () => request<DeviceList>("/api/devices"),
+
+  /** The pane's agent's slash commands, built-in and the person's own (capability `commands`). */
+  paneCommands: (paneId: string) => request<PaneCommands>(`/api/panes/${encodeURIComponent(paneId)}/commands`),
 
   /** Claude Code's and Codex's plan limits (capability `plan-usage`). */
   planUsage: () => request<PlanUsage>("/api/plan-usage"),

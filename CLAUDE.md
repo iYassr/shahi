@@ -1431,6 +1431,39 @@ identical with and without one (2.1.286, herdr 0.9.1). Tests that turn it on
 must point `CLAUDE_CONFIG_DIR` at a scratch folder. A reading from before its
 window reset is shown as reset, not as current.
 
+## Composer shortcuts, October 2026
+
+A draft that is one `/word` opens a picker of the pane's agent's commands, and
+an agent waiting on the next message offers `/` and four quick replies
+(`shared/src/slash-commands.ts`, `shared/src/quick-replies.ts`, both clients'
+composer-shortcuts components). Both only put text where typing goes: the
+picker inserts `/name ` and sends nothing, and a chip goes through the same
+send as the Send button, operation id and refusals included, landing in the
+composer if delivery is uncertain so Send retries it under that id. Chips
+hide, never insert, while anything is typed or attached, and stay away for
+`REPLY_SETTLE_MS` after a send unless herdr reports the agent at work.
+
+The built-in lists are measured, not remembered (Claude Code 2.1.288, codex
+0.160.0, cursor-agent 2026.09.28, OpenCode 1.18.33, Antigravity 1.2.12). Leave
+out every command that opens a full-screen view: after Claude's `/usage`
+(`/cost` is now its alias) the next message was accepted by herdr and never
+reached Claude, and `/status`, `/config` and `/help` open the same view.
+`/model` draws a numbered menu that herdr calls done, not blocked; the poller
+offers it as a card and `/answer` works. A partial name is dangerous to send:
+Claude's and codex's autocomplete take the Enter and run their top match
+(`/hel` ran `/help`), so the picker always inserts the whole name. A slash
+command does not start the native optimistic Working: `/context` answers at
+once and the indicator stayed for its ten-minute backstop.
+
+Custom commands (`/api/panes/:id/commands`, capability `commands`) are Claude
+Code's only: `commands/**/*.md` named with `:` per subfolder, `skills/*/SKILL.md`
+by frontmatter `name` or folder and hidden by `user-invocable: false`, the
+description the frontmatter's or the first line, personal over project, from
+the configuration directory and from the agent's folder up to its repository
+root. Codex 0.160.0 has no custom prompts left to read. Names and descriptions
+only, read from each file's first 4 KiB through a non-blocking handle, inside
+the folder they were found in, within count and visit budgets.
+
 ## Runaway usage, October 2026
 
 **A Durable Object is billed while anything in it is pending.** Never use

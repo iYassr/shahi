@@ -541,3 +541,5 @@ export { SCREEN_CARD_KEYS, SCREEN_CARD_ROWS, screenTail } from "./screen-card";
 export { messageTime } from "./message-time";
 export { ansiLines, colour256, spanColours, type AnsiLine, type AnsiSpan } from "./ansi-spans";
 export { planWindowLabel, planWindowNow, type PlanUsage, type PlanWindow, type ProviderUsage } from "./plan-usage";
+export { builtinCommands, matchCommands, mergeCommands, slashQuery, type CommandSource, type PaneCommands, type SlashCommand } from "./slash-commands";
+export { QUICK_REPLIES, REPLY_SETTLE_MS, waitingForReply, type ReplyMoment } from "./quick-replies";
