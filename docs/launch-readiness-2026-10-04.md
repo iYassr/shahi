@@ -181,7 +181,8 @@ computer release; do not reset pairings or retry uncertain writes with new IDs.
 | Computer plugin/service | Public Stable and Beta **0.3.25**, immutable tag and GitHub Latest verified, source `3cf883c` |
 | Initial website/PWA launch | Cloudflare **`7138adc0-9fae-46c5-8352-f36bec8b1d49`**, exact source `3cf883c`; replaced `d7ce91d2-b28e-48e9-be87-32009625f7ac` |
 | Initial website artifact | 49 files / 3,447,014 bytes, matching Sentry upload; all **91 live probes passed** with 47 served-file hashes and two hidden metadata files |
-| Current landing/PWA deployment | **`16f01d5d-cf2b-4dd6-97f7-8271c3a59821`**, website-only source `b3231c6`; replaced `7138adc0-9fae-46c5-8352-f36bec8b1d49`; 58 files / 5,797,345 bytes; all **100 live probes passed** |
+| Actual app feature grid | **`16f01d5d-cf2b-4dd6-97f7-8271c3a59821`**, website-only source `b3231c6`; 58 files / 5,797,345 bytes; all **100 live probes passed** |
+| Current landing/PWA deployment | **`7ff7beb4-fe32-45f7-9abc-5fbc34e9f17f`**, website-only source `bfb340d`; replaced `16f01d5d-cf2b-4dd6-97f7-8271c3a59821`; 58 files / 5,797,467 bytes; all **100 live probes passed**; dictation availability clarified consistently |
 | Production visual checks | Nine actual app screenshot cards, full-image privacy and caption checks; all images loaded on desktop; three desktop/one narrow-phone columns with no overflow; live English/Arabic/Spanish onboarding and saved Arabic choice verified; commands remain LTR |
 | Relay | Existing healthy production deployment retained; no relay code change or unnecessary redeployment |
 | iPhone | **1.1.0 (39)** submitted for automatic public release after Apple review; **1.0.0** remains publicly downloadable during review |
@@ -193,8 +194,17 @@ Evidence: [manual CI](https://github.com/iYassr/shahi/actions/runs/37170699728),
 and [native build/upload](https://github.com/iYassr/shahi/actions/runs/37171091425).
 The computer and native releases use frozen source `3cf883c`; the later
 [website-only preview preparation](https://github.com/iYassr/shahi/actions/runs/37173221401)
-uses `b3231c6`. The exact deployment, image review, matching maps and rollback
+uses `b3231c6`; the final
+[dictation availability preparation](https://github.com/iYassr/shahi/actions/runs/37174441212)
+uses `bfb340d`. The exact deployment, image review, matching maps and rollback
 are recorded in [browser hosting](browser-hosting.md). Apple status was checked
-again at 03:05 UTC: build 39 remained `VALID` and `WAITING_FOR_REVIEW`, with
+again at 03:44 UTC (06:44 Riyadh): build 39 remained `VALID` and `WAITING_FOR_REVIEW`, with
 automatic `AFTER_APPROVAL` release. No further native or computer release was
 made for the website screenshots.
+
+The locally generated launch ZIP (`marketing/video/out/launch-safe/shahi-launch-kit.zip`)
+contains 11 files / 6,018,634 bytes. Its SHA-256 is
+`180cff60535efec52a01a57c59ca900487a9a57274692653a281c1f70c9b0949`.
+CRC, all ten payload hashes, copy equality and both silent video streams were
+verified after the final website provenance refresh. It is a local share artifact,
+not publicly hosted or posted.

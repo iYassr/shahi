@@ -137,7 +137,7 @@ These remain explicit build-tool risks, not a clean audit result. See
 [the dependency review](../patches/README.md) for primary upstream sources,
 the separate EAS lockfile and the exact reachability limits.
 
-GitHub's seven open Dependabot alerts were independently read and reconciled:
+An earlier GitHub API snapshot contained seven open Dependabot alerts:
 all referred to development dependencies in `demo/package-lock.json`, not the
 root Bun lockfile. Six were Undici 7.29.0 advisories and one was Sharp 0.35.2's
 libheif advisory. Scoped npm overrides now select Undici 7.29.1 and Sharp
@@ -145,10 +145,14 @@ libheif advisory. Scoped npm overrides now select Undici 7.29.1 and Sharp
 Its frozen install and audit returned zero advisories; types, worker dry-run,
 five simulated-model tests and four state/archive tests passed. No demo
 deployment or live session was changed. GitHub's current SBOM independently
-indexes Undici 7.29.1 and Sharp 0.35.4, while the final alerts API read still
-reports the seven old demo findings open. The alert state is reported
-separately from the verified dependency versions; none were dismissed or
-suppressed.
+indexes Undici 7.29.1 and Sharp 0.35.4. A fresh alerts API read at **03:34 UTC
+on 4 October** returned **zero open and zero dismissed alerts**. Its fixed-state
+inventory contains eleven findings: ten Undici advisories and one Sharp
+advisory, all development dependencies in that same demo lockfile. GitHub
+marked them fixed at 03:33 UTC after indexing the patched dependency versions.
+The earlier seven-alert snapshot and subsequent push warnings reflected
+indexing delay; they are not the current alert state. No alert was dismissed
+or suppressed. This does not clear the separate root Bun audit findings below.
 
 The full root audit additionally reports ten Undici 7.29.0 development-tool
 advisories through Miniflare: two high, five moderate and three low. Bun

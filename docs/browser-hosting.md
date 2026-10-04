@@ -237,6 +237,33 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 4 October 2026, iPhone dictation availability
+
+Published from clean commit `bfb340db93b2a1a3549ec7235a9106ea958792a7` as
+Cloudflare version **`7ff7beb4-fe32-45f7-9abc-5fbc34e9f17f`**. It replaced
+**`16f01d5d-cf2b-4dd6-97f7-8271c3a59821`**, the immediate website rollback.
+Only landing/privacy availability text changed. Computer 0.3.25 and submitted
+iPhone 1.1.0 build 39 remain frozen on `3cf883c`.
+
+The dictation card and privacy policy now explicitly scope verified behavior
+to the submitted iPhone 1.1 update, awaiting Apple review. Existing provenance
+did not establish dictation availability in the public 1.0.0 build 17. The
+wording does not claim that the older build lacks it. The unchanged image
+accurately shows an unsent composer draft, and its preview caption is visible.
+
+Protected [website preparation 37174441212](https://github.com/iYassr/shahi/actions/runs/37174441212)
+uploaded matching browser source maps at 03:35:16 UTC. Exact downloaded output
+contains 58 files / 5,797,467 bytes. Its ZIP is 3,259,864 bytes, SHA-256
+`3e4353d519141ec07bff07c40ebd3dcac0f9d22b29a5db18409196709489c3d4`.
+The receipt remained outside the served tree and clean checkout; no rebuild
+occurred between download, verification and deployment.
+
+All **100 live probes passed** at 03:42:44 UTC: 56 served-file hashes, two
+hidden metadata entries, security/cache policies, routes, private-file refusal,
+PWA inventory and existing video ranges. All nine screenshots retain their
+reviewed bytes. Production Chrome confirmed the updated dictation image,
+caption and body at 320 pixels with no overflow; viewport state was restored.
+
 ## Verified deployment — 4 October 2026, actual app feature previews
 
 Published from clean commit `b3231c6af58c5e7bf27f399629c85bf9acb24a86` as
