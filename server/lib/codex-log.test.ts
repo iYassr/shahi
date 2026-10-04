@@ -3,7 +3,7 @@ import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, syml
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
-import { normaliseCodex, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
+import { normaliseCodex, rolloutFromTitle, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
 
 // Scratch codex homes made below, removed when the file finishes: every run
 // left three directories in $TMPDIR until the September 2026 review.
@@ -717,3 +717,47 @@ if (process.platform === "darwin") {
     } finally { closeSync(fd); }
   });
 }
+
+// TestFlight build 39, October 2026: "codex not showing reader mode". A Codex
+// 0.160 started by hand runs its thread in a shared process, so herdr reports
+// no session and the pane's process holds no rollout; the title Codex gives
+// the terminal, "<thread name> | <folder>", is what still names the thread.
+describe("a Codex conversation named by its pane's title", () => {
+  const root = mkdtempSync(join(tmpdir(), "shahi-codex-title-"));
+  const sessions = join(root, "sessions"), project = join(root, "sama-kb"), other = join(root, "elsewhere");
+  for (const dir of [join(sessions, "2026", "10", "04"), project, other]) mkdirSync(dir, { recursive: true });
+  const rollout = (id: string) => {
+    const path = join(sessions, "2026", "10", "04", `rollout-2026-10-04T02-51-13-${id}.jsonl`);
+    writeFileSync(path, "{}\n");
+    return path;
+  };
+  const db = join(root, "state_5.sqlite");
+  const index = new Database(db);
+  index.run("CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, name TEXT, archived INTEGER)");
+  const add = (id: string, name: string | null, cwd: string, archived = 0) =>
+    index.run("INSERT INTO threads VALUES (?, ?, ?, ?, ?)", [id, rollout(id), cwd, name, archived]);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210b6", "Review and improve Fihris", project);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210b7", "Review and improve Fihris", other);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210b8", "Review and improve Fihris", project, 1);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210b9", "Fix the tests", project);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210ba", "Fix the tests", project);
+  add("01a1042d-cfcf-7772-a79b-f4dafde210bb", null, project);
+  index.close();
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const find = (title: string | null, folder: string | null = project) => rolloutFromTitle(title, folder, db, sessions);
+
+  test("the one unarchived thread with that name in that folder is the pane's", () => {
+    expect(find("Review and improve Fihris | sama-kb")).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210b6.jsonl");
+  });
+  test("a name two threads share in one folder, an unnamed thread or a name in another folder finds nothing", () => {
+    expect(find("Fix the tests | sama-kb")).toBeNull();
+    expect(find("codex | sama-kb")).toBeNull();
+    expect(find("Review and improve Fihris | sama-kb", join(root, "missing"))).toBeNull();
+  });
+  test("a title that does not end with the pane's own folder, or has no folder, names nothing", () => {
+    expect(find("Review and improve Fihris | elsewhere")).toBeNull();
+    expect(find("Review and improve Fihris")).toBeNull();
+    expect(find(null)).toBeNull();
+    expect(rolloutFromTitle("Review and improve Fihris | sama-kb", project, join(root, "no-index.sqlite"), sessions)).toBeNull();
+  });
+});

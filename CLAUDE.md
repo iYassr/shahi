@@ -1385,6 +1385,12 @@ ownership explicit, on 0.157.1 this per-invocation configuration uses an embedde
 server. Without it Full auto and bypass attached to the shared daemon, losing
 this terminal's hook environment and exact process-file Reader lookup. Never
 repair that by selecting a rollout by working folder or modification time.
+A Codex a person starts by hand gets the shared daemon too (codex-cli 0.160:
+no session reported, no rollout open in the pane), and read "Nothing to read
+yet" (TestFlight build 39). Its pane title, "<thread name> | <folder>", names
+the thread: `rolloutFromTitle` takes one only when exactly one unarchived
+thread has that name in that exact folder. The folder narrows a name and is
+never evidence alone; an unnamed or shared name finds nothing.
 
 ## Read must match Screen, October 1
 

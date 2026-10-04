@@ -106,19 +106,65 @@ export function rolloutWithinSessions(path: unknown, sessionsDir = SESSIONS_DIR)
  * Finds the rollout file a pane's codex process is writing.
  *
  * Only exact ownership: the session id survives the process exiting;
- * `/proc` identifies the open file while it is alive.
+ * `/proc` identifies the open file while it is alive; the title names the
+ * thread a pane shows when Codex runs it in a shared process.
  */
 export async function findCodexRollout(
   client: HerdrClient,
   paneId: string,
   _cwd: string | null,
   sessionId?: string | null,
+  shown?: { title: string | null; folder: string | null },
 ): Promise<string | null> {
   const viaSession = sessionId ? rolloutFromSessionId(sessionId) : null;
   if (viaSession) return viaSession;
   const viaProcess = await rolloutFromProcess(client, paneId);
   if (viaProcess) return viaProcess;
-  return null;
+  return shown ? rolloutFromTitle(shown.title, shown.folder) : null;
+}
+
+/**
+ * The thread a pane's terminal title names, when the routes above cannot see it.
+ *
+ * Codex 0.160 runs the conversation of a `codex` started without per-launch
+ * settings inside a shared app-server process. Its SessionStart hook then runs
+ * there, where herdr cannot tell which pane it belongs to, so no session ID is
+ * reported, and the pane's own process holds no rollout open. Every Codex a
+ * person started themselves read "Nothing to read yet" (TestFlight build 39,
+ * October 2026; measured with codex-cli 0.160.0 on Linux and macOS, where the
+ * shared process held nine rollouts and each pane's process none). Agents Shahi
+ * starts avoid this with `approvals_reviewer="user"` (see CLAUDE.md).
+ *
+ * What still names a pane's conversation is the title Codex gives the
+ * terminal, "<thread name> | <folder>". That name is what the person sees on
+ * Screen, so it is evidence of which thread the pane shows, as a session ID
+ * is. It is taken only when exactly one unarchived thread has that name in that
+ * exact folder: the folder narrows a name and is never evidence on its own, so
+ * an unnamed thread, or two threads sharing a name in one folder, find nothing.
+ */
+export function rolloutFromTitle(title: string | null | undefined, folder: string | null | undefined, stateDb = STATE_DB, sessionsDir = SESSIONS_DIR): string | null {
+  if (!title || !folder) return null;
+  const at = title.lastIndexOf(" | ");
+  if (at <= 0) return null;
+  const name = title.slice(0, at).trim();
+  if (!name || title.slice(at + 3).trim() !== basename(folder)) return null;
+  const here = realpathIfExists(folder);
+  try {
+    const db = new Database(stateDb, { readonly: true });
+    let rows: { rollout_path: string; cwd: string | null }[];
+    try {
+      rows = db.query<{ rollout_path: string; cwd: string | null }, [string]>(
+        "SELECT rollout_path, cwd FROM threads WHERE name = ? AND archived = 0 LIMIT 50",
+      ).all(name);
+    } finally { db.close(); }
+    const named = rows.filter((row) => typeof row.cwd === "string" && realpathIfExists(row.cwd) === here);
+    if (named.length !== 1) return null;
+    const path = rolloutWithinSessions(named[0]!.rollout_path, sessionsDir);
+    return path && statSync(path).isFile() ? path : null;
+  } catch {
+    // An index codex migrated, or none yet: nothing is named.
+    return null;
+  }
 }
 
 /**
