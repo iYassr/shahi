@@ -9,6 +9,7 @@ import { addNetworkStateListener, getNetworkStateAsync } from "expo-network";
 import { RelayLink } from "./relay";
 import { linkLabel } from "@/components/link-badge";
 import { connectionHealth } from "@shahi/shared";
+import { I18nProvider, useI18n } from "./i18n";
 
 const mockSockets: any[] = [];
 jest.mock("./tunnel", () => ({ openTunnel: jest.fn(), closeTunnel: jest.fn(async () => {}), forgetHostKey: jest.fn(async () => {}) }));
@@ -152,6 +153,24 @@ test("a computer removed because this phone was revoked says so, naming it; sign
   expect(value.accessEnded).toBeNull();
   act(() => value.signOut());
   expect(value.accessEnded).toBeNull();
+  ui.unmount();
+});
+test("a revocation notice follows language changes while computer names and live sessions stay original", async () => {
+  let changeLanguage!: ReturnType<typeof useI18n>["setPreference"];
+  function LocalizedProbe() { changeLanguage = useI18n().setPreference; return <Probe />; }
+  const ui = render(<I18nProvider><SessionProvider><LocalizedProbe /></SessionProvider></I18nProvider>);
+  await waitFor(() => expect(value.ready).toBe(true));
+  await pairBoth();
+  await act(async () => { mockSockets.at(-1).message({ type: "session", session: { ...snapshot, serverName: "Settings" } }); });
+  await act(async () => { mockSockets.at(-1).unauthorized(); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+  const sockets = mockSockets.length;
+  await act(async () => { await changeLanguage("ar"); });
+  expect(value.accessEnded).toBe("لم يعد هذا الهاتف مقترنًا مع Settings. اعرض رمز اقتران جديدًا على ذلك الكمبيوتر للاتصال مجددًا.");
+  await act(async () => { await changeLanguage("es"); });
+  expect(value.accessEnded).toBe("Este teléfono ya no está vinculado con Settings. Muestra un nuevo código de vinculación en ese equipo para volver a conectar.");
+  expect(mockSockets).toHaveLength(sockets);
+  expect(value.computers.map(computer => computer.id)).toEqual([computerId(a)]);
+  await act(async () => { await changeLanguage("en"); });
   ui.unmount();
 });
 test("a failed SSH switch retains both computers and permits returning to relay", async () => {

@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 /**
  * The last line of defence against a white screen.
  *
@@ -36,12 +37,12 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.error) return this.props.children;
     return (
       <View style={styles.screen}>
-        <Text style={styles.title}>Something broke.</Text>
+        <UiText style={styles.title}>Something broke.</UiText>
         <Text style={styles.detail} numberOfLines={4}>
           {this.state.error.message}
         </Text>
         <Pressable accessibilityRole="button" style={styles.button} onPress={this.reset}>
-          <Text style={styles.buttonText}>Reload</Text>
+          <UiText style={styles.buttonText}>Reload</UiText>
         </Pressable>
       </View>
     );

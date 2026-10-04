@@ -31,6 +31,43 @@ Miniflare's pinned transitive copy. Its prebuilt libraries address
 This is build and local development tooling; the production relay does not
 bundle Sharp or process images.
 
-`bun audit` only sees package versions, not these applied patches. It still
-reports the three advisories above for these two patched package names; the
-audit is not clean and no advisories are suppressed.
+The October 4 launch review updates **brace-expansion 5.0.12** and every
+compatible 1.x copy to **1.1.21**, without changing the dependency ranges.
+These releases fix recursion and malformed-brace rewrite exhaustion, including
+[GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7),
+[GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p) and
+[GHSA-q2hr-2g5m-vwhr](https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-q2hr-2g5m-vwhr).
+The bounded dependency checks exercise both release lines, ordinary CommonJS
+Minimatch matching, deep nesting, comma parsing and the rewrite fallback.
+
+Two newly disclosed advisories still have no published fixed release as of
+October 4, 2026:
+
+- **braces 3.0.3**, [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm):
+  deeply nested glob patterns can exhaust the parser stack. Its
+  [upstream issue](https://github.com/micromatch/braces/issues/70) is open.
+  In this repository it is consumed through Micromatch by Metro, Expo and
+  test/build tooling. Metro's patterns come from project configuration;
+  the public server and encrypted-transport bundle graphs do not include it.
+- **node-forge 1.4.0**, [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv):
+  RSA PKCS#1 v1.5 verification accepts extra nested DigestAlgorithm elements.
+  The [proposed upstream fix](https://github.com/digitalbazaar/forge/pull/1152)
+  remains unmerged; no local cryptographic patch is substituted. It is used by
+  Expo/EAS certificate tooling, including local certificate/CSR checks, and
+  is absent from the public server and encrypted-transport bundle graphs.
+  The iOS update verifier uses Apple's `SecKeyVerifySignature` and
+  `SecTrust`, rather than this JavaScript library. The separate
+  `.github/eas/bun.lock` also contains the affected build-tool packages.
+
+These are unresolved build-tool risks, not suppressed advisories. Treat
+external glob configuration, certificates and CSRs as untrusted until upstream
+fixes can be adopted; the reviewed release flow uses project configuration
+and the existing operator-controlled signing material. This reachability review
+does not claim that every possible tooling invocation is safe.
+
+`bun audit --production` only sees package versions, not applied patches or
+which workspace dependencies are shipped. On October 4 it reports five
+advisories across four package names: three covered by the installed
+`decode-uri-component` / `image-size` patches above, plus the unresolved
+`braces` and `node-forge` advisories. The audit is not clean and no advisories
+are suppressed.

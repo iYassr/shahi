@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { useState } from "react";
 import { Alert, View, Pressable, ScrollView, StyleSheet, TextInput } from "react-native";
 import { Text } from "@/components/text";
@@ -14,6 +16,7 @@ import { theme } from "@/lib/theme";
  * below the card you meant to open (device audit, build 28).
  */
 export function Computers() {
+  const { t: ui } = useI18n();
   const { computers, activeComputerId, connected, switchComputer, addComputer, revokeComputer, renameComputer, accessEnded } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,67 +33,67 @@ export function Computers() {
   const actingOn = computers.find(c => c.id === acting);
   return <View style={styles.screen}>
     <ScrollView contentContainerStyle={styles.content}>
-    {accessEnded && <Text accessibilityRole="alert" testID="access-ended" style={styles.ended}>{accessEnded}</Text>}
+    {accessEnded && <UiText accessibilityRole="alert" testID="access-ended" style={styles.ended}>{accessEnded}</UiText>}
     <SaveProblem />
-    <Text style={styles.note}>All your computers stay connected while Shahi is open. Choose one to view its agents.</Text>
+    <UiText style={styles.note}>All your computers stay connected while Shahi is open. Choose one to view its agents.</UiText>
     {computers.map((computer) => {
       const selected = connected && computer.id === activeComputerId;
       const available = computer.available ?? computer.link === "live";
-      const status = computer.status ?? (computer.link === "live" ? "Connected" : computer.link === "lost" ? "Offline · retrying" : "Connecting…");
-      const waiting = computer.waiting ? ` · ${computer.waiting} waiting${available ? "" : " (last known)"}` : "";
+      const status = computer.status ?? ui(computer.link === "live" ? "Connected" : computer.link === "lost" ? "Offline · retrying" : "Connecting…");
+      const waiting = computer.waiting ? ` · ${ui(available ? "{count} waiting" : "{count} waiting (last known)", { count: computer.waiting })}` : "";
       return <View key={computer.id} style={[styles.card, selected && styles.selected]}>
         <View style={styles.cardTop}>
           <Pressable testID={`computer-${computer.id}`} accessibilityRole="button"
-            accessibilityLabel={`${selected ? "Current computer" : "Switch to"} ${computer.name}, ${status}${waiting}, ${computer.address}`}
+            accessibilityLabel={`${ui(selected ? "Current computer" : "Switch to")} ${computer.name}, ${status}${waiting}, ${computer.address}`}
             accessibilityState={{ selected, disabled: !!busy }} disabled={!!busy}
             onPress={() => void choose(computer.id)} style={styles.cardMain}>
             <Text style={styles.name}>{computer.name}</Text>
             <Text style={[styles.status, { color: available ? theme.mint : theme.peach }]}>{status}{waiting}</Text>
             <Text style={styles.address} numberOfLines={1}>{computer.address}</Text>
-            <Text style={selected ? styles.viewing : styles.action}>{busy === computer.id ? "Opening…" : selected ? "✓ Viewing" : "Open agents"}</Text>
+            <UiText style={selected ? styles.viewing : styles.action}>{busy === computer.id ? "Opening…" : selected ? "✓ Viewing" : "Open agents"}</UiText>
           </Pressable>
-          <Pressable testID={`computer-actions-${computer.id}`} accessibilityRole="button" accessibilityLabel={`More for ${computer.name}`}
+          <Pressable testID={`computer-actions-${computer.id}`} accessibilityRole="button" accessibilityLabel={ui("More for {value1}", {value1: computer.name})}
             style={styles.more} onPress={() => setActing(computer.id)}>
             <Text style={styles.moreText}>•••</Text>
           </Pressable>
         </View>
         {renaming === computer.id && <View style={styles.rename}>
-          <TextInput accessibilityLabel="Computer name" value={name} onChangeText={setName} maxLength={80} style={styles.input} autoFocus returnKeyType="done" />
+          <TextInput accessibilityLabel={ui("Computer name")} value={name} onChangeText={setName} maxLength={80} style={styles.input} autoFocus returnKeyType="done" />
           <View style={styles.renameActions}>
             <Pressable accessibilityRole="button" style={styles.button} disabled={!!busy || !name.trim()} onPress={() => {
               setBusy(computer.id); setError(null);
               void renameComputer(computer.id, name).then(() => setRenaming(null)).catch(e => setError(e.message)).finally(() => setBusy(null));
-            }}><Text style={styles.action}>Save name</Text></Pressable>
-            <Pressable accessibilityRole="button" style={styles.button} onPress={() => setRenaming(null)}><Text style={styles.note}>Cancel</Text></Pressable>
+            }}><UiText style={styles.action}>Save name</UiText></Pressable>
+            <Pressable accessibilityRole="button" style={styles.button} onPress={() => setRenaming(null)}><UiText style={styles.note}>Cancel</UiText></Pressable>
           </View>
         </View>}
       </View>;
     })}
-    {computers.length === 0 && <Text style={styles.note}>No saved computers yet. Pair one to get started.</Text>}
-    {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+    {computers.length === 0 && <UiText style={styles.note}>No saved computers yet. Pair one to get started.</UiText>}
+    {error && <UiText accessibilityRole="alert" style={styles.error}>{error}</UiText>}
     <Pressable testID="add-computer" accessibilityRole="button" disabled={!!busy} style={styles.add} onPress={() => {
       setBusy("add"); setError(null);
       void addComputer().then(() => resetTo("/connect")).catch((e: Error) => setError(e.message)).finally(() => setBusy(null));
-    }}><Text style={styles.action}>Add a computer</Text></Pressable>
-    <Text style={styles.note}>Previously replaced or signed-out connections need a new pairing code once. “Devices with access” in Settings manages phones and browsers allowed into the current computer.</Text>
+    }}><UiText style={styles.action}>Add a computer</UiText></Pressable>
+    <UiText style={styles.note}>Previously replaced or signed-out connections need a new pairing code once. “Devices with access” in Settings manages phones and browsers allowed into the current computer.</UiText>
     </ScrollView>
     {/* The same in-app sheet as an agent's long press (see agents.tsx for why
         not ActionSheetIOS or Modal). */}
     {actingOn && <View style={styles.sheetLayer}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss actions" style={styles.sheetBack} onPress={() => setActing(null)} />
+      <Pressable accessibilityRole="button" accessibilityLabel={ui("Dismiss actions")} style={styles.sheetBack} onPress={() => setActing(null)} />
       <View style={styles.sheetCard}>
         <Text style={styles.sheetTitle} numberOfLines={1}>{actingOn.name}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${actingOn.name}`} style={styles.sheetItem} onPress={() => {
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Rename {value1}", {value1: actingOn.name})} style={styles.sheetItem} onPress={() => {
           setName(actingOn.name); setRenaming(actingOn.id); setActing(null);
-        }}><Icon name="server" color={theme.peach} size={16} /><Text style={styles.sheetItemText}>Rename</Text></Pressable>
+        }}><Icon name="server" color={theme.peach} size={16} /><UiText style={styles.sheetItemText}>Rename</UiText></Pressable>
         {actingOn.kind === "relay" && <Pressable accessibilityRole="button" testID={`revoke-computer-${actingOn.id}`} style={styles.sheetItem} onPress={() => {
           setActing(null);
-          Alert.alert(`Revoke this phone’s access to ${actingOn.name}?`, `This phone will need a new pairing code for ${actingOn.name}. Other computers stay connected.`, [
-            { text: "Cancel", style: "cancel" }, { text: "Revoke access", style: "destructive", onPress: () => { void revokeComputer(actingOn.id).catch(e => setError(e.message)); } },
+          Alert.alert(ui("Revoke this phone’s access to {value1}?", {value1: actingOn.name}), ui("This phone will need a new pairing code for {value1}. Other computers stay connected.", {value1: actingOn.name}), [
+            { text: ui("Cancel"), style: "cancel" }, { text: ui("Revoke access"), style: "destructive", onPress: () => { void revokeComputer(actingOn.id).catch(e => setError(e.message)); } },
           ]);
-        }}><Icon name="log-out" color={theme.rose} size={16} /><Text style={[styles.sheetItemText, { color: theme.rose }]}>Revoke this phone’s access</Text></Pressable>}
+        }}><Icon name="log-out" color={theme.rose} size={16} /><UiText style={[styles.sheetItemText, { color: theme.rose }]}>Revoke this phone’s access</UiText></Pressable>}
         <Pressable accessibilityRole="button" style={styles.sheetItem} onPress={() => setActing(null)}>
-          <Text style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</Text>
+          <UiText style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</UiText>
         </Pressable>
       </View>
     </View>}

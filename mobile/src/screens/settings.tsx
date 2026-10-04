@@ -1,3 +1,6 @@
+import { UiText } from "@/components/ui-text";
+import { LanguagePicker } from "@/components/language-picker";
+import { useI18n } from "@/lib/i18n";
 import { AgentUsage } from "@/components/agent-usage";
 import { ComputerUpdate } from "@/components/computer-update";
 import { ConnectionHealth } from "@/components/connection-health";
@@ -36,6 +39,7 @@ import { supports } from "@shahi/shared";
 const TERMINAL_WIDTHS = [60, 100, 146];
 
 export function Settings() {
+  const { t: ui } = useI18n();
   const { api, session, link, signOut, pins, clearPins, terminalWidth, setTerminalWidth, server, computers = [], activeComputerId, control } =
     useSession();
   const lastUpdateAt = useLastUpdate();
@@ -77,7 +81,7 @@ export function Settings() {
   const isSsh = server.startsWith("ssh://");
   const kind = isSsh ? "ssh" : "shahi relay";
   const name = computers.find(c => c.id === activeComputerId)?.name ?? session?.serverName ?? host;
-  const status = link === "live" ? "Connected" : link === "lost" ? "Offline" : "Connecting…";
+  const status = ui(link === "live" ? "Connected" : link === "lost" ? "Offline" : "Connecting…");
   const [showReach, setShowReach] = useState(false);
   // What runs there, from the computer's own account of itself.
   const handshake = control?.handshake;
@@ -105,20 +109,20 @@ export function Settings() {
           not move the title. See-through at the scroll edge is also iOS's own
           default; the screen behind is the same colour, and content scrolled
           under the bar still gets the opaque standard bar. */}
-      <Stack.Screen options={{ headerLargeStyle: { backgroundColor: "transparent" }, ...plainHeaderRight(<ComputerSwitcher />) }} />
+      <Stack.Screen options={{ title: ui("Settings"), headerLargeStyle: { backgroundColor: "transparent" }, ...plainHeaderRight(<ComputerSwitcher />) }} />
       {/* The server is the identity: where WhatsApp puts your face, this app
           puts the machine you are trusting. Tap to reveal how it is reached. */}
       <ConnectionHealth />
-      <SectionHeading title="This computer" />
+      <SectionHeading title={ui("This computer")} />
       <View style={styles.group}>
         <Pressable
           style={styles.profile}
           testID="server-identity"
           onPress={() => setShowReach((v) => !v)}
           accessibilityRole="button"
-          accessibilityLabel={`${name}, ${status}. Connection details${showReach ? `. ${isSsh ? "SSH connection" : "Encrypted relay connection"}. ${server}${session ? `. herdr ${session.version}` : ""}` : ""}`}
+          accessibilityLabel={ui("{value1}, {value2}. Connection details{value3}", {value1: name, value2: status, value3: showReach ? `. ${isSsh ? "SSH connection" : "Encrypted relay connection"}. ${server}${session ? `. herdr ${session.version}` : ""}` : ""})}
           accessibilityState={{ expanded: showReach }}
-          accessibilityHint="Show or hide connection details"
+          accessibilityHint={ui("Show or hide connection details")}
         >
           <View style={styles.profileIcon}>
             <Icon name="server" color={theme.peach} size={26} />
@@ -127,29 +131,29 @@ export function Settings() {
             <Text style={styles.profileName} numberOfLines={1}>
               {name}
             </Text>
-            <Text style={styles.profileSub} numberOfLines={1}>
+            <UiText style={styles.profileSub} numberOfLines={1}>
               {status}
-            </Text>
-            <Text style={{ color: theme.peach, fontSize: 13, marginTop: 6 }}>Connection details</Text>
+            </UiText>
+            <UiText style={{ color: theme.peach, fontSize: 13, marginTop: 6 }}>Connection details</UiText>
             {showReach && (
               <Text style={styles.profileReach} selectable>
-                {kind === "ssh" ? "SSH connection" : "Encrypted relay connection"}{"\n"}{server}
-                {session ? ` · herdr ${session.version} · protocol ${session.protocol}` : ""}
+                {kind === "ssh" ? ui("SSH connection") : ui("Encrypted relay connection")}{"\n"}{server}
+                {session ? ui(" · herdr {value1} · protocol {value2}", {value1: session.version, value2: session.protocol}) : ""}
               </Text>
             )}
           </View>
           <Icon name={showReach ? "chevron-up" : "chevron-down"} color={theme.dim} size={16} />
         </Pressable>
-        {!!versions && <><Separator /><Row icon="info" tint={theme.dim} label="Versions" value={versions} /></>}
+        {!!versions && <><Separator /><Row icon="info" tint={theme.dim} label={ui("Versions")} value={versions} /></>}
         <Separator />
         <Row
           icon="activity"
           tint={age !== null && age > 15 ? theme.peach : theme.mint}
-          label="Last refreshed"
-          value={age === null ? "never" : age < 60 ? `${age}s ago` : `${Math.floor(age / 60)} min ago`}
+          label={ui("Last refreshed")}
+          value={age === null ? ui("never") : age < 60 ? ui("{count}s ago", { count: age }) : ui("{count} min ago", { count: Math.floor(age / 60) })}
         />
         <Separator />
-        <Row icon="server" tint={theme.peach} label="Computers" value="Switch or add" onPress={() => router.push("/computers")} />
+        <Row icon="server" tint={theme.peach} label={ui("Computers")} value={ui("Switch or add")} onPress={() => router.push("/computers")} />
       </View>
 
       <ComputerUpdate settings />
@@ -157,8 +161,8 @@ export function Settings() {
         <Row
           icon={push.on ? "bell" : "bell-off"}
           tint={push.on ? theme.mint : theme.peach}
-          label="Notifications"
-          value={push.busy ? (push.on ? "Turning off…" : "Asking…") : push.on ? "On" : "Off"}
+          label={ui("Notifications")}
+          value={ui(push.busy ? (push.on ? "Turning off…" : "Asking…") : push.on ? "On" : "Off")}
           disabled={push.busy}
           onPress={() => {
             if (push.on) {
@@ -175,14 +179,14 @@ export function Settings() {
             const sealed = !isSsh && supports(handshake ?? null, "push-actions");
             void enablePush(api, { sealed }).then((r) => setPush(r.ok ? { on: true } : { on: false, note: r.reason }));
           }}
-          hint={push.note ?? (push.on ? `Tap to stop notifications from ${name}.` : `Get notified when an agent on ${name} needs your reply.`)}
+          hint={push.note ?? (push.on ? ui("Tap to stop notifications from {value1}.", {value1: name}) : ui("Get notified when an agent on {value1} needs your reply.", {value1: name}))}
         />
         <Separator />
         <Row
           icon="pin"
           tint={theme.peach}
-          label="Pinned conversations"
-          value={pins.size > 0 ? `Clear ${pins.size}` : "None"}
+          label={ui("Pinned conversations")}
+          value={pins.size > 0 ? ui("Clear {count}", { count: pins.size }) : ui("None")}
           disabled={pins.size === 0}
           onPress={clearPins}
         />
@@ -195,7 +199,7 @@ export function Settings() {
         <View style={styles.row}>
           <View style={styles.rowLine}>
             <IconBadge name="server" tint={theme.peach} />
-            <Text style={styles.rowLabel}>Devices with access</Text>
+            <UiText style={styles.rowLabel}>Devices with access</UiText>
           </View>
         </View>
         <Separator />
@@ -213,17 +217,17 @@ export function Settings() {
         <Row
           icon="log-out"
           tint={theme.rose}
-          label={signingOut ? "Signing out…" : "Sign out"}
+          label={signingOut ? ui("Signing out…") : ui("Sign out")}
           disabled={signingOut}
           labelColor={theme.rose}
           onPress={() =>
             Alert.alert(
-              `Sign out of ${name}?`,
-              `You will need ${isSsh ? "your SSH details and Shahi passcode" : "a new pairing code"} to reconnect to ${name}. Other saved computers stay available.`,
+              ui("Sign out of {value1}?", {value1: name}),
+              ui("You will need {value1} to reconnect to {value2}. Other saved computers stay available.", {value1: ui(isSsh ? "your SSH details and Shahi passcode" : "a new pairing code"), value2: name}),
               [
-                { text: "Cancel", style: "cancel" },
+                { text: ui("Cancel"), style: "cancel" },
                 {
-                  text: "Sign out",
+                  text: ui("Sign out"),
                   style: "destructive",
                   onPress: async () => {
                     setSigningOut(true);
@@ -250,17 +254,19 @@ export function Settings() {
           capability shows nothing rather than an error. */}
       {supports(handshake ?? null, "plan-usage") && (
         <>
-          <SectionHeading title="Agents" />
+          <SectionHeading title={ui("Agents")} />
           <AgentUsage api={api} focused={focused} live={link === "live"} computer={name} />
         </>
       )}
 
-      <SectionHeading title="This app" />
+      <SectionHeading title={ui("This app")} />
       <View style={styles.group}>
+        <LanguagePicker />
+        <Separator />
         <View style={styles.row}>
           <View style={styles.rowLine}>
             <IconBadge name="terminal" tint={theme.mint} />
-            <Text style={styles.rowLabel}>Terminal width</Text>
+            <UiText style={styles.rowLabel}>Terminal width</UiText>
           </View>
           <View style={styles.widths}>
             {TERMINAL_WIDTHS.map((w) => (
@@ -272,20 +278,20 @@ export function Settings() {
                 onPress={() => setTerminalWidth(w)}
               >
                 <Text style={[styles.widthText, w === terminalWidth && styles.widthTextOn]}>
-                  {w === 146 ? "fit" : `${w}c`}
+                  {w === 146 ? ui("fit") : `${w}c`}
                 </Text>
               </Pressable>
             ))}
           </View>
         </View>
         <Separator />
-        <Row icon="activity" tint={theme.dim} label="Share diagnostics" value={diagnostics ? "On" : "Off"} checked={diagnostics}
-          hint="Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots."
+        <Row icon="activity" tint={theme.dim} label={ui("Share diagnostics")} value={diagnostics ? "On" : "Off"} checked={diagnostics}
+          hint={ui("Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots.")}
           onPress={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }} />
         <Separator />
-        <Row icon="info" tint={theme.dim} label="Version" value={appVersion} />
+        <Row icon="info" tint={theme.dim} label={ui("Version")} value={appVersion} />
         <Separator />
-        <Row icon="file-text" tint={theme.dim} label="Open-source licenses" onPress={() => router.push("/licenses")} />
+        <Row icon="file-text" tint={theme.dim} label={ui("Open-source licenses")} onPress={() => router.push("/licenses")} />
       </View>
       <PrivacyLinks />
     </ScrollView>
@@ -293,10 +299,12 @@ export function Settings() {
 }
 
 function SectionHeading({ title }: { title: string }) {
-  return <Text accessibilityRole="header" style={styles.section}>{title}</Text>;
+  useI18n();
+  return <UiText accessibilityRole="header" style={styles.section}>{title}</UiText>;
 }
 
 function IconBadge({ name, tint }: { name: IconName; tint: string }) {
+  useI18n();
   return (
     <View style={styles.badge}>
       <Icon name={name} color={tint} size={15} />
@@ -305,6 +313,7 @@ function IconBadge({ name, tint }: { name: IconName; tint: string }) {
 }
 
 function Separator() {
+  useI18n();
   return <View style={styles.separator} />;
 }
 
@@ -329,6 +338,7 @@ function Row({
   checked?: boolean;
   onPress?: () => void;
 }) {
+  useI18n();
   // At accessibility sizes the value goes under the label. Side by side, the
   // value kept its full width and the flexible label was left a few points:
   // AX5 on the simulator drew "Computers" one letter per line beside "Switch
@@ -339,11 +349,11 @@ function Row({
       <View style={styles.rowLine}>
         <IconBadge name={icon} tint={tint} />
         <View style={[styles.rowText, largeText && styles.rowTextStacked]}>
-          <Text style={[styles.rowLabel, largeText && { flex: 0 }, labelColor ? { color: labelColor } : null]}>{label}</Text>
-          {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+          <UiText style={[styles.rowLabel, largeText && { flex: 0 }, labelColor ? { color: labelColor } : null]}>{label}</UiText>
+          {value ? <UiText style={styles.rowValue}>{value}</UiText> : null}
         </View>
       </View>
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {hint ? <UiText style={styles.hint}>{hint}</UiText> : null}
     </>
   );
   if (!onPress) return <View style={styles.row}>{body}</View>;

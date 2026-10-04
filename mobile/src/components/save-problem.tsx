@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
@@ -18,10 +19,10 @@ export function SaveProblem() {
   if (!saveError) return null;
   return <View style={styles.card} accessibilityLiveRegion="polite" testID="save-problem">
     <Text style={styles.title}>{saveError.message}</Text>
-    <Text style={styles.detail}>Your computers work now, but may not be here after you close Shahi.</Text>
+    <UiText style={styles.detail}>Your computers work now, but may not be here after you close Shahi.</UiText>
     <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} style={styles.retry} testID="retry-save"
       onPress={() => { setBusy(true); void retrySave().catch(() => {}).finally(() => setBusy(false)); }}>
-      <Text style={styles.action}>{busy ? "Saving…" : "Try again"}</Text>
+      <UiText style={styles.action}>{busy ? "Saving…" : "Try again"}</UiText>
     </Pressable>
   </View>;
 }

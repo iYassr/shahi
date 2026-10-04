@@ -22,5 +22,5 @@ export function useLargeText() {
  * draft and navigation state mounted. Context also reaches memoized list rows. */
 export function Text(props: ComponentProps<typeof NativeText>) {
   const scale = useContext(FontScale);
-  return <NativeText key={scale} {...props} />;
+  return <NativeText key={scale} {...props} style={[{ writingDirection: "auto", textAlign: "auto" }, props.style]} />;
 }

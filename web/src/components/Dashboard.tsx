@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { useComputerControl } from "./ComputerUpdate";
 import { agentLabel, inboxKind, inboxPanes, latestConversations, paneTitle, pinnedPanes, relativeTime, retainPins, rowPreview, rowTime, togglePin as togglePinOf, type AnsweredPrompt, type Reviewed } from "@shahi/shared";
 import { UiIcon } from "./UiIcon";
@@ -36,6 +37,7 @@ const GROUPINGS: { key: Grouping; label: string }[] = [
 const STORED = "shahi.grouping";
 
 export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed, onReviewed, available: connected = true }: Props) {
+  const { t } = useLocale();
   const backend = useComputerControl()?.handshake?.backend;
   const available = connected && (!backend || backend.state === "connected");
   const navigate = useNavigate();
@@ -83,15 +85,14 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
     return (
       <div className="empty">
         <span className="empty__mark">⟳</span>
-        Connecting to your computer…
-      </div>
+        {t("Connecting to your computer…")}</div>
     );
   }
 
   const inbox = inboxPanes(session.panes, reviewed);
   const inboxIds = new Set(inbox.map((pane) => pane.paneId));
   const allAgents = session.panes.filter((p) => p.isAgent);
-  const chips = [{ id: "all", label: "All" }, { id: "inbox", label: `Inbox ${inbox.length}` }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: "Waiting" }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: agentLabel(kind!) })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: "Shells" }] : [])];
+  const chips = [{ id: "all", label: t("All") }, { id: "inbox", label: t("Inbox {value0}", { value0: inbox.length }) }, ...(allAgents.some((p) => p.status === "blocked") ? [{ id: "waiting", label: t("Waiting") }] : []), ...[...new Set(allAgents.map((p) => p.agent).filter(Boolean))].map((kind) => ({ id: `kind:${kind}`, label: agentLabel(kind!) })), ...(session.panes.some((p) => !p.isAgent) ? [{ id: "shells", label: t("Shells") }] : [])];
   const active = chips.some((c) => c.id === filter) ? filter : "all";
   const agents = session.panes.filter((p) => (active === "shells" ? !p.isAgent : p.isAgent && (active === "all" || active === "inbox" && inboxIds.has(p.paneId) || active === "waiting" && p.status === "blocked" || active === `kind:${p.agent}`)) && [p.title, p.agent, p.workspaceLabel, p.cwd, p.paneId].join(" ").toLowerCase().includes(query.toLowerCase()));
   const blocked = active === "inbox" ? latestConversations(agents.filter(p => p.status === "blocked")) : [];
@@ -101,32 +102,32 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
     return (
       <div className="empty">
         <span className="empty__mark" aria-hidden="true"><Logo size={56} /></span>
-        <h2>No agents running.</h2>
-        <p>Start an agent in a space to follow its work and reply from here.</p>
-        <button className="empty__action" onClick={() => navigate("/spaces")}>Go to spaces</button>
+        <h2>{t("No agents running.")}</h2>
+        <p>{t("Start an agent in a space to follow its work and reply from here.")}</p>
+        <button className="empty__action" onClick={() => navigate("/spaces")}>{t("Go to spaces")}</button>
       </div>
     );
   }
 
   return (
     <div className="scroll" ref={scroller}>
-      <div className="page-intro"><h2>Your work, wherever you are</h2><p>{allAgents.filter(p => p.status === "working").length} working · {inbox.length} to review or answer</p></div>
-      <div className="agent-search"><UiIcon name="search" /><input aria-label="Search agents" placeholder="Search agents, spaces or folders" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label="Clear search" onClick={() => setQuery("")}><UiIcon name="close" size={18} /></button>}</div>
-      <div className="groupbar agent-filters" role="group" aria-label="Filter agents">{chips.map((chip) => <button className="groupbar__opt" aria-label={chip.label} title={chip.label} aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>
-        {chip.id === "inbox" ? <><UiIcon name="inbox" size={19} /><span className="agent-filter-count" aria-hidden="true">Inbox {inbox.length}</span></>
+      <div className="page-intro"><h2>{t("Your work, wherever you are")}</h2><p>{allAgents.filter(p => p.status === "working").length} {" "}{t("working ·")}{" "}{inbox.length} {" "}{t("to review or answer")}</p></div>
+      <div className="agent-search"><UiIcon name="search" /><input aria-label={t("Search agents")} placeholder={t("Search agents, spaces or folders")} value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button aria-label={t("Clear search")} onClick={() => setQuery("")}><UiIcon name="close" size={18} /></button>}</div>
+      <div className="groupbar agent-filters" role="group" aria-label={t("Filter agents")}>{chips.map((chip) => <button className="groupbar__opt" aria-label={chip.label} title={chip.label} aria-pressed={chip.id === active} key={chip.id} onClick={() => setFilter(chip.id)}>
+        {chip.id === "inbox" ? <><UiIcon name="inbox" size={19} /><span className="agent-filter-count" aria-hidden="true">{t("Inbox")}{" "}{inbox.length}</span></>
           // Words as well as the logo, selected or not: a logo alone did not
           // say what it filtered (simulator run of build 32, October 2026).
           : chip.id.startsWith("kind:") || chip.id === "shells" ? <><span aria-hidden="true"><AgentIcon kind={chip.id === "shells" ? "shell" : chip.id.slice(5)} size={20} /></span><span>{chip.label}</span></>
           : chip.label}
       </button>)}</div>
-      {active === "inbox" && <div className="inbox-heading"><h2>What needs me?</h2><p>Reply to questions, check unavailable agents, and review completed work.</p>
-        {rest.filter((pane) => inboxKind(pane) === "review").length > 1 && <button className="inbox-reviewed" onClick={() => { for (const pane of rest) if (inboxKind(pane) === "review") onReviewed(pane); }}>Mark all reviewed</button>}</div>}
-      {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? "No matching inbox items." : "You’re caught up. New requests and completed work will appear here." : "No matching agents."}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>Show all agents</button>}</div>}
+      {active === "inbox" && <div className="inbox-heading"><h2>{t("What needs me?")}</h2><p>{t("Reply to questions, check unavailable agents, and review completed work.")}</p>
+        {rest.filter((pane) => inboxKind(pane) === "review").length > 1 && <button className="inbox-reviewed" onClick={() => { for (const pane of rest) if (inboxKind(pane) === "review") onReviewed(pane); }}>{t("Mark all reviewed")}</button>}</div>}
+      {agents.length === 0 && <div className="empty"><p>{active === "inbox" ? query ? t("No matching inbox items.") : t("You’re caught up. New requests and completed work will appear here.") : t("No matching agents.")}</p>{(query || active !== "all") && <button className="empty__action" onClick={() => { setQuery(""); setFilter("all"); }}>{t("Show all agents")}</button>}</div>}
 
       <div className="agent-sidebar__requests">{blocked.map((pane) => (
         <button key={pane.paneId} className={`agent-sidebar__request${selected === pane.paneId ? " row--selected" : ""}`} aria-current={selected === pane.paneId ? "page" : undefined} onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}>
           <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-          <span className="row__title">{paneTitle(pane)}<span className="row__preview">Waiting for your reply</span><span className="row__meta">{pane.workspaceLabel} · Waiting on you</span></span>
+          <span className="row__title">{paneTitle(pane)}<span className="row__preview">{t("Waiting for your reply")}</span><span className="row__meta">{pane.workspaceLabel} {" "}{t("· Waiting on you")}</span></span>
         </button>
       ))}</div>
       {!selected && <div className="agent-full-requests">{blocked.map((pane) => (
@@ -143,8 +144,8 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
 
       {rest.length > 0 && (
         <>
-          {active !== "inbox" && <div className="groupbar" role="group" aria-label="Group agents by">
-            <span className="groupbar__label">Group by</span>
+          {active !== "inbox" && <div className="groupbar" role="group" aria-label={t("Group agents by")}>
+            <span className="groupbar__label">{t("Group by")}</span>
             {GROUPINGS.map((option) => (
               <button
                 key={option.key}
@@ -152,7 +153,7 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
                 aria-pressed={effective === option.key}
                 onClick={() => setGrouping(option.key)}
               >
-                {option.label}
+                {t(option.label)}
               </button>
             ))}
           </div>}
@@ -162,7 +163,7 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
               <div className="group">
                 <h2 className="group__label">
                   {group.icon && <AgentIcon kind={group.icon} />}
-                  {active === "inbox" ? "Updates" : group.title}
+                  {active === "inbox" ? t("Updates") : effective === "priority" ? t(`{value0} ${active === "shells" ? "shell" : "agent"}${group.panes.length === 1 ? "" : "s"}`, { value0: group.panes.length }) : group.title}
                   <span className="group__count">{group.panes.length}</span>
                 </h2>
               </div>
@@ -173,9 +174,9 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
                   onClick={() => navigate(`/pane/${encodeURIComponent(pane.paneId)}`)}
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
-                  <span className="row__title">{paneTitle(pane)}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? "Ready to review" : "Status unavailable"}</span>}<span className={`row__preview${!pane.preview && pane.isAgent && pane.status !== "blocked" && pane.status !== "working" ? " row__preview--quiet" : ""}`}>{pane.status === "blocked" ? "Waiting for your reply" : pane.status === "working" ? pane.activity?.verb ?? "Working…" : rowPreview(pane) ?? ""}</span></span>
+                  <span className="row__title">{paneTitle(pane)}{active === "inbox" && <span className="inbox-kind">{pane.status === "done" ? t("Ready to review") : t("Status unavailable")}</span>}<span className={`row__preview${!pane.preview && pane.isAgent && pane.status !== "blocked" && pane.status !== "working" ? " row__preview--quiet" : ""}`}>{pane.status === "blocked" ? t("Waiting for your reply") : pane.status === "working" ? pane.activity?.verb ?? t("Working…") : rowPreview(pane) ?? ""}</span></span>
                   <span className="row__meta">{subtitle(pane, effective)}<RowTime pane={pane} now={now} /></span>
-                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={`Mark ${paneTitle(pane)} reviewed`} onClick={() => onReviewed(pane)}>Mark reviewed</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={`${pins.has(pane.paneId) ? "Unpin" : "Pin"} ${paneTitle(pane)}`} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
+                </button>{active === "inbox" && pane.status === "done" ? <button className="inbox-reviewed" aria-label={t("Mark {value0} reviewed", { value0: paneTitle(pane) })} onClick={() => onReviewed(pane)}>{t("Mark reviewed")}</button> : <button className="pin-button" aria-pressed={pins.has(pane.paneId)} aria-label={t(pins.has(pane.paneId) ? "Unpin {value0}" : "Pin {value0}", { value0: paneTitle(pane) })} onClick={() => togglePin(pane)}>{pins.has(pane.paneId) ? "★" : "☆"}</button>}</div>
               ))}
             </section>
           ))}
@@ -191,9 +192,10 @@ export function Dashboard({ session, prompts, answered = {}, onAnswer, reviewed,
  * neither, rather than a time invented from a repaint.
  */
 function RowTime({ pane, now }: { pane: DashboardPane; now: number }) {
+  const { t, locale } = useLocale();
   const at = pane.lastMessageAt ?? pane.startedAt ?? null;
   if (at === null) return null;
-  return <> · <time className="row__time" dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()} aria-label={`last active ${relativeTime(at, now)}`}>{rowTime(at, now)}</time></>;
+  return <> · <time className="row__time" dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString(locale)} aria-label={t("last active {value0}", { value0: relativeTime(at, now, locale) })}>{rowTime(at, now, locale)}</time></>;
 }
 
 /**
@@ -274,11 +276,12 @@ function BlockedCard({
   onOpen: () => void;
   onAnswer: (optionIndex: number) => Promise<void>;
 }) {
+  const { t } = useLocale();
   return (
     <article className="blocked">
       <button className="blocked__head" onClick={onOpen}>
         <span className="blocked__badge">
-          <span aria-hidden="true">●</span> {answered ? "Answer sent" : "Waiting on you"}
+          <span aria-hidden="true">●</span> {answered ? t("Answer sent") : t("Waiting on you")}
         </span>
         <h2 className="blocked__where">{paneTitle(pane)}</h2>
         {/* Conversation title first, matching the native waiting card. */}
@@ -299,21 +302,20 @@ function BlockedCard({
         // on; this card used to call that "needs a typed reply".
         <p className="blocked__question" role="status">
           {answered.outcome === "sent"
-            ? "Answer sent — waiting for the agent…"
-            : "That question had already closed, so nothing was sent. Waiting for the agent’s next step…"}
+            ? t("Answer sent — waiting for the agent…")
+            : t("That question had already closed, so nothing was sent. Waiting for the agent’s next step…")}
         </p>
       ) : (
         // The agent is blocked but the screen has no list we can act on — a
         // free-text prompt, or something the parser does not recognise. Say so
         // and hand off to the full view rather than guessing.
         <p className="blocked__question">
-          This one needs a typed reply.{" "}
+          {t("This one needs a typed reply.")}{" "}
           <button
             onClick={onOpen}
             style={{ color: "var(--accent)", textDecoration: "underline" }}
           >
-            Open the terminal
-          </button>
+            {t("Open the terminal")}</button>
         </p>
       )}
     </article>

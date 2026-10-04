@@ -1,3 +1,6 @@
+
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
@@ -213,6 +216,7 @@ interface Props {
 }
 
 export function Pane({ paneId, initialView = "reader", focusReply = false }: Props) {
+  const { t: ui } = useI18n();
   const { api, control, watch, onPaneFrame, session, terminalWidth, unauthorized, link, error: connectionError, computers = [], activeComputerId } = useSession();
   const computerName = computers.find(c => c.id === activeComputerId)?.name ?? session?.serverName;
   const cannotWrite = link !== "live" || !!connectionError || !!control?.handshake?.backend && control.handshake.backend.state !== "connected";
@@ -1088,7 +1092,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       accessibilityState={{ disabled: cannotWrite || sending }}
       onPress={() => setAttaching(true)}
       accessibilityRole="button"
-      accessibilityLabel="Attach a file"
+      accessibilityLabel={ui("Attach a file")}
     >
       <Text style={styles.attachText}>+</Text>
     </Pressable>
@@ -1104,7 +1108,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       accessibilityState={{ disabled: sending || cannotWrite || !draft.trim(), busy: sending }}
       onPress={() => void submit()}
     >
-      <Text style={styles.sendText}>{sending ? "Sending…" : cannotWrite ? "Offline" : "Send"}</Text>
+      <UiText style={styles.sendText}>{sending ? "Sending…" : cannotWrite ? "Offline" : "Send"}</UiText>
     </Pressable>
   );
 
@@ -1112,10 +1116,10 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     return (
       <View style={[styles.screen, styles.centered]}>
         <Stack.Screen options={{ headerTitle: () => <Text style={styles.title} numberOfLines={1}>{pane?.title ?? paneId}</Text> }} />
-        <Text style={styles.goneTitle} accessibilityRole="header">This pane is gone</Text>
-        <Text style={styles.dim}>It was closed on the computer, or it no longer exists.</Text>
+        <UiText style={styles.goneTitle} accessibilityRole="header">This pane is gone</UiText>
+        <UiText style={styles.dim}>It was closed on the computer, or it no longer exists.</UiText>
         <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}>
-          <Text style={styles.ghostText}>Back to agents</Text>
+          <UiText style={styles.ghostText}>Back to agents</UiText>
         </Pressable>
       </View>
     );
@@ -1158,10 +1162,10 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         }}
       />
 
-      <View style={styles.toggle} accessibilityLabel="Conversation view">
+      <View style={styles.toggle} accessibilityLabel={ui("Conversation view")}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Read"
+          accessibilityLabel={ui("Read")}
           accessibilityShowsLargeContentViewer
           accessibilityLargeContentTitle="Read"
           accessibilityState={{ selected: view === "reader" }}
@@ -1169,11 +1173,11 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           style={[styles.toggleItem, view === "reader" && styles.toggleOn]}
           onPress={() => setView("reader")}
         >
-          <Text style={[styles.toggleText, view === "reader" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Read</Text>
+          <UiText style={[styles.toggleText, view === "reader" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Read</UiText>
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Screen"
+          accessibilityLabel={ui("Screen")}
           accessibilityShowsLargeContentViewer
           accessibilityLargeContentTitle="Screen"
           accessibilityState={{ selected: view === "screen" }}
@@ -1181,12 +1185,12 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           style={[styles.toggleItem, view === "screen" && styles.toggleOn]}
           onPress={() => setView("screen")}
         >
-          <Text style={[styles.toggleText, view === "screen" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Screen</Text>
+          <UiText style={[styles.toggleText, view === "screen" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Screen</UiText>
         </Pressable>
         {canChange && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Changes"
+            accessibilityLabel={ui("Changes")}
             accessibilityShowsLargeContentViewer
             accessibilityLargeContentTitle="Changes"
             accessibilityState={{ selected: view === "changes" }}
@@ -1194,7 +1198,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             style={[styles.toggleItem, view === "changes" && styles.toggleOn]}
             onPress={() => setView("changes")}
           >
-            <Text style={[styles.toggleText, view === "changes" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Changes</Text>
+            <UiText style={[styles.toggleText, view === "changes" && styles.toggleTextOn]} maxFontSizeMultiplier={TOGGLE_SCALE}>Changes</UiText>
           </Pressable>
         )}
       </View>
@@ -1237,8 +1241,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             reason (pre-release bug hunt). The area scrolls, so a long one
             still leaves the composer on screen. */}
         {error && (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error}`} style={styles.banner} onPress={() => setError(null)}>
-            <Text style={styles.bannerText}>{error}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Dismiss error: {value1}", {value1: error})} style={styles.banner} onPress={() => setError(null)}>
+            <UiText style={styles.bannerText}>{error}</UiText>
             <Text style={styles.bannerClose}>✕</Text>
           </Pressable>
         )}
@@ -1267,39 +1271,39 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       {loading && view === "reader" ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.peach} />
-          <Text style={styles.dim}>Reading the conversation…</Text>
+          <UiText style={styles.dim}>Reading the conversation…</UiText>
         </View>
       ) : !readable && view === "reader" ? (
         <View style={styles.centered}>
           {logError ? (
             <>
-              <Text style={styles.dim}>The conversation could not be loaded.</Text>
-              <Text selectable style={styles.dim} accessibilityRole="alert">{logError.message}</Text>
+              <UiText style={styles.dim}>The conversation could not be loaded.</UiText>
+              <UiText selectable style={styles.dim} accessibilityRole="alert">{logError.message}</UiText>
               <Pressable accessibilityRole="button" style={styles.ghost} onPress={retryLog}>
-                <Text style={styles.ghostText}>Try again</Text>
+                <UiText style={styles.ghostText}>Try again</UiText>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={styles.dim}>
+              <UiText style={styles.dim}>
                 Nothing to read yet.
-              </Text>
-              <Text selectable style={styles.dim}>
+              </UiText>
+              <UiText selectable style={styles.dim}>
                 {readerNote ?? "A readable conversation is not available yet. You can follow this agent in Screen."}
-              </Text>
+              </UiText>
               {unidentified && canChoose && (
                 <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setChoosing(true)}>
-                  <Text style={styles.ghostText}>Choose the conversation</Text>
+                  <UiText style={styles.ghostText}>Choose the conversation</UiText>
                 </Pressable>
               )}
               {/* An older computer says only 404, and does not set up herdr's integration itself. */}
-              {!readerNote && pane?.agent === "claude" && <Text selectable style={styles.dim}>
+              {!readerNote && pane?.agent === "claude" && <UiText selectable style={styles.dim}>
                 If Claude already has messages, updating Shahi on the computer lets Reader find its conversations.
-              </Text>}
+              </UiText>}
             </>
           )}
           <Pressable accessibilityRole="button" style={styles.ghost} onPress={() => setView("screen")}>
-            <Text style={styles.ghostText}>Show the screen instead</Text>
+            <UiText style={styles.ghostText}>Show the screen instead</UiText>
           </Pressable>
         </View>
       ) : (
@@ -1308,17 +1312,17 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             outage is already said by the connection banner above, once. */}
         {view === "reader" && chosen && canChoose && (
           <View style={styles.logNotice}>
-            <Text style={styles.logNoticeText}>You chose this conversation.</Text>
+            <UiText style={styles.logNoticeText}>You chose this conversation.</UiText>
             <Pressable accessibilityRole="button" style={styles.logRetry} onPress={() => setChoosing(true)}>
-              <Text style={styles.ghostText}>Choose another</Text>
+              <UiText style={styles.ghostText}>Choose another</UiText>
             </Pressable>
           </View>
         )}
         {view === "reader" && logError && !(logError.unreachable && link !== "live") && (
           <View style={styles.logNotice}>
-            <Text style={styles.logNoticeText} accessibilityRole="alert">{logError.message}</Text>
+            <UiText style={styles.logNoticeText} accessibilityRole="alert">{logError.message}</UiText>
             <Pressable accessibilityRole="button" style={styles.logRetry} onPress={retryLog}>
-              <Text style={styles.ghostText}>Try again</Text>
+              <UiText style={styles.ghostText}>Try again</UiText>
             </Pressable>
           </View>
         )}
@@ -1333,14 +1337,14 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
           data={readerData}
-          ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>Ready when you are. Tell {agentLabel(pane?.agent ?? "the agent")} what to do.</Text></View>}
+          ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>{ui("Ready when you are. Tell {agent} what to do.", { agent: agentLabel(pane?.agent ?? "the agent") })}</Text></View>}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
           ListHeaderComponent={
             hasOlder ? (
               <Pressable accessibilityRole="button" style={styles.ghost} disabled={loadingOlder} onPress={() => void loadOlder()}>
-                <Text style={styles.ghostText}>{loadingOlder ? "Loading earlier messages…" : olderError ? `${olderError} — Retry` : "Load earlier messages"}</Text>
+                <Text style={styles.ghostText}>{loadingOlder ? ui("Loading earlier messages…") : olderError ? ui("{value1} — Retry", {value1: olderError}) : ui("Load earlier messages")}</Text>
               </Pressable>
             ) : null
           }
@@ -1472,7 +1476,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           }}
           ListFooterComponent={<>
             {taskList && <TasksCard list={taskList} />}
-            {sending ? <Text style={styles.dim}>Sending…</Text> : prompt || readerData.at(-1)?.activity ? null : activity ? (
+            {sending ? <UiText style={styles.dim}>Sending…</UiText> : prompt || readerData.at(-1)?.activity ? null : activity ? (
               <Working activity={activity} />
             ) : awaiting ? (
               <Working activity={AWAITING_ACTIVITY} />
@@ -1485,12 +1489,12 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             <Pressable
               accessibilityRole="button"
               // The count is the pill's news: a fixed "Go to latest" hid it from VoiceOver.
-              accessibilityLabel={unseen > 0 ? `${unseen} new ${unseen === 1 ? "message" : "messages"}. Go to latest` : "Go to latest"}
+              accessibilityLabel={unseen > 0 ? ui(unseen === 1 ? "{count} new message. Go to latest" : "{count} new messages. Go to latest", { count: unseen }) : ui("Go to latest")}
               testID="go-to-latest"
               style={styles.jump}
               onPress={jumpToLatest}
             >
-              <Text style={styles.jumpText}>{unseen > 0 ? `${unseen} new ↓` : "Latest ↓"}</Text>
+              <Text style={styles.jumpText}>{unseen > 0 ? ui("{value1} new ↓", {value1: unseen}) : ui("Latest ↓")}</Text>
             </Pressable>
           </View>
         )}
@@ -1524,13 +1528,13 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           <View key={path} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Icon name="file-text" size={16} color={theme.peach} />
             <Text style={{ flex: 1, color: theme.fg, fontSize: 14 }} numberOfLines={1} ellipsizeMode="middle" accessibilityLabel={path}>{path.split("/").pop()}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Remove attachment ${path.split("/").pop()}`} disabled={sending} style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }} onPress={() => {
+            <Pressable accessibilityRole="button" accessibilityLabel={ui("Remove attachment {value1}", {value1: path.split("/").pop() ?? ""})} disabled={sending} style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }} onPress={() => {
               savedDraft.attachments = savedDraft.attachments?.filter(item => item !== path);
               setDraft(text => text.replace(`${path}\n`, "").replace(path, ""));
             }}><Text style={{ color: theme.dim }}>×</Text></Pressable>
           </View>
         ))}
-        {!sending && savedDraft.pending && <Text accessibilityRole="alert" style={styles.dim} testID="unconfirmed-send">Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.</Text>}
+        {!sending && savedDraft.pending && <UiText accessibilityRole="alert" style={styles.dim} testID="unconfirmed-send">Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.</UiText>}
         {/* Terminal vocabulary: always there on the screen view, but in the
             reader only while the keyboard is up and you are actually
             answering — the rest of the time it was a row of noise. */}
@@ -1548,7 +1552,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
               accessibilityState={{ disabled: cannotWrite || sending }}
               style={[styles.key, label === "Ctrl+C" && styles.interruptKey]}
               accessibilityRole="button"
-              accessibilityLabel={spoken}
+              accessibilityLabel={ui(spoken)}
               // Reported, not swallowed: this is how an unsupported key name
               // stayed invisible.
               onPress={() => {
@@ -1589,7 +1593,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             value={draft}
             editable={!sending}
             onChangeText={setDraft}
-            placeholder={view === "screen" ? "Send text to terminal…" : pane && !pane.isAgent ? "Run a command…" : "Reply to this agent…"}
+            placeholder={view === "screen" ? ui("Send text to terminal…") : pane && !pane.isAgent ? ui("Run a command…") : ui("Reply to this agent…")}
             placeholderTextColor={theme.dim}
             multiline
             // A shell or the raw screen gets the keys as typed. iOS's defaults
@@ -1641,9 +1645,10 @@ function Prompt({
   disabled?: boolean;
   compact?: boolean;
 }) {
+  const { t: ui } = useI18n();
   const [armed, setArmed] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
-  if (compact && !expanded) return <Pressable accessibilityRole="button" accessibilityState={{ expanded: false }} style={styles.choice} onPress={() => setExpanded(true)}><Text style={styles.question}>Waiting: {prompt.question} ▾</Text></Pressable>;
+  if (compact && !expanded) return <Pressable accessibilityRole="button" accessibilityState={{ expanded: false }} style={styles.choice} onPress={() => setExpanded(true)}><Text style={styles.question}>{ui("Waiting:" + " ")}{prompt.question} ▾</Text></Pressable>;
   const labels = shownLabels(prompt.options);
   return (
     // In the area above the conversation, which scrolls to it (see `Pane`).
@@ -1670,7 +1675,7 @@ function Prompt({
               void onAnswer(option).catch(() => setArmed(null));
             }}
           >
-            <Text style={styles.cursor}>{current ? "❯" : " "}</Text>
+            <UiText style={styles.cursor}>{current ? "❯" : " "}</UiText>
             {/* The digit is what the terminal takes; a cursor menu has none. */}
             {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
             <View style={styles.choiceBody}>
@@ -1699,6 +1704,7 @@ const Message = memo(function Message({
   agentColor: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
+  const { locale } = useI18n();
   if (message.activity) return <ActivityGroup activity={message.activity} working={working} paneId={paneId} onOpenFile={onOpenFile} />;
   const mine = message.role === "you";
   const system = message.role === "system";
@@ -1707,10 +1713,10 @@ const Message = memo(function Message({
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         {message.showHeader && <>
-          <Text style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
+          <UiText style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
             {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
-          </Text>
-          {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{messageTime(message.at)}</Text>}
+          </UiText>
+          {!!message.at && <Text style={[styles.who, { color: theme.dim }]}>{messageTime(message.at, Date.now(), locale)}</Text>}
         </>}
         </View>
         {message.blocks.some((block) => block.kind === "text") && (
@@ -1728,16 +1734,17 @@ function ActivityGroup({ activity, working, paneId, onOpenFile }: {
   activity: ReaderActivity; working: boolean; paneId: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
+  const { t: ui, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const wasWorking = useRef(working);
   useEffect(() => {
     if (wasWorking.current && !working) setOpen(false);
     wasWorking.current = working;
   }, [working]);
-  const label = readerActivityLabel(activity, working);
+  const label = readerActivityLabel(activity, working, locale);
   return <View style={styles.activityGroup}>
     {activity.files.length > 0 && <View style={styles.activityFiles}>
-      {activity.files.map(file => <Pressable key={file.path} accessibilityRole="button" accessibilityLabel={`Open file ${file.name}`} style={styles.activityFile} onPress={() => onOpenFile(file)}>
+      {activity.files.map(file => <Pressable key={file.path} accessibilityRole="button" accessibilityLabel={ui("Open file {value1}", {value1: file.name})} style={styles.activityFile} onPress={() => onOpenFile(file)}>
         <Text style={styles.toolFileName}>{file.name}</Text>
       </Pressable>)}
     </View>}
@@ -1745,11 +1752,11 @@ function ActivityGroup({ activity, working, paneId, onOpenFile }: {
     <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} style={styles.activityHead} onPress={() => setOpen(value => !value)}>
       {working && <ActivityIndicator size="small" color={theme.dim} />}
       <Text style={styles.activityLabel}>{label}</Text>
-      <Text style={styles.activityLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</Text>
+      <UiText style={styles.activityLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</UiText>
     </Pressable>
     {open && <View style={styles.activityDetails}>
       {activity.steps.map(step => <View key={step.id}>
-        {step.showTime && <Text style={styles.activityTime}>{messageTime(step.at)}</Text>}
+        {step.showTime && <Text style={styles.activityTime}>{messageTime(step.at, Date.now(), locale)}</Text>}
         <Block block={step.block} paneId={paneId} onOpenFile={onOpenFile} attachments={false} />
       </View>)}
     </View>}
@@ -1767,6 +1774,7 @@ export function Block({
   paneId: string;
   onOpenFile: (file: { path: string; name: string }) => void;
 }) {
+  const { t: ui } = useI18n();
   const [open, setOpen] = useState(false);
 
   if (block.kind === "text") return <Markdown text={block.text} onOpenFile={onOpenFile} />;
@@ -1779,8 +1787,8 @@ export function Block({
   if (block.kind === "thinking") {
     return (
       <View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Thinking" accessibilityState={{ expanded: open }} style={styles.thinkingHead} onPress={() => setOpen((o) => !o)}>
-          <Text style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Thinking")} accessibilityState={{ expanded: open }} style={styles.thinkingHead} onPress={() => setOpen((o) => !o)}>
+          <UiText style={styles.thinkingLabel}>{open ? "▾ Thinking" : "▸ Thinking"}</UiText>
         </Pressable>
         {open && (
           <Text style={styles.thinking} selectable>
@@ -1805,10 +1813,10 @@ export function Block({
         style={styles.toolHead}
         onPress={() => setOpen((o) => !o)}
       >
-        <Text style={styles.toolCaret}>{open ? "▾" : "▸"}</Text>
+        <UiText style={styles.toolCaret}>{open ? "▾" : "▸"}</UiText>
         <Text style={styles.toolName}>{block.name}</Text>
         <Text style={styles.toolSummary} numberOfLines={1}>{block.summary}</Text>
-        {block.result?.isError && <Text style={styles.toolErr}>failed</Text>}
+        {block.result?.isError && <UiText style={styles.toolErr}>failed</UiText>}
       </Pressable>
       {/*
         * A question the agent asked, shown in full and never collapsed.
@@ -1830,7 +1838,7 @@ export function Block({
                 {option.label}
               </Text>
               {option.description ? (
-                <Text style={styles.askedWhy} selectable>{option.description}</Text>
+                <UiText style={styles.askedWhy} selectable>{option.description}</UiText>
               ) : null}
             </View>
           ))}
@@ -1843,7 +1851,7 @@ export function Block({
       {attachments && block.file && (
         <Pressable accessibilityRole="button" style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
           <Text style={styles.toolFileName}>{block.file.name}</Text>
-          <Text style={styles.toolFileGo}>open</Text>
+          <UiText style={styles.toolFileGo}>open</UiText>
         </Pressable>
       )}
 
@@ -1856,7 +1864,7 @@ export function Block({
                   {block.result.text}
                   {/* The server caps tool output. Without saying so the cut
                       reads as the command's own last line. */}
-                  {block.result.truncated && "\n… truncated"}
+                  {block.result.truncated && ui("\n… truncated")}
                 </Text>
               </ScrollView>
             </CopyOnHold>
@@ -1867,13 +1875,13 @@ export function Block({
           {/* A call that returned nothing is a fact, not an absence: an empty
               expanded tool is indistinguishable from one still working. */}
           {block.result.text.trim().length === 0 && block.result.images.length === 0 && (
-            <Text style={styles.toolAside}>(no output)</Text>
+            <UiText style={styles.toolAside}>(no output)</UiText>
           )}
         </>
       )}
       {/* No result yet. The web reader has always said this; the native one
           rendered an empty expansion instead. */}
-      {open && !block.result && <Text style={styles.toolAside}>{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</Text>}
+      {open && !block.result && <UiText style={styles.toolAside}>{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</UiText>}
     </View>
   );
 }
@@ -1887,26 +1895,27 @@ const SUBAGENT_STATE = { running: "Running…", done: "Done", failed: "Failed", 
  * report is the notification `readerRows` matched to it by call id.
  */
 function SubagentBlock({ call }: { call: NonNullable<Extract<LogBlock, { kind: "tool" }>["subagent"]> }) {
+  const { t: ui } = useI18n();
   const [open, setOpen] = useState(false);
   const state = call.state ?? "running";
   const color = state === "done" ? theme.mint : state === "failed" ? theme.rose : state === "running" ? theme.working : theme.dim;
-  const detail = [call.type, call.background ? "background" : null].filter(Boolean).join(" · ");
+  const detail = [call.type, call.background ? ui("background") : null].filter(Boolean).join(" · ");
   return (
     <View style={styles.subagent} testID="subagent">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={["Subagent", call.description, call.type, SUBAGENT_STATE[state]].filter(Boolean).join(", ")}
+        accessibilityLabel={[ui("Subagent"), call.description, call.type, ui(SUBAGENT_STATE[state])].filter(Boolean).join(", ")}
         accessibilityState={call.report ? { expanded: open } : undefined}
         disabled={!call.report}
         style={styles.subagentHead}
         onPress={() => setOpen(value => !value)}
       >
         <View style={styles.subagentTitle}>
-          <Text style={styles.subagentName} numberOfLines={2}>Subagent · {call.description}</Text>
+          <Text style={styles.subagentName} numberOfLines={2}>{ui("Subagent ·" + " ")}{call.description}</Text>
           {!!detail && <Text style={styles.subagentDetail} numberOfLines={1}>{detail}</Text>}
         </View>
         {state === "running" && <ActivityIndicator size="small" color={theme.working} />}
-        <Text style={[styles.subagentState, { color }]}>{SUBAGENT_STATE[state]}</Text>
+        <UiText style={[styles.subagentState, { color }]}>{SUBAGENT_STATE[state]}</UiText>
       </Pressable>
       {!!call.report && (open
         ? <CopyOnHold text={call.report}><Text style={styles.subagentReport} selectable>{call.report}</Text></CopyOnHold>
@@ -1923,17 +1932,18 @@ const TASK_SPOKEN = { completed: "done", in_progress: "in progress", pending: "o
  * one line of counts, the task under way while closed, and every task open.
  */
 function TasksCard({ list }: { list: ReaderTaskList }) {
+  const { t: ui, locale } = useI18n();
   const [open, setOpen] = useState(false);
-  const label = readerTasksLabel(list);
+  const label = readerTasksLabel(list, locale);
   const current = list.tasks.filter(task => task.status === "in_progress");
   return (
     <View style={styles.tasks} testID="tasks-card">
       <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} style={styles.tasksHead} onPress={() => setOpen(value => !value)}>
         <Text style={styles.tasksLabel}>{label}</Text>
-        <Text style={styles.tasksLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</Text>
+        <UiText style={styles.tasksLabel} accessibilityElementsHidden>{open ? "▾" : "▸"}</UiText>
       </Pressable>
       {(open ? list.tasks : current).map(task => (
-        <View key={task.id} style={styles.task} accessible accessibilityLabel={`${task.subject}, ${TASK_SPOKEN[task.status]}`}>
+        <View key={task.id} style={styles.task} accessible accessibilityLabel={`${task.subject}, ${ui(TASK_SPOKEN[task.status])}`}>
           <Text style={[styles.taskMark, task.status === "completed" && { color: theme.mint }, task.status === "in_progress" && { color: theme.working }]}>{TASK_MARK[task.status]}</Text>
           <Text style={[styles.taskText, task.status === "completed" && styles.taskDone]}>
             {!open && task.activeForm ? task.activeForm : task.subject}
@@ -1960,6 +1970,7 @@ function FileView({
   file: { path: string; name: string };
   onClose: () => void;
 }) {
+  const { t: ui } = useI18n();
   const { api, transport: connection } = useSession();
   const [body, setBody] = useState<{ text: string } | { imageUrl: string } | { pdfBase64: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1988,23 +1999,23 @@ function FileView({
           <Text style={styles.viewerName} numberOfLines={1}>
             {file.name}
           </Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Save or share file" disabled={saving} onPress={async () => {
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Save or share file")} disabled={saving} onPress={async () => {
             setSaving(true); setSaveError(null);
             try { await shareFile(body && "pdfBase64" in body ? body.pdfBase64 : await api.downloadFile(file.path), file.name); }
             catch (e) { setSaveError(e instanceof Error ? e.message : "The file could not be saved."); }
             finally { setSaving(false); }
-          }} hitSlop={12}><Text style={styles.fileClose}>{saving ? "Saving…" : "Save / Share"}</Text></Pressable>
+          }} hitSlop={12}><UiText style={styles.fileClose}>{saving ? "Saving…" : "Save / Share"}</UiText></Pressable>
           <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
-            <Text style={styles.fileClose}>Done</Text>
+            <UiText style={styles.fileClose}>Done</UiText>
           </Pressable>
         </View>
         <Text style={styles.filePath} numberOfLines={1} ellipsizeMode="middle">
           {file.path}
         </Text>
 
-        {saveError && <Text style={styles.err}>{saveError}</Text>}
+        {saveError && <UiText style={styles.err}>{saveError}</UiText>}
         {error ? (
-          <Text style={styles.err}>{error}</Text>
+          <UiText style={styles.err}>{error}</UiText>
         ) : !body ? (
           <ActivityIndicator color={theme.dim} style={styles.fileWait} />
         ) : "pdfBase64" in body ? (
@@ -2037,6 +2048,7 @@ function FileView({
  * `api.transcriptImage`. A failure says so in the box it would have filled.
  */
 function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
+  const { t: ui } = useI18n();
   const { api } = useSession();
   const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -2067,7 +2079,7 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
   if (!source) {
     return (
       <View style={[styles.image, styles.imagePending]}>
-        {failed ? <Text style={styles.toolAside}>{failed}</Text> : <ActivityIndicator color={theme.dim} />}
+        {failed ? <UiText style={styles.toolAside}>{failed}</UiText> : <ActivityIndicator color={theme.dim} />}
       </View>
     );
   }
@@ -2078,7 +2090,7 @@ function TranscriptImage({ paneId, imageRef }: { paneId: string; imageRef: strin
       <Pressable
         testID="transcript-image-button"
         accessibilityRole="imagebutton"
-        accessibilityLabel="Image from the conversation. Opens full screen."
+        accessibilityLabel={ui("Image from the conversation. Opens full screen.")}
         onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}
         onPress={() => setViewing(true)}
       >
@@ -2129,6 +2141,7 @@ function Screen({
   columns: number;
   onColumns: (columns: number) => void;
 }) {
+  const { t: ui } = useI18n();
   const lines = useMemo(() => (ansi ? ansiLines(ansi) : null), [ansi]);
   const width = useWindowDimensions().width;
   const { terminalPlace } = memoryOf(useSession().api);
@@ -2229,7 +2242,7 @@ function Screen({
             accessibilityLargeContentTitle={size === WIDEST ? "fit" : `${size}c`}
           >
             <Text style={[styles.widthText, size === columns && styles.widthTextOn]} maxFontSizeMultiplier={1.2}>
-              {size === WIDEST ? "fit" : `${size}c`}
+              {size === WIDEST ? ui("fit") : `${size}c`}
             </Text>
           </Pressable>
         ))}
@@ -2256,6 +2269,7 @@ const SCREEN_COLOURS = { fg: theme.fg, bg: theme.void };
 
 /** One row of the screen. `line` keeps its identity while the row is unchanged, so memo skips it. */
 const ScreenLine = memo(function ScreenLine({ line, last }: { line: AnsiLine; last: boolean }) {
+  useI18n();
   return (
     <>
       {line.map((span, i) => {
@@ -2272,6 +2286,7 @@ const AWAITING_ACTIVITY: Activity = { verb: "Working", elapsed: "", detail: null
 
 /** Stands in for the message still being written. */
 function Working({ activity }: { activity: Activity }) {
+  useI18n();
   return (
     <View style={styles.working}>
       <Text style={styles.workingSpin}>✳</Text>
@@ -2306,6 +2321,7 @@ export function FilePicker({
   onClose: () => void;
   onPick: (path: string) => void;
 }) {
+  const { t: ui } = useI18n();
   const { api } = useSession();
   const [path, setPath] = useState(start ?? "~");
   const [entries, setEntries] = useState<
@@ -2417,46 +2433,46 @@ export function FilePicker({
   return (
     <View style={styles.sheet}>
       <View style={styles.sheetHead}>
-        <Text style={styles.sheetTitle}>Attach a file</Text>
+        <UiText style={styles.sheetTitle}>Attach a file</UiText>
         <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
-          <Text style={styles.sheetClose}>Done</Text>
+          <UiText style={styles.sheetClose}>Done</UiText>
         </Pressable>
       </View>
 
-      <Text accessibilityRole="header" style={styles.sheetSection}>From this phone</Text>
+      <UiText accessibilityRole="header" style={styles.sheetSection}>From this phone</UiText>
       <View style={styles.fromPhone}>
         <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={choosing} onPress={() => void pickFromPhone("photos")}>
-          <Text style={styles.phoneButtonText}>Photo</Text>
+          <UiText style={styles.phoneButtonText}>Photo</UiText>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.phoneButton} disabled={choosing} onPress={() => void pickFromPhone("files")}>
-          <Text style={styles.phoneButtonText}>File on phone</Text>
+          <UiText style={styles.phoneButtonText}>File on phone</UiText>
         </Pressable>
       </View>
-      <Text style={styles.sheetHint}>A copy is uploaded to the computer for the agent to read.</Text>
+      <UiText style={styles.sheetHint}>A copy is uploaded to the computer for the agent to read.</UiText>
       {uploading && <>
-        <Text style={styles.sheetNote}>{uploadProgress === null ? "Uploading…" : `Uploading ${uploadProgress}%`}</Text>
-        <Pressable accessibilityRole="button" onPress={() => uploadAbort.current?.abort()}><Text style={styles.phoneButtonText}>Cancel upload</Text></Pressable>
+        <Text style={styles.sheetNote}>{uploadProgress === null ? ui("Uploading…") : ui("Uploading {value1}%", {value1: uploadProgress})}</Text>
+        <Pressable accessibilityRole="button" onPress={() => uploadAbort.current?.abort()}><UiText style={styles.phoneButtonText}>Cancel upload</UiText></Pressable>
       </>}
-      {error && <Text style={styles.uploadErr}>{error}</Text>}
+      {error && <UiText style={styles.uploadErr}>{error}</UiText>}
 
-      <Text accessibilityRole="header" style={styles.sheetSection}>From the computer</Text>
+      <UiText accessibilityRole="header" style={styles.sheetSection}>From the computer</UiText>
       <View style={styles.sheetPlace}>
         <Text style={[styles.sheetPath, { flex: 1 }]} numberOfLines={1} ellipsizeMode="head">{homePath(path)}</Text>
         {path !== "~" && (
-          <Pressable accessibilityRole="button" accessibilityLabel="Open the home folder" hitSlop={8} style={styles.sheetJump} onPress={() => setPath("~")}>
-            <Text style={styles.phoneButtonText}>Home</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Open the home folder")} hitSlop={8} style={styles.sheetJump} onPress={() => setPath("~")}>
+            <UiText style={styles.phoneButtonText}>Home</UiText>
           </Pressable>
         )}
         {start && path !== start && (
-          <Pressable accessibilityRole="button" accessibilityLabel="Open the agent's folder" hitSlop={8} style={styles.sheetJump} onPress={() => setPath(start)}>
-            <Text style={styles.phoneButtonText}>Agent's folder</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Open the agent's folder")} hitSlop={8} style={styles.sheetJump} onPress={() => setPath(start)}>
+            <UiText style={styles.phoneButtonText}>Agent's folder</UiText>
           </Pressable>
         )}
       </View>
       {directoryError && <View>
-        <Text accessibilityRole="alert" style={styles.uploadErr}>{directoryError}</Text>
+        <UiText accessibilityRole="alert" style={styles.uploadErr}>{directoryError}</UiText>
         <Pressable accessibilityRole="button" style={styles.phoneButton} onPress={() => setDirectoryAttempt(n => n + 1)}>
-          <Text style={styles.phoneButtonText}>Try again</Text>
+          <UiText style={styles.phoneButtonText}>Try again</UiText>
         </Pressable>
       </View>}
       <FlatList
@@ -2470,16 +2486,16 @@ export function FilePicker({
           // folder rather than the way back.
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={"up" in item ? `Up to ${item.display}` : item.isDirectory ? `Folder ${item.name}` : `Attach ${item.name}`}
+            accessibilityLabel={"up" in item ? ui("Up to {value1}", {value1: item.display}) : item.isDirectory ? ui("Folder {value1}", {value1: item.name}) : ui("Attach {value1}", {value1: item.name})}
             style={styles.fileRow}
             onPress={() => (item.isDirectory ? setPath(item.display) : onPick(item.path))}
           >
             <Icon name={"up" in item ? "chevron-up" : item.isDirectory ? "folder" : "file-text"} size={18} color={theme.dim} />
-            <Text style={styles.fileName} numberOfLines={1}>{"up" in item ? "Up" : item.name}</Text>
+            <Text style={styles.fileName} numberOfLines={1}>{"up" in item ? ui("Up") : item.name}</Text>
           </Pressable>
         )}
       />
-      <Text style={styles.sheetNote}>Tap a file to attach its path; the agent reads it on the computer.</Text>
+      <UiText style={styles.sheetNote}>Tap a file to attach its path; the agent reads it on the computer.</UiText>
     </View>
   );
 }
@@ -2552,9 +2568,9 @@ const styles = StyleSheet.create({
   toggleTextOn: { color: theme.fg, fontWeight: "700" },
 
   screenWrap: { flex: 1 },
-  terminal: { flex: 1, minHeight: 0 },
+  terminal: { flex: 1, minHeight: 0, direction: "ltr" },
   probe: { position: "absolute", opacity: 0, left: 0, top: 0 },
-  screenText: { color: theme.fg, fontFamily: theme.mono, padding: 12 },
+  screenText: { color: theme.fg, fontFamily: theme.mono, padding: 12, writingDirection: "ltr", textAlign: "left" },
   widths: {
     flexDirection: "row",
     gap: 8,
@@ -2629,7 +2645,7 @@ const styles = StyleSheet.create({
   filePath: { color: theme.dim, fontFamily: theme.mono, fontSize: 11, paddingHorizontal: 16, paddingBottom: 12 },
   fileWait: { marginTop: 32 },
   fileBody: { flex: 1, borderTopWidth: 1, borderTopColor: theme.line },
-  fileText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, padding: 16 },
+  fileText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, padding: 16, writingDirection: "ltr", textAlign: "left" },
 
   tool: { marginBottom: 6 },
   subagent: { borderWidth: 1, borderColor: theme.line, borderRadius: 10, borderCurve: "continuous", paddingHorizontal: 12, paddingBottom: 8, marginVertical: 6 },

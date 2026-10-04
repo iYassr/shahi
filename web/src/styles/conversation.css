@@ -42,13 +42,13 @@
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  text-align: left;
+  text-align: start;
   color: var(--text);
 }
 .choices__item:disabled { opacity: 0.6; }
 .choices__title { font-size: 14px; overflow-wrap: anywhere; }
 .choices__likely {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   padding: 1px 6px;
   border: 1px solid var(--line-bright);
   border-radius: 999px;
@@ -114,8 +114,8 @@
   margin: 4px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  padding-left: 10px;
-  border-left: 1px solid var(--line-bright);
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--line-bright);
 }
 
 /* Tool calls dominate a real transcript; collapsed, they stop drowning it. */
@@ -130,7 +130,7 @@
   width: 100%;
   min-height: 36px;
   padding: 3px 0;
-  text-align: left;
+  text-align: start;
   font-family: var(--mono);
   font-size: 11px;
 }
@@ -241,8 +241,8 @@
 }
 
 .md__quote {
-  padding-left: 10px;
-  border-left: 2px solid var(--line-bright);
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--line-bright);
   color: var(--muted);
 }
 
@@ -320,11 +320,11 @@
 }
 
 .blocked__task .agenticon {
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .detail__task .agenticon {
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .kind {
@@ -429,7 +429,7 @@
 
 .groupbar__label {
   color: var(--muted);
-  margin-right: 2px;
+  margin-inline-end: 2px;
   font-family: var(--ui);
   text-transform: none;
   letter-spacing: 0;
@@ -515,7 +515,7 @@
  */
 .msg--you {
   background: color-mix(in srgb, var(--working) 6%, var(--void));
-  border-left: 2px solid var(--working);
+  border-inline-start: 2px solid var(--working);
   border-radius: 0 8px 8px 0;
   padding: 12px 12px 4px 12px;
   margin: 8px 0;
@@ -562,13 +562,13 @@
   min-width: 96px;
   max-width: 260px;
   padding: 8px 10px;
-  border-right: 1px solid var(--line);
+  border-inline-end: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
 
 .md__th:last-child,
 .md__td:last-child {
-  border-right: none;
+  border-inline-end: none;
 }
 
 .md__th {
@@ -600,8 +600,8 @@
 
 /* One quiet disclosure per agent turn; files stay available without expanding. */
 .reader-activity { padding: 0 0 12px; border-bottom: 1px solid var(--line); }
-.reader-activity__head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 0; color: var(--muted); font-size: 13px; text-align: left; }
-.reader-activity__details { border-left: 1px solid var(--line); padding-left: 12px; }
+.reader-activity__head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 0; color: var(--muted); font-size: 13px; text-align: start; }
+.reader-activity__details { border-inline-start: 1px solid var(--line); padding-inline-start: 12px; }
 .reader-activity__step { margin-bottom: 12px; }
 .reader-activity__step > time { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
 .reader-activity__files { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
@@ -611,7 +611,7 @@
 
 /* A subagent is its own row, not a step of collapsed activity. */
 .subagent { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 8px; margin: 6px 0; }
-.subagent__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 0; text-align: left; }
+.subagent__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 0; text-align: start; }
 .subagent__head:disabled { cursor: default; opacity: 1; }
 .subagent__title { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .subagent__name { color: var(--text); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
@@ -625,7 +625,7 @@
 
 /* The agent's task list, at the end of the conversation like Claude Code's. */
 .tasks { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 6px; margin: 8px 0; }
-.tasks__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; color: var(--muted); font-size: 13px; text-align: left; }
+.tasks__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; color: var(--muted); font-size: 13px; text-align: start; }
 .tasks__list { list-style: none; margin: 0; padding: 0; }
 .tasks__task { display: flex; gap: 8px; padding: 3px 0; font-size: 14px; color: var(--text); }
 .tasks__mark { flex: none; width: 16px; text-align: center; color: var(--muted); }

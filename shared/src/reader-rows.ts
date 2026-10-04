@@ -1,4 +1,5 @@
 import type { BackgroundNotice, LogBlock, LogMessage, ReaderTask, SessionLog } from "./index";
+import { translate, type AppLocale } from "./i18n";
 
 export type ActivityStep = {
   id: string;
@@ -111,7 +112,7 @@ export function readerRows(messages: LogMessage[], previous: ReaderRow[] = [], c
 }
 
 /** Name only measured tool families; unknown/MCP tools keep a neutral status. */
-export function readerActivityLabel(activity: ReaderActivity, working: boolean): string {
+export function readerActivityLabel(activity: ReaderActivity, working: boolean, locale: AppLocale = "en"): string {
   let label = "Activity";
   if (working) {
     const last = activity.steps.at(-1)?.block;
@@ -125,7 +126,7 @@ export function readerActivityLabel(activity: ReaderActivity, working: boolean):
       else if (["grep", "glob", "search", "web_search"].includes(name)) label = "Searching…";
     }
   }
-  return `${label} · ${activity.steps.length} ${activity.steps.length === 1 ? "step" : "steps"}`;
+  return translate(locale, activity.steps.length === 1 ? "{label} · {count} step" : "{label} · {count} steps", { label: translate(locale, label), count: activity.steps.length });
 }
 
 type ToolBlock = Extract<LogBlock, { kind: "tool" }>;
@@ -213,6 +214,6 @@ export function readerTasks(log: Pick<SessionLog, "tasks"> | null | undefined, m
 }
 
 /** "5 tasks (4 done, 1 in progress, 0 open)". */
-export function readerTasksLabel(list: ReaderTaskList): string {
-  return `${list.tasks.length} ${list.tasks.length === 1 ? "task" : "tasks"} (${list.done} done, ${list.inProgress} in progress, ${list.open} open)`;
+export function readerTasksLabel(list: ReaderTaskList, locale: AppLocale = "en"): string {
+  return translate(locale, list.tasks.length === 1 ? "{count} task ({done} done, {inProgress} in progress, {open} open)" : "{count} tasks ({done} done, {inProgress} in progress, {open} open)", { count: list.tasks.length, done: list.done, inProgress: list.inProgress, open: list.open });
 }

@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * Open-source licenses: the notices the app's own binary has to carry.
  *
@@ -26,6 +28,7 @@ import { useMemo } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import { Stack } from "expo-router";
 import { ARTWORK_NOTICES } from "@shahi/shared/artwork-notices";
+import { translate, type AppLocale } from "@shahi/shared";
 import { Text } from "@/components/text";
 import { theme } from "@/lib/theme";
 import { LUCIDE_LICENSE, NOTICES } from "./licenses-text";
@@ -71,7 +74,7 @@ export function textRows(key: string, text: string): Row[] {
 }
 
 /** Packages sharing one text are listed once, above it. */
-function packageRows(): Row[] {
+function packageRows(locale: AppLocale): Row[] {
   const groups = new Map<number | string, PackageNotice[]>();
   for (const pkg of PACKAGES.packages) {
     const key = pkg.text ?? `${pkg.name}@${pkg.version}`;
@@ -83,7 +86,7 @@ function packageRows(): Row[] {
     return [
       {
         kind: "title" as const, key: `package:${key}`, testID: `license-${first.name}`,
-        title: packages.length > 1 ? `${first.name} and ${packages.length - 1} more` : first.name,
+        title: packages.length > 1 ? translate(locale, "{package} and {count} more", { package: first.name, count: packages.length - 1 }) : first.name,
         meta: [packages.map((pkg) => `${pkg.name} ${pkg.version}`).join(", "), licenses],
       },
       ...typeof key === "number"
@@ -94,16 +97,17 @@ function packageRows(): Row[] {
 }
 
 /** Everything the screen shows, in order: pure, so a test can read all of it. */
-export function licenseRows(): Row[] {
+export function licenseRows(locale: AppLocale = "en"): Row[] {
+  const ui = (source: string) => translate(locale, source);
   return [
     { kind: "intro", key: "intro" },
-    { kind: "section", key: "section:ssh", testID: "licenses-ssh", title: "Built into the SSH connection" },
+    { kind: "section", key: "section:ssh", testID: "licenses-ssh", title: ui("Built into the SSH connection") },
     ...NOTICES.flatMap((notice): Row[] => [
       { kind: "title", key: `ssh:${notice.name}`, testID: `license-${notice.name}`, title: `${notice.name} ${notice.version}`,
         meta: [notice.license, ...notice.copyright ? [notice.copyright] : []] },
       ...textRows(`ssh:${notice.name}`, notice.text),
     ]),
-    { kind: "section", key: "section:native", testID: "licenses-native", title: "Native libraries React Native and Expo build in" },
+    { kind: "section", key: "section:native", testID: "licenses-native", title: ui("Native libraries React Native and Expo build in") },
     ...NATIVE_NOTICES.flatMap((notice): Row[] => [
       { kind: "title", key: `native:${notice.name}`, testID: `license-${notice.name}`, title: `${notice.name} ${notice.version}`,
         meta: [notice.license, notice.in, `${notice.repository} at ${notice.tag}`] },
@@ -113,14 +117,14 @@ export function licenseRows(): Row[] {
         ...textRows(`native:${notice.name}:${index}`, file.text),
       ]),
     ]),
-    { kind: "section", key: "section:artwork", testID: "licenses-artwork", title: "Icons and marks" },
+    { kind: "section", key: "section:artwork", testID: "licenses-artwork", title: ui("Icons and marks") },
     ...ARTWORK.flatMap((notice): Row[] => [
       { kind: "title", key: `art:${notice.name}`, testID: `license-${notice.name}`, title: notice.name, meta: [notice.covers, notice.license] },
       ...textRows(`art:${notice.name}`, notice.text),
     ]),
-    { kind: "section", key: "section:packages", testID: "licenses-packages", title: `JavaScript and native modules from npm (${PACKAGES.packages.length})` },
-    ...packageRows(),
-    { kind: "section", key: "section:vendored", testID: "licenses-vendored", title: "Code those modules carry inside them" },
+    { kind: "section", key: "section:packages", testID: "licenses-packages", title: translate(locale, "JavaScript and native modules from npm ({count})", { count: PACKAGES.packages.length }) },
+    ...packageRows(locale),
+    { kind: "section", key: "section:vendored", testID: "licenses-vendored", title: ui("Code those modules carry inside them") },
     ...VENDORED_NOTICES.flatMap((notice): Row[] => [
       { kind: "title", key: `vendored:${notice.name}`, testID: `license-${notice.name}`, title: `${notice.name} ${notice.version}`,
         meta: [notice.license, notice.in, `${notice.repository} at ${notice.tag}`] },
@@ -133,11 +137,12 @@ export function licenseRows(): Row[] {
 }
 
 function LicenseRow({ row }: { row: Row }) {
+  useI18n();
   switch (row.kind) {
     case "intro":
-      return <Text style={styles.intro}>
+      return <UiText style={styles.intro}>
         Shahi is built on open-source software. These are the notices its licenses ask to travel with the app: the libraries compiled into it, the icons it draws, and the modules it bundles.
-      </Text>;
+      </UiText>;
     case "section":
       return <Text style={styles.section} accessibilityRole="header" testID={row.testID}>{row.title}</Text>;
     case "title":
@@ -151,10 +156,11 @@ function LicenseRow({ row }: { row: Row }) {
 }
 
 export function Licenses() {
-  const rows = useMemo(licenseRows, []);
+  const { t: ui, locale } = useI18n();
+  const rows = useMemo(() => licenseRows(locale), [locale]);
   return (
     <>
-      <Stack.Screen options={{ title: "Open-source licenses" }} />
+      <Stack.Screen options={{ title: ui("Open-source licenses") }} />
       <FlatList
         testID="licenses-list"
         data={rows}

@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -9,6 +11,7 @@ import { useOwnedRoute } from "@/lib/owned-route";
 import { theme } from "@/lib/theme";
 
 export default function PaneRoute() {
+  const { t: ui } = useI18n();
   // Route params arrive as string | string[]; a pane id is always the former.
   // `instance` is the occupant a notification was about (see below).
   const { paneId, view, instance, reply } = useLocalSearchParams<{ paneId: string; view?: string; instance?: string; reply?: string }>();
@@ -58,14 +61,13 @@ export default function PaneRoute() {
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: theme.void }}>
       {ended ? (
         <View style={styles.ended} accessibilityRole="summary">
-          <Text style={styles.endedText}>
-            The conversation this notification was about has ended. Another program now runs in {String(paneId)}.
+          <Text style={styles.endedText}>{ui("The conversation this notification was about has ended. Another program now runs in" + " ")}{String(paneId)}.
           </Text>
           <Pressable accessibilityRole="button" style={styles.endedAction} onPress={() => setOpenAnyway(true)}>
-            <Text style={styles.endedActionText}>Open what runs there now</Text>
+            <UiText style={styles.endedActionText}>Open what runs there now</UiText>
           </Pressable>
           <Pressable accessibilityRole="button" style={styles.endedAction} onPress={() => { if (router.canGoBack()) router.back(); }}>
-            <Text style={styles.endedActionText}>Back</Text>
+            <UiText style={styles.endedActionText}>Back</UiText>
           </Pressable>
         </View>
       ) : (

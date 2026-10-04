@@ -1,3 +1,5 @@
+import { useI18n } from "@/lib/i18n";
+import { UiText } from "@/components/ui-text";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Pressable, StyleSheet, View } from "react-native";
@@ -23,13 +25,14 @@ export function ConnectionHealth({ conversation = false }: { conversation?: bool
 }
 
 function ComputerHealth({ session, conversation }: { session: ReturnType<typeof useSession>; conversation: boolean }) {
+  const { locale } = useI18n();
   const { link, error, server, reconnect, online = true, activeComputerId, computers, control } = session;
   // An unnamed computer is "your computer" in a sentence, not "Your computer".
   const current = computers?.find(computer => computer.id === activeComputerId);
   const computerName = current?.named === false ? undefined : current?.name;
   const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<Error | null>(null);
-  const health = connectionHealth({ link, online, computerName, error: error ?? (link === "live" ? null : retryError), transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
+  const health = connectionHealth({ locale: locale, link, online, computerName, error: error ?? (link === "live" ? null : retryError), transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
   // Decided once per drop, during render so the first frame is already right.
   const seenLive = useRef(link === "live");
   if (link === "live") seenLive.current = true;
@@ -46,21 +49,21 @@ function ComputerHealth({ session, conversation }: { session: ReturnType<typeof 
   if (!health) return null;
   if (brief) return <View style={styles.brief} testID="connection-brief" accessibilityLiveRegion="polite">
     <ActivityIndicator size="small" color={theme.dim} />
-    <Text style={styles.briefText}>{health.brief}</Text>
+    <UiText style={styles.briefText}>{health.brief}</UiText>
   </View>;
   return <View style={styles.card} accessibilityLiveRegion="polite">
-    <Text style={styles.title}>{health.title}</Text>
-    <Text style={styles.detail}>{health.detail}</Text>
-    {conversation && <Text style={styles.note}>Your draft stays here. Nothing is sent automatically.</Text>}
+    <UiText style={styles.title}>{health.title}</UiText>
+    <UiText style={styles.detail}>{health.detail}</UiText>
+    {conversation && <UiText style={styles.note}>Your draft stays here. Nothing is sent automatically.</UiText>}
     <OtherComputers />
     <View style={styles.actions}>
     <Pressable testID="switch-computer" accessibilityRole="button" style={styles.retry} onPress={() => router.push("/computers")}>
-      <Text style={styles.action}>Switch computer</Text>
+      <UiText style={styles.action}>Switch computer</UiText>
     </Pressable>
     <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !online }} disabled={busy || !online} style={styles.retry} onPress={() => {
       setBusy(true); setRetryError(null);
       void reconnect().catch((e) => setRetryError(e instanceof Error ? e : new Error("Connection failed"))).finally(() => setBusy(false));
-    }}><Text style={styles.action}>{busy ? "Retrying…" : "Retry connection"}</Text></Pressable>
+    }}><UiText style={styles.action}>{busy ? "Retrying…" : "Retry connection"}</UiText></Pressable>
     </View>
   </View>;
 }

@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * Which saved Claude conversation runs in a pane herdr cannot identify.
  *
@@ -24,6 +26,7 @@ interface Props {
 }
 
 export function ConversationPicker({ paneId, instanceId, onChosen, onClose }: Props) {
+  const { locale, t: ui } = useI18n();
   const { api } = useSession();
   const [choices, setChoices] = useState<ConversationChoice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,19 +61,19 @@ export function ConversationPicker({ paneId, instanceId, onChosen, onClose }: Pr
     <Modal visible animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
       <View style={styles.sheet}>
         <View style={styles.bar}>
-          <Text style={styles.title} accessibilityRole="header">Which conversation is this?</Text>
+          <UiText style={styles.title} accessibilityRole="header">Which conversation is this?</UiText>
           <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12} style={styles.cancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <UiText style={styles.cancelText}>Cancel</UiText>
           </Pressable>
         </View>
-        <Text style={styles.dim}>
+        <UiText style={styles.dim}>
           Claude started here before Shahi could identify it. Choose the conversation it is running, and Reader will show it.
-        </Text>
-        {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
+        </UiText>
+        {error && <UiText style={styles.error} accessibilityRole="alert">{error}</UiText>}
         {!choices && !error ? (
           <ActivityIndicator color={theme.dim} style={styles.wait} />
         ) : choices?.length === 0 ? (
-          <Text style={styles.dim}>No saved Claude conversations were found for this folder.</Text>
+          <UiText style={styles.dim}>No saved Claude conversations were found for this folder.</UiText>
         ) : (
           <FlatList
             data={choices ?? []}
@@ -79,11 +82,11 @@ export function ConversationPicker({ paneId, instanceId, onChosen, onClose }: Pr
             renderItem={({ item }) => (
               <Pressable accessibilityRole="button" disabled={choosing} onPress={() => void choose(item.sessionId)} style={[styles.item, choosing && styles.itemBusy]}>
                 <View style={styles.itemTop}>
-                  <Text style={styles.itemTitle}>{item.firstPrompt ?? "Untitled conversation"}</Text>
-                  {item.likely && <Text style={styles.likely}>Likely</Text>}
+                  <Text style={styles.itemTitle}>{item.firstPrompt ?? ui("Untitled conversation")}</Text>
+                  {item.likely && <UiText style={styles.likely}>Likely</UiText>}
                 </View>
                 {item.lastMessage && <Text style={styles.dim} numberOfLines={2}>{item.lastMessage}</Text>}
-                <Text style={styles.when}>{relativeTime(item.updatedAt)}</Text>
+                <Text style={styles.when}>{relativeTime(item.updatedAt, Date.now(), locale)}</Text>
               </Pressable>
             )}
           />

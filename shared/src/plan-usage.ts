@@ -1,3 +1,4 @@
+import { translate, type AppLocale } from "./i18n";
 /**
  * How much of each agent's subscription is used, as `/api/plan-usage` reports
  * it (capability `plan-usage`). Claude Code's comes from the status line Shahi
@@ -41,17 +42,18 @@ export function planWindowLabel(minutes: number | null): string {
  * nothing about the new window, so its percentage is withheld rather than
  * shown as current: the agents only report again after their next reply.
  */
-export function planWindowNow(window: PlanWindow, now = Date.now()): { percent: number | null; reset: string | null } {
-  if (window.resetsAt !== null && window.resetsAt <= now) return { percent: null, reset: "Reset since the last reading" };
-  return { percent: Math.max(0, Math.round(window.usedPercent)), reset: window.resetsAt === null ? null : `Resets ${resetTime(window.resetsAt, now)}` };
+export function planWindowNow(window: PlanWindow, now = Date.now(), locale: AppLocale = "en"): { percent: number | null; reset: string | null } {
+  if (window.resetsAt !== null && window.resetsAt <= now) return { percent: null, reset: translate(locale, "Reset since the last reading") };
+  return { percent: Math.max(0, Math.round(window.usedPercent)), reset: window.resetsAt === null ? null : translate(locale, "Resets {time}", { time: resetTime(window.resetsAt, now, locale) }) };
 }
 
 /** "4:20 PM" today, "Thu 9:00 AM" this week, "Oct 8" further out. */
-function resetTime(at: number, now: number): string {
+function resetTime(at: number, now: number, locale: AppLocale): string {
   const when = new Date(at);
-  const time = when.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const dateLocale = locale === "en" ? "en-US" : locale;
+  const time = when.toLocaleTimeString(dateLocale, { hour: "numeric", minute: "2-digit" });
   const sameDay = new Date(now).toDateString() === when.toDateString();
   if (sameDay) return time;
-  if (at - now < 6 * 86_400_000) return `${when.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
-  return when.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (at - now < 6 * 86_400_000) return `${when.toLocaleDateString(dateLocale, { weekday: "short" })} ${time}`;
+  return when.toLocaleDateString(dateLocale, { month: "short", day: "numeric" });
 }

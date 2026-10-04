@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * The composer's two shortcuts: the slash-command picker and the quick-reply
  * chips. Both only put text where the person's own typing goes — the picker
@@ -47,12 +48,13 @@ const SOURCE_LABEL = { user: "personal", project: "project" } as const;
  * the composer, with the space since many take arguments, and sends nothing.
  */
 export function CommandPicker({ id, commands, active, onPick }: { id: string; commands: SlashCommand[]; active: number; onPick: (command: SlashCommand) => void }) {
+  const { t } = useLocale();
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     list.current?.querySelector<HTMLElement>(`[aria-selected="true"]`)?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
   return (
-    <div ref={list} className="commands" id={id} role="listbox" aria-label="Commands">
+    <div ref={list} className="commands" id={id} role="listbox" aria-label={t("Commands")}>
       {commands.map((command, i) => (
         <button
           key={command.name}
@@ -67,7 +69,7 @@ export function CommandPicker({ id, commands, active, onPick }: { id: string; co
           onClick={() => onPick(command)}
         >
           <span className="commands__name">/{command.name}</span>
-          {command.source !== "builtin" && <span className="commands__source">{SOURCE_LABEL[command.source]}</span>}
+          {command.source !== "builtin" && <span className="commands__source">{t(SOURCE_LABEL[command.source])}</span>}
           {command.description && <span className="commands__description">{command.description}</span>}
         </button>
       ))}
@@ -81,12 +83,13 @@ export function CommandPicker({ id, commands, active, onPick }: { id: string; co
  * place on screen does not change when the row comes and goes.
  */
 export function ReplyChips({ slash, replies, onSlash, onReply }: { slash: boolean; replies: boolean; onSlash: () => void; onReply: (text: string) => void }) {
+  const { t } = useLocale();
   if (!slash && !replies) return null;
   return (
-    <div className="replies" role="group" aria-label="Quick replies">
-      {slash && <button type="button" className="replies__slash" aria-label="Commands" title="Start a slash command" onClick={onSlash}>/</button>}
+    <div className="replies" role="group" aria-label={t("Quick replies")}>
+      {slash && <button type="button" className="replies__slash" aria-label={t("Commands")} title={t("Start a slash command")} onClick={onSlash}>/</button>}
       {replies && QUICK_REPLIES.map((reply) => (
-        <button key={reply} type="button" title="Sends this reply now" onClick={() => onReply(reply)}>{reply}</button>
+        <button key={reply} type="button" title={t("Sends this reply now")} onClick={() => onReply(t(reply))}>{t(reply)}</button>
       ))}
     </div>
   );

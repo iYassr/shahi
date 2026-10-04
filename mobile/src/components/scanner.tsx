@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 /**
  * The camera, pointed at a pairing code.
  *
@@ -61,26 +62,26 @@ export function Scanner({
   if (!permission.granted) {
     return (
       <View style={[styles.screen, styles.centred]}>
-        <Text style={styles.deniedTitle}>Shahi needs the camera to scan the code.</Text>
-        <Text style={styles.deniedText}>
+        <UiText style={styles.deniedTitle}>Shahi needs the camera to scan the code.</UiText>
+        <UiText style={styles.deniedText}>
           {permission.canAskAgain
             ? "Allow camera access when asked."
             : "Camera access is off for Shahi. Turn it on in Settings, then come back."}
-        </Text>
+        </UiText>
         {!permission.canAskAgain && (
           <Pressable accessibilityRole="button" style={styles.button} onPress={() => void Linking.openSettings()} testID="open-settings">
-            <Text style={styles.buttonText}>Open Settings</Text>
+            <UiText style={styles.buttonText}>Open Settings</UiText>
           </Pressable>
         )}
         {/* With the camera refused this screen was a dead end: Open Settings
             or Cancel, and no other way to pair (build 32). */}
         {onPaste && (
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={onPaste} testID="scanner-paste">
-            <Text style={styles.secondaryText}>Paste pairing link instead</Text>
+            <UiText style={styles.secondaryText}>Paste pairing link instead</UiText>
           </Pressable>
         )}
         <Pressable accessibilityRole="button" onPress={onCancel} hitSlop={12} testID="scanner-cancel">
-          <Text style={styles.cancel}>Cancel</Text>
+          <UiText style={styles.cancel}>Cancel</UiText>
         </Pressable>
       </View>
     );
@@ -95,9 +96,9 @@ export function Scanner({
         onBarcodeScanned={onBarcode}
       />
       <View style={styles.overlay} pointerEvents="box-none">
-        <Text style={styles.hint}>
+        <UiText style={styles.hint}>
           {rejected ? "That isn't a Shahi pairing code." : "Point at the code your computer printed."}
-        </Text>
+        </UiText>
         <View style={styles.frame} />
         <View style={styles.actions}>
           {/* A code the camera cannot read — glare, a small popup, a lens out
@@ -106,11 +107,11 @@ export function Scanner({
               the phone. The owner asked for the code beside the QR. */}
           {onPaste && (
             <Pressable accessibilityRole="button" style={styles.pasteButton} onPress={onPaste} testID="scanner-paste">
-              <Text style={styles.paste}>Can't scan? Paste pairing link</Text>
+              <UiText style={styles.paste}>Can't scan? Paste pairing link</UiText>
             </Pressable>
           )}
           <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={onCancel} hitSlop={12} testID="scanner-cancel">
-            <Text style={styles.cancel}>Cancel</Text>
+            <UiText style={styles.cancel}>Cancel</UiText>
           </Pressable>
         </View>
       </View>

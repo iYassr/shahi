@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * Browses the computer's folders, for choosing where something lives.
  *
@@ -54,6 +56,7 @@ export function FolderBrowser({
   /** The choose button's words; by default it names the folder being viewed. */
   chooseLabel?: string;
 }) {
+  const { t: ui } = useI18n();
   const { api } = useSession();
   const largeText = useLargeText();
   const [at, setAt] = useState(start);
@@ -88,7 +91,7 @@ export function FolderBrowser({
   return (
     <View style={styles.browser} testID="folder-browser">
       {/* Each folder on the way home is a way back to it. */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.crumbs} accessibilityLabel="Folder path">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.crumbs} accessibilityLabel={ui("Folder path")}>
         {crumbs.map((crumb, i) => {
           const last = i === crumbs.length - 1;
           return (
@@ -96,7 +99,7 @@ export function FolderBrowser({
               {i > 0 && <Text style={styles.crumbSep}>›</Text>}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={last ? `${crumb.label}, current folder` : `Go to ${crumb.label}`}
+                accessibilityLabel={last ? ui("{value1}, current folder", {value1: crumb.label}) : ui("Go to {value1}", {value1: crumb.label})}
                 accessibilityState={{ disabled: last }}
                 disabled={last}
                 style={styles.crumb}
@@ -110,41 +113,41 @@ export function FolderBrowser({
       </ScrollView>
 
       {shownRecent.length > 0 && <>
-        <Text style={styles.section}>RECENT</Text>
+        <UiText style={styles.section}>RECENT</UiText>
         {shownRecent.map((choice) => (
           // A folder outside home cannot be listed, only chosen as it is.
-          <Pressable accessibilityRole="button" accessibilityLabel={choice.display.startsWith("~") ? `Open ${choice.display}` : `Use ${choice.display}`} key={choice.path} style={styles.row}
+          <Pressable accessibilityRole="button" accessibilityLabel={choice.display.startsWith("~") ? ui("Open {value1}", {value1: choice.display}) : ui("Use {value1}", {value1: choice.display})} key={choice.path} style={styles.row}
             onPress={() => (choice.display.startsWith("~") ? setAt(choice.display) : onChoose?.(choice))} testID={`recent-${choice.display}`}>
             <Icon name="folder" size={18} color={theme.peach} />
             <Text style={styles.rowText} numberOfLines={lines} ellipsizeMode="head">{choice.display}</Text>
           </Pressable>
         ))}
         {allRecent.length > shownRecent.length && (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Show all ${allRecent.length} recent folders`} style={styles.row} onPress={() => setAllShown(true)}>
-            <Text style={styles.crumbText}>Show all {allRecent.length}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Show all {value1} recent folders", {value1: allRecent.length})} style={styles.row} onPress={() => setAllShown(true)}>
+            <Text style={styles.crumbText}>{ui("Show all" + " ")}{allRecent.length}</Text>
           </Pressable>
         )}
-        <Text style={styles.section}>IN HOME</Text>
+        <UiText style={styles.section}>IN HOME</UiText>
       </>}
 
       {error && <View style={styles.notice}>
-        <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+        <UiText accessibilityRole="alert" style={styles.error}>{error}</UiText>
         <Pressable accessibilityRole="button" style={styles.retry} onPress={() => setAttempt((n) => n + 1)}>
-          <Text style={styles.retryText}>Try again</Text>
+          <UiText style={styles.retryText}>Try again</UiText>
         </Pressable>
       </View>}
-      {!listing && !error && <Text accessibilityRole="text" style={styles.dim}>Opening folder…</Text>}
+      {!listing && !error && <UiText accessibilityRole="text" style={styles.dim}>Opening folder…</UiText>}
 
       {listing && listing.parent !== null && (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Up to ${breadcrumb(listing.parent).at(-1)!.label}`} style={styles.row} onPress={() => setAt(listing.parent!)} testID="folder-up">
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Up to {value1}", {value1: breadcrumb(listing.parent).at(-1)!.label})} style={styles.row} onPress={() => setAt(listing.parent!)} testID="folder-up">
           <Text style={styles.up}>↑</Text>
-          <Text style={styles.rowText}>Up</Text>
+          <UiText style={styles.rowText}>Up</UiText>
         </Pressable>
       )}
       {listing?.entries.map((entry) => (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={entry.isDirectory ? `Open folder ${entry.name}` : `Attach ${entry.name}`}
+          accessibilityLabel={entry.isDirectory ? ui("Open folder {value1}", {value1: entry.name}) : ui("Attach {value1}", {value1: entry.name})}
           key={entry.path}
           style={styles.row}
           onPress={() => (entry.isDirectory ? setAt(entry.display) : onPickFile?.(entry))}
@@ -154,7 +157,7 @@ export function FolderBrowser({
           <Text style={styles.rowText} numberOfLines={lines}>{entry.name}</Text>
         </Pressable>
       ))}
-      {listing?.entries.length === 0 && <Text style={styles.dim}>{onPickFile ? "Nothing in here." : "No folders in here."}</Text>}
+      {listing?.entries.length === 0 && <UiText style={styles.dim}>{onPickFile ? "Nothing in here." : "No folders in here."}</UiText>}
 
       {/* Opening a folder is not choosing it. The button names the folder
           and is the one filled control, because "Use this folder" under a
@@ -168,7 +171,7 @@ export function FolderBrowser({
           onPress={() => listing && onChoose({ path: listing.path, display: listing.display })}
           testID="use-folder"
         >
-          <Text style={styles.chooseText} numberOfLines={lines}>{chooseLabel ?? (atHome ? "Use your home folder" : `Use ${crumbs.at(-1)!.label}`)}</Text>
+          <Text style={styles.chooseText} numberOfLines={lines}>{chooseLabel ?? (atHome ? ui("Use your home folder") : ui("Use {value1}", {value1: crumbs.at(-1)!.label}))}</Text>
           <Text style={styles.chooseWhere} numberOfLines={lines} ellipsizeMode="head">{listing?.display ?? at}</Text>
         </Pressable>
       )}

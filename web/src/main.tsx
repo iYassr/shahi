@@ -8,10 +8,12 @@ import { Boundary } from "./components/Boundary";
 import "./styles.css";
 import { trackViewport } from "./viewport";
 import { initializeDiagnostics } from "./diagnostics";
+import { initializeLocale, LocaleProvider } from "./i18n";
 
 // Consume the secret once, before StrictMode can initialize components twice.
 const pairingCode = takePairingFragment();
 initializeDiagnostics();
+initializeLocale();
 
 // Before first paint, so the app is never briefly sized to the wrong viewport.
 trackViewport();
@@ -34,6 +36,7 @@ if ("serviceWorker" in navigator) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <LocaleProvider>
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       {/* Outside the router, so a screen that throws does not take the app with
           it and leave a blank page — the shape of "I have to refresh a lot". */}
@@ -43,5 +46,6 @@ createRoot(document.getElementById("root")!).render(
       </Boundary>
       </ClientUpdateGate>
     </BrowserRouter>
+    </LocaleProvider>
   </StrictMode>,
 );

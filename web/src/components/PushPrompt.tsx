@@ -1,3 +1,4 @@
+import { translateUi, useLocale } from "../i18n";
 import { UiIcon } from "./UiIcon";
 import { browserConnection, hosted } from "../connection";
 import { checkPushConnection } from "../push-policy";
@@ -35,6 +36,7 @@ const notifications = (): typeof Notification | null =>
   typeof window !== "undefined" && "Notification" in window ? window.Notification : null;
 
 export function PushPrompt({ onToast }: { onToast: (message: string) => void }) {
+  const { t } = useLocale();
   const [state, setState] = useState<State>("hidden");
 
   useEffect(() => {
@@ -90,19 +92,19 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
   if (state === "needs-install") {
     return (
       <div className="banner push-offer">
-        <UiIcon name="bell" /><p><strong>Add Shahi to your Home Screen</strong> for notifications. Tap Share, then Add to Home Screen.</p>
-        <button onClick={dismiss}>Not now</button>
+        <UiIcon name="bell" /><p><strong>{t("Add Shahi to your Home Screen")}</strong> {" "}{t("for notifications. Tap Share, then Add to Home Screen.")}</p>
+        <button onClick={dismiss}>{t("Not now")}</button>
       </div>
     );
   }
 
   return (
     <div className="banner push-offer">
-      <UiIcon name="bell" /><p><strong>Know when an agent needs you.</strong> Get a notification when it needs an answer.</p>
+      <UiIcon name="bell" /><p><strong>{t("Know when an agent needs you.")}</strong> {" "}{t("Get a notification when it needs an answer.")}</p>
       <button onClick={() => void enable()} disabled={state === "asking"}>
-        {state === "asking" ? "Asking…" : "Turn on notifications"}
+        {state === "asking" ? t("Asking…") : t("Turn on notifications")}
       </button>
-      <button onClick={dismiss}>Not now</button>
+      <button onClick={dismiss}>{t("Not now")}</button>
     </div>
   );
 }
@@ -117,7 +119,7 @@ export function PushPrompt({ onToast }: { onToast: (message: string) => void }) 
  * choice, because it silences the computer that had it.
  */
 export const ONE_COMPUTER = "This browser already gets notifications from another computer. A browser can get notifications from one computer at a time.";
-export const confirmSwitch = () => window.confirm(`${ONE_COMPUTER} Get them from this computer instead?`);
+export const confirmSwitch = () => window.confirm(translateUi(`${ONE_COMPUTER} Get them from this computer instead?`));
 
 export async function registerPush(expectedGeneration = browserConnection().generation, allowSwitch?: () => boolean): Promise<void> {
   const check = () => checkPushConnection(hosted, browserConnection(), expectedGeneration);

@@ -86,7 +86,7 @@ self.addEventListener("fetch", (event) => {
   // Notification routing carries pane/computer identifiers. Serve only the
   // canonical shell, never store the queried request or fetch its private URL.
   const notification = request.mode === "navigate" && url.pathname === `${BASE}notification` &&
-    [...url.searchParams.keys()].every(key => key === "pane" || key === "computer");
+    [...url.searchParams.keys()].every(key => key === "pane" || key === "computer" || key === "instance");
   if (url.search && !notification) return;
   if (assetPath(url.pathname) || RELEASED.includes(url.pathname)) event.respondWith(cacheFirst(request));
   else if (request.mode === "navigate" && appPath(url.pathname)) event.respondWith(shellFirst(event));

@@ -173,7 +173,7 @@ button {
   line-height: 1;
   color: var(--muted);
   padding: 4px 8px 4px 0;
-  margin-left: -4px;
+  margin-inline-start: -4px;
 }
 
 /* Connection state, stated plainly rather than as a bare coloured dot. */

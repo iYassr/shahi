@@ -6,6 +6,13 @@ Claude Code 2.1.286's bundled source and codex's source at `rust-v0.158.0`,
 with the startup screens captured live on this Mac under herdr 0.9.1 (October
 2026). The captures are the fixtures in `server/fixtures/startup/`.
 
+The October 4 launch check redraws startup screens with current Claude Code
+2.1.289, Codex 0.160.0 and herdr 0.9.3 using verified release binaries.
+Codex now skips folder consent outside a project; the census initializes a
+scratch repository to exercise consent. Its model migration can be a notice
+with Enter/Esc instead of the older menu; both remain covered. See
+[the dated launch review](launch-relay-security-2026-10-04.md).
+
 ## The rule
 
 A message Shahi refuses always comes with something to answer instead:

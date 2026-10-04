@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * What the agent has changed in its folder, as Git sees it (capability
  * `changes`): the changed files, and a sheet with one file's diff. The third
@@ -11,7 +13,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
-import { CHANGE_STATUS, changeSummary, diffRows, type ChangedFile, type ChangeStatus, type DiffRow, type FileDiff, type PaneChanges } from "@shahi/shared";
+import { CHANGE_STATUS, diffRows, type ChangedFile, type ChangeStatus, type DiffRow, type FileDiff, type PaneChanges } from "@shahi/shared";
 import { useFocusEffect } from "expo-router";
 import { Text, useLargeText } from "@/components/text";
 import { UnauthorizedError } from "@/lib/api";
@@ -35,6 +37,7 @@ const STATUS_COLOR: Record<ChangeStatus, string> = {
 };
 
 export function ChangesView({ paneId, status }: { paneId: string; status?: string }) {
+  const { t: ui } = useI18n();
   const { api, unauthorized } = useSession();
   const largeText = useLargeText();
   const [changes, setChanges] = useState<PaneChanges | null>(null);
@@ -76,14 +79,14 @@ export function ChangesView({ paneId, status }: { paneId: string; status?: strin
     <View>
       <View style={[styles.head, largeText && styles.headStacked]}>
         <Text style={styles.repo} accessibilityRole="header">
-          {repository ? repository.name : "Changes"}
-          {repository && <Text style={styles.branch}>{"  "}{repository.branch ?? (repository.commit ? `detached at ${repository.commit}` : "detached")}</Text>}
+          {repository ? repository.name : ui("Changes")}
+          {repository && <Text style={styles.branch}>{"  "}{repository.branch ?? (repository.commit ? ui("detached at {value1}", {value1: repository.commit}) : ui("detached"))}</Text>}
         </Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh changes" accessibilityState={{ busy: reading }} disabled={reading} onPress={() => void load()} style={styles.refresh}>
-          <Text style={styles.refreshText}>{reading ? "Reading…" : "Refresh"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Refresh changes")} accessibilityState={{ busy: reading }} disabled={reading} onPress={() => void load()} style={styles.refresh}>
+          <UiText style={styles.refreshText}>{reading ? "Reading…" : "Refresh"}</UiText>
         </Pressable>
       </View>
-      {error && <Text style={styles.error} accessibilityRole="alert" selectable>{error}</Text>}
+      {error && <UiText style={styles.error} accessibilityRole="alert" selectable>{error}</UiText>}
       {repository && changes?.note && <Text style={styles.note}>{changes.note}</Text>}
     </View>
   );
@@ -97,9 +100,9 @@ export function ChangesView({ paneId, status }: { paneId: string; status?: strin
         ListHeaderComponent={header}
         ListEmptyComponent={
           !changes ? (error ? null : <ActivityIndicator color={theme.dim} style={styles.wait} />)
-            : <Text style={styles.empty}>{repository ? "No changes since the last commit." : changes.note}</Text>
+            : <Text style={styles.empty}>{repository ? ui("No changes since the last commit.") : changes.note}</Text>
         }
-        ListFooterComponent={changes?.omitted ? <Text style={styles.note}>{`… ${changes.omitted.toLocaleString()} more ${changes.omitted === 1 ? "file" : "files"} not listed.`}</Text> : null}
+        ListFooterComponent={changes?.omitted ? <Text style={styles.note}>{ui("… {value1} more {value2} not listed.", {value1: changes.omitted.toLocaleString(), value2: ui(changes.omitted === 1 ? "file" : "files")})}</Text> : null}
         renderItem={({ item }) => <FileRow file={item} largeText={largeText} onOpen={setOpen} />}
         refreshControl={<RefreshControl refreshing={reading && !!changes} onRefresh={() => void load()} tintColor={theme.dim} />}
         keyboardShouldPersistTaps="handled"
@@ -110,6 +113,12 @@ export function ChangesView({ paneId, status }: { paneId: string; status?: strin
 }
 
 const FileRow = memo(function FileRow({ file, largeText, onOpen }: { file: ChangedFile; largeText: boolean; onOpen: (file: ChangedFile) => void }) {
+  const { t: ui, locale } = useI18n();
+  const label = [
+    ui("{path}, {status}", { path: file.path, status: ui(CHANGE_STATUS[file.status].label).toLocaleLowerCase(locale) }),
+    file.from ? ui("from {path}", { path: file.from }) : "",
+  ].filter(Boolean).join(" ") + (file.added !== null && file.removed !== null
+    ? `, ${ui("{added} {lines} added, {removed} removed", { added: file.added, removed: file.removed, lines: ui(file.added === 1 ? "line" : "lines") })}` : "");
   const folder = folderOf(file.path);
   const counts = file.added !== null && (
     <Text style={styles.counts}>
@@ -117,7 +126,7 @@ const FileRow = memo(function FileRow({ file, largeText, onOpen }: { file: Chang
     </Text>
   );
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={changeSummary(file)} onPress={() => onOpen(file)} style={styles.file}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={() => onOpen(file)} style={styles.file}>
       <Text style={[styles.letter, { color: STATUS_COLOR[file.status] }]}>{CHANGE_STATUS[file.status].letter}</Text>
       {/* At the largest sizes the whole path, on as many lines as it takes,
           with the counts under it rather than taking its width; otherwise one
@@ -135,6 +144,7 @@ const FileRow = memo(function FileRow({ file, largeText, onOpen }: { file: Chang
 });
 
 function DiffSheet({ paneId, file, onClose }: { paneId: string; file: ChangedFile; onClose: () => void }) {
+  const { t: ui } = useI18n();
   const { api, unauthorized } = useSession();
   const { fontScale } = useWindowDimensions();
   const largeText = useLargeText();
@@ -169,19 +179,19 @@ function DiffSheet({ paneId, file, onClose }: { paneId: string; file: ChangedFil
     <Modal visible animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
       <View style={styles.sheet}>
         <View style={styles.bar}>
-          <Text style={[styles.letter, { color: STATUS_COLOR[file.status] }]} accessibilityLabel={CHANGE_STATUS[file.status].label}>{CHANGE_STATUS[file.status].letter}</Text>
+          <Text style={[styles.letter, { color: STATUS_COLOR[file.status] }]} accessibilityLabel={ui(CHANGE_STATUS[file.status].label)}>{CHANGE_STATUS[file.status].letter}</Text>
           <Text style={styles.sheetTitle} accessibilityRole="header" numberOfLines={largeText ? undefined : 2} ellipsizeMode="middle">{file.path}</Text>
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.done}>
-            <Text style={styles.doneText}>Done</Text>
+            <UiText style={styles.doneText}>Done</UiText>
           </Pressable>
         </View>
-        {file.from && <Text style={styles.from} selectable>Renamed from {file.from}</Text>}
+        {file.from && <Text style={styles.from} selectable>{ui("Renamed from" + " ")}{file.from}</Text>}
         {error ? (
-          <Text style={styles.error} accessibilityRole="alert" selectable>{error}</Text>
+          <UiText style={styles.error} accessibilityRole="alert" selectable>{error}</UiText>
         ) : !diff ? (
           <ActivityIndicator color={theme.dim} style={styles.wait} />
         ) : rows.length === 0 ? (
-          <Text style={styles.empty}>{diff.note ?? "No lines changed."}</Text>
+          <UiText style={styles.empty}>{diff.note ?? "No lines changed."}</UiText>
         ) : (
           // Sideways rather than wrapped: a diff is lines of code, and wrapped
           // they no longer line up with their numbers or with each other.
@@ -194,7 +204,7 @@ function DiffSheet({ paneId, file, onClose }: { paneId: string; file: ChangedFil
               initialNumToRender={40}
               renderItem={({ item }) => <DiffLine row={item} />}
               ListFooterComponent={diff.omitted > 0 ? (
-                <Text style={styles.note}>{`… ${diff.omitted.toLocaleString()}${diff.incomplete ? "+" : ""} more ${diff.omitted === 1 ? "line" : "lines"}, too many to show here.`}</Text>
+                <Text style={styles.note}>{ui("… {value1}{value2} more {value3}, too many to show here.", {value1: diff.omitted.toLocaleString(), value2: diff.incomplete ? "+" : "", value3: ui(diff.omitted === 1 ? "line" : "lines")})}</Text>
               ) : null}
             />
           </ScrollView>
@@ -212,6 +222,7 @@ const SPOKEN: Record<DiffRow["kind"], string> = { added: "Added", removed: "Remo
  * numbers, the sign and the line, so a long diff costs two views a row.
  */
 const DiffLine = memo(function DiffLine({ row }: { row: DiffRow }) {
+  useI18n();
   const number = row.newLine ?? row.oldLine;
   return (
     <View style={[styles.row, ROW_STYLE[row.kind]]} accessible accessibilityLabel={`${SPOKEN[row.kind]}${number === undefined ? "" : `, line ${number}`}: ${row.text}`}>

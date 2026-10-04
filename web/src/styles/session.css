@@ -60,7 +60,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: right;
+  text-align: end;
 }
 
 @media (max-width: 420px) {
@@ -251,7 +251,7 @@
   font-size: 14px;
 }
 
-.changes__back { border: none; background: none; padding-left: 0; color: var(--accent); }
+.changes__back { border: none; background: none; padding-inline-start: 0; color: var(--accent); }
 
 .changes__note {
   margin: 0;
@@ -274,7 +274,7 @@
   min-height: 44px;
   padding: 8px var(--gutter);
   border-bottom: 1px solid var(--line);
-  text-align: left;
+  text-align: start;
   color: var(--text);
 }
 
@@ -362,8 +362,8 @@
 .diff__num {
   flex: none;
   width: 4.5ch;
-  padding-right: 1ch;
-  text-align: right;
+  padding-inline-end: 1ch;
+  text-align: end;
   color: var(--muted);
   user-select: none;
 }
@@ -378,7 +378,7 @@
 .diff__row[data-kind="added"] .diff__sign { color: var(--success); }
 .diff__row[data-kind="removed"] .diff__sign { color: var(--danger); }
 
-.diff__text { padding-right: var(--gutter); }
+.diff__text { padding-inline-end: var(--gutter); }
 
 /* -------------------------------------------------------------- compose -- */
 
@@ -459,7 +459,7 @@
   }
 
   .compose__send {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   /* Wraps exactly as the textarea does: same font, padding and border. */
@@ -535,7 +535,7 @@
   column-gap: 8px;
   min-height: 44px;
   padding: 8px 12px;
-  text-align: left;
+  text-align: start;
   border-bottom: 1px solid var(--line);
 }
 
@@ -718,11 +718,11 @@
 .zoombar { gap: 6px; padding: 6px var(--gutter); flex: none; background: var(--surface); }
 .zoombar button { min-height: 44px; min-width: 44px; padding: 6px 10px; font-family: var(--ui); font-size: 13px; }
 .zoombar .zoombar__percent { min-width: 62px; font-variant-numeric: tabular-nums; }
-.zoombar__geometry { margin-left: auto; color: var(--muted); font-size: 11px; }
-.zoombar .zoombar__focus { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; white-space: nowrap; }
+.zoombar__geometry { margin-inline-start: auto; color: var(--muted); font-size: 11px; }
+.zoombar .zoombar__focus { display: inline-flex; align-items: center; justify-content: center; margin-inline-start: auto; white-space: nowrap; }
 .detail[data-screen="true"] .keys { gap: 8px; }
 .detail[data-screen="true"] .keys button { min-height: 44px; color: var(--text); }
-.detail[data-screen="true"] .keys .keys__interrupt { color: var(--danger); border-color: var(--danger); margin-right: 8px; }
+.detail[data-screen="true"] .keys .keys__interrupt { color: var(--danger); border-color: var(--danger); margin-inline-end: 8px; }
 .detail[data-screen="true"] .compose__row { border: 1px solid var(--line-bright); border-radius: var(--radius); background: var(--surface); padding: 4px; gap: 4px; }
 .detail[data-screen="true"] .compose textarea { border: none; background: transparent; }
 .detail[data-screen="true"] .compose__attach { border: none; }

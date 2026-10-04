@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 import { Stack } from "expo-router/stack";
 import { theme } from "@/lib/theme";
 
@@ -8,6 +9,7 @@ import { theme } from "@/lib/theme";
  * lives.
  */
 export default function AgentsTabLayout() {
+  const { t: ui } = useI18n();
   return (
     <Stack
       screenOptions={{
@@ -21,7 +23,7 @@ export default function AgentsTabLayout() {
         headerLargeTitle: true,
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Agents" }} />
+      <Stack.Screen name="index" options={{ title: ui("Agents") }} />
     </Stack>
   );
 }

@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * Which saved Claude conversation runs in a pane herdr cannot identify.
  *
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function ConversationPicker({ paneId, instanceId, onChosen, onCancel }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const [choices, setChoices] = useState<ConversationChoice[] | null>(null);
   const [error, setError] = useState("");
@@ -47,20 +49,20 @@ export function ConversationPicker({ paneId, instanceId, onChosen, onCancel }: P
   }
 
   return (
-    <section className="choices" aria-label="Choose the conversation">
-      <h3>Which conversation is this?</h3>
-      <p>Claude started here before Shahi could identify it. Choose the conversation it is running, and Reader will show it.</p>
-      {error && <p role="alert">{error}</p>}
-      {!choices && !error && <p role="status">Looking for conversations…</p>}
-      {choices?.length === 0 && <p role="status">No saved Claude conversations were found for this folder.</p>}
+    <section className="choices" aria-label={t("Choose the conversation")}>
+      <h3>{t("Which conversation is this?")}</h3>
+      <p>{t("Claude started here before Shahi could identify it. Choose the conversation it is running, and Reader will show it.")}</p>
+      {error && <p role="alert">{t(error)}</p>}
+      {!choices && !error && <p role="status">{t("Looking for conversations…")}</p>}
+      {choices?.length === 0 && <p role="status">{t("No saved Claude conversations were found for this folder.")}</p>}
       {!!choices?.length && (
         <ul className="choices__list">
           {choices.map((choice) => (
             <li key={choice.sessionId}>
               <button className="choices__item" disabled={choosing} onClick={() => void choose(choice.sessionId)}>
                 <span className="choices__title">
-                  {choice.firstPrompt ?? "Untitled conversation"}
-                  {choice.likely && <span className="choices__likely">Likely</span>}
+                  {choice.firstPrompt ?? t("Untitled conversation")}
+                  {choice.likely && <span className="choices__likely">{t("Likely")}</span>}
                 </span>
                 {choice.lastMessage && <span className="choices__last">{choice.lastMessage}</span>}
                 <span className="choices__when">{relativeTime(choice.updatedAt)}</span>
@@ -69,7 +71,7 @@ export function ConversationPicker({ paneId, instanceId, onChosen, onCancel }: P
           ))}
         </ul>
       )}
-      <button className="empty__action" onClick={onCancel}>Cancel</button>
+      <button className="empty__action" onClick={onCancel}>{t("Cancel")}</button>
     </section>
   );
 }

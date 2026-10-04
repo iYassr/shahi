@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { SCREEN_CARD_KEYS, screenTail } from "@shahi/shared";
 
 interface Props {
@@ -16,9 +17,10 @@ interface Props {
  * whose startup screens come before any conversation. See `screen-card.ts`.
  */
 export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: Props) {
+  const { t } = useLocale();
   const rows = screenTail(text);
   if (rows.length === 0) return null;
-  const heading = waiting ? "Waiting on something Shahi cannot read" : "On the computer's screen";
+  const heading = t(waiting ? "Waiting on something Shahi cannot read" : "On the computer's screen");
   // Amber only when the agent waits on it: an idle Claude after its folder
   // trust, waiting for nothing but a first message, carried a question's
   // border and read as something that needed you (first-task test of build
@@ -27,16 +29,16 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: Pr
     <section className={waiting ? "blocked screencard" : "blocked screencard screencard--idle"} aria-label={heading}>
       <p className="blocked__question" style={{ borderTop: "none" }}>
         {heading}
-        {waiting && <span className="screencard__hint"> Messages are not sent until it is answered.</span>}
+        {waiting && <span className="screencard__hint"> {" "}{t("Messages are not sent until it is answered.")}</span>}
       </p>
       {/* Not wrapped: the agent laid these rows out for its terminal's width,
           and a menu's rows only read as a menu in their own columns. */}
-      <pre className="screencard__screen" tabIndex={0} aria-label="Terminal screen">{rows.join("\n")}</pre>
-      <div className="keys screencard__keys" role="group" aria-label="Keys">
+      <pre dir="ltr" className="screencard__screen" tabIndex={0} aria-label={t("Terminal screen")}>{rows.join("\n")}</pre>
+      <div className="keys screencard__keys" role="group" aria-label={t("Keys")}>
         {SCREEN_CARD_KEYS.map(({ label, keys, name }) => (
-          <button key={label} disabled={disabled} aria-label={name} onClick={() => onKeys(keys, label)}>{label}</button>
+          <button key={label} disabled={disabled} aria-label={t(name)} onClick={() => onKeys(keys, label)}>{t(label)}</button>
         ))}
-        <button className="screencard__open" onClick={onOpenScreen}>Open Screen</button>
+        <button className="screencard__open" onClick={onOpenScreen}>{t("Open Screen")}</button>
       </div>
     </section>
   );

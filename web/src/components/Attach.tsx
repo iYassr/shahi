@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * Attaching a file to a message.
  *
@@ -32,6 +33,7 @@ interface Props {
 type Source = "phone" | "server";
 
 export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const [source, setSource] = useState<Source>("phone");
   const [uploading, setUploading] = useState(false);
@@ -99,19 +101,17 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
   }
 
   return (
-    <Sheet title="Attach a file" onClose={onClose}>
-      <div className="kinds" role="group" aria-label="Attach from" style={{ marginBottom: 16 }}>
+    <Sheet title={t("Attach a file")} onClose={onClose}>
+      <div className="kinds" role="group" aria-label={t("Attach from")} style={{ marginBottom: 16 }}>
         <button className="kind" data-active={source === "phone"} aria-pressed={source === "phone"} onClick={() => setSource("phone")}>
-          From this device
-        </button>
+          {t("From this device")}</button>
         <button
           className="kind"
           data-active={source === "server"}
           aria-pressed={source === "server"}
           onClick={() => setSource("server")}
         >
-          On your computer
-        </button>
+          {t("On your computer")}</button>
       </div>
 
       {source === "phone" ? (
@@ -144,39 +144,37 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             onClick={() => fileInput.current?.click()}
             disabled={uploading}
           >
-            {uploading ? (progress === null ? "Uploading…" : `Uploading ${progress}%`) : "Choose photo or file"}
+            {uploading ? (progress === null ? t("Uploading…") : t("Uploading {value0}%", { value0: progress })) : t("Choose photo or file")}
           </button>
 
           {/* A button, not a label for the hidden input: a label is not a
               control, so Tab skipped it and a screen reader read it as plain
               text (pre-release bug hunt). */}
           <button className="bigaction" style={{ margin: "10px 0 0" }} disabled={uploading} onClick={() => cameraInput.current?.click()}>
-            Take a photo
-          </button>
+            {t("Take a photo")}</button>
 
-          {uploading && <button className="sheet__go" onClick={() => uploadAbort.current?.abort()}>Cancel upload</button>}
-          {remaining.length > 0 && <button className="sheet__go" disabled={uploading} onClick={() => void upload(remaining)}>Retry remaining {remaining.length === 1 ? "file" : `${remaining.length} files`}</button>}
+          {uploading && <button className="sheet__go" onClick={() => uploadAbort.current?.abort()}>{t("Cancel upload")}</button>}
+          {remaining.length > 0 && <button className="sheet__go" disabled={uploading} onClick={() => void upload(remaining)}>{t("Retry remaining")}{" "}{remaining.length === 1 ? t("file") : t("{value0} files", { value0: remaining.length })}</button>}
           <p className="sheet__note">
-            Files are copied to your computer so the agent can read them.
-          </p>
+            {t("Files are copied to your computer so the agent can read them.")}</p>
         </>
       ) : (
         <>
           <div className="picker__current">
             <span className="picker__path">{listing?.display ?? path}</span>
-            <button className="picker__toggle" onClick={() => { setPath("~"); setAttempt(n => n + 1); }}>Home folder</button>
+            <button className="picker__toggle" onClick={() => { setPath("~"); setAttempt(n => n + 1); }}>{t("Home folder")}</button>
           </div>
 
           <div className="picker__browser" style={{ maxHeight: 320 }}>
-            {error && <p className="picker__error" role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>Try again</button></p>}
-            {!listing && !error && <p className="picker__empty" role="status">Opening folder…</p>}
+            {error && <p className="picker__error" role="alert">{t(error)} <button onClick={() => setAttempt(n => n + 1)}>{t("Try again")}</button></p>}
+            {!listing && !error && <p className="picker__empty" role="status">{t("Opening folder…")}</p>}
             {listing?.parent && (
               <button className="picker__row" onClick={() => setPath(listing.parent!)}>
                 <span className="picker__glyph">↰</span> {listing.parent}
               </button>
             )}
 
-            {listing?.entries.length === 0 && <p className="picker__empty">Nothing in here.</p>}
+            {listing?.entries.length === 0 && <p className="picker__empty">{t("Nothing in here.")}</p>}
 
             {listing?.entries.map((entry) => (
               <EntryRow
@@ -191,7 +189,7 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
             ))}
           </div>
 
-          <p className="sheet__note">Tap a file to attach it. Folders open.</p>
+          <p className="sheet__note">{t("Tap a file to attach it. Folders open.")}</p>
         </>
       )}
     </Sheet>

@@ -138,7 +138,7 @@ describe("what belongs to the computer and what to the app", () => {
     } };
     const view = render(<Settings />);
     const headings = view.getAllByRole("header").map((node) => node.props.children);
-    expect(headings).toEqual(["This computer", "This app"]);
+    expect(headings).toEqual(["This computer", "This app", "Language"]);
     expect(view.getByText("Shahi 0.3.16 · herdr 0.9.1")).toBeTruthy();
     expect(view.getByText("1.0.0 (28)")).toBeTruthy();
     expect(view.getByText("Last refreshed")).toBeTruthy();
@@ -154,9 +154,9 @@ describe("what belongs to the computer and what to the app", () => {
       backend: { state: "connected", version: "0.9.1", protocol: 22 }, update: { managed: true, channel: "beta", phase: "idle", current: "0.3.19" } };
     mockControl = { pending: false, error: null, request: jest.fn(), handshake };
     const headings = () => render(<Settings />).getAllByRole("header").map((node) => node.props.children);
-    expect(headings()).toEqual(["This computer", "Agents", "This app"]);
+    expect(headings()).toEqual(["This computer", "Agents", "This app", "Language"]);
     mockControl = { pending: false, error: null, request: jest.fn(), handshake: { ...handshake, capabilities: ["computer-updates"] } };
-    expect(headings()).toEqual(["This computer", "This app"]);
+    expect(headings()).toEqual(["This computer", "This app", "Language"]);
   });
 
   test("the release channel is one control whose current choice is selected, not two links", () => {

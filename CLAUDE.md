@@ -1633,3 +1633,22 @@ children fail under `bun test` on macOS). Diffs are cut at 3,000 lines or
 native sheet also ends rows past 4,000 points (a precaution against iOS's
 largest bitmap, not measured). Never poll it: refresh on opening, on request
 and when the agent's turn ends.
+
+## Interface languages, October 2026
+
+The browser and native interfaces support English, Arabic and Spanish, with a
+saved choice or the device language. Translate authored interface copy only;
+agent prose, questions, choice labels, names, paths, code and terminal output
+keep their original text. Pass opaque values through translation placeholders.
+Changing language must preserve connections, pairing identity and unsent drafts;
+do not remount navigators or force an RTL restart.
+
+**Native render translations must depend on `useI18n().t` and `.locale`.**
+Expo enables React Compiler: a render calling the global `ui()` or
+`currentUiLocale()` can stay cached in English after a switch, even when the
+component reads context. This was caught on a Release simulator, not in Jest.
+Use `UiText` or a translator bound from the hook, and pass the hook's locale to
+shared display helpers. Reserve the global helper for events outside rendering.
+React Native mirrors logical left/right text alignment under Yoga RTL; flipping
+it again in `UiText` mirrors it twice. Verify actual Arabic layout and changing
+labels in the native language smoke, alongside unchanged raw content and drafts.

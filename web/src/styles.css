@@ -14,3 +14,12 @@
 .client-update__card h1 { font-size: 28px; line-height: 1.2; }
 .client-update__card p { line-height: 1.5; }
 .client-update__card button { min-height: 48px; border-radius: 10px; padding: 10px 16px; }
+
+/* UI language changes layout, never the agent's source or terminal geometry. */
+.language-picker { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; font-size: 14px; }
+.language-picker select { min-height: 44px; max-width: 70%; padding: 8px 12px; color: var(--text); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.login > .language-picker, .pair-browser > .language-picker { margin-block-end: 24px; }
+html[dir="rtl"] .topbar__back, html[dir="rtl"] .tool__caret, html[dir="rtl"] .choice__cursor, html[dir="rtl"] .picker__crumbsep { transform: scaleX(-1); }
+.termwrap, .terminal, .transcript, .md__code, .md__c, .diff, .fileview__text, .boundary__what, .picker__path, .picker__crumbs, .commands__name, .pair-browser code, .login code { direction: ltr; unicode-bidi: isolate; }
+.msg__text, .subagent__report, .tasks__text, .choice__label { unicode-bidi: plaintext; text-align: start; }
+html[lang="ar"] .msg__text, html[lang="ar"] .page-intro p, html[lang="ar"] .settings p { line-height: 1.65; }

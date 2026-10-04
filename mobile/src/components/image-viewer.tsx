@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * An image from a conversation, full screen, to pinch and pan. Tapping a
  * picture in Reader did nothing (device audit of build 28, October 2026): the
@@ -34,6 +36,7 @@ const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "
 
 /** Pinch to zoom and pan, filling the space it is given. */
 export function ZoomableImage({ source, label }: { source: ImageSource; label: string }) {
+  useI18n();
   const { width, height } = useWindowDimensions();
   return (
     <ScrollView
@@ -51,6 +54,7 @@ export function ZoomableImage({ source, label }: { source: ImageSource; label: s
 }
 
 export function ImageViewer({ source, onClose }: { source: ImageSource; onClose: () => void }) {
+  const { t: ui } = useI18n();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -64,12 +68,12 @@ export function ImageViewer({ source, onClose }: { source: ImageSource; onClose:
       <SafeAreaProvider initialMetrics={initialWindowMetrics ?? NO_INSETS}>
       <SafeAreaView style={styles.viewer}>
         <View style={styles.bar}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close image" hitSlop={12} style={styles.barButton} onPress={onClose}>
-            <Text style={styles.barText}>Done</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Close image")} hitSlop={12} style={styles.barButton} onPress={onClose}>
+            <UiText style={styles.barText}>Done</UiText>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Save or share image"
+            accessibilityLabel={ui("Save or share image")}
             hitSlop={12}
             style={styles.barButton}
             disabled={saving}
@@ -86,11 +90,11 @@ export function ImageViewer({ source, onClose }: { source: ImageSource; onClose:
               }
             }}
           >
-            <Text style={styles.barText}>{saving ? "Saving…" : "Save / Share"}</Text>
+            <UiText style={styles.barText}>{saving ? "Saving…" : "Save / Share"}</UiText>
           </Pressable>
         </View>
-        {error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-        <ZoomableImage source={source} label="Image from the conversation. Pinch to zoom." />
+        {error && <UiText accessibilityRole="alert" style={styles.error}>{error}</UiText>}
+        <ZoomableImage source={source} label={ui("Image from the conversation. Pinch to zoom.")} />
       </SafeAreaView>
       </SafeAreaProvider>
     </Modal>

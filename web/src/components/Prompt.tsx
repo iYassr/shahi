@@ -56,7 +56,7 @@ export function Prompt({ prompt, onAnswer, disabled }: Props) {
               ❯
             </span>
             {prompt.answer === "digit" && <span className="choice__index">{option.index}.</span>}
-            <span className="choice__label">
+            <span className="choice__label" dir="auto">
               {labels[i]}
               {option.detail && <span className="choice__detail">{option.detail}</span>}
             </span>
@@ -84,7 +84,7 @@ export function PromptContext({ context }: { context: string[] | undefined }) {
   const entries = shownContext(context);
   if (entries.length === 0) return null;
   return (
-    <div className="asked__context">
+    <div className="asked__context" dir="ltr">
       {entries.map((entry, i) => (
         <p key={i}>{entry}</p>
       ))}

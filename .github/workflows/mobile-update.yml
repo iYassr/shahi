@@ -53,6 +53,10 @@ jobs:
           cp .github/eas/package.json .github/eas/bun.lock "$RUNNER_TEMP/eas/"
           cd "$RUNNER_TEMP/eas"
           bun install --frozen-lockfile
+      - name: Authenticate Expo from the protected release session
+        env:
+          EXPO_EAS_SESSION: ${{ secrets.EXPO_EAS_SESSION }}
+        run: node .github/scripts/mobile-app-store.cjs login
       # eas-cli still reads the key: it signs the manifest it publishes, and
       # the bundle it signs comes from the app's own locked toolchain anyway.
       # The key leaves the environment once it is on disk, so the build that
@@ -60,14 +64,12 @@ jobs:
       - name: Sign and stage the compatible JavaScript update
         working-directory: mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           SHAHI_OTA_PRIVATE_KEY: ${{ secrets.SHAHI_OTA_PRIVATE_KEY }}
           RELEASE_CHANNEL: ${{ inputs.channel }}
           ROLLOUT_PERCENTAGE: ${{ inputs.percentage }}
         run: |
           set -eu
           umask 077
-          test -n "$EXPO_TOKEN"
           test -n "$SHAHI_OTA_PRIVATE_KEY"
           printf '%s' "$SHAHI_OTA_PRIVATE_KEY" > "$RUNNER_TEMP/shahi-ota-key.pem"
           trap 'rm -f "$RUNNER_TEMP/shahi-ota-key.pem"' EXIT
@@ -83,3 +85,6 @@ jobs:
         run: |
           test -n "$SENTRY_AUTH_TOKEN"
           node ../node_modules/@sentry/react-native/scripts/expo-upload-sourcemaps.js dist
+      - name: Remove this run's Expo session
+        if: always()
+        run: node .github/scripts/mobile-app-store.cjs logout

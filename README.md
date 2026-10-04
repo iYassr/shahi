@@ -15,7 +15,7 @@ use and free for everyone. No VPN, port forwarding or Shahi account required.
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 
-[Open Shahi](https://getshahi.dev/pwa/) · [Request an iOS beta invite](https://getshahi.dev/#ios-beta) · [Quick start](#quick-start) · [Connection security](#connection-security)
+[Open Shahi](https://getshahi.dev/pwa/) · [Get the iPhone app](https://apps.apple.com/app/id6813370698) · [Quick start](#quick-start) · [Connection security](#connection-security)
 
 </div>
 
@@ -106,9 +106,8 @@ Reader supports these five agents running inside herdr:
 | <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a recorded single call; images and results for multiple calls are unsupported. |
 | <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, recorded images and undo changes. Requires herdr's OpenCode integration. |
 
-OpenCode and Antigravity require **computer release 0.3.11 or newer**, currently
-available on the computer's **Beta** channel. In Shahi's Settings, select **Beta**
-and then **Update computer**; the existing iPhone app can read them.
+OpenCode and Antigravity require **computer release 0.3.11 or newer**,
+available on the computer's **Stable** channel.
 Readers select the exact session reported by herdr or
 a uniquely identified process-owned transcript. They never select another
 conversation just because it shares a folder. Use Screen mode for other agents
@@ -220,10 +219,10 @@ to these commands.
   **Connect this browser?** card first, naming the relay and the computer;
   continue only if you opened that link yourself. Add Shahi to your home screen
   for a standalone app window.
-- **iPhone app:** [request a private TestFlight beta invite](https://getshahi.dev/#ios-beta).
-  Invitations are sent by email as places become available; submitting the form
-  does not grant immediate access. Once invited, install through TestFlight,
-  open Shahi and choose **Scan QR code**.
+- **iPhone app:** [install Shahi from the App Store](https://apps.apple.com/app/id6813370698),
+  open it and choose **Scan QR code**. To try upcoming versions, you can also
+  [request a TestFlight beta invite](https://getshahi.dev/#ios-beta); invitations
+  are sent by email as places become available.
 
 Pair several computers from **Settings → Computers → Add a computer**. Tap the computer
 name on the main screen, or open Computers in Settings, to switch. Every saved computer
@@ -236,8 +235,8 @@ all saved computers when you return.
 Your existing agents appear after pairing. Outbound internet access is required
 for the default relay connection; you do not need to expose Shahi’s local port.
 
-The browser app is available on phones and computers. The native iOS app is in
-private TestFlight beta; a native Android release is not currently available.
+The browser app is available on phones and computers. The native iPhone app is
+available on the App Store; a native Android release is not currently available.
 SSH tunnelling is built into the native app, not the hosted browser app.
 
 ## Updating
@@ -462,9 +461,8 @@ pairing and sessions.
 <summary>Is Shahi available for iPhone and Android?</summary>
 
 The web app works in a modern phone browser and can be added to the home screen.
-The native iPhone app is in private TestFlight beta; [request an
-invite](https://getshahi.dev/#ios-beta) and wait for the invitation email. A native
-Android app is not currently available.
+The native iPhone app is [available on the App Store](https://apps.apple.com/app/id6813370698).
+A native Android app is not currently available.
 
 </details>
 

@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
 import { controlMessage, controlNeedsAttention, updateInProgress } from "@shahi/shared";
@@ -7,10 +9,11 @@ import { theme } from "@/lib/theme";
 const CHANNELS = [{ id: "stable", label: "Stable" }, { id: "beta", label: "Beta" }] as const;
 
 export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
+  const { locale, t: ui } = useI18n();
   const { control, server, link, error, online = true } = useSession();
   // What survives is the pairing for a relay computer, the saved login for an
   // SSH one; the card said "pairing" to SSH computers (pre-release bug hunt).
-  const kept = server?.startsWith("ssh:") ? "Your SSH login is saved." : "Your pairing is saved.";
+  const kept = ui(server?.startsWith("ssh:") ? "Your SSH login is saved." : "Your pairing is saved.");
   const h = control?.handshake;
   if (!control || !h) return null;
   const busy = control.pending || updateInProgress(h.update.phase);
@@ -20,28 +23,28 @@ export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
   if (!settings && !controlNeedsAttention(h, control, link !== "live" || !!error || !online)) return null;
   const title = h.backend.state.includes("update-required") ? "Update required" : h.update.available ? "Update available" : settings ? "Updates" : "This computer";
   return <View style={[styles.box, settings && styles.group]} accessibilityLiveRegion="polite" testID="computer-update">
-    <Text style={styles.title}>{title}</Text>
-    <Text style={styles.text}>{control.pending ? "Requesting update…" : control.error ? (updateInProgress(h.update.phase) ? "Reconnecting after the update…" : `Computer unavailable. ${kept}`) : controlMessage(h)}</Text>
+    <UiText style={styles.title}>{title}</UiText>
+    <Text style={styles.text}>{control.pending ? ui("Requesting update…") : control.error ? (updateInProgress(h.update.phase) ? ui("Reconnecting after the update…") : ui("Computer unavailable. {value1}", {value1: kept})) : controlMessage(h, locale)}</Text>
     {!!control.error && <Text style={styles.error}>{control.error}</Text>}
     {h.update.managed && <View style={styles.actions}>
-      {!!h.update.available && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("install")} style={styles.button}><Text style={styles.action}>Update computer</Text></Pressable>}
-      <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("check")} style={styles.button}><Text style={styles.action}>Check for updates</Text></Pressable>
+      {!!h.update.available && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("install")} style={styles.button}><UiText style={styles.action}>Update computer</UiText></Pressable>}
+      <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("check")} style={styles.button}><UiText style={styles.action}>Check for updates</UiText></Pressable>
     </View>}
     {/* One control with two segments, the selected one raised. As two links
         with a tick it read as two actions, "Stable ✓Beta" (device audit,
         build 28). Choosing checks compatibility; it installs nothing. */}
     {settings && h.update.managed && <View style={styles.channel}>
-      <Text style={styles.label}>Release channel</Text>
-      <View style={styles.segmented} accessibilityLabel="Release channel">
+      <UiText style={styles.label}>Release channel</UiText>
+      <View style={styles.segmented} accessibilityLabel={ui("Release channel")}>
         {CHANNELS.map(({ id, label }) => {
           const on = h.update.channel === id;
-          return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`${label} channel`} accessibilityState={{ selected: on, disabled: busy }} disabled={busy}
+          return <Pressable key={id} accessibilityRole="button" accessibilityLabel={ui("{value1} channel", {value1: label})} accessibilityState={{ selected: on, disabled: busy }} disabled={busy}
             onPress={() => { if (!on) void control.request("check", id); }} style={[styles.segment, on && styles.segmentOn]}>
-            <Text style={[styles.segmentText, on && styles.segmentTextOn]}>{label}</Text>
+            <UiText style={[styles.segmentText, on && styles.segmentTextOn]}>{label}</UiText>
           </Pressable>;
         })}
       </View>
-      <Text style={styles.text}>Beta gets early releases. Switching to Stable keeps your current release until a compatible update is available.</Text>
+      <UiText style={styles.text}>Beta gets early releases. Switching to Stable keeps your current release until a compatible update is available.</UiText>
     </View>}
   </View>;
 }

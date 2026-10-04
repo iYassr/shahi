@@ -1,6 +1,13 @@
 # Privacy and beta review readiness
 
-Last checked: 20 September 2026.
+Source disclosures checked: 4 October 2026. The App Store Connect observations
+below are dated; they do not establish the current status of its private fields.
+
+Shahi 1.0.0 is publicly listed on the
+[App Store](https://apps.apple.com/app/id6813370698). The repository now targets
+1.1.0; source features and a passing simulator build do not establish which
+features are present in the public 1.0.0 binary. Check the actual distributed
+build when completing its privacy and review answers.
 
 ## Published disclosures
 
@@ -21,10 +28,19 @@ Removing a computer does not delete files or conversations on that computer.
 Disabling notifications in iOS stops display; it does not delete a server's push
 registration. Removing a computer while it is offline leaves its device record
 active until it is revoked from another paired phone or browser; the computer
-itself has no revocation command. Native notification payloads, which Expo and
-Apple can read, include the workspace name, terminal title or pane name, pane identifier, an opaque identifier for the program occupying that pane
-(herdr’s terminal id), and the computer's stable public server identifier (policy updated 26 September
-2026).
+itself has no revocation command.
+
+With a relay-paired phone and a computer offering `push-actions`, the phone gives
+the computer a random notification key over the encrypted relay. The computer
+seals the question, context, exact answer labels, conversation/workspace names
+and pane occupant identity; the phone's notification extension decrypts them.
+Expo and Apple receive fixed wording, pane and public computer identifiers, a
+key identifier and encrypted content. SSH/passcode connections and older builds
+retain the plain notification payload: workspace name, terminal title or pane
+name, pane identifier, pane occupant identity and public computer identifier.
+See [the policy](privacy-policy.md#push-notifications) and
+[notification behavior](notifications.md). Confirm this distinction against the
+submitted binary; the extension requires a new native build.
 
 ## Apple data categories
 
@@ -63,9 +79,10 @@ The controller checkpoints pairing, sample files, attachments and transcripts
 to private R2 storage. Access expires 31 December 2026; scheduled cleanup stops
 the container and deletes its snapshot. See [demo operations](../demo/README.md).
 
-External beta review has not been submitted. App Store Connect's previously
-saved pending-access notes still need replacement with these instructions.
-Apple has not approved simulated responses as a review substitute.
+On 20 September 2026, external beta review had not been submitted and the saved
+pending-access notes still needed replacement with these instructions. That
+observation does not establish today's review state. Recheck the actual private
+review instructions for each submission.
 
 Before submitting external review:
 
@@ -78,7 +95,7 @@ Before submitting external review:
    the connection. Confirm the environment stays online throughout review.
 4. Enter the real connection credentials in App Store Connect's private review
    fields, enable its sign-in requirement as appropriate, and replace the
-   current explicit "not yet ready" notes with the verified steps.
+   any obsolete pending-access notes with the verified steps.
 5. If using a demonstration mode instead of working account access, resolve
    Apple's approval requirement for that substitution before relying on it.
 6. Complete external beta review and verify approval before sharing a public
@@ -87,9 +104,11 @@ Before submitting external review:
 Keep reviewer secrets out of Git and public documentation. France remains
 excluded pending the separate export-compliance process.
 
-App Information still shows age ratings and content rights as not configured;
-Digital Services Act account information also has a Set Up link. Resolve these
-before public release rather than treating the privacy label as full approval.
+On 20 September 2026, App Information showed age ratings and content rights as
+not configured, and Digital Services Act account information had a Set Up link.
+These are historical observations, not current blockers inferred from this
+file. Verify the current settings for the selected release and distribution
+regions.
 
 For a public App Store release, also finish and verify screenshots, age rating,
 content rights, store description, support URL, pricing/availability, the selected

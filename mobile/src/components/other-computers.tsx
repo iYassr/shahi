@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
@@ -7,6 +9,7 @@ import { theme } from "@/lib/theme";
 
 /** Keep a way into available work beside the explanation of an unavailable computer. */
 export function OtherComputers({ waitingOnly = false }: { waitingOnly?: boolean }) {
+  const { t: ui } = useI18n();
   const { computers = [], activeComputerId, switchComputer } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -18,10 +21,10 @@ export function OtherComputers({ waitingOnly = false }: { waitingOnly?: boolean 
         setBusy(c.id); setError("");
         void switchComputer(c.id).then(showComputerHome).catch(e => setError(e.message)).finally(() => setBusy(null));
       }}>
-      <Text style={styles.name}>{busy === c.id ? "Opening…" : `Open ${c.name}`}</Text>
-      <Text style={styles.detail}>Connected{c.waiting ? ` · ${c.waiting} waiting` : ""}</Text>
+      <Text style={styles.name}>{busy === c.id ? ui("Opening…") : ui("Open {value1}", {value1: c.name})}</Text>
+      <Text style={styles.detail}>{ui("Connected")}{c.waiting ? ui(" · {value1} waiting", {value1: c.waiting}) : ""}</Text>
     </Pressable>)}
-    {!!error && <Text accessibilityRole="alert" style={{ color: theme.rose }}>{error}</Text>}
+    {!!error && <UiText accessibilityRole="alert" style={{ color: theme.rose }}>{error}</UiText>}
   </View>;
 }
 const styles = StyleSheet.create({

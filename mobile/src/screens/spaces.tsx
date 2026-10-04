@@ -1,3 +1,6 @@
+
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { plainHeaderRight } from "@/lib/header-controls";
 import { ComputerSwitcher } from "@/components/computer-switcher";
 import { LinkBadge } from "@/components/link-badge";
@@ -36,16 +39,18 @@ import { AgentIcon, Icon } from "@/components/icons";
 import { FolderBrowser, type FolderChoice } from "@/components/folder-browser";
 
 export function Spaces({ session }: { session: Session | null }) {
+  const { t: ui, locale } = useI18n();
   // Same header furniture as the Agents tab — the two lists are siblings and
   // should read as one app, not two designs.
   const { activeComputerId, api, link, error, server, reconnect, computers = [], control } = useSession();
   const computerName = computers.find(c => c.id === activeComputerId)?.name;
-  const health = connectionHealth({ link, error, computerName, transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
+  const health = connectionHealth({ locale: locale, link, error, computerName, transport: server?.startsWith("ssh:") ? "ssh" : "relay", backend: control?.handshake?.backend });
   // Above the `!session` return below: hooks cannot be called conditionally.
   const spaceScroll = useRememberedScroll("spaces", () => session?.workspaces ?? [], (w) => w.workspaceId, api);
   const header = (
     <Stack.Screen
       options={{
+        title: ui("Spaces"),
         ...plainHeaderRight(
           <View style={styles.status}>
             <ComputerSwitcher />
@@ -55,8 +60,8 @@ export function Spaces({ session }: { session: Session | null }) {
       }}
     />
   );
-  if (!session) return <>{header}<Unreachable title={health?.title ?? "Connecting to your computer…"}
-    message={health?.detail ?? "Your spaces will appear once the computer connects."} server={computerName || server || ""}
+  if (!session) return <>{header}<Unreachable title={health?.title ?? ui("Connecting to your computer…")}
+    message={health?.detail ?? ui("Your spaces will appear once the computer connects.")} server={computerName || server || ""}
     onRetry={reconnect} onSwitch={() => router.push("/computers")} alternatives={<OtherComputers />} /></>;
 
   return (
@@ -70,7 +75,7 @@ export function Spaces({ session }: { session: Session | null }) {
         ListHeaderComponent={
           <><ConnectionHealth />{session.workspaces.length > 0 ? (
             <Text style={styles.groupLabel}>
-              {session.workspaces.length} SPACE{session.workspaces.length === 1 ? "" : "S"}
+              {ui(session.workspaces.length === 1 ? "{count} SPACE" : "{count} SPACES", { count: session.workspaces.length })}
             </Text>
           ) : null}</>
         }
@@ -102,9 +107,7 @@ export function Spaces({ session }: { session: Session | null }) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.spaceName}>{item.label}</Text>
                 <Text style={styles.spaceMeta} numberOfLines={1}>
-                  {item.cwd ?? item.workspaceId} · {item.tabCount} tab
-                  {item.tabCount === 1 ? "" : "s"} · {item.paneCount} pane
-                  {item.paneCount === 1 ? "" : "s"}
+                  {item.cwd ?? item.workspaceId} · {ui(item.tabCount === 1 ? "{count} tab" : "{count} tabs", { count: item.tabCount })} · {ui(item.paneCount === 1 ? "{count} pane" : "{count} panes", { count: item.paneCount })}
                 </Text>
               </View>
               {blocked > 0 && <Text style={styles.badge}>{blocked}</Text>}
@@ -114,7 +117,7 @@ export function Spaces({ session }: { session: Session | null }) {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListFooterComponent={
           <Pressable accessibilityRole="button" disabled={!!health} accessibilityState={{ disabled: !!health }} style={styles.action} onPress={() => router.push("/new-space")}>
-            <Text style={styles.actionText}>+ New space</Text>
+            <UiText style={styles.actionText}>+ New space</UiText>
           </Pressable>
         }
       />
@@ -123,6 +126,7 @@ export function Spaces({ session }: { session: Session | null }) {
 }
 
 export function SpaceDetail({ space, session }: { space: Space; session: Session }) {
+  const { t: ui } = useI18n();
   const { activeComputerId, api } = useSession();
   // Stable per computer, so the memoised rows below keep their identity.
   const open = useCallback((paneId: string) => openPane(paneId, activeComputerId), [activeComputerId]);
@@ -155,7 +159,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
           return (
             <View>
               <Text style={styles.groupLabel}>
-                {/^\d+$/.test(item.label) ? `TAB ${item.label}` : item.label.toUpperCase()}
+                {/^\d+$/.test(item.label) ? ui("TAB {value1}", {value1: item.label}) : item.label.toUpperCase()}
               </Text>
               {panes.map((pane, i) => (
                 <View key={pane.paneId}>
@@ -178,7 +182,7 @@ export function SpaceDetail({ space, session }: { space: Space; session: Session
               })
             }
           >
-            <Text style={styles.actionPrimaryText}>+ New agent</Text>
+            <UiText style={styles.actionPrimaryText}>+ New agent</UiText>
           </Pressable>
         }
       />
@@ -195,13 +199,14 @@ const PaneRow = memo(function PaneRow({
   // Stable callback taking the id, so memo holds across list re-renders.
   onPress: (paneId: string) => void;
 }) {
+  const { t: ui, locale } = useI18n();
   // The Agents row's large-text treatment. Without it the status and agent
   // label, which cannot shrink, took the whole width at accessibility sizes
   // and the title — the only thing that names the conversation — got none
   // (September 2026 review).
   const largeText = useLargeText();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={conversationLabel(pane)} style={styles.row} onPress={() => onPress(pane.paneId)}>
+    <Pressable accessibilityRole="button" accessibilityLabel={conversationLabel(pane, undefined, false, Date.now(), locale)} style={styles.row} onPress={() => onPress(pane.paneId)}>
       <Avatar pane={pane} />
       <View style={styles.rowBody}>
         <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
@@ -213,7 +218,7 @@ const PaneRow = memo(function PaneRow({
           <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-                {pane.status === "blocked" ? "waiting" : pane.status}
+                {pane.status === "blocked" ? ui("waiting") : pane.status}
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
@@ -242,6 +247,7 @@ export function NewSpace({ session, onCreated, onCancel, forAgent = false }: {
   /** Opened by New agent: the space is where that agent will work, and its form comes next. */
   forAgent?: boolean;
 }) {
+  const { t: ui } = useI18n();
   const { api } = useSession();
   const largeText = useLargeText();
   const [name, setName] = useState("");
@@ -286,27 +292,27 @@ export function NewSpace({ session, onCreated, onCancel, forAgent = false }: {
   }
 
   return (
-    <SheetBody title={forAgent ? "New agent" : "New space"} fullScreen busy={busy} onClose={onCancel}>
+    <SheetBody title={forAgent ? ui("New agent") : ui("New space")} fullScreen busy={busy} onClose={onCancel}>
       {/* What a space is, where the word first appears: a new person met
           "Choose a space" before anything had said what one was (simulator
           run of build 32). */}
-      <Text style={styles.intro}>
+      <UiText style={styles.intro}>
         {forAgent ? "Agents work in a space: a folder on your computer. Choose this one's folder, then the agent." : "A space is a folder on your computer that agents work in."}
-      </Text>
+      </UiText>
       {/* Beside the label rather than under the browser, where a long home
           folder put it a screen or two out of sight (simulator run of build 32). */}
       <View style={styles.labelRow}>
-        <Text style={styles.label}>FOLDER</Text>
+        <UiText style={styles.label}>FOLDER</UiText>
         <Pressable accessibilityRole="button" style={styles.changeTarget} onPress={() => { setTyping((t) => !t); setError(null); }} testID="type-path">
-          <Text style={styles.sheetClose}>{typing ? "Browse folders instead" : "Type a path instead"}</Text>
+          <UiText style={styles.sheetClose}>{typing ? "Browse folders instead" : "Type a path instead"}</UiText>
         </Pressable>
       </View>
       {!typing && (folder ? (
         <View style={styles.chosen} testID="chosen-folder">
           <Icon name="folder" size={18} color={theme.peach} />
           <Text style={styles.chosenPath} numberOfLines={largeText ? 3 : 1} ellipsizeMode="head">{folder.display}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Change folder" style={styles.changeTarget} onPress={() => setFolder(null)}>
-            <Text style={styles.sheetClose}>Change</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Change folder")} style={styles.changeTarget} onPress={() => setFolder(null)}>
+            <UiText style={styles.sheetClose}>Change</UiText>
           </Pressable>
         </View>
       ) : (
@@ -323,21 +329,21 @@ export function NewSpace({ session, onCreated, onCancel, forAgent = false }: {
           testID="new-space-folder"
           placeholder="/home/you/project"
           placeholderTextColor={theme.dim}
-          accessibilityLabel="Space folder"
+          accessibilityLabel={ui("Space folder")}
         />
       )}
-      <Text style={styles.label}>NAME</Text>
+      <UiText style={styles.label}>NAME</UiText>
       <TextInput
         style={styles.input}
         value={name}
         onChangeText={(text) => { named.current = true; setName(text); }}
-        placeholder="what you are working on"
+        placeholder={ui("what you are working on")}
         placeholderTextColor={theme.dim}
-        accessibilityLabel="Space name"
+        accessibilityLabel={ui("Space name")}
       />
-      {error && <Text accessibilityRole="alert" style={styles.err}>{error}</Text>}
+      {error && <UiText accessibilityRole="alert" style={styles.err}>{error}</UiText>}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || !cwd }} style={[styles.go, (busy || !cwd) && styles.goOff]} disabled={busy || !cwd} onPress={() => void create()} testID="create-space">
-        <Text style={styles.goText}>{busy ? "Creating…" : forAgent ? "Create space and continue" : "Create space"}</Text>
+        <UiText style={styles.goText}>{busy ? "Creating…" : forAgent ? "Create space and continue" : "Create space"}</UiText>
       </Pressable>
     </SheetBody>
   );
@@ -352,15 +358,16 @@ export function NewSpace({ session, onCreated, onCancel, forAgent = false }: {
  * the folder instead (`app/new-agent.tsx`).
  */
 export function PickSpace({ session, onPick, onNewSpace }: { session: Session; onPick: (space: Space) => void; onNewSpace?: () => void }) {
+  const { t: ui } = useI18n();
   // Making the space here continues to its agent; the standalone sheet is the fallback.
   const newSpace = onNewSpace ?? (() => router.replace("/new-space"));
   return (
-    <SheetBody title="Choose a space" fullScreen>
+    <SheetBody title={ui("Choose a space")} fullScreen>
       <View>
         {/* A new agent often wants a new folder; on build 28 this list
             offered only the spaces that already existed (device audit). */}
         <Pressable accessibilityRole="button" style={[styles.action, styles.actionTop]} onPress={newSpace} testID="pick-new-space">
-          <Text style={styles.actionText}>+ New space</Text>
+          <UiText style={styles.actionText}>+ New space</UiText>
         </Pressable>
         {/* Named by label and folder. herdr's workspace number was drawn here
             and read first, "1, tip-calc, ~/ShahiFresh/tip-calc", and means
@@ -382,6 +389,7 @@ export function PickSpace({ session, onPick, onNewSpace }: { session: Session; o
 }
 
 export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneId: string) => void }) {
+  const { t: ui } = useI18n();
   const { api, lastAgent, rememberAgent } = useSession();
   // As it was when the form opened: what is remembered next is for the next form.
   const [preferred] = useState(lastAgent);
@@ -485,13 +493,13 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
     return () => subscription.remove();
   }, [busy]);
   return (
-    <SheetBody title={`New agent in ${opened.label}`} fullScreen busy={busy}>
+    <SheetBody title={ui("New agent in {value1}", {value1: opened.label})} fullScreen busy={busy}>
       <Stack.Screen options={{ gestureEnabled: !busy }} />
-      {replaced && <Text accessibilityRole="alert" style={styles.err}>This space changed while you were choosing an agent. Close this screen and choose the space again.</Text>}
-      {loading && <Text style={styles.note}>Finding your agents…</Text>}
-      {loadError && <><Text style={styles.err}>{loadError}</Text><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><Text style={styles.actionText}>Try again</Text></Pressable></>}
-      {!loading && !loadError && kinds.length === 0 && <Text style={styles.note}>No agents are installed on this computer yet.</Text>}
-      <Text style={styles.label}>AGENT</Text>
+      {replaced && <UiText accessibilityRole="alert" style={styles.err}>This space changed while you were choosing an agent. Close this screen and choose the space again.</UiText>}
+      {loading && <UiText style={styles.note}>Finding your agents…</UiText>}
+      {loadError && <><UiText style={styles.err}>{loadError}</UiText><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><UiText style={styles.actionText}>Try again</UiText></Pressable></>}
+      {!loading && !loadError && kinds.length === 0 && <UiText style={styles.note}>No agents are installed on this computer yet.</UiText>}
+      <UiText style={styles.label}>AGENT</UiText>
       {/* The chosen agent is marked three ways, accent border, check and
           weight, because a slightly lighter fill was all that told it apart
           (simulator run of build 32). Each wears the icon its conversations
@@ -507,7 +515,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       </View>
       {modes.length > 0 && (
         <>
-          <Text style={styles.label}>PERMISSIONS</Text>
+          <UiText style={styles.label}>PERMISSIONS</UiText>
           <View style={styles.modes}>
             {modes.map((option) => (
               <Pressable
@@ -524,23 +532,23 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
                 disabled={busy}
               >
                 <Text style={[styles.modeLabel, option.id === mode && styles.modeLabelOn]}>
-                  {option.id === mode ? "✓ " : ""}{option.label}
+                  {option.id === mode ? "✓ " : ""}{ui(option.label)}
                 </Text>
-                {option.unsafe && <Text style={{ color: theme.rose, fontSize: 13, fontWeight: "600" }}>No approval before changes</Text>}
-                <Text style={styles.modeWhy}>{option.description}</Text>
+                {option.unsafe && <UiText style={{ color: theme.rose, fontSize: 13, fontWeight: "600" }}>No approval before changes</UiText>}
+                <UiText style={styles.modeWhy}>{option.description}</UiText>
               </Pressable>
             ))}
           </View>
         </>
       )}
-      {kind && modes.length === 0 && <Text style={styles.note}>{agentLabel(kind)} uses its own approval settings on your computer.</Text>}
-      {error && <Text style={styles.err}>{error}</Text>}
+      {kind && modes.length === 0 && <Text style={styles.note}>{ui("{agent} uses its own approval settings on your computer.", { agent: agentLabel(kind) })}</Text>}
+      {error && <UiText style={styles.err}>{error}</UiText>}
       <Pressable accessibilityRole="button" style={[styles.go, (busy || !kind) && styles.goOff]} disabled={replaced || busy || !kind || loading || !!loadError} testID="start-agent" onPress={() => void start()}>
         <Text style={styles.goText}>
-          {phase === "starting" ? `Waiting for ${kind ? agentLabel(kind) : "agent"}…` : `Start ${kind ? agentLabel(kind) : "agent"}${modes.find(option => option.id === mode)?.unsafe ? " without approvals" : ""}`}
+          {phase === "starting" ? ui("Waiting for {value1}…", {value1: kind ? agentLabel(kind) : ui("agent")}) : ui(modes.find(option => option.id === mode)?.unsafe ? "Start {agent} without approvals" : "Start {agent}", { agent: kind ? agentLabel(kind) : ui("agent") })}
         </Text>
       </Pressable>
-      <Text style={styles.note}>A cold start can take half a minute.</Text>
+      <UiText style={styles.note}>A cold start can take half a minute.</UiText>
     </SheetBody>
   );
 }
@@ -553,6 +561,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
  * measurement races and keeps the Start button reachable at large text sizes.
  */
 function SheetBody({ title, children, fullScreen = false, busy = false, onClose = () => router.back() }: { title: string; children: React.ReactNode; fullScreen?: boolean; busy?: boolean; onClose?: () => void }) {
+  useI18n();
   const content = (
     <View style={styles.sheet}>
       {/* react-native-screens requires a non-collapsible header beside a
@@ -565,7 +574,7 @@ function SheetBody({ title, children, fullScreen = false, busy = false, onClose 
             finger lands but not the element VoiceOver and Switch Control
             focus, which measured 39×18pt on the simulator. */}
         <Pressable accessibilityRole="button" disabled={busy} accessibilityState={{ disabled: busy }} onPress={onClose} style={styles.sheetCloseTarget} testID="sheet-close">
-          <Text style={styles.sheetClose}>Close</Text>
+          <UiText style={styles.sheetClose}>Close</UiText>
         </Pressable>
       </View>
       {children}

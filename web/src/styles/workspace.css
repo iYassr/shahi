@@ -61,7 +61,7 @@
   width: 100%;
   padding: 11px var(--gutter);
   border-bottom: 1px solid var(--line);
-  text-align: left;
+  text-align: start;
 }
 
 /* A space with something waiting in it says so from the left edge. */
@@ -115,7 +115,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--line-bright);
-  text-align: left;
+  text-align: start;
 }
 
 .space:active {
@@ -320,7 +320,7 @@
    * A path that ellipsizes at the end is merely truncated; one that lies about
    * its own order is worse.
    */
-  text-align: left;
+  text-align: start;
 }
 
 .picker__toggle {
@@ -406,7 +406,7 @@ span.picker__crumb {
   border-bottom: 1px solid var(--line);
   font-family: var(--mono);
   font-size: 13px;
-  text-align: left;
+  text-align: start;
 }
 
 .picker__row:last-child {

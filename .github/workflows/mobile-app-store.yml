@@ -1,0 +1,58 @@
+name: Build and upload Shahi for App Store review
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Manual CI run on this exact commit (must pass before upload)
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: shahi-app-store
+  cancel-in-progress: false
+jobs:
+  archive:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment: releases
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+      - name: Install the locked EAS CLI outside Metro's checkout
+        run: |
+          set -eu
+          mkdir "$RUNNER_TEMP/eas"
+          cp .github/eas/package.json .github/eas/bun.lock "$RUNNER_TEMP/eas/"
+          cd "$RUNNER_TEMP/eas"
+          bun install --frozen-lockfile
+      - name: Verify the CI run identity and prepare protected build credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          EXPO_EAS_SESSION: ${{ secrets.EXPO_EAS_SESSION }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: node .github/scripts/mobile-app-store.cjs prepare
+      - name: Build the latest production iPhone archive
+        working-directory: mobile
+        run: |
+          set -eu
+          umask 077
+          "$RUNNER_TEMP/eas/node_modules/.bin/eas" build --platform ios --profile production --freeze-credentials --non-interactive --no-wait --json > "$RUNNER_TEMP/shahi-ios-build.json"
+      - name: Wait for the archive and successful CI, then upload to App Store Connect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: node .github/scripts/mobile-app-store.cjs upload
+      - name: Remove only this build's temporary Sentry secret and runner credentials
+        if: always()
+        run: node .github/scripts/mobile-app-store.cjs cleanup
+      # Upload is to App Store Connect/TestFlight. Review submission and the
+      # authorized public release are completed through App Store Connect.

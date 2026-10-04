@@ -1,3 +1,6 @@
+import { UiText } from "@/components/ui-text";
+import { LanguagePicker } from "@/components/language-picker";
+import { useI18n } from "@/lib/i18n";
 /**
  * First run: how to reach the server.
  *
@@ -57,6 +60,7 @@ export function Connect({
   onConnectedSsh: (profile: SshProfile, connection: Connection) => void;
   onConnectedRelay: (identity: RelayIdentity) => void;
 }) {
+  const { t: ui } = useI18n();
   // Relay pairing is the default; SSH fields appear only when requested.
   const [phase, setPhase] = useState<"intro" | "form">("intro");
   const [ssh, setSsh] = useState<SshProfile>(emptySshProfile);
@@ -95,16 +99,17 @@ export function Connect({
     const failed = linkFailure?.payload === pending ? linkFailure.message : null;
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.introBody} testID="pair-review">
-        <Text style={styles.lede} accessibilityRole="header">Pair this phone?</Text>
-        <Text style={styles.introText}>
+        <LanguagePicker />
+        <UiText style={styles.lede} accessibilityRole="header">Pair this phone?</UiText>
+        <UiText style={styles.introText}>
           A link is asking to connect this phone to a Shahi computer. Only continue if you opened this
           link yourself, from a computer you control.
-        </Text>
-        <Text style={styles.label}>RELAY</Text>
+        </UiText>
+        <UiText style={styles.label}>RELAY</UiText>
         <Text style={styles.mono}>{host}</Text>
-        <Text style={styles.label}>COMPUTER</Text>
+        <UiText style={styles.label}>COMPUTER</UiText>
         <Text style={styles.mono}>{pending.server.slice(0, 16)}…</Text>
-        {failed && <Text style={styles.error}>{failed}</Text>}
+        {failed && <UiText style={styles.error}>{failed}</UiText>}
         <Pressable
           accessibilityRole="button"
           style={[styles.button, busy && styles.buttonOff]}
@@ -114,10 +119,10 @@ export function Connect({
             void pair(pending, true);
           }}
         >
-          <Text style={styles.buttonText}>{busy ? "Pairing…" : "Pair with this computer"}</Text>
+          <UiText style={styles.buttonText}>{busy ? "Pairing…" : "Pair with this computer"}</UiText>
         </Pressable>
         <Pressable accessibilityRole="button" style={styles.link} onPress={() => { dismissPairing(pending); setLinkFailure(null); }} testID="confirm-cancel">
-          <Text style={styles.link}>Cancel</Text>
+          <UiText style={styles.link}>Cancel</UiText>
         </Pressable>
       </ScrollView>
     );
@@ -270,6 +275,7 @@ export function Connect({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
       >
+        <LanguagePicker />
         {/* The horizontal lockup: the s-and-glass mark + lowercase wordmark — and the
             intended way in beside it. It sits in the title row on purpose: as
             a card above the form it pushed the Connect button under the
@@ -287,15 +293,15 @@ export function Connect({
             onPress={() => { setError(null); setPhase("intro"); setScanning(true); }}
             disabled={busy}
             testID="scan-code"
-            accessibilityHint="On the computer: herdr plugin action invoke shahi.pair"
+            accessibilityHint={ui("On the computer: herdr plugin action invoke shahi.pair")}
           >
-            <Text style={styles.scanText}>Scan a code</Text>
+            <UiText style={styles.scanText}>Scan a code</UiText>
           </Pressable>
         </View>
 
         <SshForm ssh={ssh} patch={patch} setAuthKind={(kind) => setAuth(setSsh, kind)} />
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error && <UiText style={styles.error}>{error}</UiText>}
 
         <Pressable
           accessibilityRole="button"
@@ -304,17 +310,17 @@ export function Connect({
           onPress={() => void connectSsh()}
           testID="connect"
         >
-          <Text style={styles.buttonText}>{busy ? "Connecting…" : "Connect"}</Text>
+          <UiText style={styles.buttonText}>{busy ? "Connecting…" : "Connect"}</UiText>
         </Pressable>
 
         {!sshTunnelAvailable() && (
-          <Text style={styles.note}>
+          <UiText style={styles.note}>
             SSH needs the native build of the app. Scan a pairing code instead.
-          </Text>
+          </UiText>
         )}
 
         <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
-          <Text style={styles.link}>Haven't set up your computer yet?</Text>
+          <UiText style={styles.link}>Haven't set up your computer yet?</UiText>
         </Pressable>
         <PrivacyLinks licenses />
       </ScrollView>
@@ -338,6 +344,7 @@ export function Connect({
  * command and opens the scanner directly once the server has printed its QR code.
  */
 function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; onPaste: () => void; onSsh: () => void; busy: boolean; error: string | null }) {
+  const { t: ui } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -349,24 +356,25 @@ function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; on
 
   return (
     <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator>
+      <LanguagePicker />
       <View style={[styles.lockup, { marginBottom: 6 }]}>
         <GreetingLogo />
         <Wordmark color={theme.fg} />
       </View>
 
-      <Text style={styles.lede}>Connect your computer</Text>
-      <Text style={styles.introText}>
+      <UiText style={styles.lede}>Connect your computer</UiText>
+      <UiText style={styles.introText}>
         Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity from your phone. Set up Shahi on your computer, then scan the code it shows.
-      </Text>
+      </UiText>
 
-      <Text style={styles.step}>1 — Set up your computer.</Text>
+      <UiText style={styles.step}>1 — Set up your computer.</UiText>
       {/* One line per command, whatever the width or text size. The second
           wrapped on build 32, so "these two lines" showed as three; Copy now
           sits above them to leave each line the box's full width, and a line
           that still does not fit scrolls sideways rather than wrapping. */}
       <View style={styles.command}>
-        <Pressable accessibilityRole="button" accessibilityLabel={copied ? "Copied both commands" : "Copy both commands"} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
-          <Text style={styles.copy}>{copied ? "Copied" : "Copy"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={copied ? ui("Copied both commands") : ui("Copy both commands")} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
+          <UiText style={styles.copy}>{copied ? "Copied" : "Copy"}</UiText>
         </Pressable>
         {INSTALL_COMMAND.split("\n").map((line) => (
           <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="install-line">
@@ -374,29 +382,26 @@ function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; on
           </ScrollView>
         ))}
       </View>
-      <Text style={styles.introText}>
-        Paste these two lines into the terminal (the window where you type commands) on a Mac or Linux computer running{" "}
+      <Text style={styles.introText}>{ui("Paste these two lines into the terminal (the window where you type commands) on a Mac or Linux computer running")}{" "}
         <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
           herdr
-        </Text>
-        , the app that keeps your AI assistants running. The second line shows a code to connect your phone.
-      </Text>
+        </Text>{ui(", the app that keeps your AI assistants running. The second line shows a code to connect your phone." + " ")}</Text>
 
-      <Text style={styles.step}>2 — Connect your phone.</Text>
-      <Text style={styles.introText}>
+      <UiText style={styles.step}>2 — Connect your phone.</UiText>
+      <UiText style={styles.introText}>
         Scan the code on your computer to connect securely. Keep your computer awake and connected to the internet while you use Shahi.
-      </Text>
+      </UiText>
 
-      {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
+      {error && <UiText style={styles.error} accessibilityRole="alert">{error}</UiText>}
       <Pressable accessibilityRole="button" style={[styles.button, busy && styles.buttonOff]} disabled={busy} onPress={onScan} testID="intro-continue">
-        <Text style={styles.buttonText}>{busy ? "Pairing…" : "Scan QR code"}</Text>
+        <UiText style={styles.buttonText}>{busy ? "Pairing…" : "Scan QR code"}</UiText>
       </Pressable>
       <Pressable accessibilityRole="button" disabled={busy} onPress={onPaste} hitSlop={12} testID="paste-pairing-link"
-        accessibilityHint="Pairs with a link copied from your computer, after you confirm it">
-        <Text style={styles.link}>Paste pairing link</Text>
+        accessibilityHint={ui("Pairs with a link copied from your computer, after you confirm it")}>
+        <UiText style={styles.link}>Paste pairing link</UiText>
       </Pressable>
       <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
-        <Text style={styles.link}>Want to use SSH?</Text>
+        <UiText style={styles.link}>Want to use SSH?</UiText>
       </Pressable>
       <PrivacyLinks licenses />
     </ScrollView>
@@ -420,13 +425,14 @@ function SshForm({
   patch: (fields: Partial<SshProfile>) => void;
   setAuthKind: (kind: "password" | "key") => void;
 }) {
+  const { t: ui } = useI18n();
   return (
     <>
-      <Text style={styles.hint}>Enter your computer’s SSH details.</Text>
+      <UiText style={styles.hint}>Enter your computer’s SSH details.</UiText>
 
       <View style={styles.row}>
         <View style={styles.grow}>
-          <Text style={styles.label}>HOSTNAME OR IP ADDRESS</Text>
+          <UiText style={styles.label}>HOSTNAME OR IP ADDRESS</UiText>
           <TextInput
             style={styles.input}
             value={ssh.host}
@@ -435,13 +441,13 @@ function SshForm({
             autoCorrect={false}
             keyboardType="url"
             testID="ssh-host"
-            placeholder="server.example.com or 192.0.2.10"
+            placeholder={ui("server.example.com or 192.0.2.10")}
             placeholderTextColor={theme.dim}
-            accessibilityLabel="SSH hostname or IP address"
+            accessibilityLabel={ui("SSH hostname or IP address")}
           />
         </View>
         <View style={styles.port}>
-          <Text style={styles.label}>PORT</Text>
+          <UiText style={styles.label}>PORT</UiText>
           <TextInput
             style={styles.input}
             value={String(ssh.port)}
@@ -449,12 +455,12 @@ function SshForm({
             keyboardType="number-pad"
             inputAccessoryViewID="ssh-number-keyboard"
             testID="ssh-port"
-            accessibilityLabel="SSH port"
+            accessibilityLabel={ui("SSH port")}
           />
         </View>
       </View>
 
-      <Text style={styles.label}>USERNAME</Text>
+      <UiText style={styles.label}>USERNAME</UiText>
       <TextInput
         style={styles.input}
         value={ssh.username}
@@ -462,12 +468,12 @@ function SshForm({
         autoCapitalize="none"
         autoCorrect={false}
         testID="ssh-username"
-        placeholder="Your computer username"
+        placeholder={ui("Your computer username")}
         placeholderTextColor={theme.dim}
-        accessibilityLabel="SSH username"
+        accessibilityLabel={ui("SSH username")}
       />
 
-      <Text style={styles.label}>AUTH</Text>
+      <UiText style={styles.label}>AUTH</UiText>
       <View style={styles.segment}>
         <Pressable
           accessibilityRole="button"
@@ -476,7 +482,7 @@ function SshForm({
           onPress={() => setAuthKind("password")}
           testID="auth-password"
         >
-          <Text style={[styles.segText, ssh.auth.kind === "password" && styles.segTextOn]}>Password</Text>
+          <UiText style={[styles.segText, ssh.auth.kind === "password" && styles.segTextOn]}>Password</UiText>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -485,7 +491,7 @@ function SshForm({
           onPress={() => setAuthKind("key")}
           testID="auth-key"
         >
-          <Text style={[styles.segText, ssh.auth.kind === "key" && styles.segTextOn]}>Key</Text>
+          <UiText style={[styles.segText, ssh.auth.kind === "key" && styles.segTextOn]}>Key</UiText>
         </Pressable>
       </View>
 
@@ -498,9 +504,9 @@ function SshForm({
           autoCapitalize="none"
           autoCorrect={false}
           testID="ssh-password"
-          placeholder="password"
+          placeholder={ui("password")}
           placeholderTextColor={theme.dim}
-          accessibilityLabel="SSH password"
+          accessibilityLabel={ui("SSH password")}
         />
       ) : (
         <>
@@ -514,11 +520,11 @@ function SshForm({
             autoCorrect={false}
             multiline
             testID="ssh-key"
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            placeholder={ui("-----BEGIN OPENSSH PRIVATE KEY-----")}
             placeholderTextColor={theme.dim}
-            accessibilityLabel="SSH private key"
+            accessibilityLabel={ui("SSH private key")}
           />
-          <Text style={styles.label}>PASSPHRASE (IF ANY)</Text>
+          <UiText style={styles.label}>PASSPHRASE (IF ANY)</UiText>
           <TextInput
             style={styles.input}
             value={ssh.auth.passphrase}
@@ -529,7 +535,7 @@ function SshForm({
             autoCapitalize="none"
             autoCorrect={false}
             testID="ssh-passphrase"
-            accessibilityLabel="Private key passphrase, if any"
+            accessibilityLabel={ui("Private key passphrase, if any")}
           />
         </>
       )}
@@ -537,7 +543,7 @@ function SshForm({
       {/* No sidecar-port field: the sidecar is always on the installer's
           default (7171), and a mass-market user should not have to know a port
           exists. `remotePort` stays at DEFAULT_SIDECAR_PORT from the profile. */}
-      <Text style={styles.label}>SHAHI PASSCODE</Text>
+      <UiText style={styles.label}>SHAHI PASSCODE</UiText>
       <TextInput
         style={[styles.input, styles.passcode]}
         value={ssh.passcode}
@@ -546,19 +552,18 @@ function SshForm({
         keyboardType="number-pad"
             inputAccessoryViewID="ssh-number-keyboard"
         testID="ssh-passcode"
-        accessibilityLabel="Shahi passcode"
+        accessibilityLabel={ui("Shahi passcode")}
       />
       {/* Only the passcode's hash is kept, and the first run shows it in the
           pair popup, not the plugin log — so "find that message again" had
           nothing to find. Replacing it is the recovery (pre-release review). */}
       {Platform.OS === "ios" && <InputAccessoryView nativeID="ssh-number-keyboard">
         <View style={{ backgroundColor: theme.surface, alignItems: "flex-end" }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Done editing SSH details" onPress={Keyboard.dismiss} style={{ minHeight: 44, minWidth: 64, justifyContent: "center", paddingHorizontal: 16 }}><Text style={{ color: theme.peach }}>Done</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Done editing SSH details")} onPress={Keyboard.dismiss} style={{ minHeight: 44, minWidth: 64, justifyContent: "center", paddingHorizontal: 16 }}><UiText style={{ color: theme.peach }}>Done</UiText></Pressable>
         </View>
       </InputAccessoryView>}
-      <Text style={styles.fieldHelp}>
-        Shown once when Shahi was set up. Lost it? On the computer, run{" "}
-        <Text style={styles.mono}>herdr plugin action invoke shahi.reset-passcode</Text>, then read the new one with{" "}
+      <Text style={styles.fieldHelp}>{ui("Shown once when Shahi was set up. Lost it? On the computer, run")}{" "}
+        <Text style={styles.mono}>herdr plugin action invoke shahi.reset-passcode</Text>{ui(", then read the new one with")}{" "}
         <Text style={styles.mono}>herdr plugin log list --plugin shahi</Text>. Pairing by QR does not need it.
       </Text>
     </>
@@ -588,6 +593,7 @@ const styles = StyleSheet.create({
   introText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
   step: { color: theme.peach, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
   command: {
+    direction: "ltr",
     gap: 6,
     backgroundColor: theme.surface,
     borderWidth: 1,

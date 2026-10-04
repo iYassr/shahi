@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { useCallback, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/components/text";
@@ -7,6 +9,7 @@ import { useSession } from "@/lib/session";
 import { theme } from "@/lib/theme";
 
 export function ComputerSwitcher() {
+  const { t: ui } = useI18n();
   const { computers, activeComputerId, session, switchComputer } = useSession();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
@@ -29,8 +32,8 @@ export function ComputerSwitcher() {
         the name full size, which is how iOS bar items serve large text. */}
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Switch computer"
-      accessibilityValue={{ text: `${name}${waitingElsewhere ? `, ${waitingElsewhere} waiting on other computers` : ""}` }}
+      accessibilityLabel={ui("Switch computer")}
+      accessibilityValue={{ text: `${name}${waitingElsewhere ? `, ${ui("{count} waiting on other computers", { count: waitingElsewhere })}` : ""}` }}
       accessibilityShowsLargeContentViewer
       accessibilityLargeContentTitle={name}
       testID="computer-switcher"
@@ -42,11 +45,11 @@ export function ComputerSwitcher() {
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
       <View style={styles.overlay}><View style={styles.sheet}>
-        <Text style={styles.title}>Computers</Text>
+        <UiText style={styles.title}>Computers</UiText>
         <ScrollView style={{ flexShrink: 1 }}>
           {computers.map(c => {
-            const status = c.status ?? (c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…");
-            const waiting = c.waiting ? ` · ${c.waiting} waiting${(c.available ?? c.link === "live") ? "" : " (last known)"}` : "";
+            const status = c.status ?? ui(c.link === "live" ? "Connected" : c.link === "lost" ? "Offline · retrying" : "Connecting…");
+            const waiting = c.waiting ? ` · ${ui((c.available ?? c.link === "live") ? "{count} waiting" : "{count} waiting (last known)", { count: c.waiting })}` : "";
             // Which one is current is a state, said as one; the tick is for
             // the eye. Read from the row's text it was "check mark, stub-box"
             // with no selected trait (pre-release bug hunt).
@@ -61,9 +64,9 @@ export function ComputerSwitcher() {
             </Pressable>;
           })}
         </ScrollView>
-        {!!error && <Text style={{ color: theme.rose }}>{error}</Text>}
-        <Pressable accessibilityRole="button" style={styles.row} onPress={() => { setOpen(false); router.push("/computers"); }}><Text style={styles.action}>Manage computers</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.row} onPress={() => setOpen(false)}><Text style={styles.action}>Close</Text></Pressable>
+        {!!error && <UiText style={{ color: theme.rose }}>{error}</UiText>}
+        <Pressable accessibilityRole="button" style={styles.row} onPress={() => { setOpen(false); router.push("/computers"); }}><UiText style={styles.action}>Manage computers</UiText></Pressable>
+        <Pressable accessibilityRole="button" style={styles.row} onPress={() => setOpen(false)}><UiText style={styles.action}>Close</UiText></Pressable>
       </View></View>
     </Modal>
   </>;

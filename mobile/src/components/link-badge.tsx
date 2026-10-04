@@ -1,5 +1,6 @@
+import { useI18n } from "@/lib/i18n";
 import { StyleSheet } from "react-native";
-import { backendUnavailable, type BackendState } from "@shahi/shared";
+import { backendUnavailable, translate, type AppLocale, type BackendState } from "@shahi/shared";
 import { Text } from "@/components/text";
 import { IncompatibleServerError } from "@/lib/errors";
 import { useSession } from "@/lib/session";
@@ -10,18 +11,19 @@ export function linkLabel({ link, error, backend }: {
   link: "connecting" | "live" | "lost";
   error: Error | null;
   backend?: BackendState | null;
-}): { text: string; live: boolean } {
-  if (error instanceof IncompatibleServerError) return { text: "UPDATE NEEDED", live: false };
+}, locale: AppLocale = "en"): { text: string; live: boolean } {
+  const ui = (source: string) => translate(locale, source);
+  if (error instanceof IncompatibleServerError) return { text: ui("UPDATE NEEDED"), live: false };
   // The socket is not herdr: it stays open while herdr is stopped, and the
   // header said LIVE over a computer that could do nothing (pre-release bug
   // hunt). A request refused for that reason says so before the computer's
   // own report arrives.
-  if (backendUnavailable(error) && (!backend || backend.state === "connected")) return { text: "HERDR OFFLINE", live: false };
+  if (backendUnavailable(error) && (!backend || backend.state === "connected")) return { text: ui("HERDR OFFLINE"), live: false };
   if (backend && backend.state !== "connected" && (link === "live" || backendUnavailable(error))) {
-    return { text: backend.state === "offline" ? "HERDR OFFLINE" : "UPDATE NEEDED", live: false };
+    return { text: backend.state === "offline" ? ui("HERDR OFFLINE") : ui("UPDATE NEEDED"), live: false };
   }
-  if (error && link === "live") return { text: "NOT RESPONDING", live: false };
-  return link === "live" ? { text: "LIVE", live: true } : { text: link === "lost" ? "OFFLINE" : "CONNECTING", live: false };
+  if (error && link === "live") return { text: ui("NOT RESPONDING"), live: false };
+  return link === "live" ? { text: ui("LIVE"), live: true } : { text: link === "lost" ? ui("OFFLINE") : ui("CONNECTING"), live: false };
 }
 
 /**
@@ -33,8 +35,9 @@ export function linkLabel({ link, error, backend }: {
  * (pre-release bug hunt).
  */
 export function LinkBadge() {
+  const { locale } = useI18n();
   const { link, error, control } = useSession();
-  const { text, live } = linkLabel({ link, error, backend: control?.handshake?.backend });
+  const { text, live } = linkLabel({ link, error, backend: control?.handshake?.backend }, locale);
   return (
     <Text testID="link-badge" style={[styles.link, { color: live ? theme.mint : theme.peach }]} maxFontSizeMultiplier={1.2}>
       {text}

@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * Long-press to copy, for text that lives in a horizontal scroller.
  *
@@ -17,6 +19,7 @@ import { Icon } from "@/components/icons";
 import { theme } from "@/lib/theme";
 
 export function CopyOnHold({ text, style, children }: { text: string; style?: StyleProp<ViewStyle>; children: React.ReactNode }) {
+  const { t: ui } = useI18n();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   return (
@@ -30,7 +33,7 @@ export function CopyOnHold({ text, style, children }: { text: string; style?: St
       // the scroll views' indicators, so the terminal read "…, Vertical
       // scroll bar, 1 page" (pre-release bug hunt).
       accessibilityLabel={text}
-      accessibilityHint="Long press to copy"
+      accessibilityHint={ui("Long press to copy")}
       onLongPress={() => {
         void Clipboard.setStringAsync(text);
         committed();
@@ -42,7 +45,7 @@ export function CopyOnHold({ text, style, children }: { text: string; style?: St
       {children}
       {copied && (
         <View style={styles.copied} pointerEvents="none">
-          <Text style={styles.copiedText}>Copied</Text>
+          <UiText style={styles.copiedText}>Copied</UiText>
         </View>
       )}
     </Pressable>
@@ -51,13 +54,14 @@ export function CopyOnHold({ text, style, children }: { text: string; style?: St
 
 /** A visible action for prose; long-press remains available for terminal regions. */
 export function CopyButton({ text }: { text: string }) {
+  const { t: ui } = useI18n();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={copied ? "Copied" : "Copy message"}
+      accessibilityLabel={copied ? ui("Copied") : ui("Copy message")}
       style={({ pressed }) => [styles.copyButton, pressed && { opacity: 0.65 }]}
       onPress={async () => {
         try {

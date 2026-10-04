@@ -1,3 +1,6 @@
+
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 import { plainHeaderRight } from "@/lib/header-controls";
 import { ComputerUpdate } from "@/components/computer-update";
 import { ComputerSwitcher } from "@/components/computer-switcher";
@@ -30,6 +33,7 @@ import { Unreachable } from "@/components/unreachable";
 import { shouldTakeOverSession } from "@/lib/agents-error";
 
 export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: string, reply?: boolean) => void; focused?: boolean }) {
+  const { t: ui, locale } = useI18n();
   const openSwipe = useRef<SwipeableMethods | null>(null);
   const closeSwipe = useCallback(() => { openSwipe.current?.close(); openSwipe.current = null; }, []);
   const rememberSwipe = useCallback((swipe: SwipeableMethods) => {
@@ -76,13 +80,13 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
       const page = await api.sessionLog(pane.paneId, 12);
       const reply = [...page.messages].reverse().find((message: LogMessage) => message.role === "agent" && message.blocks.some((block) => block.kind === "text" && block.text.trim()));
       const text = reply?.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n\n").trim();
-      if (!text) { refused(); AccessibilityInfo.announceForAccessibility("No reply to copy yet"); return; }
+      if (!text) { refused(); AccessibilityInfo.announceForAccessibility(ui("No reply to copy yet")); return; }
       await Clipboard.setStringAsync(text);
       committed();
-      AccessibilityInfo.announceForAccessibility("Last reply copied");
+      AccessibilityInfo.announceForAccessibility(ui("Last reply copied"));
     } catch {
       refused();
-      AccessibilityInfo.announceForAccessibility("Could not copy the last reply");
+      AccessibilityInfo.announceForAccessibility(ui("Could not copy the last reply"));
     }
   }
 
@@ -129,6 +133,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   const header = (
     <Stack.Screen
       options={{
+        title: ui("Agents"),
         headerLargeTitle: false,
         headerLeft: () => <GreetingLogo size={36} />,
         ...plainHeaderRight(
@@ -143,8 +148,8 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   if (error && shouldTakeOverSession(error, session)) {
     return (
       <View style={{ flex: 1 }}>{header}<ComputerUpdate /><Unreachable
-        title={connectionHealth({ link, error, computerName, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? "Connection interrupted"}
-        message={connectionHealth({ link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
+        title={connectionHealth({ locale: locale, link, error, computerName, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.title ?? ui("Connection interrupted")}
+        message={connectionHealth({ locale: locale, link, error, transport: server.startsWith("ssh:") ? "ssh" : "relay" })?.detail ?? error.message}
         server={computerName || server}
         onRetry={reconnect}
         onSwitch={() => router.push("/computers")}
@@ -157,7 +162,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
       <View style={styles.centered}>
         {header}
         <ActivityIndicator color={theme.peach} />
-        <Text style={styles.dim}>Connecting to your computer…</Text>
+        <UiText style={styles.dim}>Connecting to your computer…</UiText>
       </View>
     );
   }
@@ -177,12 +182,12 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   const kinds = [...new Set(agents.map((p) => p.agent).filter((a): a is string => !!a))].sort();
   const waiting = agents.filter((p) => p.status === "blocked").length;
   const chips: { id: string; label: string; icon?: IconName; count?: number }[] = [
-    { id: "all", label: "All" },
-    { id: "inbox", label: `Inbox ${inbox.length}`, icon: "inbox", count: inbox.length },
-    ...(waiting > 0 ? [{ id: "waiting", label: `Waiting ${waiting}` }] : []),
+    { id: "all", label: ui("All") },
+    { id: "inbox", label: ui("Inbox {value1}", {value1: inbox.length}), icon: "inbox", count: inbox.length },
+    ...(waiting > 0 ? [{ id: "waiting", label: ui("Waiting {value1}", {value1: waiting}) }] : []),
     ...kinds.map((k) => ({ id: `kind:${k}`, label: agentLabel(k),
       icon: (k === "claude" ? "claudecode" : k === "codex" ? "openai" : undefined) as IconName | undefined })),
-    ...(shells.length > 0 ? [{ id: "shells", label: "Shells" }] : []),
+    ...(shells.length > 0 ? [{ id: "shells", label: ui("Shells") }] : []),
   ];
 
   // A chip can vanish under its selection — the last codex exits, the waiting
@@ -235,11 +240,11 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             {accessEnded && <Text style={styles.notice} accessibilityRole="alert">{accessEnded}</Text>}
             {!herdrAway && <View style={{ marginHorizontal: 16 }}><OtherComputers waitingOnly /></View>}
             <View style={styles.search}>
-              <TextInput accessibilityLabel="Search agents" placeholder="Search agents, spaces or folders"
+              <TextInput accessibilityLabel={ui("Search agents")} placeholder={ui("Search agents, spaces or folders")}
                 placeholderTextColor={theme.dim} value={query} onChangeText={setQuery}
                 autoCorrect={false} autoCapitalize="none" returnKeyType="search"
                 style={styles.searchInput} testID="search-agents" />
-              {!!query && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" style={styles.searchClear} onPress={() => setQuery("")}><Text style={{ color: theme.peach }}>Clear</Text></Pressable>}
+              {!!query && <Pressable accessibilityRole="button" accessibilityLabel={ui("Clear search")} style={styles.searchClear} onPress={() => setQuery("")}><UiText style={{ color: theme.peach }}>Clear</UiText></Pressable>}
             </View>
             {/* Inside the list, not above it: content outside the FlatList
                 gets no inset for the transparent large-title header and drew
@@ -254,7 +259,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={chip.label}
-                  accessibilityHint={chip.id.startsWith("kind:") || chip.id === "shells" ? `Show ${chip.label} conversations` : undefined}
+                  accessibilityHint={chip.id.startsWith("kind:") || chip.id === "shells" ? ui("Show {value1} conversations", {value1: chip.label}) : undefined}
                   accessibilityState={{ selected: chip.id === active }}
                   key={chip.id}
                   style={[styles.filter, chip.id === active && styles.filterOn]}
@@ -274,15 +279,15 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             {/* Where the work starts, not three taps away under Spaces: the
                 sheet asks which space, then the same form a space opens. */}
             <Pressable accessibilityRole="button" disabled={herdrAway} accessibilityState={{ disabled: herdrAway }} style={[styles.newAgent, herdrAway && { opacity: 0.5 }]} onPress={() => router.push("/new-agent")} testID="new-agent">
-              <Text style={styles.newAgentText}>+ New agent</Text>
+              <UiText style={styles.newAgentText}>+ New agent</UiText>
             </Pressable>
-            {active === "inbox" && <View style={styles.inboxHeading}><Text style={styles.inboxTitle}>What needs me?</Text><Text style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</Text></View>}
+            {active === "inbox" && <View style={styles.inboxHeading}><UiText style={styles.inboxTitle}>What needs me?</UiText><UiText style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</UiText></View>}
             {/* One tap for a morning's finished work, rather than one per row.
                 Nothing is lost: new activity brings a conversation back. */}
             {active === "inbox" && rest.filter((pane) => inboxKind(pane) === "review").length > 1 && (
               <Pressable accessibilityRole="button" style={styles.reviewAll} testID="mark-all-reviewed"
                 onPress={() => { for (const pane of rest) if (inboxKind(pane) === "review") markReviewed(pane); committed(); }}>
-                <Text style={styles.reviewedText}>Mark all reviewed</Text>
+                <UiText style={styles.reviewedText}>Mark all reviewed</UiText>
               </Pressable>
             )}
             {blocked.map((pane) => (
@@ -298,8 +303,8 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             ))}
             {rest.length > 0 && (
               <Text style={styles.groupLabel}>
-                {active === "inbox" ? "UPDATES" : blocked.length > 0
-                  ? "EVERYTHING ELSE"
+                {active === "inbox" ? ui("UPDATES") : blocked.length > 0
+                  ? ui("EVERYTHING ELSE")
                   : `${rest.length} ${active === "shells" ? "SHELL" : "AGENT"}${rest.length === 1 ? "" : "S"}`}
               </Text>
             )}
@@ -307,7 +312,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
         }
         renderItem={({ item }) => (
           <View>
-          {active === "inbox" && <Text style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</Text>}
+          {active === "inbox" && <UiText style={styles.inboxLabel}>{item.status === "done" ? "Ready to review" : "Status unavailable"}</UiText>}
           {item.status === "blocked" ? <BlockedCard key={promptIdentity(prompts[item.paneId])} pane={item} prompt={prompts[item.paneId]}
             answered={answered[item.paneId]} stale={herdrAway} onAnswer={(option) => answer(item.paneId, option)} onOpen={() => onOpenPane(item.paneId)} /> : <Row
             pane={item}
@@ -319,7 +324,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             onSwipe={rememberSwipe}
             now={now}
           />}
-          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${paneTitle(item)} reviewed`} style={styles.reviewed} onPress={() => markReviewed(item)}><Text style={styles.reviewedText}>Mark reviewed</Text></Pressable>}
+          {active === "inbox" && item.status === "done" && <Pressable accessibilityRole="button" accessibilityLabel={ui("Mark {value1} reviewed", {value1: paneTitle(item)})} style={styles.reviewed} onPress={() => markReviewed(item)}><UiText style={styles.reviewedText}>Mark reviewed</UiText></Pressable>}
           </View>
         )}
         // Virtualization tuning: RN warned this list was "slow to update"
@@ -336,7 +341,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           blocked.length ? null : (
-            <Centered>{search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now."}</Centered>
+            <Centered>{ui(search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now.")}</Centered>
           )
         }
       />
@@ -350,7 +355,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
           {/* The backdrop is a sibling of the card, not its parent: a
               pressable flattens its children into one element, and the whole
               sheet inside it became a single untappable blob. */}
-          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss actions" style={styles.sheetBack} onPress={() => setActing(null)} />
+          <Pressable accessibilityRole="button" accessibilityLabel={ui("Dismiss actions")} style={styles.sheetBack} onPress={() => setActing(null)} />
           <View style={styles.sheetCard}>
               <Text style={styles.sheetTitle} numberOfLines={1}>
                 {paneTitle(acting)}
@@ -364,9 +369,9 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                 }}
               >
                 <Icon name={pins.has(acting.paneId) ? "pin-off" : "pin"} color={theme.peach} size={16} />
-                <Text style={styles.sheetItemText}>
+                <UiText style={styles.sheetItemText}>
                   {pins.has(acting.paneId) ? "Unpin" : "Pin"}
-                </Text>
+                </UiText>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -377,7 +382,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                 }}
               >
                 <Icon name="terminal" color={theme.mint} size={16} />
-                <Text style={styles.sheetItemText}>Open screen</Text>
+                <UiText style={styles.sheetItemText}>Open screen</UiText>
               </Pressable>
               {inboxKind(acting) === "review" && reviewed[acting.paneId] !== reviewKey(acting) && (
                 <Pressable
@@ -389,7 +394,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                   }}
                 >
                   <Icon name="check" color={theme.mint} size={16} />
-                  <Text style={styles.sheetItemText}>Mark reviewed</Text>
+                  <UiText style={styles.sheetItemText}>Mark reviewed</UiText>
                 </Pressable>
               )}
               {acting.isAgent && !!acting.preview && (
@@ -403,11 +408,11 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
                   }}
                 >
                   <Icon name="copy" color={theme.dim} size={16} />
-                  <Text style={styles.sheetItemText}>Copy last reply</Text>
+                  <UiText style={styles.sheetItemText}>Copy last reply</UiText>
                 </Pressable>
               )}
               <Pressable accessibilityRole="button" style={styles.sheetItem} onPress={() => setActing(null)}>
-                <Text style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</Text>
+                <UiText style={[styles.sheetItemText, { color: theme.dim }]}>Cancel</UiText>
               </Pressable>
           </View>
         </View>
@@ -448,6 +453,7 @@ const Row = memo(function Row({
   onActions: (pane: DashboardPane) => void;
   onSwipe: (swipe: SwipeableMethods) => void;
 }) {
+  const { t: ui, locale } = useI18n();
   const largeText = useLargeText();
   const swipe = useRef<SwipeableMethods | null>(null);
   const at = rowAt(pane);
@@ -455,7 +461,7 @@ const Row = memo(function Row({
   const row = (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={conversationLabel(pane, pane.workspaceLabel, pinned, now)}
+        accessibilityLabel={conversationLabel(pane, pane.workspaceLabel, pinned, now, locale)}
         style={styles.row}
         // The pinned state rides in the row's own id: children of a pressable
         // flatten into one accessibility element, so a marker inside it is
@@ -479,12 +485,12 @@ const Row = memo(function Row({
             <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-                {pane.status === "blocked" ? "waiting" : pane.status}
+                {ui(pane.status === "blocked" ? "waiting" : pane.status)}
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.workspaceLabel}</Text>
             {/* Last, and never shortened: a cut "Yester…" says nothing. */}
-            {at !== null && <Text style={styles.rowTime} testID={`time-${pane.paneId}`}>{rowTime(at, now)}</Text>}
+            {at !== null && <Text style={styles.rowTime} testID={`time-${pane.paneId}`}>{rowTime(at, now, locale)}</Text>}
             </View>
           </View>
           {/* The last thing said; for an agent that has said nothing, that it
@@ -528,7 +534,7 @@ const Row = memo(function Row({
             }}
           >
             <Icon name={pinned ? "pin-off" : "pin"} color={theme.peach} />
-            <Text style={styles.actionText}>{pinned ? "Unpin" : "Pin"}</Text>
+            <UiText style={styles.actionText}>{pinned ? "Unpin" : "Pin"}</UiText>
           </RectButton>
           <RectButton
             style={styles.action}
@@ -538,7 +544,7 @@ const Row = memo(function Row({
             }}
           >
             <Icon name="terminal" color={theme.mint} />
-            <Text style={styles.actionText}>Screen</Text>
+            <UiText style={styles.actionText}>Screen</UiText>
           </RectButton>
         </View>
       )}
@@ -579,6 +585,7 @@ function BlockedCard({
   onAnswer: (option: PromptOption) => Promise<void>;
   onOpen: () => void;
 }) {
+  const { t: ui } = useI18n();
   const [armed, setArmed] = useState<number | null>(null);
   // Said inside the card that failed. It used to go to a screen-level message
   // that rendered only when there was no session — never, with this list on
@@ -603,8 +610,8 @@ function BlockedCard({
   const labels = prompt ? shownLabels(prompt.options) : [];
   return (
     <View style={styles.blocked}>
-      <Pressable accessibilityRole="button" accessibilityLabel={["Waiting on you", title, pane.workspaceLabel, kind === title ? null : kind].filter(Boolean).join(", ")} onPress={onOpen}>
-        <Text style={[styles.badge, answered && { color: theme.dim }]}>{answered ? "ANSWER SENT" : "● WAITING ON YOU"}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={[ui("Waiting on you"), title, pane.workspaceLabel, kind === title ? null : kind].filter(Boolean).join(", ")} onPress={onOpen}>
+        <UiText style={[styles.badge, answered && { color: theme.dim }]}>{answered ? "ANSWER SENT" : "● WAITING ON YOU"}</UiText>
         {/* The title gets a line of its own, first: it is what tells two
             waiting agents in one space apart. It used to come last on one
             truncated line after the agent and pane id, which at accessibility
@@ -622,7 +629,7 @@ function BlockedCard({
         <>
           <Text style={styles.question}>{prompt.question}</Text>
           <PromptContext context={prompt.context} />
-          {stale && <Text style={styles.stale}>This question is as it was last seen. Answers are available when the computer reconnects.</Text>}
+          {stale && <UiText style={styles.stale}>This question is as it was last seen. Answers are available when the computer reconnects.</UiText>}
           {prompt.options.map((option, i) => {
             const isArmed = armed === option.index;
             const lit = isArmed || (armed === null && !!option.selected);
@@ -642,7 +649,7 @@ function BlockedCard({
                 disabled={armed !== null || stale}
                 onPress={() => choose(option)}
               >
-                <Text style={styles.cursor}>{lit ? "❯" : " "}</Text>
+                <UiText style={styles.cursor}>{lit ? "❯" : " "}</UiText>
                 {/* The digit is what the terminal takes; a cursor menu has none. */}
                 {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
                 <View style={styles.choiceBody}>
@@ -652,22 +659,22 @@ function BlockedCard({
               </Pressable>
             );
           })}
-          {failure && <Text style={styles.failure} accessibilityRole="alert">{failure}</Text>}
+          {failure && <UiText style={styles.failure} accessibilityRole="alert">{failure}</UiText>}
         </>
       ) : answered ? (
         // Between an answer and the snapshot that shows the agent moving on,
         // the pane still says blocked. A card with only two states called it
         // "needs a typed reply" there (pre-release bug hunt).
         <Pressable accessibilityRole="button" onPress={onOpen}>
-          <Text style={styles.question} accessibilityLiveRegion="polite">
+          <UiText style={styles.question} accessibilityLiveRegion="polite">
             {answered.outcome === "sent"
               ? "Answer sent — waiting for the agent…"
               : "That question had already closed, so nothing was sent. Waiting for the agent’s next step…"}
-          </Text>
+          </UiText>
         </Pressable>
       ) : (
         <Pressable accessibilityRole="button" onPress={onOpen}>
-          <Text style={styles.question}>This one needs a typed reply. Open it →</Text>
+          <UiText style={styles.question}>This one needs a typed reply. Open it →</UiText>
         </Pressable>
       )}
     </View>

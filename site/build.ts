@@ -1,6 +1,7 @@
 /** Build the public website and the independently hosted encrypted client. */
 import { cp, mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { installScript } from "./install";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const run = Bun.spawn([process.execPath, "run", "--cwd", "web", "build", "--mode", "hosted"], {
@@ -16,4 +17,8 @@ await cp(new URL("../web/dist-hosted", import.meta.url), new URL("./dist/pwa", i
 await cp(new URL("../web/public/welcome.js", import.meta.url), new URL("./dist/welcome.js", import.meta.url));
 
 await cp(new URL("../web/public/identity.css", import.meta.url), new URL("./dist/identity.css", import.meta.url));
+
+// `curl -fsSL https://getshahi.dev/install | sh`, with herdr's pinned version
+// and checksums written in (install.ts).
+await Bun.write(new URL("./dist/install", import.meta.url), await installScript());
 console.log("Built site/dist with shared identity and the browser app at /pwa/.");

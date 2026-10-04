@@ -1,17 +1,17 @@
 {
-  "//": "Written by marketing/video/scripts/publish-media.ts. The files are in the R2 bucket shahi-site-media, not in git; docs/browser-hosting.md says how to publish a new cut.",
+  "//": "Silent launch exports prepared 4 October 2026 from the hash-verified published visuals; third-party narration removed. Files are in the R2 bucket shahi-site-media, not Git.",
   "files": [
     {
-      "name": "launch-16x9.1c94ac46.mp4",
+      "name": "launch-16x9.57f84609.mp4",
       "contentType": "video/mp4",
-      "bytes": 4393899,
-      "sha256": "1c94ac46b237861b13a2bb33804adc29ee6609b2b1e3c9e8f7534ddb1e33e768"
+      "bytes": 3827872,
+      "sha256": "57f846098a981a7adc360869634d3d098317bc00291eed8bf5afa2ade9bd48d6"
     },
     {
-      "name": "launch-1x1.4d08d34d.mp4",
+      "name": "launch-1x1.901080b2.mp4",
       "contentType": "video/mp4",
-      "bytes": 2483017,
-      "sha256": "4d08d34deb32cab68850006edcdfa50d3c4eac5609069e6ecf2c80781e63c85f"
+      "bytes": 1916958,
+      "sha256": "901080b2313c926e5a4bd84206d5ac304c178b5c14188e77736e151d693e599c"
     },
     {
       "name": "launch-poster.23b82789.jpg",

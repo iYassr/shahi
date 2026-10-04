@@ -1,5 +1,6 @@
 import { test as base, expect } from "./fixtures";
 import QRCode from "qrcode";
+import { translate } from "../../shared/src/i18n";
 const test = base.extend<{ noPlaintext: void }>({
   noPlaintext: [async ({ context, baseURL }, use) => {
     const leaks: string[] = [];
@@ -41,6 +42,68 @@ function signOutButton(page: import("@playwright/test").Page) {
   return page.locator("section").filter({ has: page.getByRole("heading", { name: "Sign out of this computer", exact: true }) })
     .getByRole("button", { name: "Sign out", exact: true });
 }
+test("locale setup uses device language, persists a choice and mirrors Arabic without changing commands", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "languages", { get: () => ["es-MX", "en-US"] });
+    Object.defineProperty(navigator, "language", { get: () => "es-MX" });
+  });
+  await page.goto("/pwa/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+  await expect(page.getByRole("heading", { name: translate("es", "Connect your computer"), exact: true })).toBeVisible();
+  await page.getByLabel("Idioma", { exact: true }).selectOption("ar");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByRole("heading", { name: translate("ar", "Connect your computer"), exact: true })).toBeVisible();
+  await expect(page.locator(".setup-command code").first()).toHaveText("herdr plugin install iYassr/shahi");
+  expect(await page.locator(".setup-command code").first().evaluate(element => getComputedStyle(element).direction)).toBe("ltr");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.getByLabel("رمز الاقتران", { exact: true }).fill("not-a-pairing-code");
+  await page.getByRole("button", { name: "اتصال", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(translate("ar", "Paste a complete Shahi pairing code printed below the QR."));
+  await page.getByLabel("اللغة", { exact: true }).selectOption("en");
+  await expect(page.getByRole("alert")).toContainText("Paste a complete Shahi pairing code");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  await expect(page.getByLabel("Language", { exact: true })).toHaveValue("en");
+});
+test("locale switches keep paired access, unsent drafts and original conversation; Arabic terminal stays LTR", async ({ page, request }) => {
+  await pair(page, true);
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  await expect(page.locator(".msg__text").first()).toBeVisible();
+  const conversation = await page.locator(".msg__text").allTextContents();
+  const paneUrl = page.url();
+  const draft = "Settings is my literal project name — مشروع خاص";
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill(draft);
+  const before = await (await request.get("/__hosted/connections")).json();
+  const back = page.getByRole("button", { name: "Back", exact: true });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("ar");
+  await expect(page.getByRole("heading", { name: "الإعدادات", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /^الوكلاء/ }).click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  expect(page.url()).toBe(paneUrl);
+  await expect(page.getByRole("textbox", { name: "رسالة", exact: true })).toHaveValue(draft);
+  expect(await page.locator(".msg__text").allTextContents()).toEqual(conversation);
+  await page.getByRole("tab", { name: "قراءة", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "الشاشة", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".termwrap")).toBeVisible();
+  expect(await page.locator(".termwrap").evaluate(element => getComputedStyle(element).direction)).toBe("ltr");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  const arabicBack = page.getByRole("button", { name: "رجوع", exact: true });
+  if (await arabicBack.isVisible()) await arabicBack.click();
+  await page.getByRole("link", { name: "الإعدادات", exact: true }).click();
+  await page.getByLabel("اللغة", { exact: true }).selectOption("es");
+  await expect(page.getByRole("heading", { name: "Ajustes", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /^Agentes/ }).click();
+  await page.locator(".blocked__head:visible, .agent-sidebar__request:visible").first().click();
+  await expect(page.getByRole("textbox", { name: "Mensaje", exact: true })).toHaveValue(draft);
+  expect(await page.locator(".msg__text").allTextContents()).toEqual(conversation);
+  expect(await (await request.get("/__hosted/connections")).json()).toEqual(before);
+  expect((await (await request.get("/__hosted/device-count")).json()).count).toBe(1);
+  expect((await (await request.get("/__hosted/writes")).json()).writes.filter((write: { path: string }) => write.path.endsWith("/prompt"))).toHaveLength(0);
+});
 test("computer picker closes on Escape, outside interaction and selection", async ({ page }) => {
   await pair(page, true);
   const picker = page.locator(".computer-switcher");

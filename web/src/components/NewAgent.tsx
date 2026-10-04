@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * Starts an agent inside an existing space.
  *
@@ -32,6 +33,7 @@ type Phase = "idle" | "creating" | "starting";
 export const LAST_AGENT = "shahi.last-agent";
 
 export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const inFlight = useRef(false);
   const mounted = useRef(true);
@@ -113,26 +115,23 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
   const busy = phase !== "idle";
 
   return (
-    <Sheet title={`New agent in ${opened.label}`} onClose={() => { if (!inFlight.current) onClose(); }}>
+    <Sheet title={t("New agent in {value0}", { value0: opened.label })} onClose={() => { if (!inFlight.current) onClose(); }}>
       {replaced && (
         <p className="picker__error" role="alert">
-          {opened.label} was closed on the computer, and another space has taken its place. Close this and
-          choose a space again.
-        </p>
+          {opened.label} {" "}{t("was closed on the computer, and another space has taken its place. Close this and choose a space again.")}</p>
       )}
       <div className="field">
-        <span className="field__label">Agent</span>
+        <span className="field__label">{t("Agent")}</span>
         {available === null ? (
-          <p className="picker__empty">Looking for installed agents…</p>
+          <p className="picker__empty">{t("Looking for installed agents…")}</p>
         ) : available.length === 0 ? (
           <p className="picker__error">
-            No agents found on this machine. Install one and reopen this sheet.
-          </p>
+            {t("No agents found on this machine. Install one and reopen this sheet.")}</p>
         ) : (
           // The chosen agent is marked three ways, accent border, check and
           // weight, because a lighter fill was all that told it apart
           // (simulator run of build 32, October 2026).
-          <div className="kinds" role="group" aria-label="Agent">
+          <div className="kinds" role="group" aria-label={t("Agent")}>
             {available.map((agent) => (
               <button
                 key={agent.kind}
@@ -163,11 +162,11 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         */}
       {modes.length > 0 && (
         <div className="field">
-          <span className="field__label">Permissions</span>
+          <span className="field__label">{t("Permissions")}</span>
           {/* The choice is said as well as drawn: with only `data-active`, a
               screen reader could not tell whether "Skip all permissions" was
               the one selected (pre-release bug hunt). */}
-          <div className="modes" role="group" aria-label="Permissions">
+          <div className="modes" role="group" aria-label={t("Permissions")}>
             {modes.map((option) => (
               <button
                 key={option.id}
@@ -178,9 +177,9 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
                 onClick={() => setMode(option.id)}
                 disabled={busy}
               >
-                <span className="mode__label">{option.label}</span>
-                {option.unsafe && <span className="mode__caution">No approval before changes</span>}
-                <span className="mode__why">{option.description}</span>
+                <span className="mode__label">{t(option.label)}</span>
+                {option.unsafe && <span className="mode__caution">{t("No approval before changes")}</span>}
+                <span className="mode__why">{t(option.description)}</span>
               </button>
             ))}
           </div>
@@ -188,18 +187,18 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       )}
 
       <label className="field">
-        <span className="field__label">Name</span>
+        <span className="field__label">{t("Name")}</span>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={kind ?? "optional"}
+          placeholder={kind ?? t("optional")}
           enterKeyHint="done"
           disabled={busy}
         />
       </label>
 
       <div className="field">
-        <span className="field__label">Folder</span>
+        <span className="field__label">{t("Folder")}</span>
         <DirPicker
           value={cwd}
           onChange={setCwd}
@@ -215,15 +214,15 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         disabled={busy || replaced || !kind || !cwd.path.startsWith("/") || available?.length === 0}
       >
         {phase === "creating"
-          ? "Making a tab…"
+          ? t("Making a tab…")
           : phase === "starting"
-            ? `Waiting for ${agentLabel(kind ?? "agent")} to be ready…`
-            : `Start ${kind ? agentLabel(kind) : "agent"}`}
+            ? t("Waiting for {value0} to be ready…", { value0: agentLabel(kind ?? "agent") })
+            : t("Start {value0}", { value0: kind ? agentLabel(kind) : "agent" })}
       </button>
       <p className="sheet__note">
         {busy
-          ? "A cold start can take up to five minutes. This stays open until it is ready."
-          : "Opens in the background, then takes you to it."}
+          ? t("A cold start can take up to five minutes. This stays open until it is ready.")
+          : t("Opens in the background, then takes you to it.")}
       </p>
     </Sheet>
   );

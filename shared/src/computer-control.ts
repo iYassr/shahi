@@ -1,4 +1,5 @@
 import { type ControlHandshake, type ReleaseChannel, updateInProgress } from "./compatibility";
+import { translate, type AppLocale } from "./i18n";
 export interface ControlApi {
   control(): Promise<ControlHandshake | null>;
   updateComputer(action: "check" | "install", channel?: ReleaseChannel): Promise<unknown>;
@@ -51,14 +52,15 @@ export class ControlSession {
 /** Said in Settings only: a development checkout or a hand-run sidecar works, and has nothing to act on. */
 export const UNMANAGED_MESSAGE = "Computer updates need the managed Shahi service: install Shahi on this computer with herdr plugin install iYassr/shahi.";
 
-export function controlMessage(h: ControlHandshake): string {
+export function controlMessage(h: ControlHandshake, locale: AppLocale = "en"): string {
+  const t = (source: string) => translate(locale, source);
   const u = h.update;
-  if (updateInProgress(u.phase)) return ({ checking: "Checking for updates…", downloading: "Downloading computer update…", verifying: "Verifying computer update…", restarting: "Restarting Shahi · reconnecting automatically…" } as Record<string, string>)[u.phase]!;
-  if (h.backend.state !== "connected") return h.backend.message;
-  if (u.message) return u.message;
-  if (u.available) return "A tested update is ready. Shahi will reconnect automatically.";
-  if (!u.managed) return UNMANAGED_MESSAGE;
-  return "Connected";
+  if (updateInProgress(u.phase)) return t(({ checking: "Checking for updates…", downloading: "Downloading computer update…", verifying: "Verifying computer update…", restarting: "Restarting Shahi · reconnecting automatically…" } as Record<string, string>)[u.phase]!);
+  if (h.backend.state !== "connected") return t(h.backend.message);
+  if (u.message) return t(u.message);
+  if (u.available) return t("A tested update is ready. Shahi will reconnect automatically.");
+  if (!u.managed) return t(UNMANAGED_MESSAGE);
+  return t("Connected");
 }
 
 /**

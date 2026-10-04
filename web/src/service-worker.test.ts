@@ -183,6 +183,21 @@ describe("the worker keeps a release openable", () => {
     const response = await stalled.request("/pwa/", { mode: "navigate" });
     expect(await response!.text()).toBe(SHELL("index-a.js"));
   });
+
+  test("an offline notification naming its occupant opens the shell without caching private identifiers", async () => {
+    const sw = worker(releaseA, serveA);
+    await sw.extend("install");
+    const offline = worker(releaseA, () => { throw new Error("offline"); });
+    for (const [name, entries] of sw.storage) offline.storage.set(name, entries);
+    // notificationclick includes the occupant to refuse a reused pane id. Its
+    // query must still reach the offline shell, and never become a cache key.
+    const path = "/pwa/notification?pane=private-pane&computer=private-computer&instance=private-occupant";
+    const response = await offline.request(path, { mode: "navigate" });
+    expect(await response!.text()).toBe(SHELL("index-a.js"));
+    expect(offline.has(cacheA, path)).toBe(false);
+    expect(offline.fetched).toEqual(["/pwa/"]);
+    expect(await offline.request(`${path}&unrecognized=private`, { mode: "navigate" })).toBeUndefined();
+  });
 });
 
 describe("tapping a notification", () => {

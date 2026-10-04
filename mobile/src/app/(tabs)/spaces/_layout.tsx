@@ -1,8 +1,10 @@
+import { useI18n } from "@/lib/i18n";
 import { Stack } from "expo-router/stack";
 import { theme } from "@/lib/theme";
 
 /** Same shape as the Agents tab's layout — see the note there. */
 export default function SpacesTabLayout() {
+  const { t: ui } = useI18n();
   return (
     <Stack
       screenOptions={{
@@ -16,7 +18,7 @@ export default function SpacesTabLayout() {
         headerLargeTitle: true,
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Spaces" }} />
+      <Stack.Screen name="index" options={{ title: ui("Spaces") }} />
     </Stack>
   );
 }

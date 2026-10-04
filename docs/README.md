@@ -19,6 +19,9 @@
 
 These describe tested revisions, not a guarantee about every release or device.
 
+- [Public launch verification — 4 October 2026](launch-readiness-2026-10-04.md)
+- [Launch relay, security and latest-agent compatibility — 4 October 2026](launch-relay-security-2026-10-04.md)
+
 - [Mobile recovery — 22 September 2026](mobile-recovery-2026-09-22.md)
 - [Native computers — 8 September 2026](computers-2026-09-08.md)
 - [Web computers — 8 September 2026](web-computers-2026-09-08.md)

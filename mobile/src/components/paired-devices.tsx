@@ -1,3 +1,6 @@
+
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * The phones that paired by scanning a code, and the way to throw one out.
  *
@@ -26,6 +29,7 @@ export function PairedDevices({
   /** Whether the link is live, so a list that failed while it was down is read again once it is back. */
   live: boolean;
 }) {
+  useI18n();
   const { api, activeComputerId } = useSession();
   // Switching computers must discard the old list and any pending confirmations.
   return <DeviceListForComputer key={activeComputerId} api={api} onRevokedSelf={onRevokedSelf} focused={focused} live={live} />;
@@ -34,6 +38,7 @@ export function PairedDevices({
 function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
   api: Api; onRevokedSelf: () => void; focused: boolean; live: boolean;
 }) {
+  const { t: ui, locale } = useI18n();
   const mounted = useRef(true);
   const request = useRef(0);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; request.current++; }; }, []);
@@ -68,14 +73,14 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
   const revoke = (device: PairedDevice) => {
     const self = device.id === list?.thisDeviceId;
     Alert.alert(
-      self ? "Sign this phone out?" : `Revoke ${device.name}?`,
+      self ? ui("Sign this phone out?") : ui("Revoke {value1}?", {value1: device.name}),
       self
-        ? "This phone will need a new code to get back in."
-        : `${device.name} loses access immediately. It can pair again with a new code.`,
+        ? ui("This phone will need a new code to get back in.")
+        : ui("{value1} loses access immediately. It can pair again with a new code.", {value1: device.name}),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: ui("Cancel"), style: "cancel" },
         {
-          text: self ? "Sign out" : "Revoke",
+          text: self ? ui("Sign out") : ui("Revoke"),
           style: "destructive",
           onPress: () => {
             if (!mounted.current) return;
@@ -96,23 +101,23 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
    * October 2026). Only a list never read has nothing to keep.
    */
   const offline = !live;
-  if (offline && !list) return <Text style={styles.note}>Devices will be available when this computer reconnects.</Text>;
+  if (offline && !list) return <UiText style={styles.note}>Devices will be available when this computer reconnects.</UiText>;
   if (error && !offline) {
     return (
       <View style={styles.retryBlock}>
-        <Text style={styles.note}>Couldn't read the device list: {error}</Text>
+        <Text style={styles.note}>{ui("Couldn't read the device list:" + " ")}{error}</Text>
         <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retry} testID="retry-devices">
-          <Text style={styles.retryText}>Try again</Text>
+          <UiText style={styles.retryText}>Try again</UiText>
         </Pressable>
       </View>
     );
   }
-  if (!list) return <Text style={styles.note}>Loading…</Text>;
+  if (!list) return <UiText style={styles.note}>Loading…</UiText>;
 
   return (
     <View>
       {list.devices.length === 0 ? (
-        <Text style={styles.note}>No devices have paired by code yet.</Text>
+        <UiText style={styles.note}>No devices have paired by code yet.</UiText>
       ) : (
         list.devices.map((device, i) => (
           <View key={device.id}>
@@ -121,22 +126,21 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
               <View style={styles.body}>
                 <Text style={styles.name} numberOfLines={1}>
                   {device.name}
-                  {device.id === list.thisDeviceId ? <Text style={styles.self}> · this phone</Text> : null}
+                  {device.id === list.thisDeviceId ? <UiText style={styles.self}> · this phone</UiText> : null}
                 </Text>
-                <Text style={styles.sub}>
-                  paired {relative(device.createdAt)} · seen {relative(device.lastSeenAt)}
+                <Text style={styles.sub}>{ui("paired" + " ")}{relative(device.createdAt, Date.now(), locale)}{" "}{ui("· seen" + " ")}{relative(device.lastSeenAt, Date.now(), locale)}
                 </Text>
               </View>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={device.id === list.thisDeviceId ? `Sign out ${device.name}` : `Revoke ${device.name}`}
+                accessibilityLabel={device.id === list.thisDeviceId ? ui("Sign out {value1}", {value1: device.name}) : ui("Revoke {value1}", {value1: device.name})}
                 accessibilityState={{ disabled: offline }}
                 disabled={offline}
                 onPress={() => revoke(device)}
                 hitSlop={8}
                 testID={`revoke-${device.id}`}
               >
-                <Text style={[styles.revoke, offline && styles.revokeOff]}>{device.id === list.thisDeviceId ? "Sign out" : "Revoke"}</Text>
+                <UiText style={[styles.revoke, offline && styles.revokeOff]}>{device.id === list.thisDeviceId ? "Sign out" : "Revoke"}</UiText>
               </Pressable>
             </View>
           </View>
@@ -144,11 +148,10 @@ function DeviceListForComputer({ api, onRevokedSelf, focused, live }: {
       )}
       <Text style={styles.note}>
         {offline
-          ? "As of the last connection. Devices can be removed when this computer reconnects."
-          : <>{list.thisDeviceId === null
-            ? "This phone signed in with a passcode. Use Sign out below to disconnect it. "
-            : "Only devices connected with a pairing code appear here. "}
-          Removing a device ends its access to this computer.</>}
+          ? ui("As of the last connection. Devices can be removed when this computer reconnects.")
+          : ui(list.thisDeviceId === null
+            ? "This phone signed in with a passcode. Use Sign out below to disconnect it. Removing a device ends its access to this computer."
+            : "Only devices connected with a pairing code appear here. Removing a device ends its access to this computer.")}
       </Text>
     </View>
   );

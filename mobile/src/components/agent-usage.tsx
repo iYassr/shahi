@@ -1,3 +1,6 @@
+
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * Settings' Agents section: how much of the Claude Code and Codex plans is
  * used, from the computer on screen (`/api/plan-usage`, capability
@@ -14,6 +17,7 @@ import type { Api } from "@/lib/api";
 import { theme } from "@/lib/theme";
 
 export function AgentUsage({ api, focused, live, computer }: { api: Api; focused: boolean; live: boolean; computer: string }) {
+  const { t: ui } = useI18n();
   const [usage, setUsage] = useState<PlanUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -38,7 +42,7 @@ export function AgentUsage({ api, focused, live, computer }: { api: Api; focused
   if (!usage) {
     return (
       <View style={styles.group}>
-        {error ? <Text style={styles.note}>{error}</Text> : <ActivityIndicator style={styles.loading} color={theme.dim} />}
+        {error ? <UiText style={styles.note}>{error}</UiText> : <ActivityIndicator style={styles.loading} color={theme.dim} />}
       </View>
     );
   }
@@ -47,34 +51,35 @@ export function AgentUsage({ api, focused, live, computer }: { api: Api; focused
     <>
       <View style={styles.group} testID="usage-claude">
         <Heading kind="claude" title="Claude Code" />
-        {claude.enabled && <Windows usage={claude.usage} empty={`Appears after Claude Code's next reply on ${computer}. Claude Code reports plan limits for Pro and Max plans.`} source="Claude Code's last reply" />}
+        {claude.enabled && <Windows usage={claude.usage} empty={ui("Appears after Claude Code's next reply on {computer}. Claude Code reports plan limits for Pro and Max plans.", { computer })} source={ui("Claude Code's last reply")} />}
         <View style={styles.separator} />
         <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Show plan usage</Text>
+          <UiText style={styles.switchLabel}>Show plan usage</UiText>
           <Switch
-            accessibilityLabel="Show Claude Code plan usage"
+            accessibilityLabel={ui("Show Claude Code plan usage")}
             value={claude.enabled}
             disabled={switching || !live}
             onValueChange={(on) => void toggle(on)}
             trackColor={{ true: theme.mint, false: theme.raised }}
           />
         </View>
-        <Text style={styles.note}>
+        <UiText style={styles.note}>
           {claude.enabled
             ? "Shahi's status line in Claude Code reports these. Turn this off to put back the status line you had before."
             : "Adds a status line to Claude Code on this computer that reports your 5-hour and weekly limits. Claude Code then hides its footer hints, such as \"esc to interrupt\"; a status line you already have keeps working."}
-        </Text>
+        </UiText>
       </View>
       <View style={styles.group} testID="usage-codex">
         <Heading kind="codex" title="Codex" plan={usage.codex.usage?.plan} />
-        <Windows usage={usage.codex.usage} empty={`Appears after Codex's next turn on ${computer}.`} source="Codex's last turn" />
+        <Windows usage={usage.codex.usage} empty={ui("Appears after Codex's next turn on {computer}.", { computer })} source={ui("Codex's last turn")} />
       </View>
-      {error && <Text style={[styles.note, styles.error]}>{error}</Text>}
+      {error && <UiText style={[styles.note, styles.error]}>{error}</UiText>}
     </>
   );
 }
 
 function Heading({ kind, title, plan }: { kind: string; title: string; plan?: string }) {
+  useI18n();
   return (
     <View style={styles.heading}>
       <View style={styles.badge}><AgentIcon kind={kind} size={16} /></View>
@@ -85,18 +90,19 @@ function Heading({ kind, title, plan }: { kind: string; title: string; plan?: st
 }
 
 function Windows({ usage, empty, source }: { usage: ProviderUsage | null; empty: string; source: string }) {
+  const { t: ui, locale } = useI18n();
   if (!usage) return <Text style={styles.note}>{empty}</Text>;
   const now = Date.now();
   return (
     <>
       {usage.windows.map((window) => {
-        const { percent, reset } = planWindowNow(window, now);
+        const { percent, reset } = planWindowNow(window, now, locale);
         const high = percent !== null && percent >= 80;
         return (
-          <View key={window.label} style={styles.window} accessible accessibilityLabel={`${window.label} limit, ${percent === null ? "no current reading" : `${percent}% used`}${reset ? `. ${reset}` : ""}`}>
+          <View key={window.label} style={styles.window} accessible accessibilityLabel={ui("{value1} limit, {value2}{value3}", {value1: ui(window.label), value2: percent === null ? ui("no current reading") : ui("{value1}% used", { value1: percent }), value3: reset ? `. ${reset}` : ""})}>
             <View style={styles.windowLine}>
-              <Text style={styles.windowLabel}>{window.label}</Text>
-              <Text style={[styles.windowValue, high && { color: theme.rose }]}>{percent === null ? "—" : `${percent}% used`}</Text>
+              <UiText style={styles.windowLabel}>{window.label}</UiText>
+              <Text style={[styles.windowValue, high && { color: theme.rose }]}>{percent === null ? "—" : ui("{value1}% used", {value1: percent})}</Text>
             </View>
             <View style={styles.track}>
               <View style={[styles.fill, { width: `${Math.min(100, percent ?? 0)}%`, backgroundColor: high ? theme.rose : theme.mint }]} />
@@ -105,7 +111,7 @@ function Windows({ usage, empty, source }: { usage: ProviderUsage | null; empty:
           </View>
         );
       })}
-      <Text style={styles.note}>Updated {relativeTime(usage.observedAt, now)}, from {source}.</Text>
+      <Text style={styles.note}>{ui("Updated" + " ")}{relativeTime(usage.observedAt, now, locale)}{ui(", from" + " ")}{source}.</Text>
     </>
   );
 }

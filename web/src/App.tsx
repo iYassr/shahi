@@ -1,3 +1,4 @@
+import { useLocale } from "./i18n";
 import { ComputerSwitcher } from "./components/ComputerSwitcher";
 import { OtherComputers } from "./components/OtherComputers";
 import { ComputerUpdate, ComputerControlProvider, useComputerControl } from "./components/ComputerUpdate";
@@ -97,8 +98,10 @@ export function App(props: { initialPairingCode?: string }) {
   }, []);
   return restored ? <ApiContext.Provider value={scopedApi}><AppSession key={epoch} openPairing={openPairing} initialPairingCode={linkCode} onPairingConsumed={() => setLinkCode("")} /></ApiContext.Provider> : <Opening />;
 }
-function Opening() { return <div className="app" role="status">Opening Shahi…</div>; }
+function Opening() {
+  const { t } = useLocale(); return <div className="app" role="status">{t("Opening Shahi…")}</div>; }
 function AppSession({ initialPairingCode = "", openPairing = false, onPairingConsumed }: { initialPairingCode?: string; openPairing?: boolean; onPairingConsumed?: () => void }) {
+  const { t, locale } = useLocale();
   const api = useApi();
   const routeLocation = useLocation();
   const [pairingRequested] = useState(openPairing);
@@ -119,7 +122,7 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
    */
   const [connectionError, setConnectionError] = useState("");
   const [healthError, setHealthError] = useState<Error | null>(null);
-  const [accessEnded, setAccessEnded] = useState<string | null>(null);
+  const [accessEnded, setAccessEnded] = useState<{ source: string; name: string } | null>(null);
   useEffect(() => { if (authenticated) setAccessEnded(null); }, [authenticated]);
   /*
    * A computer on another contract version is not reconnecting; it is
@@ -396,9 +399,9 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       // browser from its own Computers list is the person's own doing.
       if (!(event as CustomEvent<{ requested?: boolean }>).detail?.requested) {
         const name = sessionRef.current?.serverName || "your computer";
-        setAccessEnded(hosted
-          ? `This browser is no longer paired with ${name}. Show a new pairing code on that computer to connect again.`
-          : `Your sign-in to ${name} has ended. Sign in again with its passcode.`);
+        setAccessEnded({ source: hosted
+          ? "This browser is no longer paired with {name}. Show a new pairing code on that computer to connect again."
+          : "Your sign-in to {name} has ended. Sign in again with its passcode.", name });
       }
       setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/");
     };
@@ -413,14 +416,14 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
   // half-open SSH tunnel, which is the "blank" refresh shape (pre-release
   // review, 2026-09). The deadline then shows "Cannot reach Shahi" and Try again.
   if (authenticated === null) return <Opening />;
-  const ended = accessEnded && !authenticated ? <p className="access-ended" role="alert">{accessEnded}</p> : null;
+  const ended = accessEnded && !authenticated ? <p className="access-ended" role="alert">{t(accessEnded.source, { name: accessEnded.name === "your computer" ? t("your computer") : accessEnded.name })}</p> : null;
   if (hosted && !authenticated && !pairingRequested && browserComputers().length > 0) {
     return <div className="app">{ended}<Computers /></div>;
   }
   if (showComputers || routeLocation.pathname === "/computers") return <div className="app"><Computers onClose={() => { setShowComputers(false); navigate("/"); }} /></div>;
   const computerButton = hosted && browserComputers().length > 0 ? <ComputerSwitcher onManage={() => setShowComputers(true)} /> : null;
   if (!reachable) {
-    const health = connectionHealth({ link: "lost", error: healthError, transport: hosted ? "relay" : "direct", online: navigator.onLine });
+    const health = connectionHealth({ link: "lost", error: healthError, transport: hosted ? "relay" : "direct", online: navigator.onLine, locale });
     // Nothing has opened yet on this screen, so the general "your
     // conversation stays open… you don't need to pair again" was wrong here,
     // and pairing means nothing to a passcode sign-in. A cause the connection
@@ -430,13 +433,12 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       <div className="app">
         <div className="empty">
           <span className="empty__mark">○</span>
-          Cannot reach Shahi. {(named ? health?.detail : "Check that your computer is awake and Shahi is running. Shahi will keep trying.") || connectionError}
+          {t("Cannot reach Shahi.")}{" "}{t((named ? health?.detail : "Check that your computer is awake and Shahi is running. Shahi will keep trying.") || connectionError)}
           {computerButton}
           {hosted && <OtherComputers />}
-          {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>Forget this browser and pair again</button>}
+          {hosted && <button className="empty__action" onClick={() => void forgetBrowser().then(() => { setReachable(true); setAuthenticated(false); })}>{t("Forget this browser and pair again")}</button>}
           <button className="empty__action" onClick={checkAuth}>
-            Try again
-          </button>
+            {t("Try again")}</button>
         </div>
       </div>
     );
@@ -458,23 +460,22 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
   return (
     <ComputerControlProvider onRecovered={retryConnection}><div className="app">
       {updateAvailable && <div className="banner" role="status">
-        <span>A new version is ready. Finish your work before reloading.{hosted && browserComputers().some(computer => !computer.remembered) && " Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code."}</span>
-        <button onClick={() => { if (!hasPendingWork() || window.confirm("Reload Shahi and discard your unfinished work?")) location.reload(); }}>{hosted && browserComputers().some(computer => !computer.remembered) ? "Reload and pair again" : "Reload Shahi"}</button>
-        <button onClick={() => setUpdateAvailable(false)}>Later</button>
+        <span>{t("A new version is ready. Finish your work before reloading.")}{hosted && browserComputers().some(computer => !computer.remembered) && t("Reloading forgets computers that were not remembered in this browser. Those computers will need a new pairing code.")}</span>
+        <button onClick={() => { if (!hasPendingWork() || window.confirm(t("Reload Shahi and discard your unfinished work?"))) location.reload(); }}>{hosted && browserComputers().some(computer => !computer.remembered) ? t("Reload and pair again") : t("Reload Shahi")}</button>
+        <button onClick={() => setUpdateAvailable(false)}>{t("Later")}</button>
       </div>}
       {computerButton}
       <ComputerUpdate linkDown={link !== "live" || !!healthError} />
       <ConnectionHealth link={link} error={healthError} relay={hosted} onRetry={retryConnection} />
       <div className={conversationLayout ? "conversation-layout" : "page-layout"} data-conversation-open={conversationOpen}>
-      {conversationLayout && <aside className="agent-sidebar" aria-label="Agent conversations">
+      {conversationLayout && <aside className="agent-sidebar" aria-label={t("Agent conversations")}>
               <header className="topbar">
-                <h1 className="topbar__title"><Logo size={28} /> Agents</h1>
-                <button className="topbar__action" disabled={link !== "live" || !!healthError} onClick={() => setNewAgent(true)}>+ New agent</button>
+                <h1 className="topbar__title"><Logo size={28} /> {" "}{t("Agents")}</h1>
+                <button className="topbar__action" disabled={link !== "live" || !!healthError} onClick={() => setNewAgent(true)}>{t("+ New agent")}</button>
                 <span className="topbar__spacer" />
                 {blockedCount > 0 && (
                   <span className="link topbar__waiting" style={{ color: "var(--accent)" }}>
-                    {blockedCount} waiting
-                  </span>
+                    {blockedCount} {" "}{t("waiting")}</span>
                 )}
                 <LinkState state={link} />
               </header>
@@ -485,13 +486,13 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       <main className="conversation-main">
       <Routes>
         <Route path="/settings" element={<Settings onComputers={() => setShowComputers(true)} onToast={showToast} onLogout={() => { setAuthenticated(false); setSession(null); setFrames({}); setPromptState({ prompts: {}, answered: {} }); clearReaderMemory(); navigate("/"); }} />} />
-        <Route path="/" element={<div className="conversation-welcome"><Logo size={64} /><h1>Your work, ready to continue</h1><p>Choose an agent on the left to read the conversation or send the next instruction.</p><span>Same session. Same computer.</span></div>} />
+        <Route path="/" element={<div className="conversation-welcome"><Logo size={64} /><h1>{t("Your work, ready to continue")}</h1><p>{t("Choose an agent on the left to read the conversation or send the next instruction.")}</p><span>{t("Same session. Same computer.")}</span></div>} />
         <Route
           path="/spaces"
           element={
             <>
               <header className="topbar">
-                <h1 className="topbar__title"><Logo size={28} /> Spaces</h1>
+                <h1 className="topbar__title"><Logo size={28} /> {" "}{t("Spaces")}</h1>
                 <span className="topbar__spacer" />
                 <LinkState state={link} />
               </header>
@@ -526,12 +527,13 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
       {newAgent && session && <NewAgentFlow session={session} onClose={() => setNewAgent(false)} onToast={showToast} onChanged={refresh}
         onStarted={(id) => { setNewAgent(false); refresh(); navigate(`/pane/${encodeURIComponent(id)}`); }} />}
       {!conversationLayout && <TabBar blockedCount={blockedCount} spaceCount={session?.workspaces.length ?? 0} />}
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && <div className="toast" role="status">{t(toast)}</div>}
     </div></ComputerControlProvider>
   );
 }
 
 function LinkState({ state }: { state: LinkState }) {
+  const { t } = useLocale();
   // The socket is not herdr: it stays open while herdr is stopped, and "live"
   // there described a computer that could do nothing (pre-release bug hunt).
   const backend = useComputerControl()?.handshake?.backend;
@@ -539,7 +541,7 @@ function LinkState({ state }: { state: LinkState }) {
   return (
     <span className={`link link--${herdrStopped ? "lost" : state}`}>
       <span className="link__dot" />
-      {herdrStopped ? "herdr offline" : state === "live" ? "live" : state === "lost" ? "offline" : "…"}
+      {herdrStopped ? t("herdr offline") : state === "live" ? t("live") : state === "lost" ? t("offline") : "…"}
     </span>
   );
 }
@@ -552,26 +554,25 @@ function LinkState({ state }: { state: LinkState }) {
  * every row of height they can get for a terminal.
  */
 function TabBar({ blockedCount, spaceCount, allowPane = false }: { blockedCount: number; spaceCount: number; allowPane?: boolean }) {
+  const { t } = useLocale();
   const { pathname } = useLocation();
   if (!allowPane && (pathname.startsWith("/pane/") || pathname.startsWith("/space/"))) return null;
 
   return (
-    <nav className="tabbar" aria-label="Main navigation">
+    <nav className="tabbar" aria-label={t("Main navigation")}>
       <NavLink to="/" className="tabbar__item" end>
         <span className="tabbar__glyph" aria-hidden="true">
           <NavigationIcon name="agents" />
         </span>
-        Agents
-        {blockedCount > 0 && <span className="tabbar__badge">{blockedCount}</span>}
+        {t("Agents")}{" "}{blockedCount > 0 && <span className="tabbar__badge">{blockedCount}</span>}
       </NavLink>
       <NavLink to="/spaces" className="tabbar__item">
         <span className="tabbar__glyph" aria-hidden="true">
           <NavigationIcon name="spaces" />
         </span>
-        Spaces
-        <span className="tabbar__count">{spaceCount}</span>
+        {t("Spaces")}{" "}<span className="tabbar__count">{spaceCount}</span>
       </NavLink>
-      <NavLink to="/settings" className="tabbar__item"><span className="tabbar__glyph" aria-hidden="true"><NavigationIcon name="settings" /></span>Settings</NavLink>
+      <NavLink to="/settings" className="tabbar__item"><span className="tabbar__glyph" aria-hidden="true"><NavigationIcon name="settings" /></span>{t("Settings")}</NavLink>
     </nav>
   );
 }

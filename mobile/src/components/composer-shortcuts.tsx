@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 /**
  * The composer's two shortcuts: the slash-command picker and the quick-reply
  * chips. Both only put text where the person's own typing goes — the picker
@@ -58,13 +59,14 @@ const SOURCE_LABEL = { user: "personal", project: "project" } as const;
  * that is a path, `/Users/…`, is not a command being looked for.
  */
 export function CommandPicker({ commands, query, onPick }: { commands: SlashCommand[]; query: string; onPick: (command: SlashCommand) => void }) {
+  const { t: ui } = useI18n();
   const { height } = useWindowDimensions();
   const matches = matchCommands(commands, query);
   if (matches.length === 0) return null;
   return (
     <ScrollView
       testID="command-picker"
-      accessibilityLabel="Commands"
+      accessibilityLabel={ui("Commands")}
       style={[styles.picker, { maxHeight: Math.round(height * PICKER_SHARE) }]}
       // A tap on a command lands on the first touch while the keyboard is up.
       keyboardShouldPersistTaps="handled"
@@ -73,14 +75,14 @@ export function CommandPicker({ commands, query, onPick }: { commands: SlashComm
         <Pressable
           key={command.name}
           accessibilityRole="button"
-          accessibilityLabel={[`/${command.name}`, command.source !== "builtin" && SOURCE_LABEL[command.source], command.description].filter(Boolean).join(", ")}
-          accessibilityHint="Puts the command in your reply"
+          accessibilityLabel={[`/${command.name}`, command.source !== "builtin" && ui(SOURCE_LABEL[command.source]), command.description].filter(Boolean).join(", ")}
+          accessibilityHint={ui("Puts the command in your reply")}
           style={({ pressed }) => [styles.command, pressed && styles.pressed]}
           onPress={() => onPick(command)}
         >
           <View style={styles.commandHead}>
             <Text style={styles.commandName}>/{command.name}</Text>
-            {command.source !== "builtin" && <Text style={styles.source}>{SOURCE_LABEL[command.source]}</Text>}
+            {command.source !== "builtin" && <Text style={styles.source}>{ui(SOURCE_LABEL[command.source])}</Text>}
           </View>
           {!!command.description && <Text style={styles.commandDescription} numberOfLines={2}>{command.description}</Text>}
         </Pressable>
@@ -101,17 +103,18 @@ export function ReplyChips({ slash, replies, onSlash, onReply }: {
   onSlash: () => void;
   onReply: (text: string) => void;
 }) {
+  const { t: ui } = useI18n();
   if (!slash && !replies) return null;
   return (
     <ScrollView horizontal testID="reply-chips" showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
       {slash && (
-        <Pressable accessibilityRole="button" accessibilityLabel="Commands" accessibilityHint="Starts a slash command" style={({ pressed }) => [styles.chip, pressed && styles.pressed]} onPress={onSlash}>
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Commands")} accessibilityHint={ui("Starts a slash command")} style={({ pressed }) => [styles.chip, pressed && styles.pressed]} onPress={onSlash}>
           <Text style={[styles.chipText, styles.slash]}>/</Text>
         </Pressable>
       )}
       {replies && QUICK_REPLIES.map((reply) => (
-        <Pressable key={reply} accessibilityRole="button" accessibilityLabel={reply} accessibilityHint="Sends this reply now" style={({ pressed }) => [styles.chip, pressed && styles.pressed]} onPress={() => onReply(reply)}>
-          <Text style={styles.chipText}>{reply}</Text>
+        <Pressable key={reply} accessibilityRole="button" accessibilityLabel={ui(reply)} accessibilityHint={ui("Sends this reply now")} style={({ pressed }) => [styles.chip, pressed && styles.pressed]} onPress={() => onReply(ui(reply))}>
+          <Text style={styles.chipText}>{ui(reply)}</Text>
         </Pressable>
       ))}
     </ScrollView>

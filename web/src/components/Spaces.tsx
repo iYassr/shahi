@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { UiIcon } from "./UiIcon";
 import { AgentAvatar } from "./AgentAvatar";
 /**
@@ -50,6 +51,7 @@ export function fromTheLeft(path: string, keep = 30): string {
 }
 
 export function Spaces({ session, onToast, onChanged }: Props) {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -59,16 +61,15 @@ export function Spaces({ session, onToast, onChanged }: Props) {
     return (
       <div className="empty">
         <span className="empty__mark">⟳</span>
-        Connecting to your computer…
-      </div>
+        {t("Connecting to your computer…")}</div>
     );
   }
 
   return (
     <>
       <div className="scroll" ref={scroller}>
-        <div className="page-intro"><h2>A place for each project</h2><p>Keep related agents and terminals together in a space.</p></div>
-        {session.workspaces.length === 0 && <div className="empty"><span className="empty__mark"><UiIcon name="folder" size={40} /></span><h2>Create your first space</h2><p>Choose a project folder, then start an agent inside it.</p></div>}
+        <div className="page-intro"><h2>{t("A place for each project")}</h2><p>{t("Keep related agents and terminals together in a space.")}</p></div>
+        {session.workspaces.length === 0 && <div className="empty"><span className="empty__mark"><UiIcon name="folder" size={40} /></span><h2>{t("Create your first space")}</h2><p>{t("Choose a project folder, then start an agent inside it.")}</p></div>}
         {session.workspaces.map((space) => {
           const panes = session.panes.filter((p) => p.workspaceId === space.workspaceId);
           const agents = panes.filter((p) => p.isAgent);
@@ -107,8 +108,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
                   <span className="space__name">{space.label}</span>
                   {blocked > 0 && (
                     <span className="space__badge">
-                      {blocked} waiting
-                    </span>
+                      {blocked} {" "}{t("waiting")}</span>
                   )}
                 </span>
 
@@ -139,8 +139,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
         })}
 
         <button className="bigaction" onClick={() => setCreating(true)}>
-          + New space
-        </button>
+          {t("+ New space")}</button>
       </div>
 
       {creating && (
@@ -162,6 +161,7 @@ export function Spaces({ session, onToast, onChanged }: Props) {
 /* -------------------------------------------------------------------------- */
 
 export function SpaceDetail({ session, onToast, onChanged }: Props) {
+  const { t } = useLocale();
   const { workspaceId = "" } = useParams();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<"tab" | "agent" | null>(null);
@@ -186,7 +186,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
     return (
       <>
         <header className="topbar">
-          <button className="topbar__back" onClick={() => navigate("/spaces")} aria-label="Back">
+          <button className="topbar__back" onClick={() => navigate("/spaces")} aria-label={t("Back")}>
             ‹
           </button>
           <div className="detail__where">{workspaceId}</div>
@@ -194,16 +194,13 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
         {session ? (
           <div className="empty">
             <span className="empty__mark">○</span>
-            That space is gone. It was closed on the computer.
-            <button className="empty__action" onClick={() => navigate("/spaces")}>
-              Back to spaces
-            </button>
+            {t("That space is gone. It was closed on the computer.")}{" "}<button className="empty__action" onClick={() => navigate("/spaces")}>
+              {t("Back to spaces")}</button>
           </div>
         ) : (
           <div className="empty" role="status">
             <span className="empty__mark">⟳</span>
-            Opening the space…
-          </div>
+            {t("Opening the space…")}</div>
         )}
       </>
     );
@@ -212,7 +209,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
   return (
     <>
       <header className="topbar">
-        <button className="topbar__back" onClick={() => navigate("/spaces")} aria-label="Back">
+        <button className="topbar__back" onClick={() => navigate("/spaces")} aria-label={t("Back")}>
           ‹
         </button>
         <div>
@@ -247,7 +244,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
             <section key={tab.tabId}>
               {grouped && (
                 <div className="group">
-                  <h2 className="group__label">{named ? tab.label : `Tab ${tab.label}`}</h2>
+                  <h2 className="group__label">{named ? tab.label : t("Tab {value0}", { value0: tab.label })}</h2>
                   {panes.length > 1 && <span className="group__count">{panes.length}</span>}
                 </div>
               )}
@@ -260,7 +257,7 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
                 >
                   <AgentAvatar kind={pane.agent} status={pane.status} isAgent={pane.isAgent} />
                   <span className="row__title">
-                    {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : "shell"}
+                    {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : t("shell")}
                   </span>
                   {/* Which tab, on the row, instead of a heading above it. */}
                   {!grouped && <span className="row__tab">{tab.label}</span>}
@@ -278,11 +275,9 @@ export function SpaceDetail({ session, onToast, onChanged }: Props) {
           * a bare tab is the occasional one and sits underneath it.
           */}
         <button className="bigaction bigaction--primary" onClick={() => setCreating("agent")}>
-          + New agent
-        </button>
+          {t("+ New agent")}</button>
         <button className="bigaction" onClick={() => setCreating("tab")}>
-          + Empty tab
-        </button>
+          {t("+ Empty tab")}</button>
       </div>
 
       {creating === "tab" && (
@@ -329,6 +324,7 @@ export function CreateSpace({
   /** Opened by New agent: the space is where that agent will work, and its form comes next. */
   forAgent?: boolean;
 }) {
+  const { t } = useLocale();
   const api = useApi();
   const [name, setName] = useState("");
   /** The person typed the name: choosing a folder no longer renames the space. */
@@ -368,31 +364,30 @@ export function CreateSpace({
   // appears; New agent on a computer with none met the word before anything
   // said what it was (simulator run of build 32, October 2026).
   return (
-    <Sheet title={forAgent ? "New agent" : "New space"} onClose={onClose}>
+    <Sheet title={forAgent ? t("New agent") : t("New space")} onClose={onClose}>
       <p className="sheet__intro">
-        {forAgent ? "Agents work in a space: a folder on your computer. Choose this one's folder, then the agent." : "A space is a folder on your computer that agents work in."}
+        {forAgent ? t("Agents work in a space: a folder on your computer. Choose this one's folder, then the agent.") : t("A space is a folder on your computer that agents work in.")}
       </p>
       <div className="field">
-        <span className="field__label">Folder</span>
+        <span className="field__label">{t("Folder")}</span>
         <DirPicker value={cwd} onChange={setCwd} suggestions={suggestions} />
       </div>
 
       <label className="field">
-        <span className="field__label">Name</span>
+        <span className="field__label">{t("Name")}</span>
         <input
           value={name}
           onChange={(e) => { setNamed(true); setName(e.target.value); }}
-          placeholder="what you are working on"
+          placeholder={t("what you are working on")}
           enterKeyHint="done"
         />
       </label>
 
       <button className="sheet__go" onClick={() => void create()} disabled={busy}>
-        {busy ? "Creating…" : forAgent ? "Create space and continue" : "Create space"}
+        {busy ? t("Creating…") : forAgent ? t("Create space and continue") : t("Create space")}
       </button>
       <p className="sheet__note">
-        Opens in the background. Your desktop view will not jump to it.
-      </p>
+        {t("Opens in the background. Your desktop view will not jump to it.")}</p>
     </Sheet>
   );
 }
@@ -408,6 +403,7 @@ function CreateTab({
   onToast: (message: string) => void;
   onCreated: () => void;
 }) {
+  const { t } = useLocale();
   const api = useApi();
   const [name, setName] = useState("");
   const [cwd, setCwd] = useState<DirChoice>(
@@ -427,20 +423,20 @@ function CreateTab({
   }
 
   return (
-    <Sheet title={`New tab in ${space.label}`} onClose={onClose}>
+    <Sheet title={t("New tab in {value0}", { value0: space.label })} onClose={onClose}>
       <label className="field">
-        <span className="field__label">Name</span>
+        <span className="field__label">{t("Name")}</span>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="optional"
+          placeholder={t("optional")}
           autoFocus
           enterKeyHint="done"
         />
       </label>
 
       <div className="field">
-        <span className="field__label">Folder</span>
+        <span className="field__label">{t("Folder")}</span>
         <DirPicker
           value={cwd}
           onChange={setCwd}
@@ -451,7 +447,7 @@ function CreateTab({
       </div>
 
       <button className="sheet__go" onClick={() => void create()} disabled={busy}>
-        {busy ? "Creating…" : "Create tab"}
+        {busy ? t("Creating…") : t("Create tab")}
       </button>
     </Sheet>
   );

@@ -38,6 +38,13 @@
   Cache-Control: no-store
   Service-Worker-Allowed: /pwa/
 
+/install
+  # The installer (site/install.sh), read by `curl | sh` and by people checking
+  # it first: plain text in a browser, and never an old copy after a pin changes.
+  Content-Type: text/plain; charset=utf-8
+  ! Cache-Control
+  Cache-Control: no-cache
+
 # The site's other text, by exact path so no 404 page (HTML) matches: revalidated,
 # as their names carry no hash, and without no-transform, so they are compressed.
 # e2e/hosted/pwa.spec.ts fails for a CSS, JavaScript or SVG file here that is missing

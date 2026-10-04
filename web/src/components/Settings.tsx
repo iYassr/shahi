@@ -1,3 +1,4 @@
+import { LanguagePicker, useLocale } from "../i18n";
 import { UiIcon } from "./UiIcon";
 import { Logo } from "./Logo";
 import { checkPushConnection } from "../push-policy";
@@ -15,6 +16,7 @@ import { AgentUsage } from "./AgentUsage";
 import { supports } from "@shahi/shared";
 
 export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () => void; onToast: (message: string) => void; onLogout: () => void }) {
+  const { t, locale } = useLocale();
   const api = useApi();
   const [devices, setDevices] = useState<DeviceList | null>(null);
   const [error, setError] = useState("");
@@ -41,47 +43,48 @@ export function Settings({ onToast, onLogout, onComputers }: { onComputers?: () 
     try { await action(); } catch (e) { onToast(e instanceof Error ? e.message : "Could not save settings"); } finally { setBusy(false); }
   }
   return <>
-    <header className="topbar"><h1 className="topbar__title"><Logo size={28} /> Settings</h1></header>
+    <header className="topbar"><h1 className="topbar__title"><Logo size={28} /> {" "}{t("Settings")}</h1></header>
     <div className="scroll settings">
-      <div className="page-intro"><h2>Make Shahi yours</h2><p>Manage your computers, notifications, and who has access.</p></div>
+      <div className="page-intro"><h2>{t("Make Shahi yours")}</h2><p>{t("Manage your computers, notifications, and who has access.")}</p></div>
       <InstallApp />
-      <section><h2><UiIcon name="shield" /> Diagnostics</h2><p>Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots.</p>
-        <button className="empty__action" role="switch" aria-checked={diagnostics} onClick={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }}>Share diagnostics: {diagnostics ? "On" : "Off"}</button>
+      <section><LanguagePicker /></section>
+      <section><h2><UiIcon name="shield" /> {" "}{t("Diagnostics")}</h2><p>{t("Help fix crashes and conversations that fail to load. Sends error types and messages, with paths, links and quoted text removed, plus app versions and code locations to Sentry. Never conversation text or screenshots.")}</p>
+        <button className="empty__action" role="switch" aria-checked={diagnostics} onClick={() => { setDiagnosticsEnabled(!diagnostics); setDiagnostics(diagnosticsEnabled()); }}>{t("Share diagnostics:")}{" "}{diagnostics ? t("On") : t("Off")}</button>
       </section>
-      {hosted && <section><h2><UiIcon name="computer" /> Computers</h2><p>Move between your connected computers. They stay connected while Shahi is open.</p><button className="empty__action" onClick={onComputers}>Switch or add a computer</button></section>}
-      <section><h2><UiIcon name="shield" /> Connection</h2>{versions && <p className="settings__versions">{versions}</p>}{hosted ? <><p>Your messages are protected by encryption between this device and your computer.</p><details className="settings__details"><summary>Connection details</summary><p>{browserConnection().identity?.relay}</p></details><p>{browserConnection().remembered ? "This browser is remembered on this device." : "You’ll need a new connection code if you refresh or close this page."} Sign out to remove this browser’s access.</p></> : <><p>{location.host}</p><p>This browser connects through the address you opened. Keep your server or SSH tunnel running.</p></>}</section>
-      <section><h2><UiIcon name="bell" /> Notifications</h2><p>Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.</p>
-        {hosted && <p>{browserConnection().remembered ? "Turn on notifications below to hear when this computer needs you." : "To receive notifications, connect again and select Remember this browser."}</p>}
+      {hosted && <section><h2><UiIcon name="computer" /> {" "}{t("Computers")}</h2><p>{t("Move between your connected computers. They stay connected while Shahi is open.")}</p><button className="empty__action" onClick={onComputers}>{t("Switch or add a computer")}</button></section>}
+      <section><h2><UiIcon name="shield" /> {" "}{t("Connection")}</h2>{versions && <p className="settings__versions">{versions}</p>}{hosted ? <><p>{t("Your messages are protected by encryption between this device and your computer.")}</p><details className="settings__details"><summary>{t("Connection details")}</summary><p>{browserConnection().identity?.relay}</p></details><p>{browserConnection().remembered ? t("This browser is remembered on this device.") : t("You’ll need a new connection code if you refresh or close this page.")} {" "}{t("Sign out to remove this browser’s access.")}</p></> : <><p>{location.host}</p><p>{t("This browser connects through the address you opened. Keep your server or SSH tunnel running.")}</p></>}</section>
+      <section><h2><UiIcon name="bell" /> {" "}{t("Notifications")}</h2><p>{t("Notify this browser when an agent needs you. On iPhone or iPad, add Shahi to your Home Screen first.")}</p>
+        {hosted && <p>{browserConnection().remembered ? t("Turn on notifications below to hear when this computer needs you.") : t("To receive notifications, connect again and select Remember this browser.")}</p>}
         <button className="empty__action" disabled={busy || (hosted && !browserConnection().remembered)} onClick={() => void run(async () => {
           const generation = browserConnection().generation;
           checkPushConnection(hosted, browserConnection(), generation);
           if (!("Notification" in window)) throw new Error("Install Shahi on your Home Screen to enable notifications on this browser.");
           if (await Notification.requestPermission() !== "granted") throw new Error("Notifications are blocked in browser settings.");
           await registerPush(generation, confirmSwitch); preferences.remove("shahi.push.dismissed"); onToast("Notifications on");
-        })}>Enable notifications</button>
+        })}>{t("Enable notifications")}</button>
         <button className="empty__action" disabled={busy} onClick={() => void run(async () => {
           await unregisterPush();
           preferences.set("shahi.push.dismissed", "1"); onToast("Notifications off");
-        })}>Disable notifications</button>
+        })}>{t("Disable notifications")}</button>
       </section>
       {supports(handshake ?? null, "plan-usage") && <AgentUsage computer="this computer" />}
-      <section><h2><UiIcon name="shield" /> Devices with access</h2><p>These devices can access the current computer. Revoking a device disconnects it and stops its notifications. Passcode logins do not appear in this list.</p>
-        {error && <p className="settings__error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></p>}
-        {!devices && !error && <p>Loading devices…</p>}
-        {devices?.devices.length === 0 && <p>No paired devices.</p>}
+      <section><h2><UiIcon name="shield" /> {" "}{t("Devices with access")}</h2><p>{t("These devices can access the current computer. Revoking a device disconnects it and stops its notifications. Passcode logins do not appear in this list.")}</p>
+        {error && <p className="settings__error" role="alert">{t(error)}<button onClick={() => void refresh()}>{t("Retry")}</button></p>}
+        {!devices && !error && <p>{t("Loading devices…")}</p>}
+        {devices?.devices.length === 0 && <p>{t("No paired devices.")}</p>}
         {/* Each button names its device, as native does: every row's button
             was just "Revoke" (pre-release bug hunt). */}
-        {devices?.devices.map((device) => <div className="device-row" key={device.id}><div><strong>{device.name}</strong><p>Last seen {new Date(device.lastSeenAt).toLocaleString()}</p></div><button disabled={busy} aria-label={device.id === devices.thisDeviceId ? `Sign out ${device.name}` : `Revoke ${device.name}`} onClick={() => {
+        {devices?.devices.map((device) => <div className="device-row" key={device.id}><div><strong>{device.name}</strong><p>{t("Last seen")}{" "}{new Date(device.lastSeenAt).toLocaleString(locale)}</p></div><button disabled={busy} aria-label={device.id === devices.thisDeviceId ? t("Sign out {value0}", { value0: device.name }) : t("Revoke {value0}", { value0: device.name })} onClick={() => {
           const self = device.id === devices.thisDeviceId;
-          if (window.confirm(self ? "Sign this browser out?" : `Revoke access for ${device.name}?`)) void run(async () => {
+          if (window.confirm(self ? t("Sign this browser out?") : t("Revoke access for {value0}?", { value0: device.name }))) void run(async () => {
             await api.revokeDevice(device.id);
             if (!mounted.current) return;
             if (self) onLogout(); else await refresh();
           });
-        }}>{device.id === devices.thisDeviceId ? "Sign out" : "Revoke"}</button></div>)}
+        }}>{device.id === devices.thisDeviceId ? t("Sign out") : t("Revoke")}</button></div>)}
       </section>
-      <section className="settings__access"><h2>Sign out of this computer</h2><p>Remove this browser’s access. You will need to pair or sign in again to reconnect.</p><button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>Sign out</button></section>
-      <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">Privacy</a><a href="mailto:support@getshahi.dev">Get help</a><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></footer>
+      <section className="settings__access"><h2>{t("Sign out of this computer")}</h2><p>{t("Remove this browser’s access. You will need to pair or sign in again to reconnect.")}</p><button className="empty__action settings__signout" disabled={busy} onClick={() => void run(async () => { try { await api.logout(); } finally { onLogout(); } })}>{t("Sign out")}</button></section>
+      <footer className="app-help__links"><a href="https://getshahi.dev/privacy" target="_blank" rel="noreferrer">{t("Privacy")}</a><a href="mailto:support@getshahi.dev">{t("Get help")}</a><a href={noticesUrl()} target="_blank" rel="noreferrer">{t("Open-source licenses")}</a></footer>
     </div>
   </>;
 }

@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "../api";
 import { FileDownloadError } from "@shahi/shared/file-download";
@@ -7,6 +8,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 
 /** Renders PDF pages without executing embedded scripts or external actions. */
 export default function PdfPreview({ url }: { url: string }) {
+  const { t } = useLocale();
   const api = useApi();
   const canvas = useRef<HTMLCanvasElement>(null);
   const [document, setDocument] = useState<PDFDocumentProxy>();
@@ -44,16 +46,16 @@ export default function PdfPreview({ url }: { url: string }) {
     }).catch(e => { if (live && e?.name !== "RenderingCancelledException") setError("This page could not be displayed. You can still download the PDF."); });
     return () => { live = false; render?.cancel(); };
   }, [document, page, zoom]);
-  if (error) return <p role="alert">{error}</p>;
-  if (!document) return <p role="status">Opening PDF…</p>;
-  return <section className="pdf-preview" aria-label="PDF preview">
-    <nav aria-label="PDF pages">
-      <button disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</button>
-      <span aria-live="polite">Page {page} of {document.numPages}</span>
-      <button disabled={page === document.numPages} onClick={() => setPage(p => p + 1)}>Next</button>
-      <button aria-label="Zoom out" disabled={zoom <= 0.75} onClick={() => setZoom(z => z - 0.25)}>−</button>
-      <button aria-label="Zoom in" disabled={zoom >= 2} onClick={() => setZoom(z => z + 0.25)}>+</button>
+  if (error) return <p role="alert">{t(error)}</p>;
+  if (!document) return <p role="status">{t("Opening PDF…")}</p>;
+  return <section className="pdf-preview" aria-label={t("PDF preview")}>
+    <nav aria-label={t("PDF pages")}>
+      <button disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t("Previous")}</button>
+      <span aria-live="polite">{t("Page")}{" "}{page} {" "}{t("of")}{" "}{document.numPages}</span>
+      <button disabled={page === document.numPages} onClick={() => setPage(p => p + 1)}>{t("Next")}</button>
+      <button aria-label={t("Zoom out")} disabled={zoom <= 0.75} onClick={() => setZoom(z => z - 0.25)}>−</button>
+      <button aria-label={t("Zoom in")} disabled={zoom >= 2} onClick={() => setZoom(z => z + 0.25)}>+</button>
     </nav>
-    <div className="pdf-preview__page"><canvas key={`${page}-${zoom}`} ref={canvas} role="img" aria-label={`PDF page ${page}. Download the file for selectable text and full accessibility.`} /></div>
+    <div className="pdf-preview__page"><canvas key={`${page}-${zoom}`} ref={canvas} role="img" aria-label={t("PDF page {value0}. Download the file for selectable text and full accessibility.", { value0: page })} /></div>
   </section>;
 }

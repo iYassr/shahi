@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 /**
  * The screen for a server that could not be read, when there is nothing older
  * to show instead.
@@ -59,10 +60,10 @@ export function Unreachable({
         onPress={() => void retry()}
         testID="retry"
       >
-        <Text style={styles.buttonText}>{busy ? "Trying…" : "Try again"}</Text>
+        <UiText style={styles.buttonText}>{busy ? "Trying…" : "Try again"}</UiText>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={onSwitch} hitSlop={12} testID="switch-server">
-        <Text style={styles.link}>Choose another computer</Text>
+        <UiText style={styles.link}>Choose another computer</UiText>
       </Pressable>
     </ScrollView>
   );

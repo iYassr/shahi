@@ -1,3 +1,4 @@
+import { I18nProvider, useI18n } from "@/lib/i18n";
 import { ClientUpdateGate } from "@/components/client-update-gate";
 import { TypographyProvider } from "@/components/text";
 import { useEffect, useRef, useState } from "react";
@@ -27,13 +28,15 @@ initializeDiagnostics();
  * arrives a moment later.
  */
 export default function RootLayout() {
+  useI18n();
   // Not behind `ready` or Settings: a notification can arrive in the first
   // second of a launch, on any screen, for a phone that opted in long ago.
   useEffect(() => { showNotificationsWhileOpen(); }, []);
   return (
     // Above the router, so the mirror and the socket survive navigation.
     // The gesture root is what lets a row's swipe actions receive the drag.
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <I18nProvider>
+    <DirectionalRoot>
     <TypographyProvider>
     <ClientUpdateGate>
     <ErrorBoundary>
@@ -45,11 +48,18 @@ export default function RootLayout() {
     </ErrorBoundary>
     </ClientUpdateGate>
     </TypographyProvider>
-    </GestureHandlerRootView>
+    </DirectionalRoot>
+    </I18nProvider>
   );
 }
 
+function DirectionalRoot({ children }: { children: import("react").ReactNode }) {
+  const { direction } = useI18n();
+  return <GestureHandlerRootView style={{ flex: 1, direction }}>{children}</GestureHandlerRootView>;
+}
+
 function Navigation() {
+  const { t: ui } = useI18n();
   const session = useSession();
   const { connectionKey, ready, activeComputerId, hostKeyReview } = session;
   const current = useRef(session); current.current = session;
@@ -86,7 +96,7 @@ function Navigation() {
         void postNotificationAnswer(state.api, pending.pane, pending.answer, pending.instance).then((outcome) => {
           if (outcome.sent) return;
           if (outcome.unauthorized) state.unauthorized();
-          else Alert.alert("Not answered", outcome.message);
+          else Alert.alert(ui("Not answered"), ui(outcome.message));
         });
       }
       setPending(null);
@@ -107,12 +117,12 @@ function Navigation() {
           headerBackButtonDisplayMode: "minimal",
           // What the hidden label reads as — otherwise VoiceOver (and the test
           // driver) get the previous ROUTE'S name, which is "(tabs)".
-          headerBackTitle: "Back",
+          headerBackTitle: ui("Back"),
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="connect" options={{ headerShown: false }} />
-        <Stack.Screen name="computers" options={{ title: "Computers" }} />
+        <Stack.Screen name="computers" options={{ title: ui("Computers") }} />
         {/* Leaves at once (see the route), so nothing of it should show. */}
         <Stack.Screen name="+not-found" options={{ headerShown: false, animation: "none" }} />
         {/* Titles set from inside the screens, where the pane or space is

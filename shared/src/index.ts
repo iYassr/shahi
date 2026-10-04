@@ -1,4 +1,5 @@
 export { latestConversations } from "./conversation-order";
+export { translate, normalizeLocale, resolveLocale, localeDirection, SUPPORTED_LOCALES, type AppLocale, type LocalePreference, type TranslationValues } from "./i18n";
 export { readerRows, readerActivityLabel, readerTasks, readerTasksLabel, type ReaderRow, type ReaderActivity, type ActivityStep, type ReaderTaskList } from "./reader-rows";
 export { backendUnavailable, connectionHealth, graceUntil, RECONNECT_GRACE_MS, type ConnectionNotice } from "./connection-health";
 export { inboxKind, inboxPanes, reviewKey, retainReviews, type Reviewed } from "./inbox";

@@ -1,3 +1,4 @@
+import { useLocale, type UiTranslator } from "../i18n";
 /**
  * What to do when a render throws.
  *
@@ -47,12 +48,13 @@ interface State {
  * back button gets the same fresh attempt.
  */
 export function Boundary({ children }: Props) {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const { key } = useLocation();
-  return <Catch place={key} onHome={() => navigate("/")}>{children}</Catch>;
+  return <Catch t={t} place={key} onHome={() => navigate("/")}>{children}</Catch>;
 }
 
-class Catch extends Component<Props & { place: string; onHome: () => void }, State> {
+class Catch extends Component<Props & { place: string; onHome: () => void; t: UiTranslator }, State> {
   override state: State = { error: null, where: null, retried: false, at: null };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -77,6 +79,7 @@ class Catch extends Component<Props & { place: string; onHome: () => void }, Sta
   }
 
   override render(): ReactNode {
+    const { t } = this.props;
     const { error, where } = this.state;
     if (!error) return this.props.children;
 
@@ -84,20 +87,17 @@ class Catch extends Component<Props & { place: string; onHome: () => void }, Sta
       <div className="app">
         <div className="empty">
           <span className="empty__mark">○</span>
-          Something in the app broke while drawing this screen.
-          <pre className="boundary__what">
-            {error.message}
-            {where ? `\n${where}` : ""}
+          {t("Something in the app broke while drawing this screen.")}{" "}<pre className="boundary__what" dir="ltr">
+            {t(error.message)}
+            {where ?? ""}
           </pre>
           <button className="empty__action" onClick={() => location.reload()}>
-            Reload
-          </button>
+            {t("Reload")}</button>
           <button
             className="empty__action"
             onClick={this.props.onHome}
           >
-            Back to agents
-          </button>
+            {t("Back to agents")}</button>
         </div>
       </div>
     );

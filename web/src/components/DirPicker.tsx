@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * Picks a working directory by browsing rather than typing.
  *
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export function DirPicker({ value, onChange, suggestions = [] }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,7 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
       <div className="picker__current">
         <span className="picker__path">{value.display}</span>
         <button className="picker__toggle" onClick={() => setBrowsing((b) => !b)}>
-          {browsing ? "Done" : "Change"}
+          {browsing ? t("Done") : t("Change")}
         </button>
       </div>
 
@@ -90,13 +92,13 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
 
       {browsing && (
         <div className="picker__browser">
-          {error && <p className="picker__error" role="alert">{error} <button onClick={() => setAttempt(n => n + 1)}>Try again</button></p>}
-          {!listing && !error && <p className="picker__empty" role="status">Opening folder…</p>}
+          {error && <p className="picker__error" role="alert">{t(error)} <button onClick={() => setAttempt(n => n + 1)}>{t("Try again")}</button></p>}
+          {!listing && !error && <p className="picker__empty" role="status">{t("Opening folder…")}</p>}
 
           {/* Each folder on the way home is a way back to it. A display path
               is enough: the effect above resolves it to its absolute form. */}
           {listing && (
-            <nav className="picker__crumbs" aria-label="Folder path">
+            <nav className="picker__crumbs" aria-label={t("Folder path")}>
               {breadcrumb(listing.display).map((crumb, i, all) => (
                 <span key={crumb.display}>
                   {i > 0 && <span className="picker__crumbsep" aria-hidden="true">›</span>}
@@ -113,7 +115,7 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
           {listing && listing.parent !== null && (
             <button
               className="picker__row"
-              aria-label={`Up to ${breadcrumb(listing.parent).at(-1)!.label}`}
+              aria-label={t("Up to {value0}", { value0: breadcrumb(listing.parent).at(-1)!.label })}
               onClick={() =>
                 onChange({
                   // The listing's own path minus its last segment, so the
@@ -123,12 +125,11 @@ export function DirPicker({ value, onChange, suggestions = [] }: Props) {
                 })
               }
             >
-              <span className="picker__glyph">↑</span> Up
-            </button>
+              <span className="picker__glyph">↑</span> {" "}{t("Up")}</button>
           )}
 
           {listing?.entries.length === 0 && (
-            <p className="picker__empty">No folders in here. Use it as it is.</p>
+            <p className="picker__empty">{t("No folders in here. Use it as it is.")}</p>
           )}
 
           {listing?.entries.map((entry) => (

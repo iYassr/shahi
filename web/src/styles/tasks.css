@@ -50,15 +50,15 @@
   gap: 10px;
   width: 100%;
   padding: 14px var(--gutter);
-  text-align: left;
+  text-align: start;
 }
 
 .row::after {
   content: "";
   position: absolute;
   /* Starts under the title, past the one glyph before it. */
-  left: 34px;
-  right: 0;
+  inset-inline-start: 34px;
+  inset-inline-end: 0;
   bottom: 0;
   height: 1px;
   background: var(--line);
@@ -164,7 +164,7 @@
   display: block;
   width: 100%;
   padding: 14px 16px 12px;
-  text-align: left;
+  text-align: start;
 }
 
 .blocked__badge {
@@ -232,7 +232,7 @@
   padding: 11px 10px;
   border-radius: 6px;
   line-height: 1.35;
-  text-align: left;
+  text-align: start;
   color: var(--text);
   transition: background 120ms ease;
   font-family: var(--ui);
@@ -294,7 +294,7 @@
   font-size: 11px;
   line-height: 1.45;
   color: var(--danger);
-  text-align: left;
+  text-align: start;
   white-space: pre-wrap;
 }
 
@@ -349,7 +349,7 @@
   margin: 4px 0 10px 21px;
   padding: 12px 14px;
   border: 1px solid var(--line-bright);
-  border-left: 2px solid var(--accent);
+  border-inline-start: 2px solid var(--accent);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -438,7 +438,7 @@
   padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  text-align: left;
+  text-align: start;
 }
 
 .mode[data-active="true"] {
@@ -548,7 +548,7 @@
   color: var(--muted);
   min-height: 44px;
   min-width: 32px;
-  text-align: left;
+  text-align: start;
 }
 
 .viewer__name {
@@ -618,7 +618,7 @@
   /* A button is line-box-aligned by default, and the descender space under the
      image reads as a gap. Zero here, restored on the image itself. */
   line-height: 0;
-  text-align: left;
+  text-align: start;
   cursor: zoom-in;
 }
 
@@ -674,5 +674,5 @@
 }
 
 .screencard__open {
-  margin-left: auto;
+  margin-inline-start: auto;
 }

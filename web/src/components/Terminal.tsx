@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * Renders a pane's screen with xterm.js.
  *
@@ -53,6 +54,7 @@ const THEME = {
 };
 
 export function Terminal({ ansi, text, cols, rows, scale }: Props) {
+  const { t } = useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
   // The first size only: later sizes resize this instance (below) rather than
@@ -142,7 +144,7 @@ export function Terminal({ ansi, text, cols, rows, scale }: Props) {
    */
   return (
     <div className="term" style={{ width: width * scale, height: height * scale }}
-      aria-label="Terminal output" role="region">
+      dir="ltr" aria-label={t("Terminal output")} role="region">
       <pre className="visually-hidden">{text}</pre>
       <div ref={hostRef} aria-hidden="true" style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }} />
     </div>

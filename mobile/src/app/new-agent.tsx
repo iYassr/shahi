@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { NewAgent, NewSpace, PickSpace } from "@/screens/spaces";
@@ -42,7 +43,7 @@ export default function NewAgentRoute() {
   const space = chosen ? session.workspaces.find((w) => w.workspaceId === chosen) : undefined;
   if (!space && chosen !== null && chosen === made) {
     // The computer has made it; this session has not heard yet.
-    return <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><Text style={{ color: theme.dim }}>Opening the new space…</Text></View>;
+    return <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><UiText style={{ color: theme.dim }}>Opening the new space…</UiText></View>;
   }
   if (!space) return <PickSpace session={session} onPick={(s) => setChosen(s.workspaceId)} onNewSpace={() => setMaking(true)} />;
   return (

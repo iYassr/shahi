@@ -1,10 +1,11 @@
+import { translate, type AppLocale } from "./i18n";
 /** "just now", "5m ago", "3h ago", "2d ago": enough to tell recent from forgotten. */
-export function relativeTime(at: number, now = Date.now()): string {
+export function relativeTime(at: number, now = Date.now(), locale: AppLocale = "en"): string {
   const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86_400)}d ago`;
+  if (s < 60) return translate(locale, "just now");
+  if (s < 3600) return translate(locale, "{count}m ago", { count: Math.floor(s / 60) });
+  if (s < 86_400) return translate(locale, "{count}h ago", { count: Math.floor(s / 3600) });
+  return translate(locale, "{count}d ago", { count: Math.floor(s / 86_400) });
 }
 
 const DAY = 86_400_000;
@@ -18,15 +19,16 @@ const midnight = (at: number) => { const d = new Date(at); d.setHours(0, 0, 0, 0
  * The audit of build 28 found rows with no time at all, so two conversations
  * from this morning and last month looked equally fresh.
  */
-export function rowTime(at: number, now = Date.now()): string {
+export function rowTime(at: number, now = Date.now(), locale: AppLocale = "en"): string {
   const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 60) return translate(locale, "now");
+  if (s < 3600) return translate(locale, "{count}m", { count: Math.floor(s / 60) });
   const today = midnight(now);
-  if (s < 6 * 3600 || at >= today) return `${Math.floor(s / 3600)}h`;
-  if (at >= today - DAY) return "Yesterday";
+  if (s < 6 * 3600 || at >= today) return translate(locale, "{count}h", { count: Math.floor(s / 3600) });
+  if (at >= today - DAY) return translate(locale, "Yesterday");
   const when = new Date(at);
-  if (at >= today - 6 * DAY) return when.toLocaleDateString("en-US", { weekday: "short" });
+  const dateLocale = locale === "en" ? "en-US" : locale;
+  if (at >= today - 6 * DAY) return when.toLocaleDateString(dateLocale, { weekday: "short" });
   const sameYear = when.getFullYear() === new Date(now).getFullYear();
-  return when.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+  return when.toLocaleDateString(dateLocale, { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }

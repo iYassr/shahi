@@ -166,7 +166,7 @@ on the next launch; never reload someone in the middle of composing a message.
 Use EAS `update:edit` to expand a rollout and `update:revert-update-rollout` to
 stop a bad one. Certificate rotation requires a new trusted binary.
 
-The **Signed Shahi phone update** workflow requires an Expo token, the private
+The **Signed Shahi phone update** workflow requires protected Expo authentication, the private
 signing key, and Expo Production or Enterprise. As checked on 2026-09-09, this
 project is on Free: signed publication is unavailable until that account change.
 While it holds the key, the workflow runs eas-cli 23.2.0 from
@@ -180,6 +180,11 @@ built from, and inside the checkout Metro would crawl it. To move eas-cli, edit
 in a directory outside the checkout, or merge the Dependabot pull request for
 `/.github/eas`.
 The certificate is configured in new binaries; unsigned OTA is never accepted.
+The App Store and signed-update workflows use the protected `EXPO_EAS_SESSION`
+credential and create a private, temporary runner session. Cleanup removes
+only the session that the job created; an existing session is never replaced.
+The production App Store workflow accepts only a manual CI run on its exact
+master commit and waits for success before uploading the finished archive.
 See [Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/),
 [code signing](https://docs.expo.dev/eas-update/code-signing/) and
 [rollouts](https://docs.expo.dev/eas-update/rollouts/).

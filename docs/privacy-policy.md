@@ -254,4 +254,6 @@ Questions about this policy: **support@getshahi.dev**.
 
 ## iOS beta requests
 
+The public iPhone app is available separately; beta signup is optional early access to future versions.
+
 If you request an iOS beta invitation, we send your email address to the Shahi support inbox using Cloudflare Email Routing. We use it to contact you about TestFlight access and beta updates. The website does not keep a separate signup database. Your request remains in the support mailbox until deleted. Email support@getshahi.dev to withdraw your request or ask us to delete it.

@@ -1,3 +1,4 @@
+import { useI18n } from "@/lib/i18n";
 /**
  * Markdown for agent prose, rendered as React Native elements.
  *
@@ -22,10 +23,12 @@ import { theme } from "@/lib/theme";
 type OpenFile = (file: { path: string; name: string }) => void;
 const FileAction = createContext<OpenFile | undefined>(undefined);
 export function Markdown({ text, onOpenFile }: { text: string; onOpenFile?: OpenFile }) {
+  useI18n();
   return <FileAction.Provider value={onOpenFile}><View>{renderBlocks(text)}</View></FileAction.Provider>;
 }
 
 function ProseLink({ label, target }: { label: string; target: string }) {
+  const { t: ui } = useI18n();
   const openFile = useContext(FileAction);
   const destination = target.trim().replace(/^<|>$/g, "");
   if (isWebUrl(destination)) return <ExternalLink url={destination}>{label}</ExternalLink>;
@@ -38,10 +41,10 @@ function ProseLink({ label, target }: { label: string; target: string }) {
     // and is what a saved or shared copy is called, and "the report" with no
     // extension could not be typed by the share sheet or Files (pre-release
     // bug hunt; the web client's f8de7f7).
-    if (openFile) return <Text accessibilityRole="link" accessibilityHint="Open file on your computer" style={styles.link}
+    if (openFile) return <Text accessibilityRole="link" accessibilityHint={ui("Open file on your computer")} style={styles.link}
       onPress={() => openFile({ path, name: path.split("/").pop() || label })}>{label}</Text>;
   }
-  return <Text>{label} (link unavailable)</Text>;
+  return <Text>{label}{" "}{ui("(link unavailable)")}</Text>;
 }
 
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
@@ -262,8 +265,8 @@ const styles = StyleSheet.create({
 
   // Code keeps its own formatting and scrolls rather than being rewrapped.
   codeBox: { backgroundColor: theme.surface, borderRadius: 8, borderCurve: "continuous", marginVertical: 6, padding: 10 },
-  code: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18 },
-  inlineCode: { fontFamily: theme.mono, fontSize: 13, color: theme.fg, backgroundColor: theme.raised },
+  code: { color: theme.fg, fontFamily: theme.mono, fontSize: 12, lineHeight: 18, writingDirection: "ltr", textAlign: "left" },
+  inlineCode: { fontFamily: theme.mono, fontSize: 13, color: theme.fg, backgroundColor: theme.raised, writingDirection: "ltr" },
 
   bold: { fontWeight: "700" },
   italic: { fontStyle: "italic" },

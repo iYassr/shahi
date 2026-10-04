@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * A bottom sheet.
  *
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function Sheet({ title, onClose, children }: Props) {
+  const { t } = useLocale();
   const dialog = useDialog(onClose);
 
   return (
@@ -25,7 +27,7 @@ export function Sheet({ title, onClose, children }: Props) {
         <div className="sheet__grip" aria-hidden="true" />
         <div className="sheet__heading">
           <h2 className="sheet__title">{title}</h2>
-          <button className="sheet__close" aria-label="Close" onClick={onClose}><UiIcon name="close" /></button>
+          <button className="sheet__close" aria-label={t("Close")} onClick={onClose}><UiIcon name="close" /></button>
         </div>
         {children}
       </div>

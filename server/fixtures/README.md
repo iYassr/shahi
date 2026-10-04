@@ -77,3 +77,14 @@ disposable OrbStack machine under herdr 0.9.3; its shell prompt's user was
 replaced at equal length with `testuser`. `docs/agent-screens.md` lists every screen, and
 `server/scripts/screen-census.ts` draws them again on a newer agent and
 compares them with these.
+
+The `codex-0.160-migration` capture comes from the official 0.160.0 binary,
+verified against the SHA-256 checked release archive on October 4, 2026,
+under checksum-verified herdr 0.9.3. Unlike the older migration menu, this
+screen only offers Enter/Esc to continue or Ctrl+C to quit. The old menu
+fixture stays covered; the new notice is held to screen-with-keys behavior.
+`codex-0.160-update` uses the same verified binary cloned into a scratch
+standalone layout, with a synthetic latest-version record of 9.0.0 to draw
+the update offer offline. No update choice was selected.
+These two captures normalize line endings and trailing empty terminal rows;
+their text, ANSI color spans and menu alignment are retained.

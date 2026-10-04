@@ -63,6 +63,10 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
     labels: ["Review hooks", "Trust all and continue", "Continue without trusting (hooks won't run)"] } } },
   "codex-0.150-migration": { herdr: "unknown", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", confirm: true,
     labels: ["Try new model", "Use existing model"] } } },
+  // 0.160 removes the old-model choice and waits for Enter/Esc to continue.
+  "codex-0.160-migration": { herdr: "unknown", agent: "codex", expect: { waits: true } },
+  "codex-0.160-update": { herdr: "unknown", agent: "codex", expect: { card: { question: "Update available · 0.160.0 → 9.0.0", answer: "digit", confirm: true,
+    labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
 };
 
 const screen = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", "startup", `${name}.ansi`), "utf8");

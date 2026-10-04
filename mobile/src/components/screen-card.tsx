@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { useI18n } from "@/lib/i18n";
 /**
  * The bottom of the terminal, as it is, with the keys that answer menus: for
  * an agent waiting on something no parser recognised (`PaneFrame.unrecognised`),
@@ -20,6 +22,7 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
   onKeys: (keys: string[]) => void;
   onOpenScreen: () => void;
 }) {
+  const { t: ui } = useI18n();
   const { fontScale } = useWindowDimensions();
   const rows = screenTail(text);
   if (rows.length === 0) return null;
@@ -34,8 +37,8 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
     // message, read as something that needed you (first-task test of build
     // 32, October 2026).
     <View testID="screen-card" style={[styles.card, waiting && styles.cardWaiting]}>
-      <Text style={styles.heading}>{heading}</Text>
-      {waiting && <Text style={styles.hint}>Messages are not sent until it is answered.</Text>}
+      <UiText style={styles.heading}>{heading}</UiText>
+      {waiting && <UiText style={styles.hint}>Messages are not sent until it is answered.</UiText>}
       <ScrollView horizontal style={styles.screen} contentContainerStyle={styles.screenBody}>
         <Text selectable accessibilityLabel={rows.join("\n")} style={[styles.rows, { width: monoWidth(longest, FONT, fontScale) }]}>
           {rows.join("\n")}
@@ -46,7 +49,7 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
           <Pressable
             key={label}
             accessibilityRole="button"
-            accessibilityLabel={name}
+            accessibilityLabel={ui(name)}
             accessibilityState={{ disabled }}
             disabled={disabled}
             style={styles.key}
@@ -56,7 +59,7 @@ export function ScreenCard({ text, waiting, disabled, onKeys, onOpenScreen }: {
           </Pressable>
         ))}
         <Pressable accessibilityRole="button" style={styles.key} onPress={onOpenScreen}>
-          <Text style={[styles.keyText, { color: theme.peach }]}>Open Screen</Text>
+          <UiText style={[styles.keyText, { color: theme.peach }]}>Open Screen</UiText>
         </Pressable>
       </ScrollView>
     </View>
@@ -78,8 +81,8 @@ const styles = StyleSheet.create({
   hint: { color: theme.dim, fontSize: 13 },
   // No height cap of its own: the notices area it sits in scrolls (see `Pane`).
   screen: { borderRadius: 8, borderCurve: "continuous", backgroundColor: theme.void },
-  screenBody: { padding: 8 },
-  rows: { color: theme.fg, fontFamily: theme.mono, fontSize: FONT, lineHeight: 16 },
+  screenBody: { padding: 8, direction: "ltr" },
+  rows: { color: theme.fg, fontFamily: theme.mono, fontSize: FONT, lineHeight: 16, writingDirection: "ltr", textAlign: "left" },
   keys: { gap: 6 },
   key: {
     minHeight: 44,

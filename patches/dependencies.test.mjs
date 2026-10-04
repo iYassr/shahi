@@ -87,3 +87,28 @@ test("xcode still generates project identifiers with the patched uuid release", 
     assert.throws(() => uuid.v5('name', uuid.v5.DNS, new Uint8Array(1)), RangeError);
   `);
 });
+
+test("both brace-expansion release lines bound deep parsing and malformed-brace rewrites", () => {
+  checkInChild(`
+    const assert = require('node:assert/strict');
+    const { createRequire } = require('node:module');
+    const legacyRequire = createRequire(require.resolve('test-exclude'));
+    const expansionRequire = createRequire(legacyRequire.resolve('minimatch'));
+    const modern = require('brace-expansion').expand;
+    const legacy = expansionRequire('brace-expansion');
+    for (const expand of [modern, legacy]) {
+      assert.deepEqual(expand('src/{a,b}.js'), ['src/a.js', 'src/b.js']);
+      assert.deepEqual(expand('{a,{b,c}}'), ['a', 'b', 'c']);
+      assert.deepEqual(expand('{1..3}'), ['1', '2', '3']);
+      // Previously overflowed the recursive expansion and comma parser.
+      const nested = '{'.repeat(4000) + 'a,b' + '}'.repeat(4000);
+      assert.deepEqual(expand(nested), [nested]);
+      assert.deepEqual(expand('{' + '{}'.repeat(4000) + ',x}'), ['{}'.repeat(4000), 'x']);
+      // The official rewrite cap retains the rest literally instead of
+      // repeatedly scanning ever-growing escaped closing-brace prefixes.
+      const rewrites = '{a}' + '}'.repeat(2500) + ',z}';
+      assert.deepEqual(expand(rewrites), [rewrites]);
+    }
+    assert.equal(legacyRequire('minimatch')('src/a.js', 'src/{a,b}.js'), true);
+  `);
+});

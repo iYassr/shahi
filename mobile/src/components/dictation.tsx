@@ -1,3 +1,5 @@
+import { UiText } from "@/components/ui-text";
+import { ui, useI18n } from "@/lib/i18n";
 /**
  * Dictating a reply: a microphone beside Send, and a live panel above the
  * reply box while it listens.
@@ -37,7 +39,7 @@ export interface Dictation {
   dismiss(): void;
 }
 
-const announce = (message: string) => AccessibilityInfo.announceForAccessibility(message);
+const announce = (message: string) => AccessibilityInfo.announceForAccessibility(ui(message));
 
 export function useDictation(insert: (text: string) => void, { active = true, owner }: { active?: boolean; owner?: unknown } = {}): Dictation {
   const insertRef = useRef(insert);
@@ -205,6 +207,7 @@ export function useDictation(insert: (text: string) => void, { active = true, ow
 }
 
 export function DictationButton({ voice, disabled }: { voice: Dictation; disabled: boolean }) {
+  const { t: ui } = useI18n();
   const listening = voice.phase === "listening";
   const busy = voice.phase === "downloading" || voice.phase === "starting" || voice.phase === "finishing";
   const off = disabled || busy;
@@ -214,7 +217,7 @@ export function DictationButton({ voice, disabled }: { voice: Dictation; disable
       onPress={voice.toggle}
       disabled={off}
       accessibilityRole="button"
-      accessibilityLabel={listening ? "Stop dictating and add to reply" : "Dictate"}
+      accessibilityLabel={listening ? ui("Stop dictating and add to reply") : ui("Dictate")}
       accessibilityState={{ disabled: off, busy }}
     >
       {busy ? <ActivityIndicator color={theme.dim} /> : <Icon name={listening ? "check" : "mic"} size={20} color={listening ? theme.void : theme.fg} />}
@@ -225,21 +228,22 @@ export function DictationButton({ voice, disabled }: { voice: Dictation; disable
 const BARS = 5;
 
 export function DictationPanel({ voice }: { voice: Dictation }) {
+  const { t: ui } = useI18n();
   const { phase } = voice;
   if (phase === "idle") {
     const message = voice.error ?? voice.notice;
     if (!message) return null;
     return (
       <View style={styles.panel}>
-        <Text style={voice.error ? styles.error : styles.dim} accessibilityRole={voice.error ? "alert" : undefined}>{message}</Text>
+        <UiText style={voice.error ? styles.error : styles.dim} accessibilityRole={voice.error ? "alert" : undefined}>{message}</UiText>
         <View style={styles.actions}>
           {voice.error?.includes("Settings") && (
             <Pressable style={styles.action} accessibilityRole="button" onPress={() => void Linking.openSettings()}>
-              <Text style={styles.actionText}>Open Settings</Text>
+              <UiText style={styles.actionText}>Open Settings</UiText>
             </Pressable>
           )}
-          <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel="Dismiss" onPress={voice.dismiss}>
-            <Text style={styles.actionText}>OK</Text>
+          <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel={ui("Dismiss")} onPress={voice.dismiss}>
+            <UiText style={styles.actionText}>OK</UiText>
           </Pressable>
         </View>
       </View>
@@ -248,12 +252,11 @@ export function DictationPanel({ voice }: { voice: Dictation }) {
   if (phase === "downloading") {
     return (
       <View style={styles.panel}>
-        <Text style={styles.dim}>
-          Downloading Apple's English speech model{voice.progress > 0 ? ` · ${Math.round(voice.progress * 100)}%` : "…"}
+        <Text style={styles.dim}>{ui("Downloading Apple's English speech model")}{voice.progress > 0 ? ` · ${Math.round(voice.progress * 100)}%` : "…"}
         </Text>
-        <Text style={styles.small}>Once, for every app on this iPhone. It runs on the phone; nothing you say leaves it.</Text>
+        <UiText style={styles.small}>Once, for every app on this iPhone. It runs on the phone; nothing you say leaves it.</UiText>
         <View style={styles.actions}>
-          <Pressable style={styles.action} accessibilityRole="button" onPress={voice.cancel}><Text style={styles.actionText}>Cancel</Text></Pressable>
+          <Pressable style={styles.action} accessibilityRole="button" onPress={voice.cancel}><UiText style={styles.actionText}>Cancel</UiText></Pressable>
         </View>
       </View>
     );
@@ -262,26 +265,26 @@ export function DictationPanel({ voice }: { voice: Dictation }) {
   return (
     <View style={styles.panel}>
       <View style={styles.status}>
-        <View style={styles.meter} accessible accessibilityLabel="Microphone level" accessibilityValue={{ min: 0, max: 100, now: Math.round(voice.level * 100) }}>
+        <View style={styles.meter} accessible accessibilityLabel={ui("Microphone level")} accessibilityValue={{ min: 0, max: 100, now: Math.round(voice.level * 100) }}>
           {Array.from({ length: BARS }, (_, index) => (
             <View key={index} style={[styles.bar, { height: 4 + Math.max(0, voice.level - index * 0.12) * 18 }]} />
           ))}
         </View>
         <Text style={styles.small}>
-          {phase === "starting" ? "Starting the microphone…" : phase === "finishing" ? "Adding…" : `Listening · ${Math.floor(voice.seconds / 60)}:${String(voice.seconds % 60).padStart(2, "0")}`}
+          {phase === "starting" ? ui("Starting the microphone…") : phase === "finishing" ? ui("Adding…") : ui("Listening · {value1}:{value2}", {value1: Math.floor(voice.seconds / 60), value2: String(voice.seconds % 60).padStart(2, "0")})}
         </Text>
       </View>
       <Text style={styles.heard} selectable>
-        {heard ? voice.finalized : "Say your reply…"}
+        {heard ? voice.finalized : ui("Say your reply…")}
         {voice.finalized && voice.volatile ? " " : ""}
         {voice.volatile ? <Text style={styles.tentative}>{voice.volatile}</Text> : null}
       </Text>
       <View style={styles.actions}>
-        <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel="Cancel dictation" onPress={voice.cancel}>
-          <Text style={styles.actionText}>Cancel</Text>
+        <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel={ui("Cancel dictation")} onPress={voice.cancel}>
+          <UiText style={styles.actionText}>Cancel</UiText>
         </Pressable>
-        <Pressable style={[styles.action, styles.add]} accessibilityRole="button" accessibilityLabel="Add to reply" disabled={phase !== "listening"} onPress={voice.toggle}>
-          <Text style={styles.addText}>Add</Text>
+        <Pressable style={[styles.action, styles.add]} accessibilityRole="button" accessibilityLabel={ui("Add to reply")} disabled={phase !== "listening"} onPress={voice.toggle}>
+          <UiText style={styles.addText}>Add</UiText>
         </Pressable>
       </View>
     </View>

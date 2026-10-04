@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,17 +29,17 @@ export default function ConnectRoute() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.void }}>
-      {accessEnded && !pairing && <Text accessibilityRole="alert" testID="access-ended"
+      {accessEnded && !pairing && <UiText accessibilityRole="alert" testID="access-ended"
         style={{ color: theme.fg, fontSize: 15, lineHeight: 21, margin: 16, marginBottom: 0, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: theme.peach, backgroundColor: theme.surface }}>
         {accessEnded}
-      </Text>}
+      </UiText>}
       {computers.length > 0 && !pairing && <Pressable accessibilityRole="button" testID="saved-computers"
         onPress={() => router.push("/computers")} style={{ padding: 16 }}>
-        <Text style={{ color: theme.peach, fontSize: 16 }}>Choose a saved computer</Text>
+        <UiText style={{ color: theme.peach, fontSize: 16 }}>Choose a saved computer</UiText>
       </Pressable>}
       {addingComputer && <Pressable accessibilityRole="button" testID="cancel-add-computer"
         onPress={() => { void cancelAddComputer().catch(e => setCancelError(e.message)); }} style={{ padding: 16, minHeight: 44 }}>
-        <Text style={{ color: theme.peach, fontSize: 16 }}>Cancel adding computer</Text>
+        <UiText style={{ color: theme.peach, fontSize: 16 }}>Cancel adding computer</UiText>
       </Pressable>}
       {!!cancelError && <Text accessibilityRole="alert" style={{ color: theme.rose, padding: 16 }}>{cancelError}</Text>}
       <Connect onConnectedSsh={signInSsh} onConnectedRelay={signInRelay} />

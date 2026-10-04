@@ -1,5 +1,6 @@
+import { useLocale } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CHANGE_STATUS, changeSummary, diffRows, type ChangedFile, type FileDiff, type PaneChanges } from "@shahi/shared";
+import { CHANGE_STATUS, diffRows, type ChangedFile, type FileDiff, type PaneChanges } from "@shahi/shared";
 import { useApi } from "../api";
 
 /**
@@ -12,6 +13,7 @@ import { useApi } from "../api";
  * Git several times on the computer.
  */
 export function Changes({ paneId, status }: { paneId: string; status?: string }) {
+  const { t, locale } = useLocale();
   const api = useApi();
   const [changes, setChanges] = useState<PaneChanges | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,28 +57,28 @@ export function Changes({ paneId, status }: { paneId: string; status?: string })
           {repository ? (
             <>
               <strong>{repository.name}</strong>{" "}
-              <span className="changes__branch">{repository.branch ?? (repository.commit ? `detached at ${repository.commit}` : "detached")}</span>
+              <span className="changes__branch">{repository.branch ?? (repository.commit ? t("detached at {value0}", { value0: repository.commit }) : t("detached"))}</span>
             </>
-          ) : "Changes"}
+          ) : t("Changes")}
         </p>
         <button className="changes__refresh" onClick={() => void load()} disabled={loading}>
-          {loading ? "Reading…" : "Refresh"}
+          {loading ? t("Reading…") : t("Refresh")}
         </button>
       </div>
-      {error && <p className="changes__note" role="alert">{error}</p>}
+      {error && <p className="changes__note" role="alert">{t(error)}</p>}
       {!changes ? (
-        !error && <div className="empty" role="status"><span className="empty__mark">⟳</span>Reading the changes…</div>
+        !error && <div className="empty" role="status"><span className="empty__mark">⟳</span>{t("Reading the changes…")}</div>
       ) : !repository ? (
         // Not a repository, or not one Shahi reads: said, not alarmed about.
-        <div className="empty"><span className="empty__mark">○</span>{changes.note}</div>
+        <div className="empty"><span className="empty__mark">○</span>{t(changes.note ?? "")}</div>
       ) : changes.files.length === 0 ? (
-        <div className="empty"><span className="empty__mark">○</span>No changes since the last commit.</div>
+        <div className="empty"><span className="empty__mark">○</span>{t("No changes since the last commit.")}</div>
       ) : (
-        <ul className="changes__files" aria-label="Changed files">
-          {changes.note && <li className="changes__note">{changes.note}</li>}
+        <ul className="changes__files" aria-label={t("Changed files")}>
+          {changes.note && <li className="changes__note">{t(changes.note)}</li>}
           {changes.files.map((file) => (
             <li key={file.path}>
-              <button className="changes__file" aria-label={changeSummary(file)} onClick={() => setOpen(file)}>
+              <button className="changes__file" aria-label={[t("{path}, {status}", { path: file.path, status: t(CHANGE_STATUS[file.status].label).toLocaleLowerCase(locale) }), file.from ? t("from {path}", { path: file.from }) : "", file.added !== null && file.removed !== null ? t("{added} {lines} added, {removed} removed", { added: file.added, removed: file.removed, lines: t(file.added === 1 ? "line" : "lines") }) : ""].filter(Boolean).join(", ")} onClick={() => setOpen(file)}>
                 <span className="changes__status" data-status={file.status} aria-hidden="true">{CHANGE_STATUS[file.status].letter}</span>
                 <span className="changes__path" aria-hidden="true">
                   <span className="changes__dir">{folderOf(file.path)}</span><span className="changes__base">{nameOf(file.path)}</span>
@@ -91,12 +93,13 @@ export function Changes({ paneId, status }: { paneId: string; status?: string })
           ))}
         </ul>
       )}
-      {!!changes?.omitted && <p className="changes__note">{`… ${changes.omitted.toLocaleString()} more ${changes.omitted === 1 ? "file" : "files"} not listed.`}</p>}
+      {!!changes?.omitted && <p className="changes__note">{t("… {value0} more {value1} not listed.", { value0: changes.omitted.toLocaleString(), value1: t(changes.omitted === 1 ? "file" : "files") })}</p>}
     </div>
   );
 }
 
 function FileChanges({ paneId, file, onBack }: { paneId: string; file: ChangedFile; onBack: () => void }) {
+  const { t } = useLocale();
   const api = useApi();
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,25 +121,25 @@ function FileChanges({ paneId, file, onBack }: { paneId: string; file: ChangedFi
   return (
     <div className="changes">
       <div className="changes__head">
-        <button ref={back} className="changes__back" onClick={onBack}>‹ All changes</button>
+        <button ref={back} className="changes__back" onClick={onBack}>{t("‹ All changes")}</button>
       </div>
       <p className="changes__title">
         <span className="changes__status" data-status={file.status}>{CHANGE_STATUS[file.status].letter}</span>
-        <span className="visually-hidden">{CHANGE_STATUS[file.status].label}: </span>
+        <span className="visually-hidden">{t(CHANGE_STATUS[file.status].label)}: </span>
         <span className="changes__name">{file.path}</span>
-        {file.from && <span className="changes__from"> from {file.from}</span>}
+        {file.from && <span className="changes__from"> {" "}{t("from")}{" "}{file.from}</span>}
       </p>
       {error ? (
-        <p className="changes__note" role="alert">{error}</p>
+        <p className="changes__note" role="alert">{t(error)}</p>
       ) : !diff ? (
-        <div className="empty" role="status"><span className="empty__mark">⟳</span>Reading the diff…</div>
+        <div className="empty" role="status"><span className="empty__mark">⟳</span>{t("Reading the diff…")}</div>
       ) : diff.note && rows.length === 0 ? (
-        <div className="empty">{diff.note}</div>
+        <div className="empty">{t(diff.note)}</div>
       ) : (
         // Scrolls sideways rather than wrapping: a diff is lines of code, and
         // wrapped they no longer line up with their numbers or each other.
         <>
-        <div className="diff" role="region" aria-label={`Changes to ${file.path}`} tabIndex={0}>
+        <div className="diff" role="region" aria-label={t("Changes to {value0}", { value0: file.path })} tabIndex={0}>
           {/* As wide as the longest line, so every row's colour reaches it. */}
           <div className="diff__lines">
             {rows.map((row, i) => (
@@ -151,7 +154,7 @@ function FileChanges({ paneId, file, onBack }: { paneId: string; file: ChangedFi
           </div>
         </div>
         {diff.omitted > 0 && (
-          <p className="changes__note">{`… ${diff.omitted.toLocaleString()}${diff.incomplete ? "+" : ""} more ${diff.omitted === 1 ? "line" : "lines"}, too many to show here.`}</p>
+          <p className="changes__note">{t("… {value0}{value1} more {value2}, too many to show here.", { value0: diff.omitted.toLocaleString(), value1: diff.incomplete ? "+" : "", value2: t(diff.omitted === 1 ? "line" : "lines") })}</p>
         )}
         </>
       )}

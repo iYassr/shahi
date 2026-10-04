@@ -1,3 +1,5 @@
+import { useI18n } from "@/lib/i18n";
+import { UiText } from "@/components/ui-text";
 import { Pressable, ScrollView, StyleSheet } from "react-native";
 import { Text } from "@/components/text";
 import type { HostKeyReview } from "@/lib/tunnel";
@@ -23,35 +25,36 @@ const HOST_KEY_FILES: Record<string, string> = {
  * that prints the same `SHA256:` form on the server itself.
  */
 export function HostKeyCard({ review, answer }: { review: HostKeyReview; answer: (trusted: boolean) => void }) {
+  const { t: ui } = useI18n();
   const changed = review.previous !== null;
   const file = HOST_KEY_FILES[review.keyType];
   const command = file ? `ssh-keygen -lf ${file}` : "ssh-keyscan localhost | ssh-keygen -lf -";
   const where = `${review.host}${review.port === 22 ? "" : `:${review.port}`}`;
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.body} testID="host-key-review">
-      <Text style={styles.lede} accessibilityRole="header">
+      <UiText style={styles.lede} accessibilityRole="header">
         {changed ? "This computer’s identity has changed" : "Check this computer’s identity"}
-      </Text>
+      </UiText>
       <Text style={styles.text}>
         {changed
-          ? `${where} presented a different key from the one this phone trusted before. That happens when the computer is reinstalled or replaced, and also when someone is intercepting the connection. Only continue if the new fingerprint matches the one on the computer.`
+          ? ui("{value1} presented a different key from the one this phone trusted before. That happens when the computer is reinstalled or replaced, and also when someone is intercepting the connection. Only continue if the new fingerprint matches the one on the computer.", {value1: where})
           : review.trustedUnseen
-            ? `An earlier version of Shahi trusted this key for ${where} without showing it to you. Before your login is sent again, check that this fingerprint matches the one on the computer.`
-            : `This phone has not connected to ${where} before. Before your login is sent, check that this fingerprint matches the one on the computer.`}
+            ? ui("An earlier version of Shahi trusted this key for {value1} without showing it to you. Before your login is sent again, check that this fingerprint matches the one on the computer.", {value1: where})
+            : ui("This phone has not connected to {value1} before. Before your login is sent, check that this fingerprint matches the one on the computer.", {value1: where})}
       </Text>
       {changed && <>
-        <Text style={styles.label}>PREVIOUSLY TRUSTED</Text>
+        <UiText style={styles.label}>PREVIOUSLY TRUSTED</UiText>
         <Text style={styles.fingerprint} selectable testID="host-key-previous">{review.previous}</Text>
       </>}
-      <Text style={styles.label}>{changed ? `NOW PRESENTED (${review.keyType})` : `${review.keyType} KEY FINGERPRINT`}</Text>
+      <Text style={styles.label}>{changed ? ui("NOW PRESENTED ({value1})", {value1: review.keyType}) : ui("{value1} KEY FINGERPRINT", {value1: review.keyType})}</Text>
       <Text style={styles.fingerprint} selectable testID="host-key-fingerprint">{review.fingerprint}</Text>
-      <Text style={styles.text}>On the computer, run:</Text>
+      <UiText style={styles.text}>On the computer, run:</UiText>
       <Text style={styles.fingerprint} selectable>{command}</Text>
       <Pressable accessibilityRole="button" style={[styles.button, changed && styles.buttonWarn]} onPress={() => answer(true)} testID="trust-host-key">
-        <Text style={styles.buttonText}>{changed ? "Trust the new key" : "Trust and connect"}</Text>
+        <UiText style={styles.buttonText}>{changed ? "Trust the new key" : "Trust and connect"}</UiText>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={() => answer(false)} hitSlop={12} testID="reject-host-key">
-        <Text style={styles.link}>Cancel</Text>
+        <UiText style={styles.link}>Cancel</UiText>
       </Pressable>
     </ScrollView>
   );

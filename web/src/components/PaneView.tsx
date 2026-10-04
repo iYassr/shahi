@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { browserConnection } from "../connection";
 import { draftOwner, webDraft, notifyWebDraft } from "../drafts";
 import type { KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
@@ -118,6 +119,7 @@ function useOccupancy(instanceId: string | undefined): number {
 }
 
 export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast, available: connected = true }: Props) {
+  const { t, locale } = useLocale();
   const api = useApi();
   const control = useComputerControl();
   const available = connected && (!control?.handshake?.backend || control.handshake.backend.state === "connected");
@@ -170,7 +172,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
   }
   function moveBetweenTabs(event: ReactKeyboardEvent<HTMLDivElement>) {
     const at = tabs.findIndex(({ id }) => id === tab);
-    const to = { ArrowRight: at + 1, ArrowLeft: at - 1 + tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+    const right = locale === "ar" ? -1 : 1;
+    const to = { ArrowRight: at + right + tabs.length, ArrowLeft: at - right + tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
     if (to === undefined) return;
     event.preventDefault();
     const next = tabs[to % tabs.length]!.id;
@@ -448,21 +451,18 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     return (
       <div className="detail">
         <header className="topbar">
-          <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
+          <button className="topbar__back" onClick={() => navigate("/")} aria-label={t("Back")}>
             ‹
           </button>
           <div className="detail__where">{paneId}</div>
         </header>
         <div className="empty" role="status">
           <span className="empty__mark">○</span>
-          The conversation this notification was about has ended. Another
-          program now runs in {paneId}.
+          {t("The conversation this notification was about has ended. Another program now runs in")}{" "}{paneId}.
           <button className="empty__action" onClick={() => setOpenAnyway(true)}>
-            Open what runs there now
-          </button>
+            {t("Open what runs there now")}</button>
           <button className="empty__action" onClick={() => navigate("/")}>
-            Back to agents
-          </button>
+            {t("Back to agents")}</button>
         </div>
       </div>
     );
@@ -472,18 +472,15 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     return (
       <div className={`detail${focused && tab === "screen" ? " detail--focused" : ""}`} data-screen={tab === "screen"}>
         <header className="topbar">
-          <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
+          <button className="topbar__back" onClick={() => navigate("/")} aria-label={t("Back")}>
             ‹
           </button>
           <div className="detail__where">{paneId}</div>
         </header>
         <div className="empty">
           <span className="empty__mark">○</span>
-          This pane is gone. It was closed, or the agent in it finished and the
-          tab went with it.
-          <button className="empty__action" onClick={() => navigate("/")}>
-            Back to agents
-          </button>
+          {t("This pane is gone. It was closed, or the agent in it finished and the tab went with it.")}{" "}<button className="empty__action" onClick={() => navigate("/")}>
+            {t("Back to agents")}</button>
         </div>
       </div>
     );
@@ -514,7 +511,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         * anyway, so it gets what is left over.
         */}
       <header className="topbar">
-        <button className="topbar__back" onClick={() => navigate("/")} aria-label="Back">
+        <button className="topbar__back" onClick={() => navigate("/")} aria-label={t("Back")}>
           ‹
         </button>
         <h1 className="detail__task">
@@ -522,7 +519,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
             <AgentAvatar kind={detail?.pane?.agent ?? known?.agent} status={detail?.pane?.agent_status ?? known?.status ?? "unknown"} isAgent />
           )}
           <span className="detail__title">
-            {frame?.prompt ? "Waiting on you" : known ? paneTitle(known) : paneId}
+            {frame?.prompt ? t("Waiting on you") : known ? paneTitle(known) : paneId}
           </span>
         </h1>
         <span className="detail__where">
@@ -531,8 +528,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
       </header>
 
       {loadError && <div className="empty" role="status">
-        {loadError}
-        <button className="empty__action" onClick={() => retryPane.current()}>Try again</button>
+        {t(loadError)}
+        <button className="empty__action" onClick={() => retryPane.current()}>{t("Try again")}</button>
       </div>}
       {!prompt && tab !== "screen" && frame && known?.agent && (frame.unrecognised || (tab === "read" && readerEmpty)) && (
         <ScreenCard
@@ -548,7 +545,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
           it scrolls: see `.blocked--ask` in session.css. */}
       {prompt && tab !== "screen" && (
         <section ref={askCard} className="blocked blocked--ask" style={{ marginBottom: 0 }}>
-          <p className="blocked__question" style={{ borderTop: "none", paddingTop: 14 }}>
+          <p className="blocked__question" dir="auto" style={{ borderTop: "none", paddingTop: 14 }}>
             {prompt.question}
           </p>
           <PromptContext context={prompt.context} />
@@ -567,7 +564,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         * promised a screen reader all of that while ArrowRight did nothing
         * (pre-release bug hunt).
         */}
-      <div className="tabs" role="tablist" aria-label="Conversation view" onKeyDown={moveBetweenTabs}>
+      <div className="tabs" role="tablist" aria-label={t("Conversation view")} onKeyDown={moveBetweenTabs}>
         {tabs.map(({ id, label }) => (
           <button
             key={id}
@@ -580,13 +577,13 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
             tabIndex={tab === id ? 0 : -1}
             onClick={() => chooseTab(id)}
           >
-            {id === "history" ? label : <><UiIcon name={id} size={17} /> {label}</>}
+            {id === "history" ? t(label) : <><UiIcon name={id} size={17} /> {t(label)}</>}
           </button>
         ))}
       </div>
 
       <div className="detail__panel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`}>
-      {tab === "read" && shell ? <div className="empty">This is a shell. Open Screen to view the terminal.<button className="empty__action" onClick={() => chooseTab("screen")}>Open Screen</button></div> : tab === "read" && readable ? (
+      {tab === "read" && shell ? <div className="empty">{t("This is a shell. Open Screen to view the terminal.")}<button className="empty__action" onClick={() => chooseTab("screen")}>{t("Open Screen")}</button></div> : tab === "read" && readable ? (
         <Reader key={`${paneId}#${occupancy}`} paneId={paneId} agent={known?.agent} cwd={known?.cwd} activity={frame?.activity ?? null} echo={echo} onUnavailable={fallBack}
           connected={available} historyKnown={!!known?.lastMessageAt || !!known?.preview || !!echo}
           computerVersion={control?.handshake?.update?.current} herdrVersion={session?.version}
@@ -595,14 +592,13 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
         <Changes key={`${paneId}#${occupancy}`} paneId={paneId} status={known?.status} />
       ) : tab === "screen" ? (
         <>
-          <div className="termwrap" ref={wrapRef}>
+          <div className="termwrap" dir="ltr" ref={wrapRef}>
             {frame ? (
               <Suspense
                 fallback={
                   <div className="empty">
                     <span className="empty__mark">⟳</span>
-                    Loading the terminal…
-                  </div>
+                    {t("Loading the terminal…")}</div>
                 }
               >
                 <Terminal ansi={frame.ansi} text={frame.text} cols={cols} rows={rows} scale={scale} />
@@ -610,36 +606,31 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
             ) : (
               <div className="empty">
                 <span className="empty__mark">⟳</span>
-                Reading the pane…
-              </div>
+                {t("Reading the pane…")}</div>
             )}
           </div>
-          <div className="zoombar" role="group" aria-label="Terminal view controls">
-            <button aria-label="Zoom out" title="Zoom out" disabled={scale <= 0.25} onClick={() => adjustZoom(-0.1)}>−</button>
-            <button className="zoombar__percent" aria-label="Full size" title="Reset to 100%" aria-pressed={!fitWidth && zoom === 1} onClick={() => { setZoom(1); setFitWidth(false); }}>{Math.round(scale * 100)}%</button>
-            <button aria-label="Zoom in" title="Zoom in" disabled={scale >= 2} onClick={() => adjustZoom(0.1)}>+</button>
-            <button aria-pressed={fitWidth} onClick={() => setFitWidth(true)}>Fit width</button>
-            <span className="zoombar__geometry" title="Terminal columns × rows">{cols}×{rows}</span>
-            <button ref={focusButton} className="zoombar__focus" aria-label={focused ? "Exit focus view" : "Focus terminal"} title={focused ? "Exit focus view (Escape)" : "Focus terminal"} aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
-              {focused ? "Exit focus" : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg>}
+          <div className="zoombar" role="group" aria-label={t("Terminal view controls")}>
+            <button aria-label={t("Zoom out")} title={t("Zoom out")} disabled={scale <= 0.25} onClick={() => adjustZoom(-0.1)}>−</button>
+            <button className="zoombar__percent" aria-label={t("Full size")} title={t("Reset to 100%")} aria-pressed={!fitWidth && zoom === 1} onClick={() => { setZoom(1); setFitWidth(false); }}>{Math.round(scale * 100)}%</button>
+            <button aria-label={t("Zoom in")} title={t("Zoom in")} disabled={scale >= 2} onClick={() => adjustZoom(0.1)}>+</button>
+            <button aria-pressed={fitWidth} onClick={() => setFitWidth(true)}>{t("Fit width")}</button>
+            <span className="zoombar__geometry" title={t("Terminal columns × rows")}>{cols}×{rows}</span>
+            <button ref={focusButton} className="zoombar__focus" aria-label={focused ? t("Exit focus view") : t("Focus terminal")} title={focused ? t("Exit focus view (Escape)") : t("Focus terminal")} aria-pressed={focused} onClick={() => setFocused((value) => !value)}>
+              {focused ? t("Exit focus") : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg>}
             </button>
           </div>
         </>
       ) : (
-        <div className="transcript">
+        <div className="transcript" dir="ltr">
           {history.length === 0 ? (
             <div className="empty">
               <span className="empty__mark">○</span>
-              No history recorded yet. Lines are captured as they scroll off the
-              screen while the app is open.
-            </div>
+              {t("No history recorded yet. Lines are captured as they scroll off the screen while the app is open.")}</div>
           ) : (
             history.map((line) =>
               line.text === GAP_MARKER ? (
                 <span className="transcript__gap" key={line.seq}>
-                  {GAP_MARKER} — this agent produced more than one screen between
-                  reads
-                </span>
+                  {GAP_MARKER} {" "}{t("— this agent produced more than one screen between reads")}</span>
               ) : (
                 <span className="transcript__line" key={line.seq}>
                   {line.text || " "}
@@ -652,15 +643,15 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
       </div>
 
       <div className="compose">
-        {!sending && savedDraft.pending && <p role="alert" className="compose__notice">Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.</p>}
+        {!sending && savedDraft.pending && <p role="alert" className="compose__notice">{t("Delivery not confirmed. Sending the same message again reuses its request to avoid a duplicate.")}</p>}
         <div className="keys">
           {KEY_BAR.filter((key) => tab === "screen" || key.everywhere).map(({ label, keys }) => (
             <button
               key={label}
               disabled={!available || sending}
-              aria-label={({ esc: "Escape", "^C": "Interrupt (Control C)", "⇥": "Tab", "⇧⇥": "Shift Tab", "↑": "Up arrow", "↓": "Down arrow", "⏎": "Enter" }[label] ?? label)}
+              aria-label={t(({ esc: "Escape", "^C": "Interrupt (Control C)", "⇥": "Tab", "⇧⇥": "Shift Tab", "↑": "Up arrow", "↓": "Down arrow", "⏎": "Enter" }[label] ?? label))}
               className={tab === "screen" && label === "^C" ? "keys__interrupt" : undefined}
-              title={label === "^C" ? "Interrupt the running process" : undefined}
+              title={label === "^C" ? t("Interrupt the running process") : undefined}
               onClick={() => void send(() => api.sendKeys(paneId, keys, instanceId), `${label} not sent`)}
             >
               {tab === "screen" ? ({ esc: "Esc", "^C": "Ctrl+C", "⇥": "Tab", "⇧⇥": "Shift+Tab", "⏎": "Enter" }[label] ?? label) : label}
@@ -677,7 +668,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
                 )}
                 <button
                   className="attached__x"
-                  aria-label={`Remove ${a.name}`}
+                  aria-label={t("Remove {value0}", { value0: a.name })}
                   onClick={() => setAttachments((c) => c.filter((x) => x.path !== a.path))}
                 >
                   ×
@@ -705,21 +696,22 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
             disabled={!available || sending}
             className="compose__attach"
             onClick={() => setAttaching(true)}
-            aria-label="Attach a file"
+            aria-label={t("Attach a file")}
           >
             +
           </button>
           {/* The wrapper repeats the draft, or the placeholder, in a hidden
               copy that sizes the box when the composer is narrow (see
               .compose__field in session.css). */}
-          <div className="compose__field" data-value={draft || placeholder}>
+          <div className="compose__field" data-value={draft || t(placeholder)}>
             <textarea
+              dir="auto"
               ref={composer}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={placeholder}
+              placeholder={t(placeholder)}
               rows={1}
-              aria-label="Message"
+              aria-label={t("Message")}
               aria-autocomplete={conversing ? "list" : undefined}
               aria-controls={matches.length > 0 ? pickerId : undefined}
               aria-activedescendant={highlighted >= 0 ? `${pickerId}-${highlighted}` : undefined}
@@ -734,7 +726,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
             onClick={() => void submit()}
             disabled={!available || sending || (draft.trim() === "" && attachments.length === 0)}
           >
-            {sending ? "Sending…" : !available ? "Offline" : "Send"}
+            {sending ? t("Sending…") : !available ? t("Offline") : t("Send")}
           </button>
         </div>
       </div>

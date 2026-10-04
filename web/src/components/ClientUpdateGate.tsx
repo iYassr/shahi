@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ClientUpdateCheck, UPDATE_CHECK_MS, WEB_CLIENT_BUILD, type UpdateRule } from "@shahi/shared/client-update";
 import { newerBundleDeployed } from "../version";
@@ -6,6 +7,7 @@ import { hosted } from "../connection";
 
 /** Hosted policy never locks a local computer's independently released UI. */
 export function ClientUpdateGate({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   const [rule, setRule] = useState<UpdateRule | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,19 +41,19 @@ export function ClientUpdateGate({ children }: { children: ReactNode }) {
     const ready = await newerBundleDeployed();
     setBusy(false);
     if (!ready) { setNotice("The update is not available here yet. Try again shortly."); return; }
-    if (hasUnsentDrafts() && !window.confirm("Reloading will discard unsent replies and attachments. Check the conversation before retrying an uncertain send. Saved computers are kept. Reload now?")) return;
+    if (hasUnsentDrafts() && !window.confirm(t("Reloading will discard unsent replies and attachments. Check the conversation before retrying an uncertain send. Saved computers are kept. Reload now?"))) return;
     location.reload();
   }
   return <>
     <div style={{ display: "contents" }} inert={!!rule} aria-hidden={rule ? true : undefined}>{children}</div>
     {rule && <div className="client-update" role="dialog" aria-modal="true" aria-labelledby="client-update-title" tabIndex={-1} ref={dialog}>
       <div className="client-update__card">
-        <h1 id="client-update-title">Update Shahi</h1>
-        <p>{rule.message}</p>
-        <p>Reload to install the latest version and continue. Your saved computers are kept.</p>
-        <button disabled={busy} onClick={() => void reload()}>Reload Shahi</button>
-        <button disabled={busy} onClick={() => void retry()}>Check again</button>
-        {!!notice && <p role="status">{notice}</p>}
+        <h1 id="client-update-title">{t("Update Shahi")}</h1>
+        <p>{t(rule.message)}</p>
+        <p>{t("Reload to install the latest version and continue. Your saved computers are kept.")}</p>
+        <button disabled={busy} onClick={() => void reload()}>{t("Reload Shahi")}</button>
+        <button disabled={busy} onClick={() => void retry()}>{t("Check again")}</button>
+        {!!notice && <p role="status">{t(notice)}</p>}
       </div>
     </div>}
   </>;

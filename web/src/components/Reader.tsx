@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { messageTime, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { agentColor } from "./AgentIcon";
 import type { CSSProperties } from "react";
@@ -145,6 +146,7 @@ export function merge(current: LogMessage[], page: LogMessage[]): LogMessage[] {
 }
 
 export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailable, connected = true, historyKnown = false, computerVersion, herdrVersion, canChoose = false, instanceId, onEmpty }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const diagnosticContext = useRef({ agent, connected, historyKnown, computerVersion, herdrVersion });
   diagnosticContext.current = { agent, connected, historyKnown, computerVersion, herdrVersion };
@@ -371,8 +373,7 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
     return (
       <div className="empty">
         <span className="empty__mark">⟳</span>
-        Reading the conversation…
-      </div>
+        {t("Reading the conversation…")}</div>
     );
   }
 
@@ -390,23 +391,23 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
       onKeyDown={reading.stopFollowing}
       onScroll={reading.onScroll}
     >
-      {error && <p role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
+      {error && <p role="alert">{t(error)} <button onClick={() => void load()}>{t("Retry")}</button></p>}
       {choosing ? (
         <ConversationPicker paneId={paneId} instanceId={instanceId} onChosen={() => { setChoosing(false); void load(); }} onCancel={() => setChoosing(false)} />
       ) : (
         <>
-          {notice && !error && <p role="status">{notice}</p>}
+          {notice && !error && <p role="status">{t(notice)}</p>}
           {canChoose && (unidentified || chosen) && (
             <p className="reader__chosen">
-              {chosen && "You chose this conversation. "}
-              <button className="empty__action" onClick={() => setChoosing(true)}>{chosen ? "Choose another" : "Choose the conversation"}</button>
+              {chosen && t("You chose this conversation.")}
+              <button className="empty__action" onClick={() => setChoosing(true)}>{chosen ? t("Choose another") : t("Choose the conversation")}</button>
             </p>
           )}
         </>
       )}
       {hasOlder && (
         <button className="reader__more" onClick={() => void loadOlder()} disabled={loadingOlder}>
-          {loadingOlder ? "Loading…" : `Load earlier (${offset} more)`}
+          {loadingOlder ? t("Loading…") : t("Load earlier ({value0} more)", { value0: offset })}
         </button>
       )}
 
@@ -414,7 +415,7 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
         <MessageView key={`${transcript.current}:${message.id}`} message={message} working={message === rows.at(-1) && !!activity && !echoVisible} paneId={paneId} onCopyError={setError} />
       ))}
 
-      {echoVisible && <article className="msg msg--you"><div className="msg__who">You · sent</div><div className="msg__text"><Markdown text={echo.text} /></div></article>}
+      {echoVisible && <article className="msg msg--you"><div className="msg__who">{t("You · sent")}</div><div className="msg__text" dir="auto"><Markdown text={echo.text} /></div></article>}
       {taskList && <TasksCard list={taskList} />}
       {activity && (echoVisible || !rows.at(-1)?.activity) && <Working activity={activity} />}
 
@@ -436,7 +437,7 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
               reading.goLatest();
             }}
           >
-            {unseen > 0 ? `${unseen} new` : "Latest"} ↓
+            {unseen > 0 ? t("{value0} new", { value0: unseen }) : t("Latest")} ↓
           </button>
         </div>
       )}
@@ -448,12 +449,13 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
 const MessageView = memo(function MessageView({ message, working, paneId, onCopyError }: {
   message: ReaderRow; working: boolean; paneId: string; onCopyError: (message: string) => void;
 }) {
+  const { t, locale } = useLocale();
   if (message.activity) return <ActivityGroup id={message.id} activity={message.activity} working={working} paneId={paneId} />;
   const text = message.blocks.flatMap(block => block.kind === "text" ? [block.text] : []).join("\n\n");
   return (
         <article className={`msg msg--${message.role}`} data-message-id={message.id}>
-          {message.showHeader && <div className="msg__who">{message.role === "agent" ? "Agent" : message.role === "system" ? "System" : "You"}{!!message.at && <time dateTime={new Date(message.at).toISOString()}> · {messageTime(message.at)}</time>}</div>}
-          {text && <button className="msg__copy" aria-label="Copy message" title="Copy message" onClick={() => void navigator.clipboard.writeText(text).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>}
+          {message.showHeader && <div className="msg__who">{message.role === "agent" ? t("Agent") : message.role === "system" ? t("System") : t("You")}{!!message.at && <time dateTime={new Date(message.at).toISOString()}> · {messageTime(message.at, undefined, locale)}</time>}</div>}
+          {text && <button className="msg__copy" aria-label={t("Copy message")} title={t("Copy message")} onClick={() => void navigator.clipboard.writeText(text).catch(() => onCopyError("Clipboard unavailable. Select the message text to copy it."))}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg></button>}
           {message.blocks.map((block, index) => (
             <BlockView key={index} block={block} paneId={paneId} />
           ))}
@@ -464,6 +466,7 @@ const MessageView = memo(function MessageView({ message, working, paneId, onCopy
 function ActivityGroup({ id, activity, working, paneId }: {
   id: string; activity: ReaderActivity; working: boolean; paneId: string;
 }) {
+  const { t, locale } = useLocale();
   const api = useApi();
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<{ path: string; name: string } | null>(null);
@@ -472,11 +475,11 @@ function ActivityGroup({ id, activity, working, paneId }: {
     if (wasWorking.current && !working) setOpen(false);
     wasWorking.current = working;
   }, [working]);
-  const label = readerActivityLabel(activity, working);
-  return <section className="reader-activity" data-message-id={id} aria-label="Agent activity">
+  const label = readerActivityLabel(activity, working, locale);
+  return <section className="reader-activity" data-message-id={id} aria-label={t("Agent activity")}>
     {activity.files.length > 0 && <div className="reader-activity__files">
       {activity.files.map(item => <div className="reader-activity__file" key={item.path}>
-        <button className="tool__open" aria-label={`Open file ${item.name}`} onClick={() => setFile(item)}>{item.name}</button>
+        <button className="tool__open" aria-label={t("Open file {value0}", { value0: item.name })} onClick={() => setFile(item)}>{item.name}</button>
         <Download className="tool__get" path={api.fileUrl(item.path, { download: true })} name={item.name}>↓</Download>
       </div>)}
     </div>}
@@ -486,7 +489,7 @@ function ActivityGroup({ id, activity, working, paneId }: {
     </button>
     {open && <div className="reader-activity__details">
       {activity.steps.map(step => <div className="reader-activity__step" key={step.id}>
-        {step.showTime && <time dateTime={new Date(step.at).toISOString()}>{messageTime(step.at)}</time>}
+        {step.showTime && <time dateTime={new Date(step.at).toISOString()}>{messageTime(step.at, undefined, locale)}</time>}
         <BlockView block={step.block} paneId={paneId} attachments={false} />
       </div>)}
     </div>}
@@ -496,13 +499,14 @@ function ActivityGroup({ id, activity, working, paneId }: {
 
 /** An image a tool returned — a screenshot, usually, and worth opening. */
 function ResultImage({ paneId, imageRef }: { paneId: string; imageRef: string }) {
+  const { t } = useLocale();
   const api = useApi();
   const [viewing, setViewing] = useState(false);
   const src = api.imageUrl(paneId, imageRef);
   return (
     <>
-      <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
-        <RemoteImage className="msg__image" src={src} alt="Tool output image" loading="lazy" />
+      <button className="msg__zoom" onClick={() => setViewing(true)} aria-label={t("Open image")}>
+        <RemoteImage className="msg__image" src={src} alt={t("Tool output image")} loading="lazy" />
       </button>
       {viewing && (
         <FileView name="image.png" url={src} downloadUrl={src} onClose={() => setViewing(false)} />
@@ -536,7 +540,7 @@ function Working({ activity }: { activity: Activity }) {
       <span className="working__verb">{activity.verb}</span>
       <span className="working__meta">
         {activity.elapsed}
-        {activity.detail && ` · ${activity.detail}`}
+        {activity.detail && <> · <bdi>{activity.detail}</bdi></>}
       </span>
     </div>
   );
@@ -551,25 +555,26 @@ const SUBAGENT_STATE = { running: "Running…", done: "Done", failed: "Failed", 
  * report is the notification `readerRows` matched to it by call id.
  */
 function SubagentView({ call }: { call: NonNullable<Extract<LogBlock, { kind: "tool" }>["subagent"]> }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const state = call.state ?? "running";
-  const detail = [call.type, call.background ? "background" : null].filter(Boolean).join(" · ");
+  const detail = [call.type, call.background ? t("background") : null].filter(Boolean).join(" · ");
   return (
     <div className="subagent" data-state={state}>
       <button
         className="subagent__head"
-        aria-label={["Subagent", call.description, call.type, SUBAGENT_STATE[state]].filter(Boolean).join(", ")}
+        aria-label={[t("Subagent"), call.description, call.type, t(SUBAGENT_STATE[state])].filter(Boolean).join(", ")}
         aria-expanded={call.report ? open : undefined}
         disabled={!call.report}
         onClick={() => setOpen(value => !value)}
       >
         <span className="subagent__title">
-          <span className="subagent__name">Subagent · {call.description}</span>
+          <span className="subagent__name">{t("Subagent ·")}{" "}{call.description}</span>
           {detail && <span className="subagent__detail">{detail}</span>}
         </span>
-        <span className="subagent__state">{SUBAGENT_STATE[state]}</span>
+        <span className="subagent__state">{t(SUBAGENT_STATE[state])}</span>
       </button>
-      {call.report && <p className="subagent__report" data-open={open}>{call.report}</p>}
+      {call.report && <p dir="auto" className="subagent__report" data-open={open}>{call.report}</p>}
     </div>
   );
 }
@@ -582,19 +587,20 @@ const TASK_SPOKEN = { completed: "done", in_progress: "in progress", pending: "o
  * one line of counts, the task under way while closed, and every task open.
  */
 function TasksCard({ list }: { list: ReaderTaskList }) {
+  const { t, locale } = useLocale();
   const [open, setOpen] = useState(false);
   const shown = open ? list.tasks : list.tasks.filter(task => task.status === "in_progress");
   return (
-    <section className="tasks" aria-label="Tasks">
+    <section className="tasks" aria-label={t("Tasks")}>
       <button className="tasks__head" aria-expanded={open} onClick={() => setOpen(value => !value)}>
-        <span>{readerTasksLabel(list)}</span><span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span>{readerTasksLabel(list, locale)}</span><span aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>
       {shown.length > 0 && <ul className="tasks__list">
         {shown.map(task => (
           <li key={task.id} className="tasks__task" data-status={task.status}>
             <span className="tasks__mark" aria-hidden="true">{TASK_MARK[task.status]}</span>
-            <span className="tasks__text">{!open && task.activeForm ? task.activeForm : task.subject}</span>
-            <span className="visually-hidden">, {TASK_SPOKEN[task.status]}</span>
+            <span className="tasks__text" dir="auto">{!open && task.activeForm ? task.activeForm : task.subject}</span>
+            <span className="visually-hidden">, {t(TASK_SPOKEN[task.status])}</span>
           </li>
         ))}
       </ul>}
@@ -603,6 +609,7 @@ function TasksCard({ list }: { list: ReaderTaskList }) {
 }
 
 function BlockView({ block, paneId, attachments = true }: { block: LogBlock; paneId: string; attachments?: boolean }) {
+  const { t } = useLocale();
   const api = useApi();
   const [open, setOpen] = useState(false);
   /** The file this block named, once you have asked to see it. */
@@ -613,7 +620,7 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
   switch (block.kind) {
     case "text":
       return (
-        <div className="msg__text">
+        <div className="msg__text" dir="auto">
           <Markdown text={block.text} onOpenFile={setLinked} />
           {linked && (
             <FileView
@@ -630,8 +637,8 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
       // Collapsed by default: interesting when you want it, noise when you do not.
       return (
         <details className="msg__thinking">
-          <summary>Thinking</summary>
-          <p>{block.text}</p>
+          <summary>{t("Thinking")}</summary>
+          <p dir="auto">{block.text}</p>
         </details>
       );
 
@@ -652,11 +659,11 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
             * way to see a screenshot was to download it. A real button has no
             * such ambiguity.
             */}
-          <button className="msg__zoom" onClick={() => setViewing(true)} aria-label="Open image">
+          <button className="msg__zoom" onClick={() => setViewing(true)} aria-label={t("Open image")}>
             <RemoteImage
               className="msg__image"
               src={src}
-              alt={`Image (${block.mediaType})`}
+              alt={t("Image ({value0})", { value0: block.mediaType })}
               loading="lazy"
             />
           </button>
@@ -682,7 +689,7 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
             </span>
             <span className="tool__name">{block.name}</span>
             <span className="tool__summary">{block.summary}</span>
-            {block.result?.isError && <span className="tool__err">failed</span>}
+            {block.result?.isError && <span className="tool__err">{t("failed")}</span>}
           </button>
 
           {/*
@@ -696,18 +703,18 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
             */}
           {block.questions?.map((question, i) => (
             <div className="asked" key={i}>
-              <p className="asked__q">{question.text}</p>
+              <p className="asked__q" dir="auto">{question.text}</p>
               <ol className="asked__options">
                 {question.options.map((option, n) => (
                   <li className="asked__option" key={n}>
                     {/* The number is in the markup rather than a CSS counter:
                         it is what you would press in the terminal, so it should
                         be selectable, readable aloud, and visible to a test. */}
-                    <span className="asked__label">
+                    <span className="asked__label" dir="auto">
                       <span className="asked__n">{n + 1}.</span> {option.label}
                     </span>
                     {option.description && (
-                      <span className="asked__why">{option.description}</span>
+                      <span className="asked__why" dir="auto">{option.description}</span>
                     )}
                   </li>
                 ))}
@@ -743,7 +750,7 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
               {block.result.text.trim() && (
                 <pre className="tool__out" data-error={block.result.isError}>
                   {block.result.text}
-                  {block.result.truncated && "\n… truncated"}
+                  {block.result.truncated && t("… truncated")}
                 </pre>
               )}
               {/* Reading a screenshot returns the image here rather than as a
@@ -757,7 +764,7 @@ function BlockView({ block, paneId, attachments = true }: { block: LogBlock; pan
               )}
             </>
           )}
-          {open && !block.result && <p className="msg__aside">{block.outputUnavailable ? "Output is not included in this transcript." : "Still running."}</p>}
+          {open && !block.result && <p className="msg__aside">{block.outputUnavailable ? t("Output is not included in this transcript.") : t("Still running.")}</p>}
         </div>
       );
   }

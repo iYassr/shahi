@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { SetupIcon } from "./SetupIcon";
 
@@ -7,6 +8,7 @@ interface InstallPrompt extends Event {
 
 /** Browser installation is optional; iOS exposes it through the Share menu. */
 export function InstallApp() {
+  const { t } = useLocale();
   const [prompt, setPrompt] = useState<InstallPrompt | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   useEffect(() => {
@@ -18,14 +20,14 @@ export function InstallApp() {
   }, []);
   if (installed) return null;
   return <details className="app-help">
-    <summary><span className="app-help__install-label"><SetupIcon name="install" size={20} /><span>Install Shahi on this device</span></span></summary>
-    <p>Open Shahi from your Home Screen or Dock. Your computer needs to stay on and connected to continue your work.</p>
-    {prompt && <button className="empty__action app-help__install-label" onClick={() => { const current = prompt; setPrompt(null); void current.prompt().catch(() => {}); }}><SetupIcon name="install" size={20} /><span>Install Shahi</span></button>}
+    <summary><span className="app-help__install-label"><SetupIcon name="install" size={20} /><span>{t("Install Shahi on this device")}</span></span></summary>
+    <p>{t("Open Shahi from your Home Screen or Dock. Your computer needs to stay on and connected to continue your work.")}</p>
+    {prompt && <button className="empty__action app-help__install-label" onClick={() => { const current = prompt; setPrompt(null); void current.prompt().catch(() => {}); }}><SetupIcon name="install" size={20} /><span>{t("Install Shahi")}</span></button>}
     <ul>
-      <li><strong>iPhone or iPad:</strong> open the browser’s Share menu, then Add to Home Screen.</li>
-      <li><strong>Android or Chrome:</strong> use the browser’s Install app or Add to Home Screen option.</li>
-      <li><strong>Safari on Mac:</strong> choose File → Add to Dock.</li>
+      <li><strong>{t("iPhone or iPad:")}</strong> {" "}{t("open the browser’s Share menu, then Add to Home Screen.")}</li>
+      <li><strong>{t("Android or Chrome:")}</strong> {" "}{t("use the browser’s Install app or Add to Home Screen option.")}</li>
+      <li><strong>{t("Safari on Mac:")}</strong> {" "}{t("choose File → Add to Dock.")}</li>
     </ul>
-    <p>Open the installed app, then pair with Remember this browser selected on your personal device. Some browsers keep installed apps’ access separate.</p>
+    <p>{t("Open the installed app, then pair with Remember this browser selected on your personal device. Some browsers keep installed apps’ access separate.")}</p>
   </details>;
 }

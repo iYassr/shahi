@@ -1,3 +1,4 @@
+import { UiText } from "@/components/ui-text";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -47,13 +48,13 @@ export function ClientUpdateGate({ children }: { children: ReactNode }) {
     <Modal visible={!!rule} animationType="fade" presentationStyle="fullScreen" onRequestClose={() => {}}>
       <SafeAreaView style={styles.safe} accessibilityViewIsModal>
       <ScrollView contentContainerStyle={styles.screen}>
-        <Text style={styles.title} accessibilityRole="header">Update Shahi</Text>
+        <UiText style={styles.title} accessibilityRole="header">Update Shahi</UiText>
         <Text style={styles.detail}>{rule?.message}</Text>
-        <Text style={styles.detail}>Install the latest Shahi to continue. Your saved computers stay connected.</Text>
-        <Pressable accessibilityRole="button" style={styles.button} onPress={() => void open(IOS_APP_URL)}><Text style={styles.buttonText}>Open App Store</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => void open("itms-beta://")}><Text style={styles.action}>Open TestFlight</Text></Pressable>
-        <Pressable accessibilityRole="button" style={styles.secondary} disabled={checking} onPress={() => void retry()}><Text style={styles.action}>{checking ? "Checking…" : "Check again"}</Text></Pressable>
-        {!!notice && <Text style={styles.detail} accessibilityLiveRegion="polite">{notice}</Text>}
+        <UiText style={styles.detail}>Install the latest Shahi to continue. Your saved computers stay connected.</UiText>
+        <Pressable accessibilityRole="button" style={styles.button} onPress={() => void open(IOS_APP_URL)}><UiText style={styles.buttonText}>Open App Store</UiText></Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => void open("itms-beta://")}><UiText style={styles.action}>Open TestFlight</UiText></Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondary} disabled={checking} onPress={() => void retry()}><UiText style={styles.action}>{checking ? "Checking…" : "Check again"}</UiText></Pressable>
+        {!!notice && <UiText style={styles.detail} accessibilityLiveRegion="polite">{notice}</UiText>}
       </ScrollView>
       </SafeAreaView>
     </Modal>

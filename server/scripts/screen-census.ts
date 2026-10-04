@@ -48,6 +48,8 @@ interface Situation {
   setup: (home: string, project: string) => string;
   /** Keys pressed once the first screen settles, for a screen behind it. */
   then?: string[];
+  /** Reviewed screen variants retained for supported older agent releases. */
+  alternateFixtures?: string[];
 }
 
 const claudeHome = (home: string, project: string, config: Record<string, unknown>) => {
@@ -86,8 +88,16 @@ const ALL: Situation[] = [
   } },
   { id: "claude-ready", kind: "claude", setup: (home, project) => claudeHome(home, project, {}) },
   { id: "codex-sign-in", kind: "codex", setup: (home, project) => codexHome(home, project, "", { signedIn: false }) },
-  { id: "codex-trust", kind: "codex", setup: (home, project) => codexHome(home, project, "", { trusted: false }) },
-  { id: "codex-migration", kind: "codex", setup: (home, project) => codexHome(home, project, 'model = "gpt-5.4"') },
+  // Codex 0.160 skips trust outside a project. Use a real scratch repository
+  // so this case still exercises folder consent rather than its composer.
+  { id: "codex-trust", kind: "codex", setup: (home, project) => {
+    const init = Bun.spawnSync(["git", "init", "--quiet", project], {
+      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" }, stdout: "ignore", stderr: "pipe",
+    });
+    if (init.exitCode !== 0) throw new Error(`scratch project initialization failed: ${init.stderr}`);
+    return codexHome(home, project, "", { trusted: false });
+  } },
+  { id: "codex-migration", kind: "codex", alternateFixtures: ["codex-0.160-migration"], setup: (home, project) => codexHome(home, project, 'model = "gpt-5.4"') },
   { id: "codex-hooks", kind: "codex", setup: (home, project) => {
     writeFileSync(join(home, "hooks.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "echo scratch", timeout: 10 }] }] } }));
     return codexHome(home, project, "[features]\nhooks = true");
@@ -95,7 +105,7 @@ const ALL: Situation[] = [
   // Drawn only where codex knows how it was installed (npm, bun, Homebrew,
   // or its standalone layout under CODEX_HOME), and only once a newer release
   // is on record; the record is written here, dated now.
-  { id: "codex-update", kind: "codex", setup: (home, project) => {
+  { id: "codex-update", kind: "codex", alternateFixtures: ["codex-0.160-update"], setup: (home, project) => {
     writeFileSync(join(home, "version.json"), JSON.stringify({ latest_version: "9.0.0", last_checked_at: new Date().toISOString(), dismissed_version: null }));
     return codexHome(home, project);
   } },
@@ -124,13 +134,16 @@ const summary = (screen: string) => {
   return providerWaitingScreen(stripAnsi(screen)) ? "waits, screen shown" : "no menu";
 };
 
-async function settle(paneId: string): Promise<string> {
+async function settle(paneId: string, shell = false): Promise<string> {
   let last = "";
   let since = Date.now();
   for (const end = Date.now() + 45_000; Date.now() < end; await sleep(500)) {
     const { read } = await rpc("pane.read", { pane_id: paneId, source: "visible", format: "ansi", strip_ansi: false });
     if (read.text !== last) [last, since] = [read.text, Date.now()];
     else if (Date.now() - since >= 3_000) {
+      // herdr 0.9.3 labels an idle shell `unknown`, too. Before agent.start,
+      // stable nonempty shell text is enough; agent dialogs keep the guard.
+      if (shell && last.trim()) break;
       // Claude Code can sit on a blank screen for seconds before its next
       // dialog (Settings Error came about 8s after launch), with herdr saying
       // `unknown` meanwhile; a screen with nothing on it yet is not the answer.
@@ -155,11 +168,11 @@ try {
     mkdirSync(project, { recursive: true });
     const exports = situation.setup(home, realpathSync(project));
     const { root_pane: { pane_id: paneId }, tab: { tab_id: tabId } } = await rpc("tab.create", { workspace_id: workspace.workspace_id, label: situation.id, cwd: project, focus: false });
-    await settle(paneId);
+    await settle(paneId, true);
     await rpc("pane.send_text", { pane_id: paneId, text: exports });
     await sleep(200);
     await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
-    await settle(paneId);
+    await settle(paneId, true);
     const mode = situation.mode ?? modesFor(situation.kind)[0]!.id;
     const args = argsForMode(situation.kind, mode);
     for (let attempt = 0; ; attempt++) {
@@ -189,7 +202,10 @@ try {
     try { fixture = readFileSync(join(FIXTURES, `${situation.id}.ansi`), "utf8"); } catch {}
     const now = summary(screen);
     const before = fixture === null ? null : summary(fixture);
-    const same = now === before;
+    const same = now === before || situation.alternateFixtures?.some((name) => {
+      try { return now === summary(readFileSync(join(FIXTURES, `${name}.ansi`), "utf8")); }
+      catch { return false; }
+    });
     if (!same) changed++;
     console.log(`${same ? "same   " : before === null ? "NEW    " : "CHANGED"} ${situation.id} (herdr: ${pane?.agent_status ?? "?"})\n        now:     ${now}${same ? "" : `\n        fixture: ${before ?? "none"}`}`);
     // Two Ctrl-C leave any of these screens; the tab goes with whatever is left.

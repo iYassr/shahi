@@ -18,11 +18,11 @@
   .conversation-layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); overflow: hidden; }
   .conversation-layout > .agent-sidebar,
   .conversation-layout > .conversation-main { display: flex !important; }
-  .agent-sidebar { --gutter: 16px; border-right: 1px solid var(--line); overflow: hidden; }
+  .agent-sidebar { --gutter: 16px; border-inline-end: 1px solid var(--line); overflow: hidden; }
   .agent-sidebar > .topbar { gap: 8px; padding-inline: 16px; }
   .agent-sidebar .topbar__waiting, .agent-sidebar .page-intro, .agent-sidebar .agent-full-requests { display: none; }
   .agent-sidebar__requests { display: block; }
-  .agent-sidebar__request { display: flex; gap: 10px; width: 100%; text-align: left; padding-inline: var(--gutter); }
+  .agent-sidebar__request { display: flex; gap: 10px; width: 100%; text-align: start; padding-inline: var(--gutter); }
   .agent-sidebar .row, .agent-sidebar__request { align-items: center; padding-block: 16px; }
   .agent-sidebar .agent-row { flex-wrap: wrap; }
   .agent-sidebar .row__title { min-width: 0; flex: 1; }

@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * A small markdown renderer for agent prose.
  *
@@ -64,6 +65,7 @@ export function linkTarget(raw: string): { kind: "url"; href: string } | { kind:
  * `api.ts:42`, which previewed nothing on the web while native opened them.
  */
 function ProseLink({ label, target }: { label: string; target: string }) {
+  const { t } = useLocale();
   const openFile = useContext(FileAction);
   const resolved = linkTarget(target);
   if (resolved?.kind === "url") {
@@ -71,7 +73,7 @@ function ProseLink({ label, target }: { label: string; target: string }) {
   }
   if (resolved?.kind === "file" && openFile) {
     return (
-      <button type="button" className="md__a md__file" title="Open file on your computer"
+      <button type="button" className="md__a md__file" title={t("Open file on your computer")}
         onClick={() => openFile({ path: resolved.path, name: resolved.path.split("/").pop() || label })}>
         {label}
       </button>

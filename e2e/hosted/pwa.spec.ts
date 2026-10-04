@@ -288,14 +288,13 @@ test("the launch video plays and seeks under the page's policy", async ({ page, 
   expect(refused).toEqual([]);
 });
 
-// The homepage offers the web app and the iOS app side by side, and every
-// iOS control asks only for an email address, so the owner can send a
-// TestFlight invite. Service workers are blocked because one would bypass
-// page.route.
+// The public iPhone app opens the App Store. Early access to future versions
+// remains a separate optional TestFlight signup. Service workers are blocked
+// because one would bypass page.route.
 test.describe("the homepage's iOS download", () => {
   test.use({ serviceWorkers: "block" });
 
-  test("Download iOS App opens an email dialog that requests a TestFlight invite, keeps focus through sending, and Esc returns focus to it", async ({ page }) => {
+  test("the public iOS download opens the App Store and optional beta signup preserves focus through sending", async ({ page }) => {
     const refused: string[] = [];
     page.on("console", message => { if (/Content.Security.Policy/i.test(message.text())) refused.push(message.text()); });
     // The Worker's own handler answers, with the rate limit open and delivery
@@ -319,7 +318,8 @@ test.describe("the homepage's iOS download", () => {
     await expect(page.getByRole("banner").getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
     const main = page.getByRole("main");
     await expect(main.getByRole("link", { name: "Open Shahi Web App" })).toHaveAttribute("href", "/pwa/");
-    const download = main.getByRole("link", { name: "Download iOS App (TestFlight)" });
+    await expect(main.getByRole("link", { name: "Download iOS App", exact: true })).toHaveAttribute("href", "https://apps.apple.com/app/id6813370698");
+    const download = main.getByRole("link", { name: "Join the iOS beta" });
     // Linux WebKit moved the page between mouse-down and mouse-up near the
     // viewport edge, delivering a click to the surrounding section instead.
     // Exercise the phone's touch input (and a mouse on the desktop project).
@@ -380,7 +380,7 @@ test.describe("the homepage's iOS download", () => {
       await route.fulfill({ status: response.status, contentType: "application/json", body: await response.text() });
     });
     await page.goto(`${site}/`);
-    const download = page.getByRole("main").getByRole("link", { name: "Download iOS App (TestFlight)" });
+    const download = page.getByRole("main").getByRole("link", { name: "Join the iOS beta" });
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     const email = dialog.getByRole("textbox", { name: "Email address" });
     const consent = dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." });
@@ -435,7 +435,8 @@ test.describe("the homepage's iOS download", () => {
     await page.goto(`${site}/`);
     const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
     expect(await fits()).toBe(true);
-    await tap(page, page.getByRole("link", { name: "Download iOS App (TestFlight)" }));
+    await expect(page.getByRole("link", { name: "Download iOS App", exact: true })).toHaveAttribute("href", "https://apps.apple.com/app/id6813370698");
+    await tap(page, page.getByRole("link", { name: "Join the iOS beta" }));
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await expect(dialog).toBeVisible();
     const box = (await dialog.boundingBox())!;
@@ -450,7 +451,7 @@ test.describe("the homepage's iOS download", () => {
     await page.setViewportSize({ width: 320, height: 568 });
     await page.route(`${site}/api/ios-beta`, route => route.fulfill({ json: { message: "Request sent. We’ll email tester@example.com when your TestFlight invite is ready." } }));
     await page.goto(`${site}/`);
-    await tap(page, page.getByRole("link", { name: "Download iOS App (TestFlight)" }));
+    await tap(page, page.getByRole("link", { name: "Join the iOS beta" }));
     const dialog = page.getByRole("dialog", { name: "Request a TestFlight invite" });
     await dialog.getByRole("textbox", { name: "Email address" }).fill("tester@example.com");
     await dialog.getByRole("checkbox", { name: "Email me my TestFlight invite and beta updates." }).check();
@@ -465,12 +466,13 @@ test.describe("the homepage's iOS download", () => {
   test.describe("without JavaScript", () => {
     test.use({ javaScriptEnabled: false });
 
-    test("Download iOS App still reaches the iOS beta section and an address to ask for an invite", async ({ page }) => {
+    test("without JavaScript the public download links to the App Store and optional beta links to a contact address", async ({ page }) => {
       await page.goto(`${site}/`);
       // force: Playwright's stability check waits on animation frames, which
       // never arrive with scripting off (measured: "element is not stable"
       // until the timeout, in both engines). The click itself is a real one.
-      const download = page.getByRole("link", { name: "Download iOS App (TestFlight)" });
+      await expect(page.getByRole("link", { name: "Download iOS App", exact: true })).toHaveAttribute("href", "https://apps.apple.com/app/id6813370698");
+      const download = page.getByRole("link", { name: "Join the iOS beta" });
       await expect(download).toBeVisible();
       await download.click({ force: true });
       await expect(page).toHaveURL(`${site}/#ios-beta`);
@@ -492,7 +494,7 @@ test("on a 390 by 664 phone screen both of the hero's buttons are on the first s
   await page.goto(`${site}/`);
   await page.evaluate(() => document.fonts.ready);
   const hero = page.locator(".hero");
-  for (const name of ["Open Shahi Web App", "Download iOS App (TestFlight)"]) {
+  for (const name of ["Open Shahi Web App", "Download iOS App"]) {
     // Polled: the hero settles 6px upward as it arrives.
     const bottom = () => hero.getByRole("link", { name }).evaluate(link => link.getBoundingClientRect().bottom - innerHeight);
     await expect.poll(bottom, { message: name }).toBeLessThanOrEqual(0);
@@ -516,7 +518,7 @@ test("offline shell includes all installation assets and survives computers and 
   const initial = await cacheKeys(page);
   for (const name of ["manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-180.png", "welcome.js"]) expect(initial.some(url => url.endsWith(`/pwa/${name}`))).toBe(true);
   await request.post("/__hosted/site-offline");
-  for (const path of ["/pwa/computers", "/pwa/notification?pane=private-pane&computer=private-computer"]) {
+  for (const path of ["/pwa/computers", "/pwa/notification?pane=private-pane&computer=private-computer&instance=private-occupant"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: "Computers", exact: true })).toBeVisible();
   }

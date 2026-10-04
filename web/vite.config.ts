@@ -6,8 +6,23 @@ import { thirdPartyNotices } from "./notices-build.ts";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { privateSourcemaps } from "./sentry-build";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const release = `shahi-web@${process.env.GITHUB_SHA ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()}`;
+function localRevision(): string {
+  // Bun's macOS test runner can hand a piped child an invalid descriptor.
+  // Let the child open its output file, as agent discovery does here.
+  const scratch = mkdtempSync(join(tmpdir(), "shahi-build-revision-"));
+  const output = join(scratch, "revision");
+  try {
+    execFileSync("sh", ["-c", 'git rev-parse HEAD > "$1"', "sh", output], { cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: ["ignore", "inherit", "inherit"] });
+    return readFileSync(output, "utf8").trim();
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+const release = `shahi-web@${process.env.GITHUB_SHA ?? localRevision()}`;
 const debugArtifacts = (mode: string) => fileURLToPath(new URL(`../dist/sentry/${mode === "hosted" ? "hosted" : "computer"}`, import.meta.url));
 
 export default defineConfig(({ mode }) => ({

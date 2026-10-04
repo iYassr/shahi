@@ -1,5 +1,6 @@
 import { ComputerSession } from "./computer-session";
 import { connectionHealth, type Reviewed, type DashboardPane } from "@shahi/shared";
+import { useI18n } from "./i18n";
 /**
  * One live connection per saved computer, shared by all of its screens.
  *
@@ -203,6 +204,7 @@ export function useLastUpdate(): number | null {
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const { locale, t } = useI18n();
   const [ready, setReady] = useState(false);
   const [online, setOnline] = useState(true);
   const [addingComputer, setAddingComputer] = useState(false);
@@ -212,7 +214,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [connectionKey, setConnectionKey] = useState(0);
   const [terminalWidth, setWidth] = useState(100);
   const [saveError, setSaveError] = useState<Error | null>(null);
-  const [accessEnded, setAccessEnded] = useState<string | null>(null);
+  const [accessEnded, setAccessEnded] = useState<{ name: string | null; kind: "relay" | "ssh" } | null>(null);
   const [hostKeyReview, setHostKeyReview] = useState<SessionValue["hostKeyReview"]>(null);
   const reviews = useRef<{ queue: Promise<unknown>; pending: ((trusted: boolean) => void) | null }>({ queue: Promise.resolve(), pending: null });
   const [, render] = useState(0);
@@ -312,10 +314,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // (pre-release bug hunt).
       const lost = live.current.get(saved.id)?.saved ?? saved;
       // Lower case in a sentence, and never the relay address it was saved under.
-      const lostName = computerNamed(lost) ? computerDisplayName(lost, bank.current) : UNNAMED_COMPUTER.toLowerCase();
-      if (mounted.current) setAccessEnded(lost.connection.kind === "relay"
-        ? `This phone is no longer paired with ${lostName}. Show a new pairing code on that computer to connect again.`
-        : `${lostName} signed this phone out. Add it again with its Shahi passcode to connect.`);
+      const lostName = computerNamed(lost) ? computerDisplayName(lost, bank.current) : null;
+      // Keep the computer name and authored template separate so a notice
+      // already on screen follows a later language choice without reconnecting.
+      if (mounted.current) setAccessEnded({ name: lostName, kind: lost.connection.kind });
       forget(saved.id);
     }, adopted, reviewSavedHostKey);
     live.current.set(saved.id, entry);
@@ -430,9 +432,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const liveComputer = live.current.get(c.id);
       const link = liveComputer?.link ?? "connecting";
       const named = computerNamed(c);
-      const health = connectionHealth({ link, online, error: liveComputer?.error, transport: c.connection.kind, computerName: named ? c.name : undefined, backend: liveComputer?.control.handshake?.backend });
+      const health = connectionHealth({ locale, link, online, error: liveComputer?.error, transport: c.connection.kind, computerName: named ? c.name : undefined, backend: liveComputer?.control.handshake?.backend });
       return { id: c.id, name: named ? computerDisplayName(c, bank.current) : UNNAMED_COMPUTER, named, serverId: c.connection.kind === "relay" ? c.connection.serverId : liveComputer?.serverId ?? c.serverId, kind: c.connection.kind, address: computerAddress(c.connection), link,
-        available: !health, status: health?.title ?? "Connected",
+        available: !health, status: health?.title ?? t("Connected"),
         waiting: liveComputer?.session?.panes.filter(p => p.isAgent && p.status === "blocked").length ?? 0 };
     }),
     switchComputer, addComputer,
@@ -462,7 +464,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       forget(id);
     },
     signOut: () => { setAccessEnded(null); if (entry) { if (selected.current === entry.saved.id) void forgetPushRegistration(); forget(entry.saved.id); } },
-    accessEnded,
+    accessEnded: accessEnded ? t(accessEnded.kind === "relay"
+      ? "This phone is no longer paired with {computer}. Show a new pairing code on that computer to connect again."
+      : "{computer} signed this phone out. Add it again with its Shahi passcode to connect.", { computer: accessEnded.name ?? t("your computer") }) : null,
     signInRelay: identity => signIn({ kind: "relay", ...identity }),
     hostKeyReview,
     signInSsh: (profile, signedIn) => {

@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 /**
  * "+ New agent" from the Agents list: which space, then the agent.
  *
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function NewAgentFlow({ session, onClose, onToast, onChanged, onStarted }: Props) {
+  const { t } = useLocale();
   const [first] = useState(() => session.workspaces.length === 0);
   const [making, setMaking] = useState(first);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -57,12 +59,12 @@ export function NewAgentFlow({ session, onClose, onToast, onChanged, onStarted }
   if (space) return <NewAgent space={space} onClose={onClose} onToast={onToast} onStarted={onStarted} />;
   if (chosen && chosen === made) {
     // The computer has made it; this session has not heard yet.
-    return <Sheet title="New agent" onClose={onClose}><p className="sheet__note" role="status">Opening the new space…</p></Sheet>;
+    return <Sheet title={t("New agent")} onClose={onClose}><p className="sheet__note" role="status">{t("Opening the new space…")}</p></Sheet>;
   }
   return (
-    <Sheet title="Choose a space" onClose={onClose}>
+    <Sheet title={t("Choose a space")} onClose={onClose}>
       {/* A new agent often wants a new folder (device audit, build 28). */}
-      <button className="bigaction sheet__new" onClick={() => setMaking(true)}>+ New space</button>
+      <button className="bigaction sheet__new" onClick={() => setMaking(true)}>{t("+ New space")}</button>
       {session.workspaces.map((s) => (
         <button className="row" key={s.workspaceId} onClick={() => setChosen(s.workspaceId)}>{s.label}</button>
       ))}

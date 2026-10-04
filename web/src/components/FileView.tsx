@@ -1,3 +1,4 @@
+import { useLocale } from "../i18n";
 import { useDialog } from "../use-dialog";
 import { UiIcon } from "./UiIcon";
 import { Download, RemoteImage } from "./RemoteMedia";
@@ -34,6 +35,7 @@ const TEXTUAL =
   /\.(txt|md|log|json|ts|tsx|js|jsx|mjs|cjs|py|rs|go|rb|java|c|h|cpp|sh|bash|zsh|toml|ya?ml|css|scss|html?|xml|csv|sql|ini|conf|env|lock|diff|patch|svg)$/i;
 
 export function FileView({ name, url, downloadUrl, onClose }: Props) {
+  const { t } = useLocale();
   const api = useApi();
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,19 +60,19 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
   return (
     <div className="viewer" ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label={name}>
       <header className="viewer__bar">
-        <button className="viewer__close" onClick={onClose} aria-label="Close">
+        <button className="viewer__close" onClick={onClose} aria-label={t("Close")}>
           <UiIcon name="close" />
         </button>
         <UiIcon name="file" /><span className="viewer__name">{name}</span>
         {/* A plain link, so the browser does the downloading — a fetch would
             mean holding the whole file in memory to hand it back to the same
             browser. */}
-        <Download className="viewer__get" path={downloadUrl} name={name}>Download</Download>
+        <Download className="viewer__get" path={downloadUrl} name={name}>{t("Download")}</Download>
       </header>
 
       <div className="viewer__body">
         {/\.pdf$/i.test(name) ? (
-          <Suspense fallback={<p role="status">Opening PDF…</p>}><PdfPreview url={url} /></Suspense>
+          <Suspense fallback={<p role="status">{t("Opening PDF…")}</p>}><PdfPreview url={url} /></Suspense>
         ) : isImage && !error ? (
           <RemoteImage
             className="viewer__image"
@@ -88,21 +90,20 @@ export function FileView({ name, url, downloadUrl, onClose }: Props) {
         ) : error ? (
           <div className="empty">
             <span className="empty__mark">○</span>
-            {error}
-            <Download className="empty__action" path={downloadUrl} name={name}>Download it instead</Download>
+            {t(error)}
+            <Download className="empty__action" path={downloadUrl} name={name}>{t("Download it instead")}</Download>
           </div>
         ) : text === null && TEXTUAL.test(name) ? (
           <div className="empty">
             <span className="empty__mark">⟳</span>
-            Reading {name}…
+            {t("Reading")}{" "}{name}…
           </div>
         ) : text !== null ? (
-          <pre className="viewer__text">{text}</pre>
+          <pre className="viewer__text" dir="ltr">{text}</pre>
         ) : (
           <div className="empty">
             <span className="empty__mark">↓</span>
-            Preview is not available for this file. Download it to open in another app.
-          </div>
+            {t("Preview is not available for this file. Download it to open in another app.")}</div>
         )}
       </div>
     </div>

@@ -1,9 +1,11 @@
+import { LanguagePicker, useLocale } from "../i18n";
 import { Logo, Wordmark } from "./Logo";
 import { useState } from "react";
 import { ApiError, useApi } from "../api";
 import { noticesUrl } from "../notices";
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
+  const { t } = useLocale();
   const api = useApi();
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,32 +36,31 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form className="login" onSubmit={submit}>
+      <LanguagePicker />
       <h1 className="login__title"><Logo size={40} /><Wordmark /></h1>
-      <h2>Welcome back</h2>
+      <h2>{t("Welcome back")}</h2>
       <p className="login__hint">
-        Enter your passcode to reach the agents on this machine.
-      </p>
+        {t("Enter your passcode to reach the agents on this machine.")}</p>
       <input
         value={passcode}
         onChange={(e) => setPasscode(e.target.value)}
         type="password"
         inputMode="numeric"
         autoComplete="current-password"
-        aria-label="Passcode"
+        aria-label={t("Passcode")}
         autoFocus
       />
-      {error && <p className="login__error" role="alert">{error}</p>}
+      {error && <p className="login__error" role="alert">{t(error)}</p>}
       <button type="submit" disabled={busy || passcode === ""}>
-        {busy ? "Checking…" : "Unlock"}
+        {busy ? t("Checking…") : t("Unlock")}
       </button>
       {/* Only the passcode's hash is kept, so a lost one is replaced rather
           than found; this page used to give no way back at all (pre-release
           review). The native SSH form says the same. */}
       <p className="login__help">
-        Lost it? On this computer, run <code>herdr plugin action invoke shahi.reset-passcode</code>, then read the new
-        one with <code>herdr plugin log list --plugin shahi</code>.
+        {t("Lost it? On this computer, run")}{" "}<code>herdr plugin action invoke shahi.reset-passcode</code>{t(", then read the new one with")}{" "}<code>herdr plugin log list --plugin shahi</code>.
       </p>
-      <p className="app-help__links"><a href={noticesUrl()} target="_blank" rel="noreferrer">Open-source licenses</a></p>
+      <p className="app-help__links"><a href={noticesUrl()} target="_blank" rel="noreferrer">{t("Open-source licenses")}</a></p>
     </form>
   );
 }

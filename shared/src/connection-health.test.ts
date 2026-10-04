@@ -1,6 +1,16 @@
 import { expect, test } from "bun:test";
 import { connectionHealth, graceUntil, RECONNECT_GRACE_MS } from "./connection-health";
 import { HostKeyError, UnreachableError, IncompatibleServerError } from "./errors";
+test("localized connection state preserves computer names and the English compatibility default", () => {
+  const args = { link: "connecting" as const, transport: "relay" as const, computerName: "Mac-$&" };
+  expect(connectionHealth(args)?.title).toBe("Connecting to Mac-$&…");
+  expect(connectionHealth({ ...args, locale: "ar" })?.title).toBe("جارٍ الاتصال بـ Mac-$&…");
+  expect(connectionHealth({ ...args, locale: "es" })?.title).toBe("Conectando con Mac-$&…");
+  const offline = connectionHealth({ ...args, locale: "ar", link: "lost", error: new UnreachableError("box", "relay", "offline") });
+  expect(offline?.title).toBe("الكمبيوتر غير متصل");
+  expect(offline?.detail).toContain("Mac-$&");
+  expect(connectionHealth({ link: "lost", transport: "relay", locale: "es" })?.title).toBe("Reconectando con tu equipo…");
+});
 test("a confirmed disconnected computer is distinguished from a network outage", () => {
   const args = { link: "lost" as const, transport: "relay" as const };
   expect(connectionHealth({ ...args, error: new UnreachableError("box", "relay", "offline") })?.title).toBe("Computer disconnected");
