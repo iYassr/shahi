@@ -32,7 +32,7 @@
  * pairing a call to its output by `call_id`. The two shapes were captured live
  * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, open, readdir, readlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -142,12 +142,29 @@ export async function findCodexRollout(
  * exact folder: the folder narrows a name and is never evidence on its own, so
  * an unnamed thread, or two threads sharing a name in one folder, find nothing.
  */
+/**
+ * What codex may call a folder in its title: the folder's own name, or, inside
+ * a git repository, the repository's. Measured on 0.160.0 (macOS and Linux,
+ * 2026-10-04): codex started by hand in `shahi-journeys/run-x` titled itself
+ * "… | shahi-journeys", so every hand-started codex in a repository's subfolder
+ * read "Nothing to read yet". The agent journeys found it
+ * (`server/scripts/agent-journeys.ts`).
+ */
+function folderLabels(folder: string): string[] {
+  const labels = [basename(folder)];
+  for (let dir = realpathIfExists(folder); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, ".git"))) { labels.push(basename(dir)); break; }
+    if (dirname(dir) === dir) break;
+  }
+  return labels;
+}
+
 export function rolloutFromTitle(title: string | null | undefined, folder: string | null | undefined, stateDb = STATE_DB, sessionsDir = SESSIONS_DIR): string | null {
   if (!title || !folder) return null;
   const at = title.lastIndexOf(" | ");
   if (at <= 0) return null;
   const name = title.slice(0, at).trim();
-  if (!name || title.slice(at + 3).trim() !== basename(folder)) return null;
+  if (!name || !folderLabels(folder).includes(title.slice(at + 3).trim())) return null;
   const here = realpathIfExists(folder);
   try {
     const db = openReadOnly(stateDb);

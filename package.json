@@ -20,6 +20,7 @@
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "test:mobile": "bun run --cwd mobile test",
     "test:relay": "bun test relay/test",
+    "test:agents": "bun run server/scripts/agent-journeys.ts",
     "test:dependencies": "node --test patches/dependencies.test.mjs",
     "build:site": "bun run site/build.ts",
     "test:hosted": "playwright test --config e2e/hosted/playwright.config.ts",

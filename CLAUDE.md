@@ -1393,10 +1393,12 @@ this terminal's hook environment and exact process-file Reader lookup. Never
 repair that by selecting a rollout by working folder or modification time.
 A Codex a person starts by hand gets the shared daemon too (codex-cli 0.160:
 no session reported, no rollout open in the pane), and read "Nothing to read
-yet" (TestFlight build 39). Its pane title, "<thread name> | <folder>", names
+yet" (TestFlight build 39). Its pane title, "<thread name> | <label>", names
 the thread: `rolloutFromTitle` takes one only when exactly one unarchived
-thread has that name in that exact folder. The folder narrows a name and is
-never evidence alone; an unnamed or shared name finds nothing.
+thread has that name in that exact folder. The label is the folder's own name,
+or the git repository's when the folder is inside one. A subfolder of a
+repository failed until the agent journeys found it. The folder narrows a name
+and is never evidence alone; an unnamed or shared name finds nothing.
 
 ## Read must match Screen, October 1
 
@@ -1426,6 +1428,18 @@ wrote. `docs/reader-parity-2026-10-01.md` has the evidence. So:
 - A message typed while Claude works is a `queued_command` attachment, not a
   user row; it is the person's message. A `<task-notification>` row is never
   the person's, status or not.
+- `bun run test:agents` (`server/scripts/agent-journeys.ts`) starts real
+  Claude and Codex both ways people start them: from Shahi, and by hand in a
+  shell. It sends each a one-word message and checks that Reader, its page
+  and the agent list's preview hold the reply, and keep holding it for a
+  minute. It runs in a scratch named session, but the agents are signed in, so
+  every journey costs one short reply. Two October failures passed everything
+  else. Codex 0.160 started by hand reported nothing. On a Mac, its index then
+  went unreadable whenever Codex closed it. Fixtures cannot see either, and an
+  agent Shahi starts takes a different path. Run it on macOS and Linux when an
+  agent or herdr updates, before a computer release, and after installing one.
+  The owner's computers run it hourly whenever something changed and at least
+  daily; failures open a GitHub issue.
 
 ## Reader providers, September 27
 

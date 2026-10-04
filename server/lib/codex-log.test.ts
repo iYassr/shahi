@@ -742,6 +742,10 @@ describe("a Codex conversation named by its pane's title", () => {
   add("01a1042d-cfcf-7772-a79b-f4dafde210b9", "Fix the tests", project);
   add("01a1042d-cfcf-7772-a79b-f4dafde210ba", "Fix the tests", project);
   add("01a1042d-cfcf-7772-a79b-f4dafde210bb", null, project);
+  const repository = join(root, "shahi"), subfolder = join(repository, "server");
+  mkdirSync(join(repository, ".git"), { recursive: true });
+  mkdirSync(subfolder, { recursive: true });
+  add("01a1042d-cfcf-7772-a79b-f4dafde210bc", "Fix the server tests", subfolder);
   index.close();
   afterAll(() => rmSync(root, { recursive: true, force: true }));
   const find = (title: string | null, folder: string | null = project) => rolloutFromTitle(title, folder, db, sessions);
@@ -759,6 +763,15 @@ describe("a Codex conversation named by its pane's title", () => {
     expect(find("Review and improve Fihris")).toBeNull();
     expect(find(null)).toBeNull();
     expect(rolloutFromTitle("Review and improve Fihris | sama-kb", project, join(root, "no-index.sqlite"), sessions)).toBeNull();
+  });
+  // Codex names the repository, not the folder, in its title: started by hand
+  // in a subfolder it read "Nothing to read yet" until the agent journeys
+  // found it (2026-10-04).
+  test("a Codex started in a repository's subfolder is found by the repository's name", () => {
+    expect(find("Fix the server tests | shahi", subfolder)).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210bc.jsonl");
+    expect(find("Fix the server tests | server", subfolder)).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210bc.jsonl");
+    // The repository's name only names a folder inside it.
+    expect(find("Review and improve Fihris | shahi")).toBeNull();
   });
   // Codex keeps its index in WAL mode and removes the -shm and -wal when it
   // closes it. A read-only open then failed on macOS, and the pane read "No

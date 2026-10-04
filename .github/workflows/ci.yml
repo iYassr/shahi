@@ -106,6 +106,24 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The unit tests again on a Mac, where Bun loads the system SQLite. It refuses
+  # a read-only open that Linux's accepts, and that kept hand-started Codex
+  # conversations unreadable on every Mac in 0.3.27 while each check above
+  # passed (server/lib/foreign-sqlite.ts).
+  macos:
+    name: unit tests (macOS)
+    timeout-minutes: 15
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
   browser:
     name: browser (${{ matrix.name }})
     runs-on: ubuntu-24.04
@@ -270,7 +288,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [checks, upgrades, browser, herdr]
+    needs: [checks, macos, upgrades, browser, herdr]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
