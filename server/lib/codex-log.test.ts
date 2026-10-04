@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, openSync, closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
@@ -759,5 +759,18 @@ describe("a Codex conversation named by its pane's title", () => {
     expect(find("Review and improve Fihris")).toBeNull();
     expect(find(null)).toBeNull();
     expect(rolloutFromTitle("Review and improve Fihris | sama-kb", project, join(root, "no-index.sqlite"), sessions)).toBeNull();
+  });
+  // Codex keeps its index in WAL mode and removes the -shm and -wal when it
+  // closes it. A read-only open then failed on macOS, and the pane read "No
+  // messages yet" until Codex opened the index again (2026-10-04).
+  test("is found while Codex has its index closed", () => {
+    const wal = join(root, "state_5-wal.sqlite");
+    copyFileSync(db, wal);
+    const index = new Database(wal);
+    index.exec("PRAGMA journal_mode = WAL");
+    index.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    index.close();
+    for (const suffix of ["-shm", "-wal"]) rmSync(wal + suffix, { force: true });
+    expect(rolloutFromTitle("Review and improve Fihris | sama-kb", project, wal, sessions)).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210b6.jsonl");
   });
 });

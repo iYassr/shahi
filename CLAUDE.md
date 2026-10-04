@@ -1286,6 +1286,12 @@ sets `reusePort: false`. A process killed by signal has `signalCode` but a null
 Trust forwarded-for only for an explicitly allowed proxy Host, at its last hop;
 validate Host ports before URL parsing. Count byte limits in encoded bytes and
 truncate names by grapheme, never half an emoji.
+Open another program's SQLite only through `openReadOnly` (`foreign-sqlite.ts`).
+Codex and OpenCode keep their databases in WAL mode and remove the `-wal` when
+they close them. With no `-wal`, macOS's SQLite refuses a read-only open, and
+the error comes from the first statement, not the constructor. Linux opens it,
+so CI cannot see this; `bun run test` on a Mac can. The hand-started Codex fix
+read "No messages yet" on this Mac whenever Codex had its index closed.
 
 **Push is bounded and owned.** Each device or passcode session holds one registration
 per channel; SSH renews its token after sign-in and expired sessions lose theirs.

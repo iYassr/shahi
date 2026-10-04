@@ -32,12 +32,12 @@
  * pairing a call to its output by `call_id`. The two shapes were captured live
  * (codex 2026.07.18.1); the fixtures in the test file are those captures.
  */
-import { Database } from "bun:sqlite";
 import { statSync } from "node:fs";
 import { mkdtemp, readFile, rm, open, readdir, readlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
+import { openReadOnly } from "./foreign-sqlite";
 import { realPathSync } from "./real-path";
 import { codexDisplayItem, codexInputAttachments, codexQuestionCall, codexQuestionProse, codexQuestions } from "./codex-items";
 import { codexItemImages } from "./codex-media";
@@ -150,7 +150,7 @@ export function rolloutFromTitle(title: string | null | undefined, folder: strin
   if (!name || title.slice(at + 3).trim() !== basename(folder)) return null;
   const here = realpathIfExists(folder);
   try {
-    const db = new Database(stateDb, { readonly: true });
+    const db = openReadOnly(stateDb);
     let rows: { rollout_path: string; cwd: string | null }[];
     try {
       rows = db.query<{ rollout_path: string; cwd: string | null }, [string]>(
@@ -186,7 +186,7 @@ function rolloutFromSessionId(sessionId: string): string | null {
   if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
 
   try {
-    const db = new Database(STATE_DB, { readonly: true });
+    const db = openReadOnly(STATE_DB);
     let row: { rollout_path: string } | null;
     try {
       row = db.query<{ rollout_path: string }, [string]>("SELECT rollout_path FROM threads WHERE id = ?").get(sessionId);

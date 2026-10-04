@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
+import { openReadOnly } from "./foreign-sqlite";
 import { imageMediaType, isRecord, questionsOf, summariseToolInput } from "./session-log";
 
 export interface OpenCodeTranscript { kind: "opencode"; databasePath: string; sessionId: string }
@@ -28,7 +29,7 @@ export function defaultOpenCodeDatabase(): string {
 }
 
 function open(source: OpenCodeTranscript): Database {
-  const db = new Database(source.databasePath, { readonly: true, strict: true });
+  const db = openReadOnly(source.databasePath, { strict: true });
   db.exec("PRAGMA query_only = ON");
   db.exec("PRAGMA busy_timeout = 100");
   return db;
