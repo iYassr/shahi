@@ -46,6 +46,9 @@ const argv = new Set(process.argv.slice(2));
 const kinds = (["claude", "codex"] as Kind[]).filter((kind) => (!argv.has("claude") && !argv.has("codex")) || argv.has(kind));
 const launches = (["shahi", "hand"] as Launch[]).filter((launch) => (!argv.has("shahi") && !argv.has("hand")) || argv.has(launch));
 const STEADY_MS = 60_000;
+// One journey's worst case is about seven minutes; one that runs past ten is
+// stuck, and the next must still run.
+const JOURNEY_MS = 10 * 60_000;
 const ASK = "Reply with exactly the word";
 
 // herdr, and every shell it starts, without this process's own agent and herdr
@@ -180,6 +183,25 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
   return failures;
 }
 
+/** Stops the scratch session and removes what the run made; once, however the run ends. */
+let cleaned = false;
+function cleanUp(): void {
+  if (cleaned) return;
+  cleaned = true;
+  Bun.spawnSync(["herdr", "session", "stop", session], { env });
+  server.kill();
+  rmSync(root, { recursive: true, force: true });
+  // Claude keeps a folder's transcripts under its path with every
+  // non-alphanumeric character as "-", and its project memory under the
+  // repository's; both folders belong to these journeys alone.
+  const claudeProjects = join(homedir(), ".claude", "projects");
+  for (const folder of [runDir, realpathSync(repo)]) rmSync(join(claudeProjects, folder.replace(/[^A-Za-z0-9]/g, "-")), { recursive: true, force: true });
+  rmSync(runDir, { recursive: true, force: true });
+}
+// `timeout` and launchd end a run with a signal, which skips `finally`; a run
+// killed that way once left its herdr session and agents behind.
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => { cleanUp(); process.exit(1); });
+
 let failed = 0;
 try {
   for (let tries = 0; ; tries++) {
@@ -192,22 +214,19 @@ try {
     for (const launch of launches) {
       const label = `${kind} (${version}) started ${launch === "shahi" ? "by Shahi" : "by hand"}`;
       let failures: string[];
-      try { failures = await journey(kind, launch, workspace.workspace_id); }
+      try {
+        failures = await Promise.race([
+          journey(kind, launch, workspace.workspace_id),
+          Bun.sleep(JOURNEY_MS).then(() => [`did not finish within ${JOURNEY_MS / 60_000} minutes`]),
+        ]);
+      }
       catch (err) { failures = [err instanceof Error ? err.message : String(err)]; }
       if (failures.length) failed++;
       console.log(`${failures.length ? "FAIL" : "ok  "}    ${label}${failures.map((f) => `\n        ${f}`).join("")}`);
     }
   }
 } finally {
-  Bun.spawnSync(["herdr", "session", "stop", session], { env });
-  server.kill();
-  rmSync(root, { recursive: true, force: true });
-  // Claude keeps a folder's transcripts under its path with every
-  // non-alphanumeric character as "-", and its project memory under the
-  // repository's; both folders belong to these journeys alone.
-  const claudeProjects = join(homedir(), ".claude", "projects");
-  for (const folder of [runDir, realpathSync(repo)]) rmSync(join(claudeProjects, folder.replace(/[^A-Za-z0-9]/g, "-")), { recursive: true, force: true });
-  rmSync(runDir, { recursive: true, force: true });
+  cleanUp();
 }
 console.log(failed ? `\n${failed} journey(s) failed.` : "\nEvery journey reached Reader and the agent list, and stayed there.");
 process.exit(failed ? 1 : 0);
