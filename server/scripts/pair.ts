@@ -109,5 +109,10 @@ if (process.argv.includes("--popup") && process.stdout.isTTY) {
   console.log("Scan with Shahi");
   console.log(await QRCode.toString(url, { type: "terminal", small: true }));
   console.log(`Expires ${new Date(code.expiresAt).toLocaleTimeString()} · one use`);
-  console.log(copied ? "Pairing code copied to clipboard." : "Use --code-only to copy the pairing code.");
+  // Printed whatever the clipboard did, for a QR the camera cannot read: run by
+  // getshahi.dev/install on a headless Linux computer there is no clipboard,
+  // and "Use --code-only" named a flag nobody running the installer can pass
+  // (fresh-VM run, October 2026).
+  console.log(copied ? "Can't scan? The code is copied: in Shahi, tap Paste pairing link." : "Can't scan? Copy this code, then in Shahi tap Paste pairing link:");
+  console.log(url);
 }
