@@ -17,8 +17,10 @@ jobs:
   # Stable runs the whole of CI on the exact commit before publishing. Beta
   # only builds and smoke-tests the package: the owner's policy from October
   # 2026, after full CI on every Beta cost half an hour per release. Promoting
-  # that version to Stable later runs the whole of CI and checks the Beta
-  # package byte for byte against the tested build (published.ts).
+  # that version to Stable later runs the whole of CI and verifies the
+  # immutable Beta archive's signed approval (published.ts). Reviewers also
+  # compare extracted candidate files before approving publication; TAR
+  # metadata can make otherwise identical compressed archives differ.
   tested:
     if: inputs.channel == 'stable'
     uses: ./.github/workflows/ci.yml

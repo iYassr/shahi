@@ -1,44 +1,36 @@
 # Relay, computer installation and security launch review — 4 October 2026
 
-The tested transport and installation paths passed. The launch still needs a
-new approved **0.3.24 package published to Stable** after the launch changes
-and required full regression CI. At this review, a fresh public installation
-selects **0.3.19**, while Beta selects 0.3.23.
+Public Stable and Beta now select **0.3.25**, built from frozen commit
+`3cf883cfc057407cbdb9f59e1e9419c61f97918c`. Both signed catalogs were
+verified with the pinned Ed25519 key. The actual published package passed fresh
+pairing, upgrade and rollback, recovery and bundled-asset checks. Its complete
+extracted contents match both full-CI builds on that exact source commit.
 
 This is an internal readiness review. It establishes the checks below, not an
 independent cryptographic audit or a production capacity guarantee.
 
 ## Public release state
 
-Both public catalogs were downloaded from their configured GitHub URLs and
-verified with the pinned Ed25519 public key using `verifyCatalog`.
-
-| Channel | Selected version | Published | Catalog expires |
+| Channel | Selected version | Catalog published | Catalog expires |
 | --- | --- | --- | --- |
-| Stable | 0.3.19 | 1 October 2026, 22:19 UTC | 29 January 2027, 22:19 UTC |
-| Beta | 0.3.23 | 3 October 2026, 16:43 UTC | 31 January 2027, 16:43 UTC |
+| Stable | 0.3.25 | 4 October 2026, 02:34 UTC | 1 February 2027, 02:34 UTC |
+| Beta | 0.3.25 | 4 October 2026, 02:22 UTC | 1 February 2027, 02:22 UTC |
 
-GitHub's Latest release was also 0.3.19. Both releases support herdr 0.9.0
-through 0.9.3 / protocol 22, all four supported computer architectures, API 5
-and encrypted transport 2.
+GitHub's [Latest release](https://github.com/iYassr/shahi/releases/tag/v0.3.25)
+is also 0.3.25, with draft and prerelease disabled. Its immutable version tag
+points directly at the same frozen commit. Catalog selection was checked on
+all four platforms with Bun 1.3.13 and herdr 0.9.3. The approved package
+supports herdr 0.9.0 through 0.9.3 / protocol 22, all four supported computer
+architectures, API 5 and encrypted transport 2.
 
-The 0.3.19 computer service boots and pairs successfully. There is no evidence
-that the Stable lag breaks service installation, authentication or ordinary
-relay access. It does leave a first-use problem: current Claude Code can show
-its folder-trust menu without writing a session record, so the older service's
-Reader offers older conversations instead of recognizing that no new
-conversation exists yet. Release 0.3.20 fixes that state. Its pairing-display
-and browser onboarding improvements, and 0.3.23's Changes, command lists and
-sealed notification actions, also require the newer approved computer package.
-For the complete advertised launch experience, an updated Stable release is a
-release gate.
-
-The launch changes include updated browser assets and a dependency lockfile,
-so rebuilding the existing immutable 0.3.23 release is inappropriate. Publish
-0.3.24 through [the release workflow](releases.md), which runs full CI for
-Stable and checks the published package's signed approval. The actual-artifact
-upgrade/rollback proof below covers the existing 0.3.19 and 0.3.23 packages;
-repeat the required release smoke for the new 0.3.24 artifact.
+The initial review selected Stable 0.3.19 and Beta 0.3.23. The older Stable
+service installed, authenticated and relayed successfully, but current Claude
+Code's folder-trust menu could appear before any session record existed, leaving
+Reader showing older conversations. The newer approved Stable includes the
+first-use fix, pairing/browser onboarding changes, Changes, command lists and
+sealed notification actions. The computer-package release gate is now closed.
+Physical-device notification acceptance and App Store publication are separate
+native release checks.
 
 ## Verification performed
 
@@ -47,7 +39,9 @@ repeat the required release smoke for the new 0.3.24 artifact.
 | Local relay suite, independent port and disposable Worker state | 139 passed; 0 failed; 1,359 assertions |
 | Targeted HTTP security, auth, configuration, secret handling and plugin suite | 223 passed; 0 failed; 1,050 assertions |
 | Operations deadline, incident-state and cache suite | 7 passed; 0 failed; 34 assertions |
-| Actual published 0.3.19 → 0.3.23 → 0.3.19 package smoke | Passed; signatures, lengths and archive hashes verified |
+| Actual published 0.3.19 → 0.3.25 → 0.3.19 package smoke | Passed; signatures, lengths and archive hashes verified |
+| Signed Beta vs manual CI and Stable-run package contents | Passed; exact source commit, contracts and all 20 extracted files match |
+| Clean macOS and Linux notice ownership checks, Bun 1.3.13 | 9 passed; 0 failed; 21 assertions on each OS |
 | Native upload CI/session gates and website artifact guard | 28 passed; 0 failed; 51 assertions |
 | Public relay health | HTTP 200, expected service JSON, `Cache-Control: no-store` |
 | Public relay cleartext HTTP | HTTP 301 to HTTPS |
@@ -59,9 +53,9 @@ repeat the required release smoke for the new 0.3.24 artifact.
 The published-package smoke used a temporary database, random fixture keys,
 loopback HTTP port and a recording unix socket. It proved:
 
-- A fresh 0.3.19 service boots with approved herdr 0.9.3 and pairs a disposable
-  device.
-- Upgrading to the actual 0.3.23 package preserves computer identity and the
+- A fresh 0.3.25 service boots with approved herdr 0.9.3 and pairs a disposable
+  device; the historical 0.3.19 service also boots and pairs before the upgrade.
+- Upgrading to the actual 0.3.25 package preserves computer identity and the
   device's existing cookie; its bundled HTML and referenced assets are present.
 - Its control handshake offers `changes`, `push-actions` and `commands`.
 - API 4 and an unsupported newer ordinary API receive 426. A newer API can
@@ -71,39 +65,60 @@ loopback HTTP port and a recording unix socket. It proved:
   restores ordinary access.
 - Rolling back to 0.3.19 preserves computer identity and device access.
 
-The recording fixture received **zero herdr writes**. No production service
-was changed, no release was published and no alert/test email was sent.
+The recording fixture received **zero herdr writes**. No production computer
+service or agent session was changed, and no alert/test email was sent. Public
+release publication was performed separately through the protected workflow.
 
 ## Final release artifact gate
 
-The prepared 0.3.24 smoke requires the signed Beta catalog's pinned-key
-verification and exact frozen source commit before running the package. It
-checks fresh pairing, the 0.3.19 upgrade and rollback path, preserved identity
-and paired-device access, API/recovery boundaries, bundled entry assets and a
-stamped service worker. Its database, HOME/XDG directories and recording herdr
-socket are disposable; no existing computer or agent session is used.
+The final source is `3cf883cfc057407cbdb9f59e1e9419c61f97918c`. The
+[manual full-CI run](https://github.com/iYassr/shahi/actions/runs/37170699728),
+[Beta release](https://github.com/iYassr/shahi/actions/runs/37170702958) and
+[Stable release](https://github.com/iYassr/shahi/actions/runs/37170876540)
+completed successfully on that same commit. The immutable earlier 0.3.24
+package was preserved; the final corrections received the new 0.3.25 version.
 
-Stable publication should wait for a separate comparison of the signed Beta
-package and the package produced by full CI on that same commit. Each archive
-must match its own manifest's digest and length. Their release contracts and
-complete extracted path/file contents must match exactly. Public source maps,
-keys and environment files are refused by the comparison.
+The published 0.3.25 archive was verified against its pinned-key signed Beta
+approval, then compared separately with the actual package artifacts from
+manual full CI and the Stable workflow. Each archive matched its own manifest's
+SHA-256 and length. Their release contracts and every extracted file matched
+exactly: **20 files, 4,124,458 expanded bytes**, with payload fingerprint
+`1c5402540dc02889acd6256a0cc10f7b6f3aea078050285a321a1e401e2300c7`.
+The signed Stable catalog independently approves that same published manifest.
+Public source maps, keys and environment files were refused by the comparison.
+
+The actual published-package smoke passed fresh pairing and the
+**0.3.19 → 0.3.25 → 0.3.19** path, preserved identity and paired-device
+access, rejected unsupported ordinary API versions, retained authenticated
+recovery, recovered after an unsupported herdr, served all four referenced
+entry assets and contained a stamped service worker. Its database, HOME/XDG
+directories and recording herdr socket were disposable; no existing computer
+or agent session was used. Production writes and herdr writes were both zero.
 
 Compressed archive equality is not a valid expectation with the current
-builder: a local experiment with identical input files produced different TAR
-entry timestamps and therefore different archive hashes. The service worker,
-notices and Vite debug identifiers are derived from content. The comparison
-excludes container timestamps and entry order, while requiring every executable
-and web asset byte to match. Existing Stable promotion checks the published
-archive against its signed approval; it does not enforce equality with the
-rebuilt full-CI package. The independent comparison closes that launch gate.
+builder: TAR entry timestamps change archive hashes even when files match.
+The service worker, notices and Vite debug identifiers are derived from
+content. The comparison excludes container timestamps and entry order while
+requiring every executable and web asset byte to match. Existing Stable
+promotion authenticates the published archive against its signed approval;
+it does not enforce equality with the rebuilt full-CI package. The independent
+comparison closes that launch gate.
+
+The failed earlier notice check was traced to resolving an optional peer in
+unrelated ancestor `node_modules` outside the checkout. The corrected lookup
+stops at the installation root and retains installed optional peers inside it.
+Clean macOS and Linux with official Bun 1.3.13 both reach 900 package directories
+and 786 unique package/version IDs, with the same closure digest. Regeneration
+preserved all **100 notices and 50 distinct licence texts**; only the closure
+hash changed. Existing bundled-package, autolinked-native, actual-licence and
+external-Pods checks remain intact, alongside the new boundary regression.
 
 The website receipt guard independently passed checks for modified, missing
 and extra files, wrong source commits, hidden/source/key/map paths, symlinks,
 embedded credentials and malformed or oversized receipts. The native upload
-guard requires a successful manual CI run on the build's exact master commit
-and preserves any preexisting runner session. Actual 0.3.24 artifact results
-remain pending until publication and full CI complete.
+guard requires successful manual CI on the build's exact master commit and
+preserves any preexisting runner session. These guard checks do not establish
+App Store approval or physical-device notification delivery.
 
 ## Dependency review
 
@@ -129,7 +144,11 @@ libheif advisory. Scoped npm overrides now select Undici 7.29.1 and Sharp
 0.35.4 in that separate demo lockfile. Direct dependency versions are unchanged.
 Its frozen install and audit returned zero advisories; types, worker dry-run,
 five simulated-model tests and four state/archive tests passed. No demo
-deployment or live session was changed; GitHub's scan may lag the source fix.
+deployment or live session was changed. GitHub's current SBOM independently
+indexes Undici 7.29.1 and Sharp 0.35.4, while the final alerts API read still
+reports the seven old demo findings open. The alert state is reported
+separately from the verified dependency versions; none were dismissed or
+suppressed.
 
 The full root audit additionally reports ten Undici 7.29.0 development-tool
 advisories through Miniflare: two high, five moderate and three low. Bun

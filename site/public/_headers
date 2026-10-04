@@ -111,6 +111,11 @@
   ! Cross-Origin-Resource-Policy
   Cross-Origin-Resource-Policy: cross-origin
 
+/feature-previews/*
+  # Real app screenshots have stable URLs; revalidate after a new capture.
+  # Keep the global no-transform so the served image matches the reviewed PNG.
+  Cache-Control: max-age=0, must-revalidate
+
 /
   # media-src: the launch video and its captions, from /media/ on this origin
   # (site/src/media.ts). Without it both engines refused the video, even with

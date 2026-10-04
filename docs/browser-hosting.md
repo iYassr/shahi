@@ -237,6 +237,36 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 4 October 2026, public launch and interface languages
+
+Published from clean commit `3cf883cfc057407cbdb9f59e1e9419c61f97918c` as
+Cloudflare **`7138adc0-9fae-46c5-8352-f36bec8b1d49`**. It replaced
+`d7ce91d2-b28e-48e9-be87-32009625f7ac`, the rollback version. The landing
+page has nine feature cards, public App Store links, current availability and
+a silent demo. The PWA adds English, Arabic and Spanish interfaces and keeps
+agent conversations and code in their original language.
+
+The protected [website preparation run](https://github.com/iYassr/shahi/actions/runs/37170704757)
+uploaded matching Sentry maps and preserved an exact 49-file / 3,447,014-byte
+artifact. That artifact was downloaded, verified against its complete digest
+receipt, and deployed without rebuilding from the clean checkout. The receipt
+and source maps were kept outside the served directory. GitHub's artifact ZIP
+digest is `db5a38dc08d100483e969436f1710d0596b0c51c1640376ef41039400eae81a1`.
+
+All **91 live probes passed**: every served artifact file matched its
+decompressed SHA-256, `_headers`/`_redirects` remained hidden, routing and
+private-file refusal were correct, cache/security headers held, and all four
+media objects matched their digests, types and range behavior. Both videos
+contain no audio. Live Chrome showed three-column desktop and one-column
+320-pixel feature cards without horizontal overflow. English/Arabic/Spanish
+onboarding, RTL/LTR changes and saved Arabic preference passed; installation
+commands retained their exact LTR text. The original device-language preference
+and browser viewport were restored.
+
+Exact-source manual CI and the separate Stable release matrix passed. Signed
+computer release 0.3.25 is public; native 1.1.0 build 39 is submitted for
+automatic release after Apple review. No relay deployment was needed.
+
 ## Verified deployment — 3 October 2026, Changes, sealed notifications and slash commands
 
 Published the site and hosted client from a clean checkout of `76a177f`

@@ -38,8 +38,14 @@ to master publishes nothing and starts no CI.
 version on master's HEAD after the `releases` environment approves it. A Stable
 release first runs the whole of CI on that commit; a Beta release only builds
 the package and runs its tests and upgrade smoke checks (owner's policy,
-October 2026). Promoting a Beta version to Stable rebuilds it under full CI and
-publishes only if the rebuilt package matches the Beta package byte for byte.
+October 2026). Promoting a Beta version to Stable rebuilds a candidate under
+full CI and publishes the immutable bytes approved by the signed Beta catalog.
+`published.ts` verifies the published archive's own digest/size and signed
+manifest approval; it does not compare the rebuilt archive's contents. Before
+environment approval, compare the approved Beta and exact-source CI candidates'
+release contracts, complete extracted paths and file contents. Compressed hashes
+alone cannot establish equality because TAR metadata changes between builds.
+Any runtime or compatibility change after Beta requires a new release version.
 Before an App Store production submission, run `gh workflow run ci.yml --ref
 master` on the exact commit of the build and submit only when it is green.
 
@@ -107,8 +113,9 @@ To release: bump `plugin/releases/release.json`, `herdr-plugin.toml` and
 `plugin/releases/notes/<version>.md` with user-facing changes under `###` headings
 (the workflow publishes it, and a test requires it). A test enforces version
 agreement; `/api/meta`'s
-`serverVersion` and `shahi.status` report it. Run the release matrix, then
-merge that tested commit to `master`, then run **Approve Shahi release** there.
+`serverVersion` and `shahi.status` report it. Run local type and canonical unit
+checks, commit directly to `master` under the owner's current policy, then run
+**Approve Shahi release** there. Stable runs its required release matrix.
 The release environment permits only the `master` branch; signing jobs also
 check that ref. Third-party build actions are pinned to full commit hashes, and
 every checkout in every workflow sets `persist-credentials: false`. Publish to
