@@ -30,7 +30,11 @@ class FakeXterm {
 }
 mock.module("@xterm/xterm", () => ({ Terminal: FakeXterm }));
 mock.module("@xterm/xterm/css/xterm.css", () => ({}));
-const { Terminal } = await import("./Terminal");
+// A copy of its own: PaneView's tests load the component with the real xterm,
+// and Bun 1.3.13 then handed this file that copy, mock or not. That happened on
+// the macOS CI runner, which listed PaneView's tests first; Bun 1.4.0 and the
+// Linux order both hid it (2026-10-05).
+const { Terminal } = await import("./Terminal?fake-xterm");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let view: ReactTestRenderer | undefined;
