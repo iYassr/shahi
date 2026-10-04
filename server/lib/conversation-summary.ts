@@ -49,10 +49,11 @@ const locations = new Map<string, { key: string; at: number; source: Promise<Tra
 const LOCATION_MAX_AGE_MS = 15_000;
 
 // A person's choice counts as a session here, so choosing one is looked up at once.
-// A Codex pane's title can name its conversation (codex-log.ts `rolloutFromTitle`), so
-// a new title is a new lookup there.
-const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane.pane_id), pane.agent_status,
-  pane.agent === "codex" ? pane.terminal_title_stripped ?? pane.terminal_title ?? null : null]);
+// The title is left out on purpose, though a Codex pane's title can name its
+// conversation (codex-log.ts `rolloutFromTitle`): a pane that retitled itself
+// twice a second drove 680 process lookups in 15s. The reader and the
+// transcript watcher look afresh, and a status change or 15s refresh this.
+const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane.pane_id), pane.agent_status]);
 
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
 export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource | null> {
