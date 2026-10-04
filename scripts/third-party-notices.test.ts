@@ -14,7 +14,7 @@ import { EXTERNAL_PODS } from "../mobile/src/screens/native-notices";
 import { closureDigest, collectNotices, dependencyClosure, externalPods, formatNotices, packageDirOf } from "./third-party-notices";
 
 const REGENERATE = "Run `bun run notices:app` and commit mobile/src/screens/third-party-notices.json.";
-const closure = dependencyClosure(MOBILE);
+const closure = dependencyClosure(MOBILE, join(MOBILE, ".."));
 
 test("the app's notices are regenerated whenever its dependencies change", () => {
   // Every package the app can ship is in this closure, at the version
@@ -59,6 +59,29 @@ function install(name: string, manifest: object, files: Record<string, string> =
   }
   return dir;
 }
+
+test("notice ownership stops at the installation root while retaining installed optional peers", () => {
+  const root = join(fixture, "ownership-checkout"), app = join(root, "mobile");
+  mkdirSync(app, { recursive: true });
+  writeFileSync(join(app, "package.json"), JSON.stringify({ name: "app", dependencies: { host: "1.0.0" } }));
+  const put = (base: string, name: string, properties: object) => {
+    const dir = join(base, "node_modules", name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", ...properties }));
+  };
+  put(root, "host", { dependencies: { owned: "1.0.0" }, peerDependencies: { optionalTool: "*" }, peerDependenciesMeta: { optionalTool: { optional: true } } });
+  put(root, "owned", {});
+  put(fixture, "optionalTool", { version: "99.0.0", dependencies: { ambientHelper: "1.0.0" } });
+  put(fixture, "ambientHelper", {});
+  const before = dependencyClosure(app, root);
+  expect([...before.values()].sort()).toEqual(["host@1.0.0", "owned@1.0.0"]);
+  put(root, "optionalTool", { version: "2.0.0", dependencies: { peerHelper: "1.0.0" } });
+  put(root, "peerHelper", {});
+  const after = dependencyClosure(app, root);
+  expect([...after.values()].sort()).toEqual(["host@1.0.0", "optionalTool@2.0.0", "owned@1.0.0", "peerHelper@1.0.0"]);
+  expect(closureDigest(after)).not.toBe(closureDigest(before));
+  expect(() => dependencyClosure(app, join(root, "node_modules"))).toThrow("inside its installation root");
+});
 
 test("a package with no licence file is named with where its licence is, never given an invented text", () => {
   const dir = install("bare", { license: "MIT", repository: { url: "git+https://github.com/example/bare.git" } });

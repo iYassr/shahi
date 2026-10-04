@@ -14,7 +14,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 export interface PackageNotice {
   name: string;
@@ -198,16 +198,27 @@ export function groupByText(notices: Notices): { packages: PackageNotice[]; text
   return [...groups, ...without];
 }
 
-function resolvePackage(name: string, from: string): string | undefined {
-  for (let dir = from; ; dir = dirname(dir)) {
+function withinInstallation(dir: string, root: string): boolean {
+  const under = relative(root, dir);
+  return under !== ".." && !under.startsWith(`..${sep}`) && !isAbsolute(under);
+}
+
+function resolvePackage(name: string, from: string, root: string): string | undefined {
+  for (let dir = from; withinInstallation(dir, root); dir = dirname(dir)) {
     const candidate = join(dir, "node_modules", name);
-    if (existsSync(join(candidate, "package.json"))) return realpathSync(candidate);
-    if (dirname(dir) === dir) return undefined;
+    if (existsSync(join(candidate, "package.json"))) {
+      const resolved = realpathSync(candidate);
+      if (!withinInstallation(resolved, root)) throw new Error("A notice dependency resolves outside the project's installation root.");
+      return resolved;
+    }
+    if (dir === root || dirname(dir) === dir) break;
   }
+  return undefined;
 }
 
 /**
- * Every installed package the project's production dependencies reach, as
+ * Every installed package the project's production dependencies reach inside
+ * its installation root, as
  * directory → `name@version`: dependencies and installed peers, never dev or
  * optional ones. Optional dependencies are skipped because they are the
  * platform-specific binaries of build tools, installed on one OS and not
@@ -216,20 +227,25 @@ function resolvePackage(name: string, from: string): string | undefined {
  * It is wider than any bundle — Expo's CLI and Metro are in it — which is the
  * point: no package can enter a build without first entering this list, so a
  * change to it is exactly when the notices must be generated again.
+ * A workspace passes its monorepo root explicitly. Never walk above it: an
+ * unrelated ancestor's optional peer installation is not part of this build.
  */
-export function dependencyClosure(project: string): Map<string, string> {
+export function dependencyClosure(project: string, installationRoot = project): Map<string, string> {
+  const root = realpathSync(installationRoot);
+  const start = realpathSync(project);
+  if (!withinInstallation(start, root)) throw new Error("The notice project must be inside its installation root.");
   const found = new Map<string, string>();
   const visit = (dir: string) => {
     const pkg = manifest(dir);
     for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
-      const resolved = resolvePackage(name, dir);
+      const resolved = resolvePackage(name, dir, root);
       if (!resolved || found.has(resolved)) continue;
       const dependency = manifest(resolved);
       found.set(resolved, `${dependency.name}@${dependency.version}`);
       visit(resolved);
     }
   };
-  visit(realpathSync(project));
+  visit(start);
   return found;
 }
 

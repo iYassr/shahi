@@ -78,7 +78,7 @@ export function Changes({ paneId, status }: { paneId: string; status?: string })
           {changes.note && <li className="changes__note">{t(changes.note)}</li>}
           {changes.files.map((file) => (
             <li key={file.path}>
-              <button className="changes__file" aria-label={[t("{path}, {status}", { path: file.path, status: t(CHANGE_STATUS[file.status].label).toLocaleLowerCase(locale) }), file.from ? t("from {path}", { path: file.from }) : "", file.added !== null && file.removed !== null ? t("{added} {lines} added, {removed} removed", { added: file.added, removed: file.removed, lines: t(file.added === 1 ? "line" : "lines") }) : ""].filter(Boolean).join(", ")} onClick={() => setOpen(file)}>
+              <button className="changes__file" aria-label={[t("{path}, {status}", { path: file.path, status: t(CHANGE_STATUS[file.status].label).toLocaleLowerCase(locale) }) + (file.from ? ` ${t("from {path}", { path: file.from })}` : ""), file.added !== null && file.removed !== null ? t("{added} {lines} added, {removed} removed", { added: file.added, removed: file.removed, lines: t(file.added === 1 ? "line" : "lines") }) : ""].filter(Boolean).join(", ")} onClick={() => setOpen(file)}>
                 <span className="changes__status" data-status={file.status} aria-hidden="true">{CHANGE_STATUS[file.status].letter}</span>
                 <span className="changes__path" aria-hidden="true">
                   <span className="changes__dir">{folderOf(file.path)}</span><span className="changes__base">{nameOf(file.path)}</span>

@@ -38,4 +38,12 @@ test("the built app declares dictation's microphone and speech purposes, no Face
   // No placeholder wording of any kind: every purpose string is Shahi's own.
   for (const [key, value] of Object.entries(plist)) if (key.endsWith("UsageDescription")) expect(value).not.toMatch(/\$\(PRODUCT_NAME\)/);
   expect(config.exp.android.permissions).not.toContain("android.permission.RECORD_AUDIO");
+  // Managed EAS builds discover targets before the native project exists.
+  // The generated notification extension needs its own signing credentials
+  // and only its dedicated shared group, never the app's credential group.
+  const bundle = config.exp.ios.bundleIdentifier;
+  expect(config.exp.extra.eas.build.experimental.ios.appExtensions).toContainEqual({
+    targetName: "NotificationService", bundleIdentifier: `${bundle}.NotificationService`,
+    entitlements: { "keychain-access-groups": [`$(AppIdentifierPrefix)${bundle}.push`] },
+  });
 });

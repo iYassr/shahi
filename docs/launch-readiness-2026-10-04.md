@@ -18,7 +18,7 @@ public launch material. Release outcomes are recorded separately from tests.
   Conversations, names, filenames, agent questions and terminal text remain
   in their original language. Live dictation remains English on supported
   iPhones running iOS 26 or later.
-- Computer 0.3.24: reviewed current Codex startup captures, localized browser
+- Computer 0.3.25: reviewed current Codex startup captures, localized browser
   assets and notification offline-navigation fix. API 5, transport 2 and
   existing supported pairings stay compatible.
 - iPhone 1.1: refreshed native binary required. The public 1.0.0 App Store
@@ -97,7 +97,7 @@ message was sent and mailbox receipt/staffing are not proven by that summary.
 
 The signed, hash-verified published 0.3.19 → 0.3.23 → 0.3.19 smoke preserved
 computer identity and device credentials, exercised recovery/version gates
-and made zero herdr writes. Repeat packaging checks for 0.3.24 and retain the
+and made zero herdr writes. Repeat packaging checks for 0.3.25 and retain the
 previous approved computer release and website deployment as rollback paths.
 
 ## Native release and remaining acceptance

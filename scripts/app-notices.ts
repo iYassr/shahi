@@ -98,7 +98,7 @@ function linkedPackages(): string[] {
 }
 
 if (import.meta.main) {
-  const closure = dependencyClosure(MOBILE);
+  const closure = dependencyClosure(MOBILE, root);
   const files = bundledFiles();
   const shipped = new Set([...files.map((file) => packageDirOf(file)!), ...linkedPackages()]);
   // Anything shipped must be reachable from the app's production

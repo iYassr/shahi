@@ -37,6 +37,19 @@ module.exports = function withNotificationService(config) {
   const team = config.ios?.appleTeamId;
   if (!bundleId || !team) throw new Error("The notification service extension needs ios.bundleIdentifier and ios.appleTeamId in app.json.");
   const shared = `$(AppIdentifierPrefix)${bundleId}.push`;
+  // EAS discovers signing targets before prebuild creates the Xcode project.
+  // Declare the same target here so a managed cloud archive also receives its
+  // distribution profile and shared-keychain entitlement.
+  const eas = config.extra?.eas ?? {};
+  const build = eas.build ?? {};
+  const experimental = build.experimental ?? {};
+  const ios = experimental.ios ?? {};
+  config.extra = { ...config.extra, eas: { ...eas, build: { ...build, experimental: { ...experimental, ios: {
+    ...ios, appExtensions: [
+      ...(ios.appExtensions ?? []).filter(extension => extension.targetName !== TARGET),
+      { targetName: TARGET, bundleIdentifier: `${bundleId}.${TARGET}`, entitlements: { "keychain-access-groups": [shared] } },
+    ],
+  } } } } };
 
   config = withEntitlementsPlist(config, mod => {
     mod.modResults["keychain-access-groups"] = [`$(AppIdentifierPrefix)${bundleId}`, shared];
