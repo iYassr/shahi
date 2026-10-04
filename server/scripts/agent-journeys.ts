@@ -27,7 +27,7 @@
  * in its history under that folder. Nothing prints conversation text: the
  * reply is a token, checked by comparison only.
  */
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startAgentInTab } from "../lib/agents";
@@ -68,6 +68,10 @@ if (!existsSync(join(repo, ".git"))) Bun.spawnSync(["git", "init", "--quiet", re
 const nonce = Math.random().toString(36).slice(2, 8);
 const runDir = join(realpathSync(repo), `run-${nonce}`);
 mkdirSync(runDir);
+// And a folder per journey within it: Codex names threads from their first
+// message, so both Codex journeys' threads were "Reply with exact word", and
+// two threads of one name in one folder are refused (ubuntu, 2026-10-04).
+const folderOf = (kind: Kind, launch: Launch) => join(runDir, `${kind}-${launch}`);
 
 const server = Bun.spawn(["herdr", "--session", session, "server"], { env, stdout: "ignore", stderr: "ignore" });
 const client = new HerdrClient({ socketPath: join(xdg, "herdr", "sessions", session, "herdr.sock"), timeoutMs: 10_000 });
@@ -103,11 +107,13 @@ async function ready(paneId: string): Promise<void> {
 }
 
 async function start(kind: Kind, launch: Launch, workspaceId: string): Promise<string> {
+  const cwd = folderOf(kind, launch);
+  mkdirSync(cwd);
   if (launch === "shahi") {
-    const { paneId } = await startAgentInTab(rpc, { workspaceId, cwd: runDir, label: `${kind}-shahi`, kind, name: `${kind}-shahi-${nonce}` });
+    const { paneId } = await startAgentInTab(rpc, { workspaceId, cwd, label: `${kind}-shahi`, kind, name: `${kind}-shahi-${nonce}` });
     return paneId;
   }
-  const { root_pane: { pane_id: paneId } } = await rpc("tab.create", { workspace_id: workspaceId, label: `${kind}-hand`, cwd: runDir, focus: false });
+  const { root_pane: { pane_id: paneId } } = await rpc("tab.create", { workspace_id: workspaceId, label: `${kind}-hand`, cwd, focus: false });
   await Bun.sleep(2_000); // the shell's first prompt
   await rpc("pane.send_text", { pane_id: paneId, text: kind });
   await Bun.sleep(200);
@@ -131,7 +137,7 @@ async function look(paneId: string, token: string): Promise<Look> {
 }
 
 /** What Reader had to go on, for a failure: herdr's view and the title, never conversation text. */
-async function signals(paneId: string, token: string): Promise<string> {
+async function signals(paneId: string, token: string, folder: string): Promise<string> {
   const { pane } = await rpc("pane.get", { pane_id: paneId });
   const title: string = pane?.terminal_title_stripped ?? pane?.terminal_title ?? "";
   const facts = [
@@ -145,7 +151,7 @@ async function signals(paneId: string, token: string): Promise<string> {
       const db = openReadOnly(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "state_5.sqlite"));
       try {
         const rows = db.query("SELECT cwd FROM threads WHERE name = ? AND archived = 0").all(title.slice(0, at).trim()) as { cwd: string }[];
-        facts.push(`Codex threads with that name: ${rows.length}, in this folder: ${rows.filter((row) => row.cwd === runDir).length}`);
+        facts.push(`Codex threads with that name: ${rows.length}, in this folder: ${rows.filter((row) => row.cwd === folder).length}`);
       } finally { db.close(); }
     } catch (err) { facts.push(`Codex index unreadable: ${(err as { code?: string }).code ?? err}`); }
   }
@@ -165,12 +171,12 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
     const deadline = Date.now() + 180_000;
     let seen = await look(paneId, token);
     while (!seen.reply && Date.now() < deadline) { await Bun.sleep(3_000); seen = await look(paneId, token); }
-    if (!seen.reply) failures.push(`${seen.found ? "Reader found a conversation without the reply" : "Reader found no conversation"} (${await signals(paneId, token)})`);
+    if (!seen.reply) failures.push(`${seen.found ? "Reader found a conversation without the reply" : "Reader found no conversation"} (${await signals(paneId, token, folderOf(kind, launch))})`);
     else {
       // Then a minute of looking again: the macOS index failure came and went.
       for (const end = Date.now() + STEADY_MS; Date.now() < end && failures.length === 0; await Bun.sleep(5_000)) {
         const again = await look(paneId, token);
-        if (!again.found) failures.push(`Reader lost the conversation after ${Math.round((STEADY_MS - (end - Date.now())) / 1000)} s (${await signals(paneId, token)})`);
+        if (!again.found) failures.push(`Reader lost the conversation after ${Math.round((STEADY_MS - (end - Date.now())) / 1000)} s (${await signals(paneId, token, folderOf(kind, launch))})`);
         else if (!again.reply) failures.push("Reader's page lost the reply");
         else if (!again.preview) failures.push(`the agent list showed no preview after ${Math.round((STEADY_MS - (end - Date.now())) / 1000)} s`);
         else if (again.parity) failures.push(`Read and Screen disagree: ${again.parity}`);
@@ -193,9 +199,15 @@ function cleanUp(): void {
   rmSync(root, { recursive: true, force: true });
   // Claude keeps a folder's transcripts under its path with every
   // non-alphanumeric character as "-", and its project memory under the
-  // repository's; both folders belong to these journeys alone.
+  // repository's; the run's folders and the repository's belong to these
+  // journeys alone.
   const claudeProjects = join(homedir(), ".claude", "projects");
-  for (const folder of [runDir, realpathSync(repo)]) rmSync(join(claudeProjects, folder.replace(/[^A-Za-z0-9]/g, "-")), { recursive: true, force: true });
+  const encoded = (folder: string) => folder.replace(/[^A-Za-z0-9]/g, "-");
+  let projects: string[] = [];
+  try { projects = readdirSync(claudeProjects); } catch {}
+  for (const name of projects) {
+    if (name === encoded(realpathSync(repo)) || name.startsWith(encoded(runDir))) rmSync(join(claudeProjects, name), { recursive: true, force: true });
+  }
   rmSync(runDir, { recursive: true, force: true });
 }
 // `timeout` and launchd end a run with a signal, which skips `finally`; a run
