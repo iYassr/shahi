@@ -88,3 +88,17 @@ standalone layout, with a synthetic latest-version record of 9.0.0 to draw
 the update offer offline. No update choice was selected.
 These two captures normalize line endings and trailing empty terminal rows;
 their text, ANSI color spans and menu alignment are retained.
+
+## Codex 0.160 question panels
+
+The `blocked__codex-user-input-0.160-*__text.txt` files were captured on
+4 October 2026 with checksum-verified herdr 0.9.3 and official Codex 0.160.0
+in an isolated named session. A loopback Responses fixture supplied synthetic
+questions, so no paid model request or owner's conversation was read. Default
+and Plan both advanced with a single digit. Tab opened notes; Enter submitted
+notes with the selected choice. The Other choice's digit submitted at once.
+
+Only the question panel was extracted from each real screen, unchanged apart
+from dropping trailing empty terminal rows. Shell, account and scratch-path
+chrome is outside these tracked fixtures. The notes captures cover the empty
+field, typed notes, Other selection and an existing draft with appended text.

@@ -597,7 +597,9 @@ function BlockedCard({
   function choose(option: PromptOption) {
     setArmed(option.index);
     setFailure(null);
-    onAnswer(option).catch((e: unknown) => {
+    onAnswer(option).then(() => {
+      if (option.textInput) setArmed(null);
+    }).catch((e: unknown) => {
       const message = `Couldn’t answer: ${e instanceof Error ? e.message : String(e)}`;
       setArmed(null);
       setFailure(message);
@@ -641,7 +643,7 @@ function BlockedCard({
                 // The option's words, not its glyphs: VoiceOver used to read
                 // the cursor mark and the blank beside it ("❯, 1., Red").
                 // Where the terminal's cursor sits is a state, said as one.
-                accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${label}` : label, option.detail]
+                accessibilityLabel={[prompt.answer === "digit" && !option.key ? `${option.index}. ${label}` : label, option.detail]
                   .filter(Boolean).join(", ")}
                 accessibilityState={{ selected: lit, disabled: armed !== null || stale }}
                 key={option.index}
@@ -650,8 +652,8 @@ function BlockedCard({
                 onPress={() => choose(option)}
               >
                 <UiText style={styles.cursor}>{lit ? "❯" : " "}</UiText>
-                {/* The digit is what the terminal takes; a cursor menu has none. */}
-                {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
+                {/* Show a digit only when it is the key the terminal takes. */}
+                {prompt.answer === "digit" && !option.key && <Text style={styles.choiceIndex}>{option.index}.</Text>}
                 <View style={styles.choiceBody}>
                   <Text style={styles.choiceLabel}>{label}</Text>
                   {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}

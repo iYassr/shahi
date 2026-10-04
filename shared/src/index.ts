@@ -144,7 +144,8 @@ export interface InstalledAgent {
 export interface PromptOption {
   /**
    * 1-based, in display order. In a numbered menu it is the digit shown and
-   * the one the server presses; in a cursor menu it only names the row.
+   * the one the server presses unless `key` names a printed shortcut; in a
+   * cursor menu it only names the row.
    */
   index: number;
   label: string;

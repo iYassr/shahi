@@ -5,7 +5,7 @@ import { Icon } from "@/components/icons";
 import { PDFView, shareFile } from "@/components/pdf-view";
 import { nativeDraft, notifyNativeDraft } from "@/lib/drafts";
 import type { SetStateAction } from "react";
-import { agentLabel, ansiLines, backendUnavailable, homePath, messageTime, REPLY_SETTLE_MS, slashQuery, spanColours, supports, waitingForReply, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, shownLabels, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
+import { agentLabel, answerRefused, ansiLines, backendUnavailable, homePath, messageTime, promptIdentity, REPLY_SETTLE_MS, slashQuery, spanColours, supports, waitingForReply, readerRows, readerActivityLabel, readerTasks, readerTasksLabel, sendRefusedBeforeTyping, shownLabels, type AnsiLine, type AnsiSpan, type ReaderRow, type ReaderActivity, type ReaderTask, type ReaderTaskList } from "@shahi/shared";
 import { ConnectionHealth } from "@/components/connection-health";
 import { CommandPicker, ReplyChips, usePaneCommands } from "@/components/composer-shortcuts";
 /**
@@ -269,6 +269,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   const [away, setAway] = useState(typeof scrollMemory.get(paneId) === "object");
   const [unseen, setUnseen] = useState(0);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
+  // chase reads before /answer reaches the terminal. Keep recent appearances
+  // closed even when the next question is answered before the prior reply lands.
+  const dismissedPrompts = useRef(new Map<string, { pending: boolean; exactId: boolean }>());
   const [activity, setActivity] = useState<Activity | null>(null);
   /**
    * Optimistic "working" shown the instant you send, until the agent responds.
@@ -643,6 +646,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
   // What this pane is, as far as the dashboard knows. A plain shell is not an
   // agent, and asking someone to "reply" to their own bash prompt is nonsense.
   const pane = session?.panes.find((p) => p.paneId === paneId);
+  useEffect(() => { dismissedPrompts.current.clear(); }, [api, paneId, activeComputerId, pane?.instanceId]);
   const diagnosticContext = useRef({ provider: pane?.agent, eligible: false, historyKnown: false, transport: "direct" as "relay" | "ssh" | "direct", computerVersion: undefined as string | undefined, herdrVersion: undefined as string | undefined });
   diagnosticContext.current = { provider: pane?.agent, eligible: focused && view === "reader" && !cannotWrite,
     historyKnown: !!pane?.lastMessageAt || !!pane?.preview || messagesRef.current.length > 0 || pending.length > 0,
@@ -757,6 +761,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     // Start and apply both responses independently: a slow transcript must
     // never hold terminal output or permission prompts behind Read loading.
     const logRequest = Date.now() < logPausedUntil.current ? null : api.sessionLog(paneId, 60);
+    const settledAtRead = [...dismissedPrompts.current].filter(([, dismissal]) => !dismissal.pending);
     const detailRequest = api.pane(paneId);
     const readLog = async () => {
       if (!logRequest) return;
@@ -783,6 +788,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         }
         transcript.current = source;
         if (switched) {
+          dismissedPrompts.current.clear();
           messagesRef.current = [];
           // Counts taken against the old transcript mean nothing in the new one.
           awaitingBaselineAgents.current = 0;
@@ -881,7 +887,15 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         const detail = await detailRequest;
         if (!stillActive()) return;
         if (goneRef.current) setGone(false);
-        setPrompt(detail.frame?.prompt ?? null);
+        const nextPrompt = detail.frame?.prompt ?? null;
+        // An old API 5 computer names content rather than an appearance. It
+        // may ask those words again after the prior question genuinely closed.
+        // A read begun before /answer settled cannot establish that transition.
+        if (!nextPrompt) for (const [identity, dismissal] of settledAtRead) {
+          if (!dismissal.exactId && dismissedPrompts.current.get(identity) === dismissal) dismissedPrompts.current.delete(identity);
+        }
+        const sameAppearance = nextPrompt && dismissedPrompts.current.has(promptIdentity(nextPrompt));
+        setPrompt(sameAppearance ? null : nextPrompt);
         const act = detail.frame?.activity ?? null;
         setActivity(act);
         setScreen(detail.frame?.text ?? null);
@@ -995,7 +1009,27 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     if (cannotWrite) return;
     // The card being answered, sent so the server can tell it from a newer one.
     const shown = prompt ?? undefined;
-    setPrompt(null);
+    const shownIdentity = shown ? promptIdentity(shown) : null;
+    const dismissal = shownIdentity ? { pending: true, exactId: !!shown?.promptId } : null;
+    function trimDismissals() {
+      const settled = [...dismissedPrompts.current].filter(([, entry]) => !entry.pending);
+      for (const [identity] of settled.slice(0, Math.max(0, settled.length - 32))) dismissedPrompts.current.delete(identity);
+    }
+    function settleDismissal() {
+      if (dismissal) dismissal.pending = false;
+      // An older pending answer that just settled is recent too. Retain it
+      // instead of evicting it immediately behind newer, completed answers.
+      if (shownIdentity && dismissedPrompts.current.get(shownIdentity) === dismissal && dismissal) {
+        dismissedPrompts.current.delete(shownIdentity);
+        dismissedPrompts.current.set(shownIdentity, dismissal);
+      }
+      trimDismissals();
+    }
+    // Selecting an editable row opens a field, it does not answer the question.
+    if (!option.textInput) {
+      if (shownIdentity && dismissal) dismissedPrompts.current.set(shownIdentity, dismissal);
+      setPrompt(null);
+    }
     beginAwaiting();
     // Chase from the tap, not from the reply to the request: the agent starts
     // moving as soon as herdr has the key, and the fast poll should already be
@@ -1003,9 +1037,26 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     chase();
     try {
       await api.answerPrompt(paneId, option, shown, pane?.instanceId);
+      settleDismissal();
+      if (stillActive()) void load();
       if (option.textInput && stillActive()) { endAwaiting(); composer.current?.focus(); }
     } catch (e) {
+      settleDismissal();
+      if (!stillActive()) return;
       endAwaiting();
+      if (answerRefused(e)) {
+        // Another client moved the screen on. Keep the refused appearance
+        // dismissed and read after the outcome, rather than rearming its keys.
+        if (option.textInput && shownIdentity && dismissal) {
+          dismissedPrompts.current.set(shownIdentity, dismissal);
+          trimDismissals();
+        }
+        setPrompt(current => current && promptIdentity(current) === shownIdentity ? null : current);
+        void load();
+        return;
+      }
+      if (shownIdentity && dismissedPrompts.current.get(shownIdentity) === dismissal) dismissedPrompts.current.delete(shownIdentity);
+      void load();
       showError(e);
       throw e;
     }
@@ -1665,19 +1716,21 @@ function Prompt({
             // One clean sentence rather than the row's parts: the cursor glyph
             // and its blank placeholder were read aloud, and which row the
             // menu's cursor is on was only visible, never spoken.
-            accessibilityLabel={[prompt.answer === "digit" ? `${option.index}. ${label}` : label, option.detail].filter(Boolean).join(". ")}
+            accessibilityLabel={[prompt.answer === "digit" && !option.key ? `${option.index}. ${label}` : label, option.detail].filter(Boolean).join(". ")}
             accessibilityState={{ selected: current, disabled: armed !== null || disabled }}
             key={option.index}
             style={[styles.choice, isArmed && styles.choiceArmed]}
             disabled={armed !== null || disabled}
             onPress={() => {
               setArmed(option.index);
-              void onAnswer(option).catch(() => setArmed(null));
+              void onAnswer(option).then(() => {
+                if (option.textInput) setArmed(null);
+              }).catch(() => setArmed(null));
             }}
           >
             <UiText style={styles.cursor}>{current ? "❯" : " "}</UiText>
-            {/* The digit is what the terminal takes; a cursor menu has none. */}
-            {prompt.answer === "digit" && <Text style={styles.choiceIndex}>{option.index}.</Text>}
+            {/* Show a digit only when it is the key the terminal takes. */}
+            {prompt.answer === "digit" && !option.key && <Text style={styles.choiceIndex}>{option.index}.</Text>}
             <View style={styles.choiceBody}>
               <Text style={styles.choiceLabel}>{label}</Text>
               {option.detail && <Text style={styles.choiceDetail}>{option.detail}</Text>}
@@ -1838,7 +1891,7 @@ export function Block({
                 {option.label}
               </Text>
               {option.description ? (
-                <UiText style={styles.askedWhy} selectable>{option.description}</UiText>
+                <Text style={styles.askedWhy} selectable>{option.description}</Text>
               ) : null}
             </View>
           ))}

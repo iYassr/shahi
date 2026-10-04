@@ -46,7 +46,32 @@ export function codexQuestions(item: Record<string, unknown>): Tool[] {
   const questions = (Array.isArray(item.questions) ? item.questions : []).filter(isRecord)
     .filter(q => typeof q.title === "string" && q.title.trim())
     .map(q => ({ text: q.title as string, options: strings(q.options).map(label => ({ label })) }));
-  return questions.length ? [{ kind: "tool", name: "Question", summary: questions[0]!.text, questions, result: null }] : [];
+  return questions.length ? [{ kind: "tool", name: "Question", summary: questions[0]!.text, questions, result: null, outputUnavailable: true }] : [];
+}
+
+/** Sync input requests are durable raw calls, not completed AgentMessages.
+ * Codex deliberately does not retain its RequestUserInput event in rollouts. */
+export function codexQuestionCall(payload: Record<string, unknown>): Pick<Tool, "questions" | "summary"> | null {
+  if (payload.type !== "function_call" || !["request_user_input", "functions.request_user_input"].includes(stringOr(payload.name, "")) || typeof payload.arguments !== "string") return null;
+  try {
+    const args: unknown = JSON.parse(payload.arguments);
+    if (!isRecord(args) || !Array.isArray(args.questions)) return null;
+    const questions = args.questions.filter(isRecord)
+      .filter(q => typeof q.question === "string" && q.question.trim())
+      .map(q => ({ text: q.question as string, options: (Array.isArray(q.options) ? q.options : []).filter(isRecord)
+        .filter(o => typeof o.label === "string" && o.label.trim())
+        .map(o => ({ label: o.label as string, ...(typeof o.description === "string" && o.description ? { description: o.description } : {}) })) }));
+    return questions.length ? { questions, summary: questions[0]!.text } : null;
+  } catch { return null; }
+}
+
+/** The async handler emits the same questions as prose and structured data.
+ * Omit only its exact generated prose; any distinct authored text stays. */
+export function codexQuestionProse(item: Record<string, unknown>, text: string): boolean {
+  if (item.delivery !== "async" || !Array.isArray(item.questions) || !item.questions.length) return false;
+  if (!item.questions.every(q => isRecord(q) && typeof q.title === "string" && q.title.trim() && (q.options === undefined || q.options === null || Array.isArray(q.options) && q.options.length && q.options.every(option => typeof option === "string" && option.trim())))) return false;
+  const generated = item.questions.filter(isRecord).map(q => [stringOr(q.title, ""), ...strings(q.options).map(option => `- ${option}`)].join("\n")).join("\n\n").trim();
+  return !!generated && text === generated;
 }
 
 export function codexDisplayItem(item: Record<string, unknown>): Display | null {

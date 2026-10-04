@@ -1,6 +1,7 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
-import type { LogBlock } from "@shahi/shared";
+import { translate, type LogBlock } from "@shahi/shared";
+import * as i18n from "@/lib/i18n";
 import { Block } from "./pane";
 
 /**
@@ -78,6 +79,52 @@ describe("the blocks a transcript is made of", () => {
     expect(view.getByText(/Red/)).toBeTruthy();
     expect(view.getByText(/Green/)).toBeTruthy();
     expect(view.getByText("Warm")).toBeTruthy();
+  });
+
+  test("Codex questions keep all options and free-text questions visible without turning transcript history into answer buttons", () => {
+    const view = draw({
+      kind: "tool", name: "functions.request_user_input", summary: "Which database?", result: null,
+      questions: [
+        { text: "Which database?", options: [
+          { label: "SQLite (Recommended)", description: "Use a local database." },
+          { label: "Postgres", description: "Use a hosted database." },
+        ] },
+        { text: "What project name?", options: [] },
+      ],
+    });
+    expect(view.getAllByText("Which database?")).toHaveLength(2);
+    expect(view.getByText(/SQLite \(Recommended\)/)).toBeTruthy();
+    expect(view.getByText("Use a local database.")).toBeTruthy();
+    expect(view.getByText(/Postgres/)).toBeTruthy();
+    expect(view.getByText("Use a hosted database.")).toBeTruthy();
+    expect(view.getByText("What project name?")).toBeTruthy();
+    expect(view.getAllByRole("button")).toHaveLength(1);
+    expect(view.queryByRole("button", { name: "SQLite (Recommended)" })).toBeNull();
+  });
+
+  test.each(["ar", "es"] as const)("question descriptions remain the agent's words in the %s interface", locale => {
+    // Use a real catalog collision: arbitrary text would also pass through
+    // UiText unchanged and fail to catch translating agent-authored copy.
+    const hook = jest.spyOn(i18n, "useI18n").mockReturnValue({
+      locale, preference: locale, direction: locale === "ar" ? "rtl" : "ltr",
+      setPreference: async () => {}, t: (source, values) => translate(locale, source, values),
+    });
+    try {
+      const view = draw({ kind: "tool", name: "request_user_input", summary: "Settings", result: null,
+        questions: [{ text: "Settings", options: [{ label: "Continue", description: "Settings" }] }] });
+      expect(view.getAllByText("Settings")).toHaveLength(3);
+      expect(view.getByText(/Continue/)).toBeTruthy();
+      expect(view.queryByText(translate(locale, "Settings"))).toBeNull();
+    } finally { hook.mockRestore(); }
+  });
+
+  test("a completed async Codex question does not claim its UI message is still running", () => {
+    const view = draw({ kind: "tool", name: "Question", summary: "Which database?", result: null, outputUnavailable: true,
+      questions: [{ text: "Which database?", options: [{ label: "SQLite" }, { label: "Postgres" }] }] });
+    fireEvent.press(view.getByRole("button", { name: "Question, Which database?" }));
+    expect(view.queryByText("Still running.")).toBeNull();
+    expect(view.getByText("Output is not included in this transcript.")).toBeTruthy();
+    expect(view.getByText(/SQLite/)).toBeTruthy();
   });
 
   // The file row sits outside the collapsed section deliberately: on a phone it

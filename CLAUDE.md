@@ -216,8 +216,26 @@ references; base64 bytes never travel in Reader pages. Local paths use the file
 viewer. Audio attachments are indicated, but inline audio playback is unavailable.
 Injected hook prompts and unknown shapes stay dropped. Codex user messages that are
 really `<task-notification>` reports, `<send_user_message_question_reply>`
-answers, or Claude Code's command and `!cmd` tags are unwrapped. The Claude
-reader's system-note handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`)
+answers, or Claude Code's command and `!cmd` tags are unwrapped.
+
+Codex 0.160.0's synchronous `request_user_input` questions live in raw
+`function_call` arguments; its `RequestUserInput` event is deliberately not
+retained in rollouts. Keep those questions and option descriptions outside
+collapsed Activity. Async questions arrive as completed `AgentMessage` items
+with `delivery: "async"`: omit only their exact duplicated generated prose,
+and do not call that completed question message a running tool. Their reply
+envelope accepts one object or an array, optionally after Codex's exact IDE
+context prefix; neither form may disappear or expose the wrapper as user prose.
+
+Codex 0.160's question digits submit immediately, including "None of the
+above"; never add Enter or mark that choice as a text field. Its printed Tab
+shortcut opens notes. Show that as "Add notes" without an invented digit.
+While notes have focus, keep the original question/page and selected choices
+as context. Before submitting typed notes, compare the exact question panel
+and field replacement/append: a moved question, selection or cursor must leave
+the text typed and Enter unsent. Wrapped or multiline notes stay conservative.
+
+The Claude reader's system-note handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`)
 for the same reason: `away_summary` and `model_refusal_fallback` carry text the
 person saw, every other `system` subtype is chrome and stays dropped. User rows
 flagged `isCompactSummary` — the 14–19KB handoff Claude Code writes after

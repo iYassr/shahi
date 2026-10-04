@@ -72,6 +72,16 @@ tapping it opens Safari, and returning keeps Reader visible. This checks native
 gesture handling inside selectable prose, which component tests cannot prove.
 All output comes from the recording fixture; no prompt is submitted.
 
+## `CodexQuestionTests`
+
+Structured question history stays visible without answer handlers. The terminal's
+current question supplies the only answer controls, including its appearance id;
+an old frame cannot rearm an answered card. Codex's unnumbered Add notes action
+selects its Tab control, focuses the composer, preserves its unsent draft and leaves
+predefined choices available.
+Both answers terminate at the recording fixture; no draft is submitted. Run this
+journey on a compiled Release app to exercise React Compiler as well as native UI.
+
 ## `ReaderPlaceTests`
 
 Proves reading mode keeps your place in the fixture's 140-message

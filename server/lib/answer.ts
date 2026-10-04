@@ -90,6 +90,10 @@ export class PromptChanged extends Error {
  */
 export function keysFor(prompt: ParsedPrompt, target: PromptOption): string[] {
   if (target.selected && isTextField(prompt, target)) return [];
+  // Codex prints Tab under its numbered question menu. This opens notes,
+  // while a digit would submit a choice immediately. Keys come from the fresh
+  // server parse, never from the posted choice.
+  if (prompt.answer === "digit" && target.key === "Tab" && target.textInput) return ["Tab"];
   if (prompt.answer === "key") {
     // Choices posted by clients contain only index/label. This key always
     // comes from a fresh, recognised menu, never from the request body.

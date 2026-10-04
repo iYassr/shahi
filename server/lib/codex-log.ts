@@ -39,7 +39,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { HerdrClient } from "./herdr-client";
 import { realPathSync } from "./real-path";
-import { codexDisplayItem, codexInputAttachments, codexQuestions } from "./codex-items";
+import { codexDisplayItem, codexInputAttachments, codexQuestionCall, codexQuestionProse, codexQuestions } from "./codex-items";
 import { codexItemImages } from "./codex-media";
 import {
   anchorAfter, emptyIndex, indexStillHolds, inTranscript, isRecord, renderUserText, stringOr,
@@ -355,11 +355,18 @@ function pushThinking(messages: LogMessage[], text: string, id: string, at: numb
  * said. Anything else in that wrapper is dropped rather than guessed at.
  */
 function codexUserText(text: string): Block | null {
-  const reply = /^\s*<send_user_message_question_reply>([\s\S]*)<\/send_user_message_question_reply>\s*$/.exec(text);
+  // The native Codex reply parser accepts a complete envelope after this
+  // exact IDE prefix, and accepts one reply object as well as an array.
+  const delimiter = "\n## My request for Codex:\n";
+  const request = text.startsWith("# Context from my IDE setup:\n") && text.includes(delimiter)
+    ? text.slice(text.lastIndexOf(delimiter) + delimiter.length).trim() : text;
+  const reply = /^\s*<send_user_message_question_reply>([\s\S]*)<\/send_user_message_question_reply>\s*$/.exec(request);
   if (!reply) return renderUserText(text);
   try {
-    const answered = (JSON.parse(reply[1]!) as { question?: unknown; answer?: unknown }[])
-      .filter((entry) => entry && typeof entry.answer === "string" && entry.answer.trim() !== "")
+    const parsed: unknown = JSON.parse(reply[1]!);
+    const answered = (Array.isArray(parsed) ? parsed : [parsed])
+      .filter(isRecord)
+      .filter((entry) => typeof entry.answer === "string" && entry.answer.trim() !== "")
       .map((entry) => ({ question: typeof entry.question === "string" ? entry.question.trim() : "", answer: (entry.answer as string).trim() }));
     // One answer stands alone under the question above it. Several need their
     // questions, or the reader cannot tell which answer is which.
@@ -521,7 +528,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
               .filter(Boolean)
               .join("\n")
               .trim();
-            const block = text ? item.type === "UserMessage" ? codexUserText(text) : { kind: "text" as const, text } : null;
+            const block = text ? item.type === "UserMessage" ? codexUserText(text) : codexQuestionProse(item, text) ? null : { kind: "text" as const, text } : null;
             const blocks = [...(block ? [block] : []), ...(item.type === "UserMessage" ? codexInputAttachments(content) : codexQuestions(item))];
             // A subagent's report arrives as a UserMessage, but nobody typed it.
             const reported = blocks.every(b => b.kind === "text" && b.notice);
@@ -593,7 +600,8 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
       if (!text) continue;
       const role = kind === "user_message" ? "you" : kind === "agent_message" ? "agent" : null;
       if (!role) continue;
-      messages.push({ id: `codex-${index}`, role, at, blocks: [{ kind: "text", text }] });
+      const block = role === "you" ? codexUserText(text) : { kind: "text" as const, text };
+      if (block) messages.push({ id: `codex-${index}`, role: block.kind === "text" && block.notice ? "system" : role, at, blocks: [block] });
       continue;
     }
 
@@ -610,6 +618,7 @@ export function normaliseCodex(rows: Record<string, unknown>[], firstIndex = 0):
             kind: "tool",
             name: typeof payload.name === "string" ? payload.name : "tool",
             summary: summariseCodexCall(payload),
+            ...codexQuestionCall(payload),
             result: (callId && outputs.get(callId)) || null,
           },
         ],

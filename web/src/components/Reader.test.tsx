@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { ApiContext, api, type LogMessage, type SessionLog } from "../api";
 import { Reader, clearReaderMemory, merge } from "./Reader";
 import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
+import { normaliseCodex } from "../../../server/lib/codex-log";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -182,6 +183,72 @@ describe("a pane reused by a new session", () => {
       await act(async () => head(fixture.deniedCommand).props.onClick());
       expect(output()).toContain(fixture.error);
       expect(head(fixture.deniedCommand).findByProps({ className: "tool__err" }).children).toEqual(["failed"]);
+      expect(output()).not.toContain("Still running.");
+    });
+  }
+
+  test("Codex question-tool choices stay visible outside Activity before and after their result arrives", async () => {
+    // A real question is not routine tool activity. Losing its structured
+    // fields buried the entire request in the collapsed disclosure.
+    const rows: Record<string, unknown>[] = [
+      { type: "response_item", timestamp: "2026-10-04T04:00:00Z", payload: {
+        type: "function_call", name: "exec_command", call_id: "inspect", arguments: JSON.stringify({ cmd: "cat example.ts" }),
+      } },
+      { type: "response_item", timestamp: "2026-10-04T04:00:01Z", payload: {
+        type: "function_call", name: "request_user_input", call_id: "choose", arguments: JSON.stringify({ questions: [
+          { id: "database", header: "Database", question: "Which database should this example use?", options: [
+            { label: "SQLite", description: "Keep the example self-contained." },
+            { label: "Postgres", description: "Use a separate database service." },
+          ] },
+          { id: "release", header: "Release", question: "When should the example be released?", options: [
+            { label: "Keep reviewing", description: "Wait for another review." },
+            { label: "Release after tests", description: "Verify the tests first." },
+          ] },
+        ] }),
+      } },
+    ];
+    await render(async () => log("codex-question", normaliseCodex(rows)));
+    const questions = () => view!.root.findAllByProps({ className: "asked__q" }).map(node => node.children.join(""));
+    const shown = ["Which database should this example use?", "When should the example be released?"];
+    expect(questions()).toEqual(shown);
+    expect(view!.root.findByProps({ className: "reader-activity__head" }).props["aria-expanded"]).toBe(false);
+    expect(output()).toContain("Keep the example self-contained.");
+    expect(output()).toContain("Release after tests");
+    // Transcript choices are a historical record. Only a fresh terminal
+    // prompt card can send an answer, never the old question in Reader.
+    expect(view!.root.findAllByProps({ className: "choice" })).toHaveLength(0);
+
+    rows.push({ type: "response_item", timestamp: "2026-10-04T04:00:02Z", payload: {
+      type: "function_call_output", call_id: "choose", output: JSON.stringify({ answers: { database: { answers: ["SQLite"] }, release: { answers: ["Keep reviewing"] } } }),
+    } });
+    await logChanged();
+    expect(questions()).toEqual(shown);
+    expect(output()).toContain("Keep the example self-contained.");
+    expect(output()).toContain("Wait for another review.");
+    expect(view!.root.findByProps({ className: "reader-activity__head" }).props["aria-expanded"]).toBe(false);
+    expect(view!.root.findAllByProps({ className: "choice" })).toHaveLength(0);
+  });
+
+  for (const [label, text] of [
+    ["no prose", ""],
+    ["its duplicated generated prose", "Which database?\n- SQLite\n- Postgres"],
+    ["distinct authored prose", "I recommend SQLite for this example."],
+  ]) {
+    test(`Codex async questions remain visible with ${label}`, async () => {
+      const rows = [{ type: "event_msg", timestamp: "2026-10-04T04:00:00Z", payload: {
+        type: "item_completed", item: { type: "AgentMessage", id: "async-question", delivery: "async",
+          content: text ? [{ type: "text", text }] : [],
+          questions: [{ title: "Which database?", options: ["SQLite", "Postgres"] }],
+        },
+      } }];
+      await render(async () => log("async-question", normaliseCodex(rows)));
+      expect(view!.root.findByProps({ className: "asked__q" }).children).toEqual(["Which database?"]);
+      expect(view!.root.findAllByProps({ className: "asked__option" })).toHaveLength(2);
+      expect(view!.root.findAllByProps({ className: "reader-activity__head" })).toHaveLength(0);
+      const prose = view!.root.findAllByProps({ className: "msg__text" });
+      expect(prose).toHaveLength(label === "distinct authored prose" ? 1 : 0);
+      if (label === "distinct authored prose") expect(output()).toContain(text!);
+      await act(async () => view!.root.findByProps({ className: "tool__head" }).props.onClick());
       expect(output()).not.toContain("Still running.");
     });
   }

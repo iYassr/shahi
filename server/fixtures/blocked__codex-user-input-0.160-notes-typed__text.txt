@@ -1,0 +1,10 @@
+  Question 1/1 (1 unanswered)
+  Which fixture format should we use?
+
+  › 1. First              The first fixture choice.
+    2. Second             The second fixture choice.
+    3. None of the above  Optionally, add details in notes (tab)
+
+  › Synthetic fixture note.
+
+  tab or esc to clear notes | enter to submit answer

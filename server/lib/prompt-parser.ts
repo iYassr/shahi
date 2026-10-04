@@ -108,7 +108,7 @@ export function stripAnsi(text: string): string {
 }
 
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
-import { providerPrompt } from "./provider-prompts";
+import { codexQuestionPrompt, providerPrompt } from "./provider-prompts";
 import { openCodePrompt } from "./opencode-prompt";
 
 export type { ParsedPrompt, PromptOption };
@@ -134,6 +134,8 @@ export function parsePrompt(screen: string, options: ParseOptions = {}): ParsedP
   // A top-aligned startup menu can have more than 25 empty terminal rows
   // below it. Empty padding must not push a live menu outside the scan.
   const allLines = stripAnsi(screen).trimEnd().split("\n").map((l) => l.trimEnd());
+  const codexQuestion = codexQuestionPrompt(allLines);
+  if (codexQuestion) return codexQuestion;
   const start = Math.max(0, allLines.length - scanLines);
   const lines = allLines.slice(start);
   const openCode = openCodePrompt(screen, allLines);

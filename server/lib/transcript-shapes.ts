@@ -204,7 +204,7 @@ export const CODEX_SHAPES: Record<string, Decision> = {
   "response:message": dropped("raw model input and output, including developer prompts; items carry the conversation"),
   "response:reasoning": dropped("raw reasoning; the Reasoning item carries it"),
   "response:agent_message": dropped("raw output; the AgentMessage item carries it"),
-  "response:function_call": shown("a step"),
+  "response:function_call": shown("tools in Activity; request_user_input questions stay visible with their descriptions"),
   "response:custom_tool_call": shown("a step"),
   "response:function_call_output": shown("joined to its call"),
   "response:custom_tool_call_output": shown("joined to its call"),

@@ -30,6 +30,9 @@ export function Prompt({ prompt, onAnswer, disabled }: Props) {
     setArmed(index);
     try {
       await onAnswer(index);
+      // Selecting a field leaves the question open; the person may still
+      // choose a predefined answer instead of sending their draft.
+      if (prompt.options.find(option => option.index === index)?.textInput) setArmed(null);
     } catch {
       // Delivery failed, so the terminal never moved. Put the cursor back
       // rather than leaving the UI claiming something that did not happen.
@@ -55,7 +58,7 @@ export function Prompt({ prompt, onAnswer, disabled }: Props) {
             <span className="choice__cursor" aria-hidden="true">
               ❯
             </span>
-            {prompt.answer === "digit" && <span className="choice__index">{option.index}.</span>}
+            {prompt.answer === "digit" && !option.key && <span className="choice__index">{option.index}.</span>}
             <span className="choice__label" dir="auto">
               {labels[i]}
               {option.detail && <span className="choice__detail">{option.detail}</span>}

@@ -2,6 +2,62 @@ import type { ParsedPrompt, PromptOption } from "@shahi/shared";
 
 const CURSOR_FEEDBACK = /^→ Tell the agent what to do instead \(Enter to send, empty to skip, Esc to cancel\)\s+ctrl\+c to stop$/;
 
+const CODEX_QUESTION_FOOTER = /^tab to add notes \| enter to submit (?:answer|all)(?: \| ←\/→ to navigate questions)? \| esc to interrupt$/;
+const CODEX_NOTES_FOOTER = /^tab or esc to clear notes \| enter to submit (?:answer|all)$/;
+
+/** The bottom question panel measured on Codex 0.160. Its digits submit
+ * immediately; Tab alone opens notes without answering the question. */
+function codexQuestionPanel(lines: string[]): { prompt: ParsedPrompt; panel: string[]; field?: number; value?: string } | null {
+  const plain = lines.map(line => line.trimEnd());
+  while (plain.length && !plain.at(-1)!.trim()) plain.pop();
+  const footer = plain.at(-1)?.trim() ?? "";
+  const notes = CODEX_NOTES_FOOTER.test(footer);
+  if (!notes && !CODEX_QUESTION_FOOTER.test(footer)) return null;
+  const top = plain.findLastIndex(line => /^Question \d+\/\d+ \(\d+ unanswered\)$/.test(line.trim()));
+  if (top < 0) return null;
+  const panel = plain.slice(top);
+  const first = panel.findIndex(line => /^\s*[›]?\s*1\.\s+\S/u.test(line));
+  const question = panel.slice(1, first).map(line => line.trim()).filter(Boolean).join(" ");
+  if (first < 2 || !question) return null;
+  const choices: PromptOption[] = [];
+  let end = first;
+  while (end < panel.length) {
+    const row = panel[end]!.trim().match(/^(›\s*)?(\d)\.\s+(.+)$/u);
+    if (!row) break;
+    if (Number(row[2]) !== choices.length + 1) return null;
+    choices.push({ index: Number(row[2]), label: row[3]!, selected: !!row[1] });
+    end++;
+  }
+  if (choices.length < 2 || choices.filter(row => row.selected).length !== 1 || !/^None of the above\s+Optionally, add details in notes \(tab\)$/.test(choices.at(-1)!.label)) return null;
+  const title = `${panel[0]!.trim()} ${question}`;
+  const tail = panel.slice(end, -1).map(line => line.trim()).filter(Boolean);
+  if (!notes) {
+    if (tail.length) return null;
+    return { panel, prompt: { question: title, answer: "digit", options: [...choices, { index: choices.length + 1, label: "Add notes", key: "Tab", selected: false, textInput: true }] } };
+  }
+  if (tail.length !== 1 || !/^› \S/u.test(tail[0]!)) return null;
+  const field = panel.findIndex((line, i) => i >= end && /^› \S/u.test(line.trim()));
+  const value = panel[field]!.trim().slice(2);
+  return { panel, field, value, prompt: { question: title, answer: "cursor", context: panel.slice(first, end).map(line => line.trim()), options: [{ index: 1, label: value, selected: true, textInput: true }] } };
+}
+
+export function codexQuestionPrompt(lines: string[]): ParsedPrompt | null {
+  return codexQuestionPanel(lines)?.prompt ?? null;
+}
+
+/** Verify the same question, selected choice and focused notes field after
+ * typing. Existing notes append only at the end; moved cursors, wrapping or
+ * multiline input keep the typed text but never receive an automatic Enter. */
+export function codexNotesTyped(before: string, after: string, typed: string): boolean {
+  if (!typed.trim() || /[\r\n]/.test(typed)) return false;
+  const a = codexQuestionPanel(before.split("\n"));
+  const b = codexQuestionPanel(after.split("\n"));
+  if (a?.field === undefined || b?.field !== a.field || a.value === undefined || b?.value === undefined) return false;
+  const expected = ((a.value === "Add notes" ? "" : a.value) + typed).trimEnd();
+  if (b.value !== expected) return false;
+  return a.panel.every((line, i) => i === a.field || line === b.panel[i]) && a.panel.length === b.panel.length;
+}
+
 /** Typing replaces Cursor's entire empty-field hint. Verify that exact change,
  * including the unchanged screen above it, before pressing Enter. Multiline or
  * wrapped inputs remain conservative: leave the text and ask for a fresh key. */
@@ -16,6 +72,8 @@ export function cursorFeedbackTyped(before: string, after: string, typed: string
 
 /** Menus measured on current CLIs which herdr 0.9.1 does not always recognise. */
 export function providerPrompt(lines: string[]): { agent: string; prompt: ParsedPrompt } | null {
+  const question = codexQuestionPrompt(lines);
+  if (question) return { agent: "codex", prompt: question };
   const plain = lines.map(line => line.trim());
   const options = (rows: string[], labels: string[], answer: "digit" | "cursor"): PromptOption[] | null => {
     const found = rows.map(row => row.match(answer === "digit" ? /^([›❯>»▶])?\s*(\d+)\.\s+(.+)$/u : /^([›❯>»▶])?\s*(.+)$/u));

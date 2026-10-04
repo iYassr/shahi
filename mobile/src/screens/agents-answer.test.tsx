@@ -81,3 +81,22 @@ test("a waiting card shows its options without keyboard shortcuts, and answers w
     mockState.prompts["w1:p1"] = saved;
   }
 });
+
+test("selecting an editable row opens the reply composer without leaving the unanswered question's choices disabled", async () => {
+  const editable: ParsedPrompt = { ...bash, options: [...bash.options, { index: 3, label: "Add notes", key: "Tab", selected: false, textInput: true }] };
+  const previous = mockState.prompts["w1:p1"]!;
+  mockState.prompts["w1:p1"] = editable;
+  mockState.api.answerPrompt.mockClear();
+  mockState.answeredPrompt.mockClear();
+  const onOpen = jest.fn();
+  try {
+    const view = render(<Agents onOpenPane={onOpen} />);
+    expect(view.queryByText("3.")).toBeNull();
+    expect(view.queryByRole("button", { name: "3. Add notes" })).toBeNull();
+    fireEvent.press(view.getByRole("button", { name: "Add notes" }));
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith("w1:p1", true));
+    await waitFor(() => expect(view.getByRole("button", { name: "1. Yes" }).props.accessibilityState.disabled).toBe(false));
+    expect(mockState.api.answerPrompt).toHaveBeenCalledWith("w1:p1", editable.options[2], editable, undefined);
+    expect(mockState.answeredPrompt).not.toHaveBeenCalled();
+  } finally { mockState.prompts["w1:p1"] = previous; }
+});

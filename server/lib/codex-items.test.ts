@@ -6,7 +6,7 @@ const blocks = (fields: object) => normaliseCodex([item(fields)])[0]!.blocks;
 
 test("Codex questions remain visible even when the message has no prose", () => {
   expect(blocks({ type: "AgentMessage", id: "a", content: [], questions: [{ title: "Which database?", options: ["SQLite", "Postgres"] }, { title: "Project name?", options: null }] }))
-    .toEqual([{ kind: "tool", name: "Question", summary: "Which database?", result: null, questions: [
+    .toEqual([{ kind: "tool", name: "Question", summary: "Which database?", result: null, outputUnavailable: true, questions: [
       { text: "Which database?", options: [{ label: "SQLite" }, { label: "Postgres" }] }, { text: "Project name?", options: [] },
     ] }]);
 });

@@ -1915,6 +1915,367 @@ test("answering from the pane says which question the card showed", async () => 
   view.unmount();
 });
 
+describe("Codex Reader questions", () => {
+  const question: Extract<LogBlock, { kind: "tool" }> = {
+    kind: "tool", name: "functions.request_user_input", summary: "Which database?", result: null,
+    questions: [
+      { text: "Which database?", options: [
+        { label: "SQLite (Recommended)", description: "Use a local database." },
+        { label: "Postgres", description: "Use a hosted database." },
+      ] },
+      { text: "What project name?", options: [] },
+    ],
+  };
+  const shown: ParsedPrompt = {
+    promptId: "codex-question-first-appearance", question: "Which database?", answer: "cursor",
+    options: [{ index: 1, label: "SQLite (Recommended)", detail: "Use a local database.", selected: true },
+      { index: 2, label: "Postgres", detail: "Use a hosted database.", selected: false }],
+  };
+  const frame = (prompt: ParsedPrompt | null) => ({ ...detail(), frame: {
+    paneId: PANE, ansi: "", text: "", prompt, activity: null, at: 1,
+  } });
+  const answerPrompt = api.answerPrompt as jest.Mock;
+  beforeEach(() => {
+    answerPrompt.mockReset();
+    mocked.sessionLog.mockResolvedValue({ ...log([{ id: "codex-demo:question", role: "agent", at: 1, blocks: [question] }]),
+      sessionId: "codex-demo", path: "/synthetic/codex-demo.jsonl" });
+  });
+
+  test("keeps structured multi-question history visible and answers only the current terminal question with its identity", async () => {
+    mocked.pane.mockResolvedValue(frame(shown));
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    expect(view.getByText("What project name?")).toBeTruthy();
+    // One historical option and one live control, neither hidden in Activity.
+    expect(view.getAllByText(/SQLite \(Recommended\)/)).toHaveLength(2);
+    expect(view.queryByRole("button", { name: /Activity/ })).toBeNull();
+    fireEvent.press(within(card).getByRole("button", { name: "Postgres. Use a hosted database." }));
+    await settle();
+    expect(answerPrompt).toHaveBeenCalledWith(PANE, shown.options[1], shown, undefined);
+    expect(mocked.send).not.toHaveBeenCalled();
+    expect(mocked.sendKeys).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  test("the same Codex question asked again re-arms its new appearance while the earlier answer is pending", async () => {
+    let current = shown;
+    const firstAnswer = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValueOnce(firstAnswer.promise).mockResolvedValueOnce({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    const firstCard = await view.findByTestId("prompt-card");
+    fireEvent.press(within(firstCard).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = { ...shown, promptId: "codex-question-second-appearance" };
+    logChanged();
+    await act(async () => { jest.advanceTimersByTime(300); });
+    await settle();
+    const next = within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." });
+    expect(next.props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(next);
+    await settle();
+    expect(answerPrompt).toHaveBeenLastCalledWith(PANE, current.options[1], current, undefined);
+    expect(answerPrompt).toHaveBeenCalledTimes(2);
+    await act(async () => { firstAnswer.resolve({ ok: true }); });
+    view.unmount();
+  });
+
+  test("the pre-answer frame cannot re-offer an appearance whose answer is still pending", async () => {
+    mocked.pane.mockResolvedValue(frame(shown));
+    const sending = deferred<{ ok: true }>();
+    answerPrompt.mockReturnValue(sending.promise);
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.press(within(card).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    // chase starts before /answer so this fetch still sees the old TUI.
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(1);
+    await act(async () => { sending.resolve({ ok: true }); });
+    view.unmount();
+  });
+
+  test("answering a newer appearance does not re-offer an earlier pending appearance from a stale frame", async () => {
+    let current = shown;
+    const firstAnswer = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValueOnce(firstAnswer.promise).mockResolvedValueOnce({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = { ...shown, promptId: "codex-question-second-appearance" };
+    logChanged();
+    await settle();
+    fireEvent.press(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }));
+    await settle();
+    expect(answerPrompt).toHaveBeenCalledTimes(2);
+    current = shown;
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    await act(async () => { firstAnswer.resolve({ ok: true }); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    current = { ...shown, promptId: "codex-question-third-appearance" };
+    logChanged();
+    await settle();
+    expect(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }).props.accessibilityState.disabled).toBe(false);
+    view.unmount();
+  });
+
+  test("an earlier transport failure releases only its own appearance after a newer answer succeeds", async () => {
+    let current = shown;
+    const firstAnswer = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValueOnce(firstAnswer.promise).mockResolvedValueOnce({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = { ...shown, promptId: "codex-question-second-appearance" };
+    logChanged();
+    await settle();
+    fireEvent.press(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }));
+    await settle();
+    await act(async () => { firstAnswer.reject(new Error("The earlier answer lost its response.")); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(2);
+    current = shown;
+    logChanged();
+    await settle();
+    expect(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }).props.accessibilityState.disabled).toBe(false);
+    expect(answerPrompt).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
+
+  test("a pending appearance remains closed through a long sequence of newer settled questions", async () => {
+    let current = shown;
+    const firstAnswer = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValueOnce(firstAnswer.promise).mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    for (let index = 0; index < 34; index++) {
+      current = { ...shown, promptId: `codex-question-later-${index}` };
+      logChanged();
+      await settle();
+      fireEvent.press(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }));
+      await settle();
+    }
+    current = shown;
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(35);
+    await act(async () => { firstAnswer.resolve({ ok: true }); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    view.unmount();
+  });
+
+  test("a failed answer can offer the current question again without issuing an automatic retry", async () => {
+    mocked.pane.mockResolvedValue(frame(shown));
+    answerPrompt.mockRejectedValueOnce(new Error("The computer did not answer in time."));
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.press(within(card).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    expect(view.getByText("The computer did not answer in time.")).toBeTruthy();
+    const offered = within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." });
+    expect(offered.props.accessibilityState.disabled).toBe(false);
+    expect(answerPrompt).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  test("a measured editable choice keeps the question available while opening the composer and sends no draft", async () => {
+    const editable = { ...shown, answer: "digit" as const, options: [...shown.options, { index: 3, label: "Add notes", key: "Tab", selected: false, textInput: true }] };
+    mocked.pane.mockResolvedValue(frame(editable));
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "Keep this unsent draft");
+    expect(within(card).getByRole("button", { name: "1. SQLite (Recommended). Use a local database." })).toBeTruthy();
+    expect(within(card).queryByText("3.")).toBeNull();
+    expect(within(card).queryByRole("button", { name: "3. Add notes" })).toBeNull();
+    fireEvent.press(within(card).getByRole("button", { name: "Add notes" }));
+    await settle();
+    expect(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Add notes" }).props.accessibilityState.disabled).toBe(false);
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("Keep this unsent draft");
+    expect(answerPrompt).toHaveBeenCalledWith(PANE, editable.options[2], editable, undefined);
+    expect(mocked.send).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  test("a frame already in flight cannot resurrect a question after a stale-answer refusal", async () => {
+    const stale = deferred<ReturnType<typeof frame>>();
+    mocked.pane.mockResolvedValueOnce(frame(shown)).mockReturnValueOnce(stale.promise).mockResolvedValue(frame(null));
+    answerPrompt.mockRejectedValue(new ApiError("That question has already been answered or closed. Nothing was sent.", 409, "prompt_gone"));
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.press(within(card).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    await act(async () => { stale.resolve(frame(shown)); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(mocked.pane).toHaveBeenCalledTimes(3);
+    expect(view.queryByText("That question has already been answered or closed. Nothing was sent.")).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  test("a transcript change releases a dismissed question identity from the previous conversation", async () => {
+    const legacy = { ...shown, promptId: undefined };
+    mocked.pane.mockResolvedValue(frame(legacy));
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.press(within(card).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    mocked.sessionLog.mockResolvedValue({ ...log([said("next:question", "agent", "A different conversation.")]),
+      sessionId: "codex-next", path: "/synthetic/codex-next.jsonl" });
+    logChanged();
+    await settle();
+    expect(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }).props.accessibilityState.disabled).toBe(false);
+    view.unmount();
+  });
+
+  test("an old computer can ask identical words again after a confirmed null frame following the settled answer", async () => {
+    const legacy = { ...shown, promptId: undefined };
+    let current: ParsedPrompt | null = legacy;
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    current = null;
+    logChanged();
+    await settle();
+    current = legacy;
+    logChanged();
+    await settle();
+    expect(within(view.getByTestId("prompt-card")).getByRole("button", { name: "Postgres. Use a hosted database." }).props.accessibilityState.disabled).toBe(false);
+    view.unmount();
+  });
+
+  test("a null frame while a versionless answer is pending cannot rearm that same question", async () => {
+    const legacy = { ...shown, promptId: undefined };
+    let current: ParsedPrompt | null = legacy;
+    const sending = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValue(sending.promise);
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = null;
+    logChanged();
+    await settle();
+    current = legacy;
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    await act(async () => { sending.resolve({ ok: true }); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    view.unmount();
+  });
+
+  test("a null frame fetched before settlement cannot release a versionless dismissal by arriving afterward", async () => {
+    const legacy = { ...shown, promptId: undefined };
+    const earlyNull = deferred<ReturnType<typeof frame>>();
+    const sending = deferred<{ ok: true }>();
+    mocked.pane.mockResolvedValueOnce(frame(legacy)).mockReturnValueOnce(earlyNull.promise).mockResolvedValue(frame(legacy));
+    answerPrompt.mockReturnValue(sending.promise);
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    await act(async () => { sending.resolve({ ok: true }); });
+    await settle();
+    await act(async () => { earlyNull.resolve(frame(null)); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(mocked.pane).toHaveBeenCalledTimes(3);
+    view.unmount();
+  });
+
+  test("an exact dismissed appearance stays closed when a null frame is followed by a stale copy", async () => {
+    let current: ParsedPrompt | null = shown;
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockResolvedValue({ ok: true });
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = null;
+    logChanged();
+    await settle();
+    current = shown;
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    view.unmount();
+  });
+
+  test("a refused editable selection also keeps its stale appearance closed", async () => {
+    const editable = { ...shown, options: [{ index: 1, label: "Other", selected: true, textInput: true }] };
+    mocked.pane.mockResolvedValue(frame(editable));
+    answerPrompt.mockRejectedValue(new ApiError("That question has already been answered or closed. Nothing was sent.", 409, "prompt_gone"));
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "Other" }));
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  test("a different question during a pending answer does not make a later pre-answer frame actionable", async () => {
+    let current: ParsedPrompt | null = shown;
+    const sending = deferred<{ ok: true }>();
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockReturnValue(sending.promise);
+    const view = render(<Pane paneId={PANE} />);
+    fireEvent.press(within(await view.findByTestId("prompt-card")).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    current = { ...shown, promptId: "different-current-question", question: "What project name?" };
+    logChanged();
+    await settle();
+    expect(view.getByTestId("prompt-card")).toBeTruthy();
+    current = shown;
+    logChanged();
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    await act(async () => { sending.resolve({ ok: true }); });
+    view.unmount();
+  });
+
+  test.each(["prompt_gone", "prompt_changed"])("a %s from another client's answer closes current controls while retaining readable question history", async code => {
+    let current: ParsedPrompt | null = shown;
+    mocked.pane.mockImplementation(async () => frame(current));
+    answerPrompt.mockImplementation(async () => {
+      current = null;
+      throw new ApiError("That question has already been answered or closed. Nothing was sent.", 409, code);
+    });
+    const view = render(<Pane paneId={PANE} />);
+    const card = await view.findByTestId("prompt-card");
+    fireEvent.press(within(card).getByRole("button", { name: "SQLite (Recommended). Use a local database." }));
+    await settle();
+    await act(async () => { jest.advanceTimersByTime(300); });
+    await settle();
+    expect(view.queryByTestId("prompt-card")).toBeNull();
+    expect(view.getByText("What project name?")).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Postgres. Use a hosted database." })).toBeNull();
+    expect(answerPrompt).toHaveBeenCalledTimes(1);
+    expect(mocked.sendKeys).not.toHaveBeenCalled();
+    view.unmount();
+  });
+});
+
 // The pane's card used to render only the question and the options, so an
 // approval opened from a notification or a list row read "Do you want to
 // proceed?" with nothing to judge it by: the command was only on the Screen

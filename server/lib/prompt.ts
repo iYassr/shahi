@@ -42,7 +42,7 @@
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
-import { cursorFeedbackTyped, providerWaitingScreen } from "./provider-prompts";
+import { codexNotesTyped, codexQuestionPrompt, cursorFeedbackTyped, providerWaitingScreen } from "./provider-prompts";
 
 /** The herdr calls this module is allowed to make, typed loosely so a test can fake them. */
 export type PromptRpc = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -182,6 +182,7 @@ interface Spot {
   question: string;
   row: number;
   feedbackScreen?: string;
+  notesScreen?: string;
 }
 
 function sameSpot(before: Spot | null, after: Spot | null): boolean {
@@ -203,6 +204,9 @@ async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previou
     format: "ansi",
     strip_ansi: false,
   })) as { read: { text: string } };
+  if (previous?.notesScreen && typed !== undefined) {
+    return codexNotesTyped(previous.notesScreen, stripAnsi(read.text), typed) ? previous : null;
+  }
   const menu = parsePrompt(read.text);
   if (!menu && previous?.feedbackScreen && typed !== undefined && cursorFeedbackTyped(previous.feedbackScreen, stripAnsi(read.text), typed)) return previous;
   // An agent waiting where there is nothing to choose, which herdr calls idle:
@@ -211,7 +215,7 @@ async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previou
   if (!menu) return null;
   const lit = menu.options.find((option) => option.selected);
   if (refuse && (!lit || !isTextField(menu, lit))) throw new PromptOpen();
-  return { question: menu.question, row: lit?.index ?? 0, ...(menu.question === "Tell the agent what to do instead" && lit?.textInput ? { feedbackScreen: stripAnsi(read.text) } : {}) };
+  return { question: menu.question, row: lit?.index ?? 0, ...(menu.question === "Tell the agent what to do instead" && lit?.textInput ? { feedbackScreen: stripAnsi(read.text) } : {}), ...(lit?.textInput && codexQuestionPrompt(stripAnsi(read.text).split("\n"))?.answer === "cursor" ? { notesScreen: stripAnsi(read.text) } : {}) };
 }
 
 /**

@@ -450,9 +450,11 @@ describe("the screen card", () => {
     const paneId = `w9:p${++opened}`;
     const session = { panes: [{ paneId, title: "Conversation", isAgent: true, agent: "claude", status: "blocked", instanceId: "i1" }] } as any;
     const sendKeys = mock(async () => {});
-    const scoped = { ...api, pane: mock().mockResolvedValue({ ...detail, pane: { ...detail.pane, pane_id: paneId } }), sessionLog: mock(sessionLog), sendKeys };
-    await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={[`/pane/${paneId}`]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{ [paneId]: { paneId, ...frame } as any }} prompts={{}} onWatch={mock()} onAnswer={mock()} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
-    return { sendKeys, paneId };
+    const send = mock(async () => {});
+    const onAnswer = mock(async () => {});
+    const scoped = { ...api, pane: mock().mockResolvedValue({ ...detail, pane: { ...detail.pane, pane_id: paneId } }), sessionLog: mock(sessionLog), sendKeys, send };
+    await act(async () => { view = create(<ApiContext.Provider value={scoped}><MemoryRouter initialEntries={[`/pane/${paneId}`]}><Routes><Route path="/pane/:paneId" element={<PaneView session={session} frames={{ [paneId]: { paneId, ...frame } as any }} prompts={{}} onWatch={mock()} onAnswer={onAnswer} onToast={mock()} />} /></Routes></MemoryRouter></ApiContext.Provider>); });
+    return { sendKeys, send, onAnswer, paneId };
   }
   const conversation = async () => ({ sessionId: "s", path: "p", total: 1, offset: 0, messages: [{ id: "a", role: "agent", at: 1, blocks: [{ kind: "text", text: "Hello." }] }] });
 
@@ -486,6 +488,28 @@ describe("the screen card", () => {
     await open(frameOf({ prompt }), async () => { throw new ApiError("nothing yet", 404, "reader_transcript_missing"); });
     expect(output()).toContain("Do you want to proceed?");
     expect(output()).not.toContain("On the computer's screen");
+  });
+
+  test("Codex Add notes is a shortcut without a fake digit and opens a field without sending the draft", async () => {
+    const prompt = { question: "Which database?", answer: "digit", options: [
+      { index: 1, label: "SQLite", selected: true },
+      { index: 2, label: "Postgres", selected: false },
+      { index: 3, label: "Keep reviewing", selected: false },
+      { index: 4, label: "Add notes", key: "Tab", textInput: true, selected: false },
+    ] };
+    const { send, sendKeys, onAnswer, paneId } = await open(frameOf({ prompt }), conversation);
+    const draft = "Keep this draft until I choose Send.";
+    await act(async () => view!.root.findByType("textarea").props.onChange({ target: { value: draft } }));
+    const choices = () => view!.root.findAllByProps({ className: "choice" });
+    expect(choices().slice(0, 3).map(choice => choice.findByProps({ className: "choice__index" }).children.join(""))).toEqual(["1.", "2.", "3."]);
+    expect(choices()[3]!.findAllByProps({ className: "choice__index" })).toHaveLength(0);
+    expect(choices()[3]!.findByProps({ className: "choice__label" }).children).toEqual(["Add notes"]);
+    await act(async () => choices()[3]!.props.onClick());
+    expect(onAnswer.mock.calls).toEqual([[paneId, 4]]);
+    expect(choices().every(choice => !choice.props.disabled)).toBe(true);
+    expect(view!.root.findByType("textarea").props.value).toBe(draft);
+    expect(send).not.toHaveBeenCalled();
+    expect(sendKeys).not.toHaveBeenCalled();
   });
 
   test("is not shown on Screen, where the terminal itself is", async () => {
