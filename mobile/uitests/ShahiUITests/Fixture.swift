@@ -22,6 +22,7 @@ enum Fixture {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/\(prefix)/\(path)")!)
         request.httpMethod = method
         request.timeoutInterval = 10
+        if prefix == "api" { request.setValue("shahi_session=stub", forHTTPHeaderField: "Cookie") }
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

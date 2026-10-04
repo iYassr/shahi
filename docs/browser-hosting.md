@@ -237,6 +237,37 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 4 October 2026, current Codex questions and notes
+
+Published from clean commit `b97eac4ae026f36c5fdd836cec8a8c66bbead315` as
+Cloudflare version **`54ac7669-6b57-4072-b334-f020f8583ad6`**, verified at
+100% traffic. It replaced **`7ff7beb4-fe32-45f7-9abc-5fbc34e9f17f`**, the
+immediate website rollback. Supporting computer Stable **0.3.26** is public
+from the same source.
+
+Reader keeps current Codex transcript questions and their option descriptions
+outside collapsed Activity, including question-only messages and updates to
+their tool results. Current prompt cards show the real **Add notes** shortcut
+without an invented choice number. Selecting that editable field preserves
+the draft and clears the card's submission latch; ordinary submitted answers
+remain latched to prevent repeated writes.
+
+Protected [website preparation 37205257047](https://github.com/iYassr/shahi/actions/runs/37205257047)
+uploaded matching browser source maps at 13:21:27 UTC. Artifact **11304716603**
+contains 58 files / 5,797,526 bytes. Its downloaded ZIP is 3,259,895 bytes,
+contains 59 entries and has SHA-256
+`33d52ef26b6b9e5034823bc13ef6f0f809dac04b5a7fda600430ccebc1e16614`.
+ZIP digest, size, CRC and safe paths passed, followed by the complete file
+receipt. The receipt remained outside the served tree and clean checkout;
+deployment used the downloaded bytes without rebuilding.
+
+Exact-source [CI 37205188868](https://github.com/iYassr/shahi/actions/runs/37205188868)
+passed before publication. All **100 live probes passed** at 15:45:10 UTC:
+56 served-file hashes, two hidden metadata entries, security/cache policies,
+PWA routes and inventory, private-file refusal and media digests/ranges. All
+nine privacy-reviewed screenshots retain their original bytes, and both demo
+videos contain no audio.
+
 ## Verified deployment — 4 October 2026, iPhone dictation availability
 
 Published from clean commit `bfb340db93b2a1a3549ec7235a9106ea958792a7` as
