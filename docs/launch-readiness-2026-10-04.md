@@ -16,7 +16,7 @@ public launch material. Release outcomes are recorded separately from tests.
   default and a saved choice. Arabic uses right-to-left interface layout.
   Switching language must keep the current connection and unsent draft.
   Conversations, names, filenames, agent questions and terminal text remain
-  in their original language. Live dictation remains English on supported
+  in their original language. The submitted iPhone 1.1 update includes English live dictation on supported
   iPhones running iOS 26 or later.
 - Computer 0.3.25: reviewed current Codex startup captures, localized browser
   assets and notification offline-navigation fix. API 5, transport 2 and
@@ -111,6 +111,11 @@ The owner confirmed successful **live dictation on hardware**, and reported
 that **native push has not been accepted on hardware**. Simulator tests and
 cryptographic harnesses do not replace that check.
 
+Public 1.0.0 build 17 could not be linked to an exact source revision or EAS
+build record, so its dictation availability is unproven. Landing-page and
+marketing dictation claims are scoped to the verified submitted 1.1.0 build;
+physical acceptance alone does not establish which version was installed.
+
 Fresh **iOS 1.1.0 build 39** passed production archive/upload, exact-source
 manual CI, code-signature and embedded-language/permission inspection. Its
 matching JavaScript source maps and native debug files were uploaded to Sentry.
@@ -176,7 +181,8 @@ computer release; do not reset pairings or retry uncertain writes with new IDs.
 | Computer plugin/service | Public Stable and Beta **0.3.25**, immutable tag and GitHub Latest verified, source `3cf883c` |
 | Initial website/PWA launch | Cloudflare **`7138adc0-9fae-46c5-8352-f36bec8b1d49`**, exact source `3cf883c`; replaced `d7ce91d2-b28e-48e9-be87-32009625f7ac` |
 | Initial website artifact | 49 files / 3,447,014 bytes, matching Sentry upload; all **91 live probes passed** with 47 served-file hashes and two hidden metadata files |
-| Production visual checks | Nine feature cards in three desktop/one narrow-phone columns; no horizontal overflow; live English/Arabic/Spanish onboarding and saved Arabic choice verified; commands remain LTR |
+| Current landing/PWA deployment | **`16f01d5d-cf2b-4dd6-97f7-8271c3a59821`**, website-only source `b3231c6`; replaced `7138adc0-9fae-46c5-8352-f36bec8b1d49`; 58 files / 5,797,345 bytes; all **100 live probes passed** |
+| Production visual checks | Nine actual app screenshot cards, full-image privacy and caption checks; all images loaded on desktop; three desktop/one narrow-phone columns with no overflow; live English/Arabic/Spanish onboarding and saved Arabic choice verified; commands remain LTR |
 | Relay | Existing healthy production deployment retained; no relay code change or unnecessary redeployment |
 | iPhone | **1.1.0 (39)** submitted for automatic public release after Apple review; **1.0.0** remains publicly downloadable during review |
 | Marketing | LinkedIn, X, Reddit and Show HN drafts, English/Arabic/Spanish posts, three graphics, two silent videos, captions, alt text and share ZIP prepared; nothing posted |
@@ -185,5 +191,10 @@ Evidence: [manual CI](https://github.com/iYassr/shahi/actions/runs/37170699728),
 [Stable publication](https://github.com/iYassr/shahi/actions/runs/37170876540),
 [website artifact and matching maps](https://github.com/iYassr/shahi/actions/runs/37170704757)
 and [native build/upload](https://github.com/iYassr/shahi/actions/runs/37171091425).
-Each release uses the same frozen source commit. Later website-only feature
-preview deployments are recorded in [browser hosting](browser-hosting.md).
+The computer and native releases use frozen source `3cf883c`; the later
+[website-only preview preparation](https://github.com/iYassr/shahi/actions/runs/37173221401)
+uses `b3231c6`. The exact deployment, image review, matching maps and rollback
+are recorded in [browser hosting](browser-hosting.md). Apple status was checked
+again at 03:05 UTC: build 39 remained `VALID` and `WAITING_FOR_REVIEW`, with
+automatic `AFTER_APPROVAL` release. No further native or computer release was
+made for the website screenshots.

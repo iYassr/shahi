@@ -237,6 +237,35 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 4 October 2026, actual app feature previews
+
+Published from clean commit `b3231c6af58c5e7bf27f399629c85bf9acb24a86` as
+Cloudflare version **`16f01d5d-cf2b-4dd6-97f7-8271c3a59821`**. It replaced
+**`7138adc0-9fae-46c5-8352-f36bec8b1d49`**, the immediate website rollback.
+This is a website-only follow-up: computer Stable/Beta 0.3.25 and submitted
+native 1.1.0 build 39 remain on `3cf883c`.
+
+Protected [website preparation 37173221401](https://github.com/iYassr/shahi/actions/runs/37173221401)
+uploaded matching browser source maps at 03:10:18 UTC. The downloaded artifact
+contains 58 files / 5,797,345 bytes. Its ZIP is 3,259,840 bytes, SHA-256
+`97c862f2e9ec3fe6ae621fb496ca8e641c7de5998206a6108e300d04659b8f69`.
+The receipt stayed outside the served directory and clean checkout; deployment
+used the exact downloaded bytes without rebuilding.
+
+All **100 live probes passed** at 03:15:23 UTC, including 56 served-file hashes,
+two hidden metadata entries, rewrites, security/cache policies, private-path
+refusals, the PWA inventory and existing video byte ranges. All nine new PNGs
+match their privacy-reviewed original captures byte for byte. Full-image,
+metadata and barcode checks covered the downloadable originals, not just the
+CSS crop; the captures contain synthetic example work and no pairing material.
+
+Production Chrome verified all nine images loaded, three columns on desktop
+and one at 320 pixels, with no horizontal overflow. Crops, alt text and captions
+match their feature. The submitted iPhone 1.1 previews are labelled as awaiting
+Apple review, the dictation image shows an unsent composer draft, notification
+settings do not claim physical delivery, and Stable/Beta refers to the computer
+update channel. Viewport overrides were restored after verification.
+
 ## Verified deployment — 4 October 2026, public launch and interface languages
 
 Published from clean commit `3cf883cfc057407cbdb9f59e1e9419c61f97918c` as

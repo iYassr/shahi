@@ -200,8 +200,9 @@ Camera access is used to scan pairing codes. Scanning happens on your device. Ph
 
 ## Voice dictation
 
-On an iPhone with iOS 26 that supports Apple's on-device speech model, you can
-dictate a reply. The microphone opens only after you tap the microphone
+The submitted iPhone 1.1 update, awaiting Apple review, supports dictating a
+reply on an iPhone with iOS 26 that supports Apple's on-device speech model.
+The microphone opens only after you tap the microphone
 button, and stops when you finish, cancel, leave the app or receive a call.
 Your voice is turned into text on the iPhone by Apple's Speech framework: the
 audio is not recorded to a file and is not sent to your computer, the relay,
