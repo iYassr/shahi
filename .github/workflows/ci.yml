@@ -45,7 +45,7 @@ jobs:
       - run: bun plugin/releases/manager-smoke.ts
       - name: Preserve the tested release candidate
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tested-computer-package
           path: dist/release/
@@ -53,7 +53,7 @@ jobs:
           retention-days: 7
       - name: Preserve debug artifacts for the trusted release job
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tested-computer-debug-artifacts
           path: dist/sentry/computer/
@@ -99,7 +99,7 @@ jobs:
 
       - name: Preserve local Worker diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wrangler-checks
           path: ${{ runner.temp }}/wrangler-logs/
@@ -171,7 +171,7 @@ jobs:
         if: matrix.suite == 'hosted' || matrix.suite == 'pwa'
       - run: bun run test:${{ matrix.suite }} ${{ matrix.project }}
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: playwright-${{ matrix.name }}
@@ -185,7 +185,7 @@ jobs:
 
       - name: Preserve local Worker diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wrangler-${{ matrix.name }}
           path: ${{ runner.temp }}/wrangler-logs/
@@ -259,7 +259,7 @@ jobs:
 
       - run: SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: herdr-server-log-${{ matrix.herdr }}
