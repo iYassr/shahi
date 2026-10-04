@@ -237,6 +237,20 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 4 October 2026, the one-line setup
+
+Published the site and hosted client from a clean checkout of `4b59d3b`
+(computer release 0.3.27) as Cloudflare version
+`31541517-8298-483a-b7c2-d40c8efb01aa`. It replaced
+`54ac7669-6b57-4072-b334-f020f8583ad6`, the version to roll back to. `/`,
+`/privacy`, `/pwa/`, `/pwa/sw.js` and `/install` answered 200, `/install` as
+`text/plain`. The live `/install` and service worker were byte-identical to
+the build. The live `/install` is the build's copy, not `site/install.sh`,
+because the build writes herdr 0.9.3 and its four checksums into the
+placeholders (`site/install.ts`). The homepage and the `/pwa/`
+bundle lead with `curl -fsSL https://getshahi.dev/install | sh`. No relay
+deployment.
+
 ## Verified deployment — 4 October 2026, current Codex questions and notes
 
 Published from clean commit `b97eac4ae026f36c5fdd836cec8a8c66bbead315` as
