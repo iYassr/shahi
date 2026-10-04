@@ -46,6 +46,7 @@ const argv = new Set(process.argv.slice(2));
 const kinds = (["claude", "codex"] as Kind[]).filter((kind) => (!argv.has("claude") && !argv.has("codex")) || argv.has(kind));
 const launches = (["shahi", "hand"] as Launch[]).filter((launch) => (!argv.has("shahi") && !argv.has("hand")) || argv.has(launch));
 const STEADY_MS = 60_000;
+const ASK = "Reply with exactly the word";
 
 // herdr, and every shell it starts, without this process's own agent and herdr
 // context: nested Claude Code refuses to start inside another.
@@ -118,8 +119,10 @@ async function look(paneId: string, token: string): Promise<Look> {
   if (!pane?.agent) return { found: false, reply: false, preview: false, parity: "herdr names no agent in the pane" };
   const source = await transcriptSourceFor(pane, client);
   const page = source ? await transcriptPage(paneId, source, pane.agent, { limit: 60 }) : null;
-  const reply = !!page?.log.messages.some((message) => message.role !== "user" && JSON.stringify(message.blocks).includes(token));
-  const preview = ((await conversationSummary(pane, client)).preview ?? "").includes(token);
+  // The message sent holds the token too, so only the agent's own words count.
+  const reply = !!page?.log.messages.some((message) => message.role === "agent" && JSON.stringify(message.blocks).includes(token));
+  const shown = (await conversationSummary(pane, client)).preview ?? "";
+  const preview = shown.includes(token) && !shown.includes(ASK);
   const parity = page ? disagreement(compare(await visible(paneId), pane.agent, page.log)) : "no transcript";
   return { found: !!source, reply, preview, parity };
 }
@@ -154,7 +157,7 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
     await ready(paneId);
     await store.resync();
     const target = await promptTarget(rpc as never, paneId, store.agent(paneId));
-    await submitPrompt(rpc as never, target, `Reply with exactly the word ${token} and nothing else.`);
+    await submitPrompt(rpc as never, target, `${ASK} ${token} and nothing else.`);
     // The reply, as Reader would show it, within three minutes.
     const deadline = Date.now() + 180_000;
     let seen = await look(paneId, token);
