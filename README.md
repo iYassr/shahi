@@ -132,7 +132,17 @@ for tested versions and further limits.
 
 ## Quick start
 
-Inside [herdr](https://herdr.dev) on your Mac or Linux computer:
+In a terminal on your Mac or Linux computer:
+
+```sh
+curl -fsSL https://getshahi.dev/install | sh
+```
+
+It installs [herdr](https://herdr.dev) if it is missing (0.9.3, checked against
+its published SHA-256 before it runs), then the Shahi plugin, starts herdr in the
+background, and shows the pairing code. [Read the script](site/install.sh)
+first if you like; it asks for no password. Already use herdr? Inside it, run
+these instead:
 
 ```sh
 herdr plugin install iYassr/shahi

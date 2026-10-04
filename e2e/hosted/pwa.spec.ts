@@ -503,7 +503,8 @@ test("on a 390 by 664 phone screen both of the hero's buttons are on the first s
 
 test("fresh users can find setup and installation help without horizontal overflow", async ({ page }) => {
   await page.goto("/pwa/");
-  await expect(page.getByRole("heading", { name: "Set up Shahi in 3 steps" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set up Shahi in 2 steps" })).toBeVisible();
+  await expect(page.getByText("curl -fsSL https://getshahi.dev/install | sh", { exact: true })).toBeVisible();
   await expect(page.getByText("herdr plugin install iYassr/shahi", { exact: true })).toBeVisible();
   await expect(page.getByText("herdr plugin action invoke shahi.pair", { exact: true })).toBeVisible();
   await page.getByText("Install Shahi on this device", { exact: true }).click();

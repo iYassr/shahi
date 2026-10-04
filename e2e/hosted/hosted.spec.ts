@@ -53,7 +53,7 @@ test("locale setup uses device language, persists a choice and mirrors Arabic wi
   await page.getByLabel("Idioma", { exact: true }).selectOption("ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: translate("ar", "Connect your computer"), exact: true })).toBeVisible();
-  await expect(page.locator(".setup-command code").first()).toHaveText("herdr plugin install iYassr/shahi");
+  await expect(page.locator(".setup-command code").first()).toHaveText("curl -fsSL https://getshahi.dev/install | sh");
   expect(await page.locator(".setup-command code").first().evaluate(element => getComputedStyle(element).direction)).toBe("ltr");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
   await page.getByLabel("رمز الاقتران", { exact: true }).fill("not-a-pairing-code");
@@ -671,11 +671,12 @@ test("setup commands copy independently and the returning-user shortcut focuses 
     } });
   });
   await page.goto("/pwa/");
-  await page.getByRole("button", { name: "Copy install command" }).click();
+  await page.getByRole("button", { name: "Copy setup command" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Copied" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Copy install command" }).click();
   await page.getByRole("button", { name: "Copy pairing command" }).click();
   expect(await page.evaluate(() => (window as any).__copied)).toEqual([
-    "herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair",
+    "curl -fsSL https://getshahi.dev/install | sh", "herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair",
   ]);
   await page.getByRole("link", { name: /Already have a code/ }).click();
   await expect(page.getByLabel("Pairing code", { exact: true })).toBeFocused();
@@ -686,7 +687,7 @@ test("setup commands copy independently and the returning-user shortcut focuses 
 test("each setup command stays on one line, even on a narrow phone", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/pwa/");
-  for (const command of ["herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair"]) {
+  for (const command of ["curl -fsSL https://getshahi.dev/install | sh", "herdr plugin install iYassr/shahi", "herdr plugin action invoke shahi.pair"]) {
     const code = page.locator(".setup-command__line code").filter({ hasText: command });
     // A range has a box per line its text occupies.
     const lines = await code.evaluate((element) => {

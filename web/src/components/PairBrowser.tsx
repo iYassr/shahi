@@ -60,12 +60,14 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
       <h1>{t("Connect your computer")}</h1><p>{t("Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity wherever you are. Start by connecting your computer.")}</p>
       <p><a className="pair-browser__jump" href="#pair-browser-form" onClick={(event) => { event.preventDefault(); document.getElementById("pair-browser-form")?.scrollIntoView({ block: "start" }); document.getElementById("pairing-code")?.focus({ preventScroll: true }); }}>{t("Already have a code? Connect now ↓")}</a></p>
       <section className="app-help pair-browser__setup" aria-labelledby="computer-setup">
-        <h2 id="computer-setup">{t("Set up Shahi in 3 steps")}</h2>
-        <p>{t("On the Mac or Linux computer you want to connect,")}{" "}<a href="https://herdr.dev" target="_blank" rel="noreferrer">{t("install and open herdr")}</a> {" "}{t("first.")}</p>
+        {/* One line installs herdr when it is missing, then Shahi, and shows
+            the code (site/install.sh): the owner asked for herdr to come with
+            it (October 2026). The plugin commands stay for herdr users. */}
+        <h2 id="computer-setup">{t("Set up Shahi in 2 steps")}</h2>
         <ol role="list">
-          <li><span className="pair-browser__step-icon"><SetupIcon name="install" /></span><div><strong><span className="pair-browser__step-number">1.</span> {" "}{t("Add Shahi to your computer")}</strong><p>{t("In herdr’s terminal (the window where you type commands), paste this line:")}</p><SetupCommand command="herdr plugin install iYassr/shahi" label={t("Copy install command")} /></div></li>
-          <li><span className="pair-browser__step-icon"><SetupIcon name="qr" /></span><div><strong><span className="pair-browser__step-number">2.</span> {" "}{t("Show your connection code")}</strong><p>{t("Then paste this line:")}</p><SetupCommand command="herdr plugin action invoke shahi.pair" label={t("Copy pairing command")} /></div></li>
-          <li><span className="pair-browser__step-icon"><SetupIcon name="devices" /></span><div><strong><span className="pair-browser__step-number">3.</span> {" "}{t("Connect this browser")}</strong><p>{t("Scan the QR code on your computer, or copy its full code into the form below.")}</p></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="install" /></span><div><strong><span className="pair-browser__step-number">1.</span> {" "}{t("Set up your computer")}</strong><p>{t("On the Mac or Linux computer you want to connect, paste this line into a terminal (the window where you type commands). It installs")}{" "}<a href="https://herdr.dev" target="_blank" rel="noreferrer">herdr</a>{" "}{t("if it is missing, then Shahi, and shows a connection code:")}</p><SetupCommand command="curl -fsSL https://getshahi.dev/install | sh" label={t("Copy setup command")} />
+            <p>{t("Already use herdr? Inside it, run these two lines instead:")}</p><SetupCommand command="herdr plugin install iYassr/shahi" label={t("Copy install command")} /><SetupCommand command="herdr plugin action invoke shahi.pair" label={t("Copy pairing command")} /></div></li>
+          <li><span className="pair-browser__step-icon"><SetupIcon name="devices" /></span><div><strong><span className="pair-browser__step-number">2.</span> {" "}{t("Connect this browser")}</strong><p>{t("Scan the QR code on your computer, or copy its full code into the form below.")}</p></div></li>
         </ol>
         <p>{t("Keep herdr open and your computer connected to the internet.")}</p>
       </section>

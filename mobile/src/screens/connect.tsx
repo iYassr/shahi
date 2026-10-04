@@ -39,9 +39,14 @@ import {
 } from "@/lib/ssh";
 import { theme } from "@/lib/theme";
 
-/** The one-time server install, the thing the intro exists to hand over. */
-export const INSTALL_COMMAND =
-  "herdr plugin install iYassr/shahi\nherdr plugin action invoke shahi.pair";
+/**
+ * The one-time computer setup, the thing the intro exists to hand over: one
+ * line that installs herdr when it is missing, then Shahi, and shows the QR
+ * (site/install.sh). The owner asked for herdr to come with it (October 2026);
+ * the two plugin commands remain for someone who already runs herdr.
+ */
+export const INSTALL_COMMAND = "curl -fsSL https://getshahi.dev/install | sh";
+export const HERDR_COMMANDS = "herdr plugin install iYassr/shahi\nherdr plugin action invoke shahi.pair";
 
 /**
  * Said when Paste found no pairing link. iOS answers an empty string both
@@ -373,7 +378,7 @@ function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; on
           sits above them to leave each line the box's full width, and a line
           that still does not fit scrolls sideways rather than wrapping. */}
       <View style={styles.command}>
-        <Pressable accessibilityRole="button" accessibilityLabel={copied ? ui("Copied both commands") : ui("Copy both commands")} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
+        <Pressable accessibilityRole="button" accessibilityLabel={copied ? ui("Copied the setup command") : ui("Copy the setup command")} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
           <UiText style={styles.copy}>{copied ? "Copied" : "Copy"}</UiText>
         </Pressable>
         {INSTALL_COMMAND.split("\n").map((line) => (
@@ -382,10 +387,18 @@ function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; on
           </ScrollView>
         ))}
       </View>
-      <Text style={styles.introText}>{ui("Paste these two lines into the terminal (the window where you type commands) on a Mac or Linux computer running")}{" "}
+      <Text style={styles.introText}>{ui("Paste this line into the terminal (the window where you type commands) on a Mac or Linux computer. It installs")}{" "}
         <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
           herdr
-        </Text>{ui(", the app that keeps your AI assistants running. The second line shows a code to connect your phone." + " ")}</Text>
+        </Text>{ui(", the app that keeps your AI assistants running, if it is missing, then Shahi, and shows a code to connect your phone." + " ")}</Text>
+      <UiText style={styles.introText}>Already use herdr? Inside it, run these two lines instead:</UiText>
+      <View style={styles.command}>
+        {HERDR_COMMANDS.split("\n").map((line) => (
+          <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="herdr-line">
+            <Text style={styles.commandText} numberOfLines={1} selectable>{line}</Text>
+          </ScrollView>
+        ))}
+      </View>
 
       <UiText style={styles.step}>2 — Connect your phone.</UiText>
       <UiText style={styles.introText}>

@@ -248,14 +248,13 @@
       <div>
         <p class="eyebrow">Setup</p>
         <h2 id="setup-title">Install. Scan. Connect.</h2>
-        <p>Two commands in herdr on your Mac or Linux computer, then one scan on your phone: about a minute once herdr is running. The Shahi tunnel is included and connects automatically after pairing.</p>
+        <p>One command on your Mac or Linux computer, then one scan on your phone. It installs herdr if you don’t have it yet, then Shahi, and shows the code. The Shahi tunnel is included and connects automatically after pairing.</p>
         <!-- The code is a shahi:// link, which a phone's camera cannot hand to a browser. -->
         <p>On your phone, open <a href="/pwa/">getshahi.dev/pwa</a> and tap <strong>Scan QR code</strong>, or scan it with the iOS app. Your camera app can’t pass this code to the browser, so scan it from inside Shahi.</p>
-        <p><strong>New to herdr?</strong> Shahi shows the agents you run inside it. <a href="https://herdr.dev">Install herdr first</a>, then start your agents there.</p>
+        <p><strong>Already use herdr?</strong> Run <code>herdr plugin install iYassr/shahi</code>, then <code>herdr plugin action invoke shahi.pair</code>, inside it instead. Shahi shows the agents you run in <a href="https://herdr.dev">herdr</a>.</p>
         <a class="quiet-link" href="https://github.com/iYassr/shahi#quick-start">Step-by-step setup guide <span aria-hidden="true">↗</span></a>
       </div>
-      <div class="command"><div class="file-label">On your computer, in herdr</div><pre><code>herdr plugin install iYassr/shahi
-herdr plugin action invoke shahi.pair</code></pre><p>Needs herdr 0.9.0 or newer, git, and bun 1.3.13 or newer (if bun is missing, the install adds it), on macOS or Linux. Automatic background setup on Linux uses systemd. Each code can be used once and expires after 10 minutes.</p></div>
+      <div class="command"><div class="file-label">On your Mac or Linux computer, in a terminal</div><pre><code>curl -fsSL https://getshahi.dev/install | sh</code></pre><p>Installs herdr 0.9.3 if herdr is missing, after checking its download against its published SHA-256, then the Shahi plugin, and shows the pairing code. Needs git, and on Linux unzip if bun is missing; it asks for no password. <a href="/install">Read the script</a> before you run it. An existing herdr must be 0.9.0 or newer. Automatic background setup on Linux uses systemd. Each code can be used once and expires after 10 minutes.</p></div>
     </section>
 
     <section class="why" aria-labelledby="why-title">
