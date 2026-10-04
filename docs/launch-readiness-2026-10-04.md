@@ -127,6 +127,16 @@ brace-expansion updates pass bounded regressions. See
 [dependency review](../patches/README.md); no speculative cryptographic patch
 or broad framework upgrade was made on launch day.
 
+The independent review-demo npm lock now selects Undici 7.29.1 and Sharp
+0.35.4 through scoped overrides, clearing its seven reported tooling alerts;
+its frozen install, audit, types, dry build and model/archive tests pass.
+Root Miniflare's ten Undici advisories remain tooling-only: a compatible
+upstream update also advances its alpha Workerd engine by 23 days. Scoped
+overrides are unsupported by the pinned Bun 1.3.13. The affected libraries
+are absent from the traced public service, relay and review runtime bundles;
+the broader tooling update needs a separate verification rather than a global
+Undici major-version override that also changes Sentry's version-six client.
+
 ## Marketing and launch-day operation
 
 [The launch kit](../marketing/launch-2026-10-04.md) contains LinkedIn posts,

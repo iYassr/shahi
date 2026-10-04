@@ -46,7 +46,7 @@ export const SAVE_FAILED = "Couldn't save your computers securely.";
 type Stored = ComputerConnection;
 
 interface SessionValue {
-  control?: import("@shahi/shared").ControlSession;
+  control?: Pick<import("@shahi/shared").ControlSession, "handshake" | "error" | "pending" | "refresh" | "request">;
   api: Api;
   transport: Connection;
   revokeComputer: (id: string) => Promise<void>;
@@ -424,8 +424,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     answeredPrompt: (pane: string, shown: ParsedPrompt | undefined, outcome: AnsweredPrompt["outcome"]) => entry?.answeredPrompt(pane, shown, outcome),
     unauthorized: () => { void entry?.unauthorized(); },
   }), [entry]);
+  const controlActions = useMemo(() => ({
+    refresh: () => entry?.control.refresh() ?? Promise.resolve(),
+    request: (...args: Parameters<import("@shahi/shared").ControlSession["request"]>) => entry?.control.request(...args) ?? Promise.resolve(),
+  }), [entry]);
+  const controlHandshake = entry?.control.handshake;
+  const controlError = entry?.control.error;
+  const controlPending = entry?.control.pending;
+  // The poller mutates its class in place. Render consumers need a new
+  // snapshot when its state changes, while unrelated socket frames retain it.
+  const controlSnapshot = useMemo(() => entry ? {
+    ...controlActions, handshake: controlHandshake ?? null, error: controlError ?? null, pending: controlPending ?? false,
+  } : undefined, [entry, controlActions, controlHandshake, controlError, controlPending]);
   const value: SessionValue = {
-    control: entry?.control,
+    control: controlSnapshot,
     api: entry?.api ?? api, transport: entry?.connection ?? connection,
     ready, online, connected: !!entry, connectionKey, addingComputer, activeComputerId: selection,
     computers: bank.current.map(c => {

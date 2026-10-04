@@ -22,6 +22,7 @@ final class LanguageTests: XCTestCase {
     app.activate()
     // Revocation returns this disposable fixture pair to onboarding, including
     // when a preceding language run stopped before restoring English.
+    try Fixture.call(Fixture.secondary, "revoke")
     try Fixture.call(Fixture.primary, "revoke")
     XCTAssertTrue(app.buttons["intro-continue"].waitForExistence(timeout: 30))
     XCTAssertTrue(app.descendants(matching: .any)["language-en"].waitForExistence(timeout: 15), "start from the isolated simulator's onboarding")

@@ -222,10 +222,13 @@ const SPOKEN: Record<DiffRow["kind"], string> = { added: "Added", removed: "Remo
  * numbers, the sign and the line, so a long diff costs two views a row.
  */
 const DiffLine = memo(function DiffLine({ row }: { row: DiffRow }) {
-  useI18n();
+  const { t: ui } = useI18n();
   const number = row.newLine ?? row.oldLine;
+  const label = number === undefined
+    ? ui("{status}: {text}", { status: ui(SPOKEN[row.kind]), text: row.text })
+    : ui("{status}, line {number}: {text}", { status: ui(SPOKEN[row.kind]), number, text: row.text });
   return (
-    <View style={[styles.row, ROW_STYLE[row.kind]]} accessible accessibilityLabel={`${SPOKEN[row.kind]}${number === undefined ? "" : `, line ${number}`}: ${row.text}`}>
+    <View style={[styles.row, ROW_STYLE[row.kind]]} accessible accessibilityLabel={label}>
       <Text style={[styles.code, (row.kind === "hunk" || row.kind === "note") && styles.quiet]}>
         <Text style={styles.number}>{pad(row.oldLine)} {pad(row.newLine)} </Text>
         <Text style={row.kind === "added" ? styles.added : row.kind === "removed" ? styles.removed : undefined}>{SIGN[row.kind]} </Text>

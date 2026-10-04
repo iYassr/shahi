@@ -8,7 +8,7 @@ import { AppState } from "react-native";
 import { addNetworkStateListener, getNetworkStateAsync } from "expo-network";
 import { RelayLink } from "./relay";
 import { linkLabel } from "@/components/link-badge";
-import { connectionHealth } from "@shahi/shared";
+import { connectionHealth, type ControlHandshake } from "@shahi/shared";
 import { I18nProvider, useI18n } from "./i18n";
 
 const mockSockets: any[] = [];
@@ -68,6 +68,37 @@ test("two computers on the same relay survive switching both ways and a cold lau
   await act(async () => { await value.switchComputer(computerId(a)); });
   expect(connection.relay?.serverId).toBe(a.serverId);
   ui.unmount();
+});
+test("control changes publish new render snapshots while keeping bound actions stable", async () => {
+  let answer!: (handshake: ControlHandshake) => void;
+  api.control = jest.fn(() => new Promise(resolve => { answer = resolve; }));
+  api.updateComputer = jest.fn(async () => ({}));
+  const ui = await mount();
+  try {
+    act(() => value.signInRelay(a));
+    await waitFor(() => expect(answer).toBeDefined());
+    const initial = value.control!;
+    expect(initial.handshake).toBeNull();
+    const handshake = { control: 1, serverId: a.serverId, buildId: "old", api: { min: 5, max: 5 }, capabilities: ["computer-updates"], backend: { state: "connected", version: "1.0.0", protocol: 22 }, update: { managed: true, channel: "stable", phase: "available", current: "0.3.0", available: "0.3.1" } } satisfies ControlHandshake;
+    await act(async () => answer(handshake));
+    await waitFor(() => expect(value.control?.handshake).toBe(handshake));
+    const available = value.control!;
+    expect(available).not.toBe(initial);
+    expect(initial.handshake).toBeNull();
+    expect(available.request).toBe(initial.request);
+    act(() => value.togglePin("a-pin"));
+    expect(value.control).toBe(available);
+    await act(async () => { await available.request("install"); });
+    expect(api.updateComputer).toHaveBeenCalledWith("install", undefined);
+    expect(value.control?.pending).toBe(true);
+    expect(value.control).not.toBe(available);
+    expect(available.pending).toBe(false);
+    expect(value.control?.refresh).toBe(initial.refresh);
+  } finally {
+    ui.unmount();
+    delete (api as Partial<typeof api>).control;
+    delete (api as Partial<typeof api>).updateComputer;
+  }
 });
 // Restoring the selected computer on launch moved it to the end of the list,
 // so a, b, c with a selected came back b, c, a (pre-release bug hunt).

@@ -31,6 +31,16 @@ Miniflare's pinned transitive copy. Its prebuilt libraries address
 This is build and local development tooling; the production relay does not
 bundle Sharp or process images.
 
+The independent review-demo npm lockfile does not inherit root overrides.
+The October 4 launch review adds scoped Miniflare overrides in
+`demo/package.json` for **Sharp 0.35.4** and **Undici 7.29.1**, updating only
+those libraries and Sharp's required prebuilt/libvips packages. Direct
+container, Wrangler and TypeScript versions are preserved. Its frozen install,
+types, worker dry-run, model and state/archive tests passed; `npm audit
+--prefix demo` reports zero advisories. This fixes the source of seven open
+GitHub alerts on that separate lockfile; GitHub may still show them until its
+next dependency scan.
+
 The October 4 launch review updates **brace-expansion 5.0.12** and every
 compatible 1.x copy to **1.1.21**, without changing the dependency ranges.
 These releases fix recursion and malformed-brace rewrite exhaustion, including
@@ -71,3 +81,23 @@ advisories across four package names: three covered by the installed
 `decode-uri-component` / `image-size` patches above, plus the unresolved
 `braces` and `node-forge` advisories. The audit is not clean and no advisories
 are suppressed.
+
+The **full** root audit additionally reports ten Undici 7.29.0 advisories
+(two high, five moderate and three low) through Miniflare's pinned development
+dependency. [Undici 7.29.1](https://github.com/nodejs/undici/releases/tag/v7.29.1)
+fixes them. The TLS callback advisory affects `BalancedPool` with custom
+function-valued TLS/connection options; the reviewed Miniflare implementation
+uses `Pool`. No Undici or Sharp input appears in the computer service, relay
+or review-container application build graphs.
+
+CI's Bun 1.3.13 does not support a parent-scoped override: isolated checks of
+nested overrides, a version selector and Yarn path resolutions leave the
+7.29.0 dependency unchanged. Applying a global 7.x override would also replace
+Sentry CLI's separate 6.x dependency, so it is not used. The first inspected
+Miniflare release with the fixed dependency is 5.20260926.1-alpha; moving from
+the pinned 5.20260903.0-alpha also changes Workerd from 1.20260903.1 to
+1.20260926.1. That broader alpha tooling/engine update is deferred. Preserve
+the explicit development-tool risk and update the paired toolchain with its
+integration checks rather than relying on an ignored override. The current
+[Bun override documentation](https://bun.com/docs/pm/overrides) describes newer
+scoped rules and a lock format that older Bun cannot read.

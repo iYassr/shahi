@@ -1652,3 +1652,11 @@ shared display helpers. Reserve the global helper for events outside rendering.
 React Native mirrors logical left/right text alignment under Yoga RTL; flipping
 it again in `UiText` mirrors it twice. Verify actual Arabic layout and changing
 labels in the native language smoke, alongside unchanged raw content and drafts.
+
+The native session context publishes an immutable control snapshot rather than
+the mutable `ControlSession` instance. Compiler caches keyed by that instance
+could retain its initial null handshake and hide updates and capabilities.
+Copy handshake/error/pending state on provider renders, keep bound actions
+stable, and retain snapshot identity when those fields and the selected
+computer are unchanged. The update lifecycle must pass in a compiled Release
+app; ordinary component tests alone do not exercise this cache behavior.

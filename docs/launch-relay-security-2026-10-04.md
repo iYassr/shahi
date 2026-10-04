@@ -122,6 +122,31 @@ These remain explicit build-tool risks, not a clean audit result. See
 [the dependency review](../patches/README.md) for primary upstream sources,
 the separate EAS lockfile and the exact reachability limits.
 
+GitHub's seven open Dependabot alerts were independently read and reconciled:
+all referred to development dependencies in `demo/package-lock.json`, not the
+root Bun lockfile. Six were Undici 7.29.0 advisories and one was Sharp 0.35.2's
+libheif advisory. Scoped npm overrides now select Undici 7.29.1 and Sharp
+0.35.4 in that separate demo lockfile. Direct dependency versions are unchanged.
+Its frozen install and audit returned zero advisories; types, worker dry-run,
+five simulated-model tests and four state/archive tests passed. No demo
+deployment or live session was changed; GitHub's scan may lag the source fix.
+
+The full root audit additionally reports ten Undici 7.29.0 development-tool
+advisories through Miniflare: two high, five moderate and three low. Bun
+1.3.13's scoped-override forms were tested in isolation and do not change that
+pinned dependency. The first inspected fixed Miniflare release also advances
+the alpha Workerd engine by 23 days; that wider update is deferred. A global
+Undici 7.x override would replace Sentry CLI's separate 6.x dependency and was
+not applied. The current five production-scope audit results therefore remain
+distinct from the 15 full-workspace version-based findings.
+
+Fresh frozen-source bundle graphs included 156 computer-service modules,
+eight relay modules and 95 review-controller modules, with no Undici, Sharp,
+braces or node-forge inputs. The reviewed Miniflare uses Undici's `Pool`, rather
+than the `BalancedPool` configuration affected by the TLS callback advisory.
+No new public-runtime high-severity blocker was demonstrated. The unresolved
+tooling risks remain documented rather than dismissed or suppressed.
+
 ## Latest upstream compatibility
 
 On October 4, public upstream metadata selected
