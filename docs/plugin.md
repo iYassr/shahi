@@ -41,7 +41,7 @@ was measured, had no menu for plugin actions.
 
 - **herdr 0.9.0 or newer** (the manifest's `min_herdr_version`) on **macOS or
   Linux**. Each Shahi release is approved for exact herdr versions — today
-  0.9.0 and 0.9.1 — once the live adapter suite passes against them
+  0.9.0 through 0.9.3 — once the live adapter suite passes against them
   ([releases.md](releases.md)). On a herdr no release is approved for, a first
   install still goes ahead with the newest release, in the recovery state:
   pairing and updates work, agent commands are refused, and the popup names the

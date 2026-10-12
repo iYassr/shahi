@@ -9,7 +9,7 @@
 Read, answer and steer your Claude Code, Codex, Cursor CLI,<br>
 Antigravity and OpenCode sessions in herdr from your phone.
 
-**Two commands, one scan, about a minute.** Shahi's encrypted tunnel is ready to
+**One command, one scan, about a minute.** Shahi's encrypted tunnel is ready to
 use and free for everyone. No VPN, port forwarding or Shahi account required.
 
 [![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
@@ -156,7 +156,7 @@ requirements and what to do if something does not work.
 ### 1. Install on the computer doing the work
 
 Shahi runs on **macOS or Linux** with **herdr 0.9.0 or newer**. Each Shahi
-release is approved for specific herdr versions, today 0.9.0 and 0.9.1, after
+release is approved for specific herdr versions, today 0.9.0 through 0.9.3, after
 the live adapter suite passes against them. On a herdr no release is approved
 for yet, Shahi still installs, in a recovery state: you can pair and update,
 but agent commands are refused until an approved Shahi or herdr arrives, and

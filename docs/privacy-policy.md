@@ -1,6 +1,6 @@
 # Shahi — Privacy Policy
 
-_Last updated: 3 October 2026. Published at
+_Last updated: 13 October 2026. Published at
 <https://getshahi.dev/privacy>._
 
 ## What Shahi does
@@ -200,7 +200,7 @@ Camera access is used to scan pairing codes. Scanning happens on your device. Ph
 
 ## Voice dictation
 
-The submitted iPhone 1.1 update, awaiting Apple review, supports dictating a
+The iPhone app (version 1.1 and later) supports dictating a
 reply on an iPhone with iOS 26 that supports Apple's on-device speech model.
 The microphone opens only after you tap the microphone
 button, and stops when you finish, cancel, leave the app or receive a call.
