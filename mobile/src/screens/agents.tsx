@@ -341,7 +341,8 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           blocked.length ? null : (
-            <Centered>{ui(search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : active === "all" ? "No agents running." : "Nothing here right now.")}</Centered>
+            !search && active === "all" ? <FirstAgent disabled={herdrAway} /> :
+            <Centered>{ui(search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : "Nothing here right now.")}</Centered>
           )
         }
       />
@@ -683,6 +684,25 @@ function BlockedCard({
   );
 }
 
+/**
+ * A computer with no agents yet, which is every computer the moment it is
+ * paired. "No agents running." was the whole of it, so a new person's first
+ * sight after pairing was a dead end, with the way forward a small button in
+ * the list header (fresh-eyes review before the public launch, October 2026).
+ */
+function FirstAgent({ disabled }: { disabled: boolean }) {
+  return (
+    <View style={styles.firstAgent} testID="first-agent">
+      <UiText style={styles.firstAgentTitle} accessibilityRole="header">No agents running yet</UiText>
+      <UiText style={styles.firstAgentText}>Start Claude Code, Codex or another agent on this computer from here. Agents started in herdr on the computer show up here too.</UiText>
+      <Pressable accessibilityRole="button" disabled={disabled} accessibilityState={{ disabled }} style={[styles.firstAgentButton, disabled && { opacity: 0.5 }]}
+        onPress={() => router.push("/new-agent")} testID="first-agent-start">
+        <UiText style={styles.firstAgentButtonText}>Start an agent</UiText>
+      </Pressable>
+    </View>
+  );
+}
+
 const Centered = ({ children }: { children: React.ReactNode }) => (
   <View style={styles.centered}>
     <Text style={styles.dim}>{children}</Text>
@@ -698,6 +718,11 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.void },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 32 },
   dim: { color: theme.dim, textAlign: "center" },
+  firstAgent: { alignItems: "center", gap: 12, paddingHorizontal: 32, paddingVertical: 40 },
+  firstAgentTitle: { color: theme.fg, fontSize: 20, fontWeight: "600", textAlign: "center" },
+  firstAgentText: { color: theme.dim, fontSize: 15, lineHeight: 22, textAlign: "center" },
+  firstAgentButton: { marginTop: 8, minHeight: 48, paddingHorizontal: 28, borderRadius: 10, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: theme.peach },
+  firstAgentButtonText: { color: theme.void, fontSize: 16, fontWeight: "600" },
 
   status: { flexDirection: "row", alignItems: "center", gap: 10 },
   notice: {

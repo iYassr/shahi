@@ -65,10 +65,11 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
 
   const [phase, setPhase] = useState<Phase>("idle");
 
+  const [lookAgain, setLookAgain] = useState(0);
   useEffect(() => {
     let live = true;
     void api
-      .agents()
+      .agents(lookAgain > 0)
       .then((d) => {
         if (!live) return;
         setAvailable(d.agents);
@@ -76,7 +77,7 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
       })
       .catch(() => { if (live) onToast("Could not list agents"); });
     return () => { live = false; };
-  }, [api, onToast]);
+  }, [api, onToast, lookAgain]);
 
   async function start() {
     if (!kind || inFlight.current || !cwd.path.startsWith("/") || replaced) return;
@@ -125,8 +126,11 @@ export function NewAgent({ space, onClose, onToast, onStarted }: Props) {
         {available === null ? (
           <p className="picker__empty">{t("Looking for installed agents…")}</p>
         ) : available.length === 0 ? (
-          <p className="picker__error">
-            {t("No agents found on this machine. Install one and reopen this sheet.")}</p>
+          // Not a dead end: the person can install one at the computer while
+          // this waits (fresh-eyes review before the public launch).
+          <div><p className="picker__error">{t("No agents are installed on this computer yet.")}</p>
+            <p className="sheet__note">{t("Install Claude Code or Codex on the computer and sign in to it there once, then check again.")}</p>
+            <button type="button" onClick={() => { setAvailable(null); setLookAgain((n) => n + 1); }}>{t("Check again")}</button></div>
         ) : (
           // The chosen agent is marked three ways, accent border, check and
           // weight, because a lighter fill was all that told it apart

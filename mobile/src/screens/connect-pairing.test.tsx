@@ -56,7 +56,7 @@ jest.mock("@/lib/relay", () => {
   };
 });
 jest.mock("@/components/scanner", () => ({ Scanner: () => null }));
-jest.mock("@/components/icons", () => ({ Logo: () => null, Wordmark: () => null }));
+jest.mock("@/components/icons", () => ({ Logo: () => null, Wordmark: () => null, Icon: () => null }));
 jest.mock("@/components/greeting-logo", () => ({ GreetingLogo: () => null }));
 jest.mock("expo-clipboard", () => ({ setStringAsync: jest.fn() }));
 jest.mock("expo-device", () => ({ deviceName: null, modelName: "iPhone" }));

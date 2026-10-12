@@ -180,7 +180,6 @@ const entries: readonly (readonly [string, string, string])[] = [
   ["New space", "مساحة جديدة", "Nuevo espacio"],
   ["New tab in {value0}", "تبويب جديد في {value0}", "Nueva pestaña en {value0}"],
   ["Next", "التالي", "Siguiente"],
-  ["No agents found on this machine. Install one and reopen this sheet.", "لم يُعثر على وكلاء على هذا الحاسوب. ثبّت وكيلًا ثم أعد فتح هذه النافذة.", "No se encontraron agentes en este ordenador. Instala uno y vuelve a abrir este panel."],
   ["No agents running.", "لا يوجد وكلاء قيد التشغيل.", "No hay agentes en ejecución."],
   ["No approval before changes", "لا موافقة قبل التغييرات", "Sin aprobación antes de los cambios"],
   ["No changes since the last commit.", "لا توجد تغييرات منذ آخر حفظ في Git.", "No hay cambios desde el último commit."],

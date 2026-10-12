@@ -96,3 +96,18 @@ test("the agent last started is chosen, and a start is remembered for the next s
   expect(onStarted).toHaveBeenCalledWith("w3:p1");
   expect(stored.get(LAST_AGENT)).toBe("agy");
 });
+
+// A new computer often has no agent yet. "Install one and reopen this sheet"
+// was the way on, and reopening within a minute got the computer's cached
+// answer again (fresh-eyes review before the public launch, October 2026).
+test("with no agents installed, Check again asks the computer to look again", async () => {
+  const answers = [{ agents: [] }, { agents: [{ kind: "claude", command: "claude" }] }];
+  const agents = mock(async (_refresh?: boolean) => answers.shift()!);
+  const empty = { ...client, agents };
+  await act(async () => { view = create(<ApiContext.Provider value={empty}><NewAgent space={space("w1", "projA")} onClose={mock()} onToast={mock()} onStarted={mock()} /></ApiContext.Provider>); });
+  expect(output()).toContain("No agents are installed on this computer yet.");
+  expect(agents.mock.calls.at(-1)?.[0]).toBe(false);
+  await act(async () => button("Check again").props.onClick());
+  expect(agents.mock.calls.at(-1)?.[0]).toBe(true);
+  expect(kinds().map((kind) => textOf(kind))).toEqual([expect.stringContaining("Claude")]);
+});

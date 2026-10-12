@@ -141,6 +141,21 @@ test("an empty installed-agent list explains why creation is unavailable", async
   expect(mockApi.startAgent).not.toHaveBeenCalled();
 });
 
+// A new computer often has no agent yet; the person installs one there while
+// the sheet waits. The computer caches its answer for a minute, so Check
+// again asks it to look afresh (fresh-eyes review before the public launch).
+test("with no agents installed, Check again asks the computer to look again", async () => {
+  mockApi.agents.mockClear();
+  mockApi.agents.mockResolvedValueOnce({ agents: [] }).mockResolvedValueOnce({ agents: [{ kind: "claude" }] });
+  render(<NewAgent space={mockSpace} onStarted={jest.fn()} />);
+  await screen.findByText(/Install Claude Code or Codex on the computer/);
+  expect(mockApi.agents).toHaveBeenLastCalledWith(false);
+  fireEvent.press(screen.getByTestId("recheck-agents"));
+  expect(await screen.findByTestId("agent-kind-claude")).toBeTruthy();
+  expect(mockApi.agents).toHaveBeenLastCalledWith(true);
+  expect(screen.queryByTestId("no-agents")).toBeNull();
+});
+
 test("Spaces shows the computer name and status without its relay address", () => {
   render(<Spaces session={mockSession} />);
   expect(screen.getByText("My computer ▾")).toBeTruthy();

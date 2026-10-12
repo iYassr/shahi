@@ -435,7 +435,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
     let active = true;
     setLoading(true);
     setLoadError(null);
-    void api.agents().then((d) => {
+    void api.agents(loadAttempt > 0).then((d) => {
       if (!active) return;
       const available = [...new Set(d.agents.map((a) => a.kind))];
       setKinds(available);
@@ -498,7 +498,13 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
       {replaced && <UiText accessibilityRole="alert" style={styles.err}>This space changed while you were choosing an agent. Close this screen and choose the space again.</UiText>}
       {loading && <UiText style={styles.note}>Finding your agents…</UiText>}
       {loadError && <><UiText style={styles.err}>{loadError}</UiText><Pressable accessibilityRole="button" testID="retry-agent-list" onPress={() => setLoadAttempt((n) => n + 1)}><UiText style={styles.actionText}>Try again</UiText></Pressable></>}
-      {!loading && !loadError && kinds.length === 0 && <UiText style={styles.note}>No agents are installed on this computer yet.</UiText>}
+      {/* Not a dead end: a new computer often has no agent yet, and the
+          person can fix that at the computer while this sheet waits. */}
+      {!loading && !loadError && kinds.length === 0 && <View testID="no-agents">
+        <UiText style={styles.note}>No agents are installed on this computer yet.</UiText>
+        <UiText style={styles.note}>Install Claude Code or Codex on the computer and sign in to it there once, then check again.</UiText>
+        <Pressable accessibilityRole="button" testID="recheck-agents" style={{ minHeight: 44, justifyContent: "center" }} onPress={() => setLoadAttempt((n) => n + 1)}><UiText style={styles.actionText}>Check again</UiText></Pressable>
+      </View>}
       <UiText style={styles.label}>AGENT</UiText>
       {/* The chosen agent is marked three ways, accent border, check and
           weight, because a slightly lighter fill was all that told it apart

@@ -570,7 +570,9 @@ const api = {
     return value;
   },
 
-  agents: () => request<{ agents: InstalledAgent[]; known: number }>("/api/agents"),
+  // `refresh` asks the computer to look again rather than answer from its
+  // minute-long cache, for a person who has just installed an agent there.
+  agents: (refresh = false) => request<{ agents: InstalledAgent[]; known: number }>(refresh ? "/api/agents?refresh=1" : "/api/agents"),
 
   dirs: (path = "~", files = false) =>
     request<DirListing>(`/api/dirs?path=${encodeURIComponent(path)}${files ? "&files=1" : ""}`),

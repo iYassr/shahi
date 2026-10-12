@@ -120,3 +120,22 @@ test("an agent with nothing said offers nothing to copy", () => {
   expect(view.queryByText("Mark reviewed")).toBeNull();
   expect(view.getByText("Open screen")).toBeTruthy();
 });
+
+// Every computer has no agents the moment it is paired, and "No agents
+// running." was all a new person saw there (fresh-eyes review before the
+// public launch, October 2026).
+test("a computer with no agents yet says how to start one, and starts the sheet", () => {
+  const { router } = jest.requireMock("expo-router") as { router: { push: jest.Mock } };
+  router.push.mockClear();
+  mockState.session = { panes: [] };
+  const view = render(<Agents onOpenPane={jest.fn()} />);
+  expect(view.getByText("No agents running yet")).toBeTruthy();
+  fireEvent.press(view.getByTestId("first-agent-start"));
+  expect(router.push).toHaveBeenCalledWith("/new-agent");
+  // A search that matches nothing is not a first run.
+  mockState.session = { panes: [pane("Fix the build")] };
+  view.rerender(<Agents onOpenPane={jest.fn()} />);
+  fireEvent.changeText(view.getByTestId("search-agents"), "nothing like it");
+  expect(view.queryByTestId("first-agent")).toBeNull();
+  expect(view.getByText("No matching conversations. Try another name, space or folder.")).toBeTruthy();
+});

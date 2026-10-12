@@ -15,14 +15,14 @@ import { useI18n } from "@/lib/i18n";
  * Credentials go straight to the Keychain and never leave the phone.
  */
 import { useState, useEffect, useRef } from "react";
-import { InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { Text } from "@/components/text";
+import { InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from "react-native";
+import { Text, useLargeText } from "@/components/text";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
-import type { PairingPayload } from "@shahi/shared";
+import { SUPPORTED_LOCALES, type PairingPayload } from "@shahi/shared";
 import { createApi, UnauthorizedError, type Connection } from "@/lib/api";
 import { closeRelay, pairingTarget, type RelayIdentity, type RelayTarget } from "@/lib/relay";
-import { Wordmark } from "@/components/icons";
+import { Icon, Wordmark } from "@/components/icons";
 import { GreetingLogo } from "@/components/greeting-logo";
 import { Scanner } from "@/components/scanner";
 import { HostKeyCard } from "@/components/host-key-card";
@@ -104,7 +104,7 @@ export function Connect({
     const failed = linkFailure?.payload === pending ? linkFailure.message : null;
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.introBody} testID="pair-review">
-        <LanguagePicker />
+        <LanguageMenu />
         <UiText style={styles.lede} accessibilityRole="header">Pair this phone?</UiText>
         <UiText style={styles.introText}>
           A link is asking to connect this phone to a Shahi computer. Only continue if you opened this
@@ -280,7 +280,7 @@ export function Connect({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
       >
-        <LanguagePicker />
+        <LanguageMenu />
         {/* The horizontal lockup: the s-and-glass mark + lowercase wordmark — and the
             intended way in beside it. It sits in the title row on purpose: as
             a card above the form it pushed the Connect button under the
@@ -351,6 +351,10 @@ export function Connect({
 function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; onPaste: () => void; onSsh: () => void; busy: boolean; error: string | null }) {
   const { t: ui } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [herdrUser, setHerdrUser] = useState(false);
+  // Pinned, the footer took half the screen at AX5 and left a sliver to read
+  // the steps through; at accessibility sizes it ends the scroll instead.
+  const large = useLargeText();
 
   const copy = async () => {
     await Clipboard.setStringAsync(INSTALL_COMMAND);
@@ -358,66 +362,142 @@ function Intro({ onScan, onPaste, onSsh, busy, error }: { onScan: () => void; on
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+  // The line is typed on a computer, and the person is holding a phone. Copy
+  // reaches a Mac only through Universal Clipboard on the same Apple Account;
+  // the share sheet reaches anything else, by AirDrop, Messages or Mail.
+  const send = () => {
+    void Share.share({ message: `${ui("Set up Shahi: paste this line into a terminal on your Mac or Linux computer.")}\n\n${INSTALL_COMMAND}` }).catch(() => {});
+  };
 
+  /*
+   * Fresh-eyes review before the public launch (October 2026), on an iPhone 17:
+   * a new person saw four language buttons first, the setup line cut off at
+   * "| s", and the herdr users' commands in the middle of their path, and had
+   * to scroll to find Scan QR code at all. So the language is one button, the
+   * line shrinks to fit its box, the herdr commands fold away, and Scan stays
+   * on screen below the steps however far they scroll.
+   */
+  const footer = <IntroFooter onScan={onScan} onPaste={onPaste} onSsh={onSsh} busy={busy} error={error} pinned={!large} />;
   return (
-    <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator>
-      <LanguagePicker />
-      <View style={[styles.lockup, { marginBottom: 6 }]}>
-        <GreetingLogo />
-        <Wordmark color={theme.fg} />
-      </View>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.introBody} showsVerticalScrollIndicator>
+        <LanguageMenu leading={<View style={styles.lockup}><GreetingLogo /><Wordmark color={theme.fg} /></View>} />
 
-      <UiText style={styles.lede}>Connect your computer</UiText>
-      <UiText style={styles.introText}>
-        Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity from your phone. Set up Shahi on your computer, then scan the code it shows.
-      </UiText>
+        {/* Capped at twice its size: at AX5 it broke "compute / r" mid-word. */}
+        <UiText style={styles.lede} accessibilityRole="header" maxFontSizeMultiplier={2}>Connect your computer</UiText>
+        <UiText style={styles.introText}>
+          Continue your work with Claude Code, Codex, Cursor, OpenCode or Antigravity from your phone. Set up Shahi on your computer, then scan the code it shows.
+        </UiText>
+        <UiText style={styles.need}>You need a Mac or Linux computer with Claude Code, Codex or another of these agents installed.</UiText>
 
-      <UiText style={styles.step}>1 — Set up your computer.</UiText>
-      {/* One line per command, whatever the width or text size. The second
-          wrapped on build 32, so "these two lines" showed as three; Copy now
-          sits above them to leave each line the box's full width, and a line
-          that still does not fit scrolls sideways rather than wrapping. */}
-      <View style={styles.command}>
-        <Pressable accessibilityRole="button" accessibilityLabel={copied ? ui("Copied the setup command") : ui("Copy the setup command")} style={styles.copyButton} onPress={() => void copy()} testID="copy-install">
-          <UiText style={styles.copy}>{copied ? "Copied" : "Copy"}</UiText>
-        </Pressable>
-        {INSTALL_COMMAND.split("\n").map((line) => (
-          <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="install-line">
-            <Text style={styles.commandText} numberOfLines={1} selectable>{line}</Text>
-          </ScrollView>
-        ))}
-      </View>
-      <Text style={styles.introText}>{ui("Paste this line into the terminal (the window where you type commands) on a Mac or Linux computer. It installs")}{" "}
-        <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
-          herdr
-        </Text>{ui(", the app that keeps your AI assistants running, if it is missing, then Shahi, and shows a code to connect your phone." + " ")}</Text>
-      <UiText style={styles.introText}>Already use herdr? Inside it, run these two lines instead:</UiText>
-      <View style={styles.command}>
-        {HERDR_COMMANDS.split("\n").map((line) => (
-          <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="herdr-line">
-            <Text style={styles.commandText} numberOfLines={1} selectable>{line}</Text>
-          </ScrollView>
-        ))}
-      </View>
+        <View style={styles.stepCard}>
+          <StepHeading number={1} title="Set up your computer" />
+          <Text style={styles.introText}>{ui("Paste this line into the terminal (the window where you type commands) on a Mac or Linux computer. It installs")}{" "}
+            <Text accessibilityRole="link" style={styles.linkInline} onPress={() => void Linking.openURL("https://herdr.dev")}>
+              herdr
+            </Text>{ui(", the app that keeps your AI assistants running, if it is missing, then Shahi, and shows a code to connect your phone." + " ")}</Text>
+          {/* One line, whatever the width or text size: it shrinks to fit
+              rather than wrap, because "paste this line" over two lines reads
+              as two commands (build 32's lesson), and rather than scroll,
+              because a sideways scroll hid the end of it. */}
+          <View style={styles.command}>
+            <Text style={styles.commandText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} selectable testID="install-line">{INSTALL_COMMAND}</Text>
+          </View>
+          <View style={styles.commandActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel={copied ? ui("Copied the setup command") : ui("Copy the setup command")} style={styles.commandAction} onPress={() => void copy()} testID="copy-install">
+              <Icon name={copied ? "check" : "copy"} size={16} color={theme.peach} />
+              <UiText style={styles.copy}>{copied ? "Copied" : "Copy"}</UiText>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={ui("Send the setup command to your computer")} style={styles.commandAction} onPress={send} testID="share-install">
+              <Icon name="share" size={16} color={theme.peach} />
+              <UiText style={styles.copy}>Send to computer</UiText>
+            </Pressable>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: herdrUser }} onPress={() => setHerdrUser((v) => !v)} style={styles.disclosure} testID="herdr-user">
+            <UiText style={styles.disclosureText}>Already use herdr?</UiText>
+            <Icon name={herdrUser ? "chevron-up" : "chevron-down"} size={16} color={theme.dim} />
+          </Pressable>
+          {herdrUser && <>
+            <UiText style={styles.introText}>Inside herdr, run these two lines instead:</UiText>
+            <View style={styles.command}>
+              {HERDR_COMMANDS.split("\n").map((line) => (
+                <ScrollView key={line} horizontal showsHorizontalScrollIndicator={false} testID="herdr-line">
+                  <Text style={styles.commandText} numberOfLines={1} selectable>{line}</Text>
+                </ScrollView>
+              ))}
+            </View>
+          </>}
+        </View>
 
-      <UiText style={styles.step}>2 — Connect your phone.</UiText>
-      <UiText style={styles.introText}>
-        Scan the code on your computer to connect securely. Keep your computer awake and connected to the internet while you use Shahi.
-      </UiText>
+        <View style={styles.stepCard}>
+          <StepHeading number={2} title="Connect your phone" />
+          <UiText style={styles.introText}>
+            Scan the code on your computer to connect securely. Keep your computer awake and connected to the internet while you use Shahi.
+          </UiText>
+        </View>
 
+        {large && footer}
+        <PrivacyLinks licenses />
+      </ScrollView>
+
+      {!large && footer}
+    </View>
+  );
+}
+
+function IntroFooter({ onScan, onPaste, onSsh, busy, error, pinned }: { onScan: () => void; onPaste: () => void; onSsh: () => void; busy: boolean; error: string | null; pinned: boolean }) {
+  const { t: ui } = useI18n();
+  return (
+    <View style={pinned ? styles.footer : styles.footerInline}>
       {error && <UiText style={styles.error} accessibilityRole="alert">{error}</UiText>}
-      <Pressable accessibilityRole="button" style={[styles.button, busy && styles.buttonOff]} disabled={busy} onPress={onScan} testID="intro-continue">
+      <Pressable accessibilityRole="button" style={[styles.button, styles.footerButton, busy && styles.buttonOff]} disabled={busy} onPress={onScan} testID="intro-continue">
         <UiText style={styles.buttonText}>{busy ? "Pairing…" : "Scan QR code"}</UiText>
       </Pressable>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={onPaste} hitSlop={12} testID="paste-pairing-link"
-        accessibilityHint={ui("Pairs with a link copied from your computer, after you confirm it")}>
-        <UiText style={styles.link}>Paste pairing link</UiText>
-      </Pressable>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={12} testID="use-ssh">
-        <UiText style={styles.link}>Want to use SSH?</UiText>
-      </Pressable>
-      <PrivacyLinks licenses />
-    </ScrollView>
+      <View style={styles.footerLinks}>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={onPaste} hitSlop={8} style={styles.footerLink} testID="paste-pairing-link"
+          accessibilityHint={ui("Pairs with a link copied from your computer, after you confirm it")}>
+          <UiText style={styles.footerLinkText}>Paste pairing link</UiText>
+        </Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={onSsh} hitSlop={8} style={styles.footerLink} testID="use-ssh">
+          <UiText style={styles.footerLinkText}>Want to use SSH?</UiText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function StepHeading({ number, title }: { number: number; title: string }) {
+  return (
+    <View style={styles.stepHeading}>
+      <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{number}</Text></View>
+      <UiText style={styles.stepTitle} accessibilityRole="header">{title}</UiText>
+    </View>
+  );
+}
+
+/**
+ * The language choice, folded behind one button: the full picker stood above
+ * everything else on the welcome screen. A phone set to Arabic or Spanish
+ * opens in it already ("Use device language"); this is for choosing otherwise,
+ * and it names the language in its own words, so it reads to the person who
+ * needs it whatever the screen is in now.
+ */
+function LanguageMenu({ leading }: { leading?: React.ReactNode }) {
+  const { t: ui, locale } = useI18n();
+  const [open, setOpen] = useState(false);
+  const current = SUPPORTED_LOCALES.find((option) => option.locale === locale)?.label ?? "English";
+  return (
+    <View>
+      <View style={styles.menuRow}>
+        {leading ?? <View />}
+        <Pressable accessibilityRole="button" accessibilityLabel={ui("Language: {value1}", { value1: current })} accessibilityState={{ expanded: open }}
+          onPress={() => setOpen((v) => !v)} style={styles.languageButton} testID="language-menu">
+          <Icon name="globe" size={16} color={theme.dim} />
+          <Text style={styles.languageText}>{current}</Text>
+        </Pressable>
+      </View>
+      {open && <LanguagePicker />}
+    </View>
   );
 }
 
@@ -601,26 +681,41 @@ const styles = StyleSheet.create({
   mono: { fontFamily: theme.mono, color: theme.fg },
 
   // Intro / setup guide
-  introBody: { flexGrow: 1, justifyContent: "center", padding: 28, gap: 14 },
-  lede: { color: theme.fg, fontSize: 20, fontWeight: "600", lineHeight: 27, marginTop: 4 },
+  introBody: { flexGrow: 1, padding: 24, paddingBottom: 16, gap: 14 },
+  lede: { color: theme.fg, fontSize: 24, fontWeight: "600", lineHeight: 31, marginTop: 8 },
   introText: { color: theme.dim, fontSize: 15, lineHeight: 22 },
-  step: { color: theme.peach, fontSize: 13, letterSpacing: 0.5, marginTop: 10 },
+  need: { color: theme.fg, fontSize: 14, lineHeight: 20 },
+  menuRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  languageButton: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: theme.line },
+  languageText: { color: theme.dim, fontSize: 14 },
+  stepCard: { gap: 12, padding: 16, borderRadius: 14, borderCurve: "continuous", borderWidth: 1, borderColor: theme.line, backgroundColor: theme.surface },
+  stepHeading: { flexDirection: "row", alignItems: "center", gap: 10 },
+  stepNumber: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: theme.peach },
+  stepNumberText: { color: theme.void, fontSize: 14, fontWeight: "700" },
+  stepTitle: { color: theme.fg, fontSize: 17, fontWeight: "600", flexShrink: 1 },
   command: {
     direction: "ltr",
     gap: 6,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.void,
     borderWidth: 1,
     borderColor: theme.lineBright,
     borderRadius: 10,
     borderCurve: "continuous",
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingVertical: 12,
   },
-  // 37 characters of 12.5pt monospace are about 278pt: they fit a 375pt
-  // phone with Copy above them, and did not with Copy beside them.
-  commandText: { color: theme.fg, fontFamily: theme.mono, fontSize: 12.5, lineHeight: 18 },
-  copyButton: { alignSelf: "flex-end", minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "flex-end", marginBottom: -8 },
-  copy: { color: theme.peach, fontSize: 13, fontWeight: "600" },
+  commandText: { color: theme.fg, fontFamily: theme.mono, fontSize: 13, lineHeight: 18 },
+  commandActions: { flexDirection: "row", gap: 10 },
+  commandAction: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 44, borderRadius: 10, borderCurve: "continuous", borderWidth: 1, borderColor: theme.peach },
+  copy: { color: theme.peach, fontSize: 14, fontWeight: "600" },
+  disclosure: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 44 },
+  disclosureText: { color: theme.dim, fontSize: 14, textDecorationLine: "underline" },
+  footer: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8, gap: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.line, backgroundColor: theme.void },
+  footerInline: { gap: 4 },
+  footerButton: { marginTop: 0 },
+  footerLinks: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", columnGap: 20 },
+  footerLink: { minHeight: 44, justifyContent: "center" },
+  footerLinkText: { color: theme.dim, fontSize: 14, textDecorationLine: "underline" },
   linkInline: { color: theme.peach },
   link: { color: theme.dim, fontSize: 14, textAlign: "center", marginTop: 18, textDecorationLine: "underline" },
   label: { color: theme.dim, fontSize: 11, marginTop: 8 },
@@ -665,5 +760,5 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   buttonOff: { opacity: 0.35 },
-  buttonText: { color: theme.void, fontWeight: "600", fontSize: 16 },
+  buttonText: { color: theme.void, fontWeight: "600", fontSize: 16, textAlign: "center" },
 });

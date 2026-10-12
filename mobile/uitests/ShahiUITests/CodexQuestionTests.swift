@@ -48,7 +48,7 @@ final class CodexQuestionTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
         app.activate()
         app.signOutEverywhere()
-        app.descendants(matching: .any)["language-en"].tap()
+        app.chooseLanguage("en")
         try app.pair(port) { try self.prepare(port) }
         let row = app.descendants(matching: .any)["row-\(paneID)"]
         XCTAssertTrue(row.waitForExistence(timeout: 30))

@@ -59,6 +59,15 @@ enum Fixture {
 /// tests alphabetically, and a test that assumed onboarding failed whenever an
 /// earlier one had left the app paired (September 2026 review).
 extension XCUIApplication {
+    /// Chooses a language on onboarding, where the choices fold behind one
+    /// button (fresh-eyes review before the public launch, October 2026).
+    func chooseLanguage(_ code: String, file: StaticString = #filePath, line: UInt = #line) {
+        let option = descendants(matching: .any)["language-\(code)"]
+        if !option.exists { buttons["language-menu"].tap() }
+        XCTAssertTrue(option.waitForExistence(timeout: 10), file: file, line: line)
+        option.tap()
+    }
+
     private var atRest: Bool {
         buttons["intro-continue"].exists || buttons["add-computer"].exists || buttons["switch-server"].exists
             || tabBars.buttons["Settings"].exists
