@@ -42,4 +42,4 @@ env:
       id: "agent-mode-bypass"
     direction: DOWN
 - assertVisible: ".*No approval before changes.*"
-- assertVisible: ".*Never asks. It can run any command as you, without a prompt.*"
+- assertVisible: ".*Bypasses normal permission checks and can run commands as you.*"

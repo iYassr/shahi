@@ -26,10 +26,16 @@ env:
     visible: "Connect your computer"
     timeout: 30000
 - runFlow: fixture/pair.yaml
+# The floating tab bar covers the list's last rows: a row only just scrolled
+# into view took its press on the Spaces tab (October 2026). It is the last
+# row, so it cannot be centred; scroll on until the list's end lifts it clear.
 - scrollUntilVisible:
     element:
       id: "row-w2:p1"
     direction: DOWN
+- swipe:
+    start: 50%, 70%
+    end: 50%, 35%
 - tapOn:
     id: "row-w2:p1"
 - tapOn: "Reply to this agent…"

@@ -39,6 +39,11 @@ env:
 - assertVisible: ".*Which colour do you prefer.*"
 - assertNotVisible: ".*Summarise the meeting.*"
 
+# Choosing a chip scrolls it to the start of the row, which takes All past the
+# edge (October 2026); swipe it back as a thumb would.
+- swipe:
+    from: "Waiting 1"
+    direction: RIGHT
 - tapOn: "All"
 - assertVisible: ".*Convert PDF to markdown.*"
 - assertVisible: ".*Which colour do you prefer.*"

@@ -33,7 +33,7 @@ env:
     centerElement: true
 - tapOn: "Sign out"
 - extendedWaitUntil:
-    visible: "Sign out of this computer?"
+    visible: "Sign out of .+\\?"
     timeout: 5000
 # The alert's own button, not the row behind it with the same words.
 - tapOn:
