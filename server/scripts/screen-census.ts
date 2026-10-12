@@ -97,7 +97,7 @@ const ALL: Situation[] = [
     if (init.exitCode !== 0) throw new Error(`scratch project initialization failed: ${init.stderr}`);
     return codexHome(home, project, "", { trusted: false });
   } },
-  { id: "codex-migration", kind: "codex", alternateFixtures: ["codex-0.160-migration"], setup: (home, project) => codexHome(home, project, 'model = "gpt-5.4"') },
+  { id: "codex-migration", kind: "codex", alternateFixtures: ["codex-0.160-migration", "codex-0.162-migration"], setup: (home, project) => codexHome(home, project, 'model = "gpt-5.4"') },
   { id: "codex-hooks", kind: "codex", setup: (home, project) => {
     writeFileSync(join(home, "hooks.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "echo scratch", timeout: 10 }] }] } }));
     return codexHome(home, project, "[features]\nhooks = true");

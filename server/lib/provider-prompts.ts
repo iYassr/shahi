@@ -213,13 +213,14 @@ export function providerPrompt(lines: string[]): { agent: string; prompt: Parsed
  * - "Press Enter to continue…": Claude Code's security notes and sign-in,
  *   codex's sign-in success. A message's Enter would dismiss them unread.
  * - Codex's model notice with nothing left to choose, which Enter or Esc
- *   accepts (codex source, 0.158).
+ *   accepts (codex source, 0.158). 0.162.1 writes its quit key as "⌃c" where
+ *   0.160 wrote "ctrl+c" (screen census, 2026-10-12); both are read.
  */
 export function providerWaitingScreen(text: string): boolean {
   const last = text.trimEnd().split("\n").map(line => line.trim()).filter(Boolean).at(-1) ?? "";
   return /^Space to select · (?:Enter to confirm · )?Esc to reject all$/.test(last) ||
     /^Press Enter to (?:continue|start your trial)(?:…|\.\.\.)?$/i.test(last) ||
-    last === "enter/esc continue · ctrl+c quit";
+    /^enter\/esc continue · (?:ctrl\+c|⌃c) quit$/.test(last);
 }
 
 /** A narrow adapter for measured provider menus, not a general status override. */
