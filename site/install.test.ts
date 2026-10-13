@@ -59,6 +59,12 @@ case "$*" in
     [ "$TEST_INSTALL_FAIL" != 1 ] || exit 13
     touch "$TEST_STATE/plugin" ;;
   'plugin config-dir shahi') printf '%s\\n' "$TEST_CONFIG" ;;
+  'plugin log list --plugin shahi')
+    [ -n "$TEST_HOOK_AFTER" ] || exit 17
+    n=0; [ -f "$TEST_STATE/log-reads" ] && read -r n < "$TEST_STATE/log-reads"; n=$((n + 1)); echo "$n" > "$TEST_STATE/log-reads"
+    if [ "$n" -ge "$TEST_HOOK_AFTER" ]; then now=$(date +%s)
+      printf '{"result":{"logs":[{"event":"startup","status":"succeeded","started_unix_ms":%s000,"finished_unix_ms":%s000}]}}\\n' "$now" "$now"
+    else printf '{"result":{"logs":[]}}\\n'; fi ;;
   'plugin action invoke shahi.restart') [ "$TEST_NEVER_START" = service ] || touch "$TEST_STATE/service" ;;
   server) [ "$TEST_NEVER_START" != herdr ] || exit 27; touch "$TEST_STATE/server" "$TEST_STATE/service" ;;
   *) exit 17 ;;
@@ -83,7 +89,8 @@ interface InstallScenario {
   quotedPort?: boolean;
   truncate?: boolean;
   neverStart?: "herdr" | "service";
-  linger?: "yes" | "no";
+  hookAfter?: number;
+  setsid?: boolean;
 }
 
 async function installation(scenario: InstallScenario = {}) {
@@ -106,7 +113,7 @@ async function installation(scenario: InstallScenario = {}) {
   for (const tool of ["git", "unzip", "bash", "apt-get"]) {
     if (!absent.has(tool)) executable(tool, "#!/bin/sh\nexit 0\n");
   }
-  if (scenario.linger) executable("loginctl", `#!/bin/sh\n[ "$*" = "show-user tester -p Linger --value" ] && printf '%s\\n' "${scenario.linger}"\n`);
+  if (scenario.setsid) executable("setsid", `#!/bin/sh\nprintf 'setsid %s\\n' "$*" >> "$TEST_LOG"\nexec "$@"\n`);
   // The background stub gets a scheduling opportunity, without making a
   // successful installation test wait the real service's half-second tick.
   executable("sleep", "#!/bin/sh\n/bin/sleep 0.01\n");
@@ -177,7 +184,7 @@ else exit 29; fi
     TEST_PLATFORM: scenario.platform ?? "Linux", TEST_CPU: scenario.cpu ?? "x86_64",
     TEST_DOWNLOAD: scenario.download ?? "okay", TEST_BINARY: downloaded,
     TEST_INSTALL_FAIL: scenario.installFail ? "1" : "0", TEST_PAIR_FAIL: scenario.pairFail ? "1" : "0",
-    TEST_NEVER_START: scenario.neverStart ?? "",
+    TEST_NEVER_START: scenario.neverStart ?? "", TEST_HOOK_AFTER: scenario.hookAfter ? String(scenario.hookAfter) : "",
     TEST_REAL_BUN: process.execPath,
   };
   const run = async () => {
@@ -327,7 +334,7 @@ describe("the public installer in a disposable environment", () => {
     try {
       const result = await fixture.run();
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("needs git, unzip and bash first. Run:  sudo apt-get install -y git unzip bash");
+      expect(result.stderr).toContain("needs git, unzip and bash first. Run:  sudo apt-get update && sudo apt-get install -y git unzip bash");
       expect(result.commands).toBe("");
       expect(result.installedBinary).toBe(false);
     } finally { fixture.cleanup(); }
@@ -341,25 +348,43 @@ describe("the public installer in a disposable environment", () => {
       const result = await fixture.run();
       expect(result.exitCode, result.stderr).toBe(0);
       expect(result.stdout.trimEnd().endsWith("Synthetic pairing QR")).toBe(true);
-      expect(result.stdout.indexOf("After you scan, run herdr")).toBeLessThan(result.stdout.indexOf("Synthetic pairing QR"));
+      expect(result.stdout.indexOf("herdr does not start by itself")).toBeLessThan(result.stdout.indexOf("Synthetic pairing QR"));
       expect(result.stdout).toContain("https://apps.apple.com/app/id6813370698");
     } finally { fixture.cleanup(); }
   }, 15_000);
 
-  // On a computer reached over SSH, Shahi went offline at logout and only the
-  // plugin log said why.
-  for (const linger of ["no", "yes"] as const) {
-    test(`a Linux user ${linger === "no" ? "without" : "with"} lingering ${linger === "no" ? "is told how to keep Shahi running after logout" : "is not told to enable it"}`, async () => {
-      const fixture = await installation({ linger });
-      try {
-        const result = await fixture.run();
-        expect(result.exitCode, result.stderr).toBe(0);
-        const hinted = result.stdout.includes("sudo loginctl enable-linger tester");
-        expect(hinted).toBe(linger === "no");
-        if (hinted) expect(result.stdout.indexOf("enable-linger")).toBeLessThan(result.stdout.indexOf("Synthetic pairing QR"));
-      } finally { fixture.cleanup(); }
-    }, 15_000);
-  }
+  // Fresh-VM run before the public launch: after a reboot, a re-run started
+  // herdr, minted a code from the service its startup hook was about to
+  // restart, and the code was refused when scanned, 5 times in 10.
+  test("a run that starts herdr makes its code only after herdr's startup hook has finished", async () => {
+    const fixture = await installation({ running: false, hookAfter: 3 });
+    try {
+      const result = await fixture.run();
+      expect(result.exitCode, result.stderr).toBe(0);
+      const reads = result.commands.match(/herdr plugin log list --plugin shahi/g) ?? [];
+      expect(reads.length).toBe(3);
+      expect(result.commands.lastIndexOf("plugin log list")).toBeLessThan(result.commands.indexOf("bun run server/scripts/pair.ts"));
+    } finally { fixture.cleanup(); }
+  }, 15_000);
+
+  test("a herdr that was already running is not waited on", async () => {
+    const fixture = await installation({ hookAfter: 3 });
+    try {
+      const result = await fixture.run();
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.commands).not.toContain("plugin log list");
+    } finally { fixture.cleanup(); }
+  }, 15_000);
+
+  // Under `ssh -t host '… | sh'` herdr took the terminal's SIGHUP and shut down.
+  test("herdr is started in a session of its own where setsid exists", async () => {
+    const fixture = await installation({ running: false, setsid: true });
+    try {
+      const result = await fixture.run();
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.commands).toMatch(/^setsid nohup .*herdr server$/m);
+    } finally { fixture.cleanup(); }
+  }, 15_000);
 
   for (const [scenario, message] of [[{ installFail: true, installed: false }, "could not install the Shahi plugin"], [{ pairFail: true }, "pairing code could not be made"]] as const) {
     test(`an unsuccessful step never reports Done: ${message}`, async () => {

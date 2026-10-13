@@ -122,7 +122,8 @@ need_tools() {
   if [ "$os" = macos ]; then
     fail "this computer needs $missing first. Install missing command-line tools (for git: xcode-select --install), then run this again."
   fi
-  if command -v apt-get >/dev/null 2>&1; then hint="sudo apt-get install -y $missing"
+  # A cloud image's package lists can be empty, so apt is told to fetch them.
+  if command -v apt-get >/dev/null 2>&1; then hint="sudo apt-get update && sudo apt-get install -y $missing"
   elif command -v dnf >/dev/null 2>&1; then hint="sudo dnf install -y $missing"
   elif command -v pacman >/dev/null 2>&1; then hint="sudo pacman -S --needed $missing"
   elif command -v apk >/dev/null 2>&1; then hint="sudo apk add $missing"
@@ -155,9 +156,17 @@ start_herdr() {
   fi
   step "Starting herdr in the background"
   # The plugin's startup hook sets Shahi up when herdr starts. Run herdr to
-  # open it; it attaches to this same session.
-  nohup "$HERDR" server >/dev/null 2>&1 &
-  deadline=$(($(date +%s) + 30))
+  # open it; it attaches to this same session. In a session of its own where
+  # setsid exists: herdr handles SIGHUP itself, so under `ssh -t host '…|sh'`
+  # nohup did not save it, and it shut down half a second after starting
+  # when the terminal closed (fresh-VM run before the public launch).
+  STARTED_AT=$(date +%s)
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup "$HERDR" server </dev/null >/dev/null 2>&1 &
+  else
+    nohup "$HERDR" server </dev/null >/dev/null 2>&1 &
+  fi
+  deadline=$((STARTED_AT + 30))
   until server_running; do
     [ "$(date +%s)" -lt "$deadline" ] || fail "herdr did not start within 30 seconds. Try running:  $HERDR"
     sleep 0.5
@@ -198,6 +207,29 @@ service_up() {
   [ "$status" = 0 ]
 }
 
+# When this script started herdr, herdr's startup hook restarts Shahi's
+# service a moment later, and pairing codes live in the service's memory: a
+# code minted from the process about to be replaced was refused when scanned.
+# That is every re-run after a reboot, and it failed 5 times in 10 on a fresh
+# Debian VM (before the public launch). So wait for herdr's log to show this
+# start's hook finished. A herdr whose log cannot be read is not waited for.
+wait_for_startup_hook() {
+  [ "${STARTED:-0}" = 1 ] || return 0
+  deadline=$(($(date +%s) + 60))
+  while :; do
+    since=$((STARTED_AT * 1000 - 1000)) found=0
+    "$HERDR" plugin log list --plugin shahi 2>/dev/null | SINCE=$since "$BUN" -e '
+      let d; try { d = await Bun.stdin.json(); } catch { process.exit(2); }
+      const logs = (d.result ?? d).logs;
+      if (!Array.isArray(logs)) process.exit(2);
+      const done = logs.some((l) => l.event === "startup" && l.started_unix_ms >= Number(process.env.SINCE) && l.finished_unix_ms);
+      process.exit(done ? 0 : 1);' || found=$?
+    case $found in 0|2) return 0 ;; esac
+    [ "$(date +%s)" -lt "$deadline" ] || return 0
+    sleep 0.5
+  done
+}
+
 wait_for_service() {
   CONFIG=$("$HERDR" plugin config-dir shahi)
   ROOT=$("$HERDR" plugin list --json | "$BUN" -e 'const d = await Bun.stdin.json(); const p = (d.result ?? d).plugins.find((x) => x.plugin_id === "shahi"); console.log(p?.plugin_root ?? "")')
@@ -206,6 +238,7 @@ wait_for_service() {
   # an installation the owner deliberately stopped.
   enabled=$("$HERDR" plugin list --json | "$BUN" -e 'const d = await Bun.stdin.json(); const p = (d.result ?? d).plugins.find((x) => x.plugin_id === "shahi"); console.log(p?.enabled === false ? "no" : "yes")')
   [ "$enabled" != no ] || fail "the Shahi plugin is disabled. Enable it with:  $HERDR plugin enable shahi   then run this again."
+  wait_for_startup_hook
   service_up && { say "Shahi's service is running."; return; }
   # A herdr that was already running did not run the startup hook just now.
   [ "$STARTED" = 1 ] || "$HERDR" plugin action invoke shahi.restart >/dev/null 2>&1 || true
@@ -220,31 +253,22 @@ wait_for_service() {
   say "Shahi's service is running."
 }
 
-# A systemd user service stops with its user's last session unless the user
-# lingers, so on a computer reached over SSH Shahi went offline the moment the
-# person logged out, and only the plugin log said why (fresh-eyes review
-# before the public launch, October 2026). Enabling it needs sudo, which this
-# script never asks for, so it says what to run.
-linger_hint() {
-  [ "$os" = linux ] && command -v loginctl >/dev/null 2>&1 || return 0
-  user=${USER:-$(id -un 2>/dev/null)}
-  [ "$(loginctl show-user "$user" -p Linger --value 2>/dev/null)" = no ] || return 0
-  say "Shahi stops when you log out of this computer, for example by closing an SSH session."
-  say "To keep it running, run this once:  sudo loginctl enable-linger $user"
-}
-
 # The code is the last thing printed. Terminal.app and GNOME Terminal open at
 # 80×24, and the lines that used to follow it scrolled its top out of sight;
 # pair.ts draws it to fit, and says so when the window cannot hold it.
 pair() {
   step "Pair your phone"
-  linger_hint
+  # Said plainly: after a restart nothing brings herdr back, and the phone only
+  # says herdr is offline (fresh-VM run before the public launch).
+  say "Your phone reaches your agents while herdr runs here. After you scan, open it:  $HERDR"
+  say "herdr does not start by itself: after restarting this computer, run herdr again."
   if [ "${PATH_HINT:-0}" = 1 ]; then
-    say "herdr is in $BIN_DIR, which is not on your PATH. Add this line to your shell's profile:"
+    # Ubuntu and Debian add ~/.local/bin at the next login once it exists, so
+    # "add this to your profile" was wrong there; a new terminal is enough.
+    say "This terminal cannot find herdr by name yet. Open a new terminal; if it still cannot, add this line to your shell's profile:"
     say "  export PATH=\"$BIN_DIR:\$PATH\""
   fi
-  say "After you scan, run herdr to open your session:  $HERDR"
-  say "To pair another phone later, run this again, or inside herdr:  herdr plugin action invoke shahi.pair"
+  say "To pair another phone later, run this line again."
   say ""
   say "Scan this code in the Shahi app, or in https://getshahi.dev/pwa/ on any phone."
   say "No app yet? It is free on the App Store: https://apps.apple.com/app/id6813370698"
