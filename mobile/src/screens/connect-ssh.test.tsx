@@ -170,3 +170,15 @@ test("a forward that drops while signing in is described by the SSH host, not th
     (globalThis as { fetch: unknown }).fetch = realFetch;
   }
 });
+
+// The passcode's number pad has no return key, and its Done bar did not appear
+// on iOS 26 (simulator run before the public launch): a drag must put the
+// keyboard away so Connect can be reached.
+test("the SSH form puts its keyboard away when dragged", () => {
+  render(<Connect onConnectedSsh={jest.fn()} onConnectedRelay={jest.fn()} />);
+  fireEvent.press(screen.getByTestId("use-ssh"));
+  type Host = { type: unknown; props: { keyboardDismissMode?: string }; parent: Host | null };
+  let node = screen.getByTestId("ssh-passcode") as unknown as Host | null;
+  while (node && node.type !== "RCTScrollView") node = node.parent;
+  expect(node?.props.keyboardDismissMode).toBe("on-drag");
+});

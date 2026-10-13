@@ -278,6 +278,11 @@ export function Connect({
       <ScrollView
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
+        // The passcode's number pad has no return key, and on iOS 26 the Done
+        // bar above it appeared for the port but not for the masked passcode
+        // (simulator run before the public launch), which left the keyboard
+        // over Connect. A drag dismisses it, as a tap on blank space does.
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator
       >
         <LanguageMenu />
