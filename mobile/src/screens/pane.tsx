@@ -1509,8 +1509,15 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
             if (pendingRestore.current) scheduleRestoreRetry();
           }}
           onLayout={({ nativeEvent: e }) => {
+            const shrank = e.layout.height < scrollMetrics.current.viewport;
             scrollMetrics.current.viewport = e.layout.height;
             if (pendingRestore.current) restore();
+            // The composer grows beneath the list and the list keeps its
+            // offset, so at the tail the newest row slid under whatever
+            // arrived: the quick replies that appear once an agent's turn
+            // ends hid the end of its answer (simulator run before the public
+            // launch, October 2026).
+            else if (shrank && following.current) scrollToTail();
           }}
           onContentSizeChange={(_width, height) => {
             if (height !== undefined) scrollMetrics.current.height = height;

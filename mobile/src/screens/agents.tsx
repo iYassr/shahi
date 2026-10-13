@@ -208,6 +208,9 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
   const blocked = active === "inbox" ? latestConversations(shown.filter(p => p.status === "blocked")) : [];
   const rest = latestConversations(active === "inbox" ? shown.filter(p => p.status !== "blocked") : shown, pins);
   rows.current = rest;
+  // A computer with nothing on it yet: the empty list says how to start, with
+  // its own button, so the header's was a second orange "start" button.
+  const firstRun = !search && active === "all" && rest.length === 0 && blocked.length === 0;
 
   return (
     <View style={styles.screen}>
@@ -278,9 +281,9 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
             </ScrollView>
             {/* Where the work starts, not three taps away under Spaces: the
                 sheet asks which space, then the same form a space opens. */}
-            <Pressable accessibilityRole="button" disabled={herdrAway} accessibilityState={{ disabled: herdrAway }} style={[styles.newAgent, herdrAway && { opacity: 0.5 }]} onPress={() => router.push("/new-agent")} testID="new-agent">
+            {!firstRun && <Pressable accessibilityRole="button" disabled={herdrAway} accessibilityState={{ disabled: herdrAway }} style={[styles.newAgent, herdrAway && { opacity: 0.5 }]} onPress={() => router.push("/new-agent")} testID="new-agent">
               <UiText style={styles.newAgentText}>+ New agent</UiText>
-            </Pressable>
+            </Pressable>}
             {active === "inbox" && <View style={styles.inboxHeading}><UiText style={styles.inboxTitle}>What needs me?</UiText><UiText style={styles.dim}>Reply to questions, check unavailable agents, and review completed work.</UiText></View>}
             {/* One tap for a morning's finished work, rather than one per row.
                 Nothing is lost: new activity brings a conversation back. */}
@@ -341,7 +344,7 @@ export function Agents({ onOpenPane, focused = true }: { onOpenPane: (paneId: st
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           blocked.length ? null : (
-            !search && active === "all" ? <FirstAgent disabled={herdrAway} /> :
+            firstRun ? <FirstAgent disabled={herdrAway} /> :
             <Centered>{ui(search ? "No matching conversations. Try another name, space or folder." : active === "inbox" ? "You’re caught up. New requests and completed work will appear here." : "Nothing here right now.")}</Centered>
           )
         }

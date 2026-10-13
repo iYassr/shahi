@@ -1026,6 +1026,38 @@ describe("keeping your place", () => {
     forgetPaneMemory(api, paneId);
   });
 
+  // Quick replies appear under the reader once an agent's turn ends, and the
+  // end of its answer slid beneath them (simulator run before the launch).
+  test("at the tail, a composer that grows keeps the newest message in view", async () => {
+    const paneId = "w1:p-grow";
+    forgetPaneMemory(api, paneId);
+    mocked.sessionLog.mockResolvedValue(log(thread));
+    const scrollToOffset = jest.spyOn(FlatList.prototype, "scrollToOffset").mockImplementation(() => undefined);
+    const visit = render(<Pane paneId={paneId} />);
+    await visit.findByText(/Message three/);
+    const list = visit.UNSAFE_getByType(FlatList);
+    const cell = visit.UNSAFE_getAllByType(list.props.CellRendererComponent).find((c) => c.props.item.id === "m3")!;
+    act(() => cell.findAllByType(View)[0]!.props.onLayout({ nativeEvent: { layout: { y: 2100, height: 500 } } }));
+    fireEvent(list, "layout", { nativeEvent: { layout: { height: 600 } } });
+    fireEvent(list, "scroll", { nativeEvent: {
+      contentSize: { height: 2616 }, layoutMeasurement: { height: 600 }, contentOffset: { y: 2016 },
+    } });
+    fireEvent(list, "contentSizeChange", 400, 2616);
+    fireEvent(list, "layout", { nativeEvent: { layout: { height: 520 } } });
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 2096, animated: false });
+    // Away from the tail, a person's place is theirs.
+    act(() => list.props.onScrollBeginDrag());
+    fireEvent(list, "scroll", { nativeEvent: {
+      contentSize: { height: 2616 }, layoutMeasurement: { height: 520 }, contentOffset: { y: 900 },
+    } });
+    const calls = scrollToOffset.mock.calls.length;
+    fireEvent(list, "layout", { nativeEvent: { layout: { height: 460 } } });
+    expect(scrollToOffset).toHaveBeenCalledTimes(calls);
+    visit.unmount();
+    scrollToOffset.mockRestore();
+    forgetPaneMemory(api, paneId);
+  });
+
   test("Go to latest keeps seeking through programmatic momentum instead of saving an intermediate offset", async () => {
     const paneId = "w1:p-jump-long";
     forgetPaneMemory(api, paneId);

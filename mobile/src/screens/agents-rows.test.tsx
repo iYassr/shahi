@@ -130,11 +130,14 @@ test("a computer with no agents yet says how to start one, and starts the sheet"
   mockState.session = { panes: [] };
   const view = render(<Agents onOpenPane={jest.fn()} />);
   expect(view.getByText("No agents running yet")).toBeTruthy();
+  // One way to start, not two orange buttons saying the same thing.
+  expect(view.queryByTestId("new-agent")).toBeNull();
   fireEvent.press(view.getByTestId("first-agent-start"));
   expect(router.push).toHaveBeenCalledWith("/new-agent");
   // A search that matches nothing is not a first run.
   mockState.session = { panes: [pane("Fix the build")] };
   view.rerender(<Agents onOpenPane={jest.fn()} />);
+  expect(view.getByTestId("new-agent")).toBeTruthy();
   fireEvent.changeText(view.getByTestId("search-agents"), "nothing like it");
   expect(view.queryByTestId("first-agent")).toBeNull();
   expect(view.getByText("No matching conversations. Try another name, space or folder.")).toBeTruthy();
