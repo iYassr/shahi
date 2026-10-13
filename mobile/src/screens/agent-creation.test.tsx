@@ -137,7 +137,8 @@ test("an empty installed-agent list explains why creation is unavailable", async
   mockApi.agents.mockResolvedValue({ agents: [] });
   render(<NewAgent space={mockSpace} onStarted={jest.fn()} />);
   await screen.findByText("No agents are installed on this computer yet.");
-  fireEvent.press(screen.getByTestId("start-agent"));
+  // Nothing to start, so no Start button to press.
+  expect(screen.queryByTestId("start-agent")).toBeNull();
   expect(mockApi.startAgent).not.toHaveBeenCalled();
 });
 

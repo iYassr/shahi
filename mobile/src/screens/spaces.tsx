@@ -505,6 +505,10 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         <UiText style={styles.note}>Install Claude Code or Codex on the computer and sign in to it there once, then check again.</UiText>
         <Pressable accessibilityRole="button" testID="recheck-agents" style={{ minHeight: 44, justifyContent: "center" }} onPress={() => setLoadAttempt((n) => n + 1)}><UiText style={styles.actionText}>Check again</UiText></Pressable>
       </View>}
+      {/* With nothing to choose, an empty AGENT heading and a disabled Start
+          button only stood under the explanation (simulator run on a fresh
+          Linux computer, before the public launch). */}
+      {(loading || !!loadError || kinds.length > 0) && <>
       <UiText style={styles.label}>AGENT</UiText>
       {/* The chosen agent is marked three ways, accent border, check and
           weight, because a slightly lighter fill was all that told it apart
@@ -555,6 +559,7 @@ export function NewAgent({ space, onStarted }: { space: Space; onStarted: (paneI
         </Text>
       </Pressable>
       <UiText style={styles.note}>A cold start can take half a minute.</UiText>
+      </>}
     </SheetBody>
   );
 }

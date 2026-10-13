@@ -63,7 +63,11 @@ export function connectionHealth({ link, error, transport, online = true, comput
   const computer = computerName?.trim() || t("your computer");
   const named = (source: string) => translate(locale, source, { computer });
   const brief = named(link === "connecting" && !error ? "Connecting to {computer}…" : "Reconnecting to {computer}…");
-  if (!online || error instanceof UnreachableError && error.reason === "offline") return {
+  // A live link is proof of a network. Seen on a simulator run before the
+  // public launch: the system went on reporting no internet while the relay
+  // link carried the session, and "You're offline" sat under a green LIVE. A
+  // network that really went away drops the link soon after.
+  if (!online && link !== "live" || error instanceof UnreachableError && error.reason === "offline") return {
     title: t("You’re offline"), detail: t("Connect to Wi-Fi or mobile data. Shahi will reconnect when your network returns."),
   };
   if (error instanceof UnauthorizedError) return { title: t("Access ended"), detail: t("Sign in again or scan a fresh pairing code from your computer.") };

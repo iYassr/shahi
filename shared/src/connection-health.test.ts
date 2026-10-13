@@ -17,6 +17,13 @@ test("a confirmed disconnected computer is distinguished from a network outage",
   expect(connectionHealth({ ...args, online: false })?.title).toBe("You’re offline");
   expect(connectionHealth(args)?.title).toBe("Reconnecting to your computer…");
 });
+
+// A simulator run before the public launch: the system reported no internet
+// while the relay link carried the session, under a green LIVE.
+test("a live link is not called offline whatever the system reports", () => {
+  expect(connectionHealth({ link: "live", transport: "relay", online: false })).toBeNull();
+  expect(connectionHealth({ link: "lost", transport: "relay", online: false })?.title).toBe("You’re offline");
+});
 // Build 32's Agents list said this in four places; the card that remains
 // carries the reason, the reassurance and the next step on its own.
 test("an offline computer's one card says why, that the pairing is kept, and that it comes back by itself", () => {
