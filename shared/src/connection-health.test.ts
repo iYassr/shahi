@@ -54,7 +54,9 @@ test("herdr stopped behind a live link says so, naming the computer", () => {
   const offline = { state: "offline" as const, message: "herdr is offline. Shahi will reconnect automatically." };
   const health = connectionHealth({ link: "live", transport: "relay", computerName: "My Mac", backend: offline });
   expect(health?.title).toBe("herdr isn’t running on My Mac");
-  expect(health?.detail).toBe(offline.message);
+  // What to do, rather than the computer's "will reconnect automatically":
+  // nothing restarts herdr after a reboot (fresh-VM run before the launch).
+  expect(health?.detail).toBe("Start it on My Mac: open a terminal there and run herdr. Shahi reconnects as soon as it’s running.");
   expect(connectionHealth({ link: "live", transport: "relay", backend: { state: "connected", version: "0.9.1", protocol: 22 } })).toBeNull();
 });
 

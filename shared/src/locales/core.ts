@@ -53,6 +53,7 @@ export const coreTranslations = {
     "Shahi will reconnect automatically. You don’t need to pair again.": "سيعيد Shahi الاتصال تلقائيًا. لا حاجة إلى الاقتران مجددًا.",
     "Connecting to {computer}…": "جارٍ الاتصال بـ {computer}…", "Reconnecting to {computer}…": "جارٍ إعادة الاتصال بـ {computer}…",
     "herdr isn’t running on {computer}": "herdr لا يعمل على {computer}", "herdr isn’t available on {computer}": "herdr غير متاح على {computer}",
+    "Start it on {computer}: open a terminal there and run herdr. Shahi reconnects as soon as it’s running.": "شغّله على {computer}: افتح الطرفية هناك واكتب herdr. يعيد Shahi الاتصال فور تشغيله.",
     "Shahi on {computer} isn’t connected to the relay. Wake the computer and check that Shahi is running. Your pairing is saved, and Shahi reconnects as soon as it’s back.": "Shahi على {computer} غير متصل بخدمة الاتصال. أخرج الكمبيوتر من وضع السكون وتأكّد من تشغيل Shahi. اقترانك محفوظ، وسيعيد Shahi الاتصال بمجرد عودته.",
   },
   es: {
@@ -109,6 +110,7 @@ export const coreTranslations = {
     "Shahi will reconnect automatically. You don’t need to pair again.": "Shahi se reconectará automáticamente. No necesitas vincularlo de nuevo.",
     "Connecting to {computer}…": "Conectando con {computer}…", "Reconnecting to {computer}…": "Reconectando con {computer}…",
     "herdr isn’t running on {computer}": "herdr no está en ejecución en {computer}", "herdr isn’t available on {computer}": "herdr no está disponible en {computer}",
+    "Start it on {computer}: open a terminal there and run herdr. Shahi reconnects as soon as it’s running.": "Inícialo en {computer}: abre una terminal allí y ejecuta herdr. Shahi se vuelve a conectar en cuanto esté en marcha.",
     "Shahi on {computer} isn’t connected to the relay. Wake the computer and check that Shahi is running. Your pairing is saved, and Shahi reconnects as soon as it’s back.": "Shahi en {computer} no está conectado al servicio de conexión. Activa el equipo y comprueba que Shahi esté funcionando. La vinculación está guardada y Shahi se reconectará en cuanto vuelva.",
   },
 } satisfies Record<"ar" | "es", Record<string, string>>;

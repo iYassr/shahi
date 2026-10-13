@@ -89,7 +89,12 @@ export function connectionHealth({ link, error, transport, online = true, comput
   };
   if (backendUnavailable(error) || link === "live" && !error && backend?.state === "offline") return {
     title: named(backend?.state === "offline" ? "herdr isn’t running on {computer}" : "herdr isn’t available on {computer}"),
-    detail: t(error?.message || (backend && "message" in backend && backend.message) || "Shahi will reconnect automatically when herdr is back."),
+    // What to do, not the computer's "Shahi will reconnect automatically":
+    // nothing starts herdr again after a restart, so on a fresh-VM run before
+    // the public launch that sentence was a promise nobody would keep.
+    detail: backend?.state === "offline"
+      ? named("Start it on {computer}: open a terminal there and run herdr. Shahi reconnects as soon as it’s running.")
+      : t(error?.message || (backend && "message" in backend && backend.message) || "Shahi will reconnect automatically when herdr is back."),
   };
   if (link === "live" && !error) return null;
   return {

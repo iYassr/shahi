@@ -2749,7 +2749,7 @@ describe("herdr stopped behind a live link", () => {
     control.handshake.backend = offline;
     view.rerender(<Pane paneId={PANE} />);
     expect(view.getByText("herdr isn’t running on your computer")).toBeTruthy();
-    expect(view.getByText(offline.message)).toBeTruthy();
+    expect(view.getByText("Start it on your computer: open a terminal there and run herdr. Shahi reconnects as soon as it’s running.")).toBeTruthy();
   });
 });
 
