@@ -237,6 +237,23 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 13 October 2026, the night before the public launch
+
+Published the site and hosted client from a clean checkout of `a31aaa6` (CI
+run 38330726537 green on that commit; computer release still 0.3.29) as
+Cloudflare version `95b9f313-d818-4bc3-b71a-e8fefa679359`. It replaced
+`31541517-8298-483a-b7c2-d40c8efb01aa`, the version to roll back to. `/`,
+`/privacy`, `/pwa/`, `/pwa/sw.js` and `/install` answered 200, `/install` as
+`text/plain`; the live `/install` and service worker were byte-identical to
+the build. What changed: the homepage, privacy policy and README stopped
+calling iPhone 1.1 "awaiting Apple review"; the installer waits for herdr's
+startup hook before minting a code, starts herdr with setsid, and ends on its
+pairing code drawn to fit the window; the hosted client has Check again on an
+empty New Agent sheet and says how to start herdr when it is not running.
+A fresh Ubuntu 24.04 VM then ran the live one-liner in an 80×24 terminal: 15
+seconds, the code printed last and claimed successfully over loopback. No
+relay deployment.
+
 ## Verified deployment — 4 October 2026, the one-line setup
 
 Published the site and hosted client from a clean checkout of `4b59d3b`
