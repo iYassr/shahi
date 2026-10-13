@@ -5,7 +5,8 @@
  * hands out more than it should.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 interface Step {
@@ -60,6 +61,32 @@ describe("phone updates", () => {
     expect(publish.steps[signing]!.run).toContain('"$RUNNER_TEMP/eas/node_modules/.bin/eas" update');
     // What eas-cli spawns (the Metro build) has no reason to inherit the key.
     expect(publish.steps[signing]!.run).toMatch(/> "\$RUNNER_TEMP\/shahi-ota-key\.pem"[\s\S]*unset SHAHI_OTA_PRIVATE_KEY[\s\S]*\.bin\/eas" update/);
+  });
+
+  // The first stable publish (13 October 2026) passed `--rollout-percentage
+  // 100` and EAS refused it after CI and the approval: "Rollout percentage
+  // must be between 0 and 99". The step itself runs here, against a stand-in.
+  test("a rollout to everyone publishes without a rollout percentage, and a partial one with it", () => {
+    const temp = mkdtempSync(join(tmpdir(), "shahi-eas-"));
+    try {
+      mkdirSync(join(temp, "eas/node_modules/.bin"), { recursive: true });
+      const eas = join(temp, "eas/node_modules/.bin/eas");
+      writeFileSync(eas, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(temp, "args")}"\n`);
+      chmodSync(eas, 0o755);
+      const flags = (percentage: string) => {
+        const run = Bun.spawnSync(["bash", "-e", "-c", publish.steps[signing]!.run!], {
+          env: { PATH: process.env.PATH, RUNNER_TEMP: temp, GITHUB_SHA: "abc", SHAHI_OTA_PRIVATE_KEY: "key", RELEASE_CHANNEL: "stable", ROLLOUT_PERCENTAGE: percentage },
+        });
+        expect(run.exitCode).toBe(0);
+        return readFileSync(join(temp, "args"), "utf8").trim().split("\n");
+      };
+      expect(flags("100")).not.toContain("--rollout-percentage");
+      expect(flags("100")).toContain("--non-interactive");
+      const partial = flags("25");
+      expect(partial[partial.indexOf("--rollout-percentage") + 1]).toBe("25");
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   });
 
   test("the locked eas-cli is exact, and every package in its tree carries an integrity hash", () => {
