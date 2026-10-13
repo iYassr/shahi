@@ -174,8 +174,11 @@ Use EAS `update:edit` to expand a rollout and `update:revert-update-rollout` to
 stop a bad one. Certificate rotation requires a new trusted binary.
 
 The **Signed Shahi phone update** workflow requires protected Expo authentication, the private
-signing key, and Expo Production or Enterprise. As checked on 2026-09-09, this
-project is on Free: signed publication is unavailable until that account change.
+signing key, and Expo Production or Enterprise. The account is on Free, and
+EAS refuses a signed publish there only at its last step, after CI and the
+release approval: "EAS Update code signing requires a subscription to the EAS
+Production or Enterprise plan" (the workflow's first run, 13 October 2026).
+Until that account change, a JavaScript fix reaches phones only in a new binary.
 While it holds the key, the workflow runs eas-cli 23.2.0 from
 `.github/eas/bun.lock`, a lockfile frozen with integrity hashes and installed
 in `$RUNNER_TEMP`, and unsets the key from the environment once it has written
