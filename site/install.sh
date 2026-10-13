@@ -110,7 +110,9 @@ install_herdr() {
 # named together, so one command fixes them all.
 need_tools() {
   missing=""
-  command -v git >/dev/null 2>&1 || missing="git"
+  # `git --version`, not `command -v git`: a Mac without the command-line
+  # tools has a /usr/bin/git that only offers to install them.
+  git --version >/dev/null 2>&1 || missing="git"
   if ! command -v bun >/dev/null 2>&1 && [ ! -x "$HOME/.bun/bin/bun" ]; then
     for tool in curl unzip bash; do
       command -v "$tool" >/dev/null 2>&1 || missing="${missing:+$missing }$tool"
@@ -126,7 +128,8 @@ need_tools() {
   elif command -v apk >/dev/null 2>&1; then hint="sudo apk add $missing"
   else hint="install: $missing"
   fi
-  fail "this computer needs $(printf %s "$missing" | sed 's/ / and /') first. Run:  $hint   then run this again."
+  names=$(printf %s "$missing" | awk '{ for (i = 1; i <= NF; i++) printf "%s%s", $i, (i == NF ? "" : i == NF - 1 ? " and " : ", ") }')
+  fail "this computer needs $names first. Run:  $hint   then run this again."
 }
 
 server_running() { "$HERDR" status server 2>/dev/null | grep -q '^status: running'; }
@@ -217,9 +220,34 @@ wait_for_service() {
   say "Shahi's service is running."
 }
 
+# A systemd user service stops with its user's last session unless the user
+# lingers, so on a computer reached over SSH Shahi went offline the moment the
+# person logged out, and only the plugin log said why (fresh-eyes review
+# before the public launch, October 2026). Enabling it needs sudo, which this
+# script never asks for, so it says what to run.
+linger_hint() {
+  [ "$os" = linux ] && command -v loginctl >/dev/null 2>&1 || return 0
+  user=${USER:-$(id -un 2>/dev/null)}
+  [ "$(loginctl show-user "$user" -p Linger --value 2>/dev/null)" = no ] || return 0
+  say "Shahi stops when you log out of this computer, for example by closing an SSH session."
+  say "To keep it running, run this once:  sudo loginctl enable-linger $user"
+}
+
+# The code is the last thing printed. Terminal.app and GNOME Terminal open at
+# 80×24, and the lines that used to follow it scrolled its top out of sight;
+# pair.ts draws it to fit, and says so when the window cannot hold it.
 pair() {
   step "Pair your phone"
-  say "Open the Shahi iPhone app or https://getshahi.dev/pwa/ and scan this code inside Shahi."
+  linger_hint
+  if [ "${PATH_HINT:-0}" = 1 ]; then
+    say "herdr is in $BIN_DIR, which is not on your PATH. Add this line to your shell's profile:"
+    say "  export PATH=\"$BIN_DIR:\$PATH\""
+  fi
+  say "After you scan, run herdr to open your session:  $HERDR"
+  say "To pair another phone later, run this again, or inside herdr:  herdr plugin action invoke shahi.pair"
+  say ""
+  say "Scan this code in the Shahi app, or in https://getshahi.dev/pwa/ on any phone."
+  say "No app yet? It is free on the App Store: https://apps.apple.com/app/id6813370698"
   (cd "$ROOT" && SHAHI_ENV_FILE="$CONFIG/.env" "$BUN" run server/scripts/pair.ts --no-copy) ||
     fail "the pairing code could not be made. Try:  $HERDR plugin action invoke shahi.status"
 }
@@ -234,13 +262,6 @@ main() {
   find_bun
   wait_for_service
   pair
-  step "Done"
-  if [ "${PATH_HINT:-0}" = 1 ]; then
-    say "herdr is in $BIN_DIR, which is not on your PATH. Add this line to your shell's profile:"
-    say "  export PATH=\"$BIN_DIR:\$PATH\""
-  fi
-  say "Run herdr to open your session:  $HERDR"
-  say "To pair another phone later, run this again, or inside herdr:  herdr plugin action invoke shahi.pair"
 }
 
 # Everything above is a definition. Nothing runs until this line, so a download

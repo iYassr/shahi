@@ -32,6 +32,31 @@ function wrap(text: string, columns: number): string[] {
   if (line) lines.push(line);
   return lines;
 }
+/**
+ * The code for a plain terminal: the installer's last word, above nothing but
+ * the prompt. Terminal.app and GNOME Terminal open at 80×24, and the code, 28
+ * rows at the default correction, scrolled its top away under the lines that
+ * used to follow it (fresh-eyes review before the public launch, October
+ * 2026). So the larger symbol is drawn when it fits above the prompt, and
+ * the low-correction one, 26 rows, which a phone reads off a screen, when not.
+ * (The terminal renderer ignores `margin`.) A code the window still cannot
+ * hold, as 80×24 cannot by three rows, is followed
+ * by a line saying so: a line before it would scroll away unseen, and a
+ * taller window brings the whole code back from the scrollback. A pipe has
+ * no height and gets the default symbol.
+ */
+export async function terminalPairingCode(url: string, rows?: number): Promise<string> {
+  const symbols: string[][] = [];
+  for (const errorCorrectionLevel of ["M", "L"] as const) {
+    const lines = (await QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel })).split("\n");
+    while (lines.length && !plain(lines.at(-1)!).trim()) lines.pop();
+    symbols.push(lines);
+  }
+  const fits = symbols.find((lines) => !rows || lines.length + 1 <= rows);
+  if (fits) return fits.join("\n");
+  return [...symbols.at(-1)!, "Can't see the whole code? Make this window taller, or zoom out, and it appears above."].join("\n");
+}
+
 export async function pairingDisplay(url: string, expiresAt: number, copied: boolean) {
   const symbols = await Promise.all((["M", "L"] as const).map(async errorCorrectionLevel => {
     const lines = (await QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel })).split("\n");

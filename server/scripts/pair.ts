@@ -21,8 +21,7 @@
  * to write the default into the file the design keeps it out of (pre-release
  * review). Over loopback, /api/meta names the relay the box actually dials.
  */
-import QRCode from "qrcode";
-import { showPairingPopup } from "../lib/pairing-display";
+import { showPairingPopup, terminalPairingCode } from "../lib/pairing-display";
 import { SHAHI_API_VERSION, type PairingCode, type ServerInfo } from "@shahi/shared";
 import { Auth } from "../lib/auth";
 import { loadConfig } from "../lib/config";
@@ -106,8 +105,6 @@ const copied = !process.argv.includes("--no-copy") && copyToClipboard(url);
 if (process.argv.includes("--popup") && process.stdout.isTTY) {
   await showPairingPopup(url, code.expiresAt, copied);
 } else {
-  console.log("Scan with Shahi");
-  console.log(await QRCode.toString(url, { type: "terminal", small: true }));
   console.log(`Expires ${new Date(code.expiresAt).toLocaleTimeString()} · one use`);
   // Printed whatever the clipboard did, for a QR the camera cannot read: run by
   // getshahi.dev/install on a headless Linux computer there is no clipboard,
@@ -115,4 +112,7 @@ if (process.argv.includes("--popup") && process.stdout.isTTY) {
   // (fresh-VM run, October 2026).
   console.log(copied ? "Can't scan? The code is copied: in Shahi, tap Paste pairing link." : "Can't scan? Copy this code, then in Shahi tap Paste pairing link:");
   console.log(url);
+  console.log("");
+  // Last, so nothing after it scrolls its top away (terminalPairingCode).
+  console.log(await terminalPairingCode(url, process.stdout.rows));
 }

@@ -83,6 +83,7 @@ interface InstallScenario {
   quotedPort?: boolean;
   truncate?: boolean;
   neverStart?: "herdr" | "service";
+  linger?: "yes" | "no";
 }
 
 async function installation(scenario: InstallScenario = {}) {
@@ -105,6 +106,7 @@ async function installation(scenario: InstallScenario = {}) {
   for (const tool of ["git", "unzip", "bash", "apt-get"]) {
     if (!absent.has(tool)) executable(tool, "#!/bin/sh\nexit 0\n");
   }
+  if (scenario.linger) executable("loginctl", `#!/bin/sh\n[ "$*" = "show-user tester -p Linger --value" ] && printf '%s\\n' "${scenario.linger}"\n`);
   // The background stub gets a scheduling opportunity, without making a
   // successful installation test wait the real service's half-second tick.
   executable("sleep", "#!/bin/sh\n/bin/sleep 0.01\n");
@@ -168,7 +170,7 @@ else exit 29; fi
   const source = await installScript(undefined, testPin);
   writeFileSync(installer, scenario.truncate ? source.replace(/main "\$@"\s*$/, "") : source);
   const environment = {
-    HOME: home, PATH: bin, TMPDIR: join(dir, "tmp"),
+    HOME: home, PATH: bin, TMPDIR: join(dir, "tmp"), USER: "tester",
     XDG_CONFIG_HOME: config, XDG_STATE_HOME: state, XDG_DATA_HOME: join(dir, "data"),
     TEST_LOG: log, TEST_STATE: state, TEST_ROOT: root, TEST_CONFIG: config,
     TEST_VERSION: scenario.version ?? "0.9.3", TEST_ENABLED: scenario.disabled ? "false" : "true",
@@ -325,11 +327,39 @@ describe("the public installer in a disposable environment", () => {
     try {
       const result = await fixture.run();
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("sudo apt-get install -y git unzip bash");
+      expect(result.stderr).toContain("needs git, unzip and bash first. Run:  sudo apt-get install -y git unzip bash");
       expect(result.commands).toBe("");
       expect(result.installedBinary).toBe(false);
     } finally { fixture.cleanup(); }
   });
+
+  // Fresh-eyes review before the public launch: "Done" and four lines of next
+  // steps followed the code, and a new 80×24 terminal scrolled its top away.
+  test("the pairing code is the last thing printed, after what to do next", async () => {
+    const fixture = await installation();
+    try {
+      const result = await fixture.run();
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.stdout.trimEnd().endsWith("Synthetic pairing QR")).toBe(true);
+      expect(result.stdout.indexOf("After you scan, run herdr")).toBeLessThan(result.stdout.indexOf("Synthetic pairing QR"));
+      expect(result.stdout).toContain("https://apps.apple.com/app/id6813370698");
+    } finally { fixture.cleanup(); }
+  }, 15_000);
+
+  // On a computer reached over SSH, Shahi went offline at logout and only the
+  // plugin log said why.
+  for (const linger of ["no", "yes"] as const) {
+    test(`a Linux user ${linger === "no" ? "without" : "with"} lingering ${linger === "no" ? "is told how to keep Shahi running after logout" : "is not told to enable it"}`, async () => {
+      const fixture = await installation({ linger });
+      try {
+        const result = await fixture.run();
+        expect(result.exitCode, result.stderr).toBe(0);
+        const hinted = result.stdout.includes("sudo loginctl enable-linger tester");
+        expect(hinted).toBe(linger === "no");
+        if (hinted) expect(result.stdout.indexOf("enable-linger")).toBeLessThan(result.stdout.indexOf("Synthetic pairing QR"));
+      } finally { fixture.cleanup(); }
+    }, 15_000);
+  }
 
   for (const [scenario, message] of [[{ installFail: true, installed: false }, "could not install the Shahi plugin"], [{ pairFail: true }, "pairing code could not be made"]] as const) {
     test(`an unsuccessful step never reports Done: ${message}`, async () => {

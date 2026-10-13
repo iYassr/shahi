@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import QRCode from "qrcode";
 import { parsePairingUrl } from "@shahi/shared/pairing";
-import { browserPairingLink, pairingDisplay } from "./pairing-display";
+import { browserPairingLink, pairingDisplay, terminalPairingCode } from "./pairing-display";
 const url = "shahi://pair#v=1&server=" + "a".repeat(43) + "&relay=" + encodeURIComponent("https://relay.getshahi.dev") + "&secret=" + "b".repeat(43);
 const strip = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -141,3 +141,25 @@ await showPairingPopup(${JSON.stringify(url)}, Date.now() + 600000, false);`;
     await reading;
   }
 }, 20_000);
+
+// Fresh-eyes review before the public launch: the installer printed a 28-row
+// code with four lines under it, and a new 80×24 Terminal.app or GNOME
+// Terminal window never showed the whole of it.
+test("the installer's code is drawn whole above the prompt, or says how to see all of it", async () => {
+  const lines = (text: string) => strip(text).split("\n").map(line => line.trimEnd()).join("\n").trimEnd().split("\n");
+  const symbol = (level: "M" | "L") => QRCode.toString(url, { type: "terminal", small: true, errorCorrectionLevel: level }).then(lines);
+  const [m, l] = [await symbol("M"), await symbol("L")];
+  // A pipe, or a tall window: the default symbol, unchanged.
+  expect(lines(await terminalPairingCode(url))).toEqual(m);
+  expect(lines(await terminalPairingCode(url, m.length + 1))).toEqual(m);
+  // The smaller one only when the larger would push its top away.
+  expect(lines(await terminalPairingCode(url, m.length))).toEqual(l);
+  expect(lines(await terminalPairingCode(url, l.length + 1))).toEqual(l);
+  for (const line of l) expect(line.length).toBeLessThanOrEqual(80);
+  // 80×24 is short of even that. Saying so before the code scrolled away
+  // unseen; after it, the line is the last thing on the screen.
+  expect(l.length + 1).toBeGreaterThan(24);
+  const short = lines(await terminalPairingCode(url, 24));
+  expect(short.slice(0, -1)).toEqual(l);
+  expect(short.at(-1)).toBe("Can't see the whole code? Make this window taller, or zoom out, and it appears above.");
+});
