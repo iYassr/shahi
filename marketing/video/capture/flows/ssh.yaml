@@ -1,0 +1,11 @@
+# Recorded: from the first-launch screen to the SSH form, filled in.
+appId: app.shahi.mobile
+---
+- tapOn: "Want to use SSH?"
+- waitForAnimationToEnd
+- tapOn: "server.example.com.*"
+- inputText: "workstation.local"
+- tapOn: "Your computer username"
+- inputText: "maya"
+- hideKeyboard
+- waitForAnimationToEnd

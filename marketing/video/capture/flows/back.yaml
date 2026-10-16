@@ -1,0 +1,6 @@
+# The header's back button, top left.
+appId: app.shahi.mobile
+---
+- tapOn:
+    point: 9%, 9%
+- waitForAnimationToEnd

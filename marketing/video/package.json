@@ -3,11 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "studio": "bun run sound && remotion studio",
+    "studio": "bun run sound && bun run sound:phone && remotion studio",
     "render": "remotion render Wide out/shahi-16x9.mp4 && remotion render Square out/shahi-1x1.mp4",
     "still": "remotion still",
     "render:launch": "bun run sound && remotion render LaunchWide out/shahi-launch-16x9.mp4 && remotion render LaunchSquare out/shahi-launch-1x1.mp4",
+    "render:phone": "bun run sound:phone && remotion render PhoneWide out/shahi-phone-16x9.mp4 && remotion render PhoneSquare out/shahi-phone-1x1.mp4 && remotion render PhoneTall out/shahi-phone-9x16.mp4",
     "sound": "bun audio/generate.ts",
+    "sound:phone": "bun audio/phone.ts",
+    "stills:phone": "bun scripts/phone-stills.ts",
+    "capture:phone": "bun capture/capture.ts",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {

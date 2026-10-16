@@ -1,0 +1,15 @@
+# Chooses LANGUAGE (its own name: English, العربية, Español) in Settings, then
+# opens the agent list.
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "gearshape"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Español"
+    direction: DOWN
+- tapOn: ${LANGUAGE}
+- waitForAnimationToEnd
+- tapOn:
+    id: "cpu"
+- waitForAnimationToEnd

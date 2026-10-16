@@ -1,0 +1,14 @@
+# Settings at the agents' plan limits.
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "gearshape"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Codex"
+    direction: DOWN
+- swipe:
+    start: 50%, 60%
+    end: 50%, 40%
+    duration: 600
+- waitForAnimationToEnd

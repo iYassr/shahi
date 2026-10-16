@@ -1,0 +1,13 @@
+# Recorded: a finished conversation opened from the list at its newest reply,
+# then scrolled up to the question that started it.
+appId: app.shahi.mobile
+---
+- tapOn: ".*Fix the flaky due-date test.*"
+- extendedWaitUntil:
+    visible: "Activity · 6 steps"
+    timeout: 15000
+- swipe:
+    start: 50%, 30%
+    end: 50%, 85%
+    duration: 1500
+- waitForAnimationToEnd

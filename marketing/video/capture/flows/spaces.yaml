@@ -1,0 +1,9 @@
+# Recorded: herdr's spaces, then the panes of one.
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "folder"
+- waitForAnimationToEnd
+- tapOn:
+    id: "space-w1"
+- waitForAnimationToEnd

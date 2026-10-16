@@ -1,0 +1,5 @@
+# Recorded: the composer's "/" shortcut opening the agent's commands.
+appId: app.shahi.mobile
+---
+- tapOn: "Commands"
+- waitForAnimationToEnd

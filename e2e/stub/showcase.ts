@@ -234,7 +234,11 @@ export function showcaseSession(): Scenario {
       protocol: 22,
       defaultGrouping: null,
       workspaces: spaces,
-      tabs: panes.map((p) => tab({ tabId: p.tabId, workspaceId: p.workspaceId, status: p.status })),
+      // Numbered within each space, as herdr numbers them: the space view heads each tab with it.
+      tabs: panes.map((p) => {
+        const number = panes.filter((q) => q.workspaceId === p.workspaceId && q.tabId.localeCompare(p.tabId) < 0).length + 1;
+        return tab({ tabId: p.tabId, workspaceId: p.workspaceId, status: p.status, number, label: String(number) });
+      }),
       panes,
       focusedPaneId: "w1:p4",
     },
@@ -242,5 +246,17 @@ export function showcaseSession(): Scenario {
     prompts: { "w3:p4": offlineEdit() },
     screens: Object.fromEntries(panes.map((p) => [p.paneId, SCREEN])),
     changes: { "w1:p4": SHOWCASE_CHANGES, "w3:p4": SHOWCASE_CHANGES },
+    // Settings' Agents section, as a computer reports it with Claude's limits switched on.
+    planUsage: {
+      claude: { enabled: true, usage: { observedAt: minutes(1), windows: [
+        { label: "5-hour", usedPercent: 38, resetsAt: AT + 134 * 60_000 },
+        { label: "Weekly", usedPercent: 61, resetsAt: AT + 3 * 86_400_000 },
+      ] } },
+      codex: { usage: { observedAt: minutes(2), plan: "pro", windows: [
+        { label: "5-hour", usedPercent: 12, resetsAt: AT + 201 * 60_000 },
+        { label: "Weekly", usedPercent: 44, resetsAt: AT + 4 * 86_400_000 },
+      ] } },
+      checkedAt: AT,
+    },
   };
 }

@@ -1,0 +1,5 @@
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "sheet-close"
+- waitForAnimationToEnd

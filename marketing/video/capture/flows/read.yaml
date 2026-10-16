@@ -1,0 +1,5 @@
+# Back to the conversation's Read tab, at its newest message.
+appId: app.shahi.mobile
+---
+- tapOn: "Read"
+- waitForAnimationToEnd

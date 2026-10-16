@@ -16,6 +16,7 @@ import type {
   LogMessage,
   PaneChanges,
   ParsedPrompt,
+  PlanUsage,
   Session,
   Space,
   SpaceTab,
@@ -37,6 +38,8 @@ export interface Scenario {
   unrecognised?: string[];
   /** What a pane's repository reports to the Changes view, where it is not `SAMPLE_CHANGES`. */
   changes?: Record<string, RepositoryChanges>;
+  /** What `/api/plan-usage` answers; without it the route is missing, as on a computer that has none. */
+  planUsage?: PlanUsage;
 }
 
 /** The Changes view's two answers for one pane: its list, and each listed file's diff by path. */

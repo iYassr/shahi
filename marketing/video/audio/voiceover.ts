@@ -94,22 +94,29 @@ type Take = { seed: number; cut: number; alignment: Alignment };
 const DIR = join(import.meta.dirname, "vo");
 
 /** Speaks every line (from the cache when it can) and returns where each sits in its clip. */
-export async function speak(): Promise<Spoken[]> {
-  mkdirSync(DIR, { recursive: true });
+export const speak = () => speakLines(LINES, DIR);
+
+/**
+ * Speaks `lines` into the cache folder `dir`, which belongs to one cut alone:
+ * takes no line there uses are deleted. `attempts` caps the seeds tried for a
+ * line, so a cut can bound what a run may spend.
+ */
+export async function speakLines(lines: Line[], dir: string, attempts = VOICE.attempts): Promise<Spoken[]> {
+  mkdirSync(dir, { recursive: true });
   const out: Spoken[] = [];
   const used = new Set<string>();
-  for (const line of LINES) {
+  for (const line of lines) {
     const words = line.say ?? line.text;
     const request = { text: words + VOICE.tail, model_id: VOICE.model, voice_settings: VOICE.settings };
     const hash = createHash("sha256").update(JSON.stringify([VOICE.id, request])).digest("hex").slice(0, 10);
-    const mp3 = join(DIR, `${line.id}-${hash}.mp3`), json = join(DIR, `${line.id}-${hash}.json`);
+    const mp3 = join(dir, `${line.id}-${hash}.mp3`), json = join(dir, `${line.id}-${hash}.json`);
     used.add(`${line.id}-${hash}.mp3`).add(`${line.id}-${hash}.json`);
 
     if (!existsSync(mp3) || !existsSync(json)) {
       const key = process.env.ELEVENLABS_API_KEY;
       if (!key) throw new Error(`No cached speech for "${line.id}" and ELEVENLABS_API_KEY is not set.`);
       let kept = false;
-      for (let k = 0; k < VOICE.attempts && !kept; k++) {
+      for (let k = 0; k < attempts && !kept; k++) {
         const seed = VOICE.seed + k;
         const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE.id}/with-timestamps?output_format=${VOICE.format}`, {
           method: "POST",
@@ -128,7 +135,7 @@ export async function speak(): Promise<Spoken[]> {
       }
       if (!kept) {
         rmSync(mp3);
-        throw new Error(`No take of "${line.id}" in ${VOICE.attempts} seeds ended cleanly before its tail; reword the line or raise VOICE.attempts.`);
+        throw new Error(`No take of "${line.id}" in ${attempts} seeds ended cleanly before its tail; reword the line or allow more attempts.`);
       }
     }
 
@@ -136,7 +143,7 @@ export async function speak(): Promise<Spoken[]> {
     out.push({ line, mp3, cut: take.cut, sentences: sentences(take.alignment, words.length, line.text) });
   }
   // The cache is committed: takes no line uses any more would only grow the repository.
-  for (const f of readdirSync(DIR)) if (!used.has(f)) rmSync(join(DIR, f));
+  for (const f of readdirSync(dir)) if (!used.has(f)) rmSync(join(dir, f));
   return out;
 }
 

@@ -1,0 +1,13 @@
+# Recorded: the conversation's Changes tab, then one file's diff.
+appId: app.shahi.mobile
+---
+- tapOn: "Changes"
+- extendedWaitUntil:
+    visible: ".*due.ts.*"
+    timeout: 15000
+- waitForAnimationToEnd
+- tapOn: ".*src/tasks/due.ts.*"
+- extendedWaitUntil:
+    visible: ".*getTime.*"
+    timeout: 15000
+- waitForAnimationToEnd

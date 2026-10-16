@@ -1,0 +1,8 @@
+# Recorded: the waiting card's first answer, pressed. capture.ts then moves the
+# fixture on as the computer would once the edit is approved.
+appId: app.shahi.mobile
+---
+- extendedWaitUntil:
+    visible: "1. Yes"
+    timeout: 15000
+- tapOn: "1. Yes"

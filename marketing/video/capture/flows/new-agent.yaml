@@ -1,0 +1,18 @@
+# Recorded: New agent in tasks-web, through each of the five agents, ending on
+# Claude with edits auto-accepted.
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "new-agent"
+- tapOn:
+    id: "pick-w1"
+- extendedWaitUntil:
+    visible: "New agent in tasks-web"
+    timeout: 10000
+- tapOn: "Codex"
+- tapOn: "Cursor"
+- tapOn: "OpenCode"
+- tapOn: "Antigravity"
+- tapOn: "Claude"
+- tapOn: "Auto-accept edits.*"
+- waitForAnimationToEnd

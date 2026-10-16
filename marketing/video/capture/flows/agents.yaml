@@ -1,0 +1,11 @@
+# Back to the agent list, at its top.
+appId: app.shahi.mobile
+---
+- tapOn:
+    id: "cpu"
+- waitForAnimationToEnd
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 400
+- waitForAnimationToEnd

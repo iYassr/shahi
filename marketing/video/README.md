@@ -68,5 +68,53 @@ It names Termius, Blink and WhatsApp in text only. No logos or product UI
 appear, and the phone screens are drawn from the app's own reader layout
 (YOU blocks, agent labels, tool cards), not chat bubbles.
 
+## Phone cut
+
+A 60-second cut about the app itself, `PhoneWide`, `PhoneSquare` and
+`PhoneTall` (9:16), with sound: a terminal squeezed onto a phone, then Reader,
+one-tap answers, every agent, herdr's workspace, setup and SSH, notifications,
+dictation, the rest, and the end card. Sources are in `src/phone/`; its timeline
+is `src/phone/timeline.ts`, read by the picture, `audio/phone.ts` and
+`audio/phone-voiceover.ts`, as the launch cut's is.
+
+```sh
+bun run render:phone    # the soundtrack, then out/shahi-phone-16x9.mp4, -1x1.mp4 and -9x16.mp4
+bun run sound:phone     # just the soundtrack and out/shahi-phone.en.{vtt,srt}
+bun run stills:phone    # one still per scene and format, in out/phone-stills/ (--at 405,410 for others)
+```
+
+**Footage.** What the phone shows of the app is the app: the 1.1.2 Release
+build on an iPhone 17 Pro Max simulator, paired with the encrypted fixture on
+its showcase scenario (`e2e/stub/showcase.ts`, invented projects and agents),
+recorded by `capture/capture.ts` into `public/phone/`. Those files are
+committed (4 MB), so rendering needs no simulator. To record them again: the
+simulator set up as `marketing/app-store/README.md` says, Maestro, Homebrew's
+ffmpeg, `HOSTED_PORT=7572 bun e2e/hosted/server.ts` from the repository root,
+then `bun run capture:phone`. It prints the frames where each clip's movements
+begin, and `timeline.ts` and `scenes.tsx` put taps, holds and skips on those
+frames, so new footage means reading them again.
+
+Four things are drawn rather than recorded, each because the simulator cannot
+show it: the terminal app in the opening (and no real product's interface), the
+camera reading the installer's code, the notification on the lock screen, and
+dictation. The app asks for notification permission only on a device, so the
+simulator never shows its banner; it has no SpeechTranscriber, so no microphone
+button. The banner's words are what `server/lib/push.ts` sends, and dictation
+follows `mobile/src/components/dictation.tsx`.
+
+**Voice.** The script is `PHONE_LINES` in `audio/phone-voiceover.ts`, spoken
+and cached (`audio/vo-phone/`) exactly as the launch cut's, three seeds a line
+at most. Lines are placed by their waveform, and the scenes' cues by where each
+word is heard, measured the same way; ElevenLabs' alignment puts every word
+after a pause half a second early.
+
+**Before posting.** The takes in `audio/vo-phone/` are a draft for timing,
+made on the free plan, which has no commercial licence: upgrade, delete
+`audio/vo-phone/`, and run `ELEVENLABS_API_KEY=… bun run render:phone`. New
+takes differ a little; the build re-checks every ending and fit. Notifications
+and dictation have not yet been proven on a physical iPhone (see "What is not
+done" in the repository's CLAUDE.md); check both on a device before this cut
+says they work.
+
 Remotion is free for individuals and companies of up to three people; larger
 companies need a company license.

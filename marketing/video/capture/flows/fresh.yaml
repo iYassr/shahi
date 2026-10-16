@@ -1,0 +1,10 @@
+# A first launch: nothing saved, the screen that asks for a computer.
+appId: app.shahi.mobile
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 30000
+- waitForAnimationToEnd

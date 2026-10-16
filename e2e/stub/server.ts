@@ -323,6 +323,8 @@ Bun.serve({
       return json({ agents: (scenario.agents ?? ["claude"]).map(kind => ({ kind, command: `/usr/bin/${kind}` })), known: 19 });
     }
 
+    if (pathname === "/api/plan-usage" && scenario.planUsage) return json(scenario.planUsage);
+
     if (pathname === "/api/dirs") {
       return json({
         path: "/home/x",
