@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { sign } from "node:crypto";
 import type { ReleaseChannel } from "@shahi/shared";
-import { MAX_RELEASES, compareVersion, supportsHerdr, validateRelease, verifyCatalog, type Catalog, type Release } from "./catalog";
+import { MAX_RELEASES, compareVersion, validateRelease, verifyCatalog, type Catalog, type Release } from "./catalog";
 
 /** A catalog's life. Renewal (catalog-expiry.yml) re-signs a channel well before this runs out. */
 export const CATALOG_LIFETIME_MS = 120 * 86400_000;
@@ -16,7 +16,10 @@ export const CATALOG_LIFETIME_MS = 120 * 86400_000;
 function supersedes(newer: Release, older: Release): boolean {
   return compareVersion(newer.version, older.version) > 0 && newer.dataSchema === older.dataSchema &&
     newer.api.min <= older.api.min && compareVersion(newer.bun, older.bun) <= 0 &&
-    older.platforms.every(p => newer.platforms.includes(p)) && older.herdr.every(h => supportsHerdr(newer, h));
+    older.platforms.every(p => newer.platforms.includes(p)) &&
+    // Exact versions, not supportsHerdr: managers up to 0.3.29 select a release
+    // only if it names the computer's herdr, and they read this catalog too.
+    older.herdr.every(h => newer.herdr.some(n => n.version === h.version && n.protocol === h.protocol));
 }
 
 /**
