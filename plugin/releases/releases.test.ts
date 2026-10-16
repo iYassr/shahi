@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { download, RELEASE_HOSTS, selectRelease, sha256, verifyCatalog, type Catalog, type Release } from "./catalog";
+import { download, RELEASE_HOSTS, selectRelease, sha256, verifyCatalog, withStable, type Catalog, type Release } from "./catalog";
 import { stage } from "./stage";
 import { atomicJson, installation, readJson, type Transaction } from "./storage";
 import { beginTransaction, finishTransaction, type Runner } from "./transaction";
@@ -67,6 +67,18 @@ describe("approved releases", () => {
     for (const patch of [{ transport: 1 }, { api: { min: 4, max: 5 } }, { artifact: { ...release.artifact, url: "https://evil.example/service" } }]) {
       expect(() => verifyCatalog(signed({ ...catalog, releases: [{ ...release, ...patch }] }), "stable", 0, trusted)).toThrow();
     }
+  });
+  // 16 October 2026: 0.3.30 went straight to Stable and the owner's Beta computers were offered nothing.
+  test("a Beta computer is offered a newer release published only to Stable", () => {
+    const fix = { ...release, version: "0.4.1", buildId: "build-fix" };
+    const beta = { ...catalog, channel: "beta" as const, releases: [release] };
+    expect(selectRelease(withStable(beta, { ...catalog, releases: [fix, release] }), { ...machine, current: release }).release?.buildId).toBe("build-fix");
+    expect(withStable(beta, null)).toBe(beta);
+    // A Beta release newer than Stable's still wins, and a version in both is not doubled.
+    const preview = { ...release, version: "0.4.2-beta.1", buildId: "build-beta" };
+    const both = withStable({ ...beta, releases: [preview, release] }, { ...catalog, releases: [fix, release] });
+    expect(both.releases.map(r => r.version)).toEqual(["0.4.2-beta.1", "0.3.0", "0.4.1"]);
+    expect(selectRelease(both, { ...machine, current: release }).release?.buildId).toBe("build-beta");
   });
   test("keeps a supported release when the newest needs a newer herdr", () => {
     const newest = { ...release, version: "0.4.0", herdr: [{ version: "0.10.0", protocol: 23 }] };

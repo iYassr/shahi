@@ -112,6 +112,17 @@ export function incompatibility(r: Release, m: Machine): string | null {
   if (m.current && r.api.min > m.current.api.max) return "Install the intermediate supported Shahi release first.";
   return null;
 }
+/**
+ * What a Beta computer chooses from: its own channel plus every Stable release
+ * it lacks. A release published straight to Stable never reached Beta, so on
+ * 16 October both of the owner's computers, on Beta, were offered nothing while
+ * Stable carried the fix for herdr 0.9.4 and 0.9.5.
+ */
+export function withStable(beta: Catalog, stable: Catalog | null): Catalog {
+  if (!stable) return beta;
+  const have = new Set(beta.releases.map(r => r.version));
+  return { ...beta, releases: [...beta.releases, ...stable.releases.filter(r => !have.has(r.version))] };
+}
 export function selectRelease(c: Catalog, m: Machine): { release: Release | null; reason?: string } {
   const ordered = [...c.releases].sort((a, b) => compareVersion(b.version, a.version));
   const release = ordered.find(r => !incompatibility(r, m) && (!m.current || compareVersion(r.version, m.current.version) >= 0)) ?? null;

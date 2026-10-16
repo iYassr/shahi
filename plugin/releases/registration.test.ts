@@ -63,6 +63,25 @@ describe("whether herdr still has the plugin", () => {
     expect(registration({ herdr: "/usr/local/bin/herdr", pluginId: "shahi", configDir: "", command: herdr("", { out: list([]) }) })).toBe("unknown");
   });
 
+  // A later herdr whose registry stops listing Shahi, or names it otherwise
+  // ("iYassr/shahi"), while its files are where herdr last listed them, has
+  // changed its registry, not uninstalled anything (resilience review, October 2026).
+  test("a registry that stops listing the plugin while its files remain is not an uninstall", () => {
+    const pluginRoot = scratch();
+    let seen = null as string | null;
+    const answer = (plugins: object[]) => registration({ herdr: "/usr/local/bin/herdr", pluginId: "shahi", configDir, command: herdr(configDir, { out: list(plugins) }), knownRoot: seen, onRoot: (r) => { seen = r; } });
+    expect(answer([{ plugin_id: "shahi", enabled: true, plugin_root: pluginRoot }])).toBe("enabled");
+    expect(seen).toBe(pluginRoot);
+    expect(answer([])).toBe("unknown");
+    expect(answer([{ plugin_id: "iYassr/shahi", enabled: true, plugin_root: pluginRoot }])).toBe("unknown");
+    // A real uninstall deletes them.
+    rmSync(pluginRoot, { recursive: true, force: true });
+    expect(answer([{ plugin_id: "other", enabled: true }])).toBe("removed");
+    // Disabling leaves the files, and the entry says so.
+    mkdirSync(pluginRoot);
+    expect(answer([{ plugin_id: "shahi", enabled: false, plugin_root: pluginRoot }])).toBe("removed");
+  });
+
   test("one transient answer during a reinstall does not remove the service", async () => {
     const answers = ["removed", "enabled"] as const; let i = 0;
     expect(await confirmedRemoved(() => answers[i++]!, async () => {})).toBe(false);

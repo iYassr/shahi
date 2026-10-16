@@ -34,8 +34,12 @@ export function run(argv: string[]): { ok: boolean; out: string } {
 
 const canonical = (path: string) => { try { return realpathSync(path); } catch { return path; } };
 
-export function registration(options: { herdr: string | null; pluginId: string; configDir: string; command?: Command }): Registration {
-  const { herdr, pluginId, configDir, command = run } = options;
+export function registration(options: {
+  herdr: string | null; pluginId: string; configDir: string; command?: Command;
+  /** The plugin's files as herdr last listed them, and where to tell a new answer. */
+  knownRoot?: string | null; onRoot?: (root: string) => void;
+}): Registration {
+  const { herdr, pluginId, configDir, command = run, knownRoot, onRoot } = options;
   if (!herdr || !configDir) return "unknown";
   const dir = command([herdr, "plugin", "config-dir", pluginId]);
   if (!dir.ok || canonical(dir.out.trim()) !== canonical(configDir)) return "unknown";
@@ -47,8 +51,18 @@ export function registration(options: { herdr: string | null; pluginId: string; 
   // a later herdr) would otherwise read as "not listed" and remove every
   // install at once.
   if (!Array.isArray(plugins) || !plugins.every((p: { plugin_id?: unknown }) => typeof p?.plugin_id === "string")) return "unknown";
-  const entry = plugins.find((p: { plugin_id?: unknown }) => p.plugin_id === pluginId) as { enabled?: unknown } | undefined;
-  return !entry || entry.enabled === false ? "removed" : "enabled";
+  const entry = plugins.find((p: { plugin_id?: unknown }) => p.plugin_id === pluginId) as { enabled?: unknown; plugin_root?: unknown } | undefined;
+  if (entry && entry.enabled === false) return "removed";
+  if (entry) {
+    if (typeof entry.plugin_root === "string" && entry.plugin_root) onRoot?.(entry.plugin_root);
+    return "enabled";
+  }
+  // Not listed. `herdr plugin uninstall` deletes the plugin's files, so files
+  // still where herdr last listed them mean the registry changed, not the
+  // install: an empty list or a renamed id in a later herdr would otherwise
+  // read as "uninstalled" and remove Shahi from every computer at once
+  // (resilience review, October 2026).
+  return knownRoot && existsSync(knownRoot) ? "unknown" : "removed";
 }
 
 /**

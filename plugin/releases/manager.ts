@@ -6,7 +6,7 @@ import { loadConfig, type Config } from "../../server/lib/config";
 import { HerdrClient } from "../../server/lib/herdr-client";
 import { type ComputerUpdate, type ControlHandshake } from "@shahi/shared";
 import { serviceFor } from "../service";
-import { CATALOG_URL, download, selectRelease, verifyCatalog, sha256, type Catalog, type Release } from "./catalog";
+import { CATALOG_URL, download, selectRelease, verifyCatalog, withStable, sha256, type Catalog, type Release } from "./catalog";
 import { confirmedRemoved, herdrBinary, registration, removalNotice } from "./registration";
 import { atomicJson, installation, readJson, releaseDirectory, type UpdateRequest } from "./storage";
 import { stage } from "./stage";
@@ -78,10 +78,14 @@ export async function manage(root: string) {
   // again. The passcode, paired devices and data stay on disk, as they do
   // after the shahi.uninstall action. A service installed outside the plugin
   // (no SHAHI_ENV_FILE, as in the smoke tests) is never "removed".
+  const rootFile = join(root, "plugin-root.json");
+  let knownRoot = readJson<{ root: string }>(rootFile)?.root ?? null;
   const registered = () => registration({
     herdr: herdrBinary(),
     pluginId: process.env.SHAHI_PLUGIN_ID || "shahi",
     configDir: process.env.SHAHI_ENV_FILE ? dirname(process.env.SHAHI_ENV_FILE) : "",
+    knownRoot,
+    onRoot: (seen) => { if (seen !== knownRoot) { knownRoot = seen; atomicJson(rootFile, { root: seen }); } },
   });
   async function retireIfRemoved() {
     if (!await confirmedRemoved(registered)) return;
@@ -266,10 +270,16 @@ export async function manage(root: string) {
     const record = installation(root)!;
     const raw = Buffer.from(await download(CATALOG_URL(channel), 256 * 1024)).toString("utf8");
     const catalog = verifyCatalog(raw, channel, record.sequence[channel] ?? 0);
+    // Beta also takes Stable's releases (withStable); a Stable catalog that
+    // cannot be had leaves Beta's choice as it was, never the check failed.
+    let stable: Catalog | null = null;
+    if (channel === "beta") {
+      try { stable = verifyCatalog(Buffer.from(await download(CATALOG_URL("stable"), 256 * 1024)).toString("utf8"), "stable", record.sequence.stable ?? 0); } catch { /* Beta alone. */ }
+    }
     let herdr = null; try { herdr = await client.rpc("ping", {}); } catch { /* Recovery works offline. */ }
-    const result = selectRelease(catalog, { platform: `${process.platform}-${process.arch}`, bun: Bun.version, herdr, current: record.active });
+    const result = selectRelease(withStable(catalog, stable), { platform: `${process.platform}-${process.arch}`, bun: Bun.version, herdr, current: record.active });
     atomicJson(join(root, `catalog-${channel}.json`), JSON.parse(raw));
-    atomicJson(join(root, "installation.json"), { ...record, channel, sequence: { ...record.sequence, [channel]: catalog.sequence } });
+    atomicJson(join(root, "installation.json"), { ...record, channel, sequence: { ...record.sequence, [channel]: catalog.sequence, ...(stable ? { stable: stable.sequence } : {}) } });
     const available = result.release?.buildId !== record.active.buildId ? result.release?.version : undefined;
     save(down() ? { available, checkedAt: Date.now() } : { phase: available ? "available" : "idle", available, checkedAt: Date.now(), message: result.reason });
     return { catalog, release: result.release };
