@@ -1,0 +1,16 @@
+# Pairs a freshly installed app with the encrypted fixture on the showcase scenario.
+appId: app.shahi.mobile
+env:
+  FIXTURE_PORT: "7572"
+  SCENARIO: showcase
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible: "Connect your computer"
+    timeout: 30000
+- runFlow:
+    file: ../../../.maestro/fixture/pair.yaml
+    env:
+      SCENARIO: showcase

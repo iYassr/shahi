@@ -1,0 +1,6 @@
+appId: app.shahi.mobile
+---
+- tapOn: ".*Fix the flaky due-date test.*"
+- extendedWaitUntil:
+    visible: ".*Changes.*"
+    timeout: 15000

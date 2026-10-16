@@ -1,0 +1,12 @@
+appId: app.shahi.mobile
+---
+- tapOn:
+    point: 9%, 9%
+- extendedWaitUntil:
+    visible: ".*New agent.*"
+    timeout: 10000
+- swipe:
+    start: 50%, 30%
+    end: 50%, 85%
+    duration: 600
+- tapOn: ".*New agent.*"

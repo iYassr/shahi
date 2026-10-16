@@ -1,0 +1,6 @@
+appId: app.shahi.mobile
+---
+- tapOn: "Changes"
+- extendedWaitUntil:
+    visible: ".*due.ts.*"
+    timeout: 15000

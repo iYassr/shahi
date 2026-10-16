@@ -1,0 +1,6 @@
+appId: app.shahi.mobile
+---
+- tapOn: ".*src/tasks/due.ts.*"
+- extendedWaitUntil:
+    visible: ".*getTime.*"
+    timeout: 15000

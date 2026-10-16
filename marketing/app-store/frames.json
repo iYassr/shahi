@@ -1,0 +1,9 @@
+[
+  { "file": "01-agents.png", "capture": "agents.png", "title": ["Your coding agents,", "on your phone"], "sub": "Claude Code, Codex, Cursor and more, running in herdr on your own computer." },
+  { "file": "02-read.png", "capture": "read.png", "title": ["Read your agents", "like a chat"], "sub": "Replies, code and tool calls, laid out for a phone." },
+  { "file": "03-answer.png", "capture": "answer.png", "title": ["Answer them", "in one tap"], "sub": "Every answer is checked against the agent's live screen before it's pressed." },
+  { "file": "04-setup.png", "capture": "setup.png", "title": ["One command.", "One scan."], "sub": "End-to-end encrypted. No VPN and no account needed." },
+  { "file": "05-changes.png", "capture": "changes.png", "title": ["See exactly", "what changed"], "sub": "Every file and its diff, without leaving the conversation." },
+  { "file": "06-start.png", "capture": "start.png", "title": ["Start an agent", "from anywhere"], "sub": "Any project, any agent, and the permission mode you choose." },
+  { "file": "07-screen.png", "capture": "screen.png", "title": ["The real terminal,", "when you need it"], "sub": "With the keys a phone keyboard leaves out." }
+]

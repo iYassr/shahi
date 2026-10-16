@@ -1,0 +1,7 @@
+appId: app.shahi.mobile
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Agents"
+    timeout: 20000

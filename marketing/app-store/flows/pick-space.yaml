@@ -1,0 +1,4 @@
+appId: app.shahi.mobile
+---
+- tapOn:
+    point: 40%, 24%

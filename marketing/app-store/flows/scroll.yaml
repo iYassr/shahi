@@ -1,0 +1,6 @@
+appId: app.shahi.mobile
+---
+- swipe:
+    start: 50%, 80%
+    end: 50%, 22%
+    duration: 1200

@@ -20,6 +20,7 @@ import type {
   Space,
   SpaceTab,
 } from "@shahi/shared";
+import { showcaseSession } from "./showcase";
 
 export interface Scenario {
   /** Override discovery and simulate unique created panes and spaces for creation tests. */
@@ -82,7 +83,7 @@ export const SAMPLE_CHANGES: RepositoryChanges = {
   },
 };
 
-const space = (over: Partial<Space> & { workspaceId: string; label: string }): Space => ({
+export const space = (over: Partial<Space> & { workspaceId: string; label: string }): Space => ({
   status: "idle",
   paneCount: 1,
   tabCount: 1,
@@ -92,7 +93,7 @@ const space = (over: Partial<Space> & { workspaceId: string; label: string }): S
   ...over,
 });
 
-const tab = (over: Partial<SpaceTab> & { tabId: string; workspaceId: string }): SpaceTab => ({
+export const tab = (over: Partial<SpaceTab> & { tabId: string; workspaceId: string }): SpaceTab => ({
   label: "1",
   number: 1,
   status: "idle",
@@ -477,6 +478,7 @@ export function crowdedSession(): Scenario {
 
 export const SCENARIOS = {
   busy: busySession,
+  showcase: showcaseSession,
   empty: emptySession,
   waiting: everyoneWaiting,
   trust: trustQuestion,
