@@ -5,7 +5,7 @@
 # night the change landed, with a week or more to react before it is stable.
 # It never blocks a push: a preview failure opens or updates an issue and
 # nothing else.
-name: herdr preview
+name: herdr nightly
 
 on:
   schedule:
@@ -24,13 +24,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Two herdrs a night: the newest prerelease, a week or more ahead of users,
+  # and what herdr's installer hands out today. Stable was tested only when a
+  # Shahi release ran CI, so herdr 0.9.4 and 0.9.5 reached every computer
+  # untested (October 2026); with the service's own gate in the suite, a
+  # stable herdr Shahi cannot use now files an issue the night it ships.
   preview:
-    name: real herdr (latest preview)
+    name: real herdr (latest ${{ matrix.channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    outputs:
-      tag: ${{ steps.herdr.outputs.tag }}
-      probe: ${{ steps.probe.outcome }}
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [preview, stable]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -41,16 +47,26 @@ jobs:
       - run: bun install --frozen-lockfile
 
       # A prerelease has no digest to pin it against. This proves only that
-      # the bytes are the ones GitHub's immutable release records.
-      - name: Install the newest prerelease
+      # the bytes are the ones GitHub's immutable release records. Stable
+      # comes from herdr.dev's manifest, cross-checked against GitHub, as in
+      # ci.yml.
+      - name: Install the newest ${{ matrix.channel }}
         id: herdr
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ matrix.channel }}
         run: |
           set -euo pipefail
-          tag=$(gh api --paginate --slurp "repos/herdrdev/herdr/releases?per_page=100" | jq -er 'add | map(select(.prerelease and (.draft | not))) | sort_by(.published_at) | last | .tag_name')
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          bash .github/scripts/install-herdr.sh "$tag"
+          if [ "$CHANNEL" = stable ]; then
+            manifest=$(curl -fsSL --retry 3 https://herdr.dev/latest.json)
+            tag="v$(jq -er '.version' <<< "$manifest")"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            bash .github/scripts/install-herdr.sh "$tag" "$(jq -er '.sha256["linux-x86_64"]' <<< "$manifest")"
+          else
+            tag=$(gh api --paginate --slurp "repos/herdrdev/herdr/releases?per_page=100" | jq -er 'add | map(select(.prerelease and (.draft | not))) | sort_by(.published_at) | last | .tag_name')
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            bash .github/scripts/install-herdr.sh "$tag"
+          fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Start a headless herdr
@@ -58,9 +74,9 @@ jobs:
           herdr --version
           bash .github/scripts/start-herdr.sh
 
-      # Direct protocol behavior plus the production recovery/version gate.
-      # A green preview does not approve that version for production use.
-      - name: Probe preview contracts and recovery
+      # The adapter, the routes, and the service's own gate, which must say
+      # "connected": a herdr Shahi cannot use fails here, preview or stable.
+      - name: Run the live suite
         id: probe
         run: SHAHI_HERDR_LIVE=1 SHAHI_HERDR_PREVIEW=1 bun test server/lib/herdr-live.test.ts
 
@@ -70,20 +86,20 @@ jobs:
           TAG: ${{ steps.herdr.outputs.tag }}
           RESULT: ${{ steps.probe.outcome }}
         run: |
-          printf 'Preview: %s\n\nContract/recovery probe: %s. A passing probe does not approve this version for production. Application writes remain covered by the supported-version CI matrix.\n' "$TAG" "$RESULT" >> "$GITHUB_STEP_SUMMARY"
+          printf 'herdr %s: live suite %s.\n' "$TAG" "$RESULT" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
-          name: herdr-preview-server-log
+          name: herdr-${{ matrix.channel }}-server-log
           path: /tmp/herdr-server.log
           if-no-files-found: ignore
           retention-days: 7
 
   report:
-    name: file the preview failure
+    name: file the nightly failure
     needs: preview
-    if: ${{ !cancelled() && needs.preview.outputs.probe == 'failure' && github.event_name == 'schedule' }}
+    if: ${{ !cancelled() && needs.preview.result == 'failure' && github.event_name == 'schedule' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -93,12 +109,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.preview.outputs.tag }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="herdr preview $TAG breaks the live suite"
-          existing=$(gh issue list --state open --search "in:title \"herdr preview\" breaks the live suite" --json number --jq '.[0].number')
-          body="The nightly run against herdr prerelease \`$TAG\` failed: $RUN"
+          title="Tonight's herdr breaks the live suite"
+          existing=$(gh issue list --state open --search "in:title \"breaks the live suite\"" --json number --jq '.[0].number')
+          body="The nightly run against herdr's newest prerelease or stable release failed; the run's summary names the version: $RUN"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else

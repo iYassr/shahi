@@ -827,8 +827,9 @@ push — against `v0.9.0`, the minimum supported release, through `v0.9.5`, all
 pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
 against whatever herdr's own installer hands out today, read from
 `herdr.dev/latest.json` (version and checksum) and cross-checked against
-GitHub — and nightly against the newest prerelease (`herdr-preview.yml`),
-checked only against its own release's digest. Every herdr in CI is installed
+GitHub — and nightly against the newest prerelease, checked only against its
+own release's digest, and against today's stable (`herdr-preview.yml`), so a
+stable herdr is tested the night it ships rather than at Shahi's next release. Every herdr in CI is installed
 by `.github/scripts/install-herdr.sh`, which refuses a binary whose bytes do not
 match GitHub's digest for the asset (and the pinned one, when given), and never
 runs it; herdr's own `install.sh` is no longer piped into `sh`. A failed nightly files an
