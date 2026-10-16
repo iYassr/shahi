@@ -1658,6 +1658,39 @@ test("a Claude pane with no Reader yet says why without asking anyone to type a 
   }
 });
 
+// TestFlight, 15 October 2026: "why a lot of images cannot be loaded". Reader
+// followed a conversation Claude continued in a new file; the image route
+// looked the session up itself, opened the original file and answered 404.
+test("a Claude conversation continued in a new file serves the images Reader shows from it", async () => {
+  const config = mkdtempSync(join(tmpdir(), "shahi-http-claude-"));
+  const previousConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = config;
+  const OLD = "11111111-2222-4333-8444-555555555555", NEW = "66666666-7777-4888-9999-aaaaaaaaaaaa";
+  const project = join(config, "projects", "-work-app");
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(project, `${OLD}.jsonl`), [
+    JSON.stringify({ type: "assistant", sessionId: OLD, uuid: "said-1", message: { role: "assistant", content: [{ type: "text", text: "Before." }] } }),
+    JSON.stringify({ type: "continued-in", sessionId: OLD, continuedInSessionId: NEW }),
+  ].join("\n") + "\n");
+  writeFileSync(join(project, `${NEW}.jsonl`), JSON.stringify({ type: "user", sessionId: NEW, uuid: "shot-1", message: { role: "user", content: [
+    { type: "tool_result", tool_use_id: "read-1", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: "aGVsbG8=" } }] },
+  ] } }) + "\n");
+  occupant = { agent: "claude", agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: OLD } };
+  const app = await boot();
+  try {
+    const res = await fetch(`${app.base}/api/panes/${encodeURIComponent(PANE)}/image?ref=shot-1:r0`, { headers: { cookie: app.cookie, "x-shahi-api": String(SHAHI_API_VERSION) } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
+    expect(await res.text()).toBe("hello");
+  } finally {
+    app.stop();
+    occupant = {};
+    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfig;
+    rmSync(config, { recursive: true, force: true });
+  }
+});
+
 // Found on an iPhone, October 2026: a new Claude waiting at its folder-trust
 // dialog has reported no session (its hooks wait for trust), and Reader called
 // it a conversation Shahi could not identify. Claude has recorded it, unsaved.

@@ -35,13 +35,13 @@ import { readAgentPanelSort } from "./herdr-config";
 import { dirname } from "node:path";
 import { ClaudeSettingsError, planUsage, setClaudePlanUsage } from "./plan-usage";
 import { paneCommands } from "./slash-commands";
-import { readSessionImage } from "./session-log";
+import { readTranscriptImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf, paneFolder } from "./herdr-pane";
 import { ChangesError, fileDiff, paneChanges } from "./changes";
 import { computerName } from "./computer-name";
-import { atFolderTrust, choiceHeld, chooseConversation, chosenSession, conversationChoices, unsavedSession } from "./claude-choice";
+import { atFolderTrust, choiceHeld, chooseConversation, conversationChoices, unsavedSession } from "./claude-choice";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
 import { PaneWrites } from "./pane-writes";
@@ -1445,17 +1445,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             }
           }
 
-          // Images belong to the exact provider session in this pane. A UUID
+          // Images belong to the exact provider session in this pane, read
+          // from the transcript Reader shows (transcriptSourceFor), which a
+          // Claude conversation continued or parked elsewhere moves. A UUID
           // reported by another provider must never select a Claude image.
           if (sub === "/image") {
             const pane = store.pane(paneId);
-            const sessionId = agentSessionOf(pane) ?? (pane?.agent === "claude" ? await chosenSession(client, pane) : null);
             const ref = url.searchParams.get("ref");
             if (!pane || !ref) return json({ error: "not found" }, { status: 404 });
-            const source = pane.agent === "codex" || pane.agent === "opencode" ? await transcriptSourceFor(pane, client) : null;
+            const source = pane.agent === "codex" || pane.agent === "opencode" || pane.agent === "claude" ? await transcriptSourceFor(pane, client) : null;
             const image = pane.agent === "codex" && typeof source === "string" ? await readCodexImage(source, ref)
               : pane.agent === "opencode" && source && typeof source !== "string" ? await readOpenCodeImage(source, ref)
-              : pane.agent === "claude" && sessionId ? await readSessionImage(sessionId, ref) : null;
+              : pane.agent === "claude" && typeof source === "string" ? await readTranscriptImage(source, ref) : null;
             if (!image) return json({ error: "not found" }, { status: 404 });
             return new Response(image.bytes, {
               headers: {

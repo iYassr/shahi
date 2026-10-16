@@ -991,13 +991,26 @@ export async function readSessionImage(
   sessionId: string,
   ref: string,
 ): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
+  const path = await findTranscript(sessionId);
+  return path ? readTranscriptImage(path, ref) : null;
+}
+
+/**
+ * The same, from the transcript Reader shows. The image route must ask the
+ * file Reader built its refs from: a conversation Claude continued in a new
+ * file or parked as a background job has its images there, and the route's
+ * own lookup by session found the original file, without them, and answered
+ * 404 (111 times on one computer on 15 October 2026, "why a lot of images
+ * cannot be loaded").
+ */
+export async function readTranscriptImage(
+  path: string,
+  ref: string,
+): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
   const separator = ref.lastIndexOf(":");
   if (separator <= 0) return null;
   const uuid = ref.slice(0, separator);
   const wanted = Number(ref.slice(separator + 1));
-
-  const path = await findTranscript(sessionId);
-  if (!path) return null;
 
   // `r` marks an image that came back inside a tool result rather than as a
   // block of the message itself.
