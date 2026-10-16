@@ -150,7 +150,10 @@ export async function manage(root: string) {
             // prevent repairing Shahi. Backend compatibility is checked first.
             if (h.control === 1 && h.buildId === release.buildId && (!serverId || h.serverId === serverId)) {
               let needsBackend = false;
-              try { const pong = await client.rpc("ping", {}); needsBackend = release.herdr.some(p => p.version === pong.version && p.protocol === pong.protocol); } catch { /* Recovery-only readiness while herdr is offline. */ }
+              // A herdr on a protocol this release was tested with must connect
+              // before the release counts as ready, or the update rolls back; a
+              // newer protocol may not, and that is no reason to roll back.
+              try { const pong = await client.rpc("ping", {}); needsBackend = release.herdr.some(p => p.protocol === pong.protocol); } catch { /* Recovery-only readiness while herdr is offline. */ }
               if (needsBackend && h.backend.state !== "connected") { await Bun.sleep(250); continue; }
               const web = await fetch(base, { signal: AbortSignal.timeout(2_000) });
               if (web.ok && (await web.text()).includes('id="root"')) return true;

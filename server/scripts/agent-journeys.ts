@@ -31,6 +31,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync }
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startAgentInTab } from "../lib/agents";
+import { herdrCompatibility } from "../lib/backend";
 import { answerPrompt } from "../lib/answer";
 import { conversationSummary, transcriptPage, transcriptSourceFor } from "../lib/conversation-summary";
 import { HerdrClient } from "../lib/herdr-client";
@@ -216,9 +217,17 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal
 
 let failed = 0;
 try {
+  let pong!: { version: string; protocol: number };
   for (let tries = 0; ; tries++) {
-    try { await client.connect(); break; } catch (err) { if (tries > 40) throw err; await Bun.sleep(250); }
+    try { pong = await client.connect(); break; } catch (err) { if (tries > 40) throw err; await Bun.sleep(250); }
   }
+  // The journeys call the routes' functions directly, past the service's own
+  // gate, so they passed against herdr 0.9.5 on both computers while every
+  // installed Shahi refused it (October 2026). Ask the gate as well.
+  const gate = herdrCompatibility(pong.version, pong.protocol);
+  const gateLabel = `herdr ${pong.version} (protocol ${pong.protocol}) admitted by the service`;
+  if (gate.state !== "connected") failed++;
+  console.log(`${gate.state === "connected" ? "ok  " : "FAIL"}    ${gateLabel}${gate.state === "connected" ? "" : `\n        ${gate.state}: ${gate.message}`}`);
   const { workspace } = await rpc("workspace.create", { cwd: runDir, label: "journeys", focus: false });
   for (const kind of kinds) {
     if (!Bun.which(kind, { PATH: env.PATH })) { console.log(`skip    ${kind}: not installed`); continue; }

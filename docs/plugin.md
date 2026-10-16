@@ -40,14 +40,13 @@ was measured, had no menu for plugin actions.
 ## Requirements
 
 - **herdr 0.9.0 or newer** (the manifest's `min_herdr_version`) on **macOS or
-  Linux**. Each Shahi release is approved for exact herdr versions — today
-  0.9.0 through 0.9.3 — once the live adapter suite passes against them
-  ([releases.md](releases.md)). On a herdr no release is approved for, a first
+  Linux**. Shahi accepts herdr by protocol, not version, so herdr releases on
+  the same protocol work without a Shahi release; each release is tested with
+  the herdr versions in `release.json`, today 0.9.0 through 0.9.5
+  ([releases.md](releases.md)). On a herdr too old for any release, a first
   install still goes ahead with the newest release, in the recovery state:
   pairing and updates work, agent commands are refused, and the popup names the
-  herdr it found and the versions the release is approved for. The app offers a
-  Shahi update once one is approved for that herdr; installing an approved herdr
-  also works.
+  herdr it found and the oldest one the release needs.
 - **`git`**, which `herdr plugin install` runs to fetch the plugin. A minimal
   Ubuntu does not have it.
 - **[bun](https://bun.sh) 1.3.13 or newer.** Every command in the manifest goes

@@ -56,7 +56,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HerdrClient, HerdrError, HerdrSubscriber, type AnyEvent } from "./herdr-client";
-import { herdrCompatibility } from "./backend";
 import { HERDR_PROTOCOL } from "./herdr-schema";
 import { SessionStore } from "./state";
 import { Poller } from "./poller";
@@ -367,7 +366,6 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
     let child: ReturnType<typeof Bun.spawn> | null = null;
     let base = "";
     let cookie = "";
-    let expectedBackend = "connected";
     const fetch = (input: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       if (cookie) headers.set("cookie", cookie);
@@ -415,14 +413,16 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(login.status).toBe(200);
       cookie = login.headers.get("set-cookie")!.split(";")[0]!;
       const pong = await client.connect();
-      expectedBackend = PREVIEW ? herdrCompatibility(pong.version, pong.protocol).state : "connected";
+      // Every herdr the sidecar can talk to must reach "connected", preview or
+      // not. This expectation used to be the version list itself, so the
+      // nightly passed while Shahi refused herdr 0.9.4 and 0.9.5 (October 2026).
       // Recovery opens first, even with no herdr. App readiness is a separate
       // authenticated promise and must include a usable session snapshot.
       const ready = await eventually(
         () => fetch(`${base}/api/control/handshake`, { headers: { "x-shahi-control": "1" } }).then(r => r.json()).then(h => (h as { backend?: { state: string } }).backend ?? null).catch(() => null),
-        backend => backend?.state === expectedBackend, 15_000,
+        backend => backend?.state === "connected", 15_000,
       );
-      expect(ready?.state, `herdr ${pong.version} / protocol ${pong.protocol}: ${JSON.stringify(ready)}`).toBe(expectedBackend);
+      expect(ready?.state, `herdr ${pong.version} / protocol ${pong.protocol}: ${JSON.stringify(ready)}`).toBe("connected");
     }, 20_000);
 
     afterAll(() => child?.kill());
@@ -452,17 +452,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(body.api.min).toBeLessThanOrEqual(body.api.max);
     });
 
-    test.skipIf(!PREVIEW)("preview keeps authentication and recovery available without bypassing version approval", async () => {
-      const response = await fetch(`${base}/api/session`, { headers: { "x-shahi-api": String(SHAHI_API_VERSION) } });
-      expect(response.status).toBe(expectedBackend === "connected" ? 200 : 503);
-      if (expectedBackend !== "connected") {
-        expect(await response.json()).toMatchObject({ code: "backend_unavailable" });
-      }
-    });
-
-    // Preview probes the raw adapter and recovery gate. Only approved versions
-    // exercise authenticated application operations; never bypass that gate.
-    test.skipIf(PREVIEW)("GET /api/session lists the scratch pane", async () => {
+    test("GET /api/session lists the scratch pane", async () => {
       const session = (await (await fetch(`${base}/api/session`, { headers: { "x-shahi-api": String(SHAHI_API_VERSION) } })).json()) as {
         panes: { paneId: string; status: string }[];
       };
@@ -471,7 +461,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(KNOWN_STATUSES.has(row!.status)).toBe(true);
     });
 
-    test.skipIf(PREVIEW)("POST /api/panes/:id/prompt delivers once and answers a retry with the same receipt", async () => {
+    test("POST /api/panes/:id/prompt delivers once and answers a retry with the same receipt", async () => {
       const body = JSON.stringify({ text: `printf 'shahi-http-%s\\n' ${nonce}`, clientMessageId: `cm-${nonce}` });
       const headers = { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) };
       const first = (await (await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/prompt`, { method: "POST", headers, body })).json()) as {
@@ -486,7 +476,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(text.includes(`shahi-http-${nonce}`)).toBe(true);
     });
 
-    test.skipIf(PREVIEW)("POST /api/panes/:id/answer refuses a pane that is not asking, with a code", async () => {
+    test("POST /api/panes/:id/answer refuses a pane that is not asking, with a code", async () => {
       // The scratch shell shows a prompt line, not a menu: nothing is pressed
       // and the phone learns why, instead of a stray keystroke landing in a
       // terminal that was not waiting for one.
@@ -499,7 +489,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
       expect(((await res.json()) as { code: string }).code).toBe("prompt_gone");
     });
 
-    test.skipIf(PREVIEW)("POST /api/panes/:id/keys and /api/workspaces go through", async () => {
+    test("POST /api/panes/:id/keys and /api/workspaces go through", async () => {
       const headers = { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) };
       const keys = await fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/keys`, {
         method: "POST",
@@ -520,7 +510,7 @@ describe.skipIf(!LIVE)("against a real herdr", () => {
 
     // The Changes view reads the folder herdr reports for the pane: proven
     // here against herdr's own `cwd` and `foreground_cwd`, not a fixture's.
-    test.skipIf(PREVIEW)("GET /api/panes/:id/changes reads the repository holding the pane's folder", async () => {
+    test("GET /api/panes/:id/changes reads the repository holding the pane's folder", async () => {
       const headers = { "x-shahi-api": String(SHAHI_API_VERSION) };
       const changes = () => fetch(`${base}/api/panes/${encodeURIComponent(paneId)}/changes`, { headers }).then((r) => r.json()) as Promise<{ repository: unknown; note?: string; files: { path: string; status: string }[] }>;
       expect((await changes()).note).toBe("This folder is not in a Git repository, so there are no changes to show.");

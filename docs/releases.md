@@ -19,9 +19,17 @@ is operated by Shahi and SSH libraries travel inside the phone binary.
   herdr is offline or unsupported. It cannot bypass a revoked device grant.
 - The encrypted transport floor is 2. There is no insecure relay fallback.
   Supporting infrastructure must be deployed before clients need a new transport.
-- herdr 0.9.0 through 0.9.3 / protocol 22 are tested adapter profiles. A new herdr
-  version enters the approved list only after the live adapter suite passes.
-  Unsupported herdr leaves recovery and pairing available, but refuses commands.
+- herdr is accepted by protocol, not version: any herdr on protocol 22 or newer
+  is used (`herdrCompatibility`), and the update manager chooses releases by
+  the same rule (`supportsHerdr`). Until 0.3.30 both matched exact versions,
+  and herdr 0.9.4 and 0.9.5, on the same protocol, were refused on every
+  computer that installed them (October 2026). A newer protocol is tried; only
+  a session the adapter cannot read asks for a Shahi update. An older protocol
+  leaves recovery and pairing available, but refuses commands.
+- `HERDR_SUPPORT` and `release.json` list the versions a release was tested
+  with, each with a pinned live job in CI. Add herdr's current stable to both
+  before every computer release: managers up to 0.3.29 install only a release
+  that names the computer's exact herdr.
 
 `shared/src/compatibility.ts` defines app support. The adapter profiles live in
 `server/lib/backend.ts`; release requirements live in

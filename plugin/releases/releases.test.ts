@@ -68,7 +68,7 @@ describe("approved releases", () => {
       expect(() => verifyCatalog(signed({ ...catalog, releases: [{ ...release, ...patch }] }), "stable", 0, trusted)).toThrow();
     }
   });
-  test("keeps a supported release when the newest needs different herdr", () => {
+  test("keeps a supported release when the newest needs a newer herdr", () => {
     const newest = { ...release, version: "0.4.0", herdr: [{ version: "0.10.0", protocol: 23 }] };
     const chosen = selectRelease({ ...catalog, releases: [newest, release] }, { ...machine, current: release });
     expect(chosen.release?.version).toBe("0.3.0"); expect(chosen.reason).toContain("herdr");

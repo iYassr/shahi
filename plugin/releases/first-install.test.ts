@@ -25,23 +25,27 @@ const catalog: Catalog = {
 const machine = { platform: "darwin-arm64", bun: "1.3.13", herdr: { version: "0.9.1", protocol: 22 } };
 
 describe("the release a first install runs", () => {
-  test("a herdr newer than every approved one still gets Shahi, in recovery, with both versions named", () => {
-    const chosen = firstRelease(catalog, { ...machine, herdr: { version: "0.9.2", protocol: 22 } });
+  // herdr 0.9.4 and 0.9.5 kept protocol 22; installs and updates on them got
+  // no release that worked until one named their exact version (October 2026).
+  test("a herdr newer than every listed one, on the same protocol, gets the newest release with nothing to explain", () => {
+    expect(firstRelease(catalog, { ...machine, herdr: { version: "0.9.5", protocol: 22 } })).toEqual({ release: catalog.releases[0]! });
+    expect(selectRelease(catalog, { ...machine, herdr: { version: "0.10.0", protocol: 23 } }).release).toBe(catalog.releases[0]!);
+  });
+
+  test("a herdr older than every release supports still gets Shahi, in recovery, naming both versions and the fix", () => {
+    const old = { ...machine, herdr: { version: "0.8.2", protocol: 20 } };
+    const chosen = firstRelease(catalog, old);
     expect(chosen.release.version).toBe("0.3.6");
-    expect(chosen.notice).toContain("this computer runs herdr 0.9.2 (protocol 22)");
-    expect(chosen.notice).toContain("approved for herdr 0.9.0 (protocol 22), 0.9.1 (protocol 22)");
+    expect(chosen.notice).toContain("Shahi 0.3.6 needs herdr 0.9.0 or newer, and this computer runs herdr 0.8.2 (protocol 20)");
     expect(chosen.notice).toContain("pair now");
-  });
-
-  test("the app's update status names both herdr versions too", () => {
     // Once installed in recovery, the manager's catalog check reports this as the reason no update applies.
-    expect(selectRelease(catalog, { ...machine, herdr: { version: "0.9.2", protocol: 22 } }).reason)
-      .toBe("Shahi 0.3.6 is approved for herdr 0.9.0 (protocol 22), 0.9.1 (protocol 22), and this computer runs herdr 0.9.2 (protocol 22).");
+    expect(selectRelease(catalog, old).reason)
+      .toBe("Shahi 0.3.6 needs herdr 0.9.0 or newer, and this computer runs herdr 0.8.2 (protocol 20). Update herdr on this computer.");
   });
 
-  test("an approved herdr gets the newest release that supports it, with nothing to explain", () => {
+  test("a supported herdr gets the newest release that supports it, with nothing to explain", () => {
     expect(firstRelease(catalog, machine)).toEqual({ release: catalog.releases[0]! });
-    expect(firstRelease({ ...catalog, releases: [release("0.3.7", { herdr: [{ version: "0.9.2", protocol: 22 }] }), ...catalog.releases] }, machine))
+    expect(firstRelease({ ...catalog, releases: [release("0.3.7", { herdr: [{ version: "0.10.0", protocol: 23 }] }), ...catalog.releases] }, machine))
       .toEqual({ release: catalog.releases[0]! });
   });
 
@@ -53,8 +57,8 @@ describe("the release a first install runs", () => {
     expect(() => firstRelease(catalog, { ...machine, bun: "1.2.21" })).toThrow(
       "Shahi 0.3.6 needs bun 1.3.13 or newer, and this computer has bun 1.2.21. Upgrade bun on this computer (bun upgrade",
     );
-    // Also on a herdr with no approved release: recovery does not lift it.
-    expect(() => firstRelease(catalog, { ...machine, bun: "1.2.21", herdr: { version: "0.9.2", protocol: 22 } })).toThrow("needs bun 1.3.13");
+    // Also on a herdr too old for any release: recovery does not lift it.
+    expect(() => firstRelease(catalog, { ...machine, bun: "1.2.21", herdr: { version: "0.8.2", protocol: 20 } })).toThrow("needs bun 1.3.13");
   });
 
   test("an unsupported platform is refused naming the platforms", () => {

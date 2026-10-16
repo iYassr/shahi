@@ -155,12 +155,12 @@ requirements and what to do if something does not work.
 
 ### 1. Install on the computer doing the work
 
-Shahi runs on **macOS or Linux** with **herdr 0.9.0 or newer**. Each Shahi
-release is approved for specific herdr versions, today 0.9.0 through 0.9.3, after
-the live adapter suite passes against them. On a herdr no release is approved
-for yet, Shahi still installs, in a recovery state: you can pair and update,
-but agent commands are refused until an approved Shahi or herdr arrives, and
-setup names both versions. The computer also needs `git`, which herdr uses to
+Shahi runs on **macOS or Linux** with **herdr 0.9.0 or newer**. New herdr
+releases work as they come out: Shahi goes by herdr's protocol rather than its
+version number, and is tested with 0.9.0 through 0.9.5. On a herdr too old for
+Shahi, it still installs, in a recovery state: you can pair and update, but
+agent commands are refused until herdr is updated, and setup names both
+versions. The computer also needs `git`, which herdr uses to
 fetch the plugin, and bun 1.3.13 or newer; with no bun at all, the install
 fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`
 and adds `~/.bun/bin` to the shell’s rc file. Allow HTTPS access to `github.com`

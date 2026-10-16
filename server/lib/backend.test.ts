@@ -1,15 +1,34 @@
 import { describe, expect, test } from "bun:test";
 import { BackendMonitor, herdrCompatibility, probeHerdr } from "./backend";
-test("herdr adapter accepts only release-tested combinations", () => {
-  expect(herdrCompatibility("0.9.0", 22).state).toBe("connected");
-  expect(herdrCompatibility("0.9.1", 22).state).toBe("connected");
-  expect(herdrCompatibility("0.9.1", 23).state).toBe("service-update-required");
-  expect(herdrCompatibility("0.9.2", 22).state).toBe("connected");
-  expect(herdrCompatibility("0.9.3", 22).state).toBe("connected");
-  expect(herdrCompatibility("0.9.3", 23).state).toBe("service-update-required");
-  expect(herdrCompatibility("0.9.4", 22).state).toBe("service-update-required");
-  expect(herdrCompatibility("0.8.2", 20).state).toBe("update-required");
-  expect(herdrCompatibility("0.10.0", 23).state).toBe("service-update-required");
+// herdr 0.9.4 and 0.9.5 kept protocol 22 and were refused for not being on a
+// list of versions; every computer that updated herdr lost its agents.
+test("a herdr release on the same protocol connects, whatever its version", () => {
+  for (const version of ["0.9.0", "0.9.3", "0.9.4", "0.9.5", "0.9.17", "0.10.0"]) expect(herdrCompatibility(version, 22).state).toBe("connected");
+});
+test("a newer protocol is tried, and an older one asks for a herdr update", () => {
+  expect(herdrCompatibility("0.10.0", 23).state).toBe("connected");
+  expect(herdrCompatibility("0.8.2", 20)).toMatchObject({ state: "update-required", message: expect.stringContaining("Update herdr") });
+});
+test("a newer herdr whose session cannot be read asks for a Shahi update, not for herdr to start", async () => {
+  let protocol = 23;
+  const monitor = new BackendMonitor(async () => ({ version: "0.10.0", protocol }), async () => { throw new Error("herdr snapshot unavailable"); }, () => {});
+  await monitor.check();
+  expect(monitor.state).toMatchObject({ state: "service-update-required", version: "0.10.0", message: expect.stringContaining("Check for a computer update") });
+  // The same failure on the protocol this build speaks is herdr not answering properly, not a change.
+  protocol = 22; await monitor.check();
+  expect(monitor.state.state).toBe("offline");
+  monitor.close();
+});
+test("a connected herdr replaced by a newer one Shahi cannot read is not called offline", async () => {
+  let pong = { version: "0.9.5", protocol: 22 };
+  const store = { lastSyncOk: true, async resync() { store.lastSyncOk = pong.protocol === 22; } };
+  const monitor = new BackendMonitor(() => probeHerdr(async () => pong, store, () => monitor.state.state === "connected"), async () => {}, () => {});
+  await monitor.check();
+  expect(monitor.state.state).toBe("connected");
+  pong = { version: "0.10.0", protocol: 23 }; store.lastSyncOk = false;
+  await monitor.check();
+  expect(monitor.state).toMatchObject({ state: "service-update-required", version: "0.10.0" });
+  monitor.close();
 });
 test("backend failure and recovery do not restart the connection service", async () => {
   let offline = true, starts = 0, stops = 0;

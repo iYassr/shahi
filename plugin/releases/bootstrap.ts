@@ -2,18 +2,17 @@ import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { HerdrClient } from "../../server/lib/herdr-client";
 import type { Layout } from "../layout";
-import { CATALOG_URL, download, herdrProfiles, selectRelease, verifyCatalog, type Catalog, type Machine, type Release } from "./catalog";
+import { CATALOG_URL, download, herdrFloor, selectRelease, verifyCatalog, type Catalog, type Machine, type Release } from "./catalog";
 import { atomicJson, installation, releaseDirectory } from "./storage";
 import { stage } from "./stage";
 
 /**
  * The release a first install runs, and what to tell the person about it.
  *
- * A herdr that no release has been approved for gets the newest release
- * anyway, exactly as an offline herdr always has: the service then runs in
- * its documented recovery state (pairing and updates work, agent commands are
- * refused until an approved Shahi or herdr arrives), and the app offers the
- * approved update when it is published. Refusing instead meant every new user
+ * A herdr older than every release supports gets the newest release anyway,
+ * exactly as an offline herdr always has: the service then runs in its
+ * documented recovery state (pairing and updates work, agent commands are
+ * refused until herdr is updated). Refusing instead meant every new user
  * was turned away from the day herdr shipped a release until Shahi signed one
  * (pre-public-release review). Platform and bun stay hard requirements: a
  * build that cannot run is not a recovery state.
@@ -26,8 +25,8 @@ export function firstRelease(catalog: Catalog, machine: Machine): { release: Rel
   const { release } = recovery;
   return {
     release,
-    notice: `Shahi ${release.version} is approved for herdr ${herdrProfiles(release)}, and this computer runs herdr ${machine.herdr!.version} (protocol ${machine.herdr!.protocol}). ` +
-      "Shahi is installed so a phone can pair now; agents stay out of reach until the two match. The app offers a Shahi update once one is approved for this herdr; installing an approved herdr also works.",
+    notice: `Shahi ${release.version} needs herdr ${herdrFloor(release).version} or newer, and this computer runs herdr ${machine.herdr!.version} (protocol ${machine.herdr!.protocol}). ` +
+      "Shahi is installed so a phone can pair now; agents stay out of reach until herdr is updated.",
   };
 }
 

@@ -12,7 +12,8 @@ import type { ControlHandshake } from "@shahi/shared";
 const root = resolve(import.meta.dir, "../..");
 const scratch = mkdtempSync(join(tmpdir(), "shahi-contracts-"));
 const socketPath = join(scratch, "recording-herdr.sock");
-let backend = "0.9.0";
+/** What the recording herdr claims to be, and whether its session can be read. */
+let backend = { version: "0.9.0", protocol: 22, readable: true };
 const writes: string[] = [];
 const stub = createServer(socket => {
   let buffer = "";
@@ -21,11 +22,12 @@ const stub = createServer(socket => {
     const at = buffer.indexOf("\n"); if (at < 0) return;
     const message = JSON.parse(buffer.slice(0, at)); buffer = buffer.slice(at + 1);
     const { id, method } = message;
-    const protocol = backend === "0.9.0" ? 22 : 23;
-    const result = method === "ping" ? { version: backend, protocol }
-      : method === "session.snapshot" ? { snapshot: { version: backend, protocol, workspaces: [], tabs: [], panes: [], agents: [], layouts: [], focused_pane_id: null } }
+    const { version, protocol } = backend;
+    const result = method === "ping" ? { version, protocol }
+      : method === "session.snapshot" ? { snapshot: { version, protocol, workspaces: [], tabs: [], panes: [], agents: [], layouts: [], focused_pane_id: null } }
       : null;
     if (method === "events.subscribe") { socket.write(JSON.stringify({ id, result: { subscribed: true } }) + "\n"); return; }
+    if (method === "session.snapshot" && !backend.readable) { socket.end(JSON.stringify({ id, error: { code: "unknown_method", message: "No such method" } }) + "\n"); return; }
     if (!result) { writes.push(method); socket.end(JSON.stringify({ id, error: { code: "test_refused", message: "Recording stub refuses writes" } }) + "\n"); }
     else socket.end(JSON.stringify({ id, result }) + "\n");
   });
@@ -39,6 +41,15 @@ const env = { ...process.env, SHAHI_ENV_FILE: "", PASSCODE_HASH_B64: Buffer.from
 const auth = new Auth({ passcodeHash: "", sessionSecret: env.SESSION_SECRET, sessionTtlMs: 60_000 });
 const owner = auth.cookie(auth.issue()).split(";")[0]!;
 async function get(path: string, cookie = owner, api = "5") { return fetch(base + path, { headers: { cookie, "x-shahi-api": api, "x-shahi-control": "1" }, signal: AbortSignal.timeout(1_000) }); }
+/** herdr is probed every 3 s, and a change may take two probes to be decided. */
+async function backendBecomes(state: string, cookie: string) {
+  const until = Date.now() + 12_000;
+  for (;;) {
+    const handshake = await (await get("/api/control/handshake", cookie)).json() as ControlHandshake;
+    if (handshake.backend.state === state || Date.now() > until) return handshake;
+    await Bun.sleep(250);
+  }
+}
 async function stop() {
   if (!child) return; child.kill("SIGTERM"); await child.exited; child = undefined;
 }
@@ -81,14 +92,21 @@ try {
   assert.equal((await get("/api/session", paired, "99")).status, 426);
   const html = await (await fetch(base)).text(); assert.ok(html.includes('id="root"'));
   for (const asset of html.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)) { const res = await fetch(base + asset[1]); assert.ok(res.ok && (await res.arrayBuffer()).byteLength > 0, "Packaged assets must contain their actual bytes."); }
-  backend = "0.10.0"; await Bun.sleep(3_500);
-  const recovery = await (await get("/api/control/handshake", paired)).json() as ControlHandshake;
+  // A herdr release no Shahi has named, on the same protocol, simply works:
+  // herdr 0.9.4 and 0.9.5 were refused for their version alone (October 2026).
+  backend = { version: "0.9.99", protocol: 22, readable: true }; await Bun.sleep(3_500);
+  assert.equal((await backendBecomes("connected", paired)).backend.state, "connected");
+  assert.equal((await get("/api/session", paired)).status, 200, "A same-protocol herdr release keeps agents reachable.");
+  // A newer herdr this build cannot read asks for a Shahi update, with recovery intact.
+  backend = { version: "0.10.0", protocol: 23, readable: false };
+  const recovery = await backendBecomes("service-update-required", paired);
   assert.equal(recovery.backend.state, "service-update-required"); assert.equal((await get("/api/session", paired)).status, 503);
   assert.equal((await get("/api/devices", paired)).status, 200);
-  backend = "0.9.0"; await Bun.sleep(3_500); assert.equal((await get("/api/session", paired)).status, 200);
+  backend = { version: "0.9.0", protocol: 22, readable: true };
+  assert.equal((await backendBecomes("connected", paired)).backend.state, "connected"); assert.equal((await get("/api/session", paired)).status, 200);
   await start(join(previous, "server/index.ts"));
   assert.equal((await get("/api/session", paired)).status, 200, "Rollback preserves existing device sessions.");
   assert.equal((await (await get("/api/meta")).json() as { serverId: string }).serverId, before.serverId);
   assert.deepEqual(writes, [], "No write may leave the recording fixture.");
-  console.log("Passed: shipped/current API, verified package assets, preserved identity and pairing, unsupported herdr recovery, reconnect, and rollback.");
+  console.log("Passed: shipped/current API, verified package assets, preserved identity and pairing, an unnamed same-protocol herdr, unreadable herdr recovery, reconnect, and rollback.");
 } finally { await stop(); stub.close(); rmSync(scratch, { recursive: true, force: true }); }

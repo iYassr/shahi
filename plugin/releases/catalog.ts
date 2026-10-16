@@ -85,9 +85,17 @@ export function verifyCatalog(text: string, channel: ReleaseChannel, minimumSequ
 }
 
 export interface Machine { platform: string; bun: string; herdr: { version: string; protocol: number } | null; current?: Release }
-export const supportsHerdr = (r: Release, herdr: { version: string; protocol: number }) =>
-  r.herdr.some(h => h.version === herdr.version && h.protocol === herdr.protocol);
-export const herdrProfiles = (r: Release) => r.herdr.map(h => `${h.version} (protocol ${h.protocol})`).join(", ");
+/** The oldest herdr a release lists: it runs that one and anything newer. */
+export const herdrFloor = (r: Release) =>
+  [...r.herdr].sort((a, b) => a.protocol - b.protocol || compareVersion(a.version, b.version))[0]!;
+/**
+ * The sidecar's own rule (herdrCompatibility): a herdr on the oldest protocol a
+ * release lists, or a newer one. Managers up to 0.3.29 matched exact versions,
+ * so computers that updated to herdr 0.9.4 or 0.9.5 could install no release
+ * that did not name them (October 2026); release.json still names the tested
+ * versions for those managers.
+ */
+export const supportsHerdr = (r: Release, herdr: { version: string; protocol: number }) => herdr.protocol >= herdrFloor(r).protocol;
 /**
  * Each reason names both sides and the fix, because it is the one line a
  * person sees: in the pair popup on a first install, and as the update status
@@ -97,7 +105,7 @@ export const herdrProfiles = (r: Release) => r.herdr.map(h => `${h.version} (pro
 export function incompatibility(r: Release, m: Machine): string | null {
   if (!r.platforms.includes(m.platform)) return `Shahi ${r.version} runs on ${r.platforms.join(", ")}, and this computer is ${m.platform}.`;
   if (compareVersion(m.bun, r.bun) < 0) return `Shahi ${r.version} needs bun ${r.bun} or newer, and this computer has bun ${m.bun}. Upgrade bun on this computer (bun upgrade, or brew upgrade bun if Homebrew installed it).`;
-  if (m.herdr && !supportsHerdr(r, m.herdr)) return `Shahi ${r.version} is approved for herdr ${herdrProfiles(r)}, and this computer runs herdr ${m.herdr.version} (protocol ${m.herdr.protocol}).`;
+  if (m.herdr && !supportsHerdr(r, m.herdr)) return `Shahi ${r.version} needs herdr ${herdrFloor(r).version} or newer, and this computer runs herdr ${m.herdr.version} (protocol ${m.herdr.protocol}). Update herdr on this computer.`;
   // A rollback must not reinterpret a migrated database. Ship migrations only
   // after adding an explicit tested upgrade path, never by changing this test.
   if (m.current && r.dataSchema !== m.current.dataSchema) return "This release needs a separately approved data upgrade.";

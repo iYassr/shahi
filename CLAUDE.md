@@ -76,7 +76,7 @@ them.
 The docs are wrong in places. These were established against herdr 0.7.5,
 protocol 17, re-checked against 0.8.2, protocol 20, and every one of them cost
 an afternoon. Most are also asserted by `server/lib/herdr-live.test.ts`
-against a real herdr on every push — 0.9.0 through 0.9.3, protocol 22, and
+against a real herdr on every push — 0.9.0 through 0.9.5, protocol 22, and
 whatever is current (see Testing) — so the next drift is a red job rather than
 a report from a phone. Restart/id-reuse, agent-lifetime, request-size and
 plugin-registry measurements also include manual checks; the live suite does
@@ -823,7 +823,7 @@ mirror and dashboard projection, `pane.read` in every form the app uses, a
 prompt typed into a scratch shell and read back (including 260 KB), occupant
 identity, `pane.process_info`, every key-bar name, the event
 stream, and the HTTP routes including the 426 gate. CI runs it five times per
-push — against `v0.9.0`, the minimum supported release, through `v0.9.3`, all
+push — against `v0.9.0`, the minimum supported release, through `v0.9.5`, all
 pinned by tag and by the SHA-256 of their `herdr-linux-x86_64` asset, and
 against whatever herdr's own installer hands out today, read from
 `herdr.dev/latest.json` (version and checksum) and cross-checked against
@@ -878,8 +878,17 @@ directory under `~/.config/herdr/sessions/` and starts with nothing in it.
 
 A newer stable protocol fails the pinned job on purpose: regenerate
 (`bun run gen:types`), read the diff, and bump the pin here and in `ci.yml`.
-A newly approved herdr profile needs a pinned job, even when it is also stable;
-the workflow policy test enforces this. A pinned tag needs its digest beside it
+That is a prompt to developers, never a gate for users: the service accepts
+herdr by protocol (protocol 22 or newer), not by version, and the update
+manager chooses releases the same way. Both matched exact versions until
+0.3.30, and herdr 0.9.4 and 0.9.5 (same protocol) were refused on every
+computer that installed them, while the nightly preview job, whose
+expectation was the version list itself, and the agent journeys, which skip
+the service's gate, all passed. Every live check now expects "connected".
+Each version in `release.json` (`HERDR_SUPPORT`) needs a pinned job, even when
+it is also stable; the workflow policy test enforces this. Add herdr's current
+stable before each computer release: managers up to 0.3.29 install only a
+release naming the computer's exact herdr. A pinned tag needs its digest beside it
 in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
