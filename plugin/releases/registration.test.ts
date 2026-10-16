@@ -16,7 +16,7 @@ import { Auth } from "../../server/lib/auth";
 import { layoutFromEnv } from "../layout";
 import { launchd, systemd } from "../service";
 import { serviceSpec } from "../shahi";
-import { confirmedRemoved, registration, type Command } from "./registration";
+import { confirmedRemoved, herdrBinary, registration, type Command } from "./registration";
 import { atomicJson } from "./storage";
 import type { Release } from "./catalog";
 
@@ -80,6 +80,15 @@ describe("whether herdr still has the plugin", () => {
     // Disabling leaves the files, and the entry says so.
     mkdirSync(pluginRoot);
     expect(answer([{ plugin_id: "shahi", enabled: false, plugin_root: pluginRoot }])).toBe("removed");
+  });
+
+  test("a service whose PATH lacks ~/.local/bin still finds the herdr the installer put there", () => {
+    const home = scratch();
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    const herdrPath = join(home, ".local", "bin", "herdr");
+    writeFileSync(herdrPath, "#!/bin/sh\n"); chmodSync(herdrPath, 0o755);
+    expect(herdrBinary({ HOME: home, PATH: "/usr/bin:/bin" })).toBe(herdrPath);
+    expect(herdrBinary({ HOME: home, PATH: "/usr/bin:/bin", HERDR_BIN_PATH: "/nowhere/herdr" })).toBe(herdrPath);
   });
 
   test("one transient answer during a reinstall does not remove the service", async () => {

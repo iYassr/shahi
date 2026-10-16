@@ -18,6 +18,7 @@
  * must not take a working install down.
  */
 import { existsSync, realpathSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { herdrCli } from "../../server/lib/herdr-session";
 
 export type Registration = "enabled" | "removed" | "unknown";
@@ -68,11 +69,17 @@ export function registration(options: {
 /**
  * The herdr the service was installed by (the hook's HERDR_BIN_PATH), else
  * whichever is on the service's PATH — a service rendered before this check
- * existed carries only the latter.
+ * existed carries only the latter — else where herdr's installer and Homebrew
+ * put it. A systemd unit's PATH has no ~/.local/bin: on the owner's Linux
+ * computer the manager found no herdr at all, so every registration answer was
+ * "unknown" and `herdr plugin uninstall` would have left Shahi running
+ * (October 2026). Any herdr found is asked about this install's own
+ * configuration directory, so a different one can only answer "unknown".
  */
 export function herdrBinary(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.HERDR_BIN_PATH && existsSync(env.HERDR_BIN_PATH)) return env.HERDR_BIN_PATH;
-  return Bun.which("herdr", { PATH: env.PATH ?? "" });
+  const usual = [env.HOME ? join(env.HOME, ".local", "bin") : "", "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean);
+  return Bun.which("herdr", { PATH: [env.PATH ?? "", ...usual].filter(Boolean).join(delimiter) });
 }
 
 /**
