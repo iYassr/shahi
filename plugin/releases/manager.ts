@@ -15,6 +15,15 @@ import { beginTransaction, finishTransaction, type Runner } from "./transaction"
 /** Often enough that a removed plugin stops being reachable within a minute; a check is two short herdr CLI calls. */
 const REGISTRATION_CHECK_MS = 30_000;
 const CATALOG_CHECK_MS = 6 * 60 * 60_000;
+/**
+ * A service that refuses the computer's herdr fixes nothing by waiting, so the
+ * manager asks it once a minute and, while it refuses, looks for a release
+ * every 15 minutes and installs one by itself. Until 0.3.30 a fix reached a
+ * computer only when someone found "Check for updates" and tapped it: the day
+ * herdr 0.9.4 shipped, every installed Shahi refused its agents and stayed so.
+ */
+const REFUSAL_PROBE_MS = 60_000;
+const REFUSAL_CHECK_MS = 15 * 60_000;
 
 /**
  * How long to wait before starting a service that keeps failing: 3 s after
@@ -212,6 +221,17 @@ export async function manage(root: string) {
   const activateUpdate = async (release: Release, serverId?: string) => beginTransaction(root, release, runner, serverId, { handoff: managerChanges(release) });
 
   let nextCheck = 0;
+  let nextRefusalProbe = Date.now() + REFUSAL_PROBE_MS;
+  let nextRefusalCheck = 0;
+  /** Releases installed for a refusal that did not start; never tried again by themselves. */
+  const failedRepairs = new Set<string>();
+  /** Whether the running service says this herdr needs a Shahi it is not. */
+  async function refusing(): Promise<boolean> {
+    try {
+      const res = await fetch(`${base}/api/control/handshake`, { headers: { cookie: auth.cookie(auth.issue()).split(";")[0]!, "x-shahi-control": "1" }, signal: AbortSignal.timeout(2_000) });
+      return res.ok && (await res.json() as ControlHandshake).backend.state === "service-update-required";
+    } catch { return false; }
+  }
   try {
     const pending = readJson<{ target: Release }>(join(root, "transaction.json"));
     if (pending) {
@@ -273,10 +293,18 @@ export async function manage(root: string) {
       const request = readJson<UpdateRequest>(requestPath);
       if (request) rmSync(requestPath);
       if (request && (request.action !== "check" && request.action !== "install" || request.channel !== undefined && !["stable", "beta"].includes(request.channel))) throw new Error("Invalid manager request.");
-      if (request || Date.now() >= nextCheck) {
+      let repair = false;
+      if (!request && !down() && Date.now() >= nextRefusalProbe) {
+        nextRefusalProbe = Date.now() + REFUSAL_PROBE_MS;
+        repair = Date.now() >= nextRefusalCheck && await refusing();
+        if (repair) nextRefusalCheck = Date.now() + REFUSAL_CHECK_MS;
+      }
+      if (request || repair || Date.now() >= nextCheck) {
         nextCheck = Date.now() + CATALOG_CHECK_MS;
         const { release } = await check(request?.channel);
-        if (request?.action === "install" && release && release.buildId !== installation(root)!.active.buildId) {
+        const install = request?.action === "install" || (repair && release !== null && !failedRepairs.has(release.buildId));
+        if (install && release && release.buildId !== installation(root)!.active.buildId) {
+          if (repair) log(`Shahi ${installation(root)!.active.version} cannot use this computer's herdr; installing Shahi ${release.version}, which can.`);
           save({ phase: "downloading", message: undefined });
           await stage(root, release, async (url, size) => {
             const bytes = await download(url, size); save({ phase: "verifying" }); return bytes;
@@ -284,6 +312,7 @@ export async function manage(root: string) {
           let serverId: string | undefined;
           try { const response = await fetch(`${base}/api/meta`, { signal: AbortSignal.timeout(2_000) }); serverId = (await response.json() as { serverId: string }).serverId; } catch { /* Service may already be down. */ }
           await activateUpdate(release, serverId);
+          if (repair && installation(root)!.active.buildId !== release.buildId) failedRepairs.add(release.buildId);
           if (!readJson(join(root, "transaction.json"))) await reconcile();
         }
       }

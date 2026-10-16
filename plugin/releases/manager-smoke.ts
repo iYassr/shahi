@@ -1,6 +1,7 @@
 /** Actual supervisor/download/restart loop, with a test-only signing root and feed. */
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
@@ -38,6 +39,9 @@ const broken = await packageRelease(nextVersion(1), "broken-build", new TextEnco
 const fixedBuild = await Bun.build({ entrypoints: [join(repo, "server/index.ts")], target: "bun", minify: true, define: { "process.env.SHAHI_BUILD_ID": '"fixed-build"' } });
 assert.ok(fixedBuild.success);
 const fixed = await packageRelease(nextVersion(2), "fixed-build", new Uint8Array(await fixedBuild.outputs[0]!.arrayBuffer()));
+const repairBuild = await Bun.build({ entrypoints: [join(repo, "server/index.ts")], target: "bun", minify: true, define: { "process.env.SHAHI_BUILD_ID": '"repair-build"' } });
+assert.ok(repairBuild.success);
+const repair = await packageRelease(nextVersion(3), "repair-build", new Uint8Array(await repairBuild.outputs[0]!.arrayBuffer()));
 let sequence = 0;
 function feed(releases: Release[]) {
   const payload = Buffer.from(JSON.stringify({ schema: 1, channel: "stable", sequence: ++sequence, publishedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400_000).toISOString(), releases }));
@@ -67,8 +71,8 @@ const auth = new Auth({ passcodeHash: "", sessionSecret, sessionTtlMs: 60_000 })
 const owner = auth.cookie(auth.issue()).split(";")[0]!;
 let manager: ReturnType<typeof Bun.spawn> | undefined;
 const start = () => { manager = Bun.spawn([process.execPath, "--preload", preload, join(root, "manager.js")], { cwd: scratch, env, stdout: Bun.file(join(scratch, "manager.log")), stderr: Bun.file(join(scratch, "manager.log")) }); };
-async function until(ok: () => boolean | Promise<boolean>) {
-  const deadline = Date.now() + 40_000;
+async function until(ok: () => boolean | Promise<boolean>, within = 40_000) {
+  const deadline = Date.now() + within;
   while (Date.now() < deadline) { if (await ok()) return; if (manager?.exitCode !== null) throw new Error("Fixture manager exited."); await Bun.sleep(100); }
   throw new Error(`Manager test timed out: ${JSON.stringify(updateStatus(root))}`);
 }
@@ -92,7 +96,21 @@ try {
   manager!.kill("SIGKILL"); await manager!.exited; start();
   await until(async () => { try { const h = await (await request("/api/control/handshake", cookie)).json() as { serverId: string; buildId: string }; return h.serverId === before.serverId && h.buildId === fixed.buildId && updateStatus(root)?.phase === "idle"; } catch { return false; } });
   assert.equal((await request("/api/devices", cookie)).status, 200);
-  console.log("Passed: actual signed download, restart failure rollback, approved update, preserved pairing, and supervisor-crash recovery with herdr offline.");
+  // A herdr this release cannot read appears, and a release that can is
+  // published: the manager installs it with nobody asking. Its first look at
+  // the service comes a minute after it starts.
+  const herdr = createServer(socket => socket.once("data", bytes => {
+    const { id, method } = JSON.parse(bytes.toString().split("\n")[0]!);
+    socket.end(JSON.stringify(method === "ping" ? { id, result: { version: "0.10.0", protocol: 23 } } : { id, error: { code: "unknown_method", message: "No such method" } }) + "\n");
+  }));
+  await new Promise<void>(resolve => herdr.listen(env.HERDR_SOCKET_PATH, resolve));
+  try {
+    await until(async () => (await (await request("/api/control/handshake", cookie)).json() as { backend: { state: string } }).backend.state === "service-update-required");
+    feed([repair, fixed, initial]);
+    await until(() => updateStatus(root)?.phase === "ready" && installation(root)!.active.buildId === repair.buildId, 150_000);
+    assert.equal((await request("/api/devices", cookie)).status, 200, "Pairing survives an update nobody asked for.");
+  } finally { herdr.close(); }
+  console.log("Passed: actual signed download, restart failure rollback, approved update, preserved pairing, supervisor-crash recovery with herdr offline, and an unasked repair while the service refused herdr.");
 } finally {
   if (manager?.exitCode === null) { manager.kill("SIGTERM"); await manager.exited; }
   rmSync(scratch, { recursive: true, force: true });
