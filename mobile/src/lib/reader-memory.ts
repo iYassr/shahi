@@ -45,7 +45,8 @@ interface ReaderMemory {
    * axes: 146 columns that do not fit across a phone scroll sideways, and a
    * screen taller than the viewport scrolls down.
    */
-  terminalPlace: Map<string, { x: number; y: number }>;
+  /** Where each terminal was scrolled; `bottom` when it was at its end, which it then follows. */
+  terminalPlace: Map<string, { x: number; y: number; bottom?: boolean }>;
   /**
    * Read, Screen or Changes, so leaving a pane on the terminal and coming
    * back opens on the terminal — before this, every return snapped to the

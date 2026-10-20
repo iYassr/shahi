@@ -391,6 +391,10 @@ describe("sending a reply", () => {
         mocked.sessionLog.mockRejectedValue(noTranscript());
         const view = render(<Pane paneId="w1:p-shell" />);
         await settle();
+        // A shell keeps no transcript, so it opens on its screen.
+        expect(view.getByTestId("terminal-body")).toBeTruthy();
+        expect(view.getByPlaceholderText("Send text to terminal…").props).toMatchObject(literal);
+        fireEvent.press(view.getByRole("button", { name: "Read" }));
         expect(view.getByPlaceholderText("Run a command…").props).toMatchObject(literal);
         view.unmount();
       } finally {
@@ -1707,7 +1711,7 @@ describe("keeping your terminal place", () => {
     const first = render(<Pane paneId={P} initialView="screen" />);
     await first.findByTestId("terminal-body");
     fireEvent(first.getByTestId("terminal-across"), "scroll", { nativeEvent: { contentOffset: { x: 240, y: 0 } } });
-    fireEvent(first.getByTestId("terminal-down"), "scroll", { nativeEvent: { contentOffset: { x: 0, y: 512 } } });
+    fireEvent(first.getByTestId("terminal-down"), "scroll", { nativeEvent: { contentOffset: { x: 0, y: 512 }, layoutMeasurement: { width: 400, height: 400 }, contentSize: { width: 400, height: 2000 } } });
     first.unmount();
 
     // A fresh mount, as a route pop and reopen would be: the remembered offset
@@ -1739,11 +1743,26 @@ describe("keeping your terminal place", () => {
     expect(StyleSheet.flatten(overlay!.props.style).overflow).toBe("hidden");
   });
 
-  test("a terminal never scrolled opens at the top-left, not somewhere guessed", async () => {
+  // A terminal's prompt and newest rows are at its bottom. Opened at the top,
+  // an 88-row laptop terminal showed rows 113-154 of 200 and no prompt
+  // (simulator, 20 October 2026).
+  test("a terminal never scrolled opens at its left edge and its bottom, and follows the bottom", async () => {
+    const scrollToEnd = jest.spyOn(ScrollView.prototype, "scrollToEnd").mockImplementation(() => undefined);
     const view = render(<Pane paneId={P} initialView="screen" />);
     await view.findByTestId("terminal-body");
     expect(view.getByTestId("terminal-across").props.contentOffset).toEqual({ x: 0, y: 0 });
-    expect(view.getByTestId("terminal-down").props.contentOffset).toEqual({ x: 0, y: 0 });
+    fireEvent(view.getByTestId("terminal-down"), "contentSizeChange", 400, 2000);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    // Scrolled up to read, it stays where the person put it as the screen redraws.
+    fireEvent(view.getByTestId("terminal-down"), "scroll", { nativeEvent: { contentOffset: { x: 0, y: 300 }, layoutMeasurement: { width: 400, height: 400 }, contentSize: { width: 400, height: 2000 } } });
+    scrollToEnd.mockClear();
+    fireEvent(view.getByTestId("terminal-down"), "contentSizeChange", 400, 2010);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    // Back at the end, it follows again.
+    fireEvent(view.getByTestId("terminal-down"), "scroll", { nativeEvent: { contentOffset: { x: 0, y: 1600 }, layoutMeasurement: { width: 400, height: 400 }, contentSize: { width: 400, height: 2000 } } });
+    fireEvent(view.getByTestId("terminal-down"), "contentSizeChange", 400, 2020);
+    expect(scrollToEnd).toHaveBeenCalled();
+    scrollToEnd.mockRestore();
   });
 
   test("leaving a pane on the terminal reopens it on the terminal, not the reader", async () => {

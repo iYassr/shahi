@@ -350,9 +350,15 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
    */
   // A swipe's Screen action (initialView "screen") is an explicit "open the
   // terminal" and wins; a plain tap defers to where you last left this pane.
-  const [chosenView, setViewState] = useState<"reader" | "screen" | "changes">(
-    initialView === "screen" ? "screen" : terminalView.get(paneId) ?? "reader",
+  // Until either says, the pane decides: a plain shell keeps no transcript, so
+  // it shows its screen, and opened on Read it said only "Nothing to read
+  // yet… follow this agent in Screen" (simulator, 20 October 2026). An agent
+  // started in it later turns that into its conversation.
+  const [pickedView, setViewState] = useState<"reader" | "screen" | "changes" | null>(
+    initialView === "screen" ? "screen" : terminalView.get(paneId) ?? null,
   );
+  const shellPane = session?.panes.find((p) => p.paneId === paneId)?.isAgent === false;
+  const chosenView = pickedView ?? (shellPane ? "screen" : "reader");
   // Changes only where the computer offers it (capability `changes`); one
   // that stops, rolled back to an older release, opens on the reader.
   const canChange = supports(control?.handshake ?? null, "changes");
@@ -2221,10 +2227,17 @@ function Screen({
   // scroll handlers keep current; `start` is the frozen value the restore aims
   // at, so a scroll event mid-restore cannot move the target it is chasing.
   const start = useRef(terminalPlace.get(paneId));
-  const place = useRef({ x: start.current?.x ?? 0, y: start.current?.y ?? 0 });
+  const place = useRef({ x: start.current?.x ?? 0, y: start.current?.y ?? 0, bottom: start.current?.bottom ?? true });
   const across = useRef<ScrollView>(null);
   const down = useRef<ScrollView>(null);
   const restored = useRef(false);
+  // A terminal's newest rows, its prompt and an agent's menu are at the
+  // bottom, so a screen taller than the view opens there and stays there as
+  // it redraws, until the person scrolls up; a remembered place above the
+  // bottom is kept. It opened at the top, and on an 88-row terminal (a laptop
+  // running herdr full screen) the phone showed rows 113-154 of 200 and no
+  // prompt (simulator, 20 October 2026).
+  const following = useRef(place.current.bottom);
   // `contentOffset` sets the initial position when the content is measured on
   // the first pass; this catches the case where the text lays out a frame
   // later (a fresh fetch, a font-size change), where the initial offset would
@@ -2233,8 +2246,9 @@ function Screen({
     if (restored.current || !start.current) return;
     restored.current = true;
     across.current?.scrollTo({ x: start.current.x, animated: false });
-    down.current?.scrollTo({ y: start.current.y, animated: false });
+    if (!following.current) down.current?.scrollTo({ y: start.current.y, animated: false });
   }, []);
+  const remember = () => terminalPlace.set(paneId, { ...place.current });
 
   return (
     <View style={styles.screenWrap}>
@@ -2249,26 +2263,42 @@ function Screen({
           Sized by its content instead, a 35-row screen pushed the chips past
           the view's edge and over the key bar, where a tap on "60c" pressed
           Escape (pre-release bug hunt). */}
+      {/* Vertical outside, horizontal inside. The other way round, the
+          vertical view grew to its content's height inside the horizontal
+          one, which clipped it: it never scrolled, and only the top rows
+          showed. Here the vertical view is bounded by the region, and the
+          horizontal one by the vertical view's width. */}
       <CopyOnHold text={body} style={styles.terminal}>
         <ScrollView
-          ref={across}
-          horizontal
-          testID="terminal-across"
-          contentOffset={{ x: start.current?.x ?? 0, y: 0 }}
-          onScroll={(e) => {
-            place.current.x = e.nativeEvent.contentOffset.x;
-            terminalPlace.set(paneId, { ...place.current });
+          ref={down}
+          testID="terminal-down"
+          style={styles.terminalDown}
+          contentOffset={{ x: 0, y: following.current ? 0 : start.current?.y ?? 0 }}
+          onLayout={() => {
+            if (following.current) down.current?.scrollToEnd({ animated: false });
           }}
-          onContentSizeChange={restore}
+          onScroll={(e) => {
+            const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+            place.current.y = contentOffset.y;
+            // Within a row of the end is the end: the last row is what counts.
+            place.current.bottom = contentOffset.y + (layoutMeasurement?.height ?? 0) >= (contentSize?.height ?? 0) - 16;
+            following.current = place.current.bottom;
+            remember();
+          }}
+          onContentSizeChange={() => {
+            if (following.current) down.current?.scrollToEnd({ animated: false });
+            restore();
+          }}
           scrollEventThrottle={100}
         >
           <ScrollView
-            ref={down}
-            testID="terminal-down"
-            contentOffset={{ x: 0, y: start.current?.y ?? 0 }}
+            ref={across}
+            horizontal
+            testID="terminal-across"
+            contentOffset={{ x: start.current?.x ?? 0, y: 0 }}
             onScroll={(e) => {
-              place.current.y = e.nativeEvent.contentOffset.y;
-              terminalPlace.set(paneId, { ...place.current });
+              place.current.x = e.nativeEvent.contentOffset.x;
+              remember();
             }}
             onContentSizeChange={restore}
             scrollEventThrottle={100}
@@ -2633,6 +2663,7 @@ const styles = StyleSheet.create({
 
   screenWrap: { flex: 1 },
   terminal: { flex: 1, minHeight: 0, direction: "ltr" },
+  terminalDown: { flex: 1 },
   probe: { position: "absolute", opacity: 0, left: 0, top: 0 },
   screenText: { color: theme.fg, fontFamily: theme.mono, padding: 12, writingDirection: "ltr", textAlign: "left" },
   widths: {
