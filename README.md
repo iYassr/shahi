@@ -1,341 +1,191 @@
-<div align="center">
+<h1 align="center">
+  <a href="https://getshahi.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockup.svg">
+      <img src="docs/brand/lockup-dark.svg" alt="Shahi" width="232" height="80">
+    </picture>
+  </a>
+</h1>
 
-<img src="docs/logo.svg" alt="Shahi" width="76" height="76">
-
-# Shahi
-
-**Your herdr agents, as a chat on your phone.**
-
-Read, answer and steer your Claude Code, Codex, Cursor CLI,<br>
-Antigravity and OpenCode sessions in herdr from your phone.
-
-**One command, one scan, about a minute.** Shahi's encrypted tunnel is ready to
-use and free for everyone. No VPN, port forwarding or Shahi account required.
-
-[![CI](https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg)](https://github.com/iYassr/shahi/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-
-[Open Shahi](https://getshahi.dev/pwa/) · [Get the iPhone app](https://apps.apple.com/app/id6813370698) · [Quick start](#quick-start) · [Connection security](#connection-security)
-
-</div>
-
-## Your work stays where you started it
-
-You start a task with a coding agent on your computer or server. Then you
-step away. An agent needs permission, has a question, or finishes something you
-want to review.
-
-Open Shahi on your phone and pick up that same session. Read the conversation,
-answer the question, send the next instruction, or open the terminal screen.
-When you return to your computer, your replies and the agent’s work are already
-there.
-
-**Shahi connects you to the work that is already running.** There is no project
-to upload or conversation to recreate. Your agents, files, and commands stay on
-your machine, inside [herdr](https://herdr.dev).
-
-```mermaid
-flowchart LR
-  Desktop["At your desk<br/>Start a task in herdr"] --> Session["The same running session<br/>Agent · conversation · files"]
-  Phone["On your phone<br/>Read, reply, and continue"] <--> Session
-  Session --> Return["Back at your desk<br/>Carry on where you left off"]
-```
-
-Your computer or server must stay awake and connected. Closing Shahi on your
-phone does not stop the agents running there.
-
-## Why not just a terminal app?
-
-A terminal on a phone is a poor way to talk to an agent. SSH apps show output
-wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
-Tab. Shahi reads the agent's saved transcript so supported messages, tool calls
-and diffs fit your screen. Supported permission prompts become buttons. The
-terminal is still one tap away, on the Screen tab.
-
-Shahi is built on [herdr](https://herdr.dev), a lightweight home for your agents
-with spaces, panes and live status for each one. Shahi mirrors all of it, so you
-can browse spaces and start new agents from your phone.
-
-## A herdr client made for your phone
-
-Shahi brings your running agents into an interface designed for a small screen:
-clear conversations, readable code, colored agent icons, and controls that are
-easy to reach. Live updates keep you close to the work; returning to a conversation
-keeps your reading position and unfinished reply.
-
-Reader formats the content each supported agent records, with no per-tool layout
-to configure. Coverage differs by provider; the table below lists the main
-limits. Screen mode remains available for the terminal itself.
-
-- **A free tunnel, ready to use.** Scan a pairing QR code to connect through
-  Shahi's built-in encrypted tunnel. It is free for everyone, with no Shahi
-  account, public server port, VPN installation or domain setup needed.
-- **Read comfortably.** Written responses take priority. Routine tool calls and
-  thinking share one expandable Activity section per turn, while files, images,
-  questions and failed steps stay accessible. Screen mode shows the terminal.
-- **Keep work moving.** Answer supported permission prompts inline, send a
-  follow-up, attach a file, or use terminal keys your phone keyboard lacks.
-- **Find what needs you.** The Inbox in Agents gathers unanswered requests,
-  completed work, and agents whose status needs checking. Mark completed items
-  Reviewed for the current app session. Search by conversation name, agent, space or
-  folder to find earlier work quickly.
-- **Know when the connection is interrupted.** Connection guidance distinguishes
-  reported network, relay, and computer-disconnection problems and offers a
-  retry while preserving the last loaded view.
-- **Manage your workspaces.** Browse spaces, open existing agents, and start new
-  ones on the same machine. A new agent opens directly into its conversation.
-- **Switch without losing your place.** Move between conversations or computers
-  and return to your unfinished message while Shahi stays open.
+<p align="center"><strong>Your coding agents, as a chat on your phone.</strong></p>
 
 <p align="center">
-  <img src="docs/screenshots/02-agents.png" width="230" alt="Agent list with a question and answer choices" />
-  <img src="docs/screenshots/04-reader.png" width="230" alt="An agent conversation formatted for reading on a phone" />
-  <img src="docs/screenshots/03-spaces.png" width="230" alt="Workspaces and their running agents" />
+  Read, answer and steer Claude Code, Codex, Cursor CLI, OpenCode and Antigravity<br>
+  running in <a href="https://herdr.dev">herdr</a> on your Mac or Linux computer, from your iPhone or any browser.
 </p>
-<p align="center"><sub>iPhone simulator captures, 26 September 2026. All conversations shown are synthetic examples.</sub></p>
+
+<p align="center">
+  <a href="https://apps.apple.com/app/id6813370698"><img alt="Download on the App Store" src="https://img.shields.io/badge/App_Store-Download-0D96F6?logo=apple&logoColor=white"></a>
+  <a href="https://getshahi.dev/pwa/"><img alt="Open the web app" src="https://img.shields.io/badge/Web_app-getshahi.dev-E8A33D"></a>
+  <a href="https://github.com/iYassr/shahi/releases/latest"><img alt="Latest computer release" src="https://img.shields.io/github/v/release/iYassr/shahi?label=computer%20release&color=0E0D0B"></a>
+  <a href="https://github.com/iYassr/shahi/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/iYassr/shahi/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-0E0D0B"></a>
+</p>
+
+<p align="center">
+  <a href="https://getshahi.dev">Website</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#connection-security">Security</a> ·
+  <a href="docs/README.md">Documentation</a>
+</p>
+
+<p align="center">
+  <img src="site/public/feature-previews/08-permission.png" width="200" alt="Shahi's agent list on iPhone: a Claude Code edit waits for approval, with Yes and No as buttons">
+  <img src="site/public/feature-previews/02-reader.png" width="200" alt="A Claude Code conversation in Reader, with quick replies above the composer">
+  <img src="site/public/feature-previews/03-new-agent.png" width="200" alt="Starting a new agent: Claude, Codex, Cursor, OpenCode or Antigravity, and an approval mode">
+  <img src="site/public/feature-previews/07-changes.png" width="200" alt="The Changes tab listing the repository's uncommitted files">
+</p>
+<p align="center"><sub>The Shahi iPhone app 1.1 with an example project.</sub></p>
+
+## Pick up your agents from anywhere
+
+You start a task with a coding agent at your desk, then step away. The agent
+asks for permission, has a question, or finishes something you want to review.
+Open Shahi on your phone and carry on with the same session: read the
+conversation, tap an answer, send the next instruction, or look at the terminal
+itself. When you are back at your desk, your replies and the agent's work are
+already there.
+
+Nothing is uploaded or recreated. Your agents, files and commands stay on your
+computer, inside [herdr](https://herdr.dev); Shahi connects your phone to the
+work that is already running. Setup is **one command and one QR scan**, and the
+end-to-end encrypted tunnel is built in and free for everyone: no VPN, port
+forwarding or Shahi account.
+
+Your computer must stay awake and connected. Closing Shahi on your phone does
+not stop the agents running there, and an agent waiting for an answer still
+waits for you.
+
+### Why not a terminal app?
+
+A terminal is a poor way to talk to an agent on a phone. SSH apps show output
+wrapped for a wide screen, so you pinch, scroll sideways and hunt for Esc and
+Tab. Shahi reads each agent's own transcript instead, so messages, tool calls
+and diffs fit your screen and permission prompts become buttons. The real
+terminal is still one tap away, on the Screen tab.
+
+## Features
+
+- **A conversation that fits.** Reader turns each agent's transcript into a
+  chat: messages, reasoning, tool calls, edits, subagents and task lists.
+  Routine steps fold into one Activity section per turn, while questions,
+  failed steps, files and images stay in view.
+- **Answer with a tap.** Permission requests and multiple-choice questions
+  become buttons, with the command or edit they ask about shown above them.
+  Shahi re-reads the screen before pressing anything, so a card that is out of
+  date never answers a different question.
+- **Start the next task.** Launch Claude Code, Codex, Cursor CLI, OpenCode or
+  Antigravity in any space, and choose how much it may do without asking.
+- **The real terminal, one tap away.** Screen shows exactly what the agent
+  drew, with the Esc, Tab, arrow and Ctrl-C keys your phone keyboard lacks.
+- **Review what changed.** The Changes tab lists the uncommitted Git changes
+  in the agent's repository, with read-only diffs. Open text files, images and
+  PDFs from the conversation, and attach files of up to 32 MiB.
+- **Know when you're needed.** The Inbox gathers questions and finished work.
+  Notifications tell you when an agent is waiting; on an iPhone paired through
+  the relay, they show its question and answers, encrypted end to end.
+- **Speak your next instruction.** Live dictation on supported iPhones with
+  iOS 26 or later, in English. Words appear as you talk, nothing sends until
+  you do, and the audio stays on your phone.
+- **Composer shortcuts.** Type `/` for the agent's slash commands, including
+  your own Claude Code commands and skills, or tap a quick reply such as
+  *Continue*.
+- **Plan usage at a glance.** Settings shows Codex's 5-hour and weekly limits,
+  and Claude Code's once you switch them on.
+- **All your computers together.** Pair your laptop, Mac and Linux servers at
+  once. Each keeps its own live connection, and switching keeps your place and
+  your unsent replies.
+- **In your language.** English, العربية and Español, following your device or
+  chosen in Settings.
 
 ## Supported agents
 
-Reader supports these five agents running inside herdr:
-
-| Agent | Reader coverage |
+| Agent | What Reader shows |
 | --- | --- |
-| <img src="site/public/agents/claude.svg" alt="" width="24" height="24"> **Claude Code** | Messages, thinking, tools and results, supported questions and images. |
-| <img src="site/public/agents/codex.svg" alt="" width="24" height="24"> **Codex** | Messages, reasoning, commands, edits, questions, MCP and web activity, and images. Audio attachments are indicated; playback is unavailable. |
+| <img src="site/public/agents/claude.svg" alt="" width="24" height="24"> **Claude Code** | Messages, thinking, tools and results, subagents, task lists, questions and images. |
+| <img src="site/public/agents/codex.svg" alt="" width="24" height="24"> **Codex** | Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played. |
 | <img src="site/public/agents/cursor.svg" alt="" width="24" height="24"> **Cursor CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
-| <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a recorded single call; images and results for multiple calls are unsupported. |
-| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, recorded images and undo changes. Requires herdr's OpenCode integration. |
+| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, images and undo. |
+| <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a single recorded call. |
 
-OpenCode and Antigravity require **computer release 0.3.11 or newer**,
-available on the computer's **Stable** channel.
-Readers select the exact session reported by herdr or
-a uniquely identified process-owned transcript. They never select another
-conversation just because it shares a folder. Use Screen mode for other agents
-or output Reader cannot format.
-
-Readers identify a conversation by the session id its agent reports through
-herdr's integration for that agent. Shahi's computer service installs the
-integration for each of these agents it finds on the computer, and updates
-outdated ones, whenever it starts: every herdr start and every update. It edits
-only what herdr's own
-`herdr integration install` edits (for Claude, a hook in `~/.claude/settings.json`),
-and an integration you remove stays removed. A Claude conversation that was
-already running when its integration was installed cannot report itself, so
-Reader asks you to choose it from the conversations saved for its folder; the
-choice lasts until that Claude exits. See [Reader troubleshooting](docs/reader-troubleshooting.md)
-if messages are missing.
-
-At OpenCode's empty home screen, its integration retains the previous session
-until the first prompt in a new one. The Codex integration also keeps Reader
-available after the agent process exits. See the [provider coverage notes](docs/reader-providers-2026-09-27.md)
-for tested versions and further limits.
+Reader shows the exact session each agent reports through herdr's
+integration for it, which Shahi installs and keeps up to date, or the one
+transcript the agent's own process has open. It never guesses a conversation
+from a folder: a Claude Code session that was
+already running before its integration was installed asks you, once, to choose
+its conversation. For any other program, or output Reader cannot format, use
+Screen. Shahi is checked against new releases of herdr and of each agent on
+macOS and Linux. See [Reader troubleshooting](docs/reader-troubleshooting.md)
+and the [provider notes](docs/reader-providers-2026-09-27.md) for details.
 
 ## Quick start
 
-In a terminal on your Mac or Linux computer:
+**1. On your Mac or Linux computer,** run:
 
 ```sh
 curl -fsSL https://getshahi.dev/install | sh
 ```
 
-It installs [herdr](https://herdr.dev) if it is missing (0.9.3, checked against
-its published SHA-256 before it runs), then the Shahi plugin, starts herdr in the
-background, and shows the pairing code. [Read the script](site/install.sh)
-first if you like; it asks for no password. Already use herdr? Inside it, run
-these instead:
+It installs herdr if it is missing (a pinned release, checked against its
+published SHA-256 before it runs), adds the Shahi plugin, starts herdr in the
+background and shows a pairing QR code. It asks for no password;
+[read the script](site/install.sh) first if you like.
+
+Already use herdr? Run these from a terminal inside it instead:
 
 ```sh
 herdr plugin install iYassr/shahi
 herdr plugin action invoke shahi.pair
 ```
 
-Then open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) or the iOS app on your
-phone and scan the code. Your agents appear. The rest of this section covers
-requirements and what to do if something does not work.
+**2. On your phone,** [install Shahi from the App Store](https://apps.apple.com/app/id6813370698)
+or open [getshahi.dev/pwa](https://getshahi.dev/pwa/), choose **Scan QR code**,
+and scan. Your agents appear.
 
-### 1. Install on the computer doing the work
+A pairing code works **once, for ten minutes**. Treat it like a password: a
+device that claims it can operate your terminal. Run `shahi.pair` again for
+each phone or browser, and press **T** then Enter in the popup for a link
+instead of a QR. The first pairing also shows a four-digit passcode, once; keep
+it for SSH or a locally served web app. More in [Using Shahi](docs/using-shahi.md).
 
-Shahi runs on **macOS or Linux** with **herdr 0.9.0 or newer**. New herdr
-releases work as they come out: Shahi goes by herdr's protocol rather than its
-version number, and is tested with 0.9.0 through 0.9.5. On a herdr too old for
-Shahi, it still installs, in a recovery state: you can pair and update, but
-agent commands are refused until herdr is updated, and setup names both
-versions. The computer also needs `git`, which herdr uses to
-fetch the plugin, and bun 1.3.13 or newer; with no bun at all, the install
-fetches it with bun's own installer, which needs `curl`, `unzip` and `bash`
-and adds `~/.bun/bin` to the shell’s rc file. Allow HTTPS access to `github.com`
-and `release-assets.githubusercontent.com`.
-On Linux, systemd supervises Shahi automatically. Without systemd, setup prints
-the command to run under your own service manager; see the
-[installation requirements](docs/plugin.md#requirements). Run your agents inside herdr,
-then install Shahi:
+### Requirements
 
-```sh
-herdr plugin install iYassr/shahi
-```
+- **macOS or Linux** with **herdr 0.9.0 or newer.** Shahi follows herdr's
+  protocol rather than its version number, so new herdr releases keep working.
+- **git** and **bun 1.3.13 or newer.** The install fetches bun if it is
+  missing.
+- **Outbound HTTPS** to `github.com` and `release-assets.githubusercontent.com`,
+  where Shahi's signed releases are downloaded from.
+- **On Linux,** systemd supervises the service. On a headless server, run
+  `loginctl enable-linger $USER` once so Shahi keeps running after you log out.
+  Without systemd, setup prints the command to run under your own init.
 
-herdr shows the commands it will run before running them. On a first install,
-the service comes from a signed release and is set up the first time you pair
-(below), or at the next herdr start. Reinstalling updates and restarts an existing
-service. Need herdr first? Start with
-[herdr’s installation instructions](https://herdr.dev).
+The full list and what gets installed where are in the
+[plugin guide](docs/plugin.md#requirements). If nothing appears, run
+`herdr plugin action invoke shahi.status` and read its report with
+`herdr plugin log list --plugin shahi`.
 
-On a headless Linux server using systemd, also run
-`loginctl enable-linger $USER` once, or the service stops when your last SSH
-session ends.
+### Updating and uninstalling
 
-### 2. Show a pairing code
-
-From a terminal inside herdr on that same computer:
-
-```sh
-herdr plugin action invoke shahi.pair
-```
-
-The code appears in a popup in herdr’s window, so a herdr window must be open;
-on a server with no herdr window attached, run `herdr` first and invoke it from
-there. The first time, the popup sets Shahi up in front of you and prints a
-four-digit passcode, shown only once and needed for SSH or the locally served
-web app. If the startup hook ran first, read it in the plugin log. On Linux it also shows the
-lingering reminder when it applies. It waits for Enter before showing the QR,
-and keeps any failure on screen until Enter, with what to do next.
-
-Press **T** then Enter to see the code as a `https://getshahi.dev/pwa/#pair=…`
-link instead of a QR; T and Enter again brings the QR back, and Enter alone
-closes the popup.
-
-The code can be claimed **once** and expires after **10 minutes**. Generate a
-separate code for each phone or browser. Treat the QR code and pairing link as
-credentials: anyone who claims a valid code can gain access to your session.
-
-**If nothing appears,** run `herdr plugin action invoke shahi.status`, then
-read its report with `herdr plugin log list --plugin shahi`. The invoke itself
-prints a JSON action record; the plugin log contains the status report. herdr’s CLI
-exits successfully even when the popup could not open, for example with no
-herdr window attached; the plugin log then holds the reason and a command that
-prints the code as text. **Lost the passcode?**
-`herdr plugin action invoke shahi.reset-passcode` prints a new one to that same
-log; existing sessions and paired phones stay signed in.
-
-If the QR asks for more room, enlarge the window or press T then Enter for
-the link. From outside a named herdr session’s panes, add `--session <name>`
-to these commands.
-
-### 3. Open Shahi on your phone
-
-- **Browser:** open [getshahi.dev/pwa/](https://getshahi.dev/pwa/) and scan the
-  QR using **Scan QR code** inside Shahi, or paste the code. Your phone’s
-  camera app cannot hand a native pairing code to the browser. Opening the `#pair=` link from the popup shows a
-  **Connect this browser?** card first, naming the relay and the computer;
-  continue only if you opened that link yourself. Add Shahi to your home screen
-  for a standalone app window.
-- **iPhone app:** [install Shahi from the App Store](https://apps.apple.com/app/id6813370698),
-  open it and choose **Scan QR code**. To try upcoming versions, you can also
-  [request a TestFlight beta invite](https://getshahi.dev/#ios-beta); invitations
-  are sent by email as places become available.
-
-Pair several computers from **Settings → Computers → Add a computer**. Tap the computer
-name on the main screen, or open Computers in Settings, to switch. Every saved computer
-keeps its own live connection while Shahi is open; switching only changes the view.
-The computer list shows which machines are connected and lets you revoke this
-phone or browser’s access to one without disconnecting the others. Mobile operating
-systems can suspend connections while the app is in the background; Shahi reconnects
-all saved computers when you return.
-
-Your existing agents appear after pairing. Outbound internet access is required
-for the default relay connection; you do not need to expose Shahi’s local port.
-
-The browser app is available on phones and computers. The native iPhone app is
-available on the App Store; a native Android release is not currently available.
-SSH tunnelling is built into the native app, not the hosted browser app.
-
-## Updating
-
-When Shahi shows **Update computer**, tap it to install a signed release and
-restart the service while keeping your pairings. Or run
-`herdr plugin install iYassr/shahi` again. Updating herdr does not update Shahi.
-
-## Messages and files
-
-In both apps, links to files on your computer open a labeled preview through
-your existing connection. Text, images and PDFs can be viewed in Shahi. Use
-Save / Share on iPhone to keep a copy in Files or open it in another app; the web
-viewer has a Download button. PDFs have native scrolling and zoom on iPhone, and
-page and zoom controls on the web. Downloads are limited to 25 MiB and travel
-through the encrypted relay in 512 KiB parts. Computer release 0.3.6 drops
-the range headers, so Shahi falls back to a whole-file request up to one relay
-body (783,360 bytes, about 765 KiB). Larger relay downloads require 0.3.7 or
-newer and say when an update is needed. SSH has no such fallback limit.
-
-Unsent messages are kept separately for each conversation and computer while
-Shahi remains open. They are not saved permanently: reloading the browser or
-closing the app process clears them. Signing out or revoking access also clears
-that connection’s drafts. A draft also goes when its pane closes or its
-identifier is reassigned to another program, so it cannot reach the next agent.
-
-Files can be up to **32 MiB each** through the relay or SSH. Update both Shahi
-and the computer service to use the larger relay limit. Relay uploads show
-progress, travel in small encrypted pieces, and recover from brief connection
-losses while the upload remains open. Larger files take several minutes;
-closing the app may require selecting the file again. Older computer services
-keep the previous 761 KiB relay limit. Browser batches can retry remaining files
-without adding completed attachments again. Relay uploads run one at a time,
-with at most 128 completed files an hour per computer.
-
-## Uninstall
+When Shahi shows **Update computer**, tap it: the computer installs a signed
+release and restarts the service, keeping your pairings. Updating herdr does
+not update Shahi. To remove Shahi:
 
 ```sh
 herdr plugin action invoke shahi.uninstall
 ```
 
-This stops Shahi and removes its LaunchAgent or systemd user unit at once, then
-runs `herdr plugin uninstall shahi`. A plain `herdr plugin uninstall shahi` or
-`herdr plugin disable shahi` also stops Shahi and removes its service, within
-about 40 seconds: the service asks herdr every 30 seconds whether the plugin is
-still installed and enabled, and confirms a “no” five seconds later before it
-removes itself. `herdr plugin enable shahi` afterwards does not start it again
-(herdr has no hook for that): run `herdr plugin action invoke shahi.restart`,
-or restart herdr.
-
-Either way, your passcode, paired devices and data stay in the plugin’s config
-and state directories. Deleting them as well ends every pairing:
-
-```sh
-rm -r "$(herdr plugin config-dir shahi)" ~/.local/state/herdr/plugins/shahi
-```
-
-Those are the default paths; with `XDG_*` variables set, herdr’s follow them,
-and `shahi.status` writes the actual ones to the plugin log while the
-plugin is still installed. If herdr itself is already gone, the service cannot
-ask it and keeps running. Remove it by hand. On macOS:
-
-```sh
-launchctl bootout gui/$(id -u)/app.shahi.sidecar
-rm ~/Library/LaunchAgents/app.shahi.sidecar.plist
-```
-
-On Linux:
-
-```sh
-systemctl --user disable --now shahi.service
-rm ~/.config/systemd/user/shahi.service
-systemctl --user daemon-reload
-```
+Your passcode and paired devices stay in the plugin's folders until you delete
+them; see [uninstalling cleanly](docs/plugin.md#uninstalling-cleanly).
 
 ## How it connects
 
-**Shahi's tunnel is included, ready to use and free for everyone.** There is no
-VPN to install, tunnel service to subscribe to, or port forwarding to configure.
-Your coding agents still use their own providers and any accounts or plans
-those providers require.
-
-Both your phone and your computer make an **outbound connection** to Shahi’s
-relay. That lets them find each other without opening an inbound port on your
-computer or configuring your router.
-
-The relay forwards traffic. **Your phone and your computer encrypt and decrypt
-the application data.** The relay does not receive the keys needed to read your
-conversation, files, or commands.
+Your phone and your computer each make an **outbound connection** to Shahi's
+relay, so they find each other without an open port on your computer or a
+change to your router. The relay forwards traffic; **your phone and your
+computer encrypt and decrypt it**, and the relay never receives the keys to
+read your conversations, files or commands.
 
 ```mermaid
 flowchart LR
@@ -352,146 +202,130 @@ flowchart LR
   Service <-->|"Outbound WSS connection<br/>Encrypted application data"| Relay
 ```
 
-The arrows show two-way traffic; **both connections are initiated by your own
-devices**. The default relay is `relay.getshahi.dev`. You can also
-[operate your own relay](docs/relay.md).
+The default relay is `relay.getshahi.dev`, and you can
+[operate your own](docs/relay.md). Your coding agents still use their own
+providers and whatever accounts or plans those require.
 
-Prefer SSH? In the native app, choose **Want to use SSH?** and connect to a
-computer you can already reach over SSH. Shahi opens a tunnel to its loopback
-service. Before it sends a login, it shows the server's host-key fingerprint
-for you to compare, and it pins the key you trust. To disable the relay, add
-`RELAY_URL=` to `"$(herdr plugin config-dir shahi)/.env"`, then run
-`herdr plugin action invoke shahi.restart`. QR pairing and the hosted browser
-app then stop working for that computer; use the iPhone app’s SSH connection.
+**Prefer SSH?** In the iPhone app, choose **Want to use SSH?** and connect to a
+computer you already reach over SSH, with no third party in the path. Shahi
+shows the server's host-key fingerprint for you to compare before it sends a
+login, and pins the key you trust. To turn the relay off entirely, add
+`RELAY_URL=` to `"$(herdr plugin config-dir shahi)/.env"` and run
+`herdr plugin action invoke shahi.restart`; QR pairing and the hosted web app
+then stop working for that computer. See [SSH connections](docs/ssh.md).
 
 ## Connection security
 
 Shahi can operate your terminal, so a paired device has powerful access. Its
-connection is designed around a few concrete protections:
+connection is built around a few concrete protections:
 
 | Protection | What it does |
 |---|---|
 | **End-to-end encryption** | Application payloads are encrypted between your device and your computer, in addition to the WSS transport encryption. The relay forwards ciphertext. |
-| **One-time pairing** | A short-lived QR secret introduces a device. Pairing replaces it with that device’s own secret. |
-| **Proof before access** | Knowing a device identifier is insufficient. The device must prove possession of its secret with a valid encrypted message before the server grants session access. |
+| **One-time pairing** | A short-lived QR secret introduces a device. Pairing replaces it with that device's own secret. |
+| **Proof before access** | Knowing a device identifier is not enough. The device must prove it holds its secret with a valid encrypted message before the server grants a session. |
 | **Fresh connection keys** | Each connection uses ephemeral X25519 keys. HKDF-SHA-256 mixes the exchange with the pairing or device secret; ChaCha20-Poly1305 protects messages. |
 | **Message integrity and ordering** | Altered messages and unexpected counters are rejected rather than accepted as commands. |
-| **Device revocation** | Revoke a paired device in Settings to close its active connection and refuse further authenticated requests. A device revoked while offline is signed out the next time it connects through the relay. |
-| **Local service boundary** | The sidecar binds to loopback and answers only requests addressed to `127.0.0.1`, `localhost` or `[::1]`, or a proxy named in `SHAHI_ALLOWED_HOSTS`. Direct access requires a passcode session; relay access uses the paired device’s credentials. |
+| **Device revocation** | Revoke a device in Settings to close its connection and refuse its requests. A device revoked while offline is signed out the next time it connects. |
+| **Local service boundary** | The service listens on loopback only and answers only requests addressed to `127.0.0.1`, `localhost` or `[::1]`, or a proxy you name in `SHAHI_ALLOWED_HOSTS`. Direct access needs the passcode; relay access needs a paired device's credentials. |
 
 **Encryption has a boundary.** The relay and its infrastructure provider can
-observe connection metadata, including IP addresses, identifiers, and traffic
-sizes and timing. A compromised phone, computer, or browser application can
-access data at an endpoint. Optional notifications on iPhone pass through Expo
-and Apple, which receive their content. Your coding agent’s own model-provider
-connection is also separate from Shahi. Browser notification contents are
-encrypted for the browser’s push service; that service also sees a short
-computer/pane hash used to replace undelivered notifications. Hosted relay
-connection-event records, with counts, durations and region but no IP addresses
-or content, are retained for three months; see the privacy policy.
+see connection metadata: IP addresses, identifiers, and traffic sizes and
+timing. A compromised phone, computer or browser can read what that device can.
+iPhone notifications for a phone paired through the relay are encrypted for
+that phone, so Expo and Apple see only fixed wording and routing identifiers;
+for a computer reached over SSH or signed in with the passcode they can read
+the workspace and conversation names. Browser notifications are encrypted for
+your browser. Relay connection records, with no IP addresses or content, are
+kept for three months. Your agent's own connection to its model provider is
+separate from Shahi.
 
-The native app stores pairing credentials in the iOS Keychain. Browser pairing
-is temporary unless you explicitly choose to remember it; remembered credentials
-are accessible to code running on the website’s origin. Trusting the hosted
-browser app includes trusting its published code.
+The iPhone app keeps pairing credentials in the iOS Keychain. Browser pairing
+lasts for the session unless you choose to remember it, and trusting the hosted
+web app means trusting its published code. Optional crash and Reader
+diagnostics exclude conversations, terminal text and credentials, and can be
+turned off with **Share diagnostics** in Settings.
 
-**[Read the illustrated security guide →](docs/connection-security.md)**
-
-It explains pairing, encryption, credential storage, metadata, revocation, and
-what the published security reviews do—and do not—establish. The project has
-not had an independent security audit. For data collection
-and retention, read the [privacy policy](docs/privacy-policy.md). Optional Sentry
-crash and Reader diagnostics can be disabled with **Share diagnostics** in
-Settings; reports exclude conversations, terminal text and credentials. Report security
-issues through [SECURITY.md](SECURITY.md).
+**[Read the illustrated security guide →](docs/connection-security.md)** It
+covers pairing, encryption, credential storage, metadata, revocation, and what
+the published security reviews do and do not establish. The project has not had
+an independent security audit. For data collection and retention, read the
+[privacy policy](docs/privacy-policy.md). Report vulnerabilities privately
+through [SECURITY.md](SECURITY.md).
 
 ## FAQ
 
 <details>
-<summary>What do I need on my computer?</summary>
+<summary><strong>Is Shahi free?</strong></summary>
 
-Install herdr and the coding agents you want to use, sign in to those agents on
-the computer, then add the Shahi plugin. Run the agents inside herdr so Shahi can
-find them. See [Quick start](#quick-start) for versions and setup commands.
+Yes. The apps, the computer service and the encrypted tunnel are free, and the
+code is MIT licensed. Your coding agents' own accounts and subscriptions are
+separate.
 
 </details>
 
 <details>
-<summary>Will my agents keep working when I close Shahi?</summary>
+<summary><strong>Do I need herdr?</strong></summary>
 
-Closing Shahi on your phone does not stop the agents on your computer. The
-computer must remain awake, connected and running herdr. An agent waiting for
+Yes. Shahi shows the agents you run inside [herdr](https://herdr.dev), a
+lightweight terminal workspace for coding agents with spaces, panes and live
+status. The one-line installer sets herdr up for you if you do not have it.
+
+</details>
+
+<details>
+<summary><strong>Will my agents keep working when I close Shahi?</strong></summary>
+
+Yes. Closing Shahi on your phone does not stop the agents on your computer. The
+computer must stay awake, connected and running herdr, and an agent waiting for
 permission or an answer still needs your response before it can continue.
 
 </details>
 
 <details>
-<summary>Which agents can I read as a conversation?</summary>
+<summary><strong>Can the relay read my code or conversations?</strong></summary>
 
-Claude Code, Codex, Cursor CLI, Antigravity and OpenCode. Coverage depends on the
-transcript each agent records; some results and attachments are unavailable.
-The [coverage table](#supported-agents) explains the limits. Screen mode shows
-the original terminal for other agents and output Reader cannot format.
-
-</details>
-
-<details>
-<summary>Is the Shahi tunnel free? Do I need a VPN?</summary>
-
-The built-in Shahi tunnel is ready to use and free for everyone. No Shahi
-account, VPN or port forwarding is needed: both devices connect outward through
-the encrypted relay, paired with a one-time QR code. Your coding agent's account
-or subscription is separate. The iPhone app also supports your existing SSH connection;
-see [connection options](#how-it-connects).
+No. The relay forwards encrypted content without the keys to read it. It and
+its hosting provider can see connection metadata, such as IP addresses, traffic
+sizes and timing. The [privacy policy](https://getshahi.dev/privacy) explains
+diagnostics, notifications and data retention.
 
 </details>
 
 <details>
-<summary>Can the relay read my code or conversations?</summary>
+<summary><strong>Can I connect more than one computer?</strong></summary>
 
-The relay forwards encrypted content without the keys to read it. It and its
-hosting provider can see connection metadata, including IP addresses, traffic
-sizes and timing. Your connected devices can read the content. The
-[privacy policy](https://getshahi.dev/privacy) also explains diagnostics,
-notifications and data retention; it is linked from Connect and Settings in
-the app.
+Yes. Add each one from **Settings → Computers → Add a computer**, then switch
+by tapping the computer name on the main screen. Each computer keeps its own
+pairing, connection and conversations.
 
 </details>
 
 <details>
-<summary>Can I connect more than one computer?</summary>
+<summary><strong>Is there an Android app?</strong></summary>
 
-Yes. Add each computer from **Settings → Computers → Add a computer**, then
-switch using the computer name on the main screen. Each computer has its own
-pairing and sessions.
-
-</details>
-
-<details>
-<summary>Is Shahi available for iPhone and Android?</summary>
-
-The web app works in a modern phone browser and can be added to the home screen.
-The native iPhone app is [available on the App Store](https://apps.apple.com/app/id6813370698).
-A native Android app is not currently available.
+Not yet. The [web app](https://getshahi.dev/pwa/) works in any modern phone
+browser and can be added to the home screen. The native app is
+[on the App Store](https://apps.apple.com/app/id6813370698) for iPhone.
 
 </details>
 
 ## Development
 
-Shahi uses Expo and React Native for mobile, React for the PWA, Bun for the
-sidecar, and a Cloudflare Worker for the relay. Both clients share the wire
-contract and encryption implementation.
+Shahi is a Bun service beside herdr, an Expo and React Native iPhone app, a
+React web app, and a Cloudflare Worker relay. Both clients share the wire
+contract and the encryption code.
 
 ```text
-mobile/   Native app
-web/      Responsive browser app and PWA
-server/   Local service connecting to herdr
-shared/   Types, pairing, encryption, and shared client logic
-relay/    Encrypted-traffic relay
-plugin/   Installation and service management
-site/     Public website
-operations/ Monitoring and service alerts
-e2e/      Browser tests against isolated fixtures
+mobile/      iPhone app (Expo, React Native)
+web/         Browser app and PWA
+server/      Local service that talks to herdr
+shared/      Types, pairing, encryption and shared client logic
+relay/       Encrypted-traffic relay (Cloudflare Worker)
+plugin/      herdr plugin: installation and service management
+site/        getshahi.dev
+operations/  Monitoring and service alerts
+e2e/         Browser tests against isolated fixtures
 ```
 
 ```sh
@@ -502,37 +336,30 @@ bun run test:mobile --runInBand
 bun run test:relay
 bun run build:web
 bun run test:e2e --project=phone --project=ios
-bun run build:site
-bun run test:hosted
-bun run test:pwa
 ```
 
-Browser tests use fixtures that record actions without sending them to your
-agents. Real-herdr checks require a named test session and a fresh configuration
-directory without installed startup hooks; never point write tests at your
-working session. See [CONTRIBUTING.md](CONTRIBUTING.md)
-and [CLAUDE.md](CLAUDE.md) for development. [Developing the plugin](docs/plugin.md#developing-it)
-explains linking a checkout and restarting its managed service.
+Browser tests run against a stub that records actions instead of sending them
+to your agents. Checks against a real herdr need a named test session and a
+fresh configuration directory; never point write tests at your working
+session. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and
+[CLAUDE.md](CLAUDE.md); [developing the plugin](docs/plugin.md#developing-it)
+explains linking a checkout, and [on a Mac](docs/on-a-mac.md) covers building
+the iOS app.
 
-## Further reading
+## Documentation
 
-- [Install, update, and manage the plugin](docs/plugin.md)
-- [Release channels, compatibility, and recovery](docs/releases.md)
+- [Using Shahi: pairing, computers, files and troubleshooting](docs/using-shahi.md)
+- [Install, update and manage the plugin](docs/plugin.md)
+- [Release channels, compatibility and recovery](docs/releases.md)
 - [Pairing and device revocation](docs/pairing.md)
 - [Connection security, explained](docs/connection-security.md)
 - [Relay protocol and self-hosting](docs/relay.md)
-- [Build and test the iOS app](docs/on-a-mac.md)
-- [Customer journey verification and known limits](docs/customer-journeys-2026-09-18.md)
 - [All documentation](docs/README.md)
-
-The infrastructure owner can use the private operations dashboard to inspect
-service health, relay traffic and connection trends. It collects no agent
-conversations or files; see [dashboard setup and metric limits](docs/operations.md#private-owner-dashboard).
 
 ## Support and license
 
-For questions, email [support@getshahi.dev](mailto:support@getshahi.dev) or
+Questions: email [support@getshahi.dev](mailto:support@getshahi.dev) or
 [open an issue](https://github.com/iYassr/shahi/issues). Send vulnerabilities
 privately using the [security reporting instructions](SECURITY.md).
 
-Shahi is licensed under the [MIT License](LICENSE).
+Shahi is open source under the [MIT License](LICENSE).

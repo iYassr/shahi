@@ -2,7 +2,8 @@
 
 ## Maintained guides
 
-- [Install and pair](../README.md#quick-start)
+- [Install and pair](../README.md#quick-start), then [using Shahi](using-shahi.md):
+  pairing more devices, several computers, files and troubleshooting
 - [Connection security, explained with diagrams](connection-security.md)
 - [Plugin](plugin.md) and [pairing](pairing.md)
 - [Browser hosting and beta signup](browser-hosting.md)

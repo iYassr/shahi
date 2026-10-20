@@ -363,7 +363,20 @@ installed and enabled for the configuration it was installed from, and on a
 within about 40 seconds; the action is the immediate path. Any answer short of
 a clear "no" — herdr missing, a registry being rewritten, a different
 configuration root — leaves the service running. If herdr is gone altogether,
-remove the service by hand (the README has the commands).
+the service cannot ask it and keeps running; remove it by hand. On macOS:
+
+```sh
+launchctl bootout gui/$(id -u)/app.shahi.sidecar
+rm ~/Library/LaunchAgents/app.shahi.sidecar.plist
+```
+
+On Linux:
+
+```sh
+systemctl --user disable --now shahi.service
+rm ~/.config/systemd/user/shahi.service
+systemctl --user daemon-reload
+```
 
 **`herdr plugin enable shahi` does not bring Shahi back by itself.** herdr runs
 a plugin's startup hook only when its server starts, and has no hook for
