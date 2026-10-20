@@ -67,6 +67,8 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "codex-0.160-migration": { herdr: "unknown", agent: "codex", expect: { waits: true } },
   // 0.162.1 draws the same notice with its quit key as "⌃c", and herdr calls it idle.
   "codex-0.162-migration": { herdr: "idle", agent: "codex", expect: { waits: true } },
+  // On Linux the same notice writes the key as "^c" (0.163.0, ubuntu).
+  "codex-0.163-migration-linux": { herdr: "idle", agent: "codex", expect: { waits: true } },
   "codex-0.160-update": { herdr: "unknown", agent: "codex", expect: { card: { question: "Update available · 0.160.0 → 9.0.0", answer: "digit", confirm: true,
     labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
 };
