@@ -46,6 +46,7 @@ const MAX_RESULT_CHARS = 2_000;
 
 /** The `system` subtypes whose top-level `content` is real, user-visible text. */
 const SYSTEM_NOTE_SUBTYPES = new Set(["away_summary", "model_refusal_fallback"]);
+const isWarning = (row: Record<string, unknown>) => row.subtype === "informational" && row.level === "warning";
 
 /** `Block` is the local name for the contract's `LogBlock`. */
 export type Block = LogBlock;
@@ -594,8 +595,10 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     //   - away_summary: Claude Code recounting what it did while you were gone.
     //   - model_refusal_fallback: a safeguard flagged a message and switched
     //     models mid-session; its `content` explains the switch the user saw.
-    // (measured across the real transcripts: 82 and 2.)
-    if (type === "system" && SYSTEM_NOTE_SUBTYPES.has(row.subtype as string) && typeof row.content === "string" && row.content.trim()) {
+    // (measured across the real transcripts: 82 and 2.) And an `informational`
+    // row at level "warning", which Claude Code leaves in the conversation
+    // (reader-parity, 2.1.301); its notices stay dropped, as unmeasured.
+    if (type === "system" && (SYSTEM_NOTE_SUBTYPES.has(row.subtype as string) || isWarning(row)) && typeof row.content === "string" && row.content.trim()) {
       messages.push({ id, role: "system", at, blocks: [{ kind: "text", text: row.content.trim() }] });
       continue;
     }

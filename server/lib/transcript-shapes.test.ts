@@ -23,14 +23,31 @@ describe("Claude Code", () => {
     expect(claudeShapes(null)).toEqual([]);
   });
 
+  // Claude Code 2.1.301 copies each message it sends into the transcript, with
+  // the message's own role and blocks: drawn, every reply would show twice.
+  test("a request log's message copies are one dropped record, never messages of their own", () => {
+    const copy = { type: "api-request-blob", hash: "h", sessionId: "s", message: { role: "assistant", content: [{ type: "text", text: "Done." }, { type: "tool_use", id: "t", name: "Bash", input: {} }] } };
+    expect(claudeShapes(copy)).toEqual(["record:api-request-blob"]);
+    expect(normalise([copy, { ...copy, message: { role: "user", content: "Fix it." } }])).toEqual([]);
+  });
+
   test("every record type said to be dropped produces nothing in Reader", () => {
     for (const type of keys(CLAUDE_SHAPES, "record:", "dropped")) {
       expect([type, normalise([{ type, uuid: "r", content: "text", message: { content: "text" } }])]).toEqual([type, []]);
     }
   });
 
+  test("every informational level is shown or dropped as its decision says", () => {
+    for (const level of Object.keys(CLAUDE_SHAPES).filter(key => key.startsWith("informational:")).map(key => key.slice(14))) {
+      const shown = normalise([{ type: "system", subtype: "informational", level, uuid: "i", content: "Something happened." }]).length > 0;
+      expect([level, shown]).toEqual([level, CLAUDE_SHAPES[`informational:${level}`]!.handling === "shown"]);
+    }
+    expect(claudeShapes({ type: "system", subtype: "informational", level: "warning" })).toEqual(["record:system", "system:informational", "informational:warning"]);
+  });
+
   test("every system subtype is shown or dropped as its decision says", () => {
-    for (const subtype of Object.keys(CLAUDE_SHAPES).filter(key => key.startsWith("system:")).map(key => key.slice(7))) {
+    // `informational` is decided by level, in the test above.
+    for (const subtype of Object.keys(CLAUDE_SHAPES).filter(key => key.startsWith("system:") && key !== "system:informational").map(key => key.slice(7))) {
       const shown = normalise([{ type: "system", subtype, uuid: "s", content: "Something happened." }]).length > 0;
       expect([subtype, shown]).toEqual([subtype, CLAUDE_SHAPES[`system:${subtype}`]!.handling === "shown"]);
     }

@@ -39,6 +39,13 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "record:attachment": shown("by attachment type, below"),
   "record:continued-in": { handling: "followed", why: "a backgrounded session continues in another transcript (continuedTranscript)" },
   "record:agent-name": dropped("the session's name; the list titles panes from herdr"),
+  // Claude Code 2.1.301's request log, about a quarter of a transcript's bytes:
+  // each request's settings, and content-addressed copies of the system
+  // prompt, the tools and the messages it sent. The conversation draws none of
+  // it; its own user and assistant rows carry the same words.
+  "record:api-request": dropped("a request's settings and the hashes of what it sent"),
+  "record:api-request-blob": dropped("a copy of a message as sent to the model, already shown from its own row"),
+  "record:api-request-shape": dropped("the system prompt and tool list as sent to the model"),
   "record:ai-title": dropped("the session's generated title; the list titles panes from herdr"),
   "record:custom-title": dropped("a /rename title; the list titles panes from herdr"),
   "record:artifact-autoreact-ledger": dropped(BOOKKEEPING),
@@ -59,7 +66,13 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "system:away_summary": shown("Claude recounting what it did while the person was away"),
   "system:model_refusal_fallback": shown("explains a model switch the person saw"),
   "system:compact_boundary": dropped("marks where /compact cut the context"),
-  "system:informational": dropped("transient notices such as Backgrounding…"),
+  "system:informational": shown("by level, below"),
+  // Claude Code keeps a warning on screen, in the conversation, until the
+  // session ends: reader-parity found "Artifact comment monitor … didn't
+  // resume its automatic replies" on Screen and not in Read (2.1.301,
+  // 20 October 2026). Notices are left as they were until one is measured.
+  "informational:warning": shown("a warning Claude Code draws in the conversation and leaves there"),
+  "informational:notice": dropped("transient notices such as Backgrounding…; none measured staying on screen"),
   "system:local_command": dropped("a local command's echo; its output arrives as <local-command-stdout>"),
   "system:turn_duration": dropped("the turn's timing"),
 
@@ -217,11 +230,15 @@ export function claudeShapes(row: unknown): string[] {
   if (!isRecord(row)) return [];
   const keys = [`record:${String(row.type)}`];
   if (row.type === "system") keys.push(`system:${String(row.subtype)}`);
+  if (row.type === "system" && row.subtype === "informational") keys.push(`informational:${String(row.level)}`);
   if (row.type === "attachment" && isRecord(row.attachment)) {
     keys.push(`attachment:${String(row.attachment.type)}`);
     if (row.attachment.type === "queued_command") keys.push(`queued:${String(row.attachment.commandMode)}`);
   }
-  const content = isRecord(row.message) ? row.message.content : undefined;
+  // Blocks are decided for the two records Reader draws them from; another
+  // record's are decided with it (Claude Code 2.1.301's request copies hold
+  // every block type, and are dropped whole).
+  const content = (row.type === "user" || row.type === "assistant") && isRecord(row.message) ? row.message.content : undefined;
   if (Array.isArray(content)) for (const block of content) {
     if (!isRecord(block)) continue;
     keys.push(`block:${String(row.type)}.${String(block.type)}`);
