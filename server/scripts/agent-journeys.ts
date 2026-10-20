@@ -110,6 +110,13 @@ const visible = async (paneId: string) => (await rpc("pane.read", { pane_id: pan
 const status = async (paneId: string) => (await rpc("pane.get", { pane_id: paneId })).pane?.agent_status as string | undefined;
 
 /**
+ * The journey could not test Shahi: the agent's own account stopped it. Said
+ * as a skip, so the hourly runner files no issue for a sign-in or a provider
+ * bill, which no change to Shahi can fix.
+ */
+class Untestable extends Error {}
+
+/**
  * Waits until the agent takes a message, answering only what a scratch folder
  * makes safe: trusting it, and skipping Codex's update offer. Anything else
  * that asks (sign-in, hooks review, a model change, terms) is the person's,
@@ -133,7 +140,7 @@ async function ready(paneId: string): Promise<void> {
       // herdr calls an agent at its sign-in screen idle: Cursor 2026.10 with
       // an expired login drew "Press any key to log in..." and the journey
       // went on to type into it (ubuntu, 20 October 2026).
-      if (/press any key to (log|sign) ?in/i.test(await visible(paneId))) throw new Error("is not signed in on this computer, which needs a person");
+      if (/press any key to (log|sign) ?in/i.test(await visible(paneId))) throw new Untestable("is not signed in on this computer, which needs a person");
       return;
     }
   }
@@ -254,7 +261,10 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
     const deadline = Date.now() + 180_000;
     let seen = await look(paneId, token);
     while (!seen.reply && Date.now() < deadline) { await Bun.sleep(3_000); seen = await look(paneId, token); }
-    if (!seen.reply) failures.push(`${seen.found ? `Reader found a conversation without the reply, ending in a ${seen.last === "system" ? "system note (the agent's account or provider may have refused)" : `${seen.last ?? "missing"} message`}` : "Reader found no conversation"} (${await signals(paneId, token, folderOf(kind, launch))})`);
+    // Reader found the conversation and drew the agent's error in it: the
+    // provider refused (OpenCode's "Invalid credentials", a suspended account).
+    if (!seen.reply && seen.found && seen.last === "system") throw new Untestable("did not reply: its conversation ends in a system note, as when its account or provider refuses");
+    if (!seen.reply) failures.push(`${seen.found ? `Reader found a conversation without the reply, ending in a ${seen.last ?? "missing"} message` : "Reader found no conversation"} (${await signals(paneId, token, folderOf(kind, launch))})`);
     else {
       // Then a minute of looking again: the macOS index failure came and went.
       for (const end = Date.now() + STEADY_MS; Date.now() < end && failures.length === 0; await Bun.sleep(5_000)) {
@@ -325,7 +335,10 @@ try {
           Bun.sleep(JOURNEY_MS).then(() => [`did not finish within ${JOURNEY_MS / 60_000} minutes`]),
         ]);
       }
-      catch (err) { failures = [err instanceof Error ? err.message : String(err)]; }
+      catch (err) {
+        if (err instanceof Untestable) { console.log(`skip    ${label}\n        ${err.message}`); continue; }
+        failures = [err instanceof Error ? err.message : String(err)];
+      }
       if (failures.length) failed++;
       console.log(`${failures.length ? "FAIL" : "ok  "}    ${label}${failures.map((f) => `\n        ${f}`).join("")}`);
     }
