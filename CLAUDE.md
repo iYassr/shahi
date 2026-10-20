@@ -237,7 +237,11 @@ the text typed and Enter unsent. Wrapped or multiline notes stay conservative.
 
 The Claude reader's system-note handler is an explicit allowlist (`SYSTEM_NOTE_SUBTYPES`)
 for the same reason: `away_summary` and `model_refusal_fallback` carry text the
-person saw, every other `system` subtype is chrome and stays dropped. User rows
+person saw, and so does an `informational` row at level `warning`, which Claude
+Code leaves in the conversation (measured by reader-parity on 2.1.301); every
+other `system` subtype, and an `informational` notice, is chrome and stays
+dropped. Claude Code 2.1.301's request log (`api-request`, `api-request-blob`,
+`api-request-shape`), copies of what each request sent, is dropped whole. User rows
 flagged `isCompactSummary` — the 14–19KB handoff Claude Code writes after
 `/compact` — are dropped like `isMeta` rows; `<bash-input>` renders as
 `! <cmd>`, and `<bash-stdout>`/`<bash-stderr>` as its output, with no message
@@ -889,7 +893,9 @@ the service's gate, all passed. Every live check now expects "connected".
 Each version in `release.json` (`HERDR_SUPPORT`) needs a pinned job, even when
 it is also stable; the workflow policy test enforces this. Add herdr's current
 stable before each computer release: managers up to 0.3.29 install only a
-release naming the computer's exact herdr. A pinned tag needs its digest beside it
+release naming the computer's exact herdr. Move the one-line installer to it too
+(`site/herdr-pin.json`, then a site release); `site/install.test.ts` holds the pin
+to the newest version listed. A pinned tag needs its digest beside it
 in the herdr matrix's `include`:
 `gh api repos/herdrdev/herdr/releases/tags/vX.Y.Z --jq '.assets[] | select(.name=="herdr-linux-x86_64") | .digest'`.
 
