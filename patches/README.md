@@ -28,12 +28,17 @@ CommonJS `v4()` API used by `xcode`.
 The September 9 review updates and overrides `sharp` to **0.35.4**, including
 Miniflare's pinned transitive copy. Its prebuilt libraries address
 [GHSA-rgj7-g3m4-5g8c](https://github.com/lovell/sharp/security/advisories/GHSA-rgj7-g3m4-5g8c).
-This is build and local development tooling; the production relay does not
-bundle Sharp or process images.
+On October 20 the pin moved to **0.35.5**, whose prebuilt librsvg 2.63.2 fixes
+[GHSA-wq5f-xc86-pv6w](https://github.com/lovell/sharp/security/advisories/GHSA-wq5f-xc86-pv6w),
+a memory flaw that could allow code execution while decoding an SVG on
+glibc Linux. Both copies, root and demo, moved together; the brand assets it
+renders came out byte-identical. This is build and local development tooling;
+the production relay does not bundle Sharp or process images, and the only
+SVGs it decodes are the project's own.
 
 The independent review-demo npm lockfile does not inherit root overrides.
 The October 4 launch review adds scoped Miniflare overrides in
-`demo/package.json` for **Sharp 0.35.4** and **Undici 7.29.1**, updating only
+`demo/package.json` for **Sharp** (0.35.4, now 0.35.5) and **Undici 7.29.1**, updating only
 those libraries and Sharp's required prebuilt/libvips packages. Direct
 container, Wrangler and TypeScript versions are preserved. Its frozen install,
 types, worker dry-run, model and state/archive tests passed; `npm audit
