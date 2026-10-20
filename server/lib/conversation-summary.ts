@@ -16,6 +16,7 @@ import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log"
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
 import { continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
+import { withoutAgentStatus } from "./agent-titles";
 import { choiceHeld, chosenSession, parkedSession } from "./claude-choice";
 import { fitPage } from "./session-window";
 import { claudeTasks } from "./claude-tasks";
@@ -55,13 +56,19 @@ const LOCATION_MAX_AGE_MS = 15_000;
 // transcript watcher look afresh, and a status change or 15s refresh this.
 const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane.pane_id), pane.agent_status]);
 
+/** A Codex pane's title without its status, which would hide the thread it names. */
+const codexTitle = (pane: PaneInfo) => {
+  const title = pane.terminal_title_stripped ?? pane.terminal_title;
+  return title ? withoutAgentStatus(title, "codex") : null;
+};
+
 /** Where a pane's transcript is, looked up afresh: the reported session first, then the pane's process. */
 export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource | null> {
   // Never a session herdr kept after its agent left the pane (see herdr-pane.ts).
   const id = agentSessionOf(pane);
   const source = pane.agent === "cursor" ? (client ? cursorTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
     : pane.agent === "codex" ? (client ? findCodexRollout(client, pane.pane_id, pane.cwd ?? null, id,
-      { title: pane.terminal_title_stripped ?? pane.terminal_title ?? null, folder: pane.foreground_cwd ?? pane.cwd ?? null }) : Promise.resolve(null))
+      { title: codexTitle(pane), folder: pane.foreground_cwd ?? pane.cwd ?? null }) : Promise.resolve(null))
     : pane.agent === "agy" ? (client ? antigravityTranscriptFor(client, pane.pane_id, id) : Promise.resolve(null))
     : pane.agent === "opencode" ? (id ? findOpenCodeTranscript(id) : Promise.resolve(null))
     : pane.agent === "claude" ? claudeTranscriptFor(pane, client, id) : Promise.resolve(null);

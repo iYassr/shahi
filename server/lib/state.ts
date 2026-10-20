@@ -25,6 +25,7 @@ import type { StatusChange as WireStatusChange } from "@shahi/shared";
 import { EventEmitter } from "node:events";
 import type { HerdrClient } from "./herdr-client";
 import type { AnyEvent } from "./herdr-client";
+import { withoutAgentStatus } from "./agent-titles";
 import { PaneInstances } from "./herdr-pane";
 import type {
   AgentInfo,
@@ -70,7 +71,7 @@ export interface StatusChange extends WireStatusChange {
  */
 export function paneTitle(pane: PaneInfo): string | null {
   for (const title of [pane.terminal_title_stripped, pane.terminal_title, pane.label]) {
-    const trimmed = title?.trim();
+    const trimmed = title && withoutAgentStatus(title.trim(), pane.agent);
     if (trimmed) return trimmed;
   }
   return null;
@@ -464,7 +465,7 @@ function signatureOf(state: SessionState): string {
   const panes = state.panes
     .map(
       (p) =>
-        `${p.pane_id}:${p.terminal_id ?? ""}:${p.agent_status}:${p.agent ?? ""}:${p.tab_id ?? ""}:${p.cwd ?? ""}:${p.focused ? 1 : 0}:${p.terminal_title_stripped ?? p.terminal_title ?? ""}`,
+        `${p.pane_id}:${p.terminal_id ?? ""}:${p.agent_status}:${p.agent ?? ""}:${p.tab_id ?? ""}:${p.cwd ?? ""}:${p.focused ? 1 : 0}:${paneTitle(p) ?? ""}`,
     )
     .sort()
     .join("|");

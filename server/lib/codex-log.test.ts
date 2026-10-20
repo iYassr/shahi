@@ -3,6 +3,7 @@ import { copyFileSync, openSync, closeSync, mkdirSync, mkdtempSync, realpathSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
+import { withoutAgentStatus } from "./agent-titles";
 import { normaliseCodex, rolloutFromTitle, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
 
 // Scratch codex homes made below, removed when the file finishes: every run
@@ -752,6 +753,14 @@ describe("a Codex conversation named by its pane's title", () => {
 
   test("the one unarchived thread with that name in that folder is the pane's", () => {
     expect(find("Review and improve Fihris | sama-kb")).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210b6.jsonl");
+  });
+  // While Codex 0.163 asks, its title leads with "[ ! ] Action Required | ";
+  // read as part of the name, it hid the conversation for the whole question.
+  test("the thread is found while Codex's title says it is waiting", () => {
+    for (const shown of ["[ ! ] Action Required | Review and improve Fihris | sama-kb", "[ . ] Action Required | Review and improve Fihris | sama-kb", "⠋ Review and improve Fihris | sama-kb"]) {
+      expect(find(shown)).toBeNull();
+      expect(find(withoutAgentStatus(shown, "codex"))).toEndWith("-01a1042d-cfcf-7772-a79b-f4dafde210b6.jsonl");
+    }
   });
   test("a name two threads share in one folder, an unnamed thread or a name in another folder finds nothing", () => {
     expect(find("Fix the tests | sama-kb")).toBeNull();

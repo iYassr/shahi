@@ -395,3 +395,17 @@ test("a pane whose title is only spaces has no title", () => {
   expect(paneTitle(pane("w1:p1", "w1", { terminal_title_stripped: " ", terminal_title: "\t", label: " build " }))).toBe("build");
   expect(paneTitle(pane("w1:p1", "w1", { terminal_title_stripped: "  Fix the build ", terminal_title: "✳ Fix the build" }))).toBe("Fix the build");
 });
+
+// Codex 0.163 blinks "[ ! ] Action Required" and "[ . ] Action Required" in
+// front of its title each second while it waits, and herdr 0.9.5 passes both
+// through: every approval renamed the row and churned it once a second.
+test("a Codex pane is named without the status Codex writes into its title", () => {
+  const codex = (title: string) => pane("w1:p1", "w1", { agent: "codex", terminal_title_stripped: title, terminal_title: title });
+  for (const title of ["[ ! ] Action Required | Reply mango | shahi-journeys", "[ . ] Action Required | Reply mango | shahi-journeys",
+    "● [ ! ] Action Required | Reply mango | shahi-journeys", "⠹ Reply mango | shahi-journeys", "Reply mango | shahi-journeys"]) {
+    expect([title, paneTitle(codex(title))]).toEqual([title, "Reply mango | shahi-journeys"]);
+  }
+  // Another agent's title is its own business, and a bare prefix is no name.
+  expect(paneTitle(pane("w1:p1", "w1", { agent: "claude", terminal_title_stripped: "[ ! ] Action Required | Plan" }))).toBe("[ ! ] Action Required | Plan");
+  expect(paneTitle(pane("w1:p1", "w1", { agent: "codex", terminal_title_stripped: "[ ! ] Action Required", label: "codex" }))).toBe("codex");
+});
