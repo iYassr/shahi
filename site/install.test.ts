@@ -16,6 +16,18 @@ test("the installer's herdr is one the current Shahi release is approved for", (
   for (const platform of HERDR_PLATFORMS) expect((pin.sha256 as Record<string, string>)[platform]).toMatch(/^[0-9a-f]{64}$/);
 });
 
+// And the newest one: the pin stayed on 0.9.3 for three weeks after 0.9.4
+// and 0.9.5 were tested and approved, so every new computer started on a
+// herdr two releases old (fresh-VM check, 20 October 2026). Adding a herdr
+// to the release means moving the installer to it.
+test("the installer's herdr is the newest one the current Shahi release is approved for", () => {
+  const parts = (version: string) => version.split(".").map(Number);
+  const newest = release.herdr.map((h: { version: string }) => h.version)
+    .sort((a: string, b: string) => { const [x, y] = [parts(a), parts(b)]; return x[0]! - y[0]! || x[1]! - y[1]! || x[2]! - y[2]!; })
+    .at(-1);
+  expect(pin.version).toBe(newest);
+});
+
 test("the installer is written whole: every pin filled, valid shell, and nothing runs before its last line", async () => {
   const script = await installScript();
   expect(script).not.toMatch(/__[A-Z0-9_]+__/);
