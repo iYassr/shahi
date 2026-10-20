@@ -503,6 +503,15 @@ now cover them are named after the symptom.
 - **A service worker bypasses `page.route`.** In WebKit, completely. This is why
   the suite blocks service workers and why a fuse fails any write that leaves for
   a host other than the stub: mocked writes once reached real agents.
+- **A touchable around a ScrollView stops it scrolling, and so does nesting
+  vertical inside horizontal.** The native Screen was a Pressable (hold to
+  copy) around a horizontal ScrollView around a vertical one: on an 88-row
+  terminal it showed the top 42 rows, no prompt, and no drag moved it either
+  way (simulator, 20 October 2026; XCUITest saw the same stillness in
+  September and could not say why). The vertical view is now outside,
+  bounded by the region, the hold lives on the text inside (`CopyOnHold`
+  hands it down), and a terminal opens at its bottom and follows it until
+  scrolled up. Code blocks and tool output in Read had the same wrapper.
 - **A FlatList's content size changes while you swipe through it**, as cells
   above the fold get measured for the first time. The reader used
   `onContentSizeChange → scrollToEnd` to follow new output, gated on a
