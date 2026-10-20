@@ -42,7 +42,7 @@
  */
 
 import { isTextField, parsePrompt, stripAnsi } from "./prompt-parser";
-import { codexNotesTyped, codexQuestionPrompt, cursorFeedbackTyped, providerWaitingScreen } from "./provider-prompts";
+import { codexNotesTyped, codexQuestionPrompt, cursorFeedbackTyped, providerSettling, providerWaitingScreen } from "./provider-prompts";
 
 /** The herdr calls this module is allowed to make, typed loosely so a test can fake them. */
 export type PromptRpc = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -139,7 +139,7 @@ export async function submitPrompt(
   // shell with no read: Claude Code quit 6 times in 6. A menu on screen means
   // the program holding the terminal is waiting on it, so it takes the
   // terminal path, and only into a text field.
-  let menu = await openMenu(rpc, paneId, { agent: target.isAgent });
+  let menu = await openMenu(rpc, paneId, { agent: target.isAgent, settle: sleep });
   let blocked = target.isAgent && target.status === "blocked";
   if (target.isAgent && !menu && !blocked) {
     try {
@@ -195,15 +195,28 @@ function sameSpot(before: Spot | null, after: Spot | null): boolean {
  * would not take typed text is refused with `PromptOpen`, unless `refuse` is
  * false, when it is returned like any other.
  */
-async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previous, typed, agent = false }: { refuse?: boolean; previous?: Spot | null; typed?: string; agent?: boolean } = {}): Promise<Spot | null> {
+/** How long the first read waits for an agent's settling screen to clear (it took 0.8s). */
+export const SETTLE_LIMIT_MS = 3_000;
+const SETTLE_POLL_MS = 150;
+
+async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previous, typed, agent = false, settle }: { refuse?: boolean; previous?: Spot | null; typed?: string; agent?: boolean; settle?: (ms: number) => Promise<void> } = {}): Promise<Spot | null> {
   // The same read the poller and `answer.ts` make, so the menu found here is
   // the one the phone was offered buttons for.
-  const { read } = (await rpc("pane.read", {
+  const look = async () => (await rpc("pane.read", {
     pane_id: paneId,
     source: "visible",
     format: "ansi",
     strip_ansi: false,
   })) as { read: { text: string } };
+  let { read } = await look();
+  // Before the first write, an agent busy leaving a screen by itself
+  // (`providerSettling`) is waited for: text typed there is never submitted.
+  // One still there after the limit is refused with nothing typed.
+  for (let waited = 0; settle && agent && providerSettling(stripAnsi(read.text)); waited += SETTLE_POLL_MS) {
+    if (waited >= SETTLE_LIMIT_MS) throw new PromptUnrecognised();
+    await settle(SETTLE_POLL_MS);
+    ({ read } = await look());
+  }
   if (previous?.notesScreen && typed !== undefined) {
     return codexNotesTyped(previous.notesScreen, stripAnsi(read.text), typed) ? previous : null;
   }

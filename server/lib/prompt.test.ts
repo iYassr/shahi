@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, SETTLE_LIMIT_MS, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
 
@@ -42,6 +42,31 @@ describe("submitPrompt", () => {
     expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt"]);
     expect(calls[1]).toEqual({ method: "agent.prompt", params: { target: "w1:p1", text: "run the tests" } });
     expect(noSleep.slept).toEqual([]);
+  });
+
+  // Cursor 2026.10.19 draws "⏳ Trusting workspace..." for about 0.8s after
+  // its trust question is answered, with herdr calling it idle; a message
+  // typed then sat in the composer unsent, and the agent never answered.
+  test("an agent leaving its trust screen is waited for, then prompted", async () => {
+    const trusting = fixture("startup/cursor-2026.10-trusting.ansi");
+    const screens = [trusting, trusting, ""];
+    const calls: string[] = [];
+    const rpc = async (method: string) => {
+      calls.push(method);
+      return method === "pane.read" ? { read: { text: screens.shift() ?? "" } } : {};
+    };
+    noSleep.slept = [];
+    expect(await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "hello", sleep)).toBe("agent");
+    expect(calls).toEqual(["pane.read", "pane.read", "pane.read", "agent.prompt"]);
+    expect(noSleep.slept.length).toBe(2);
+  });
+
+  test("an agent that never leaves its trust screen is not typed at", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("startup/cursor-2026.10-trusting.ansi"));
+    noSleep.slept = [];
+    await expect(submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "hello", sleep)).rejects.toBeInstanceOf(PromptUnrecognised);
+    expect(calls.map((c) => c.method).filter((m) => m !== "pane.read")).toEqual([]);
+    expect(noSleep.slept.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(SETTLE_LIMIT_MS);
   });
 
   test("a shell gets text, the pause, then Enter — in that order", async () => {

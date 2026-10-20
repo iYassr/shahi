@@ -225,6 +225,19 @@ export function providerWaitingScreen(text: string): boolean {
     /^enter\/esc continue · (?:ctrl\+c|⌃c|\^c) quit$/.test(last);
 }
 
+/**
+ * A screen an agent is busy leaving, where a message's Enter is lost: Cursor's
+ * "⏳ Trusting workspace..." at the bottom, for about 0.8s after its trust
+ * question is answered, while herdr already calls it idle (2026.10.19,
+ * measured). A message sent then was typed into the composer and never
+ * submitted, so the agent never answered (agent journeys, 20 October 2026).
+ * It clears by itself; the message route waits it out.
+ */
+export function providerSettling(text: string): boolean {
+  const bottom = text.trimEnd().split("\n").map(line => line.trim()).filter(Boolean).slice(-4);
+  return bottom.some(line => /^│?\s*⏳\s*Trusting workspace(?:\.\.\.|…)\s*│?$/.test(line));
+}
+
 /** A narrow adapter for measured provider menus, not a general status override. */
 export function providerIsWaiting(kind: string | null | undefined, text: string, parsed: ParsedPrompt | null): boolean {
   if (!kind || !parsed) return false;
