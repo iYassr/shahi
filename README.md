@@ -101,13 +101,13 @@ terminal is still one tap away, on the Screen tab.
 
 ## Supported agents
 
-| Agent | What Reader shows |
-| --- | --- |
-| <img src="site/public/agents/claude.svg" alt="" width="24" height="24">&nbsp;**Claude&nbsp;Code** | Messages, thinking, tools and results, subagents, task lists, questions and images. |
-| <img src="site/public/agents/codex.svg" alt="" width="24" height="24">&nbsp;**Codex** | Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played. |
-| <img src="site/public/agents/cursor.svg" alt="" width="24" height="24">&nbsp;**Cursor&nbsp;CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
-| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24">&nbsp;**OpenCode** | Messages, thinking, tools and results, edits, questions, files, images and undo. |
-| <img src="site/public/agents/agy.svg" alt="" width="24" height="24">&nbsp;**Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a single recorded call. |
+| | Agent | What Reader shows |
+| --- | --- | --- |
+| <img src="site/public/agents/claude.svg" alt="" width="24" height="24"> | **Claude&nbsp;Code** | Messages, thinking, tools and results, subagents, task lists, questions and images. |
+| <img src="site/public/agents/codex.svg" alt="" width="24" height="24"> | **Codex** | Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played. |
+| <img src="site/public/agents/cursor.svg" alt="" width="24" height="24"> | **Cursor&nbsp;CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
+| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> | **OpenCode** | Messages, thinking, tools and results, edits, questions, files, images and undo. |
+| <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> | **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a single recorded call. |
 
 Reader shows the exact session each agent reports through herdr's
 integration for it, which Shahi installs and keeps up to date, or the one
@@ -197,8 +197,8 @@ flowchart LR
     Service["Shahi local service<br/>Encrypts and decrypts"]
     Work["herdr<br/>Your existing agents and files"]
   end
-  App <-->|"Outbound WSS from your phone<br/>Encrypted application data"| Relay
-  Relay <-->|"Outbound WSS from your computer<br/>Encrypted application data"| Service
+  App <-->|"Outbound WSS<br/>Encrypted data"| Relay
+  Relay <-->|"Outbound WSS<br/>Encrypted data"| Service
   Service <--> Work
 ```
 
