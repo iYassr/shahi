@@ -18,37 +18,48 @@ import { committed } from "@/lib/feel";
 import { Icon } from "@/components/icons";
 import { theme } from "@/lib/theme";
 
-export function CopyOnHold({ text, style, children }: { text: string; style?: StyleProp<ViewStyle>; children: React.ReactNode }) {
+/**
+ * The hold goes to the text, inside the scroll views, as `children(hold)`.
+ * It was a Pressable around them, and a touchable around a ScrollView takes
+ * the touch before the ScrollView's pan can start: neither the terminal nor
+ * a code block scrolled at all, either way (simulator, 20 October 2026;
+ * XCUITest had seen the terminal stay put in September and could not say
+ * why). A touchable inside a scroll view yields to its pan, as list rows do.
+ */
+export function CopyOnHold({ text, style, children }: { text: string; style?: StyleProp<ViewStyle>; children: (hold: () => void) => React.ReactNode }) {
   const { t: ui } = useI18n();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hold = () => {
+    void Clipboard.setStringAsync(text);
+    committed();
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1400);
+  };
   return (
-    <Pressable
+    <View
       // A region that must fit a bounded space (the terminal) says so here:
-      // unstyled, the pressable takes its content's full height whatever its
+      // unstyled, the region takes its content's full height whatever its
       // parent has room for.
       style={style}
+      accessible
       accessibilityRole="button"
       // The text itself. Left to build a label from its children, iOS added
       // the scroll views' indicators, so the terminal read "…, Vertical
       // scroll bar, 1 page" (pre-release bug hunt).
       accessibilityLabel={text}
       accessibilityHint={ui("Long press to copy")}
-      onLongPress={() => {
-        void Clipboard.setStringAsync(text);
-        committed();
-        setCopied(true);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => setCopied(false), 1400);
-      }}
+      accessibilityActions={[{ name: "longpress" }]}
+      onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "longpress") hold(); }}
     >
-      {children}
+      {children(hold)}
       {copied && (
         <View style={styles.copied} pointerEvents="none">
           <UiText style={styles.copiedText}>Copied</UiText>
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 

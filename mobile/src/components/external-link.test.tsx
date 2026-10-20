@@ -34,7 +34,7 @@ describe("ExternalLink", () => {
   });
 
   test("holding a nested link copies only the URL, acknowledges it and suppresses the release tap", async () => {
-    const view = render(<CopyOnHold text="whole region"><Text><ExternalLink url={url}>the docs</ExternalLink></Text></CopyOnHold>);
+    const view = render(<CopyOnHold text="whole region">{(hold) => <Text onLongPress={hold}><ExternalLink url={url}>the docs</ExternalLink></Text>}</CopyOnHold>);
     const link = view.getByRole("link", { name: "the docs" });
     const stopPropagation = jest.fn();
     fireEvent(link, "pressIn");

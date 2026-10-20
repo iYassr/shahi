@@ -1929,14 +1929,16 @@ export function Block({
         <>
           {block.result.text.trim().length > 0 && (
             <CopyOnHold text={block.result.text}>
-              <ScrollView horizontal style={styles.toolOut}>
-                <Text style={styles.toolOutText}>
-                  {block.result.text}
-                  {/* The server caps tool output. Without saying so the cut
-                      reads as the command's own last line. */}
-                  {block.result.truncated && ui("\n… truncated")}
-                </Text>
-              </ScrollView>
+              {(hold) => (
+                <ScrollView horizontal style={styles.toolOut}>
+                  <Text style={styles.toolOutText} onLongPress={hold}>
+                    {block.result!.text}
+                    {/* The server caps tool output. Without saying so the cut
+                        reads as the command's own last line. */}
+                    {block.result!.truncated && ui("\n… truncated")}
+                  </Text>
+                </ScrollView>
+              )}
             </CopyOnHold>
           )}
           {attachments && block.result.images.map((ref) => (
@@ -1988,7 +1990,7 @@ function SubagentBlock({ call }: { call: NonNullable<Extract<LogBlock, { kind: "
         <UiText style={[styles.subagentState, { color }]}>{SUBAGENT_STATE[state]}</UiText>
       </Pressable>
       {!!call.report && (open
-        ? <CopyOnHold text={call.report}><Text style={styles.subagentReport} selectable>{call.report}</Text></CopyOnHold>
+        ? <CopyOnHold text={call.report}>{(hold) => <Text style={styles.subagentReport} selectable onLongPress={hold}>{call.report}</Text>}</CopyOnHold>
         : <Text style={styles.subagentReport} numberOfLines={3}>{call.report}</Text>)}
     </View>
   );
@@ -2269,55 +2271,58 @@ function Screen({
           showed. Here the vertical view is bounded by the region, and the
           horizontal one by the vertical view's width. */}
       <CopyOnHold text={body} style={styles.terminal}>
-        <ScrollView
-          ref={down}
-          testID="terminal-down"
-          style={styles.terminalDown}
-          contentOffset={{ x: 0, y: following.current ? 0 : start.current?.y ?? 0 }}
-          onLayout={() => {
-            if (following.current) down.current?.scrollToEnd({ animated: false });
-          }}
-          onScroll={(e) => {
-            const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-            place.current.y = contentOffset.y;
-            // Within a row of the end is the end: the last row is what counts.
-            place.current.bottom = contentOffset.y + (layoutMeasurement?.height ?? 0) >= (contentSize?.height ?? 0) - 16;
-            following.current = place.current.bottom;
-            remember();
-          }}
-          onContentSizeChange={() => {
-            if (following.current) down.current?.scrollToEnd({ animated: false });
-            restore();
-          }}
-          scrollEventThrottle={100}
-        >
+        {(hold) => (
           <ScrollView
-            ref={across}
-            horizontal
-            testID="terminal-across"
-            contentOffset={{ x: start.current?.x ?? 0, y: 0 }}
+            ref={down}
+            testID="terminal-down"
+            style={styles.terminalDown}
+            contentOffset={{ x: 0, y: following.current ? 0 : start.current?.y ?? 0 }}
+            onLayout={() => {
+              if (following.current) down.current?.scrollToEnd({ animated: false });
+            }}
             onScroll={(e) => {
-              place.current.x = e.nativeEvent.contentOffset.x;
+              const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+              place.current.y = contentOffset.y;
+              // Within a row of the end is the end: the last row is what counts.
+              place.current.bottom = contentOffset.y + (layoutMeasurement?.height ?? 0) >= (contentSize?.height ?? 0) - 16;
+              following.current = place.current.bottom;
               remember();
             }}
-            onContentSizeChange={restore}
+            onContentSizeChange={() => {
+              if (following.current) down.current?.scrollToEnd({ animated: false });
+              restore();
+            }}
             scrollEventThrottle={100}
           >
-            <Text
-              testID="terminal-body"
-              style={[
-                styles.screenText,
-                {
-                  fontSize,
-                  lineHeight: fontSize * 1.25,
-                  width: longest * fontSize * aspect + 24,
-                },
-              ]}
+            <ScrollView
+              ref={across}
+              horizontal
+              testID="terminal-across"
+              contentOffset={{ x: start.current?.x ?? 0, y: 0 }}
+              onScroll={(e) => {
+                place.current.x = e.nativeEvent.contentOffset.x;
+                remember();
+              }}
+              onContentSizeChange={restore}
+              scrollEventThrottle={100}
             >
-              {lines ? lines.map((line, i) => <ScreenLine key={i} line={line} last={i === lines.length - 1} />) : body}
-            </Text>
+              <Text
+                testID="terminal-body"
+                onLongPress={hold}
+                style={[
+                  styles.screenText,
+                  {
+                    fontSize,
+                    lineHeight: fontSize * 1.25,
+                    width: longest * fontSize * aspect + 24,
+                  },
+                ]}
+              >
+                {lines ? lines.map((line, i) => <ScreenLine key={i} line={line} last={i === lines.length - 1} />) : body}
+              </Text>
+            </ScrollView>
           </ScrollView>
-        </ScrollView>
+        )}
       </CopyOnHold>
       <View style={styles.widths}>
         {TERMINAL_SIZES.map((size) => (

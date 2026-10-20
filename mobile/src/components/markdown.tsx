@@ -81,11 +81,13 @@ function renderBlocks(text: string): ReactNode[] {
       while (i < lines.length && !/^\s*```\s*$/.test(lines[i]!)) body.push(lines[i++]!);
       out.push(
         <CopyOnHold text={body.join("\n")} key={key++}>
-          <ScrollView horizontal style={styles.codeBox}>
-            {/* Not selectable: the hold already copies, and the selection menu
-                landing on top of it offered the same copy twice. */}
-            <Text style={styles.code}>{body.join("\n")}</Text>
-          </ScrollView>
+          {(hold) => (
+            <ScrollView horizontal style={styles.codeBox}>
+              {/* Not selectable: the hold already copies, and the selection menu
+                  landing on top of it offered the same copy twice. */}
+              <Text style={styles.code} onLongPress={hold}>{body.join("\n")}</Text>
+            </ScrollView>
+          )}
         </CopyOnHold>,
       );
       continue;

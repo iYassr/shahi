@@ -114,6 +114,10 @@ describe("the slash-command picker", () => {
     agentPane({ agent: null, isAgent: false });
     const shell = render(<Pane paneId={PANE} />);
     await settle();
+    // A shell opens on its screen; neither of its views offers the picker.
+    fireEvent.changeText(shell.getByPlaceholderText("Send text to terminal…"), "/");
+    expect(shell.queryByTestId("command-picker")).toBeNull();
+    fireEvent.press(shell.getByTestId("view-read"));
     fireEvent.changeText(shell.getByPlaceholderText("Run a command…"), "/");
     expect(shell.queryByTestId("command-picker")).toBeNull();
     shell.unmount();

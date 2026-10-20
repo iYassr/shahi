@@ -23,7 +23,7 @@ describe("CopyOnHold", () => {
   const draw = () =>
     render(
       <CopyOnHold text={"line one\nline two, off screen"}>
-        <Text>line one</Text>
+        {(hold) => <Text onLongPress={hold}>line one</Text>}
       </CopyOnHold>,
     );
 
@@ -45,6 +45,14 @@ describe("CopyOnHold", () => {
 
   // Two holds in a row: the second must restart the clock, or the badge
   // vanishes almost immediately after the second copy and reads as a failure.
+  // VoiceOver has no long press on a region it reads as one element; the
+  // hold is offered to it as the region's own action.
+  test("VoiceOver's long-press action copies the whole text too", () => {
+    const view = draw();
+    fireEvent(view.getByLabelText("line one\nline two, off screen"), "accessibilityAction", { nativeEvent: { actionName: "longpress" } });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith("line one\nline two, off screen");
+  });
+
   test("a second hold restarts the moment", () => {
     const view = draw();
     fireEvent(view.getByText("line one"), "longPress");
