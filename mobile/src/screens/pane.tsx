@@ -2251,6 +2251,23 @@ function Screen({
     if (!following.current) down.current?.scrollTo({ y: start.current.y, animated: false });
   }, []);
   const remember = () => terminalPlace.set(paneId, { ...place.current });
+  // A new width is a new font size, and an offset kept in points then
+  // pointed at another part of the screen: switching 60c to fit after
+  // scrolling right showed only the blank right of a 200-column terminal.
+  // The same rows and columns stay in view instead, scaled by the font.
+  const shownFont = useRef(fontSize);
+  useEffect(() => {
+    const scale = fontSize / shownFont.current;
+    shownFont.current = fontSize;
+    if (scale === 1) return;
+    place.current.x *= scale;
+    across.current?.scrollTo({ x: place.current.x, animated: false });
+    if (!following.current) {
+      place.current.y *= scale;
+      down.current?.scrollTo({ y: place.current.y, animated: false });
+    }
+    remember();
+  }, [fontSize]);
 
   return (
     <View style={styles.screenWrap}>

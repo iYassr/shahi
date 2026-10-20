@@ -1765,6 +1765,23 @@ describe("keeping your terminal place", () => {
     scrollToEnd.mockRestore();
   });
 
+  // A width chip changes the font, and an offset kept in points pointed at
+  // another part of the screen: after scrolling right at 60c, "fit" showed
+  // only the blank right of a wide terminal (simulator, 20 October 2026).
+  test("a new terminal width keeps the same columns in view, scaled by the font", async () => {
+    const scrollTo = jest.spyOn(ScrollView.prototype, "scrollTo").mockImplementation(() => undefined);
+    const view = render(<Pane paneId={P} initialView="screen" />);
+    await view.findByTestId("terminal-body");
+    fireEvent.press(view.getByTestId("width-60"));
+    fireEvent(view.getByTestId("terminal-across"), "scroll", { nativeEvent: { contentOffset: { x: 300, y: 0 } } });
+    scrollTo.mockClear();
+    fireEvent.press(view.getByTestId("width-146"));
+    const across = scrollTo.mock.calls.map(([to]) => to as { x?: number }).find((to) => to.x !== undefined);
+    expect(across!.x).toBeGreaterThan(0);
+    expect(across!.x).toBeLessThan(300);
+    scrollTo.mockRestore();
+  });
+
   test("leaving a pane on the terminal reopens it on the terminal, not the reader", async () => {
     // Not readable, so the reader would show its ghost — the terminal showing
     // instead is the proof the view was remembered. The way onto the screen
