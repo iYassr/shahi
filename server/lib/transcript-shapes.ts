@@ -65,6 +65,9 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
 
   "system:away_summary": shown("Claude recounting what it did while the person was away"),
   "system:model_refusal_fallback": shown("explains a model switch the person saw"),
+  "system:model_consent_fallback": shown("explains a model switch the person agreed to"),
+  "system:model_refusal_no_fallback": dropped("an empty row marking a refused request (2.1.286); there is no text to show"),
+  "system:scheduled_task_fire": shown("\"Running scheduled task (…)\", which Screen keeps above each /loop run"),
   "system:compact_boundary": dropped("marks where /compact cut the context"),
   "system:informational": shown("by level, below"),
   // Claude Code keeps a warning on screen, in the conversation, until the
@@ -95,6 +98,8 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "attachment:environment": dropped(MODEL_CONTEXT),
   "attachment:file": dropped("an @-mentioned file's contents; the mention itself is in the person's message"),
   "attachment:hook_system_message": dropped("a hook's message to the model"),
+  "attachment:hook_additional_context": dropped("context a hook added for the model"),
+  "attachment:hook_success": dropped("a hook's success record, for the model"),
   "attachment:instructions": dropped(MODEL_CONTEXT),
   "attachment:invoked_skills": dropped("skill instructions loaded for the model"),
   "attachment:mcp_instructions_delta": dropped(MODEL_CONTEXT),
@@ -165,6 +170,11 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "tool:PushNotification": shown("a step"),
   "tool:SendUserFile": shown("a step with its file"),
   "tool:SendFeedback": shown("a step"),
+  "tool:ScheduleWakeup": shown("a step; each run it schedules is a system note"),
+  "tool:TaskOutput": shown("a step"),
+  "tool:DesignSync": shown("a step"),
+  "tool:ArtifactData": shown("a step"),
+  "tool:computer": shown("a step"),
   "tool:mcp__*": shown("an MCP call, a step"),
 };
 

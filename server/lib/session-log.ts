@@ -45,7 +45,7 @@ export const claudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || join(homed
 const MAX_RESULT_CHARS = 2_000;
 
 /** The `system` subtypes whose top-level `content` is real, user-visible text. */
-const SYSTEM_NOTE_SUBTYPES = new Set(["away_summary", "model_refusal_fallback"]);
+const SYSTEM_NOTE_SUBTYPES = new Set(["away_summary", "model_refusal_fallback", "model_consent_fallback", "scheduled_task_fire"]);
 const isWarning = (row: Record<string, unknown>) => row.subtype === "informational" && row.level === "warning";
 
 /** `Block` is the local name for the contract's `LogBlock`. */
@@ -595,6 +595,10 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     //   - away_summary: Claude Code recounting what it did while you were gone.
     //   - model_refusal_fallback: a safeguard flagged a message and switched
     //     models mid-session; its `content` explains the switch the user saw.
+    //     model_consent_fallback is the same switch, made with consent.
+    //   - scheduled_task_fire: "Running scheduled task (…)", which Screen keeps
+    //     above each /loop or cron run; the run's prompt is a meta row, drawn
+    //     on neither (measured on 2.1.304, 20 October 2026).
     // (measured across the real transcripts: 82 and 2.) And an `informational`
     // row at level "warning", which Claude Code leaves in the conversation
     // (reader-parity, 2.1.301); its notices stay dropped, as unmeasured.
