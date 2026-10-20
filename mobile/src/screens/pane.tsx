@@ -1771,7 +1771,11 @@ const Message = memo(function Message({
   return (
     <View testID={`message-${message.id}`} style={[styles.msg, mine && styles.msgYou, system && styles.msgSystem]}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+        {/* flex: 1 gives the wrapping header a definite width. Sized to its
+            content, Yoga rounded "YOU" and its time a fraction past the line
+            and put the time on a second line under "YOU", in some messages
+            and not others (an Antigravity reply on iOS 27, 20 October 2026). */}
+        <View style={{ flex: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         {message.showHeader && <>
           <UiText style={[styles.who, { color: agentColor }, mine && styles.whoYou, system && styles.whoSystem]}>
             {mine ? "YOU" : system ? "SYSTEM" : "AGENT"}
