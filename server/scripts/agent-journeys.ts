@@ -10,10 +10,11 @@
  * message goes in through `submitPrompt`, and once the reply is in the
  * transcript the run checks, every 5 s for a minute, that Reader finds the
  * conversation, that its page holds the reply, that the agent list's preview
- * does, and that Read agrees with Screen. An agent Shahi started is then asked
- * to run a command: if it asks first, the question must be one the phone can
- * answer (a card with a yes, as the poller would offer it), the answer is given
- * through `answerPrompt`, and the command must run. Exits 1 if any journey fails.
+ * does, and that Read agrees with Screen. Each agent is then asked to run a
+ * command: if it asks first, the question must be one the phone can answer (a
+ * card with a yes, as the poller would offer it) while Reader still finds the
+ * conversation, the answer is given through `answerPrompt`, and the command
+ * must run. Exits 1 if any journey fails.
  * With `--out`, a journey that fails on a screen writes that screen there, for
  * review; nothing else in the run prints or keeps what the panes showed.
  *
@@ -237,6 +238,10 @@ async function permission(kind: Kind, paneId: string, folder: string, token: str
       const yes = parsed.options.find((option) => /^(yes|allow|approve|accept|run)\b/i.test(option.label) && !/always|don.t ask|session|all\b/i.test(option.label));
       if (!yes) return [`asked "${parsed.question}" with no plain yes among ${parsed.options.length} choices${keep(`${kind}-permission`, screen)}`];
       if (++asked > 3) return [`asked again after ${asked - 1} answers${keep(`${kind}-permission`, screen)}`];
+      // The conversation must stay readable while it asks: Codex 0.163 puts
+      // "[ ! ] Action Required" in its title then, and Reader, which names a
+      // hand-started Codex's thread from that title, lost it until answered.
+      if (!(await look(paneId, token)).found) return [`Reader lost the conversation while the agent asked (${await signals(paneId, token, folder)})`];
       await answerPrompt(rpc as never, paneId, { index: yes.index, label: yes.label, question: parsed.question, context: parsed.context });
       continue;
     }
@@ -274,8 +279,9 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
         else if (!again.preview) failures.push(`the agent list showed no preview after ${Math.round((STEADY_MS - (end - Date.now())) / 1000)} s`);
         else if (again.parity) failures.push(`Read and Screen disagree: ${again.parity}`);
       }
-      // The mode Shahi started it in is known (Ask), so whether it asks is too.
-      if (failures.length === 0 && launch === "shahi") failures.push(...(await permission(kind, paneId, folderOf(kind, launch), token)));
+      // Started by hand it runs in the person's own mode, which may never ask
+      // (Codex in YOLO mode on this Mac); the command must run either way.
+      if (failures.length === 0) failures.push(...(await permission(kind, paneId, folderOf(kind, launch), token)));
     }
   } finally {
     // Two Ctrl-C leave most agents; the tab goes with whatever is left.
@@ -309,6 +315,9 @@ function cleanUp(): void {
 // killed that way once left its herdr session and agents behind.
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => { cleanUp(); process.exit(1); });
 
+/** What an interactive shell, the kind herdr starts in a pane, prints for `script`. */
+const inShell = (script: string) => Bun.spawnSync([process.env.SHELL || "/bin/bash", "-ic", script], { env, stdin: "ignore", stderr: "ignore", timeout: 20_000 }).stdout.toString().trim();
+
 let failed = 0;
 try {
   let pong!: { version: string; protocol: number };
@@ -324,8 +333,12 @@ try {
   console.log(`${gate.state === "connected" ? "ok  " : "FAIL"}    ${gateLabel}${gate.state === "connected" ? "" : `\n        ${gate.state}: ${gate.message}`}`);
   const { workspace } = await rpc("workspace.create", { cwd: runDir, label: "journeys", focus: false });
   for (const kind of kinds) {
-    if (!Bun.which(agentCommand(kind), { PATH: env.PATH })) { console.log(`skip    ${kind}: not installed`); continue; }
-    const version = Bun.spawnSync([agentCommand(kind), "--version"], { env }).stdout.toString().trim().split("\n")[0];
+    // Asked of the shell a pane runs, as discovery does: a profile that puts
+    // ~/.local/bin first runs another copy than this process's PATH names,
+    // and the label once said "agy 1.4.2" over journeys that ran 1.2.15.
+    const command = agentCommand(kind);
+    if (!inShell(`command -v ${command}`)) { console.log(`skip    ${kind}: not installed`); continue; }
+    const version = inShell(`${command} --version 2>/dev/null`).split("\n")[0];
     for (const launch of launches) {
       const label = `${kind} (${version}) started ${launch === "shahi" ? "by Shahi" : "by hand"}`;
       let failures: string[];
