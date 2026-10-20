@@ -237,6 +237,20 @@ the same origin. The PWA ships no third-party scripts, keeps marketing pages
 script-free, and restricts executable content with CSP. IndexedDB persistence
 is explicit and intended only for a trusted personal browser profile.
 
+## Verified deployment — 20 October 2026, the installer on herdr 0.9.5
+
+Published the site and hosted client from a clean checkout of `524ef53`
+(computer release 0.3.33; CI run 39366533860 green on that commit) as
+Cloudflare version `4bd61387-92e1-4fb3-a9b7-889b40ecff06`. It replaced
+`95b9f313-d818-4bc3-b71a-e8fefa679359`, the version to roll back to. `/`,
+`/privacy`, `/pwa/`, `/pwa/sw.js` and `/install` answered 200, `/install` as
+`text/plain`; the live `/install`, service worker and homepage were
+byte-identical to the build. What changed: the one-line installer installs
+herdr 0.9.5 (with its four checksums) instead of 0.9.3, which a fresh Ubuntu
+VM had been given that morning. The hosted client's sources were unchanged
+since 13 October; its bundle differs only by the embedded release id, which
+renames its chunks. No relay deployment.
+
 ## Verified deployment — 13 October 2026, the night before the public launch
 
 Published the site and hosted client from a clean checkout of `a31aaa6` (CI
