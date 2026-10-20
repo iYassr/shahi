@@ -31,10 +31,10 @@
 </p>
 
 <p align="center">
-  <img src="site/public/feature-previews/08-permission.png" width="200" alt="Shahi's agent list on iPhone: a Claude Code edit waits for approval, with Yes and No as buttons">
-  <img src="site/public/feature-previews/02-reader.png" width="200" alt="A Claude Code conversation in Reader, with quick replies above the composer">
-  <img src="site/public/feature-previews/03-new-agent.png" width="200" alt="Starting a new agent: Claude, Codex, Cursor, OpenCode or Antigravity, and an approval mode">
-  <img src="site/public/feature-previews/07-changes.png" width="200" alt="The Changes tab listing the repository's uncommitted files">
+  <img src="site/public/feature-previews/08-permission.png" width="186" alt="Shahi's agent list on iPhone: a Claude Code edit waits for approval, with Yes and No as buttons">
+  <img src="site/public/feature-previews/02-reader.png" width="186" alt="A Claude Code conversation in Reader, with quick replies above the composer">
+  <img src="site/public/feature-previews/03-new-agent.png" width="186" alt="Starting a new agent: Claude, Codex, Cursor, OpenCode or Antigravity, and an approval mode">
+  <img src="site/public/feature-previews/07-changes.png" width="186" alt="The Changes tab listing the repository's uncommitted files">
 </p>
 <p align="center"><sub>The Shahi iPhone app 1.1 with an example project.</sub></p>
 
@@ -81,7 +81,7 @@ terminal is still one tap away, on the Screen tab.
   drew, with the Esc, Tab, arrow and Ctrl-C keys your phone keyboard lacks.
 - **Review what changed.** The Changes tab lists the uncommitted Git changes
   in the agent's repository, with read-only diffs. Open text files, images and
-  PDFs from the conversation, and attach files of up to 32 MiB.
+  PDFs from the conversation, and attach files of up to 32&nbsp;MiB.
 - **Know when you're needed.** The Inbox gathers questions and finished work.
   Notifications tell you when an agent is waiting; on an iPhone paired through
   the relay, they show its question and answers, encrypted end to end.
@@ -103,11 +103,11 @@ terminal is still one tap away, on the Screen tab.
 
 | Agent | What Reader shows |
 | --- | --- |
-| <img src="site/public/agents/claude.svg" alt="" width="24" height="24"> **Claude Code** | Messages, thinking, tools and results, subagents, task lists, questions and images. |
-| <img src="site/public/agents/codex.svg" alt="" width="24" height="24"> **Codex** | Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played. |
-| <img src="site/public/agents/cursor.svg" alt="" width="24" height="24"> **Cursor CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
-| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24"> **OpenCode** | Messages, thinking, tools and results, edits, questions, files, images and undo. |
-| <img src="site/public/agents/agy.svg" alt="" width="24" height="24"> **Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a single recorded call. |
+| <img src="site/public/agents/claude.svg" alt="" width="24" height="24">&nbsp;**Claude&nbsp;Code** | Messages, thinking, tools and results, subagents, task lists, questions and images. |
+| <img src="site/public/agents/codex.svg" alt="" width="24" height="24">&nbsp;**Codex** | Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played. |
+| <img src="site/public/agents/cursor.svg" alt="" width="24" height="24">&nbsp;**Cursor&nbsp;CLI** | Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes. |
+| <img src="site/public/agents/opencode.svg" alt="" width="24" height="24">&nbsp;**OpenCode** | Messages, thinking, tools and results, edits, questions, files, images and undo. |
+| <img src="site/public/agents/agy.svg" alt="" width="24" height="24">&nbsp;**Antigravity** | Messages, thinking, tools, files and questions. Results are paired only for a single recorded call. |
 
 Reader shows the exact session each agent reports through herdr's
 integration for it, which Shahi installs and keeps up to date, or the one
@@ -190,16 +190,16 @@ read your conversations, files or commands.
 ```mermaid
 flowchart LR
   subgraph Device["Your phone or browser"]
-    App["Shahi<br/>Encrypts and decrypts"]
+    App["Shahi app<br/>Encrypts and decrypts"]
   end
   Relay["Shahi relay on Cloudflare<br/>Forwards encrypted payloads<br/>Can observe connection metadata"]
   subgraph Computer["Your computer or server"]
     Service["Shahi local service<br/>Encrypts and decrypts"]
     Work["herdr<br/>Your existing agents and files"]
-    Service <--> Work
   end
-  App <-->|"Outbound WSS connection<br/>Encrypted application data"| Relay
-  Service <-->|"Outbound WSS connection<br/>Encrypted application data"| Relay
+  App <-->|"Outbound WSS from your phone<br/>Encrypted application data"| Relay
+  Relay <-->|"Outbound WSS from your computer<br/>Encrypted application data"| Service
+  Service <--> Work
 ```
 
 The default relay is `relay.getshahi.dev`, and you can
