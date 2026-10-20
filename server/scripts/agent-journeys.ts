@@ -2,14 +2,20 @@
  * Starts real agents the two ways people start them and checks the phone sees
  * each conversation, through the functions its routes call:
  *
- *   bun run server/scripts/agent-journeys.ts [claude] [codex] [shahi] [hand]
+ *   bun run server/scripts/agent-journeys.ts [claude] [codex] [cursor] [opencode] [agy]
+ *     [shahi] [hand] [--out <dir>]
  *
  * For each installed agent: started by Shahi (`startAgentInTab`, as New agent
  * does) and started by hand (its plain command typed into a shell). A short
  * message goes in through `submitPrompt`, and once the reply is in the
  * transcript the run checks, every 5 s for a minute, that Reader finds the
  * conversation, that its page holds the reply, that the agent list's preview
- * does, and that Read agrees with Screen. Exits 1 if any journey fails.
+ * does, and that Read agrees with Screen. An agent Shahi started is then asked
+ * to run a command: if it asks first, the question must be one the phone can
+ * answer (a card with a yes, as the poller would offer it), the answer is given
+ * through `answerPrompt`, and the command must run. Exits 1 if any journey fails.
+ * With `--out`, a journey that fails on a screen writes that screen there, for
+ * review; nothing else in the run prints or keeps what the panes showed.
  *
  * Why it exists: each Reader failure of October 2026 passed every test. Codex
  * 0.160 started by hand reported no session and held no file open (TestFlight
@@ -23,11 +29,16 @@
  * signed in as this computer's user, so each journey costs one short reply on
  * that account. They work in a folder of their own under /tmp/shahi-journeys,
  * a scratch git repository whose trust question is answered here. Claude's
- * transcripts for that folder are removed after the run; Codex's threads stay
- * in its history under that folder. Nothing prints conversation text: the
- * reply is a token, checked by comparison only.
+ * transcripts for that folder are removed after the run; the other agents'
+ * conversations stay in their histories under that folder. Nothing prints
+ * conversation text: the reply is a token, checked by comparison only.
+ *
+ * Cursor, OpenCode and Antigravity were added after their own updates had
+ * gone untested for weeks (October 2026): Antigravity 1.4.1 redrew the edit
+ * approval its card is matched against, and only Claude and Codex ran here.
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { agentCommand } from "@shahi/shared";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startAgentInTab } from "../lib/agents";
@@ -38,13 +49,18 @@ import { HerdrClient } from "../lib/herdr-client";
 import { openReadOnly } from "../lib/foreign-sqlite";
 import { submitPrompt, promptTarget } from "../lib/prompt";
 import { parsePrompt } from "../lib/prompt-parser";
+import { providerIsWaiting } from "../lib/provider-prompts";
 import { compare, disagreement } from "../lib/reader-parity";
 import { SessionStore } from "../lib/state";
 
-type Kind = "claude" | "codex";
+const KINDS = ["claude", "codex", "cursor", "opencode", "agy"] as const;
+type Kind = (typeof KINDS)[number];
 type Launch = "shahi" | "hand";
-const argv = new Set(process.argv.slice(2));
-const kinds = (["claude", "codex"] as Kind[]).filter((kind) => (!argv.has("claude") && !argv.has("codex")) || argv.has(kind));
+const args = process.argv.slice(2);
+const outAt = args.indexOf("--out");
+const out = outAt >= 0 ? args.splice(outAt, 2)[1] : undefined;
+const argv = new Set(args);
+const kinds = KINDS.filter((kind) => !KINDS.some((k) => argv.has(k)) || argv.has(kind));
 const launches = (["shahi", "hand"] as Launch[]).filter((launch) => (!argv.has("shahi") && !argv.has("hand")) || argv.has(launch));
 const STEADY_MS = 60_000;
 // One journey's worst case is about seven minutes; one that runs past ten is
@@ -59,6 +75,17 @@ const xdg = join(root, "xdg");
 const session = `shahi-journeys-${root.slice(-6).toLowerCase().replace(/[^a-z0-9]/g, "x")}`;
 const env = Object.fromEntries(Object.entries({ ...process.env, XDG_CONFIG_HOME: xdg })
   .filter(([key]) => !/^(CLAUDE|HERDR|AI_AGENT|CODEX)/.test(key))) as Record<string, string>;
+// The panes inherit that XDG_CONFIG_HOME, and OpenCode and Cursor keep their
+// own configuration there, herdr's integrations included: an OpenCode with an
+// empty one loaded no session reporter and never named its conversation, so
+// the journey failed on something no real computer has (20 October 2026).
+// They get theirs back; herdr keeps the scratch one, so no plugin of the
+// person's runs here.
+const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+mkdirSync(xdg);
+for (const name of ["opencode", "cursor"]) {
+  if (existsSync(join(configHome, name))) symlinkSync(join(configHome, name), join(xdg, name));
+}
 
 // One repository for every run, so its trust is asked once rather than written
 // again for each run's folder; a folder per run inside it, so Codex never sees
@@ -102,7 +129,13 @@ async function ready(paneId: string): Promise<void> {
       answered++;
       continue;
     }
-    if (now === "idle" || now === "done") return;
+    if (now === "idle" || now === "done") {
+      // herdr calls an agent at its sign-in screen idle: Cursor 2026.10 with
+      // an expired login drew "Press any key to log in..." and the journey
+      // went on to type into it (ubuntu, 20 October 2026).
+      if (/press any key to (log|sign) ?in/i.test(await visible(paneId))) throw new Error("is not signed in on this computer, which needs a person");
+      return;
+    }
   }
   throw new Error(`was not ready within 2 minutes (herdr says ${await status(paneId)})`);
 }
@@ -116,13 +149,13 @@ async function start(kind: Kind, launch: Launch, workspaceId: string): Promise<s
   }
   const { root_pane: { pane_id: paneId } } = await rpc("tab.create", { workspace_id: workspaceId, label: `${kind}-hand`, cwd, focus: false });
   await Bun.sleep(2_000); // the shell's first prompt
-  await rpc("pane.send_text", { pane_id: paneId, text: kind });
+  await rpc("pane.send_text", { pane_id: paneId, text: agentCommand(kind) });
   await Bun.sleep(200);
   await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
   return paneId;
 }
 
-interface Look { found: boolean; reply: boolean; preview: boolean; parity: string | null }
+interface Look { found: boolean; reply: boolean; preview: boolean; parity: string | null; last?: string }
 async function look(paneId: string, token: string): Promise<Look> {
   await store.resync();
   const pane = store.pane(paneId);
@@ -134,7 +167,10 @@ async function look(paneId: string, token: string): Promise<Look> {
   const shown = (await conversationSummary(pane, client)).preview ?? "";
   const preview = shown.includes(token) && !shown.includes(ASK);
   const parity = page ? disagreement(compare(await visible(paneId), pane.agent, page.log)) : "no transcript";
-  return { found: !!source, reply, preview, parity };
+  // Who spoke last, for a failure: a conversation ending in a system note is
+  // usually the agent's account or provider refusing ("Invalid credentials"
+  // from OpenCode on this Mac, October 2026), not Reader losing the reply.
+  return { found: !!source, reply, preview, parity, last: page?.log.messages.at(-1)?.role };
 }
 
 /** What Reader had to go on, for a failure: herdr's view and the title, never conversation text. */
@@ -159,6 +195,52 @@ async function signals(paneId: string, token: string, folder: string): Promise<s
   return facts.join("; ");
 }
 
+/** Keeps a screen a journey failed on, when asked to; never printed. */
+function keep(name: string, screen: string): string {
+  if (!out) return "";
+  mkdirSync(out, { recursive: true, mode: 0o700 });
+  const file = join(out, `${name}.ansi`);
+  writeFileSync(file, screen, { mode: 0o600 });
+  return ` (screen kept in ${file})`;
+}
+
+/**
+ * Asks the agent to run a command, and answers its question as the phone
+ * would: only once the poller would offer the card, and only with a plain
+ * yes for this one command. A blocked agent whose screen holds no menu the
+ * parser knows is the failure this exists for: the phone would show only the
+ * terminal, with nothing to tap.
+ */
+async function permission(kind: Kind, paneId: string, folder: string, token: string): Promise<string[]> {
+  const file = join(folder, `${token}.txt`);
+  const target = await promptTarget(rpc as never, paneId, store.agent(paneId));
+  await submitPrompt(rpc as never, target, `Run the shell command \`touch ${token}.txt\` in the current folder, then reply with the single word done.`);
+  const deadline = Date.now() + 180_000;
+  let asked = 0;
+  let unrecognisedSince = 0;
+  while (Date.now() < deadline) {
+    await Bun.sleep(1_500);
+    if (existsSync(file)) return [];
+    const screen = (await rpc("pane.read", { pane_id: paneId, source: "visible", format: "ansi", strip_ansi: false })).read.text as string;
+    const now = await status(paneId);
+    const parsed = parsePrompt(screen);
+    const offered = parsed !== null && (now !== "working" || providerIsWaiting(kind, screen, parsed));
+    if (offered) {
+      unrecognisedSince = 0;
+      const yes = parsed.options.find((option) => /^(yes|allow|approve|accept|run)\b/i.test(option.label) && !/always|don.t ask|session|all\b/i.test(option.label));
+      if (!yes) return [`asked "${parsed.question}" with no plain yes among ${parsed.options.length} choices${keep(`${kind}-permission`, screen)}`];
+      if (++asked > 3) return [`asked again after ${asked - 1} answers${keep(`${kind}-permission`, screen)}`];
+      await answerPrompt(rpc as never, paneId, { index: yes.index, label: yes.label, question: parsed.question, context: parsed.context });
+      continue;
+    }
+    if (parsed === null && now === "blocked") {
+      unrecognisedSince ||= Date.now();
+      if (Date.now() - unrecognisedSince > 6_000) return [`waits (herdr: blocked) on a screen with no menu Shahi recognises${keep(`${kind}-permission`, screen)}`];
+    } else unrecognisedSince = 0;
+  }
+  return [`the command did not run within 3 minutes (asked ${asked} time(s); herdr says ${await status(paneId)})`];
+}
+
 async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise<string[]> {
   const failures: string[] = [];
   const token = `shahi-${kind}-${launch}-${nonce}`;
@@ -172,7 +254,7 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
     const deadline = Date.now() + 180_000;
     let seen = await look(paneId, token);
     while (!seen.reply && Date.now() < deadline) { await Bun.sleep(3_000); seen = await look(paneId, token); }
-    if (!seen.reply) failures.push(`${seen.found ? "Reader found a conversation without the reply" : "Reader found no conversation"} (${await signals(paneId, token, folderOf(kind, launch))})`);
+    if (!seen.reply) failures.push(`${seen.found ? `Reader found a conversation without the reply, ending in a ${seen.last === "system" ? "system note (the agent's account or provider may have refused)" : `${seen.last ?? "missing"} message`}` : "Reader found no conversation"} (${await signals(paneId, token, folderOf(kind, launch))})`);
     else {
       // Then a minute of looking again: the macOS index failure came and went.
       for (const end = Date.now() + STEADY_MS; Date.now() < end && failures.length === 0; await Bun.sleep(5_000)) {
@@ -182,9 +264,11 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
         else if (!again.preview) failures.push(`the agent list showed no preview after ${Math.round((STEADY_MS - (end - Date.now())) / 1000)} s`);
         else if (again.parity) failures.push(`Read and Screen disagree: ${again.parity}`);
       }
+      // The mode Shahi started it in is known (Ask), so whether it asks is too.
+      if (failures.length === 0 && launch === "shahi") failures.push(...(await permission(kind, paneId, folderOf(kind, launch), token)));
     }
   } finally {
-    // Two Ctrl-C leave either agent; the tab goes with whatever is left.
+    // Two Ctrl-C leave most agents; the tab goes with whatever is left.
     for (let i = 0; i < 2; i++) { await rpc("pane.send_keys", { pane_id: paneId, keys: ["C-c"] }).catch(() => {}); await Bun.sleep(600); }
   }
   return failures;
@@ -230,8 +314,8 @@ try {
   console.log(`${gate.state === "connected" ? "ok  " : "FAIL"}    ${gateLabel}${gate.state === "connected" ? "" : `\n        ${gate.state}: ${gate.message}`}`);
   const { workspace } = await rpc("workspace.create", { cwd: runDir, label: "journeys", focus: false });
   for (const kind of kinds) {
-    if (!Bun.which(kind, { PATH: env.PATH })) { console.log(`skip    ${kind}: not installed`); continue; }
-    const version = Bun.spawnSync([kind, "--version"], { env }).stdout.toString().trim().split("\n")[0];
+    if (!Bun.which(agentCommand(kind), { PATH: env.PATH })) { console.log(`skip    ${kind}: not installed`); continue; }
+    const version = Bun.spawnSync([agentCommand(kind), "--version"], { env }).stdout.toString().trim().split("\n")[0];
     for (const launch of launches) {
       const label = `${kind} (${version}) started ${launch === "shahi" ? "by Shahi" : "by hand"}`;
       let failures: string[];
