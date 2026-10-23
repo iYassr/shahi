@@ -133,6 +133,18 @@ open. It navigates by the app's own links (`shahi://computers`,
 follow the interface language. The other classes sign out of every saved
 computer, so `run-phone.sh` refuses to run them on a phone.
 
+`SHAHI_PHONE_TOUR=6` adds `testTourOfRealConversationsReadOnly`: on every
+saved computer the phone reaches, up to that many agent rows are opened and
+looked at without writing anything, which only works with the owner's leave
+to read their sessions. It times Read's first message, scrolls back and
+follows the Latest pill home, checks whether Screen is live and whether a
+swipe moves it, opens Changes, and puts each pane back on the view it had.
+It taps only rows, the view switches, Latest and Back; a waiting agent is a
+card of answer buttons with no `row-` id, so it is never opened. Its "tour
+report" attachment lists every pane. Its first run (23 October 2026, 13 panes
+on three computers) found the owner's Codex pane showing a journey's test
+thread; see 2902311.
+
 The first run after a TestFlight install meets TestFlight's "Share Feedback"
 welcome, drawn over the app by StoreKit's service; it takes every tap until
 dismissed, and the test dismisses it. The result bundle holds the four

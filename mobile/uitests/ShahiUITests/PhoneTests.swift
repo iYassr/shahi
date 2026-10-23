@@ -93,6 +93,136 @@ final class PhoneTests: XCTestCase {
         XCTAssertNotEqual(across, later, "swiping sideways did not move the Screen")
     }
 
+    /// A read-only tour of the real conversations on every saved computer the
+    /// phone can reach, at most SHAHI_PHONE_TOUR panes each: Read (time to the
+    /// first message, scrolling back, the Latest pill), Screen (shown, live,
+    /// moved by a swipe) and Changes, with screenshots, and a report of what
+    /// each showed. The owner allowed reading their sessions (23 October
+    /// 2026); nothing here may write to one. It taps only rows, the view
+    /// switches, Latest and Back: a waiting agent is drawn as a card of answer
+    /// buttons with no `row-` id, so it is never opened, and swipes are drags,
+    /// which a button does not take as a press. Each pane is left on the view
+    /// it had, and the computer that was open is reopened at the end.
+    func testTourOfRealConversationsReadOnly() throws {
+        let limit = Int(try required("SHAHI_PHONE_TOUR")) ?? 6
+        continueAfterFailure = true
+        let app = XCUIApplication(bundleIdentifier: "app.shahi.mobile")
+        app.activate()
+        dismissBetaWelcome()
+        let previous = openComputer(app)
+        let computers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'computer-'")).allElementsBoundByIndex
+            .map(\.identifier).filter { !$0.hasPrefix("computer-actions-") }
+        var report: [String] = []
+        addTeardownBlock {
+            let text = XCTAttachment(string: report.joined(separator: "\n"))
+            text.name = "tour report"
+            text.lifetime = .keepAlways
+            self.add(text)
+            guard let previous else { return }
+            self.showComputers(app)
+            let card = app.buttons[previous]
+            for _ in 0..<6 where !(card.exists && card.isHittable) { app.swipeDown() }
+            if card.exists && !card.isSelected { card.tap() }
+        }
+        for (c, computer) in computers.enumerated() {
+            showComputers(app)
+            let card = app.buttons[computer]
+            for _ in 0..<6 where !(card.exists && card.isHittable) { app.swipeUp() }
+            report.append("== computer \(c + 1): \(card.label)")
+            card.tap()
+            let agentsTab = app.tabBars.buttons["Agents"]
+            guard agentsTab.waitForExistence(timeout: 25) else { report.append("   its agents never showed"); continue }
+            agentsTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+            let rows = paneRows(app, limit)
+            if rows.isEmpty { report.append("   no agent rows (waiting agents are cards, and are skipped)") }
+            for (p, row) in rows.enumerated() { visit(app, row, "c\(c + 1)p\(p + 1)", &report) }
+        }
+    }
+
+    /// The ids of up to `limit` agent rows, in list order, pinned rows once.
+    private func paneRows(_ app: XCUIApplication, _ limit: Int) -> [String] {
+        var seen: [String] = []
+        for _ in 0..<3 {
+            for row in app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'row-'")).allElementsBoundByIndex {
+                let id = row.identifier.replacingOccurrences(of: "-pinned", with: "")
+                if !seen.contains(id) { seen.append(id) }
+            }
+            if seen.count >= limit { break }
+            app.swipeUp()
+        }
+        for _ in 0..<3 { app.swipeDown() }
+        return Array(seen.prefix(limit))
+    }
+
+    /// Opens one pane, looks at it read-only, and leaves it as it was found.
+    private func visit(_ app: XCUIApplication, _ row: String, _ tag: String, _ report: inout [String]) {
+        let element = app.buttons.matching(NSPredicate(format: "identifier == %@ OR identifier == %@", row, row + "-pinned")).firstMatch
+        for _ in 0..<8 where !(element.exists && element.isHittable) { app.swipeUp() }
+        guard element.exists && element.isHittable else { report.append("   \(tag) \(row): could not reach its row"); return }
+        let name = String(element.label.prefix(70))
+        let started = Date()
+        element.tap()
+        let readTab = app.buttons["view-read"], screenTab = app.buttons["view-screen"], changesTab = app.buttons["view-changes"]
+        guard readTab.waitForExistence(timeout: 20) else { report.append("   \(tag) \(name): the pane did not open"); app.settle(); return }
+        let openedOn = screenTab.isSelected ? screenTab : changesTab.exists && changesTab.isSelected ? changesTab : readTab
+        var line = "   \(tag) \(row.dropFirst(4)) \(name)\n      opened on \(openedOn === readTab ? "Read" : openedOn === screenTab ? "Screen" : "Changes")"
+
+        if !readTab.isSelected { readTab.tap() }
+        let messages = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'message-'"))
+        let shown = messages.firstMatch.waitForExistence(timeout: 25)
+        line += shown ? String(format: "; Read: first message after %.1fs, %ld drawn", Date().timeIntervalSince(started), messages.count) : "; Read: no message within 25s"
+        snap(app, "\(tag) read latest")
+        let list = app.descendants(matching: .any).matching(identifier: "conversation-list").firstMatch
+        if shown && list.exists {
+            list.swipeDown(); list.swipeDown(); list.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+            snap(app, "\(tag) read earlier")
+            let latest = app.buttons["go-to-latest"]
+            if latest.waitForExistence(timeout: 3) {
+                latest.tap()
+                let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: latest)
+                line += XCTWaiter.wait(for: [gone], timeout: 8) == .completed ? ", Latest pill shown and returned" : ", Latest pill STILL SHOWN after tapping it"
+            } else {
+                line += ", no Latest pill after scrolling back"
+            }
+        }
+
+        screenTab.tap()
+        let terminal = app.descendants(matching: .any).matching(identifier: "terminal-down").firstMatch
+        if terminal.waitForExistence(timeout: 15) {
+            Thread.sleep(forTimeInterval: 2)
+            let first = picture(terminal, "\(tag) screen")
+            Thread.sleep(forTimeInterval: 2)
+            let live = picture(terminal, nil) != first
+            terminal.swipeDown(); terminal.swipeDown()
+            Thread.sleep(forTimeInterval: 1.5)
+            let moved = picture(terminal, "\(tag) screen after swipes down") != first
+            terminal.swipeUp(); terminal.swipeUp(); terminal.swipeUp()
+            line += "; Screen: \(live ? "changing on its own" : "still"), swipe \(moved ? "changed it" : "changed nothing")"
+        } else {
+            line += "; Screen: no terminal within 15s"
+        }
+
+        if changesTab.exists {
+            changesTab.tap()
+            Thread.sleep(forTimeInterval: 4)
+            snap(app, "\(tag) changes")
+            line += "; Changes opened"
+        }
+        if !openedOn.isSelected { openedOn.tap() }
+        report.append(line)
+        app.settle()
+    }
+
+    /// A screenshot of the whole app, kept in the result under `name`.
+    private func snap(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     /// PNG bytes of the element, attached to the result under `name` if given.
     private func picture(_ element: XCUIElement, _ name: String?) -> Data {
         let shot = element.screenshot()

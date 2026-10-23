@@ -12,6 +12,7 @@
 #
 #   PHONE_UDID=<udid> mobile/uitests/run-phone.sh
 #   PHONE_UDID=<udid> SHAHI_PHONE_BUILD=46 mobile/uitests/run-phone.sh   # install that TestFlight build first
+#   PHONE_UDID=<udid> SHAHI_PHONE_TOUR=6 mobile/uitests/run-phone.sh     # also tour real conversations, read only
 #
 # The UDID is in `xcrun devicectl list devices`. The phone must be paired with
 # Xcode, in Developer Mode and unlocked for the run: iOS refuses UI tests on a
@@ -104,6 +105,8 @@ for arg in "$@"; do case "$arg" in -only-testing:*) only=() ;; esac; done
 # xcodebuild hands TEST_RUNNER_-prefixed variables to the test process.
 export TEST_RUNNER_SHAHI_PHONE_PAIR_CODE="$code" TEST_RUNNER_SHAHI_PHONE_PANE="$pane"
 export TEST_RUNNER_SHAHI_PHONE_BUILD="${SHAHI_PHONE_BUILD:-}"
+# A read-only tour of the phone's real computers, this many panes each; off when unset.
+export TEST_RUNNER_SHAHI_PHONE_TOUR="${SHAHI_PHONE_TOUR:-}"
 xcodegen generate --spec project.yml --quiet
 xcodebuild test \
   -project ShahiUITests.xcodeproj \
@@ -113,4 +116,4 @@ xcodebuild test \
   -collect-test-diagnostics never \
   "${signing[@]}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-6H24S2PL9V}" CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES \
-  "${only[@]}" "$@"
+  ${only[@]+"${only[@]}"} "$@"  # bash 3.2 calls an empty array unbound under set -u
