@@ -15,7 +15,7 @@ app and no share of the Expo project.
 
 ## Everything runs against the recording fixture
 
-Every test pairs with `e2e/hosted/server.ts`: an encrypted relay and a box in
+Every simulator test pairs with `e2e/hosted/server.ts`: an encrypted relay and a box in
 one process, whose writes end at the recording stub. Nothing reaches herdr, a
 real computer or a real transcript, and no camera, credentials or deployed
 relay is needed. From the repository root, keep both running while the tests
@@ -99,3 +99,44 @@ passes with or without the restore; it guards against a regression to unmounting
 
 These are **local** checks, run by hand the way `docs/verify-on-device.md` is;
 nothing in CI boots a simulator.
+
+## `PhoneTests`: a real iPhone
+
+What only glass can answer, on someone's own phone. `run-phone.sh` starts a
+disposable computer on the Mac: a named herdr session under a fresh
+`XDG_CONFIG_HOME`, its pane 89 rows by 171 columns (a client attached through
+a 200x90 pseudo-terminal, as a laptop running herdr full screen), and a
+sidecar from this checkout with its own secrets and port, reached through
+Shahi's relay. It mints a pairing code, runs only `PhoneTests` and removes
+everything when the run ends.
+
+```sh
+PHONE_UDID=<udid> mobile/uitests/run-phone.sh                       # the phone's current build
+PHONE_UDID=<udid> SHAHI_PHONE_BUILD=46 mobile/uitests/run-phone.sh  # install that TestFlight build first
+```
+
+The UDID is in `xcrun devicectl list devices`. The phone must be paired with
+Xcode (Wi-Fi is enough), in Developer Mode and **unlocked** for the whole run,
+since iOS refuses UI tests on a locked phone: Auto-Lock set to Never while it
+charges is the practical way. The Mac may be locked. The runner is signed
+through Xcode's account, or through an App Store Connect key when
+`ASC_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID` are set, which needs no
+account at all.
+
+The phone's own computers are kept. `testScreenScrollsATallTerminal` records
+which computer is open, pairs the disposable one, opens its Screen, swipes
+down, up and sideways, and fails if a swipe leaves the picture unchanged
+(after checking that two pictures with nothing done between them match). Its
+teardown revokes only the disposable computer and reopens the one that was
+open. It navigates by the app's own links (`shahi://computers`,
+`shahi://pane/<id>?computer=<id>&view=screen`) rather than by words, which
+follow the interface language. The other classes sign out of every saved
+computer, so `run-phone.sh` refuses to run them on a phone.
+
+The first run after a TestFlight install meets TestFlight's "Share Feedback"
+welcome, drawn over the app by StoreKit's service; it takes every tap until
+dismissed, and the test dismisses it. The result bundle holds the four
+screenshots (opened at the bottom, earlier rows, back at the bottom, the
+right of the rows) and a screen recording of the run, which shows whatever
+else the phone displayed; look at it accordingly.
+
