@@ -39,7 +39,7 @@
  * approval its card is matched against, and only Claude and Codex ran here.
  */
 import { agentCommand } from "@shahi/shared";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startAgentInTab } from "../lib/agents";
@@ -146,6 +146,33 @@ async function ready(paneId: string): Promise<void> {
     }
   }
   throw new Error(`was not ready within 2 minutes (herdr says ${await status(paneId)})`);
+}
+
+/**
+ * The herdr pane that owns the person's shared Codex daemon, if its herdr is
+ * still running. A Codex started by hand joins that daemon, which runs every
+ * thread's SessionStart hook with the herdr variables of the pane that
+ * started it (codex-cli 0.163, reproduced in a scratch session and CODEX_HOME
+ * on 23 October 2026: pane B's thread was reported as pane A's). On 17 October
+ * a hand-started journey's thread was reported as the person's spendings
+ * pane; herdr resumed it there after a restart, and Reader and Screen both
+ * showed the journey in place of the person's conversation. A daemon whose
+ * herdr has gone reports nowhere, so the journey runs then, and when no daemon
+ * runs at all it starts one under its own session, which ends with it.
+ */
+function liveCodexDaemonOwner(own: string): string | null {
+  const ps = Bun.spawnSync(["ps", "-axo", "pid=,command="]).stdout.toString();
+  for (const line of ps.split("\n")) {
+    const [pid, ...command] = line.trim().split(/\s+/);
+    if (!pid || !/codex/.test(command.join(" ")) || !command.includes("app-server")) continue;
+    const env = existsSync(`/proc/${pid}/environ`)
+      ? readFileSync(`/proc/${pid}/environ`, "utf8").split("\0")
+      : Bun.spawnSync(["ps", "eww", "-o", "command=", "-p", pid]).stdout.toString().split(/\s+/);
+    const socket = env.find((entry) => entry.startsWith("HERDR_SOCKET_PATH="))?.slice("HERDR_SOCKET_PATH=".length);
+    const pane = env.find((entry) => entry.startsWith("HERDR_PANE_ID="))?.slice("HERDR_PANE_ID=".length);
+    if (socket && pane && socket !== own && existsSync(socket)) return `${pane} (${socket})`;
+  }
+  return null;
 }
 
 async function start(kind: Kind, launch: Launch, workspaceId: string): Promise<string> {
@@ -341,6 +368,11 @@ try {
     const version = inShell(`${command} --version 2>/dev/null`).split("\n")[0];
     for (const launch of launches) {
       const label = `${kind} (${version}) started ${launch === "shahi" ? "by Shahi" : "by hand"}`;
+      const owner = kind === "codex" && launch === "hand" ? liveCodexDaemonOwner(join(xdg, "herdr", "sessions", session, "herdr.sock")) : null;
+      if (owner) {
+        console.log(`skip    ${label}\n        a shared Codex daemon belongs to herdr pane ${owner}, which would be told this journey's conversation is its own`);
+        continue;
+      }
       let failures: string[];
       try {
         failures = await Promise.race([
