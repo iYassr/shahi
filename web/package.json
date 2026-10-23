@@ -18,11 +18,11 @@
     "react-router-dom": "7.18.3"
   },
   "devDependencies": {
-    "@sentry/vite-plugin": "5.4.0",
+    "@sentry/vite-plugin": "11.8.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
-    "@vitejs/plugin-react": "6.1.1",
+    "@vitejs/plugin-react": "6.1.2",
     "typescript": "^7.0.2",
-    "vite": "8.2.4"
+    "vite": "8.3.4"
   }
 }
