@@ -57,6 +57,7 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "record:file-history-snapshot": dropped("checkpoint data for /rewind"),
   "record:frame-link": dropped(BOOKKEEPING),
   "record:last-prompt": dropped("a copy of the last prompt, already shown as its own message"),
+  "record:tools-used": dropped("the names of the tools a session has used (2.1.311), never drawn"),
   "record:mode": dropped("the composer's mode, drawn in the footer, not the conversation"),
   "record:permission-mode": dropped("the permission mode, drawn in the footer, not the conversation"),
   "record:pr-link": dropped("a pull request link drawn in the footer, not the conversation"),
