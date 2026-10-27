@@ -111,6 +111,8 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "attachment:read_truncation_notice": dropped(MODEL_CONTEXT),
   "attachment:remote_session_change": dropped(MODEL_CONTEXT),
   "attachment:session_context": dropped(MODEL_CONTEXT),
+  // Scheduled check-ins carried into a resumed or cleared session (2.1.304).
+  "attachment:session_cron_carry": dropped(BOOKKEEPING),
   "attachment:silent_turn_reminder": dropped(MODEL_CONTEXT),
   "attachment:skill_listing": dropped(MODEL_CONTEXT),
   "attachment:task_reminder": dropped("the model's copy of the task list, which Reader reads from the store"),
@@ -160,6 +162,7 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "tool:Skill": shown("a step"),
   "tool:SlashCommand": shown("a step"),
   "tool:ToolSearch": shown("a step"),
+  "tool:ReadNotifications": shown("a step"),
   "tool:TaskStop": shown("a step"),
   "tool:SendMessage": shown("a step"),
   "tool:ListAgents": shown("a step"),
@@ -227,6 +230,8 @@ export const CODEX_SHAPES: Record<string, Decision> = {
   "response:message": dropped("raw model input and output, including developer prompts; items carry the conversation"),
   "response:reasoning": dropped("raw reasoning; the Reasoning item carries it"),
   "response:agent_message": dropped("raw output; the AgentMessage item carries it"),
+  // Codex 0.163's tool definitions, sent as developer context (October 2026).
+  "response:additional_tools": dropped("the tools offered to the model, as developer context"),
   "response:function_call": shown("tools in Activity; request_user_input questions stay visible with their descriptions"),
   "response:custom_tool_call": shown("a step"),
   "response:function_call_output": shown("joined to its call"),
