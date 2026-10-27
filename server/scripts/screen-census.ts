@@ -87,7 +87,7 @@ const ALL: Situation[] = [
     return claudeHome(home, project, {});
   } },
   { id: "claude-ready", kind: "claude", setup: (home, project) => claudeHome(home, project, {}) },
-  { id: "codex-sign-in", kind: "codex", setup: (home, project) => codexHome(home, project, "", { signedIn: false }) },
+  { id: "codex-sign-in", kind: "codex", alternateFixtures: ["codex-0.163-sign-in"], setup: (home, project) => codexHome(home, project, "", { signedIn: false }) },
   // Codex 0.160 skips trust outside a project. Use a real scratch repository
   // so this case still exercises folder consent rather than its composer.
   { id: "codex-trust", kind: "codex", setup: (home, project) => {

@@ -40,8 +40,8 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "claude-imports": { herdr: "blocked", agent: "claude", expect: { card: { question: "Allow external CLAUDE.md file imports?", answer: "cursor", labels: ["No, disable external imports", "Yes, allow external imports"] } } },
   "claude-settings-error": { herdr: "blocked", agent: "claude", expect: { card: { question: "Settings Error", answer: "digit", labels: ["Fix with Claude", "Exit and fix manually", "Continue without these settings"] } } },
   "claude-ready": { herdr: "idle", agent: "claude", expect: { ready: true } },
-  "codex-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Sign in with ChatGPT to use Codex as part of your paid plan or connect an API key for usage-based billing", answer: "digit", confirm: true,
-    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Provide your own API key"] } } },
+  "codex-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Choose how you want to use Codex.", answer: "digit", confirm: true,
+    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Use an OpenAI API key", "Use Amazon Bedrock"] } } },
   "codex-trust": { herdr: "idle", agent: "codex", expect: { card: { question: "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.", answer: "digit", confirm: true, labels: ["Trust and continue", "Quit"] } } },
   "codex-update": { herdr: "idle", agent: "codex", expect: { card: { question: "Update available · 0.157.1 → 0.159.3", answer: "digit", confirm: true,
     labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
@@ -69,6 +69,10 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "codex-0.162-migration": { herdr: "idle", agent: "codex", expect: { waits: true } },
   // On Linux the same notice writes the key as "^c" (0.163.0, ubuntu).
   "codex-0.163-migration-linux": { herdr: "idle", agent: "codex", expect: { waits: true } },
+  // Up to 0.163 sign-in offered three ways in, the last "Provide your own API key";
+  // 0.164.0 reworded the question and added Amazon Bedrock.
+  "codex-0.163-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Sign in with ChatGPT to use Codex as part of your paid plan or connect an API key for usage-based billing", answer: "digit", confirm: true,
+    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Provide your own API key"] } } },
   "codex-0.160-update": { herdr: "unknown", agent: "codex", expect: { card: { question: "Update available · 0.160.0 → 9.0.0", answer: "digit", confirm: true,
     labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
 };

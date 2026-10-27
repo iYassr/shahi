@@ -89,6 +89,11 @@ the update offer offline. No update choice was selected.
 These two captures normalize line endings and trailing empty terminal rows;
 their text, ANSI color spans and menu alignment are retained.
 
+`codex-sign-in` was captured again from codex 0.164.0 (installed with npm into
+a scratch folder) under herdr 0.9.5 on 27 October 2026, when the census found
+its question reworded and a fourth way in; the 0.157.1 capture it replaced is
+`codex-0.163-sign-in`, the last release that drew it.
+
 ## Codex 0.160 question panels
 
 The `blocked__codex-user-input-0.160-*__text.txt` files were captured on
