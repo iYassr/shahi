@@ -615,6 +615,14 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
     // continued…" handoff that rendered as a message the person typed and took
     // over the list preview (review finding, September 2026; 4 rows in the
     // local corpus). The boundary itself, `compact_boundary`, is already chrome.
+    // A background subagent's report, which Claude Code 2.1.311 hands to the
+    // conversation as a message from that agent rather than in its notice.
+    // Written for the model and so `isMeta`, but it is how the subagent ends.
+    const handback = handbackOf(row);
+    if (handback) {
+      messages.push({ id, role: "system", at, blocks: [{ kind: "text", text: `Report from ${handback.name}\n${handback.report}`, notice: { status: "completed", taskId: handback.taskId } }] });
+      continue;
+    }
     if (row.isMeta === true || row.isCompactSummary === true) continue;
 
     const blocks: LogBlock[] = [];
@@ -715,6 +723,23 @@ function contentOf(row: Record<string, unknown>): unknown {
 }
 
 /**
+ * A background subagent's final report, as Claude Code 2.1.311 delivers it:
+ * a user row from the agent (`origin: {kind: "peer", handback: true,
+ * senderTaskId, name, handbackReportText}`) whose content frames the report
+ * for the model. Measured 27 October 2026, a subagent waiting on a `sleep`
+ * of its own: Claude Code drew it running until this row arrived. A peer's
+ * other messages (teammates talking) stay dropped with every `isMeta` row.
+ */
+function handbackOf(row: Record<string, unknown>): { taskId: string; name: string; report: string } | undefined {
+  const origin = isRecord(row.origin) ? row.origin : undefined;
+  if (row.type !== "user" || origin?.kind !== "peer" || origin.handback !== true) return undefined;
+  const taskId = typeof origin.senderTaskId === "string" ? origin.senderTaskId : origin.from;
+  if (typeof taskId !== "string" || !/^[\w-]{1,200}$/.test(taskId) || typeof origin.handbackReportText !== "string") return undefined;
+  const name = typeof origin.name === "string" && origin.name.trim() ? origin.name.trim().slice(0, 100) : "a subagent";
+  return { taskId, name, report: origin.handbackReportText.trim() };
+}
+
+/**
  * A message the person typed while Claude was working. Claude Code does not
  * write it as a user row: it queues it and hands it to the model mid-turn as
  * an attachment, `{type: "queued_command", commandMode: "prompt", prompt}`,
@@ -770,12 +795,29 @@ export function renderUserText(raw: string): LogBlock | null {
     // person's words (10 of 125 queued reports in the October 2026 census),
     // and with no status it is not tied to a call whose state it would set.
     const toolUseId = inner("tool-use-id");
+    // Claude Code 2.1.311 reports a subagent that stopped to wait on background
+    // work of its own as `completed`, its note saying the agent may resume and
+    // "the result below may be interim", and one that messages will resume as
+    // completed too, saying it "will notify again". Its own panel kept both
+    // agents running, and Reader called them done (27 October 2026). Such a
+    // notice is only a note: tied to no call, so the subagent's row stays
+    // running until the report that ends it, and without a result that is a
+    // placeholder for that report.
+    const interim = /may be interim|will notify again/.test(`${inner("note") ?? ""}\n${summary ?? ""}`);
+    // Its final report then names only the agent's task id, and says the
+    // report itself "was delivered to you as a message": the hand-back row
+    // (`handbackOf`) carries it and ends the subagent's row, so this says
+    // nothing Claude Code draws.
+    if (text.startsWith("<task-notification>") && /report was delivered to you as a message/.test(result ?? "")) return null;
+    const taskId = inner("task-id");
+    const call = toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId }
+      : taskId && /^[\w-]{1,200}$/.test(taskId) ? { taskId } : {};
     const notice = text.startsWith("<task-notification>")
-      ? { status: status ?? "event", ...(status && toolUseId && /^[\w-]{1,200}$/.test(toolUseId) ? { toolUseId } : {}) }
+      ? interim ? { status: "event" } : { status: status ?? "event", ...(status ? call : {}) }
       : undefined;
     return {
       kind: "text",
-      text: [status ? `${headline} (${status})` : headline, result].filter(Boolean).join("\n"),
+      text: interim ? headline : [status ? `${headline} (${status})` : headline, result].filter(Boolean).join("\n"),
       ...(notice ? { notice } : {}),
     };
   }

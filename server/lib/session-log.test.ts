@@ -312,6 +312,34 @@ describe("machine-generated user records", () => {
     expect(messages[0]!.role).toBe("system");
   });
 
+  // Claude Code 2.1.311 drew both agents running in its panel while these said
+  // "completed", and Reader showed them done with "has not reported yet".
+  test("a subagent waiting on its own background work is a note, not its report", () => {
+    const waiting = userText([
+      "<task-notification>",
+      "<task-id>a82a6317c36451624</task-id>",
+      "<tool-use-id>toolu_017Q</tool-use-id>",
+      "<status>completed</status>",
+      '<summary>Agent "Sleeper two" is waiting on its own background work</summary>',
+      "<note>This agent stopped with background work of its own still running. It may resume on its own when that work completes or reports, and the same task-id notifies again if it does; the result below may be interim.</note>",
+      "<result>This agent has not reported yet: it is waiting on its own background work and will deliver its report through SubagentHandback when that finishes.\n</result>",
+      "</task-notification>",
+    ].join("\n"));
+    expect(waiting[0]).toMatchObject({ role: "system", blocks: [{ kind: "text", text: 'Agent "Sleeper two" is waiting on its own background work', notice: { status: "event" } }] });
+    expect((waiting[0]!.blocks[0] as { notice?: { toolUseId?: string } }).notice!.toolUseId).toBeUndefined();
+    // The final report keeps its call, and the note Claude Code puts on it then.
+    const finished = userText([
+      "<task-notification>",
+      "<tool-use-id>toolu_017Q</tool-use-id>",
+      "<status>completed</status>",
+      '<summary>Agent "Sleeper two" finished</summary>',
+      "<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>",
+      "<result>finished</result>",
+      "</task-notification>",
+    ].join("\n"));
+    expect(finished[0]!.blocks[0]).toMatchObject({ text: 'Agent "Sleeper two" finished (completed)\nfinished', notice: { status: "completed", toolUseId: "toolu_017Q" } });
+  });
+
   test("a report with no call id is still a system note, and prose quoting one is still the person", () => {
     const report = userText('<task-notification><task-id>k1</task-id><status>completed</status><summary>Monitor stopped</summary></task-notification>');
     expect(report[0]).toMatchObject({ role: "system", blocks: [{ notice: { status: "completed" } }] });

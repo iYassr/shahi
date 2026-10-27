@@ -20,6 +20,7 @@ import { withoutAgentStatus } from "./agent-titles";
 import { choiceHeld, chosenSession, parkedSession } from "./claude-choice";
 import { fitPage } from "./session-window";
 import { claudeTasks } from "./claude-tasks";
+import { withSubagentCalls } from "./claude-subagents";
 import type { TranscriptWatchSource } from "./transcript-watch";
 
 type Summary = { preview: string | null; lastMessageAt: number | null };
@@ -210,8 +211,12 @@ export async function transcriptPage(paneId: string, path: TranscriptSource, kin
     held.windows.set(key, cached);
     return cached;
   }
-  const read = await readTranscript(path, kind, window);
-  if (!read) return null;
+  const raw = await readTranscript(path, kind, window);
+  if (!raw) return null;
+  // A Claude subagent's last reports name its task, not its call
+  // (claude-subagents.ts). Codex reports are parsed the same way, so their
+  // pages are resolved too, which only drops the task id there.
+  const read = typeof path === "string" ? await withSubagentCalls(raw, path) : raw;
   // Claude's task list rides on the tail, the page every poll asks for; an
   // earlier page is history, and a list on it would be the current one anyway.
   const tasks = (kind ?? "claude") === "claude" && window.before === undefined && read.sessionId ? await claudeTasks(read.sessionId) : undefined;

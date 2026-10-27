@@ -344,6 +344,11 @@ export interface BackgroundNotice {
   toolUseId?: string;
   /** As Claude Code writes it: measured `completed`, `failed` and `killed`. */
   status: string;
+  /**
+   * The subagent's task id, on a report that names no call (Claude Code
+   * 2.1.311). Server side only: a page resolves it to `toolUseId` and drops it.
+   */
+  taskId?: string;
 }
 
 /**

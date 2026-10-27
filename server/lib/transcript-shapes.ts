@@ -82,6 +82,7 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "attachment:queued_command": shown("a message typed while Claude was working, delivered mid-turn, or a background task's report"),
   "queued:prompt": shown("the person's message, as they typed it"),
   "queued:task-notification": shown("a background task's report, folded into its subagent row"),
+  "origin:handback": shown("a background subagent's report, delivered as its message (2.1.311), folded into its row"),
   "attachment:agent_listing_delta": dropped(MODEL_CONTEXT),
   "attachment:auto_mode": dropped(MODEL_CONTEXT),
   "attachment:bash_output_audience_note": dropped(MODEL_CONTEXT),
@@ -246,6 +247,7 @@ export function claudeShapes(row: unknown): string[] {
   const keys = [`record:${String(row.type)}`];
   if (row.type === "system") keys.push(`system:${String(row.subtype)}`);
   if (row.type === "system" && row.subtype === "informational") keys.push(`informational:${String(row.level)}`);
+  if (row.type === "user" && isRecord(row.origin) && row.origin.handback === true) keys.push("origin:handback");
   if (row.type === "attachment" && isRecord(row.attachment)) {
     keys.push(`attachment:${String(row.attachment.type)}`);
     if (row.attachment.type === "queued_command") keys.push(`queued:${String(row.attachment.commandMode)}`);
