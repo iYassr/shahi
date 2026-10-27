@@ -158,9 +158,13 @@ async function ready(paneId: string): Promise<void> {
  * pane; herdr resumed it there after a restart, and Reader and Screen both
  * showed the journey in place of the person's conversation. A daemon whose
  * herdr has gone reports nowhere, so the journey runs then, and when no daemon
- * runs at all it starts one under its own session, which ends with it.
+ * runs at all it starts one under its own session, which ends with it. There
+ * is one daemon per CODEX_HOME, and the journey's Codex joins only the one of
+ * its own: a scratch daemon for another CODEX_HOME made it skip for nothing
+ * (27 October 2026).
  */
 function liveCodexDaemonOwner(own: string): string | null {
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
   const ps = Bun.spawnSync(["ps", "-axo", "pid=,command="]).stdout.toString();
   for (const line of ps.split("\n")) {
     const [pid, ...command] = line.trim().split(/\s+/);
@@ -170,6 +174,8 @@ function liveCodexDaemonOwner(own: string): string | null {
       : Bun.spawnSync(["ps", "eww", "-o", "command=", "-p", pid]).stdout.toString().split(/\s+/);
     const socket = env.find((entry) => entry.startsWith("HERDR_SOCKET_PATH="))?.slice("HERDR_SOCKET_PATH=".length);
     const pane = env.find((entry) => entry.startsWith("HERDR_PANE_ID="))?.slice("HERDR_PANE_ID=".length);
+    const home = env.find((entry) => entry.startsWith("CODEX_HOME="))?.slice("CODEX_HOME=".length) || join(homedir(), ".codex");
+    if (home !== codexHome) continue;
     if (socket && pane && socket !== own && existsSync(socket)) return `${pane} (${socket})`;
   }
   return null;
