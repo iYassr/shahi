@@ -7,7 +7,7 @@
  * and both are kept for exactly the panes that exist (`retainSummaries`).
  */
 import { stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import type { HerdrClient } from "./herdr-client";
 import type { PaneInfo } from "./herdr-schema";
 import { findCodexRollout, readCodexLog } from "./codex-log";
@@ -15,10 +15,10 @@ import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log";
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
 import { readOpenCodeV2Log } from "./opencode-v2-log";
-import { continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
+import { claudeConfigDir, continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
 import { withoutAgentStatus } from "./agent-titles";
-import { choiceHeld, chosenSession, parkedSession } from "./claude-choice";
+import { choiceHeld, chosenSession, paneClaudeDir, parkedSession } from "./claude-choice";
 import { fitPage } from "./session-window";
 import { claudeTasks } from "./claude-tasks";
 import { withSubagentCalls } from "./claude-subagents";
@@ -79,15 +79,34 @@ export function transcriptSourceFor(pane: PaneInfo, client?: HerdrClient): Promi
 }
 
 /**
+ * The configuration folder each pane's Claude transcript was found in, with
+ * that transcript. The task list lives in the same folder as the transcript
+ * (claude-tasks.ts), and the page is read by path, after the lookup that
+ * knew the folder; keeping it here spares the page a second herdr call.
+ */
+const claudeDirs = new Map<string, { path: string; dir: string }>();
+
+/**
  * The background job the pane's Claude parked its conversation in, which the
  * pane shows (claude-choice.ts, `parkedSession`); then Claude's reported
- * session; then the one a person chose for this process.
+ * session; then the one a person chose for this process. All of them are
+ * looked up in the folder the pane's Claude runs with (claude-config.ts).
  */
 async function claudeTranscriptFor(pane: PaneInfo, client: HerdrClient | undefined, id: string | null): Promise<string | null> {
+  const dir = await paneClaudeDir(client, pane.pane_id);
+  const projects = join(dir, "projects");
   const session = await parkedSession(client, pane) ?? id ?? await chosenSession(client, pane);
-  const path = session ? await findTranscript(session) : null;
-  return path ? continuedTranscript(path) : null;
+  const found = session ? await findTranscript(session, projects) : null;
+  const path = found ? await continuedTranscript(found, projects) : null;
+  if (path) claudeDirs.set(pane.pane_id, { path, dir });
+  return path;
 }
+
+/** The folder the pane's Claude transcript at `path` was found in, else the service's own. */
+const claudeDirFor = (paneId: string, path: TranscriptSource) => {
+  const held = claudeDirs.get(paneId);
+  return held && held.path === path ? held.dir : claudeConfigDir();
+};
 
 /** File-only compatibility for callers that need actual bytes, such as Codex images. */
 export async function transcriptPathFor(pane: PaneInfo, client?: HerdrClient): Promise<string | null> {
@@ -220,7 +239,7 @@ export async function transcriptPage(paneId: string, path: TranscriptSource, kin
   const read = typeof path === "string" ? await withSubagentCalls(raw, path) : raw;
   // Claude's task list rides on the tail, the page every poll asks for; an
   // earlier page is history, and a list on it would be the current one anyway.
-  const tasks = (kind ?? "claude") === "claude" && window.before === undefined && read.sessionId ? await claudeTasks(read.sessionId) : undefined;
+  const tasks = (kind ?? "claude") === "claude" && window.before === undefined && read.sessionId ? await claudeTasks(read.sessionId, claudeDirFor(paneId, path)) : undefined;
   // Bounded in bytes as well as messages, or one huge message in the window
   // is a 413 through the relay on every poll (`fitPage`). Before the ETag, so
   // the tag names what is sent.
@@ -242,7 +261,7 @@ export async function transcriptPage(paneId: string, path: TranscriptSource, kin
 /** Forgets the summaries, pages and transcript locations of panes that no longer exist. */
 export function retainSummaries(paneIds: Iterable<string>): void {
   const live = new Set(paneIds);
-  for (const cache of [summaries, pages, locations]) {
+  for (const cache of [summaries, pages, locations, claudeDirs]) {
     for (const paneId of cache.keys()) if (!live.has(paneId)) cache.delete(paneId);
   }
 }
