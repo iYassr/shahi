@@ -171,9 +171,12 @@ export function rolloutFromTitle(title: string | null | undefined, folder: strin
     let rows: { rollout_path: string; cwd: string | null }[];
     try {
       rows = db.query<{ rollout_path: string; cwd: string | null }, [string]>(
-        "SELECT rollout_path, cwd FROM threads WHERE name = ? AND archived = 0 LIMIT 50",
+        "SELECT rollout_path, cwd FROM threads WHERE name = ? AND archived = 0 LIMIT 51",
       ).all(name);
     } finally { db.close(); }
+    // The folder check canonicalises paths in JavaScript. A bounded SQL
+    // prefix cannot prove uniqueness: its next row may be another match.
+    if (rows.length > 50) return null;
     const named = rows.filter((row) => typeof row.cwd === "string" && realpathIfExists(row.cwd) === here);
     if (named.length !== 1) return null;
     const path = rolloutWithinSessions(named[0]!.rollout_path, sessionsDir);

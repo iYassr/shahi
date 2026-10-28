@@ -767,6 +767,23 @@ describe("a Codex conversation named by its pane's title", () => {
     expect(find("codex | sama-kb")).toBeNull();
     expect(find("Review and improve Fihris | sama-kb", join(root, "missing"))).toBeNull();
   });
+  test("a title lookup never treats a truncated set of same-name threads as unique", () => {
+    const crowded = join(root, "crowded.sqlite");
+    const many = new Database(crowded);
+    try {
+      many.run("CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, name TEXT, archived INTEGER)");
+      for (let i = 0; i < 50; i++) {
+        const id = `11111111-1111-4111-8111-${i.toString(16).padStart(12, "0")}`;
+        many.run("INSERT INTO threads VALUES (?, ?, ?, ?, 0)", [id, rollout(id), i === 0 ? project : other, "Repeated title"]);
+      }
+      // Fifty candidates are complete and still have one match. A duplicate
+      // in this same folder after that cap must never lend it the first log.
+      expect(rolloutFromTitle("Repeated title | sama-kb", project, crowded, sessions)).toEndWith("-11111111-1111-4111-8111-000000000000.jsonl");
+      const id = "11111111-1111-4111-8111-000000000050";
+      many.run("INSERT INTO threads VALUES (?, ?, ?, ?, 0)", [id, rollout(id), project, "Repeated title"]);
+      expect(rolloutFromTitle("Repeated title | sama-kb", project, crowded, sessions)).toBeNull();
+    } finally { many.close(); }
+  });
   test("a title that does not end with the pane's own folder, or has no folder, names nothing", () => {
     expect(find("Review and improve Fihris | elsewhere")).toBeNull();
     expect(find("Review and improve Fihris")).toBeNull();
