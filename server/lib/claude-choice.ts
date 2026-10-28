@@ -26,7 +26,8 @@ import type { HerdrClient } from "./herdr-client";
 import { agentSessionOf } from "./herdr-pane";
 import type { PaneInfo } from "./herdr-schema";
 import { realPath } from "./real-path";
-import { claudeConfigDir, findTranscript, normalise, parseLines, previewOf } from "./session-log";
+import { claudeConfigDirOf } from "./claude-config";
+import { findTranscript, normalise, parseLines, previewOf } from "./session-log";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_CHOICES = 20;
@@ -59,18 +60,35 @@ async function foreground(client: Rpc, paneId: string): Promise<Foreground[]> {
 const isClaude = (p: Foreground) =>
   p.name === "claude" || basename(p.argv0 ?? "") === "claude" || (p.argv ?? []).slice(0, 2).some((arg) => basename(arg) === "claude");
 
-const readRecord = async (...path: string[]) => JSON.parse(await readFile(join(claudeConfigDir(), ...path), "utf8")) as Record<string, unknown>;
+const readRecord = async (dir: string, ...path: string[]) => JSON.parse(await readFile(join(dir, ...path), "utf8")) as Record<string, unknown>;
+
+/**
+ * The pane's Claude process and the configuration folder it runs with
+ * (claude-config.ts). Every record and transcript of that Claude is in its
+ * folder, never in another account's. Throws when herdr does not answer.
+ */
+async function paneClaude(client: Rpc, paneId: string): Promise<{ pid: number; dir: string } | null> {
+  const process = (await foreground(client, paneId)).find(isClaude);
+  return process ? { pid: process.pid, dir: await claudeConfigDirOf(process.pid) } : null;
+}
+
+/** The configuration folder of the pane's Claude, else the service's own. */
+export async function paneClaudeDir(client: Rpc | undefined, paneId: string): Promise<string> {
+  let claude: { dir: string } | null = null;
+  try { claude = client ? await paneClaude(client, paneId) : null; } catch { /* herdr not answering */ }
+  return claude?.dir ?? await claudeConfigDirOf(null);
+}
 
 /**
  * The session Claude's own record names for a process: a hint, never a choice.
  * A process that parked its conversation as a background job keeps its old
  * `sessionId` and names the job in `parkedJobId` (see `parkedJob`).
  */
-async function recordedSession(pid: number): Promise<string | null> {
+async function recordedSession(dir: string, pid: number): Promise<string | null> {
   try {
-    const row = await readRecord("sessions", `${pid}.json`);
+    const row = await readRecord(dir, "sessions", `${pid}.json`);
     if (row.pid !== pid) return null;
-    if (row.parkedJobId !== undefined && row.parkedJobId !== null) return await parkedJob(row.parkedJobId);
+    if (row.parkedJobId !== undefined && row.parkedJobId !== null) return await parkedJob(dir, row.parkedJobId);
     return typeof row.sessionId === "string" ? row.sessionId : null;
   } catch {
     return null;
@@ -78,9 +96,9 @@ async function recordedSession(pid: number): Promise<string | null> {
 }
 
 /** The session of a parked background job, from `jobs/<id>/state.json`. */
-async function parkedJob(jobId: unknown): Promise<string | null> {
+async function parkedJob(dir: string, jobId: unknown): Promise<string | null> {
   if (typeof jobId !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(jobId)) return null;
-  const job = await readRecord("jobs", jobId, "state.json");
+  const job = await readRecord(dir, "jobs", jobId, "state.json");
   return typeof job.sessionId === "string" && UUID.test(job.sessionId) ? job.sessionId : null;
 }
 
@@ -102,10 +120,10 @@ async function parkedJob(jobId: unknown): Promise<string | null> {
 export async function parkedSession(client: Rpc | undefined, pane: Pick<PaneInfo, "pane_id" | "agent">): Promise<string | null> {
   if (!client || pane.agent !== "claude") return null;
   try {
-    const process = (await foreground(client, pane.pane_id)).find(isClaude);
-    if (!process) return null;
-    const row = await readRecord("sessions", `${process.pid}.json`);
-    return row.pid === process.pid && row.parkedJobId !== undefined && row.parkedJobId !== null ? await parkedJob(row.parkedJobId) : null;
+    const claude = await paneClaude(client, pane.pane_id);
+    if (!claude) return null;
+    const row = await readRecord(claude.dir, "sessions", `${claude.pid}.json`);
+    return row.pid === claude.pid && row.parkedJobId !== undefined && row.parkedJobId !== null ? await parkedJob(claude.dir, row.parkedJobId) : null;
   } catch {
     return null;
   }
@@ -141,8 +159,8 @@ async function describe(path: string, size: number): Promise<{ firstPrompt: stri
   return { firstPrompt: text?.kind === "text" ? flat(text.text) : null, lastMessage: previewOf(normalise(parseLines(tail))) };
 }
 
-async function listFor(pid: number, cwd: string, claimed: ReadonlySet<string>): Promise<ConversationChoice[]> {
-  const dir = join(claudeConfigDir(), "projects", projectFolder(cwd));
+async function listFor(config: string, pid: number, cwd: string, claimed: ReadonlySet<string>): Promise<ConversationChoice[]> {
+  const dir = join(config, "projects", projectFolder(cwd));
   let names: string[];
   try { names = await readdir(dir); } catch { return []; }
   const files = (await Promise.all(names.map(async (name) => {
@@ -155,13 +173,13 @@ async function listFor(pid: number, cwd: string, claimed: ReadonlySet<string>): 
       return null;
     }
   }))).filter((file) => file !== null).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CHOICES);
-  const likely = await recordedSession(pid);
+  const likely = await recordedSession(config, pid);
   const choices = (await Promise.all(files.map(async (file) => {
     try {
       // Previewing already exposes transcript content. Apply Reader's exact
       // ownership checks before reading, not only when the person chooses:
       // one canonical file under projects, retaining this session's UUID.
-      const canonical = await findTranscript(file.sessionId);
+      const canonical = await findTranscript(file.sessionId, join(config, "projects"));
       if (!canonical || canonical !== await realPath(file.path)) return null;
       const said = await describe(canonical, file.size);
       if (!said.firstPrompt && !said.lastMessage) return null;
@@ -185,9 +203,10 @@ export async function conversationChoices(client: Rpc, pane: Pane, claimed: Read
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return []; }
   const cwd = claude[0]?.cwd ?? pane.cwd;
   if (claude.length !== 1 || !cwd) return [];
+  const config = await claudeConfigDirOf(claude[0]!.pid);
   // A new conversation is not offered an old one to become.
-  if (await unsaved(claude[0]!.pid)) return [];
-  return listFor(claude[0]!.pid, cwd, claimed);
+  if (await unsaved(config, claude[0]!.pid)) return [];
+  return listFor(config, claude[0]!.pid, cwd, claimed);
 }
 
 /**
@@ -220,13 +239,13 @@ export async function unsavedSession(client: Rpc, pane: Pane): Promise<boolean> 
   if (pane.agent !== "claude" || agentSessionOf(pane)) return false;
   let claude: Foreground[];
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return false; }
-  return claude.length === 1 && unsaved(claude[0]!.pid);
+  return claude.length === 1 && unsaved(await claudeConfigDirOf(claude[0]!.pid), claude[0]!.pid);
 }
 
-async function unsaved(pid: number): Promise<boolean> {
-  const session = await recordedSession(pid);
+async function unsaved(config: string, pid: number): Promise<boolean> {
+  const session = await recordedSession(config, pid);
   if (!session || !UUID.test(session)) return false;
-  const root = join(claudeConfigDir(), "projects");
+  const root = join(config, "projects");
   let projects: string[];
   try {
     projects = await readdir(root);
@@ -253,10 +272,11 @@ export async function chooseConversation(client: Rpc, pane: Pane, sessionId: str
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return false; }
   const cwd = claude[0]?.cwd ?? pane.cwd;
   if (claude.length !== 1 || !cwd) return false;
-  if (await unsaved(claude[0]!.pid)) return false;
-  if (!(await listFor(claude[0]!.pid, cwd, claimed)).some((choice) => choice.sessionId === sessionId)) return false;
+  const config = await claudeConfigDirOf(claude[0]!.pid);
+  if (await unsaved(config, claude[0]!.pid)) return false;
+  if (!(await listFor(config, claude[0]!.pid, cwd, claimed)).some((choice) => choice.sessionId === sessionId)) return false;
   // One canonical file under the projects root; a copy elsewhere is refused.
-  if (!(await findTranscript(sessionId))) return false;
+  if (!(await findTranscript(sessionId, join(config, "projects")))) return false;
   chosen.set(pane.pane_id, { terminal: pane.terminal_id, pid: claude[0]!.pid, sessionId });
   return true;
 }

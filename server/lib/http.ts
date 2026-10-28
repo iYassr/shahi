@@ -34,14 +34,14 @@ import { compress } from "./compress";
 import { readAgentPanelSort } from "./herdr-config";
 import { dirname } from "node:path";
 import { ClaudeSettingsError, planUsage, setClaudePlanUsage } from "./plan-usage";
-import { paneCommands } from "./slash-commands";
+import { defaultRoots, paneCommands } from "./slash-commands";
 import { readTranscriptImage } from "./session-log";
 import { readCodexImage } from "./codex-log";
 import { readOpenCodeImage } from "./opencode-log";
 import { agentSessionOf, paneFolder } from "./herdr-pane";
 import { ChangesError, fileDiff, paneChanges } from "./changes";
 import { computerName } from "./computer-name";
-import { atFolderTrust, choiceHeld, chooseConversation, conversationChoices, unsavedSession } from "./claude-choice";
+import { atFolderTrust, choiceHeld, chooseConversation, conversationChoices, paneClaudeDir, unsavedSession } from "./claude-choice";
 import { isLoopback } from "./endpoint";
 import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, submitPrompt } from "./prompt";
 import { PaneWrites } from "./pane-writes";
@@ -1542,7 +1542,10 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // agent's, where Claude Code looks for a project's commands.
           if (sub === "/commands" && req.method === "GET") {
             const pane = store.pane(paneId);
-            const commands = await paneCommands(pane?.agent, pane?.foreground_cwd ?? pane?.cwd);
+            // A Claude's own commands and skills are in the folder it runs
+            // with, which can be another account's (claude-config.ts).
+            const roots = pane?.agent === "claude" ? { ...defaultRoots(), claudeDir: await paneClaudeDir(client, paneId) } : undefined;
+            const commands = await paneCommands(pane?.agent, pane?.foreground_cwd ?? pane?.cwd, roots);
             return json({ commands } satisfies PaneCommands);
           }
 

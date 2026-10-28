@@ -26,9 +26,9 @@ const MAX_TEXT = 300;
 const STATUSES = new Set<string>(["pending", "in_progress", "completed"]);
 
 /** The session's tasks in order, or undefined when it has never had any. */
-export async function claudeTasks(sessionId: string): Promise<ReaderTask[] | undefined> {
+export async function claudeTasks(sessionId: string, configDir = claudeConfigDir()): Promise<ReaderTask[] | undefined> {
   if (!/^[0-9a-f-]{8,64}$/i.test(sessionId)) return undefined;
-  const dir = join(claudeConfigDir(), "tasks", sessionId);
+  const dir = join(configDir, "tasks", sessionId);
   let names: string[];
   try { names = await readdir(dir); } catch { return undefined; }
   const files = names.filter(name => /^\d{1,9}\.json$/.test(name))
