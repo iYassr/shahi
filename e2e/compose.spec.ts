@@ -42,6 +42,25 @@ test.describe("the composer", () => {
     await expect(page.locator("textarea")).toHaveValue("", { timeout: 10_000 });
   });
 
+  test("a timestamp-free Cursor reply replaces its sent echo without matching an older identical reply", async ({ page }) => {
+    const text = "Continue";
+    const messages = [
+      { id: "cursor-0", role: "you", at: 0, blocks: [{ kind: "text", text }] },
+      { id: "cursor-1", role: "agent", at: 0, blocks: [{ kind: "text", text: "Earlier answer" }] },
+    ];
+    await page.route("**/api/panes/*/session?*", route => route.fulfill({ json: { sessionId: "cursor-echo", path: "/fixture/cursor.jsonl", messages, total: messages.length, offset: 0 } }));
+    await openPane(page, "w1:p2");
+    await expect(page.locator(".reader")).toContainText("Earlier answer");
+    await page.getByRole("textbox", { name: "Message", exact: true }).fill(text);
+    await tap(page, page.locator(".compose__send"));
+    await expect(page.locator(".msg__who").filter({ hasText: "You · sent" })).toHaveCount(1);
+    messages.push({ id: "cursor-2", role: "you", at: 0, blocks: [{ kind: "text", text }] });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("shahi:log_changed", { detail: "w1:p2" })));
+    await expect(page.locator(".msg__who").filter({ hasText: "You · sent" })).toHaveCount(0);
+    await expect(page.locator(".reader .msg__text").filter({ hasText: /^Continue$/ })).toHaveCount(2);
+    expect(await paneWrites(page)).toHaveLength(1);
+  });
+
   test("will not send nothing", async ({ page }) => {
     await openPane(page);
     await expect(page.locator(".compose__send")).toBeDisabled();

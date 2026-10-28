@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { ApiContext, api, type LogMessage, type SessionLog } from "../api";
-import { Reader, clearReaderMemory, merge } from "./Reader";
+import { Reader, clearReaderMemory, merge, readerEcho, type ReaderEcho } from "./Reader";
 import { providerReaderFixtures } from "../../../shared/test-fixtures/provider-reader";
 import { normaliseCodex } from "../../../server/lib/codex-log";
 
@@ -116,6 +116,53 @@ describe("a pane reused by a new session", () => {
     await render(mock().mockResolvedValue(newChat));
     expect(output()).toContain("NEW answer");
     expect(output()).not.toContain("OLD");
+  });
+
+  test("a timestamp-free Cursor message replaces its sent echo", async () => {
+    let current = log("cursor-echo", [said("cursor-0", "Earlier question")]);
+    const sessionLog = async () => current;
+    const draw = (sent: ReaderEcho | null) => <ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} echo={sent} /></ApiContext.Provider>;
+    await act(async () => { view = create(draw(null)); });
+    const echo = readerEcho("w1:p1", "Cursor reply probe");
+    await act(async () => { view!.update(draw(echo)); });
+    expect(output()).toContain("You · sent");
+    current = log("cursor-echo", [...current.messages, { ...message("cursor-2", echo.text), role: "you" }]);
+    await logChanged();
+    expect(output()).not.toContain("You · sent");
+    expect(output().match(/Cursor reply probe/g)).toHaveLength(1);
+  });
+
+  test.each([false, true])("an older identical reply cannot retire a new Cursor echo (poll before receipt: %s)", async (pollFirst) => {
+    let current = log("cursor-repeat", [said("cursor-0", "Continue"), said("cursor-1", "Earlier answer")]);
+    const sessionLog = async () => current;
+    const draw = (echo: ReaderEcho | null) => <ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} echo={echo} /></ApiContext.Provider>;
+    await act(async () => { view = create(draw(null)); });
+    const echo = readerEcho("w1:p1", "Continue");
+    if (!pollFirst) {
+      await act(async () => { view!.update(draw(echo)); });
+      expect(output()).toContain("You · sent");
+    }
+    current = log("cursor-repeat", [...current.messages, { ...message("cursor-2", "Continue"), role: "you" }]);
+    await logChanged();
+    if (pollFirst) await act(async () => { view!.update(draw(echo)); });
+    expect(output()).not.toContain("You · sent");
+    expect(output().match(/Continue/g)).toHaveLength(2);
+  });
+
+  test("loading an older identical reply does not retire a timestamp-free echo", async () => {
+    const old = said("cursor-0", "Continue"), tail = said("cursor-1", "Earlier answer");
+    let current = log("cursor-history", [tail], 2);
+    const sessionLog = async (_pane: string, options: { before?: number } = {}) => options.before === undefined ? current : log("cursor-history", [old], 2);
+    const draw = (echo: ReaderEcho | null) => <ApiContext.Provider value={{ ...api, sessionLog }}><Reader paneId="w1:p1" activity={null} onUnavailable={() => {}} echo={echo} /></ApiContext.Provider>;
+    await act(async () => { view = create(draw(null)); });
+    const echo = readerEcho("w1:p1", "Continue");
+    await act(async () => { view!.update(draw(echo)); });
+    await act(async () => view!.root.findByProps({ className: "reader__more" }).props.onClick());
+    expect(output()).toContain("You · sent");
+    current = log("cursor-history", [old, tail, { ...message("cursor-2", "Continue"), role: "you" }]);
+    await logChanged();
+    expect(output()).not.toContain("You · sent");
+    expect(output().match(/Continue/g)).toHaveLength(2);
   });
 
   test("activity disclosure resets when a new transcript reuses message ids", async () => {

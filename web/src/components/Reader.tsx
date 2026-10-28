@@ -72,6 +72,18 @@ export function forgetReaderMemory(paneId: string) {
   remembered.delete(paneId); rememberedOffsets.delete(paneId); rememberedTranscripts.delete(paneId); forgetReaderPlace(paneId);
 }
 
+export interface ReaderEcho {
+  text: string;
+  transcript: string | null;
+  after: number;
+}
+
+/** Capture before sending: Cursor exports no timestamps, and a poll can beat the receipt. */
+export function readerEcho(paneId: string, text: string): ReaderEcho {
+  return { text, transcript: rememberedTranscripts.get(paneId) ?? null,
+    after: (rememberedOffsets.get(paneId) ?? 0) + (remembered.get(paneId)?.length ?? 0) };
+}
+
 /**
  * The identity of the transcript a page came from.
  *
@@ -93,7 +105,7 @@ interface Props {
   agent?: string | null;
   /** The pane's working folder, which activity steps name files from (`readerRows`). */
   cwd?: string | null;
-  echo?: { text: string; at: number } | null;
+  echo?: ReaderEcho | null;
   /** Live status from the pane's screen; null when the agent is not mid-turn. */
   activity: Activity | null;
   /** Called when this pane has no transcript, so the caller can fall back. */
@@ -378,7 +390,10 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
   }
 
   const hasOlder = offset > 0;
-  const echoVisible = echo && !messages.some((message) => message.role === "you" && message.at >= echo.at - 5000 && message.blocks.some((block) => block.kind === "text" && block.text.trim() === echo.text.trim()));
+  // Match only records after the send's baseline. An old "Continue" or a
+  // prepended history page must not retire a new reply with the same words.
+  const echoVisible = echo && (echo.transcript === null || echo.transcript === transcript.current) && !messages.some((message, index) =>
+    offset + index >= echo.after && message.role === "you" && message.blocks.some((block) => block.kind === "text" && block.text.trim() === echo.text.trim()));
 
   return (
     <div

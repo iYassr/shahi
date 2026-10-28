@@ -33,7 +33,7 @@ import {
 import { AgentAvatar } from "./AgentAvatar";
 import { Attach, formatSize, type Attachment } from "./Attach";
 import { Prompt, PromptContext } from "./Prompt";
-import { Reader } from "./Reader";
+import { Reader, readerEcho, type ReaderEcho } from "./Reader";
 import { Changes } from "./Changes";
 import { ScreenCard } from "./ScreenCard";
 import { fitScale } from "../termfit";
@@ -198,7 +198,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const savedDraft = useRef(webDraft(draftOwner(browserConnection().identity), paneId)).current;
   const pending = useRef(savedDraft.pending);
-  const [echo, setEcho] = useState<{ text: string; at: number } | null>(null);
+  const [echo, setEcho] = useState<ReaderEcho | null>(null);
   const [draft, setDraftState] = useState(savedDraft.text);
   function setDraft(value: SetStateAction<string>) {
     savedDraft.text = typeof value === "function" ? value(savedDraft.text) : value;
@@ -425,13 +425,14 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     savedDraft.pending = pending.current;
     savedDraft.inFlight = true;
     notifyWebDraft(savedDraft);
+    const acceptedEcho = readerEcho(paneId, body);
     await send(async () => {
       try {
         await api.send(paneId, body, savedDraft.pending!.id, savedDraft.pending!.instanceId);
         savedDraft.pending = null;
         if (chosen === undefined && savedDraft.text === draft) savedDraft.text = "";
         savedDraft.attachments = savedDraft.attachments.filter(file => !files.some(sent => sent.path === file.path));
-        if (mounted.current) { setEcho({ text: body, at: Date.now() }); setSentAt(Date.now()); }
+        if (mounted.current) { setEcho(acceptedEcho); setSentAt(Date.now()); }
       } catch (error) {
         if (sendRefusedBeforeTyping(error)) {
           savedDraft.pending = null;
