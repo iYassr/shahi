@@ -434,15 +434,31 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
   );
   const badInstance = (instanceId: unknown) => instanceId !== undefined && typeof instanceId !== "string";
 
+  const HERDR_DISCONNECTED = new Set(["ENOENT", "ECONNREFUSED", "EACCES", "ENOTSOCK"]);
+  const HERDR_REFUSALS: Record<string, string> = {
+    pane_not_found: "That pane is no longer open on this computer.",
+    workspace_not_found: "That space is no longer open on this computer.",
+    tab_not_found: "That tab is no longer open on this computer.",
+    agent_not_ready: "The agent is still starting. Try again in a moment.",
+    agent_blocked: "The agent is waiting for an answer before it can take a new message.",
+    agent_not_found: "That agent is no longer running in this pane.",
+    agent_pane_busy: "That pane is busy. Try again in a moment.",
+  };
+
   /** herdr said no (400, with its code) or something else broke (500). */
-  const failure = (err: unknown) =>
-    err instanceof PaneReplaced
-      ? replacedResponse()
-      : err instanceof OperationError
-      ? json({ error: err.message }, { status: err.status })
-      : err instanceof HerdrError
-      ? json({ error: err.message, code: err.code }, { status: 400 })
-      : json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  const failure = (err: unknown) => {
+    if (err instanceof PaneReplaced) return replacedResponse();
+    if (err instanceof OperationError) return json({ error: err.message }, { status: err.status });
+    if (err instanceof HerdrError) {
+      const clean = HERDR_REFUSALS[err.code] ?? err.message.replace(/^herdr \S+ failed \[[^\]]+\]:\s*/, "");
+      return json({ error: clean, code: err.code }, { status: 400 });
+    }
+    const code = (err as { code?: unknown } | null)?.code;
+    if (typeof code === "string" && HERDR_DISCONNECTED.has(code)) {
+      return json({ error: "herdr is offline. Shahi will reconnect automatically.", code: "backend_unavailable" }, { status: 500 });
+    }
+    return json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  };
 
   // herdr's own agent-panel preference, cached rather than re-read on every
   // broadcast. Refreshed whenever the dashboard is fetched, so editing
@@ -1012,7 +1028,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               }),
             );
           } catch (err) {
-            if (err instanceof OutsideHomeError) return json({ error: err.message }, { status: 403 });
+            if (err instanceof OutsideHomeError) {
+              return json({ error: "That folder is outside your home folder, so Shahi will not open it.", code: "outside_roots" }, { status: 403 });
+            }
             return json({ error: "cannot list that directory" }, { status: 404 });
           }
         }
@@ -1022,11 +1040,15 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         // 30-second wait for readiness that was never coming.
         if (pathname === "/api/agents") {
           if (url.searchParams.get("refresh") === "1") forgetInstalledAgents();
-          const { manifests } = await client.rpc("server.agent_manifests", {});
-          return json({
-            agents: await installedAgents(manifests.map((m) => m.agent)),
-            known: manifests.length,
-          });
+          try {
+            const { manifests } = await client.rpc("server.agent_manifests", {});
+            return json({
+              agents: await installedAgents(manifests.map((m) => m.agent)),
+              known: manifests.length,
+            });
+          } catch (err) {
+            return failure(err);
+          }
         }
 
         // Starting an agent is two herdr calls with a race between them, so it is

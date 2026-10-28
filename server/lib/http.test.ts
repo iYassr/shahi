@@ -1025,7 +1025,14 @@ describe("writes and notification ownership", () => {
     const body = { text: "sent during a restart", clientMessageId: "restart-review" };
     herdrDown = await noHerdrSocket();
     try {
-      expect((await post(`/api/panes/${PANE}/prompt`, body)).status).toBe(500);
+      const down = await post(`/api/panes/${PANE}/prompt`, body);
+      expect(down.status).toBe(500);
+      const downBody = (await down.json()) as { error: string; code?: string };
+      expect(downBody).toEqual({
+        error: "herdr is offline. Shahi will reconnect automatically.",
+        code: "backend_unavailable",
+      });
+      expect(downBody.error).not.toContain(".sock");
     } finally { herdrDown = null; }
     const start = s.calls.length;
     const retried = await post(`/api/panes/${PANE}/prompt`, body);
@@ -1168,6 +1175,12 @@ test("a folder, a file outside home and a missing file are each refused for what
   };
   expect(await refusal(scratch)).toEqual({ status: 400, code: "not_a_file", error: "That is a folder, not a file." });
   expect(await refusal("/etc/hosts")).toMatchObject({ status: 403, code: "outside_roots", error: expect.stringContaining("outside your home folder") });
+  const dirOutside = await fetch(`${s.base}/api/dirs?path=${encodeURIComponent("/etc")}`, { headers: { cookie: s.cookie } });
+  expect(dirOutside.status).toBe(403);
+  expect(await dirOutside.json()).toEqual({
+    error: "That folder is outside your home folder, so Shahi will not open it.",
+    code: "outside_roots",
+  });
   expect(await refusal(join(scratch, "never-written.txt"))).toMatchObject({ status: 404, code: "not_found" });
   // The relay's own 413 means "this computer needs an update"; this one is
   // final, and says so with a code the clients can tell apart.
