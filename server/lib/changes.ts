@@ -178,7 +178,9 @@ async function list(folder: string | null, deadline: number): Promise<Listing | 
     ...SAFE, "config", "-z", "--show-scope", "--get-regexp", String.raw`^(filter\..+\.(clean|smudge|process)|status\.showuntrackedfiles)$`,
   ], 1024 * 1024, deadline);
   // 1: none of them is set.
-  if (config.code !== 0 && config.code !== 1) throw new ChangesError(FAILED, 503, "git_failed");
+  // A fast Git can finish before the output watcher kills it. A truncated
+  // list then omits filter programs, which status/diff would still execute.
+  if (config.cut || (config.code !== 0 && config.code !== 1)) throw new ChangesError(FAILED, 503, "git_failed");
   const settings = [...SAFE];
   let untracked = "all";
   const filters = new Set<string>();

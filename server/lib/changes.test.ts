@@ -7,7 +7,7 @@
  * test sees. Children write nowhere but a file (docs/on-a-mac.md).
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { diffRows } from "@shahi/shared";
@@ -230,6 +230,24 @@ describe("one file's diff", () => {
 });
 
 describe("a repository's own settings", () => {
+  test("an incomplete filter listing refuses the repository before any configured program runs", async () => {
+    const dir = repository({ ".gitattributes": "*.txt filter=hidden\n", "a.txt": "a\n" });
+    const marks = join(dir, "marks");
+    mkdirSync(marks);
+    const script = join(dir, "filter.sh");
+    writeFileSync(script, `#!/bin/sh\ntouch "${marks}/ran"\ncat\n`);
+    chmodSync(script, 0o755);
+    // The entire discovery output must be trusted before status/diff can
+    // run. A fast Git can finish writing past the cap before the 50ms poll.
+    appendFileSync(join(dir, ".git", "config"), `\n[filter "padding"]\nclean = ${"x".repeat(1024 * 1024)}\n[filter "hidden"]\nclean = ${script}\n`);
+    write(dir, "a.txt", "b\n");
+    utimesSync(join(dir, "a.txt"), new Date(2001, 0, 1), new Date(2001, 0, 1));
+    const result = await paneChanges(dir).catch(error => error);
+    expect(readdirSync(marks)).toEqual([]);
+    expect(result).toBeInstanceOf(ChangesError);
+    expect(result).toMatchObject({ code: "git_failed" });
+  });
+
   test("run no program while it is listed or diffed, and the index is never written", async () => {
     const marks = join(scratch, "marks");
     mkdirSync(marks);
