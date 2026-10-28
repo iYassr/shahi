@@ -22,9 +22,11 @@ import {
 const TOOL_STATES = ["streaming", "running", "completed", "error"];
 
 const text = (path: string) => sqlString("m.data", path, true);
+const SKILL_NAME = sqlString("s.value", "$.name", true);
 /** The same allowlist as `render`, so COUNT and the API 5 clients' paging agree with what is drawn. */
 const VISIBLE = `${sqlId("m.id")} AND json_valid(m.data) AND CASE m.type
   WHEN 'user' THEN ${text("$.text")} OR json_array_length(m.data,'$.files') > 0 OR json_array_length(m.data,'$.agents') > 0
+    OR (json_type(m.data,'$.skills')='array' AND EXISTS (SELECT 1 FROM json_each(m.data,'$.skills') s WHERE json_valid(s.value) AND ${SKILL_NAME}))
   WHEN 'assistant' THEN ${text("$.error.message")} OR (json_type(m.data,'$.content')='array' AND EXISTS (
     SELECT 1 FROM json_each(m.data,'$.content') c WHERE json_valid(c.value) AND (
       (json_extract(c.value,'$.type') IN ('text','reasoning') AND ${sqlString("c.value", "$.text", true)})
@@ -58,7 +60,9 @@ const ROW = `SELECT m.id, m.type, m.time_created AS created,
     'uri', CASE WHEN json_extract(f.value,'$.source.type')='uri' AND length(json_extract(f.value,'$.source.uri')) <= 4096 THEN json_extract(f.value,'$.source.uri') END))
     FROM (SELECT value FROM json_each(m.data,'$.files') WHERE json_type(m.data,'$.files')='array' AND json_valid(value) LIMIT 32) f) AS files,
   (SELECT json_group_array(substr(json_extract(a.value,'$.name'),1,200))
-    FROM (SELECT value FROM json_each(m.data,'$.agents') WHERE json_type(m.data,'$.agents')='array' AND json_valid(value) LIMIT 32) a) AS agents
+    FROM (SELECT value FROM json_each(m.data,'$.agents') WHERE json_type(m.data,'$.agents')='array' AND json_valid(value) LIMIT 32) a) AS agents,
+  (SELECT json_group_array(substr(json_extract(s.value,'$.name'),1,200))
+    FROM (SELECT s.value FROM json_each(m.data,'$.skills') s WHERE json_type(m.data,'$.skills')='array' AND json_valid(s.value) AND ${SKILL_NAME} LIMIT 32) s) AS skills
   FROM session_message m`;
 /** An assistant step's text, reasoning and tool calls, each projected before it reaches JavaScript. */
 const CONTENT = `SELECT json_extract(c.value,'$.type') AS type, ${cut("c.value", "$.text", MAX_TEXT)} AS text,
@@ -130,6 +134,9 @@ function userBlocks(row: Row): LogBlock[] {
     else if (name || mime) blocks.push({ kind: "text", text: `Attachment: ${excerpt(name || mime, 256)}${mime && name && name !== mime ? ` (${mime})` : ""}` });
   }
   for (const agent of list(row.agents)) if (str(agent)) blocks.push({ kind: "text", text: `@${excerpt(agent, 200)}` });
+  // The TUI shows selected skill names even without prose. Instructions in
+  // those attachments are model context, so only bounded names are projected.
+  for (const skill of list(row.skills)) if (str(skill)) blocks.push({ kind: "text", text: `Skill: ${excerpt(skill, 200)}` });
   return blocks;
 }
 

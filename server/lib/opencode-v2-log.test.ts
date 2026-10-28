@@ -134,6 +134,22 @@ describe("OpenCode 2 messages", () => {
     expect(JSON.stringify(blocks)).not.toContain("iVBORw0KGgo");
   });
 
+  test("selected skills stay visible, including a user turn with no prose", async () => {
+    const { db, source } = await fixture();
+    // v2.2.0's Prompt.SkillAttachment and TUI UserMessage show the skill's
+    // name. Its model-facing instructions are not the person's message.
+    openCodeV2Message(db, "msg_skill_only", "user", 1, { text: "", skills: [{ id: "sk_review", name: "review", text: "model-facing instructions" }] });
+    openCodeV2Message(db, "msg_with_skill", "user", 2, { text: "Check this", skills: [{ id: "sk_tests", name: "tests" }] });
+    openCodeV2Message(db, "msg_unknown_skills", "user", 3, { text: "", skills: [null, {}, { name: 7 }, { name: { text: "not a skill name" } }, { name: "" }] });
+    const tail = await readOpenCodeV2Log(source, { limit: 1 });
+    expect(texts(tail)).toEqual(["you: Check this | Skill: tests"]);
+    expect([tail?.total, tail?.offset]).toEqual([2, 1]);
+    const earlier = await readOpenCodeV2Log(source, { limit: 1, before: 1 });
+    expect(texts(earlier)).toEqual(["you: Skill: review"]);
+    expect(earlier?.offset).toBe(0);
+    expect(JSON.stringify(earlier)).not.toContain("model-facing instructions");
+  });
+
   test("long text and tool output are cut with a note, inside SQLite", async () => {
     const { db, source } = await fixture();
     openCodeV2Message(db, "msg_u", "user", 1, { text: "x".repeat(70_000) });
