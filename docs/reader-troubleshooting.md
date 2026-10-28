@@ -43,8 +43,14 @@ Reader shows one of two waiting states rather than an error:
 
 Screen shows the terminal meanwhile in both cases.
 
-Reader reads Claude's history from `~/.claude/projects` by default. If Claude
-uses a different `CLAUDE_CONFIG_DIR`, Shahi's service needs the same absolute
+Reader reads Claude's history from the configuration folder of the pane's own
+Claude process. On Linux, Shahi reads that process's `CLAUDE_CONFIG_DIR` from
+`/proc/<pid>/environ`, so two Claude accounts with two folders on one computer
+both work with no setting. Only an absolute folder is used. When the process
+has no such value, or Shahi cannot read it (always on macOS), Reader uses the
+service's own `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+
+On macOS, if Claude uses a different `CLAUDE_CONFIG_DIR`, Shahi's service needs the same absolute
 configuration directory, not its `projects` subdirectory. Set
 `CLAUDE_CONFIG_DIR=/absolute/path/to/claude-config` in the `.env` inside
 `herdr plugin config-dir shahi`, keeping the other entries, then run
