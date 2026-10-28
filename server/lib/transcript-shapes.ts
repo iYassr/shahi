@@ -234,6 +234,10 @@ export const CODEX_SHAPES: Record<string, Decision> = {
   "response:agent_message": dropped("raw output; the AgentMessage item carries it"),
   // Codex 0.163's tool definitions, sent as developer context (October 2026).
   "response:additional_tools": dropped("the tools offered to the model, as developer context"),
+  // Codex 0.163's ResponseItem::ConfigurationUpdate changes the backend's
+  // reasoning effort at this point in history; it carries no conversation.
+  // Four records on Ubuntu failed the launch census until this was explicit.
+  "response:configuration_update": dropped("a durable reasoning setting for the model backend"),
   "response:function_call": shown("tools in Activity; request_user_input questions stay visible with their descriptions"),
   "response:custom_tool_call": shown("a step"),
   "response:function_call_output": shown("joined to its call"),

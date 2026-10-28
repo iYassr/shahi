@@ -73,6 +73,14 @@ describe("Claude Code", () => {
 });
 
 describe("Codex", () => {
+  test("reasoning configuration updates are classified as model controls, not conversation", () => {
+    const row = { type: "response_item", payload: { type: "configuration_update", reasoning: { effort: "high" } } };
+    expect(codexShapes(row)).toEqual(["record:response_item", "response:configuration_update"]);
+    expect(unclassified(new Map(codexShapes(row).map(key => [key, 1])), CODEX_SHAPES)).toEqual([]);
+    expect(CODEX_SHAPES["response:configuration_update"]?.handling).toBe("dropped");
+    expect(normaliseCodex([row])).toEqual([]);
+  });
+
   test("a row yields its record, event, item and response keys", () => {
     expect(codexShapes({ type: "event_msg", payload: { type: "item_completed", item: { type: "Reasoning" } } }))
       .toEqual(["record:event_msg", "event:item_completed", "item:Reasoning"]);
