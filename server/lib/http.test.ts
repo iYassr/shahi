@@ -60,6 +60,8 @@ let occupant: Record<string, unknown> = {};
 /** Set to the error herdr's client gives while herdr is down; writes then fail with it. */
 let herdrDown: unknown = null;
 const WRITES = new Set(["pane.send_text", "pane.send_keys", "agent.prompt", "tab.create", "agent.start"]);
+/** A deterministic in-flight write, so tests can revoke or replace a queued writer. */
+let beforeFakeWrite: (() => Promise<void>) | null = null;
 
 /** The error a real client gives when herdr's socket is not there. */
 function noHerdrSocket(): Promise<unknown> {
@@ -104,6 +106,11 @@ function fakeHerdr(calls: { method: string; params: unknown }[], freshCreation =
     rpc: async (method: string, params: unknown) => {
       if (herdrDown && WRITES.has(method)) throw herdrDown;
       calls.push({ method, params });
+      if (WRITES.has(method) && beforeFakeWrite) {
+        const wait = beforeFakeWrite;
+        beforeFakeWrite = null;
+        await wait();
+      }
       switch (method) {
         case "session.snapshot":
           return { snapshot: structuredClone(snapshot) };
@@ -1968,6 +1975,71 @@ describe("a write meant for a pane's previous program", () => {
     expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: "term_first" })).status).toBe(409);
     expect((await post("/prompt", { text: "again", clientMessageId: "refused-then-meant", instanceId: now })).status).toBe(200);
   });
+});
+
+describe("terminal writes waiting behind another phone", () => {
+  const queued = [
+    ["/prompt", { text: "queued message", clientMessageId: "queued-message" }],
+    ["/keys", { keys: ["Enter"] }],
+    ["/answer", { index: 1, label: "Yes" }],
+  ] as const;
+
+  for (const [sub, body] of queued) {
+    for (const change of ["logout", "revocation", "replacement"] as const) {
+      test(`${sub} rechecks ${change} when its turn begins`, async () => {
+        occupant = { terminal_id: "term_queue_first" };
+        const app = await boot();
+        let release!: () => void;
+        let entered!: () => void;
+        const blocked = new Promise<void>(resolve => { release = resolve; });
+        const started = new Promise<void>(resolve => { entered = resolve; });
+        const device = change === "revocation" ? new Devices(app.db).create("Queued phone").device : null;
+        const token = device ? new Auth({ passcodeHash, sessionSecret: "test-secret", sessionTtlMs: 60_000 }).issue(Date.now(), device.id) : null;
+        const cookie = token ? `shahi_session=${token}` : app.cookie;
+        const post = (path: string, input: unknown) => app.dispatch(new Request(`${app.base}${path}`, {
+          method: "POST", headers: { cookie }, body: JSON.stringify(input),
+        }), "queue-review");
+        try {
+          // The first key is already in flight. The next request has passed
+          // its body/auth checks but cannot execute until this one finishes.
+          beforeFakeWrite = async () => { entered(); await blocked; };
+          const first = post(`/api/panes/${encodeURIComponent(PANE)}/keys`, { keys: ["Escape"] });
+          await started;
+          const pending = post(`/api/panes/${encodeURIComponent(PANE)}${sub}`, { ...body, instanceId: "term_queue_first" });
+          await Bun.sleep(0);
+          if (change === "logout") {
+            expect((await post("/api/auth/logout", {})).status).toBe(200);
+          } else if (device) {
+            expect((await app.dispatch(new Request(`${app.base}/api/devices/${device.id}`, {
+              method: "DELETE", headers: { cookie: app.cookie },
+            }), "queue-owner")).status).toBe(200);
+          } else {
+            app.herdr.panes[0]!.terminal_id = "term_queue_second";
+            await app.store.resync();
+          }
+          // A replacement may draw the identical permission menu. Its text
+          // cannot substitute for the occupant check, even for older cards.
+          screen = sub === "/answer" ? readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__claude-bash__text.txt"), "utf8") : "";
+          afterKeys = (keys, current) => keys.includes("Escape") ? current : "";
+          release();
+          expect((await first).status).toBe(200);
+          const response = await pending;
+          expect(response.status).toBe(change === "replacement" ? 409 : 401);
+          if (change === "replacement") expect(await response.json()).toMatchObject({ code: "pane_replaced" });
+          expect(app.calls.filter(call => WRITES.has(call.method))).toEqual([
+            { method: "pane.send_keys", params: { pane_id: PANE, keys: ["Escape"] } },
+          ]);
+        } finally {
+          release();
+          beforeFakeWrite = null;
+          app.stop();
+          occupant = {};
+          screen = "";
+          afterKeys = "";
+        }
+      });
+    }
+  }
 });
 
 // A dashboard card offers what the pane's screen asks now. The pre-release

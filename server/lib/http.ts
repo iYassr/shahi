@@ -434,7 +434,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
 
   /** herdr said no (400, with its code) or something else broke (500). */
   const failure = (err: unknown) =>
-    err instanceof OperationError
+    err instanceof PaneReplaced
+      ? replacedResponse()
+      : err instanceof OperationError
       ? json({ error: err.message }, { status: err.status })
       : err instanceof HerdrError
       ? json({ error: err.message, code: err.code }, { status: 400 })
@@ -1353,6 +1355,9 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             try {
               const delivery = trackDelivery(herdrRpc);
               const receipt = await operations.run(key, body.text, () => paneWrites.run(paneId, async (): Promise<PromptReceipt> => {
+                // A preceding answer can hold this queue while the owner
+                // revokes the phone. Admission is not permission to write later.
+                if (!authorized(req)) throw new OperationError("unauthorized", 401);
                 // Inside the operation, so a retry of a message delivered before
                 // the pane changed hands gets its receipt, not a refusal; and
                 // a refusal reached nothing, so it is not kept.
@@ -1406,13 +1411,18 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
             if (replaced(paneId, body.instanceId)) return replacedResponse();
             try {
-              await paneWrites.run(paneId, () => answerPrompt(herdrRpc, paneId, {
-                index: body.index as number,
-                label: body.label as string,
-                ...(typeof body.question === "string" ? { question: body.question } : {}),
-                ...(Array.isArray(body.context) ? { context: body.context as string[] } : {}),
-                ...(typeof body.promptId === "string" ? { promptId: body.promptId } : {}),
-              }, { instances: poller.prompts }));
+              await paneWrites.run(paneId, () => {
+                if (!authorized(req)) throw new OperationError("unauthorized", 401);
+                // Pane ids can change hands while a preceding write settles.
+                if (replaced(paneId, body.instanceId)) throw new PaneReplaced();
+                return answerPrompt(herdrRpc, paneId, {
+                  index: body.index as number,
+                  label: body.label as string,
+                  ...(typeof body.question === "string" ? { question: body.question } : {}),
+                  ...(Array.isArray(body.context) ? { context: body.context as string[] } : {}),
+                  ...(typeof body.promptId === "string" ? { promptId: body.promptId } : {}),
+                }, { instances: poller.prompts });
+              });
               // What the agent drew next, to watchers and as a new card to
               // every client, now rather than at the next poll; and herdr's
               // statuses a moment later (see `settleAfterAnswer`).
@@ -1438,7 +1448,11 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             if (badInstance(body.instanceId)) return json({ error: "instanceId must be text" }, { status: 400 });
             if (replaced(paneId, body.instanceId)) return replacedResponse();
             try {
-              await paneWrites.run(paneId, () => client.rpc("pane.send_keys", { pane_id: paneId, keys }));
+              await paneWrites.run(paneId, () => {
+                if (!authorized(req)) throw new OperationError("unauthorized", 401);
+                if (replaced(paneId, body.instanceId)) throw new PaneReplaced();
+                return client.rpc("pane.send_keys", { pane_id: paneId, keys });
+              });
               return json({ ok: true });
             } catch (err) {
               return failure(err);
