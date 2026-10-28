@@ -242,6 +242,8 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
  * on a fetch forces a preflight this server never answers.
  */
 function originAllowed(req: Request): boolean {
+  const fetchSite = req.headers.get("sec-fetch-site")?.toLowerCase();
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return false;
   const origin = req.headers.get("origin");
   if (origin === null) return true;
   let originHost: string;
@@ -252,7 +254,7 @@ function originAllowed(req: Request): boolean {
     // not a URL, but it is still this server if the rest matches.
     originHost = origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
   }
-  const bare = (h: string) => h.split(",")[0]!.trim().replace(/[[\]]/g, "");
+  const bare = (h: string) => h.split(",")[0]!.trim().replace(/[[\]]/g, "").toLowerCase();
   return [req.headers.get("host"), req.headers.get("x-forwarded-host")].some(
     (host) => host !== null && bare(host) === bare(originHost),
   );
@@ -775,6 +777,13 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         const { pathname } = url;
 
         // --- unauthenticated ---
+        // A browser on another origin gets no further than this with the
+        // cookie it carries, and before the pre-auth rate limiter so a page
+        // the owner visits cannot spend the local 127.0.0.1 rate budget.
+        if ((pathname === "/ws" || pathname.startsWith("/api/")) && !originAllowed(req)) {
+          return json({ error: "cross-origin request refused" }, { status: 403 });
+        }
+
         if (isRateLimitedPath(pathname)) {
           const wait = limiter.hit(arrival.rateKey);
           if (wait !== null) {
@@ -783,14 +792,6 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               { status: 429, headers: { "retry-after": String(Math.ceil(wait / 1000)) } },
             );
           }
-        }
-
-        // A browser on another origin gets no further than this with the
-        // cookie it carries. Reads are left alone: CORS already denies the
-        // page the response, and the archived web client's static assets
-        // are fetched cross-origin by nothing.
-        if ((pathname === "/ws" || (pathname.startsWith("/api/") && req.method !== "GET")) && !originAllowed(req)) {
-          return json({ error: "cross-origin request refused" }, { status: 403 });
         }
 
         if (pathname === "/api/meta") return json(serverInfo(arrival));

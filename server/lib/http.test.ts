@@ -504,11 +504,40 @@ describe("a browser on another origin", () => {
         cookie: s.cookie,
         "content-type": "application/json",
         origin: "https://box.tailnet.ts.net",
-        "x-forwarded-host": "box.tailnet.ts.net",
+        "x-forwarded-host": "BOX.tailnet.ts.net",
       },
       body: JSON.stringify({ keys: ["Enter"] }),
     });
     expect(res.status).toBe(200);
+  });
+
+  test("cannot burn the local pre-auth rate limit or trigger cross-site GET routes", async () => {
+    const box = await boot();
+    try {
+      for (let i = 0; i < 35; i++) {
+        const claim = await fetch(`${box.base}/api/pair/claim`, {
+          method: "POST",
+          headers: { origin: "https://evil.example", "content-type": "text/plain" },
+          body: '{"secret":"x"}',
+        });
+        expect(claim.status).toBe(403);
+        const meta = await fetch(`${box.base}/api/meta`, {
+          headers: { "sec-fetch-site": "cross-site" },
+        });
+        expect(meta.status).toBe(403);
+      }
+      // The local rate budget is still intact for the owner's own client.
+      expect((await fetch(`${box.base}/api/meta`)).status).toBe(200);
+      // Same-site cross-origin GET (such as another machine on a tailnet) is also refused.
+      const before = box.calls.length;
+      const sameSite = await fetch(`${box.base}/api/agents?refresh=1`, {
+        headers: { cookie: box.cookie, "sec-fetch-site": "same-site" },
+      });
+      expect(sameSite.status).toBe(403);
+      expect(box.calls.length).toBe(before);
+    } finally {
+      box.stop();
+    }
   });
 });
 
