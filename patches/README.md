@@ -46,6 +46,17 @@ types, worker dry-run, model and state/archive tests passed; `npm audit
 GitHub alerts on that separate lockfile; GitHub may still show them until its
 next dependency scan.
 
+On October 28 both Undici pins moved to **7.30.1**, for five advisories
+published that morning (cache poisoning across redirects, TLS validation and
+renegotiation, WebSocket PONG buffering, excessive content-encodings;
+GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx, GHSA-qrxm-fqhp-jwvm,
+GHSA-9fm3-97px-rjf6, GHSA-xjj6-f33q-929c). The root gains its own override,
+since its Miniflare held 7.29.0 and `@sentry/cli` 6.29.0, both affected; Bun
+has only top-level overrides, so sentry-cli's copy moves to 7.30.1 as well.
+It uses Undici only in its postinstall download, which Bun does not run here
+and whose `ProxyAgent` and `fetch` Undici 7 keeps. All of these are local
+development and build tooling; nothing deployed runs Undici.
+
 The October 4 launch review updates **brace-expansion 5.0.12** and every
 compatible 1.x copy to **1.1.21**, without changing the dependency ranges.
 These releases fix recursion and malformed-brace rewrite exhaustion, including

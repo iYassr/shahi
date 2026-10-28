@@ -42,9 +42,10 @@
     "expo-constants": "~57.0.17",
     "react-test-renderer": "19.2.3",
     "sharp": "0.35.5",
+    "undici": "7.30.1",
     "uuid": "11.1.1"
   },
-  "//security-overrides": "uuid 11 fixes GHSA-w5hq-g745-h8pq while retaining xcode's CommonJS API. sharp 0.35.5 fixes GHSA-rgj7-g3m4-5g8c and GHSA-wq5f-xc86-pv6w (librsvg), including miniflare's pinned copy. See patches/README.md for transitive security backports.",
+  "//security-overrides": "uuid 11 fixes GHSA-w5hq-g745-h8pq while retaining xcode's CommonJS API. sharp 0.35.5 fixes GHSA-rgj7-g3m4-5g8c and GHSA-wq5f-xc86-pv6w (librsvg), including miniflare's pinned copy. undici 7.30.1 fixes GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx, GHSA-qrxm-fqhp-jwvm, GHSA-9fm3-97px-rjf6 and GHSA-xjj6-f33q-929c in miniflare's copy and @sentry/cli's. See patches/README.md for transitive security backports.",
   "patchedDependencies": {
     "decode-uri-component@0.2.2": "patches/decode-uri-component@0.2.2.patch",
     "image-size@1.2.1": "patches/image-size@1.2.1.patch"
