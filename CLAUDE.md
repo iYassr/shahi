@@ -1498,6 +1498,19 @@ a new prompt can prune the old branch and clear revert between two polls.
 Unknown older schemas without that event history remain unavailable. Its TUI integration retains the previous session at home until
 the next first prompt; do not infer a session change from terminal prose.
 
+OpenCode 2 (2.2.0, 27 October 2026) writes `session_v2` and typed
+`session_message` rows instead, after copying every 1.x session across the
+first time it opens the database; Reader found no conversation for any of
+them until the agent journeys ran on Linux the next day. `opencode-v2-log.ts`
+reads them, from OpenCode's own schema and TUI at that tag, and
+`findOpenCodeTranscript` picks whichever projection holds the session's newest
+write, so a person who goes back to 1.x is still read. Its undo deletes the
+undone rows when committed and records no event, so the reader notices fewer
+rows at or below the highest `seq` it last read (in memory, so an undo while
+the sidecar was stopped is missed). Attachments are named, not shown: Reader
+has no route to its `media:` blobs yet. npm's `opencode-ai` still served
+1.19.4 that day; OpenCode's own installer serves 2.x.
+
 Antigravity 1.2.11 writes the documented transcript under its brain UUID.
 Its unique open `presence/<UUID>.lock` identifies the current conversation when
 no hook ID is available; conversation database handles may include previous or

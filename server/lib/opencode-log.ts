@@ -11,13 +11,14 @@ import type { LogBlock, LogMessage, SessionLog } from "@shahi/shared";
 import { openReadOnly } from "./foreign-sqlite";
 import { imageMediaType, isRecord, questionsOf, summariseToolInput } from "./session-log";
 
-export interface OpenCodeTranscript { kind: "opencode"; databasePath: string; sessionId: string }
-const SESSION = /^ses_[A-Za-z0-9_-]{1,128}$/;
-const ID = /^(?:msg|prt)_[A-Za-z0-9_-]{1,128}$/;
-const MAX_TEXT = 65_536;
-const MAX_RESULT = 8_192;
+/** `schema: 2` is OpenCode 2's projection, read by opencode-v2-log.ts. */
+export interface OpenCodeTranscript { kind: "opencode"; databasePath: string; sessionId: string; schema?: 2 }
+export const SESSION = /^ses_[A-Za-z0-9_-]{1,128}$/;
+export const ID = /^(?:msg|prt)_[A-Za-z0-9_-]{1,128}$/;
+export const MAX_TEXT = 65_536;
+export const MAX_RESULT = 8_192;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-const MAX_PAGE_READ = 2 * 1024 * 1024;
+export const MAX_PAGE_READ = 2 * 1024 * 1024;
 const TRUNCATED = "\n… [Reader excerpt]";
 const REMOVAL_EVENTS = ["message.removed.1", "message.part.removed.1", "session.next.revert.committed.1"];
 const ERROR_NAMES = ["APIError", "ProviderAuthError", "MessageAbortedError", "UnknownError", "MessageOutputLengthError", "StructuredOutputError", "ContextOverflowError", "ContentFilterError"];
@@ -28,7 +29,7 @@ export function defaultOpenCodeDatabase(): string {
   return custom ? (custom === ":memory:" || isAbsolute(custom) ? custom : join(root, custom)) : join(root, "opencode.db");
 }
 
-function open(source: OpenCodeTranscript): Database {
+export function open(source: OpenCodeTranscript): Database {
   const db = openReadOnly(source.databasePath, { strict: true });
   db.exec("PRAGMA query_only = ON");
   db.exec("PRAGMA busy_timeout = 100");
@@ -42,7 +43,18 @@ export async function findOpenCodeTranscript(sessionId: string, databasePath = d
     if (!(await stat(databasePath)).isFile()) return null;
     const source: OpenCodeTranscript = { kind: "opencode", databasePath, sessionId };
     db = open(source);
-    return db.query("SELECT id FROM session WHERE id = ?").get(sessionId) ? source : null;
+    const tables = new Set(db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('session','session_v2')").all().map(row => row.name));
+    const v1 = tables.has("session") && !!db.query("SELECT id FROM session WHERE id = ?").get(sessionId);
+    const v2 = tables.has("session_v2") && !!db.query("SELECT id FROM session_v2 WHERE id = ?").get(sessionId);
+    if (!v2) return v1 ? source : null;
+    if (!v1) return { ...source, schema: 2 };
+    // OpenCode 2 copies every 1.x session into its own tables the first time it
+    // opens the database, and from then on writes only those (measured on
+    // 2.2.0, 28 October 2026); a 1.x started afterwards writes only the old
+    // ones. Whichever was written last holds what the terminal shows.
+    const latest = (sql: string) => (db!.query(sql).get(sessionId) as { at: number | null }).at ?? 0;
+    return latest("SELECT max(time_updated) AS at FROM session_message WHERE session_id = ?") >= latest("SELECT max(time_updated) AS at FROM message WHERE session_id = ?")
+      ? { ...source, schema: 2 } : source;
   } catch { return null; }
   finally { db?.close(); }
 }
@@ -59,20 +71,20 @@ export async function openCodeStamp(source: OpenCodeTranscript): Promise<{ versi
 // SQLite's text substr ends at NUL. Treat binary-shaped string fields as
 // unsupported in both visibility and rendering instead of counting a row
 // whose bounded projection would disappear.
-const str = (x: unknown): string => typeof x === "string" && !x.includes("\0") ? x : "";
-const obj = (x: unknown): Record<string, unknown> => isRecord(x) ? x : {};
-const time = (x: unknown): number => typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0;
-function excerpt(value: unknown, max = MAX_TEXT): string {
+export const str = (x: unknown): string => typeof x === "string" && !x.includes("\0") ? x : "";
+export const obj = (x: unknown): Record<string, unknown> => isRecord(x) ? x : {};
+export const time = (x: unknown): number => typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0;
+export function excerpt(value: unknown, max = MAX_TEXT): string {
   const text = str(value);
   if (text.length <= max) return text;
   let end = max;
   if (/[\uD800-\uDBFF]/.test(text[end - 1] ?? "")) end--;
   return text.slice(0, end) + TRUNCATED;
 }
-function parse(value: unknown): Record<string, unknown> {
+export function parse(value: unknown): Record<string, unknown> {
   try { return obj(JSON.parse(str(value))); } catch { return {}; }
 }
-function filePath(part: Record<string, unknown>): string | null {
+export function filePath(part: Record<string, unknown>): string | null {
   const source = obj(part.source);
   if ((source.type === "file" || source.type === "symbol") && str(source.path).length <= 4096 && isAbsolute(str(source.path))) return str(source.path);
   try {
@@ -84,7 +96,7 @@ function filePath(part: Record<string, unknown>): string | null {
   } catch { /* A data URI has no local file to open. */ }
   return null;
 }
-function fileBlock(path: string, name = "File"): LogBlock {
+export function fileBlock(path: string, name = "File"): LogBlock {
   return { kind: "tool", name, summary: excerpt(path, 120), file: { path, name: excerpt(basename(path), 256) }, result: { text: "", isError: false, truncated: false, images: [] } };
 }
 function imageRef(session: string, part: string, attachment?: number): string {
@@ -108,11 +120,11 @@ function errorText(error: unknown): string {
   if (text) return excerpt(text);
   return value.name === "MessageOutputLengthError" ? "The response reached the model's output limit." : "";
 }
-function boundedQuestions(name: string, input: Record<string, unknown>) {
+export function boundedQuestions(name: string, input: Record<string, unknown>) {
   const { questions } = questionsOf(name, input);
   return questions ? { questions: questions.slice(0, 8).map(q => ({ text: excerpt(q.text, 1024), options: q.options.slice(0, 16).map(o => ({ label: excerpt(o.label, 128), ...(o.description ? { description: excerpt(o.description, 256) } : {}) })) })) } : {};
 }
-function boundedBlocks(blocks: LogBlock[]): LogBlock[] {
+export function boundedBlocks(blocks: LogBlock[]): LogBlock[] {
   let bytes = 0;
   const kept: LogBlock[] = [];
   for (const block of blocks) {
@@ -214,7 +226,7 @@ export function normaliseOpenCode(rows: unknown[], sessionId: string): LogMessag
 // COUNT/LIMIT. Correlation uses OpenCode's part_message_id_id_idx index; only
 // the requested visible window is hydrated into JavaScript.
 const SQL_SPACE = "char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)";
-function sqlString(data: string, field: string, trim = false): string {
+export function sqlString(data: string, field: string, trim = false): string {
   const value = `json_extract(${data},'${field}')`;
   return `(json_type(${data},'${field}')='text' AND instr(${value},char(0))=0 AND ${trim ? `trim(${value},${SQL_SPACE})` : value}<>'')`;
 }
@@ -222,7 +234,7 @@ function sqlError(data: string): string {
   return `(json_extract(${data},'$.error.name') IN (${ERROR_NAMES.map(x => `'${x}'`).join(",")}) AND
     (${sqlString(data, "$.error.data.message")} OR json_extract(${data},'$.error.name')='MessageOutputLengthError'))`;
 }
-function sqlId(id: string): string {
+export function sqlId(id: string): string {
   return `(length(${id}) BETWEEN 5 AND 132 AND instr(${id},char(0))=0 AND (${id} GLOB 'msg_*' OR ${id} GLOB 'prt_*') AND ${id} NOT GLOB '*[^A-Za-z0-9_-]*')`;
 }
 function sqlVisiblePart(alias: string, role: string): string {

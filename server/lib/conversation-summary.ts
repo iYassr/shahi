@@ -14,6 +14,7 @@ import { findCodexRollout, readCodexLog } from "./codex-log";
 import { cursorTranscriptFor, readCursorLog } from "./cursor-log";
 import { antigravityTranscriptFor, readAntigravityLog } from "./antigravity-log";
 import { findOpenCodeTranscript, openCodeStamp, readOpenCodeLog, type OpenCodeTranscript } from "./opencode-log";
+import { readOpenCodeV2Log } from "./opencode-v2-log";
 import { continuedTranscript, findTranscript, previewOf, readWindow, type SessionLog } from "./session-log";
 import { agentSessionOf } from "./herdr-pane";
 import { withoutAgentStatus } from "./agent-titles";
@@ -28,7 +29,7 @@ type Window = { limit?: number; before?: number };
 export type TranscriptSource = string | OpenCodeTranscript;
 
 const sourceKey = (source: TranscriptSource): string => typeof source === "string"
-  ? source : JSON.stringify([source.kind, source.databasePath, source.sessionId]);
+  ? source : JSON.stringify([source.kind, source.databasePath, source.sessionId, source.schema ?? 1]);
 
 /**
  * Where the dashboard last found each pane's transcript, and what that
@@ -103,7 +104,7 @@ function locate(pane: PaneInfo, client?: HerdrClient): Promise<TranscriptSource 
 
 /** Reads a window of the transcript at `path` the way its agent writes it. */
 async function readTranscript(path: TranscriptSource, kind: string | null | undefined, window: Window): Promise<SessionLog | null> {
-  if (typeof path !== "string") return kind === "opencode" ? readOpenCodeLog(path, window) : null;
+  if (typeof path !== "string") return kind !== "opencode" ? null : path.schema === 2 ? readOpenCodeV2Log(path, window) : readOpenCodeLog(path, window);
   if (kind === "cursor") return readCursorLog(path, window);
   if (kind === "codex") return readCodexLog(path, window);
   if (kind === "agy") return readAntigravityLog(path, window);

@@ -20,3 +20,19 @@ export function openCodeFixtureMessage(db: Database, id: string, role: "user" | 
   parts.forEach((part, index) => db.run("INSERT INTO part VALUES (?,?,?,?,?,?)", [str(part.id) || `prt_${id.slice(4)}_${index}`, id, session, created, created, JSON.stringify(part)]));
 }
 function str(x: unknown) { return typeof x === "string" ? x : ""; }
+
+/** OpenCode 2.2.0's projection, the columns Reader reads (packages/core/src/session/sql.ts). */
+export function createOpenCodeV2Fixture(path: string, session = OPEN_CODE_SESSION): Database {
+  const db = new Database(path, { create: true });
+  db.exec(`PRAGMA journal_mode=WAL;
+    CREATE TABLE session_v2 (id TEXT PRIMARY KEY,version TEXT,revert TEXT);
+    CREATE TABLE session_message (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,type TEXT NOT NULL,seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL,time_updated INTEGER NOT NULL,data TEXT NOT NULL);
+    CREATE UNIQUE INDEX session_message_session_seq_idx ON session_message(session_id,seq);`);
+  db.run("INSERT INTO session_v2 (id,version) VALUES (?,?)", [session, "2.2.0"]);
+  return db;
+}
+export function openCodeV2Message(db: Database, id: string, type: string, seq: number, data: Record<string, unknown>, session = OPEN_CODE_SESSION): void {
+  const created = 1_793_146_059_000 + seq;
+  db.run("INSERT INTO session_message VALUES (?,?,?,?,?,?,?)", [id, session, type, seq, created, created, JSON.stringify({ time: { created }, ...data })]);
+}
