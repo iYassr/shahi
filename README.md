@@ -76,7 +76,8 @@ terminal is still one tap away, on the Screen tab.
   Shahi re-reads the screen before pressing anything, so a card that is out of
   date never answers a different question.
 - **Start the next task.** Launch Claude Code, Codex, Cursor CLI, OpenCode or
-  Antigravity in any space, and choose how much it may do without asking.
+  Antigravity in any space, and for Claude Code or Codex choose how much it may
+  do without asking.
 - **The real terminal, one tap away.** Screen shows exactly what the agent
   drew, with the Esc, Tab, arrow and Ctrl-C keys your phone keyboard lacks.
 - **Review what changed.** The Changes tab lists the uncommitted Git changes
@@ -106,13 +107,14 @@ Reader formats the conversations of five agents running in herdr:
 - <img src="site/public/agents/claude.svg" alt="" width="20" height="20"> **Claude Code**: Messages, thinking, tools and results, subagents, task lists, questions and images.
 - <img src="site/public/agents/codex.svg" alt="" width="20" height="20"> **Codex**: Messages, reasoning, commands, edits, questions, plans, MCP and web activity, and images. Audio attachments are indicated but not played.
 - <img src="site/public/agents/cursor.svg" alt="" width="20" height="20"> **Cursor CLI**: Messages, recorded tool calls, failure and cancellation notes, and attachment labels. Cursor's export omits tool results and attachment bytes.
-- <img src="site/public/agents/opencode.svg" alt="" width="20" height="20"> **OpenCode**: Messages, thinking, tools and results, edits, questions, files, images and undo.
+- <img src="site/public/agents/opencode.svg" alt="" width="20" height="20"> **OpenCode**: Messages, thinking, tools and results, edits, questions, files, undo, and inline images in OpenCode 1 (OpenCode 2 names attached images without displaying them).
 - <img src="site/public/agents/agy.svg" alt="" width="20" height="20"> **Antigravity**: Messages, thinking, tools, files and questions. Results are paired only for a single recorded call.
 
 Reader shows the exact session each agent reports through herdr's
-integration for it, which Shahi installs and keeps up to date, or the one
-transcript the agent's own process has open. It never guesses a conversation
-from a folder: a Claude Code session that was
+integration for it, which Shahi installs and keeps up to date, the one
+transcript the agent's own process has open, or (for Codex 0.160+) the one
+thread in that exact folder whose name the pane title shows. It never
+guesses an arbitrary conversation from a folder: a Claude Code session that was
 already running before its integration was installed asks you, once, to choose
 its conversation. For any other program, or output Reader cannot format, use
 Screen. Shahi is checked against new releases of herdr and of each agent on

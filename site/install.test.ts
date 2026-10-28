@@ -26,6 +26,8 @@ test("the installer's herdr is the newest one the current Shahi release is appro
     .sort((a: string, b: string) => { const [x, y] = [parts(a), parts(b)]; return x[0]! - y[0]! || x[1]! - y[1]! || x[2]! - y[2]!; })
     .at(-1);
   expect(pin.version).toBe(newest);
+  const homepage = readFileSync(new URL("./public/index.html", import.meta.url), "utf8");
+  expect(homepage).toContain(`Installs herdr ${pin.version} if herdr is missing`);
 });
 
 test("the installer is written whole: every pin filled, valid shell, and nothing runs before its last line", async () => {
