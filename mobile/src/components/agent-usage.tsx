@@ -97,11 +97,13 @@ function Windows({ usage, empty, source }: { usage: ProviderUsage | null; empty:
     <>
       {usage.windows.map((window) => {
         const { percent, reset } = planWindowNow(window, now, locale);
+        const duration = /^(\d+)-(day|hour|minute)$/.exec(window.label);
+        const label = duration ? ui(`{count}-${duration[2]}`, { count: duration[1]! }) : ui(window.label);
         const high = percent !== null && percent >= 80;
         return (
-          <View key={window.label} style={styles.window} accessible accessibilityLabel={ui("{value1} limit, {value2}{value3}", {value1: ui(window.label), value2: percent === null ? ui("no current reading") : ui("{value1}% used", { value1: percent }), value3: reset ? `. ${reset}` : ""})}>
+          <View key={window.label} style={styles.window} accessible accessibilityLabel={ui("{value1} limit, {value2}{value3}", {value1: label, value2: percent === null ? ui("no current reading") : ui("{value1}% used", { value1: percent }), value3: reset ? `. ${reset}` : ""})}>
             <View style={styles.windowLine}>
-              <UiText style={styles.windowLabel}>{window.label}</UiText>
+              <Text style={styles.windowLabel}>{label}</Text>
               <Text style={[styles.windowValue, high && { color: theme.rose }]}>{percent === null ? "—" : ui("{value1}% used", {value1: percent})}</Text>
             </View>
             <View style={styles.track}>

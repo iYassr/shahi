@@ -147,7 +147,7 @@ function FileChanges({ paneId, file, onBack }: { paneId: string; file: ChangedFi
                 <span className="diff__num" aria-hidden="true">{row.oldLine ?? ""}</span>
                 <span className="diff__num" aria-hidden="true">{row.newLine ?? ""}</span>
                 <span className="diff__sign" aria-hidden="true">{SIGN[row.kind]}</span>
-                {SPOKEN[row.kind] && <span className="visually-hidden">{SPOKEN[row.kind]}</span>}
+                {SPOKEN[row.kind] && <span className="visually-hidden">{t(SPOKEN[row.kind]!)}</span>}
                 <span className="diff__text">{row.text || " "}</span>
               </div>
             ))}

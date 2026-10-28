@@ -510,7 +510,7 @@ const Row = memo(function Row({
                 </Text>
               ) : (
                 <Text style={[styles.rowSaid, !pane.preview && pane.isAgent && styles.rowQuiet]} numberOfLines={1}>
-                  {said}
+                  {said ? ui(said) : ""}
                 </Text>
               )}
             </View>

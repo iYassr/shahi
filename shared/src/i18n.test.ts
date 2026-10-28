@@ -47,3 +47,17 @@ test("list timestamps and plan resets follow the interface language and retain t
   expect(messageTime(yesterday, now, "ar")).toBe(`أمس ${new Date(yesterday).toLocaleTimeString("ar", { hour: "numeric", minute: "2-digit" })}`);
   expect(planWindowNow({ label: "Weekly", usedPercent: 60, resetsAt: yesterday }, now, "es")).toEqual({ percent: null, reset: "Se restableció desde la última lectura" });
 });
+
+test("Git detached HEAD, task status and agent status translations remain accurate across merged catalogs", () => {
+  expect(translate("es", "detached")).toBe("separado");
+  expect(translate("es", "detached at {value0}", { value0: "a1b2c3d" })).toBe("separado en a1b2c3d");
+  expect(translate("ar", "detached at {value0}", { value0: "a1b2c3d" })).toBe("منفصل عند a1b2c3d");
+  expect(translate("es", "open")).toBe("pendiente");
+  expect(translate("es", "Open")).toBe("Abrir");
+  expect(translate("ar", "Open")).toBe("فتح");
+  expect(translate("es", "blocked")).toBe("esperando");
+  expect(translate("ar", "No messages yet")).toBe("لا توجد رسائل بعد");
+  expect(translate("es", "No messages yet")).toBe("Aún no hay mensajes");
+  expect(translate("ar", "Section")).toBe("قسم");
+  expect(translate("es", "Section")).toBe("Sección");
+});

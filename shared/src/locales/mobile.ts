@@ -507,7 +507,7 @@ export const mobileTranslations: { ar: Record<string, string>; es: Record<string
   "es": {
     "idle": "inactivo",
     "working": "trabajando",
-    "blocked": "bloqueado",
+    "blocked": "esperando",
     "pinned": "fijado",
     "Removed": "Eliminado",
     "Unchanged": "Sin cambios",
@@ -792,7 +792,7 @@ export const mobileTranslations: { ar: Record<string, string>; es: Record<string
     "Your computers work now, but may not be here after you close Shahi.": "Tus equipos funcionan ahora, pero podrían no aparecer después de cerrar Shahi.",
     "Your draft stays here. Nothing is sent automatically.": "Tu borrador se conserva aquí. No se envía nada automáticamente.",
     "failed": "falló",
-    "open": "abierto",
+    "open": "pendiente",
     "paired": "vinculado",
     "pane": "panel",
     "password": "contraseña",

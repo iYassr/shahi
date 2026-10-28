@@ -87,7 +87,7 @@ export function ChangesView({ paneId, status }: { paneId: string; status?: strin
         </Pressable>
       </View>
       {error && <UiText style={styles.error} accessibilityRole="alert" selectable>{error}</UiText>}
-      {repository && changes?.note && <Text style={styles.note}>{changes.note}</Text>}
+      {repository && changes?.note && <Text style={styles.note}>{ui(changes.note)}</Text>}
     </View>
   );
 
@@ -100,7 +100,7 @@ export function ChangesView({ paneId, status }: { paneId: string; status?: strin
         ListHeaderComponent={header}
         ListEmptyComponent={
           !changes ? (error ? null : <ActivityIndicator color={theme.dim} style={styles.wait} />)
-            : <Text style={styles.empty}>{repository ? ui("No changes since the last commit.") : changes.note}</Text>
+            : <Text style={styles.empty}>{repository ? ui("No changes since the last commit.") : (changes.note ? ui(changes.note) : "")}</Text>
         }
         ListFooterComponent={changes?.omitted ? <Text style={styles.note}>{ui("… {value1} more {value2} not listed.", {value1: changes.omitted.toLocaleString(), value2: ui(changes.omitted === 1 ? "file" : "files")})}</Text> : null}
         renderItem={({ item }) => <FileRow file={item} largeText={largeText} onOpen={setOpen} />}

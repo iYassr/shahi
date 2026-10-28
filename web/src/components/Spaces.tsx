@@ -88,10 +88,10 @@ export function Spaces({ session, onToast, onChanged }: Props) {
            * whether any of them is waiting on you.
            */
           const summary = [
-            agents.length > 0 && `${agents.length} agent${agents.length === 1 ? "" : "s"}`,
-            working > 0 && `${working} running`,
-            agents.length === 0 && shells > 0 && `${shells} shell${shells === 1 ? "" : "s"}`,
-            agents.length === 0 && shells === 0 && "empty",
+            agents.length > 0 && (agents.length === 1 ? t("{value0} agent", { value0: agents.length }) : t("{value0} agents", { value0: agents.length })),
+            working > 0 && t("{value0} running", { value0: working }),
+            agents.length === 0 && shells > 0 && (shells === 1 ? t("{value0} shell", { value0: shells }) : t("{value0} shells", { value0: shells })),
+            agents.length === 0 && shells === 0 && t("empty"),
           ]
             .filter(Boolean)
             .join(" · ");

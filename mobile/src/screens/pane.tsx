@@ -1394,7 +1394,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
           contentInsetAdjustmentBehavior="automatic"
           ref={listRef}
           data={readerData}
-          ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>{ui("Ready when you are. Tell {agent} what to do.", { agent: agentLabel(pane?.agent ?? "the agent") })}</Text></View>}
+          ListEmptyComponent={<View style={styles.centered}><Text style={styles.dim}>{ui("Ready when you are. Tell {agent} what to do.", { agent: pane?.agent ? agentLabel(pane.agent) : ui("the agent") })}</Text></View>}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.list}
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
@@ -1878,7 +1878,7 @@ export function Block({
     <View style={styles.tool}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={[block.name, block.summary, block.result?.isError ? "failed" : null].filter(Boolean).join(", ")}
+        accessibilityLabel={[block.name, block.summary, block.result?.isError ? ui("failed") : null].filter(Boolean).join(", ")}
         accessibilityState={{ expanded: open }}
         style={styles.toolHead}
         onPress={() => setOpen((o) => !o)}
@@ -1921,7 +1921,7 @@ export function Block({
       {attachments && block.file && (
         <Pressable accessibilityRole="button" style={styles.toolFile} onPress={() => onOpenFile(block.file!)}>
           <Text style={styles.toolFileName}>{block.file.name}</Text>
-          <UiText style={styles.toolFileGo}>open</UiText>
+          <UiText style={styles.toolFileGo}>Open</UiText>
         </Pressable>
       )}
 

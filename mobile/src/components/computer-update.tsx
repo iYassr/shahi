@@ -25,7 +25,7 @@ export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
   return <View style={[styles.box, settings && styles.group]} accessibilityLiveRegion="polite" testID="computer-update">
     <UiText style={styles.title}>{title}</UiText>
     <Text style={styles.text}>{control.pending ? ui("Requesting update…") : control.error ? (updateInProgress(h.update.phase) ? ui("Reconnecting after the update…") : ui("Computer unavailable. {value1}", {value1: kept})) : controlMessage(h, locale)}</Text>
-    {!!control.error && <Text style={styles.error}>{control.error}</Text>}
+    {!!control.error && <UiText style={styles.error}>{control.error}</UiText>}
     {h.update.managed && <View style={styles.actions}>
       {!!h.update.available && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("install")} style={styles.button}><UiText style={styles.action}>Update computer</UiText></Pressable>}
       <Pressable accessibilityRole="button" disabled={busy} onPress={() => void control.request("check")} style={styles.button}><UiText style={styles.action}>Check for updates</UiText></Pressable>
@@ -38,7 +38,7 @@ export function ComputerUpdate({ settings = false }: { settings?: boolean }) {
       <View style={styles.segmented} accessibilityLabel={ui("Release channel")}>
         {CHANNELS.map(({ id, label }) => {
           const on = h.update.channel === id;
-          return <Pressable key={id} accessibilityRole="button" accessibilityLabel={ui("{value1} channel", {value1: label})} accessibilityState={{ selected: on, disabled: busy }} disabled={busy}
+          return <Pressable key={id} accessibilityRole="button" accessibilityLabel={ui("{value1} channel", {value1: ui(label)})} accessibilityState={{ selected: on, disabled: busy }} disabled={busy}
             onPress={() => { if (!on) void control.request("check", id); }} style={[styles.segment, on && styles.segmentOn]}>
             <UiText style={[styles.segmentText, on && styles.segmentTextOn]}>{label}</UiText>
           </Pressable>;

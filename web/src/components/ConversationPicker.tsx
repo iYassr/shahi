@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function ConversationPicker({ paneId, instanceId, onChosen, onCancel }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const api = useApi();
   const [choices, setChoices] = useState<ConversationChoice[] | null>(null);
   const [error, setError] = useState("");
@@ -65,7 +65,7 @@ export function ConversationPicker({ paneId, instanceId, onChosen, onCancel }: P
                   {choice.likely && <span className="choices__likely">{t("Likely")}</span>}
                 </span>
                 {choice.lastMessage && <span className="choices__last">{choice.lastMessage}</span>}
-                <span className="choices__when">{relativeTime(choice.updatedAt)}</span>
+                <span className="choices__when">{relativeTime(choice.updatedAt, Date.now(), locale)}</span>
               </button>
             </li>
           ))}

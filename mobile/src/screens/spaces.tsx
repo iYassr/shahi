@@ -211,14 +211,14 @@ const PaneRow = memo(function PaneRow({
       <View style={styles.rowBody}>
         <View style={[styles.rowLine, largeText && { flexDirection: "column", alignItems: "stretch" }]}>
           <Text style={[styles.rowTitle, largeText && { flex: 0 }]} numberOfLines={largeText ? 2 : 1}>
-            {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : "shell"}
+            {pane.isAgent || pane.title?.trim() ? paneTitle(pane) : ui("shell")}
           </Text>
           {/* Same quieting as the Agents rows: idle says nothing, and the
               second line only exists when there is something to preview. */}
           <View style={{ flexDirection: "row", gap: 8, flexShrink: 1, maxWidth: largeText ? "100%" : "50%" }}>
             {pane.status !== "idle" && (
               <Text style={[styles.rowStatus, { color: statusColor(pane.status) }]}>
-                {pane.status === "blocked" ? ui("waiting") : pane.status}
+                {ui(pane.status === "blocked" ? "waiting" : pane.status)}
               </Text>
             )}
             <Text style={[styles.rowMeta, { flexShrink: 1 }]} numberOfLines={1}>{pane.agent ? agentLabel(pane.agent) : pane.paneId}</Text>
