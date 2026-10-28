@@ -790,6 +790,20 @@ describe("a Codex conversation named by its pane's title", () => {
     expect(find(null)).toBeNull();
     expect(rolloutFromTitle("Review and improve Fihris | sama-kb", project, join(root, "no-index.sqlite"), sessions)).toBeNull();
   });
+  test("a title-selected index entry cannot substitute another thread's rollout", () => {
+    const stale = join(root, "stale-title.sqlite");
+    const records = new Database(stale);
+    const ownId = "22222222-2222-4222-8222-000000000001";
+    const otherId = "22222222-2222-4222-8222-000000000002";
+    const otherPath = rollout(otherId);
+    try {
+      records.run("CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, name TEXT, archived INTEGER)");
+      records.run("INSERT INTO threads VALUES (?, ?, ?, ?, 0)", [ownId, otherPath, project, "Stale index pointer"]);
+      records.run("INSERT INTO threads VALUES (?, ?, ?, ?, 0)", [otherId, otherPath, project, "Other conversation"]);
+      expect(rolloutFromTitle("Other conversation | sama-kb", project, stale, sessions)).toBe(otherPath);
+      expect(rolloutFromTitle("Stale index pointer | sama-kb", project, stale, sessions)).toBeNull();
+    } finally { records.close(); }
+  });
   // Codex names the repository, not the folder, in its title: started by hand
   // in a subfolder it read "Nothing to read yet" until the agent journeys
   // found it (2026-10-04).

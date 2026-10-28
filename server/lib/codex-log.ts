@@ -168,10 +168,10 @@ export function rolloutFromTitle(title: string | null | undefined, folder: strin
   const here = realpathIfExists(folder);
   try {
     const db = openReadOnly(stateDb);
-    let rows: { rollout_path: string; cwd: string | null }[];
+    let rows: { id: string; rollout_path: string; cwd: string | null }[];
     try {
-      rows = db.query<{ rollout_path: string; cwd: string | null }, [string]>(
-        "SELECT rollout_path, cwd FROM threads WHERE name = ? AND archived = 0 LIMIT 51",
+      rows = db.query<{ id: string; rollout_path: string; cwd: string | null }, [string]>(
+        "SELECT id, rollout_path, cwd FROM threads WHERE name = ? AND archived = 0 LIMIT 51",
       ).all(name);
     } finally { db.close(); }
     // The folder check canonicalises paths in JavaScript. A bounded SQL
@@ -179,8 +179,12 @@ export function rolloutFromTitle(title: string | null | undefined, folder: strin
     if (rows.length > 50) return null;
     const named = rows.filter((row) => typeof row.cwd === "string" && realpathIfExists(row.cwd) === here);
     if (named.length !== 1) return null;
-    const path = rolloutWithinSessions(named[0]!.rollout_path, sessionsDir);
-    return path && statSync(path).isFile() ? path : null;
+    const thread = named[0]!;
+    const path = rolloutWithinSessions(thread.rollout_path, sessionsDir);
+    // A stale or doctored index must not lend another thread's existing
+    // rollout to this title, just as the reported-session lookup refuses it.
+    return path && /^[0-9a-f-]{36}$/i.test(thread.id) &&
+      basename(path).toLowerCase().endsWith(`-${thread.id.toLowerCase()}.jsonl`) && statSync(path).isFile() ? path : null;
   } catch {
     // An index codex migrated, or none yet: nothing is named.
     return null;
