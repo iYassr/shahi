@@ -949,6 +949,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
         }
         if (pathname === "/api/plan-usage/claude" && req.method === "POST") {
           const body: unknown = await req.json().catch(() => null);
+          if (!authorized(req)) return json({ error: "unauthorized" }, { status: 401 });
           const enabled = typeof body === "object" && body !== null ? (body as { enabled?: unknown }).enabled : undefined;
           if (typeof enabled !== "boolean") return json({ error: "Say whether Claude's plan usage should be on." }, { status: 400 });
           try {

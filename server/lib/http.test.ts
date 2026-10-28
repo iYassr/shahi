@@ -2200,6 +2200,42 @@ test("OpenCode's coloured approval rejects typing and answers the fresh horizont
 // Claude Code's settings, so the configuration directories are scratch ones:
 // a test must never change the person's own.
 describe("plan usage", () => {
+  test("a phone revoked while the settings body arrives cannot change Claude's status line", async () => {
+    const claude = join(scratch, "plan-revoked-claude"), codex = join(scratch, "plan-revoked-codex");
+    mkdirSync(claude, { recursive: true });
+    const original = JSON.stringify({ statusLine: { type: "command", command: "echo owner" } });
+    writeFileSync(join(claude, "settings.json"), original);
+    const before = { claude: process.env.CLAUDE_CONFIG_DIR, codex: process.env.CODEX_HOME };
+    process.env.CLAUDE_CONFIG_DIR = claude;
+    process.env.CODEX_HOME = codex;
+    const app = await boot();
+    let finish!: (body: unknown) => void;
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    try {
+      const device = new Devices(app.db).create("Slow settings phone").device;
+      const auth = new Auth({ passcodeHash, sessionSecret: "test-secret", sessionTtlMs: 60_000 });
+      const req = new Request(`${app.base}/api/plan-usage/claude`, {
+        method: "POST", headers: { cookie: `shahi_session=${auth.issue(Date.now(), device.id)}` },
+      });
+      Object.defineProperty(req, "json", { value: () => { reading(); return new Promise(resolve => { finish = resolve; }); } });
+      const pending = app.dispatch(req, "slow-settings-review");
+      await started;
+      expect((await app.dispatch(new Request(`${app.base}/api/devices/${device.id}`, {
+        method: "DELETE", headers: { cookie: app.cookie },
+      }), "settings-owner")).status).toBe(200);
+      finish({ enabled: true });
+      expect((await pending).status).toBe(401);
+      expect(readFileSync(join(claude, "settings.json"), "utf8")).toBe(original);
+    } finally {
+      finish?.({ enabled: false });
+      app.stop();
+      for (const [key, value] of [["CLAUDE_CONFIG_DIR", before.claude], ["CODEX_HOME", before.codex]] as const) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  });
+
   test("reads both agents, refuses a vague switch, and turns Claude Code's status line on and off", async () => {
     const claude = join(scratch, "plan-claude"), codex = join(scratch, "plan-codex");
     mkdirSync(claude, { recursive: true });
