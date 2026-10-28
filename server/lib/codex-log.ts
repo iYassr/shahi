@@ -117,10 +117,35 @@ export async function findCodexRollout(
   shown?: { title: string | null; folder: string | null },
 ): Promise<string | null> {
   const viaSession = sessionId ? rolloutFromSessionId(sessionId) : null;
-  if (viaSession) return viaSession;
+  if (viaSession) return shown && titleContradicts(sessionId!, shown) ? null : viaSession;
   const viaProcess = await rolloutFromProcess(client, paneId);
   if (viaProcess) return viaProcess;
   return shown ? rolloutFromTitle(shown.title, shown.folder) : null;
+}
+
+/**
+ * Whether the pane's title names a different thread than its reported session.
+ *
+ * A Codex started by hand runs its thread in a shared app-server process, and
+ * that process reports every thread's session as the pane that first started
+ * it. So a reported session can be another pane's conversation: measured on
+ * Codex 0.164 with scratch accounts, and on the owner's Linux computer during
+ * the pre-launch review (28 October 2026), where one pane read another's
+ * conversation while its own title named its own thread. The title is what
+ * the person sees, so when it names one thread unambiguously and the
+ * reported one is a different, named thread, Reader shows neither rather
+ * than the wrong one. A thread too new to have a name, as after `/new`
+ * before its first reply, never contradicts its title.
+ */
+export function titleContradicts(sessionId: string, shown: { title: string | null; folder: string | null }, stateDb = STATE_DB, sessionsDir = SESSIONS_DIR): boolean {
+  const named = rolloutFromTitle(shown.title, shown.folder, stateDb, sessionsDir);
+  if (!named || basename(named).toLowerCase().endsWith(`-${sessionId.toLowerCase()}.jsonl`)) return false;
+  try {
+    const db = openReadOnly(stateDb);
+    try {
+      return !!db.query<{ name: string | null }, [string]>("SELECT name FROM threads WHERE id = ?").get(sessionId)?.name?.trim();
+    } finally { db.close(); }
+  } catch { return false; }
 }
 
 /**

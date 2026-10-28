@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "bun:test";
 import { withoutAgentStatus } from "./agent-titles";
-import { normaliseCodex, rolloutFromTitle, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess } from "./codex-log";
+import { normaliseCodex, rolloutFromTitle, rolloutWithinSessions, rolloutFromLinuxProcess, rolloutFromMacProcess, titleContradicts } from "./codex-log";
 
 // Scratch codex homes made below, removed when the file finishes: every run
 // left three directories in $TMPDIR until the September 2026 review.
@@ -468,6 +468,38 @@ describe("normaliseCodex, codex 0.151+ items", () => {
  * installed. `CODEX_HOME` is read when the module loads, so this imports a
  * fresh copy pointed at a temp directory rather than at the real one.
  */
+// The owner's Linux computer, 28 October 2026: the shared app-server reported
+// another pane's thread for this one, and Reader showed that conversation.
+describe("findCodexRollout, when the pane's title names another thread", () => {
+  const home = scratch("shahi-codex-contradicted-");
+  const project = join(home, "project");
+  mkdirSync(project, { recursive: true });
+  const index = new Database(join(home, "state_5.sqlite"));
+  index.run("CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, name TEXT, archived INTEGER)");
+  for (const [id, name] of [["019f9bd1-1b6b-7f33-a046-a60cce4e6461", "Own thread"], ["019f9bd1-1b6b-7f33-a046-a60cce4e6462", "Other pane's thread"]] as const) {
+    const path = join(home, "sessions/2026/10/28", `rollout-2026-10-28T01-00-00-${id}.jsonl`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "");
+    index.run("INSERT INTO threads VALUES (?, ?, ?, ?, 0)", [id, path, project, name]);
+  }
+  index.close();
+  const noClient = { rpc: () => { throw new Error("a reported session answers before the process is asked"); } } as never;
+
+  test("shows nothing rather than the reported thread, and the matching one as before", async () => {
+    const saved = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = home;
+    let module: typeof import("./codex-log");
+    try { module = (await import(`./codex-log?codex-home=${encodeURIComponent(home)}`)) as typeof import("./codex-log"); }
+    finally {
+      if (saved === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = saved;
+    }
+    const shown = { title: "Own thread | project", folder: project };
+    expect(await module.findCodexRollout(noClient, "w1:p1", project, "019f9bd1-1b6b-7f33-a046-a60cce4e6462", shown)).toBeNull();
+    expect(await module.findCodexRollout(noClient, "w1:p1", project, "019f9bd1-1b6b-7f33-a046-a60cce4e6461", shown)).toEndWith("-019f9bd1-1b6b-7f33-a046-a60cce4e6461.jsonl");
+  });
+});
+
 describe("findCodexRollout, by session id", () => {
   const home = scratch("shahi-codex-");
   const id = "019f9bd1-1b6b-7f33-a046-a60cce4e6455";
@@ -803,6 +835,22 @@ describe("a Codex conversation named by its pane's title", () => {
       expect(rolloutFromTitle("Other conversation | sama-kb", project, stale, sessions)).toBe(otherPath);
       expect(rolloutFromTitle("Stale index pointer | sama-kb", project, stale, sessions)).toBeNull();
     } finally { records.close(); }
+  });
+  // The shared app-server reports every hand-started thread as the pane that
+  // started it, so one pane on the owner's Linux computer read another's
+  // conversation (28 October 2026). Its title still named its own thread.
+  test("a reported session another named thread's title contradicts is not trusted", () => {
+    const shown = { title: "Review and improve Fihris | sama-kb", folder: project };
+    const contradicts = (session: string, on: { title: string | null; folder: string | null } = shown) => titleContradicts(session, on, db, sessions);
+    // Another pane's named thread, reported here: the title disagrees.
+    expect(contradicts("01a1042d-cfcf-7772-a79b-f4dafde210b9")).toBe(true);
+    // The thread the title names, a thread too new to be named, a title that
+    // names nothing unambiguously, and no title: nothing to disagree with.
+    expect(contradicts("01a1042d-cfcf-7772-a79b-f4dafde210b6")).toBe(false);
+    expect(contradicts("01a1042d-cfcf-7772-a79b-f4dafde210bb")).toBe(false);
+    expect(contradicts("01a1042d-cfcf-7772-a79b-f4dafde210b9", { title: "Fix the tests | sama-kb", folder: project })).toBe(false);
+    expect(contradicts("01a1042d-cfcf-7772-a79b-f4dafde210b9", { title: null, folder: project })).toBe(false);
+    expect(titleContradicts("01a1042d-cfcf-7772-a79b-f4dafde210b9", shown, join(root, "no-index.sqlite"), sessions)).toBe(false);
   });
   // Codex names the repository, not the folder, in its title: started by hand
   // in a subfolder it read "Nothing to read yet" until the agent journeys

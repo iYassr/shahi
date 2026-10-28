@@ -1428,7 +1428,13 @@ and is never evidence alone; an unnamed or shared name finds nothing. Codex
 while it asks, adds "● " while its microphone listens and a spinner frame
 while it works; herdr passes them through, so `withoutAgentStatus`
 (`agent-titles.ts`) strips them for the row's name, the dashboard signature
-and this lookup. Read as a name, the prefix hid the conversation for as long
+and this lookup. The same shared process reports every hand-started thread's
+session as the pane that first started it, so a reported session can be
+another pane's conversation (one pane on the owner's Linux computer read
+another's, 28 October 2026). When the title unambiguously names a different
+thread than a reported, named one, `titleContradicts` refuses both: Reader
+shows nothing rather than the wrong conversation. A thread too new to have a
+name never contradicts. Read as a name, the prefix hid the conversation for as long
 as the question was open (simulator run, 20 October 2026).
 
 ## Read must match Screen, October 1
