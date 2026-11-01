@@ -30,7 +30,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -45,7 +45,7 @@ jobs:
       - run: bun plugin/releases/manager-smoke.ts
       - name: Preserve the tested release candidate
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tested-computer-package
           path: dist/release/
@@ -53,7 +53,7 @@ jobs:
           retention-days: 7
       - name: Preserve debug artifacts for the trusted release job
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tested-computer-debug-artifacts
           path: dist/sentry/computer/
@@ -66,7 +66,7 @@ jobs:
     env:
       WRANGLER_SEND_METRICS: "false"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -99,7 +99,7 @@ jobs:
 
       - name: Preserve local Worker diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wrangler-checks
           path: ${{ runner.temp }}/wrangler-logs/
@@ -115,7 +115,7 @@ jobs:
     timeout-minutes: 15
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -157,7 +157,7 @@ jobs:
             project: ""
             browsers: chromium webkit
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -175,7 +175,7 @@ jobs:
         run: echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/wrangler-logs" >> "$GITHUB_ENV"
 
       - name: Cache browsers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ matrix.browsers }}-${{ hashFiles('bun.lock') }}
@@ -189,7 +189,7 @@ jobs:
         if: matrix.suite == 'hosted' || matrix.suite == 'pwa'
       - run: bun run test:${{ matrix.suite }} ${{ matrix.project }}
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: playwright-${{ matrix.name }}
@@ -203,7 +203,7 @@ jobs:
 
       - name: Preserve local Worker diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wrangler-${{ matrix.name }}
           path: ${{ runner.temp }}/wrangler-logs/
@@ -242,7 +242,7 @@ jobs:
           - herdr: v0.9.5
             sha256: 14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -281,7 +281,7 @@ jobs:
 
       - run: SHAHI_HERDR_LIVE=1 bun test server/lib/herdr-live.test.ts
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: herdr-server-log-${{ matrix.herdr }}
