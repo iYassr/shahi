@@ -230,6 +230,18 @@ test("a pairing link followed in an open tab opens its card and leaves the addre
   await page.goBack();
   expect(new URL(page.url()).hash).toBe("");
 });
+// Opened fresh, with a computer remembered, the code came off the address and
+// the dashboard opened with no card and no word (state-machine review).
+test("a pairing link opened fresh in a browser that remembers a computer still opens its card", async ({ page, request }) => {
+  await pair(page, true);
+  const second = await (await request.post(`${secondUrl}/__hosted/reset`)).json();
+  await page.goto("about:blank");
+  await page.goto(`/pwa/#pair=${encodeURIComponent(second.code)}`);
+  await expect(page.getByText("A link is asking to connect this browser")).toBeVisible();
+  expect(new URL(page.url()).hash).toBe("");
+  await page.getByRole("button", { name: `Connect to 127.0.0.1:${SECOND}`, exact: true }).click();
+  await expect(page.getByRole("button", { name: "+ New agent", exact: true })).toBeVisible();
+});
 test("a pairing link followed from a paired dashboard adds that computer", async ({ page, request }) => {
   await pair(page, true);
   const second = await (await request.post(`${secondUrl}/__hosted/reset`)).json();

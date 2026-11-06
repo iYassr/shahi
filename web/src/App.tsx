@@ -42,6 +42,15 @@ export function App(props: { initialPairingCode?: string }) {
   const navigate = useNavigate();
   useEffect(() => {
     void restoreBrowser().then(async () => {
+      // A pairing link opened fresh, in a browser with a computer already
+      // selected: the code had been taken off the address, and the dashboard
+      // opened with no card and no word, so the link did nothing (state-machine
+      // review, November 2026). The same route a link followed in an open tab takes.
+      if (hosted && props.initialPairingCode && browserConnection().identity) {
+        followedLink.current = props.initialPairingCode;
+        await selectBrowserComputer(null);
+        return;
+      }
       if (!window.location.pathname.endsWith("/notification")) return;
       const query = new URLSearchParams(window.location.search);
       await openNotification(query.get("pane"), query.get("computer"), (path) => navigate(path, { replace: true }), query.get("instance"));
