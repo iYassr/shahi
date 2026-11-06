@@ -109,6 +109,9 @@ export function Attach({ startPath, onClose, onAttach, onToast }: Props) {
           className="kind"
           data-active={source === "server"}
           aria-pressed={source === "server"}
+          // Picking a file there closes the sheet, which aborts the upload, and
+          // Cancel upload is not shown there (state-machine review, November 2026).
+          disabled={uploading}
           onClick={() => setSource("server")}
         >
           {t("On your computer")}</button>

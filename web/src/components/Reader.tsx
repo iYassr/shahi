@@ -324,6 +324,8 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
           : `${waiting} Reader will update when this agent saves its conversation.`);
         setError(missing ? "" : err instanceof Error ? err.message : "Could not read conversation");
         setUnidentified(missing && err.code === "reader_session_missing");
+        // The sidecar restarted and lost the choice: it is not chosen any more.
+        if (missing && err.code === "reader_session_missing") setChosen(false);
         setLoading(false);
       }
     } finally { busy.current = false; }
@@ -404,6 +406,10 @@ export function Reader({ paneId, agent, cwd = null, activity, echo, onUnavailabl
       onWheel={reading.stopFollowing}
       onPointerDown={reading.stopFollowing}
       onKeyDown={reading.stopFollowing}
+      onTouchEnd={reading.settleAfterPress}
+      onPointerUp={reading.settleAfterPress}
+      onPointerCancel={reading.settleAfterPress}
+      onKeyUp={reading.settleAfterPress}
       onScroll={reading.onScroll}
     >
       {error && <p role="alert">{t(error)} <button onClick={() => void load()}>{t("Retry")}</button></p>}

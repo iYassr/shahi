@@ -371,6 +371,10 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
       userScroll.current = false;
       pendingRestore.current = true;
       anchorLock.current = typeof scrollMemory.get(paneId) === "object";
+      // A place held near the tail is not following. With both set, a stop 3 to
+      // 79 points above the end neither followed new output nor offered the
+      // pill once the view had been flipped (state-machine review, November 2026).
+      if (anchorLock.current) { following.current = false; setAway(true); }
       terminalView.set(paneId, v);
       setViewState(v);
     },
@@ -730,6 +734,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     if (olderInFlight.current || before == null || before <= 0) return;
     olderInFlight.current = true;
     following.current = false;
+    // Said as well as done: with a tail page that fits the screen no scroll
+    // follows, and new output arrived with no pill.
+    setAway(true);
     setLoadingOlder(true);
     setOlderError(null);
     const from = transcript.current;
@@ -880,6 +887,8 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         const explained = missing && (e.code === "reader_session_missing" || e.code === "reader_transcript_missing");
         setReaderNote(explained ? e.message : null);
         setUnidentified(missing && e.code === "reader_session_missing");
+        // The sidecar restarted and lost the choice: it is not chosen any more.
+        if (missing && e.code === "reader_session_missing") setChosen(false);
         setLogError(missing ? null : {
           message: e instanceof Error ? e.message : "The conversation could not be loaded.",
           unreachable: e instanceof UnreachableError,
@@ -2471,15 +2480,24 @@ export function FilePicker({
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [directoryAttempt, setDirectoryAttempt] = useState(0);
   const owner = useRef(0);
+  // `start` is the pane's folder, which moves whenever the agent does. Tied to
+  // the reset below, that aborted an upload under way with no word, and clearing
+  // the error too, so the file just vanished (state-machine review, November 2026).
   useEffect(() => {
     owner.current++;
     busy.current = false;
     setChoosing(false);
     setUploading(false);
     setError(null);
-    setPath(start ?? "~");
     return () => { owner.current++; uploadAbort.current?.abort(); };
-  }, [api, start]);
+  }, [api]);
+  // The folder follows the pane's only until the person has gone somewhere.
+  const followedFolder = useRef(start ?? "~");
+  useEffect(() => {
+    const next = start ?? "~";
+    setPath((current) => (current === followedFolder.current ? next : current));
+    followedFolder.current = next;
+  }, [start]);
 
   useEffect(() => {
     let cancelled = false;

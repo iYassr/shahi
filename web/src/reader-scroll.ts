@@ -50,6 +50,20 @@ export function useReaderScroll({ paneId, scroller, ready, revision, following, 
   }, [paneId, ready, revision, scroller]);
   return {
     stopFollowing() { appliedTop.current = null; following.current = false; },
+    /**
+     * A press that moved nothing sends no scroll event. Following stayed off
+     * after any tap at the tail, on a copy button or just on the text: new
+     * messages were not shown and, with the place still "bottom", no pill said
+     * they had come (state-machine review, November 2026).
+     */
+    settleAfterPress() {
+      const node = scroller.current;
+      if (!node || following.current) return;
+      place.current = capture(node);
+      places.set(paneId, place.current);
+      following.current = place.current.bottom;
+      notify.current(place.current.bottom);
+    },
     onScroll() {
       const node = scroller.current;
       if (!node) return;
@@ -76,6 +90,7 @@ export function useReaderScroll({ paneId, scroller, ready, revision, following, 
         place.current = saved.bottom ? { bottom: false, id: first?.dataset.messageId ?? null, offset: first ? first.getBoundingClientRect().top - node.getBoundingClientRect().top : 0, top: node.scrollTop } : saved;
         places.set(paneId, place.current);
         following.current = false;
+        notify.current(false);
       }
     },
   };

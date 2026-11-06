@@ -242,6 +242,23 @@ test.describe("finding your way back down", () => {
     await expect(page.locator(".reader__more")).toHaveText("Load earlier (20 more)");
   });
 
+  // A press that moves nothing sends no scroll event. Following stayed off after
+  // any tap at the tail, and with the place still "bottom" no pill said new
+  // messages had come (state-machine review, November 2026).
+  test("a tap at the tail does not stop the reader following new messages", async ({ page }) => {
+    await openReader(page, LONG);
+    const reader = page.locator(".reader");
+    await expect.poll(() => reader.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(80);
+    await reader.locator(".msg").last().click();
+
+    const existing = (await (await page.request.get("/api/panes/w1%3Ap2/session?limit=400")).json()).messages;
+    const more = Array.from({ length: 30 }, (_, i) => ({ id: `after-tap-${i}`, role: "agent", at: 10 + i, blocks: [{ kind: "text", text: `After the tap ${i}.` }] }));
+    await page.request.post("/__stub/scenario", { data: { patch: { transcripts: { "w1:p2": [...existing, ...more] } } } });
+
+    await expect(page.getByText("After the tap 29.")).toBeInViewport({ timeout: 20_000 });
+    await expect(page.locator(".reader__jump")).toHaveCount(0);
+  });
+
   // More than one page can bridge still starts again at the newest messages,
   // but counted from the transcript: from the window the count came out
   // negative and was skipped, leaving a stale one (pre-release bug hunt).
