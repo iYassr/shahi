@@ -109,6 +109,49 @@ describe("history seeding", () => {
  * 400ms. So a question can be on screen for seconds before the mirror admits
  * the agent is waiting, and the answer buttons wait with it.
  */
+describe("reads that finish out of order", () => {
+  /** A herdr whose first history read waits, parking the read that made it. */
+  function herdrHoldingFirstSeed(screens: string[]) {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let reads = 0, seeds = 0;
+    const client = {
+      rpc: async (_method: string, params: { source: string }) => {
+        if (params.source === "recent") { if (seeds++ === 0) await held; return { read: { text: "" } }; }
+        return { read: { text: screens[Math.min(reads++, screens.length - 1)]! } };
+      },
+    } as unknown as HerdrClient;
+    return { client, release: () => release() };
+  }
+  const blockedStore = { pane: () => ({ agent: "claude", agent_status: "blocked" }), instance: () => undefined } as unknown as SessionStore;
+
+  test("an older read cannot replace a newer screen or send out a card for a question already gone", async () => {
+    const { client, release } = herdrHoldingFirstSeed([MENU, "the agent moved on"]);
+    const poller = new Poller(client, blockedStore, new TranscriptStore(":memory:"));
+    const frames: { prompt: unknown }[] = [];
+    poller.on("frame", (frame) => frames.push(frame));
+    const older = poller.refresh("w1:p1");
+    await Bun.sleep(1);
+    const newer = await poller.refresh("w1:p1");
+    expect(newer?.prompt).toBeNull();
+    release();
+    await older;
+    expect(frames.map((frame) => frame.prompt)).toEqual([null]);
+    expect(poller.frame("w1:p1")?.text).toBe("the agent moved on");
+  });
+
+  test("a pane forgotten during a read does not come back", async () => {
+    const { client, release } = herdrHoldingFirstSeed(["a screen"]);
+    const poller = new Poller(client, blockedStore, new TranscriptStore(":memory:"));
+    const read = poller.refresh("w1:p1");
+    await Bun.sleep(1);
+    poller.forget("w1:p1");
+    release();
+    await read;
+    expect(poller.frame("w1:p1")).toBeUndefined();
+  });
+});
+
 describe("answering sooner than the mirror knows", () => {
   function herdrSaying(status: string, screen: string) {
     const calls: string[] = [];

@@ -312,6 +312,12 @@ export class Poller extends EventEmitter<PollerEvents> {
     // and before the first screen is recorded on top of it.
     if (!existing) await this.#seedHistory(paneId, text);
 
+    // Those two waits are herdr calls. A newer read that finished during them
+    // holds a newer screen, which this older one overwrote and sent out as a
+    // card for a question already gone; and a pane forgotten during them came
+    // back as a record nothing would ever drop (state-machine review).
+    if (this.prompts.overtaken(paneId, ticket)) return this.#records.get(paneId)?.frame;
+
     this.#records.set(paneId, { hash, lastPolledAt: now, frame, parsed, instance });
     this.transcript.record(paneId, text);
     this.emit("frame", frame);

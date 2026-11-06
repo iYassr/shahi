@@ -95,6 +95,12 @@ export class PromptInstances {
     return state.id;
   }
 
+  /** Whether this read has since been overtaken by a later one, or its pane forgotten. */
+  overtaken(paneId: string, ticket: number): boolean {
+    const state = this.#panes.get(paneId);
+    return !state || ticket < state.seen;
+  }
+
   /** Whether `screen` is the one an answer was already pressed on. */
   alreadyAnswered(paneId: string, screen: string): boolean {
     return this.#panes.get(paneId)?.answeredScreen === screen;
