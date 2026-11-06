@@ -292,6 +292,9 @@ function AppSession({ initialPairingCode = "", openPairing = false, onPairingCon
     return () => {
       socket.close();
       socketRef.current = null;
+      // Closing tells no one. A computer that refused this version left the
+      // header saying live over the update notice (state-machine review).
+      if (active()) setLink("lost");
     };
   }, [authenticated, onMessage, applySession, incompatible]);
 
