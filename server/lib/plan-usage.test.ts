@@ -94,6 +94,13 @@ describe("Claude Code", () => {
     ] } });
   });
 
+  test("a quick off during an on cannot lose the person's status line", async () => {
+    const theirs = { type: "command", command: "echo mine", padding: 1 };
+    writeFileSync(settingsFile, JSON.stringify({ statusLine: theirs }));
+    await Promise.all([setClaudePlanUsage(paths, true), setClaudePlanUsage(paths, false), setClaudePlanUsage(paths, true), setClaudePlanUsage(paths, false)]);
+    expect(settings().statusLine).toEqual(theirs);
+  });
+
   test("turning it off puts the person's status line back and forgets the readings", async () => {
     const theirs = { type: "command", command: "echo mine", padding: 1 };
     writeFileSync(settingsFile, JSON.stringify({ model: "opus", statusLine: theirs }));

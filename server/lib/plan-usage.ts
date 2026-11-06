@@ -177,8 +177,22 @@ if (previous) await Bun.spawn(["/bin/sh", "-c", previous], { stdin: new TextEnco
 
 export class ClaudeSettingsError extends Error {}
 
-/** Turns Claude's plan usage on or off by installing or removing Shahi's status line. */
-export async function setClaudePlanUsage(paths: PlanUsagePaths, enabled: boolean): Promise<void> {
+let settingClaudePlanUsage: Promise<unknown> = Promise.resolve();
+
+/**
+ * Turns Claude's plan usage on or off by installing or removing Shahi's status
+ * line. One at a time: each reads settings.json and acts on what it found, so a
+ * quick off during an on removed the saved status line and script just before
+ * the on pointed settings at them, and the person's own status line was gone at
+ * the next start (state-machine review, November 2026).
+ */
+export function setClaudePlanUsage(paths: PlanUsagePaths, enabled: boolean): Promise<void> {
+  const change = settingClaudePlanUsage.then(() => changeClaudePlanUsage(paths, enabled));
+  settingClaudePlanUsage = change.catch(() => {});
+  return change;
+}
+
+async function changeClaudePlanUsage(paths: PlanUsagePaths, enabled: boolean): Promise<void> {
   let settings: Record<string, unknown> | null;
   try { settings = await readSettings(paths); } catch {
     throw new ClaudeSettingsError("Claude Code's settings.json could not be read, so it was left unchanged.");
