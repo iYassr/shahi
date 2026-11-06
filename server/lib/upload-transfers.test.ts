@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm, readFile, appendFile, readdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile, appendFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -141,6 +141,35 @@ test("an upload interrupted before its cancel arrived does not block the phone's
   expect(new Uint8Array(await readFile(retried.path))).toEqual(bytes);
   // Its predecessor is gone, partial bytes and all.
   await expect(store.status("stranded-transfer-01", owner)).rejects.toMatchObject({ status: 404 });
+});
+
+// A restart between writing the digest and the result, with the phone gone by
+// the time it was back. Nothing retried the finish, cancelling skips a transfer
+// with a digest, and it counted as uploading until the hour was up.
+test("a transfer stranded while finalizing does not tell its owner another file is uploading", async () => {
+  const { dir, store } = await setup();
+  const bytes = new Uint8Array(32).fill(7);
+  await store.begin(id, owner, { name: "stranded.bin", type: "application/octet-stream", size: bytes.length });
+  await store.chunk(id, owner, 0, bytes);
+  const journal = join(dir, ".transfers", `${id}.json`);
+  await writeFile(journal, JSON.stringify({ ...JSON.parse(await readFile(journal, "utf8")), digest: digest(bytes) }));
+
+  const next = "test-transfer-00000002";
+  expect(await new UploadTransfers(dir).begin(next, owner, { name: "next.bin", type: "application/octet-stream", size: 1 })).toEqual({ offset: 0 });
+  expect(await readFile(join(dir, `${id}_stranded.bin`))).toEqual(Buffer.from(bytes));
+});
+
+test("a stranded finalizing transfer that no longer matches its digest is discarded rather than published", async () => {
+  const { dir, store } = await setup();
+  const bytes = new Uint8Array(32).fill(7);
+  await store.begin(id, owner, { name: "changed.bin", type: "application/octet-stream", size: bytes.length });
+  await store.chunk(id, owner, 0, bytes);
+  const journal = join(dir, ".transfers", `${id}.json`);
+  await writeFile(journal, JSON.stringify({ ...JSON.parse(await readFile(journal, "utf8")), digest: "0".repeat(64) }));
+
+  await new UploadTransfers(dir).begin("test-transfer-00000002", owner, { name: "next.bin", type: "application/octet-stream", size: 1 });
+  expect(await readdir(dir)).not.toContain(`${id}_changed.bin`);
+  expect(await readdir(join(dir, ".transfers"))).not.toContain(`${id}.json`);
 });
 
 test("another phone's stranded upload gives up its place on a full computer once it stops moving", async () => {

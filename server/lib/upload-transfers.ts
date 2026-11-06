@@ -76,8 +76,12 @@ export class UploadTransfers {
     for (const entry of entries.filter(x => x.endsWith(".json"))) {
       const id = entry.slice(0, -5);
       const t = JSON.parse(await readFile(this.path(id), "utf8")) as Transfer;
-      if (t.expires < this.now() || (unfinished(t) && this.now() - (t.updated ?? t.expires - LIFETIME) > IDLE)) await this.discard(id);
-      else active.push({ id, t });
+      const idle = this.now() - (t.updated ?? t.expires - LIFETIME) > IDLE;
+      if (t.expires < this.now() || (unfinished(t) && idle)) await this.discard(id);
+      else if (t.digest && !t.result && idle) {
+        const finished = await this.settle(id, t);
+        if (finished) active.push({ id, t: finished });
+      } else active.push({ id, t });
     }
     // A crash between creating a partial/journal temp and publishing its
     // manifest must not leave unaccounted disk usage forever.
@@ -90,11 +94,27 @@ export class UploadTransfers {
     }
     return active;
   }
+  /**
+   * Completes a transfer left between its digest and its result, which only a
+   * client retrying the finish ever did. A restart in that window left one
+   * nothing else could reclaim: it counted as uploading, so its owner was told
+   * "Another file is uploading" until it expired, an hour later, and it held
+   * one of the computer's two places (state-machine review, November 2026).
+   */
+  private async settle(id: string, t: Transfer): Promise<Transfer | null> {
+    try {
+      const { result } = await this.finish(id, t.owner, t.digest!);
+      return { ...t, result };
+    } catch {
+      await this.discard(id);
+      return null;
+    }
+  }
   async begin(id: string, owner: string, body: { name?: unknown; type?: unknown; size?: unknown }) {
     this.path(id);
     if (typeof body.name !== "string" || body.name.length > 512 || typeof body.type !== "string" || body.type.length > 128 || !Number.isSafeInteger(body.size) || (body.size as number) < 0) throw new TransferError(400, "Invalid file details");
     if ((body.size as number) > MAX_UPLOAD_BYTES) throw new TransferError(413, "Files can be up to 32 MB");
-    const active = await this.sweep();
+    const swept = await this.sweep();
     await sweepOldUploads(this.now, this.dir);
     let existing: Transfer | undefined;
     try { existing = await this.load(id, owner); } catch (e) { if (!(e instanceof TransferError) || e.status !== 404) throw e; }
@@ -112,6 +132,13 @@ export class UploadTransfers {
     // upload at a time, so an owner beginning another has abandoned any it
     // left unfinished, and those are discarded here. Other owners' stranded
     // transfers go once idle (see IDLE, in `sweep`).
+    const active: typeof swept = [];
+    for (const entry of swept) {
+      if (entry.id !== id && entry.t.owner === owner && entry.t.digest && !entry.t.result) {
+        const finished = await this.settle(entry.id, entry.t);
+        if (finished) active.push({ id: entry.id, t: finished });
+      } else active.push(entry);
+    }
     const stranded = active.filter(({ t }) => t.owner === owner && unfinished(t));
     for (const { id: abandoned } of stranded) await this.discard(abandoned);
     const live = active.filter(a => !stranded.includes(a)).map(({ t }) => t);
