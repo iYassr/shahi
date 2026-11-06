@@ -380,6 +380,11 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   let notice: string | null | undefined;
   try {
     ({ root: managerRoot, notice } = await bootstrap(layout));
+    // An install that went ahead in the recovery state (an unapproved herdr or
+    // bun) says so, and names the versions, instead of looking like success.
+    // Said now because only this run knows it: a service install that threw
+    // below lost it for good (state-machine review, November 2026).
+    if (notice) console.log(`\n  ${notice}\n`);
   } catch (err) {
     throw new Error(`Could not set up Shahi's approved release: ${message(err)}`, { cause: err });
   }
@@ -444,9 +449,6 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   } else {
     console.log(`Shahi was started but is not running${start.why ? `: ${start.why}` : "."} The log says why:\n  ${layout.logPath}`);
   }
-  // An install that went ahead in the recovery state (an unapproved herdr or
-  // bun) says so, and names the versions, instead of looking like success.
-  if (notice) console.log(`\n  ${notice}`);
   const linger = lingerHint(process.platform, lingerValue(), process.env.USER ?? "$USER");
   if (linger) console.log(`\n  ${linger}\n`);
   console.log(where(layout, service));

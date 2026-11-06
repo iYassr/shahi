@@ -283,6 +283,18 @@ describe("an update interrupted mid-activation", () => {
  * the phone lost its link again while believing the update had finished
  * (compatibility bug hunt).
  */
+test("a rollback's notice survives the manager that wrote it being replaced", async () => {
+  const c = await computer();
+  const current = c.staged(c.build("0.3.6", "current-build"));
+  atomicJson(join(c.root, "installation.json"), { active: current, channel: "stable", sequence: {} });
+  c.catalog([current]);
+  atomicJson(join(c.root, "status.json"), { managed: true, phase: "rolled-back", channel: "stable", current: "0.3.6", message: "The update did not start correctly." });
+  c.start();
+  await c.until(() => c.status()?.message === "The update did not start correctly." && c.starts().length > 0, 20_000, "the service");
+  await Bun.sleep(2_500);
+  expect(c.status()).toMatchObject({ phase: "rolled-back", message: "The update did not start correctly." });
+}, 60_000);
+
 test("a release that rolled back is not tried again at every herdr start, only when a person asks", async () => {
   const c = await computer();
   const current = c.staged(c.build("0.3.6", "current-build"));

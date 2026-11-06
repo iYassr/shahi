@@ -53,7 +53,12 @@ export async function manage(root: string) {
   const managerHash = sha256(readFileSync(import.meta.path));
   // Read before this manager writes anything: a manager that replaced itself
   // after an update left "restarting" for this one to finish (see reconcile).
-  const handedOver = readJson<ComputerUpdate>(join(root, "status.json"))?.phase === "restarting";
+  const earlier = readJson<ComputerUpdate>(join(root, "status.json"));
+  const handedOver = earlier?.phase === "restarting";
+  // A rollback's outcome outlives this manager. Replaced right after one, the
+  // next manager said idle over it, and the person never learned the update had
+  // failed (state-machine review, November 2026).
+  const rolledBack = earlier?.phase === "rolled-back" ? earlier : null;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let startedAt = 0;
   let closing = false;
@@ -257,6 +262,7 @@ export async function manage(root: string) {
       await runner.activate(release);
       if (await runner.ready(release)) {
         if (handedOver) { runner.phase("ready"); nextCheck = Date.now() + CATALOG_CHECK_MS; }
+        else if (rolledBack) { runner.phase("rolled-back", rolledBack.message); nextCheck = Date.now() + CATALOG_CHECK_MS; }
         else save({ phase: "idle" });
       } else if (!down()) save({ phase: "failed", message: "The installed service did not become ready. Its recovery files are retained." });
     }
