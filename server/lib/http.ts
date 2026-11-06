@@ -1528,7 +1528,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
             if (agentSessionOf(pane)) {
               return json({ error: "herdr already identifies this conversation.", code: "conversation_known" }, { status: 409 });
             }
-            if (!(await chooseConversation(client, pane, body.sessionId, claimedBy(paneId)))) {
+            if (!(await chooseConversation(client, pane, body.sessionId, () => claimedBy(paneId)))) {
               return json({ error: "That conversation is not one this pane can show any more. Choose again.", code: "conversation_not_offered" }, { status: 409 });
             }
             // The dashboard's cached location for this pane is out of date now.

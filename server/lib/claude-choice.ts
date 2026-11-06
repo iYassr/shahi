@@ -266,7 +266,7 @@ async function unsaved(config: string, pid: number): Promise<boolean> {
 }
 
 /** Records a person's choice, if it is one of the pane's choices now. */
-export async function chooseConversation(client: Rpc, pane: Pane, sessionId: string, claimed: ReadonlySet<string>): Promise<boolean> {
+export async function chooseConversation(client: Rpc, pane: Pane, sessionId: string, claimed: () => ReadonlySet<string>): Promise<boolean> {
   if (!UUID.test(sessionId) || pane.agent !== "claude" || agentSessionOf(pane)) return false;
   let claude: Foreground[];
   try { claude = (await foreground(client, pane.pane_id)).filter(isClaude); } catch { return false; }
@@ -274,12 +274,12 @@ export async function chooseConversation(client: Rpc, pane: Pane, sessionId: str
   if (claude.length !== 1 || !cwd) return false;
   const config = await claudeConfigDirOf(claude[0]!.pid);
   if (await unsaved(config, claude[0]!.pid)) return false;
-  if (!(await listFor(config, claude[0]!.pid, cwd, claimed)).some((choice) => choice.sessionId === sessionId)) return false;
+  if (!(await listFor(config, claude[0]!.pid, cwd, claimed())).some((choice) => choice.sessionId === sessionId)) return false;
   // One canonical file under the projects root; a copy elsewhere is refused.
   if (!(await findTranscript(sessionId, join(config, "projects")))) return false;
   // Asked again after the awaits above: two phones choosing for two panes both
   // passed `claimed`, and both panes then showed one conversation.
-  for (const [other, held] of chosen) if (other !== pane.pane_id && held.sessionId === sessionId) return false;
+  if (claimed().has(sessionId)) return false;
   chosen.set(pane.pane_id, { terminal: pane.terminal_id, pid: claude[0]!.pid, sessionId });
   return true;
 }

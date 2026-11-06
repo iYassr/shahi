@@ -56,7 +56,7 @@ const LOCATION_MAX_AGE_MS = 15_000;
 // conversation (codex-log.ts `rolloutFromTitle`): a pane that retitled itself
 // twice a second drove 680 process lookups in 15s. The reader and the
 // transcript watcher look afresh, and a status change or 15s refresh this.
-const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane.pane_id), pane.agent_status]);
+const locationKey = (pane: PaneInfo) => JSON.stringify([pane.terminal_id, pane.agent ?? null, agentSessionOf(pane) ?? choiceHeld(pane), pane.agent_status]);
 
 /** A Codex pane's title without its status, which would hide the thread it names. */
 const codexTitle = (pane: PaneInfo) => {

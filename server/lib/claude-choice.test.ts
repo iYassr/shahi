@@ -106,10 +106,10 @@ describe("choosing a conversation herdr cannot identify", () => {
   });
 
   test("a choice is honoured only if it was offered", async () => {
-    expect(await chooseConversation(client, pane(), ELSEWHERE, new Set())).toBe(false);
-    expect(await chooseConversation(client, pane(), NEWER, new Set([NEWER]))).toBe(false);
-    expect(await chooseConversation(client, pane(), "../../etc/passwd", new Set())).toBe(false);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
+    expect(await chooseConversation(client, pane(), ELSEWHERE, () => new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), NEWER, () => new Set([NEWER]))).toBe(false);
+    expect(await chooseConversation(client, pane(), "../../etc/passwd", () => new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(true);
     expect(await chosenSession(client, pane())).toBe(OLDER);
   });
 
@@ -120,7 +120,7 @@ describe("choosing a conversation herdr cannot identify", () => {
     rmSync(path);
     symlinkSync(outside, path);
     expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).not.toContain(OLDER);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(false);
   });
 
   test("a project symlink outside history never exposes previews", async () => {
@@ -131,7 +131,7 @@ describe("choosing a conversation herdr cannot identify", () => {
     rmSync(project, { recursive: true });
     symlinkSync(outside, project);
     expect(await conversationChoices(client, pane(), new Set())).toEqual([]);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(false);
   });
 
   test("an alias for a different session never labels its preview as this session", async () => {
@@ -139,19 +139,19 @@ describe("choosing a conversation herdr cannot identify", () => {
     rmSync(join(project, `${OLDER}.jsonl`));
     symlinkSync(join(project, `${NEWER}.jsonl`), join(project, `${OLDER}.jsonl`));
     expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).toEqual([NEWER, RECORDED]);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(false);
   });
 
   test("two distinct copies of a session are not offered when Reader cannot choose one", async () => {
     transcript(OLDER, [user("A conflicting copy")], 1, projectFolder("/Users/me/duplicate"));
     expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).not.toContain(OLDER);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(false);
   });
 
   test("a directory alias of the same canonical history stays readable", async () => {
     symlinkSync(join(root, "projects", projectFolder(CWD)), join(root, "projects", "alias"));
     expect((await conversationChoices(client, pane(), new Set())).map((c) => c.sessionId)).toEqual([NEWER, RECORDED, OLDER]);
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
+    expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(true);
   });
 
   // Found on an iPhone, October 2026: a new Claude at its folder-trust
@@ -169,7 +169,7 @@ describe("choosing a conversation herdr cannot identify", () => {
       record(FRESH);
       expect(await unsavedSession(client, pane())).toBe(true);
       expect(await conversationChoices(client, pane(), new Set())).toEqual([]);
-      expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(false);
+      expect(await chooseConversation(client, pane(), OLDER, () => new Set())).toBe(false);
     });
 
     test("is not, once its recorded session has a transcript", async () => {
@@ -187,7 +187,7 @@ describe("choosing a conversation herdr cannot identify", () => {
   });
 
   test("a choice holds while that Claude runs there, including through a tool it runs", async () => {
-    await chooseConversation(client, pane(), OLDER, new Set());
+    await chooseConversation(client, pane(), OLDER, () => new Set());
     processes = [...processes, { pid: 999, name: "bash" }];
     expect(await chosenSession(client, pane())).toBe(OLDER);
     herdrDown = true;
@@ -197,16 +197,16 @@ describe("choosing a conversation herdr cannot identify", () => {
   });
 
   test("a choice ends with its Claude process, its terminal, or the hook's own report", async () => {
-    await chooseConversation(client, pane(), OLDER, new Set());
+    await chooseConversation(client, pane(), OLDER, () => new Set());
     processes = [{ pid: PID + 1, name: "claude", cwd: CWD }];
     expect(await chosenSession(client, pane())).toBeNull();
     expect(choiceHeld(pane())).toBeNull();
 
     processes = [{ pid: PID, name: "claude", cwd: CWD }];
-    await chooseConversation(client, pane(), OLDER, new Set());
+    await chooseConversation(client, pane(), OLDER, () => new Set());
     expect(await chosenSession(client, pane({ terminal_id: "term_b" }))).toBeNull();
 
-    await chooseConversation(client, pane(), OLDER, new Set());
+    await chooseConversation(client, pane(), OLDER, () => new Set());
     expect(await chosenSession(client, pane({ agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: NEWER } }))).toBeNull();
     expect(choiceHeld(pane())).toBeNull();
   });
@@ -214,17 +214,27 @@ describe("choosing a conversation herdr cannot identify", () => {
 
 describe("what a choice keeps from other panes", () => {
   test("nothing once Claude has quit to the shell, or the terminal has someone else in it", async () => {
-    await chooseConversation(client, pane(), OLDER, new Set());
+    await chooseConversation(client, pane(), OLDER, () => new Set());
     expect(choiceHeld(pane())).toBe(OLDER);
     expect(choiceHeld(pane({ agent: null }))).toBeNull();
     expect(choiceHeld(pane({ terminal_id: "term_b" }))).toBeNull();
     forgetChoice("w1:p1");
   });
 
-  test("the same conversation cannot be chosen for two panes", async () => {
-    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
-    expect(await chooseConversation(client, pane({ pane_id: "w1:p2" }), OLDER, new Set())).toBe(false);
-    forgetChoice("w1:p1");
+  test("a pane cannot take a conversation another took while it was choosing", async () => {
+    let taken = new Set<string>();
+    const asked = () => taken;
+    const choosing = chooseConversation(client, pane({ pane_id: "w1:p2" }), OLDER, asked);
+    taken = new Set([OLDER]);
+    expect(await choosing).toBe(false);
+  });
+
+  test("one whose Claude has quit is free to choose in another pane", async () => {
+    await chooseConversation(client, pane(), OLDER, () => new Set());
+    const shell = pane({ agent: null });
+    const held = choiceHeld(shell);
+    expect(await chooseConversation(client, pane({ pane_id: "w1:p2" }), OLDER, () => new Set(held ? [held] : []))).toBe(true);
+    forgetChoice("w1:p1"); forgetChoice("w1:p2");
   });
 });
 
