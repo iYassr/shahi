@@ -18,6 +18,27 @@ test("updates stay scoped and a changed running build reconnects once", async ()
     current = { ...h, buildId: "new" }; await a.refresh(); await a.refresh(); expect(recovered).toBe(1);
   } finally { a.stop(); b.stop(); }
 });
+// Mobile refreshes on its own schedule (a 503 in a pane, a pull in Settings), and
+// SSH reconnects stop and restart this session. Either one inside the settle
+// window left the update card on "Requesting update…" until a relaunch.
+test("a refresh or a restart just after requesting an update does not leave it requesting for good", async () => {
+  const api = { control: async () => h, updateComputer: async () => {} };
+  const refreshed = new ControlSession(api, () => {}, () => {});
+  const restarted = new ControlSession(api, () => {}, () => {});
+  try {
+    refreshed.start(); restarted.start(); await Bun.sleep(5);
+    await refreshed.request("check"); await restarted.request("check");
+    expect(refreshed.pending).toBe(true); expect(restarted.pending).toBe(true);
+    await refreshed.refresh();
+    restarted.stop(); expect(restarted.pending).toBe(false); restarted.start();
+    await Bun.sleep(2_100);
+    expect(refreshed.pending).toBe(false); expect(restarted.pending).toBe(false);
+    let sent = 0;
+    const again = new ControlSession({ ...api, updateComputer: async () => { sent++; } }, () => {}, () => {});
+    again.start(); await Bun.sleep(5); await again.request("check"); await again.refresh(); await Bun.sleep(2_100);
+    await again.request("install"); expect(sent).toBe(2); again.stop();
+  } finally { refreshed.stop(); restarted.stop(); }
+});
 test("absent additive capabilities hide only their own feature", () => {
   expect(supports(h, "attachments")).toBe(false); expect(supports(h, "sessions")).toBe(true);
   expect(supports(null, "attachments")).toBe(true); expect(supports(null, "computer-updates")).toBe(false);

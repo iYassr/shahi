@@ -11,10 +11,17 @@ export class ControlSession {
   pending = false;
   private stopped = true;
   private timer?: ReturnType<typeof setTimeout>;
+  /**
+   * Its own timer because it alone ends `pending`. They shared one, so a refresh
+   * or a stop in those two seconds cancelled it and the card said "Requesting
+   * update…" with its buttons off until the app was relaunched (state-machine
+   * review, November 2026).
+   */
+  private settling?: ReturnType<typeof setTimeout>;
   private reading = false;
   constructor(private api: ControlApi, private changed: () => void, private recovered: () => void) {}
   start() { if (!this.stopped) return; this.stopped = false; void this.refresh(); }
-  stop() { this.stopped = true; if (this.timer !== undefined) clearTimeout(this.timer); }
+  stop() { this.stopped = true; if (this.timer !== undefined) clearTimeout(this.timer); if (this.settling !== undefined) clearTimeout(this.settling); this.pending = false; }
   async refresh() {
     if (this.stopped || this.reading) return;
     this.reading = true; if (this.timer !== undefined) clearTimeout(this.timer);
@@ -41,8 +48,8 @@ export class ControlSession {
     finally {
       if (!this.stopped) {
         // The independent manager picks up the durable request once a second.
-        if (this.timer !== undefined) clearTimeout(this.timer);
-        this.timer = setTimeout(() => { this.pending = false; void this.refresh(); }, 2_000);
+        if (this.settling !== undefined) clearTimeout(this.settling);
+        this.settling = setTimeout(() => { this.pending = false; void this.refresh(); }, 2_000);
         this.changed();
       }
     }
