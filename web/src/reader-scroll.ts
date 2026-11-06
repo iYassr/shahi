@@ -58,7 +58,9 @@ export function useReaderScroll({ paneId, scroller, ready, revision, following, 
      */
     settleAfterPress() {
       const node = scroller.current;
-      if (!node || following.current) return;
+      // Only from the tail: Enter on Load earlier reaches here after the click
+      // has saved its place, and this would have put that back to following.
+      if (!node || following.current || !place.current.bottom) return;
       place.current = capture(node);
       places.set(paneId, place.current);
       following.current = place.current.bottom;
