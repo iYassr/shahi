@@ -116,6 +116,10 @@ async function boot() {
     if (Date.now() > deadline) throw new Error("Shahi unavailable"); await Bun.sleep(500);
   }
   await checkpoint();
+  // A child that died during boot passed unnoticed: only one dying after this
+  // point stops the container, so a dead model server answered healthy for
+  // the whole review (state-machine review, November 2026).
+  if (children.some((child) => child.exitCode !== null || child.signalCode !== null)) throw new Error("A demo process exited during startup");
   ready = true;
   setInterval(() => { void checkpoint().catch(() => { checkpointError = true; }); }, 15_000);
 }
