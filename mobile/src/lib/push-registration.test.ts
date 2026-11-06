@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { api } from "./api";
-import { configurePushComputer, forgetPushRegistration, preparePushLogout, pushKeyFor, registerEnabledPush, renewPushRegistration, restorePushRegistration, savedPushToken, unregisterPushRegistration } from "./push-registration";
+import { configurePushComputer, forgetPushRegistration, preparePushLogout, preparePushRegistration, pushKeyFor, registerEnabledPush, renewPushRegistration, restorePushRegistration, savedPushToken, unregisterPushRegistration } from "./push-registration";
 import type { ComputerConnection } from "./computers";
 import type { SshProfile } from "./ssh";
 jest.mock("./api", () => ({ api: { registerPush: jest.fn(async () => {}), unregisterPush: jest.fn(async () => {}) } }));
@@ -73,6 +73,18 @@ test("switching during logout cannot erase the next computer's notification opt-
   await logout;
   expect([...values.values()]).toContain("ExponentPushToken[b]");
   expect(client.registerPush).toHaveBeenCalledWith("ExponentPushToken[a]");
+});
+
+test("switching computers while registering keeps the token, so Settings does not say Off while notifications arrive", async () => {
+  configurePushComputer(ssh(profile));
+  let release!: () => void;
+  const client = { registerPush: jest.fn(() => new Promise<void>(r => { release = r; })) };
+  const registering = preparePushRegistration(client as never)("ExponentPushToken[first]");
+  for (let i = 0; i < 100 && !release; i++) await Promise.resolve();
+  configurePushComputer(ssh({ ...profile, host: "second.test" }));
+  release();
+  await registering;
+  expect(values.get(pushKeyFor(ssh(profile))!)).toBe("ExponentPushToken[first]");
 });
 
 // An SSH opt-in saved before relay computers had keys lives where it did.

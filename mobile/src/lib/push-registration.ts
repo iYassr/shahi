@@ -6,6 +6,8 @@ import { deletePushKey, readPushKey, storePushKey, type PushKey } from "./push-k
 
 let key: string | null = null;
 let revision = 0;
+/** Moves only when a computer's notifications are being forgotten, not on a switch. */
+let forgets = 0;
 let registration: Promise<unknown> = Promise.resolve();
 
 /**
@@ -66,6 +68,7 @@ export function configurePushComputer(connection: ComputerConnection | null): vo
 export function preparePushRegistration(client: Api = api): (token: string, sealed?: PushKey | null) => Promise<void> {
   const savedKey = key;
   const current = revision;
+  const forgetsThen = forgets;
   return async (token, sealed = null) => {
     registration = registration.catch(() => undefined).then(async () => {
       if (current !== revision) return;
@@ -77,7 +80,10 @@ export function preparePushRegistration(client: Api = api): (token: string, seal
         if (sealed) await deletePushKey(sealed.id).catch(() => undefined);
         throw e;
       }
-      if (savedKey && current === revision) {
+      // Kept under that computer's own key even if the phone has since switched:
+      // it holds this token now, and with no record Settings read Off while its
+      // notifications kept arriving (state-machine review, November 2026).
+      if (savedKey && forgetsThen === forgets) {
         await writeSecret(savedKey, token);
         if (sealed) await writeSecret(keyIdFor(savedKey), sealed.id);
         else await deleteSecret(keyIdFor(savedKey));
@@ -166,6 +172,7 @@ export async function unregisterPushRegistration(client: Api = api): Promise<voi
 export async function forgetPushRegistration(): Promise<void> {
   const savedKey = key;
   revision++;
+  forgets++;
   await registration.catch(() => undefined);
   if (savedKey) {
     await deleteSecret(savedKey).catch(() => undefined);
