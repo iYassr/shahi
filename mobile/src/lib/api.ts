@@ -956,6 +956,9 @@ export class SessionSocket {
   close(): void {
     this.#closed = true;
     if (this.#timer) clearTimeout(this.#timer);
+    // Cleared as well as cancelled: `#retry` does nothing while one is set, so
+    // the first loss after reopening was never retried.
+    this.#timer = undefined;
     if (this.#watchdog) clearInterval(this.#watchdog);
     this.#watchdog = undefined;
     this.#socket?.close();
@@ -985,6 +988,12 @@ export class SessionSocket {
       this.#timer = undefined;
     }
     this.#backoffMs = 500;
+    // A socket still connecting may never finish, so it is replaced. It used to
+    // be left to finish too: two live sockets delivering every frame, one of
+    // them out of `close()`'s reach (state-machine review, November 2026).
+    const previous = this.#socket;
+    this.#socket = undefined;
+    previous?.close();
     this.#open();
   }
 
@@ -1044,12 +1053,14 @@ export class SessionSocket {
     this.#socket = socket;
 
     socket.onopen = () => {
+      if (this.#socket !== socket) return;
       this.#backoffMs = 500;
       this.#lastMessageAt = Date.now();
       this.onLink("live");
       if (this.#watching) socket.send(JSON.stringify({ type: "watch", paneId: this.#watching }));
     };
     socket.onmessage = (event) => {
+      if (this.#socket !== socket) return;
       this.#lastMessageAt = Date.now();
       try {
         const message = JSON.parse(String(event.data)) as SocketMessage;
@@ -1060,6 +1071,10 @@ export class SessionSocket {
       }
     };
     socket.onclose = (event: { code?: number }) => {
+      // A socket already replaced or closed on purpose says nothing about the
+      // link. Its late close used to report a healthy successor as lost, and
+      // the session answered by closing that one's tunnel.
+      if (this.#socket !== socket) return;
       this.onLink("lost");
       // 4001 is the server's heartbeat finding this session expired or
       // revoked. Retrying would be refused at the gate forever, and React

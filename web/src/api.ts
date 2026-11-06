@@ -504,6 +504,7 @@ export class SessionSocket {
     this.#relay = undefined;
     this.#relaySubscription = undefined;
     if (this.#timer) clearTimeout(this.#timer);
+    this.#timer = undefined;
     if (this.#watchdog) clearInterval(this.#watchdog);
     this.#watchdog = undefined;
     window.removeEventListener("offline", this.#handleOffline);

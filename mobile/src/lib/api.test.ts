@@ -402,6 +402,60 @@ describe("semantic requests", () => {
     expect(disconnected).toHaveBeenCalledTimes(1);
   });
 
+  describe("while one socket is still connecting", () => {
+    type Fake = { readyState: number; onopen?: () => void; onmessage?: (event: { data: string }) => void; onclose?: (event: { code?: number }) => void; closed: boolean; close(): void; send(): void };
+    const realWebSocket = globalThis.WebSocket;
+    let opened: Fake[];
+    beforeEach(() => {
+      opened = [];
+      connection.baseUrl = "http://localhost:7272";
+      class FakeWebSocket {
+        readyState = 0; closed = false;
+        constructor() { opened.push(this as unknown as Fake); }
+        close() { this.closed = true; }
+        send() {}
+      }
+      (globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+    });
+    afterEach(() => { (globalThis as { WebSocket: unknown }).WebSocket = realWebSocket; });
+
+    test("reconnecting replaces it, and the replaced one can neither deliver nor report the link", () => {
+      const onMessage = jest.fn(), onLink = jest.fn();
+      const socket = new SessionSocket(onMessage, onLink);
+      socket.connect();
+      socket.ensureConnected();
+      expect(opened).toHaveLength(2);
+      expect(opened[0]!.closed).toBe(true);
+
+      opened[1]!.readyState = 1;
+      opened[1]!.onopen?.();
+      onLink.mockClear();
+      opened[0]!.onopen?.();
+      opened[0]!.onmessage?.({ data: JSON.stringify({ type: "session" }) });
+      opened[0]!.onclose?.({ code: 1006 });
+      expect(onMessage).not.toHaveBeenCalled();
+      expect(onLink).not.toHaveBeenCalled();
+      socket.close();
+      expect(opened[1]!.closed).toBe(true);
+    });
+
+    test("a retry left waiting by a close does not stop the next loss being retried", () => {
+      jest.useFakeTimers();
+      try {
+        const socket = new SessionSocket(jest.fn(), jest.fn());
+        socket.connect();
+        opened[0]!.onclose?.({ code: 1006 });
+        socket.close();
+        socket.connect();
+        expect(opened).toHaveLength(2);
+        opened[1]!.onclose?.({ code: 1006 });
+        jest.advanceTimersByTime(1_100);
+        expect(opened).toHaveLength(3);
+        socket.close();
+      } finally { jest.useRealTimers(); }
+    });
+  });
+
   // 426 is the server declining this version, not a generic failure: the
   // message names which side to update.
   test("a 426 is an incompatible server, in the server's words", async () => {
