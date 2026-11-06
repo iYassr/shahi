@@ -119,7 +119,7 @@ function health(monitor) {
   $('health-banner').dataset.state = state; $('health-title').textContent = title; $('health-detail').textContent = detail;
   $('health-time').textContent = monitor ? `Checked ${date(monitor.checkedAt)}` : 'No sample';
   rows('checks', expected.map((key) => { const c = checks[key]; return [names[key], !c || stale ? 'Unknown' : c.healthy ? `Healthy${c.durationMs > 0 ? ' · ' + ms(c.durationMs) : ''}` : 'Failed', !c || stale ? 'warn' : c.healthy ? 'good' : 'bad']; }));
-  rows('incidents', incidentList.length ? incidentList.map(([key, i]) => [names[key] ?? key, `${count(i.failures)} consecutive failures`, 'bad']) : [[stale || !complete ? 'Current incidents unknown' : 'No active incidents', stale || !complete ? '—' : 'Clear', stale || !complete ? 'warn' : 'good']]);
+  rows('incidents', incidentList.length ? incidentList.map(([key, i]) => [names[key] ?? key, i.failures ? `${count(i.failures)} consecutive failures` : 'Recovering: healthy again, one more check to clear', 'bad']) : [[stale || !complete ? 'Current incidents unknown' : 'No active incidents', stale || !complete ? '—' : 'Clear', stale || !complete ? 'warn' : 'good']]);
   $('delivery').textContent = monitor ? `${count(monitor.deliveryFailures)} alert email delivery failures recorded by the monitor. Counts are cumulative, not limited to the selected range.` : 'Alert delivery data unavailable.';
 }
 function drawChart(stats) {
