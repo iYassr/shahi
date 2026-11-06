@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { router } from "expo-router";
 import NewAgentRoute from "../app/new-agent";
 
@@ -52,6 +52,32 @@ test("a space made from Choose a space goes straight on to its agent form", () =
   view.rerender(<NewAgentRoute />);
   fireEvent.press(screen.getByText("Finish in w3"));
   expect(router.replace).toHaveBeenCalledWith({ pathname: "/pane/[paneId]", params: { paneId: "w3:p2", computer: "c1" } });
+});
+
+test("a new space that never appears goes back to choosing rather than opening for good", () => {
+  jest.useFakeTimers();
+  try {
+    render(<NewAgentRoute />);
+    fireEvent.press(screen.getByText("New space"));
+    fireEvent.press(screen.getByText("Create w3 for its agent"));
+    expect(screen.getByText("Opening the new space…")).toBeTruthy();
+    act(() => { jest.advanceTimersByTime(15_000); });
+    expect(screen.queryByText("Opening the new space…")).toBeNull();
+    expect(screen.getByText("Choose w1")).toBeTruthy();
+  } finally { jest.useRealTimers(); }
+});
+
+test("a new space that appears and then closes goes back to choosing too", () => {
+  const view = render(<NewAgentRoute />);
+  fireEvent.press(screen.getByText("New space"));
+  fireEvent.press(screen.getByText("Create w3 for its agent"));
+  const before = mockSession.workspaces;
+  mockSession.workspaces = [...before, { workspaceId: "w3", label: "New" }];
+  view.rerender(<NewAgentRoute />);
+  mockSession.workspaces = before;
+  view.rerender(<NewAgentRoute />);
+  expect(screen.queryByText("Opening the new space…")).toBeNull();
+  expect(screen.getByText("Choose w1")).toBeTruthy();
 });
 
 // Simulator run of build 32: a computer with no spaces opened New agent on an

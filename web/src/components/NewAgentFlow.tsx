@@ -16,6 +16,9 @@ import { NewAgent } from "./NewAgent";
 import { Sheet } from "./Sheet";
 import { CreateSpace } from "./Spaces";
 
+/** The session lists a space seconds after its creation; this is well past that. */
+const NEW_SPACE_WAIT_MS = 15_000;
+
 interface Props {
   session: Session;
   onClose: () => void;
@@ -41,7 +44,12 @@ export function NewAgentFlow({ session, onClose, onToast, onChanged, onStarted }
   useEffect(() => {
     if (!chosen) return;
     if (space) { if (made === chosen) setMade(null); return; }
-    if (chosen !== made) setChosen(null);
+    if (chosen !== made) { setChosen(null); return; }
+    // Made, and never listed: closed on the computer before this session heard
+    // of it. "Opening the new space…" stayed up with nothing to do but close the
+    // sheet (state-machine review, November 2026).
+    const timer = setTimeout(() => { setMade(null); setChosen(null); }, NEW_SPACE_WAIT_MS);
+    return () => clearTimeout(timer);
   }, [chosen, space, made]);
 
   if (making) {

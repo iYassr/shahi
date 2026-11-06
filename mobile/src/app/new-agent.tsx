@@ -1,5 +1,5 @@
 import { UiText } from "@/components/ui-text";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { NewAgent, NewSpace, PickSpace } from "@/screens/spaces";
 import { Text } from "@/components/text";
@@ -7,6 +7,9 @@ import { View } from "react-native";
 import { theme } from "@/lib/theme";
 import { useSession } from "@/lib/session";
 import { useOwnedRoute } from "@/lib/owned-route";
+
+/** The session lists a space seconds after its creation; this is well past that. */
+const NEW_SPACE_WAIT_MS = 15_000;
 
 /**
  * One sheet for every way in: a space's own "+ New agent" arrives with its
@@ -31,6 +34,17 @@ export default function NewAgentRoute() {
   const { session, refresh, activeComputerId } = useSession();
   // A space's id, like a pane's, means something only on its own computer.
   const owned = useOwnedRoute();
+  const listed = !!session?.workspaces.some((w) => w.workspaceId === chosen);
+  // Listed, it is an ordinary chosen space: one that closes then goes back to
+  // choosing. Never listed, it closed on the computer before this session heard
+  // of it. Either way "Opening the new space…" stayed up for good, with no
+  // control on it (state-machine review, November 2026).
+  useEffect(() => {
+    if (chosen === null || chosen !== made) return;
+    if (listed) { setMade(null); return; }
+    const timer = setTimeout(() => { setMade(null); setChosen(null); }, NEW_SPACE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [chosen, made, listed]);
   if (!session || !owned) return null;
   if (first === null) {
     setFirst(session.workspaces.length === 0);
