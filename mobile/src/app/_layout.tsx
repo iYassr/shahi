@@ -64,6 +64,8 @@ function Navigation() {
   const { connectionKey, ready, activeComputerId, hostKeyReview } = session;
   const current = useRef(session); current.current = session;
   const [pending, setPending] = useState<{ id: string; pane: string; switched: boolean; instance?: string; answer?: NotificationAnswer } | null>(null);
+  const translate = useRef(ui); translate.current = ui;
+  const noticeUnanswered = () => Alert.alert(translate.current("Not answered"), translate.current("That computer could not be opened, so nothing was sent. Its question is still waiting."));
   // Above the remounting stack: a notification can select another computer.
   useEffect(() => {
     if (!ready) return;
@@ -71,10 +73,13 @@ function Navigation() {
       const state = current.current;
       const target = serverId ? state.computers.find(c => c.serverId === serverId) :
         state.computers.length === 1 ? state.computers[0] : undefined;
-      if (!target) { router.push("/computers"); return; }
+      // The person pressed an answer, and it cannot go anywhere: say so. It
+      // used to vanish behind the Computers list with the question still open.
+      if (!target) { if (answer) noticeUnanswered(); router.push("/computers"); return; }
       const switched = target.id !== state.activeComputerId;
       setPending({ id: target.id, pane, switched, ...(instance && { instance }), ...(answer && { answer }) });
       if (switched) void state.switchComputer(target.id).catch(() => {
+        if (answer) noticeUnanswered();
         setPending(null); router.push("/computers");
       });
     };
