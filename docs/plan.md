@@ -1,7 +1,10 @@
 # State-machine review, November 2026
 
-Fixes from a review of the app's implicit state machines. Each has a test named
-after its symptom. Commits are local until the owner asks to push.
+Fixes from a review of the app's implicit state machines. Most have a test named
+after their symptom. Without one: the notification alert, the web Attach switch,
+the phone's upload folder, its reader pill after flipping views, the chosen note,
+the Working backstop, the review controller and the dashboard wording. Commits
+are local until the owner asks to push.
 
 ## Done
 
