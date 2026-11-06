@@ -41,6 +41,15 @@ test("checking twenty other agents keeps a typed reply, an attachment and an unc
   expect(webDraft(computer, "on-screen")).toBe(onScreen);
 });
 
+test("a ninth computer does not take the operation ID of an uncertain send from the oldest", () => {
+  const uncertain = webDraft("computer-0", "pane");
+  uncertain.pending = { body: "deploy", id: "op-1" };
+  for (let i = 1; i < 9; i++) webDraft(`computer-${i}`, "pane");
+  expect(webDraft("computer-0", "pane")).toBe(uncertain);
+  expect(uncertain.pending?.id).toBe("op-1");
+  for (let i = 0; i < 9; i++) clearWebDrafts(`computer-${i}`);
+});
+
 test("when only typed drafts are left, the least recently opened one goes", () => {
   const computer = draftOwner({ serverId: "recency", deviceId: "device" });
   for (let i = 0; i < 20; i++) webDraft(computer, `typed-${i}`).text = `reply ${i}`;

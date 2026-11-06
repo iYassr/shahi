@@ -213,7 +213,7 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     notifyWebDraft(savedDraft);
   }
   useEffect(() => {
-    const update = () => { setDraftState(savedDraft.text); setAttachmentsState(savedDraft.attachments); setSending(savedDraft.inFlight); pending.current = savedDraft.pending; };
+    const update = () => { setDraftState(savedDraft.text); setAttachmentsState(savedDraft.attachments); setSending(savedDraft.inFlight || actionInFlight.current); pending.current = savedDraft.pending; };
     savedDraft.listeners.add(update);
     return () => { savedDraft.listeners.delete(update); };
   }, [savedDraft]);
@@ -424,13 +424,17 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
     if (pending.current?.body !== body) pending.current = { body, id: requestId(), ...(instanceId ? { instanceId } : {}) };
     savedDraft.pending = pending.current;
     savedDraft.inFlight = true;
+    const sentGeneration = savedDraft.generation;
     notifyWebDraft(savedDraft);
     const acceptedEcho = readerEcho(paneId, body);
     await send(async () => {
       try {
         await api.send(paneId, body, savedDraft.pending!.id, savedDraft.pending!.instanceId);
         savedDraft.pending = null;
-        if (chosen === undefined && savedDraft.text === draft) savedDraft.text = "";
+        // Only what was sent goes. A person can keep typing during a send, and
+        // the whole draft stayed then, the delivered words included, for Send
+        // to deliver again (state-machine review, November 2026).
+        if (chosen === undefined && savedDraft.text.startsWith(draft)) savedDraft.text = savedDraft.text.slice(draft.length).replace(/^\s+/, "");
         savedDraft.attachments = savedDraft.attachments.filter(file => !files.some(sent => sent.path === file.path));
         if (mounted.current) { setEcho(acceptedEcho); setSentAt(Date.now()); }
       } catch (error) {
@@ -439,7 +443,8 @@ export function PaneView({ session, frames, prompts, onWatch, onAnswer, onToast,
           pending.current = null;
         }
         // Where a typed message would have stayed, so Send can retry it.
-        if (chosen !== undefined && savedDraft.text.trim() === "") savedDraft.text = text;
+        // Not for a new occupant of this pane, whose draft was emptied on purpose.
+        if (chosen !== undefined && savedDraft.generation === sentGeneration && savedDraft.text.trim() === "") savedDraft.text = text;
         throw error;
       } finally {
         savedDraft.inFlight = false;

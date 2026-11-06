@@ -1,5 +1,7 @@
 /** Private drafts exist only in this page's memory, scoped to a pairing grant. */
 export interface WebDraft {
+  /** Moves when the pane's occupant ends, so a send still out cannot restore its words for the next one. */
+  generation: number;
   text: string;
   inFlight: boolean;
   listeners: Set<() => void>;
@@ -31,18 +33,35 @@ function evictOne(drafts: Map<string, WebDraft>): boolean {
   }
   return typed !== undefined && drafts.delete(typed);
 }
+/**
+ * The oldest computer holding nothing that must be kept. Deleting the oldest
+ * whatever it held lost an uncertain send's operation ID on a ninth computer,
+ * and a retry of that message then went out as a new one. Only sends someone
+ * made and panes on screen can take this past eight.
+ */
+function evictScope(): void {
+  for (const [owner, drafts] of scopes) {
+    if ([...drafts.values()].some(draft => draft.inFlight || draft.pending || draft.listeners.size > 0)) continue;
+    scopes.delete(owner);
+    return;
+  }
+}
 export function webDraft(owner: string, pane: string): WebDraft {
   let drafts = scopes.get(owner);
   if (!drafts) {
-    if (scopes.size >= 8) scopes.delete(scopes.keys().next().value!);
+    if (scopes.size >= 8) evictScope();
     scopes.set(owner, drafts = new Map());
+  } else {
+    // Least recently used first, as within a scope.
+    scopes.delete(owner);
+    scopes.set(owner, drafts);
   }
   let draft = drafts.get(pane);
   if (draft) {
     // Re-inserted on every read, so insertion order is recency order.
     drafts.delete(pane);
   } else {
-    draft = { text: "", attachments: [], pending: null, inFlight: false, listeners: new Set() };
+    draft = { generation: 0, text: "", attachments: [], pending: null, inFlight: false, listeners: new Set() };
     // A loop, so a scope that grew past the limit while sends were uncertain
     // shrinks back once they settle.
     while (drafts.size >= 20 && evictOne(drafts));
@@ -62,7 +81,9 @@ export function clearWebDrafts(owner: string) { scopes.delete(owner); }
  */
 export function forgetWebDraft(owner: string, pane: string) {
   const draft = scopes.get(owner)?.get(pane);
-  if (!draft || (!draft.text && !draft.attachments.length && !draft.pending)) return;
+  if (!draft) return;
+  draft.generation++;
+  if (!draft.text && !draft.attachments.length && !draft.pending) return;
   draft.text = "";
   draft.attachments = [];
   draft.pending = null;
