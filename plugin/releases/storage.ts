@@ -10,8 +10,11 @@ export interface Transaction {
   serverId?: string;
   /** installation.previous when the journal was written (null: none), which a rollback restores. Absent in journals from 0.3.7 and earlier. */
   earlier?: Release | null;
+  /** The target failed: only the previous release is being restored. Absent in journals before 0.3.37, which go forward first. */
+  restoring?: boolean;
 }
-export type UpdateRequest = { action: "check" | "install"; channel?: ReleaseChannel };
+/** `automatic`: setup asking at a herdr start, which does not retry a release that failed. */
+export type UpdateRequest = { action: "check" | "install"; channel?: ReleaseChannel; automatic?: boolean };
 export function readJson<T>(path: string): T | null {
   try { return JSON.parse(readFileSync(path, "utf8")) as T; }
   catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return null; throw e; }

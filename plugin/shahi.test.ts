@@ -529,7 +529,7 @@ describe("a Linux without systemd", () => {
     expect(out.text()).not.toContain("Shahi is not running");
     expect(herdr.calls()).toContain("notification show Shahi is running");
     expect(herdr.calls()).not.toContain("not set up");
-    expect(JSON.parse(readFileSync(join(layout.stateDir, "managed", "request.json"), "utf8"))).toEqual({ action: "install" });
+    expect(JSON.parse(readFileSync(join(layout.stateDir, "managed", "request.json"), "utf8"))).toEqual({ action: "install", automatic: true });
   });
 
   test("with nothing answering, the hand-over says it is not running, and still leaves the update request", async () => {

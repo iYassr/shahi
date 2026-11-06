@@ -404,7 +404,7 @@ export async function install(layout: Layout, service: Service, opts: { newPassc
   const managed = { ...spec, root: managerRoot, entry: join(managerRoot, "manager.js"), env: { ...spec.env, SHAHI_MANAGER_ROOT: managerRoot } };
   const { url } = address(layout, env);
   const requestInstall = () => {
-    try { requestUpdate(managerRoot, { action: "install" }); }
+    try { requestUpdate(managerRoot, { action: "install", automatic: true }); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
   };
   const since = Date.now();

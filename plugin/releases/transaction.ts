@@ -16,6 +16,15 @@ export interface Runner {
  */
 export interface Activation { handoff?: boolean }
 
+const ROLLED_BACK = "The update did not start correctly. Your previous release and pairing have been restored.";
+/**
+ * The release that last failed to start, kept across restarts. Setup asks for
+ * the newest release at every herdr start, so without this a release that
+ * rolled back was tried again each time, taking the service down for it. A
+ * person's own request still tries it.
+ */
+export const FAILED_RELEASE = "failed-release.json";
+
 /** The manager outlives the service. Pending activation is resumed after reboot. */
 export async function finishTransaction(root: string, runner: Runner, { handoff = false }: Activation = {}): Promise<void> {
   const tx = readJson<Transaction>(join(root, "transaction.json"));
@@ -23,13 +32,22 @@ export async function finishTransaction(root: string, runner: Runner, { handoff 
   const record = installation(root)!;
   if (tx.previous.dataSchema !== tx.target.dataSchema) throw new Error("No tested rollback path for this data format.");
   runner.phase("restarting");
-  atomicJson(join(root, "installation.json"), { ...record, active: tx.target, previous: tx.previous });
-  let healthy = false;
-  try { await runner.activate(tx.target); healthy = await runner.ready(tx.target, tx.serverId); } catch { /* Restore below. */ }
-  if (healthy) {
-    rmSync(join(root, "transaction.json"));
-    if (!handoff) runner.phase("ready");
-    return;
+  // A journal that says it is restoring never goes forward again. Without the
+  // field, a manager killed mid-rollback, or a restart after a recovery that
+  // failed, stopped whatever was running to try the failed release once more
+  // (state-machine review, November 2026).
+  if (!tx.restoring) {
+    atomicJson(join(root, "installation.json"), { ...record, active: tx.target, previous: tx.previous });
+    let healthy = false;
+    try { await runner.activate(tx.target); healthy = await runner.ready(tx.target, tx.serverId); } catch { /* Restore below. */ }
+    if (healthy) {
+      rmSync(join(root, "transaction.json"));
+      rmSync(join(root, FAILED_RELEASE), { force: true });
+      if (!handoff) runner.phase("ready");
+      return;
+    }
+    atomicJson(join(root, FAILED_RELEASE), { buildId: tx.target.buildId });
+    atomicJson(join(root, "transaction.json"), { ...tx, restoring: true } satisfies Transaction);
   }
   // A rollback restores the release before the target and the one before
   // that. The record read above can already be this journal's own rewrite,
@@ -43,12 +61,24 @@ export async function finishTransaction(root: string, runner: Runner, { handoff 
     await runner.activate(tx.previous);
     if (!await runner.ready(tx.previous, tx.serverId)) throw new Error("Previous release did not become ready.");
     rmSync(join(root, "transaction.json"));
-    runner.phase("rolled-back", "The update did not start correctly. Your previous release and pairing have been restored.");
+    runner.phase("rolled-back", ROLLED_BACK);
   } catch {
     // Leave the transaction so a restart retries recovery; never declare success.
     runner.phase("failed", "Shahi could not restart. The previous release is retained; check the computer's service log.");
     throw new Error("Update and recovery readiness checks failed.");
   }
+}
+/**
+ * A rollback whose restored release answered late. The supervisor keeps
+ * restarting that release after a failed recovery, and the journal it left
+ * refused every later update ("already pending recovery") for as long as this
+ * manager ran, with a status that had meanwhile gone back to idle.
+ */
+export async function finishRecovery(root: string, runner: Runner): Promise<void> {
+  const tx = readJson<Transaction>(join(root, "transaction.json"));
+  if (!tx?.restoring || !await runner.ready(tx.previous, tx.serverId)) return;
+  rmSync(join(root, "transaction.json"));
+  runner.phase("rolled-back", ROLLED_BACK);
 }
 export async function beginTransaction(root: string, target: Release, runner: Runner, serverId?: string, activation: Activation = {}) {
   const record = installation(root);

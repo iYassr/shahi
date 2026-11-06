@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { download, RELEASE_HOSTS, selectRelease, sha256, verifyCatalog, withStable, type Catalog, type Release } from "./catalog";
 import { stage } from "./stage";
 import { atomicJson, installation, readJson, type Transaction } from "./storage";
-import { beginTransaction, finishTransaction, type Runner } from "./transaction";
+import { beginTransaction, FAILED_RELEASE, finishRecovery, finishTransaction, type Runner } from "./transaction";
 import { verifyPublished } from "./published";
 
 const keys = generateKeyPairSync("ed25519");
@@ -185,6 +185,37 @@ describe("restart and recovery", () => {
     await finishTransaction(s.root, s.runner);
     expect(installation(s.root)?.active.buildId).toBe(release.buildId);
     expect(installation(s.root)?.previous).toBeUndefined();
+  });
+  test("a manager killed during a rollback finishes it and never starts the failed release again", async () => {
+    const s = setup(true);
+    atomicJson(join(s.root, "installation.json"), { active: release, channel: "stable", sequence: {} });
+    atomicJson(join(s.root, "transaction.json"), { previous: release, target, serverId: "paired-computer", earlier: null, restoring: true });
+    await finishTransaction(s.root, s.runner);
+    expect(s.activations).toEqual([release.buildId]);
+    expect(s.phases.at(-1)).toBe("rolled-back");
+    expect(existsSync(join(s.root, "transaction.json"))).toBe(false);
+  });
+  test("a recovery that failed is finished once the restored release answers, and later updates are no longer refused", async () => {
+    const s = setup(true);
+    let answers = false;
+    const runner: Runner = { ...s.runner, async ready(r) { return answers && r.buildId === release.buildId; } };
+    await expect(beginTransaction(s.root, target, runner, "paired-computer")).rejects.toThrow("recovery");
+    expect(readJson<Transaction>(join(s.root, "transaction.json"))?.restoring).toBe(true);
+    await expect(beginTransaction(s.root, target, runner)).rejects.toThrow("already pending");
+    await finishRecovery(s.root, runner);
+    expect(existsSync(join(s.root, "transaction.json"))).toBe(true);
+    answers = true;
+    await finishRecovery(s.root, runner);
+    expect(existsSync(join(s.root, "transaction.json"))).toBe(false);
+    expect(s.phases.at(-1)).toBe("rolled-back");
+  });
+  test("a release that failed is remembered across restarts, and forgotten when one starts", async () => {
+    const failing = setup(true);
+    await beginTransaction(failing.root, target, failing.runner, "paired-computer");
+    expect(readJson<{ buildId: string }>(join(failing.root, FAILED_RELEASE))?.buildId).toBe(target.buildId);
+    const working: Runner = { ...failing.runner, async ready() { return true; } };
+    await beginTransaction(failing.root, target, working, "paired-computer");
+    expect(existsSync(join(failing.root, FAILED_RELEASE))).toBe(false);
   });
   test("the journal records the release a rollback restores as previous", async () => {
     const older = { ...release, version: "0.2.9", buildId: "build-0" };

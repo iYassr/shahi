@@ -283,6 +283,29 @@ describe("an update interrupted mid-activation", () => {
  * the phone lost its link again while believing the update had finished
  * (compatibility bug hunt).
  */
+test("a release that rolled back is not tried again at every herdr start, only when a person asks", async () => {
+  const c = await computer();
+  const current = c.staged(c.build("0.3.6", "current-build"));
+  atomicJson(join(c.root, "installation.json"), { active: current, channel: "stable", sequence: {} });
+  const broken = await c.published(c.build("0.3.7", "broken-build", { works: false }));
+  c.catalog([broken, current]);
+  // What the rollback left, with this manager started after it.
+  atomicJson(join(c.root, "failed-release.json"), { buildId: broken.buildId });
+  c.start();
+  await c.until(() => !!c.status()?.checkedAt, 20_000, "the first check");
+
+  requestUpdate(c.root, { action: "install", automatic: true });
+  await c.until(() => !existsSync(join(c.root, "request.json")), 10_000, "setup's request to be read");
+  await Bun.sleep(1_500);
+  expect(installation(c.root)?.active.buildId).toBe("current-build");
+  expect(existsSync(join(c.root, "releases", "broken-build"))).toBe(false);
+  expect(c.status()?.available).toBe("0.3.7");
+
+  requestUpdate(c.root, { action: "install" });
+  await c.until(() => c.status()?.phase === "rolled-back", 45_000, "the person's own try");
+  expect(installation(c.root)?.active.buildId).toBe("current-build");
+}, 120_000);
+
 test("an update that brings a new manager says restarting until the new manager's service is up", async () => {
   const c = await computer();
   const current = c.staged(c.build("0.3.6", "current-build"));
