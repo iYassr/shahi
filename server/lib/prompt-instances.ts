@@ -26,8 +26,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ParsedPrompt } from "@shahi/shared";
 
 interface PaneState {
-  /** Tickets handed out, and the highest one observed. */
-  issued: number;
+  /** The highest ticket observed. */
   seen: number;
   /** The screen that read found, and the id it was given. */
   screen?: string;
@@ -51,10 +50,18 @@ export function screenId(text: string): string {
 
 export class PromptInstances {
   readonly #panes = new Map<string, PaneState>();
+  /**
+   * One count for every pane, which outlives `forget`. Counted per pane, a read
+   * finishing just after its pane was forgotten restored its old high mark to a
+   * count starting again from zero. Herdr reuses pane ids, and for the next
+   * occupant's reads every one was "overtaken": no prompt ids, and an answered
+   * mark nothing could clear (state-machine review, November 2026).
+   */
+  #issued = 0;
 
   /** Taken before a read is sent. */
-  ticket(paneId: string): number {
-    return ++this.#state(paneId).issued;
+  ticket(_paneId: string): number {
+    return ++this.#issued;
   }
 
   /**
@@ -108,7 +115,7 @@ export class PromptInstances {
 
   #state(paneId: string): PaneState {
     let state = this.#panes.get(paneId);
-    if (!state) this.#panes.set(paneId, (state = { issued: 0, seen: 0 }));
+    if (!state) this.#panes.set(paneId, (state = { seen: 0 }));
     return state;
   }
 }

@@ -95,3 +95,18 @@ describe("PromptInstances", () => {
     expect(instances.alreadyAnswered("w1:p1", screenId(BASH))).toBe(false);
   });
 });
+
+test("a read finishing after its pane was forgotten does not blind the next occupant of that id", () => {
+  const instances = new PromptInstances();
+  const prompt = parsePrompt(readFileSync(join(import.meta.dir, "..", "fixtures", "blocked__w4-p2__text.txt"), "utf8"))!;
+  let late = 0;
+  for (let i = 0; i < 50; i++) late = instances.ticket("w1:p1");
+  instances.forget("w1:p1");
+  instances.observe("w1:p1", late, null, "the old occupant's screen");
+
+  const read = instances.ticket("w1:p1");
+  expect(instances.observe("w1:p1", read, prompt, "the new occupant's question")).toBeString();
+  instances.answered("w1:p1", "the new occupant's question");
+  instances.observe("w1:p1", instances.ticket("w1:p1"), null, "it moved on");
+  expect(instances.alreadyAnswered("w1:p1", "the new occupant's question")).toBe(false);
+});
