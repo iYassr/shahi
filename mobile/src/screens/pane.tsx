@@ -889,6 +889,9 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         setUnidentified(missing && e.code === "reader_session_missing");
         // The sidecar restarted and lost the choice: it is not chosen any more.
         if (missing && e.code === "reader_session_missing") setChosen(false);
+        // The ten-minute backstop is otherwise only reached with a transcript:
+        // with none ever saved, Working stayed and the replies stayed hidden.
+        if (missing && awaitingRef.current && Date.now() - awaitingSince.current > 10 * 60_000) endAwaiting();
         setLogError(missing ? null : {
           message: e instanceof Error ? e.message : "The conversation could not be loaded.",
           unreachable: e instanceof UnreachableError,
