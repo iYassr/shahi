@@ -7,6 +7,8 @@ export interface Runner {
   activate(release: Release): Promise<void>;
   ready(release: Release, serverId?: string): Promise<boolean>;
   phase(phase: "restarting" | "ready" | "rolled-back" | "failed", message?: string): void;
+  /** The manager itself is being stopped, which says nothing about the release it was checking. */
+  stopping?(): boolean;
 }
 /**
  * `handoff`: the target brings a new manager, which replaces this one once
@@ -46,6 +48,9 @@ export async function finishTransaction(root: string, runner: Runner, { handoff 
       if (!handoff) runner.phase("ready");
       return;
     }
+    // A logout or a reboot during the check is no verdict. The journal stays as
+    // it is, and the next start goes forward.
+    if (runner.stopping?.()) throw new Error("Manager is shutting down.");
     atomicJson(join(root, FAILED_RELEASE), { buildId: tx.target.buildId });
     atomicJson(join(root, "transaction.json"), { ...tx, restoring: true } satisfies Transaction);
   }
@@ -84,7 +89,11 @@ export async function beginTransaction(root: string, target: Release, runner: Ru
   const record = installation(root);
   if (!record) throw new Error("No managed installation.");
   if (record.active.dataSchema !== target.dataSchema) throw new Error("This data upgrade has no approved rollback path.");
-  if (readJson(join(root, "transaction.json"))) throw new Error("An update is already pending recovery.");
+  // A journal only restoring is not in this update's way: the record already
+  // names the release it is restoring, and a person with a fixed release must
+  // not be held behind one that will never answer.
+  const pending = readJson<Transaction>(join(root, "transaction.json"));
+  if (pending && !pending.restoring) throw new Error("An update is already pending recovery.");
   atomicJson(join(root, "transaction.json"), { previous: record.active, target, serverId, earlier: record.previous ?? null } satisfies Transaction);
   await finishTransaction(root, runner, activation);
 }

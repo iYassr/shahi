@@ -185,6 +185,7 @@ export async function manage(root: string) {
       return false;
     },
     phase(phase, message) { save({ phase, message, ...(phase === "ready" ? { available: undefined } : {}) }); },
+    stopping: () => closing,
   };
   const down = () => !running(child);
   /** The service stopped by itself, or could not be started: one line, a status, and a later start. */
@@ -309,8 +310,9 @@ export async function manage(root: string) {
         }
       }
       if (!down() && Date.now() >= nextRecoveryCheck) {
-        nextRecoveryCheck = Date.now() + RECOVERY_CHECK_MS;
         await finishRecovery(root, runner);
+        // After, since an unready service holds this loop for the whole check.
+        nextRecoveryCheck = Date.now() + RECOVERY_CHECK_MS;
       }
       const requestPath = join(root, "request.json");
       const request = readJson<UpdateRequest>(requestPath);

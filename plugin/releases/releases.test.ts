@@ -201,13 +201,33 @@ describe("restart and recovery", () => {
     const runner: Runner = { ...s.runner, async ready(r) { return answers && r.buildId === release.buildId; } };
     await expect(beginTransaction(s.root, target, runner, "paired-computer")).rejects.toThrow("recovery");
     expect(readJson<Transaction>(join(s.root, "transaction.json"))?.restoring).toBe(true);
-    await expect(beginTransaction(s.root, target, runner)).rejects.toThrow("already pending");
     await finishRecovery(s.root, runner);
     expect(existsSync(join(s.root, "transaction.json"))).toBe(true);
     answers = true;
     await finishRecovery(s.root, runner);
     expect(existsSync(join(s.root, "transaction.json"))).toBe(false);
     expect(s.phases.at(-1)).toBe("rolled-back");
+  });
+  test("a recovery that will not answer does not hold back a person's install of a fixed release", async () => {
+    const s = setup(true);
+    await expect(beginTransaction(s.root, target, { ...s.runner, async ready() { return false; } }, "paired-computer")).rejects.toThrow("recovery");
+    const fixed = { ...release, version: "0.3.2", buildId: "build-3" };
+    await beginTransaction(s.root, fixed, { ...s.runner, async ready() { return true; } });
+    expect(installation(s.root)?.active.buildId).toBe(fixed.buildId);
+    expect(existsSync(join(s.root, "transaction.json"))).toBe(false);
+  });
+  test("a journal still going forward is still in the way", async () => {
+    const s = setup(false);
+    atomicJson(join(s.root, "transaction.json"), { previous: release, target, serverId: "paired-computer" });
+    await expect(beginTransaction(s.root, target, s.runner)).rejects.toThrow("already pending");
+  });
+  test("a manager stopped during the check is no verdict on the release", async () => {
+    const s = setup(true);
+    const runner: Runner = { ...s.runner, stopping: () => true };
+    await expect(beginTransaction(s.root, target, runner, "paired-computer")).rejects.toThrow("shutting down");
+    expect(readJson<Transaction>(join(s.root, "transaction.json"))?.restoring).toBeUndefined();
+    expect(existsSync(join(s.root, FAILED_RELEASE))).toBe(false);
+    expect(installation(s.root)?.active.buildId).toBe(target.buildId);
   });
   test("a release that failed is remembered across restarts, and forgotten when one starts", async () => {
     const failing = setup(true);
