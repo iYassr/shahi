@@ -219,7 +219,11 @@ export async function startAgentInTab(
       // A permission/setup question must open immediately for the user to answer.
       let agent = started.agent;
       for (let checks = 0; agent?.agent_status !== "blocked" && (agent?.interactive_ready === false || agent?.launch_pending === true); checks++) {
-        if (checks >= 600 || Date.now() >= readyDeadline) throw new Error("The agent is still starting. Open its conversation again in a moment.");
+        // Slow is not failed. This was an error, and retries under the same id
+        // replayed it for ten minutes after the agent had come up. The pane
+        // shows its screen until the agent has a conversation, and herdr
+        // refuses a message it cannot take yet (state-machine review).
+        if (checks >= 600 || Date.now() >= readyDeadline) break;
         await wait(500);
         agent = (await rpc<{ agent?: { interactive_ready?: boolean; launch_pending?: boolean; agent_status?: string } }>("agent.get", { target: paneId })).agent;
       }

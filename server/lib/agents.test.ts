@@ -304,7 +304,9 @@ test("a startup that never becomes ready is bounded and is never relaunched", as
     if (method === "agent.start") starts++; else checks++;
     return { agent: { interactive_ready: false, launch_pending: true } } as never;
   };
-  await expect(startAgentInTab(rpc, { workspaceId: "w", cwd: null, label: null, kind: "codex", name: "codex" }, async () => {})).rejects.toThrow("still starting");
+  // Handed over rather than refused: a refusal's retries replayed it for ten
+  // minutes after the agent came up.
+  expect((await startAgentInTab(rpc, { workspaceId: "w", cwd: null, label: null, kind: "codex", name: "codex" }, async () => {})).paneId).toBe("new");
   expect(starts).toBe(1);
   expect(checks).toBe(600);
 });
