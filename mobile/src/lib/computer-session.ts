@@ -159,7 +159,10 @@ export class ComputerSession {
     this.link = "lost";
     // herdr, not the link: learn its state now for the header and banner.
     if (backendUnavailable(e)) void this.control.refresh();
-    if (e instanceof IncompatibleServerError) { this.incompatible = true; this.socket?.close(); }
+    // An SSH socket's close reports nothing now, and a refresh that clears the
+    // refusal reads this: left "live", the header claimed LIVE over a closed
+    // stream. A relay link stays up through this, and says so itself.
+    if (e instanceof IncompatibleServerError) { this.incompatible = true; this.socket?.close(); if (!this.connection.relay) this.socketLink = "lost"; }
     this.changed();
   }
   /**
