@@ -87,8 +87,15 @@ export function Connect({
   // An SSH server's host key waiting for the person's decision.
   const [hostKey, setHostKey] = useState<{ review: HostKeyReview; answer: (trusted: boolean) => void } | null>(null);
   const answerRef = useRef<((trusted: boolean) => void) | null>(null);
-  // Leaving the screen is a refusal: the login waiting on it must never run.
-  useEffect(() => () => answerRef.current?.(false), []);
+  // Leaving the screen is a refusal: the login waiting on it must never run,
+  // and an attempt still under way must not switch computer when it lands.
+  // "Cancel adding computer" used to return to the old computer and then have
+  // this attempt's sign-in take the phone away from it (state-machine review).
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => { left.current = true; answerRef.current?.(false); };
+  }, []);
   const reviewHostKey = (review: HostKeyReview) => new Promise<boolean>((resolve) => {
     const answer = (trusted: boolean) => { answerRef.current = null; setHostKey(null); resolve(trusted); };
     answerRef.current = answer;
@@ -167,6 +174,9 @@ export function Connect({
       // indistinguishable in Settings; the model name is always populated.
       const label =
         Device.deviceName && Device.deviceName !== "iPhone" ? Device.deviceName : (Device.modelName ?? "iPhone");
+      // Not spending the code for someone who has gone. Once it is spent the
+      // device exists on the computer, and is kept rather than left an orphan.
+      if (left.current) return;
       const claim = await pairing.claimRelayPairing(payload.secret, label);
       onConnectedRelay({
         relay: payload.relay,
@@ -252,6 +262,7 @@ export function Connect({
       signingIn.baseUrl = tunnel;
       await client.meta();
       await client.login(ssh.passcode);
+      if (left.current) { await closeTunnel(tunnel); return; }
       onConnectedSsh(ssh, signingIn);
     } catch (e) {
       // The tunnel may be half-up (opened, then login failed); close it so the
@@ -260,6 +271,9 @@ export function Connect({
       // separate, and keeps running.
       await closeTunnel(tunnel);
       setError((e as Error).message);
+    } finally {
+      // On success too: a pairing link holds this screen open after a sign-in,
+      // and its Pair button stayed off reading "Pairing…" (state-machine review).
       setBusy(false);
     }
   }
@@ -329,7 +343,11 @@ export function Connect({
           </UiText>
         )}
 
-        <Pressable accessibilityRole="button" onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
+        {/* Off while connecting: Intro has no room for the host-key sheet, so a
+            review opening behind it never resolved, and `busy` then disabled
+            every button on Intro. On a first run only killing the app got out
+            (state-machine review, November 2026). */}
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => setPhase("intro")} hitSlop={12} testID="back-to-setup">
           <UiText style={styles.link}>Haven't set up your computer yet?</UiText>
         </Pressable>
         <PrivacyLinks licenses />

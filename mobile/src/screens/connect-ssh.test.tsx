@@ -90,6 +90,30 @@ test("a first SSH connection shows the server's fingerprint before the login, an
   expect(pins.size).toBe(0);
 });
 
+test("the way back to setup is off while connecting, so a host key review cannot open behind it", async () => {
+  fillSshForm();
+  expect(await screen.findByText("Check this computer’s identity")).toBeTruthy();
+  fireEvent.press(screen.getByTestId("back-to-setup"));
+  // Still reachable: the review, and through it the way out.
+  expect(screen.getByTestId("reject-host-key")).toBeTruthy();
+  fireEvent.press(screen.getByTestId("reject-host-key"));
+  await screen.findByText("Not connected. Nothing was sent to that computer.");
+  fireEvent.press(screen.getByTestId("back-to-setup"));
+  expect(screen.getByTestId("intro-continue")).toBeEnabled();
+});
+
+test("leaving while signing in closes this attempt's tunnel and does not switch computer", async () => {
+  pins.set("shahi.knownhost.box.example_22", "bmV3LWtleS1zaGEyNTY=");
+  let finishLogin!: (cookie: string) => void;
+  mockLogin.mockImplementationOnce(() => new Promise<string>((resolve) => { finishLogin = resolve; }));
+  const onConnectedSsh = fillSshForm();
+  await waitFor(() => expect(mockLogin).toHaveBeenCalled());
+  screen.unmount();
+  finishLogin("shahi_session=fake");
+  await waitFor(() => expect(mockNative.close).toHaveBeenCalled());
+  expect(onConnectedSsh).not.toHaveBeenCalled();
+});
+
 test("a changed host key shows both fingerprints and connects only after a deliberate re-trust", async () => {
   pins.set("shahi.knownhost.box.example_22", "b2xkLWtleS1zaGEyNTY=");
   const onConnectedSsh = fillSshForm();
