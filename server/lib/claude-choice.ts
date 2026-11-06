@@ -277,12 +277,24 @@ export async function chooseConversation(client: Rpc, pane: Pane, sessionId: str
   if (!(await listFor(config, claude[0]!.pid, cwd, claimed)).some((choice) => choice.sessionId === sessionId)) return false;
   // One canonical file under the projects root; a copy elsewhere is refused.
   if (!(await findTranscript(sessionId, join(config, "projects")))) return false;
+  // Asked again after the awaits above: two phones choosing for two panes both
+  // passed `claimed`, and both panes then showed one conversation.
+  for (const [other, held] of chosen) if (other !== pane.pane_id && held.sessionId === sessionId) return false;
   chosen.set(pane.pane_id, { terminal: pane.terminal_id, pid: claude[0]!.pid, sessionId });
   return true;
 }
 
-/** The session chosen for a pane, unchecked: for telling other panes it is taken. */
-export const choiceHeld = (paneId: string): string | null => chosen.get(paneId)?.sessionId ?? null;
+/**
+ * The session chosen for a pane, for telling other panes it is taken. Only a
+ * Claude in the same terminal holds one: `chosenSession` is what ends a choice,
+ * and it is never asked once Claude has quit to the shell, so the conversation
+ * stayed hidden from every other pane until this one closed (state-machine
+ * review, November 2026). The process itself is checked when it is read.
+ */
+export function choiceHeld(pane: Pick<Pane, "pane_id" | "agent" | "terminal_id">): string | null {
+  const held = chosen.get(pane.pane_id);
+  return held && pane.agent === "claude" && held.terminal === pane.terminal_id ? held.sessionId : null;
+}
 
 /**
  * The session a person chose for this pane, while the process they chose it

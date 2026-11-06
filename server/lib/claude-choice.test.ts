@@ -78,7 +78,7 @@ describe("choosing a conversation herdr cannot identify", () => {
     writeFileSync(join(root, "sessions", `${PID}.json`), JSON.stringify({ pid: PID, sessionId: RECORDED }));
     const choices = await conversationChoices(client, pane(), new Set());
     expect(choices.map((c) => [c.sessionId, c.likely])).toEqual([[RECORDED, true], [NEWER, false], [OLDER, false]]);
-    expect(choiceHeld("w1:p1")).toBeNull();
+    expect(choiceHeld(pane())).toBeNull();
   });
 
   test("a process that parked its conversation as a background job hints at the parked one", async () => {
@@ -200,7 +200,7 @@ describe("choosing a conversation herdr cannot identify", () => {
     await chooseConversation(client, pane(), OLDER, new Set());
     processes = [{ pid: PID + 1, name: "claude", cwd: CWD }];
     expect(await chosenSession(client, pane())).toBeNull();
-    expect(choiceHeld("w1:p1")).toBeNull();
+    expect(choiceHeld(pane())).toBeNull();
 
     processes = [{ pid: PID, name: "claude", cwd: CWD }];
     await chooseConversation(client, pane(), OLDER, new Set());
@@ -208,7 +208,23 @@ describe("choosing a conversation herdr cannot identify", () => {
 
     await chooseConversation(client, pane(), OLDER, new Set());
     expect(await chosenSession(client, pane({ agent_session: { agent: "claude", kind: "id", source: "herdr:claude", value: NEWER } }))).toBeNull();
-    expect(choiceHeld("w1:p1")).toBeNull();
+    expect(choiceHeld(pane())).toBeNull();
+  });
+});
+
+describe("what a choice keeps from other panes", () => {
+  test("nothing once Claude has quit to the shell, or the terminal has someone else in it", async () => {
+    await chooseConversation(client, pane(), OLDER, new Set());
+    expect(choiceHeld(pane())).toBe(OLDER);
+    expect(choiceHeld(pane({ agent: null }))).toBeNull();
+    expect(choiceHeld(pane({ terminal_id: "term_b" }))).toBeNull();
+    forgetChoice("w1:p1");
+  });
+
+  test("the same conversation cannot be chosen for two panes", async () => {
+    expect(await chooseConversation(client, pane(), OLDER, new Set())).toBe(true);
+    expect(await chooseConversation(client, pane({ pane_id: "w1:p2" }), OLDER, new Set())).toBe(false);
+    forgetChoice("w1:p1");
   });
 });
 

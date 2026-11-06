@@ -1510,7 +1510,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
           // reports no session; the person names its conversation instead
           // (claude-choice.ts). Sessions other panes hold are not offered.
           const claimedBy = (paneId: string) => new Set(store.state.panes.filter((p) => p.pane_id !== paneId)
-            .flatMap((p) => { const held = agentSessionOf(p) ?? choiceHeld(p.pane_id); return held ? [held] : []; }));
+            .flatMap((p) => { const held = agentSessionOf(p) ?? choiceHeld(p); return held ? [held] : []; }));
           if (sub === "/conversations" && req.method === "GET") {
             const pane = store.pane(paneId);
             if (!pane || pane.agent !== "claude") return json({ error: "not found" }, { status: 404 });
@@ -1581,7 +1581,7 @@ export function createServer(deps: HttpDeps, { heartbeatMs = HEARTBEAT_MS, uploa
               // A new Claude at its trust dialog, or past it with nothing
               // saved, has no session yet either and is not one to choose for
               // (`atFolderTrust`, `unsavedSession`).
-              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(paneId) &&
+              const missingSession = claude && !agentSessionOf(pane) && !choiceHeld(pane) &&
                 !atFolderTrust(poller.frame(paneId)?.prompt) && !(await unsavedSession(client, pane!));
               // Neither is something to fix on the computer. The service
               // installs herdr's integration, which reports the session when
