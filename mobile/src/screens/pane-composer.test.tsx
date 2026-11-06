@@ -200,6 +200,27 @@ describe("quick replies", () => {
     expect(composer(view).props.value).toBe("");
   });
 
+  test("a reply whose delivery is uncertain is still there to resend after going Back", async () => {
+    let fail!: (e: Error) => void;
+    mocked.send.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    let view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Shall I run the tests/);
+    fireEvent.press(within(view.getByTestId("reply-chips")).getByLabelText("Yes, go ahead"));
+    await settle();
+    const attempt = mocked.send.mock.calls[0]![2];
+    view.unmount();
+    await act(async () => fail(new Error("connection interrupted")));
+
+    view = render(<Pane paneId={PANE} />);
+    await view.findByText(/Shall I run the tests/);
+    expect(view.getByTestId("unconfirmed-send")).toBeTruthy();
+    expect(composer(view).props.value).toBe("Yes, go ahead");
+    mocked.send.mockResolvedValueOnce(receipt);
+    fireEvent.press(view.getByText("Send"));
+    await settle();
+    expect(mocked.send.mock.calls[1]![2]).toBe(attempt);
+  });
+
   test("after a reply the chips stay away until the agent has answered, so a second tap cannot send it twice", async () => {
     let transcript = [said("a1", "agent", "I fixed the parser. Shall I run the tests?")];
     mocked.sessionLog.mockImplementation(async () => log(transcript));

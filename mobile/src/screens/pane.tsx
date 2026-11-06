@@ -1082,6 +1082,7 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     const text = (chosen ?? draft).replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
     if (!text || cannotWrite || promptInFlight.current || savedDraft.inFlight) return;
     promptInFlight.current = true;
+    const sentGeneration = savedDraft.generation;
     const key = JSON.stringify([paneId, text]);
     // The occupant rides with the operation id, so a retry is refused (409
     // pane_replaced) rather than typed into whatever took the pane id since.
@@ -1109,7 +1110,11 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
     chase();
     try {
       await api.send(paneId, text, promptAttempt.current.id, promptAttempt.current.instanceId);
-      if (chosen === undefined && savedDraft.text === draft) savedDraft.text = "";
+      // Only what was sent goes. Dictation can finish into the draft while this
+      // request is out; the comparison used to keep the whole draft then, the
+      // delivered words included, for Send to deliver again (state-machine
+      // review, November 2026).
+      if (chosen === undefined && savedDraft.text.startsWith(draft)) savedDraft.text = savedDraft.text.slice(draft.length).replace(/^\s+/, "");
       savedDraft.pending = null;
       if (!stillActive()) return;
       promptAttempt.current = null;
@@ -1126,11 +1131,17 @@ export function Pane({ paneId, initialView = "reader", focusReply = false }: Pro
         savedDraft.pending = null;
         promptAttempt.current = null;
       }
+      // The words go back to the draft even with the screen gone: a chip's
+      // message lives nowhere else, and "Sending the same message again" was
+      // shown over an empty composer after Back. Nothing returns to a new
+      // occupant of this pane, whose draft was emptied on purpose. A draft that
+      // still has text is left alone: dictation may have added to it.
+      if (savedDraft.generation === sentGeneration && savedDraft.text.trim() === "") savedDraft.text = text;
       if (!stillActive()) return;
       // Delivery may have succeeded before the response was lost. Keep the
       // request id so retry asks for that outcome rather than sending twice.
       setPending((prev) => prev.filter((p) => p.message.id !== id));
-      if (chosen === undefined || savedDraft.text.trim() === "") setDraft(text);
+      setDraftState(savedDraft.text);
       endAwaiting();
       refused();
       showError(e);

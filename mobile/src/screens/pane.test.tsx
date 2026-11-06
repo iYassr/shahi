@@ -2999,6 +2999,48 @@ test("a replaced occupant never receives the previous agent's late dictation", a
   } finally { mockDictation.available = false; }
 });
 
+test("dictation finishing during a send keeps only its own words, so Send cannot deliver the first message again", async () => {
+  mockDictation.available = true;
+  const sending = deferred<PromptReceipt>();
+  mocked.send.mockReturnValueOnce(sending.promise);
+  const finishing = deferred<string>();
+  mockDictation.finish.mockReturnValueOnce(finishing.promise);
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("voice-send", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    const mic = await view.findByLabelText("Dictate");
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "typed first");
+    await act(async () => fireEvent.press(mic));
+    await act(async () => fireEvent.press(view.getByText("Send")));
+    await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+    await act(async () => finishing.resolve("and then said"));
+    await act(async () => sending.resolve(receipt));
+    expect(mocked.send).toHaveBeenCalledTimes(1);
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toBe("and then said");
+  } finally { mockDictation.available = false; }
+});
+
+test("dictation finishing during a send that fails keeps both the message and the new words", async () => {
+  mockDictation.available = true;
+  const sending = deferred<PromptReceipt>();
+  mocked.send.mockReturnValueOnce(sending.promise);
+  const finishing = deferred<string>();
+  mockDictation.finish.mockReturnValueOnce(finishing.promise);
+  try {
+    mocked.sessionLog.mockResolvedValue(log([said("voice-fail", "agent", "Ready.")]));
+    const view = render(<Pane paneId={PANE} />);
+    const mic = await view.findByLabelText("Dictate");
+    fireEvent.changeText(view.getByPlaceholderText("Reply to this agent…"), "typed first");
+    await act(async () => fireEvent.press(mic));
+    await act(async () => fireEvent.press(view.getByText("Send")));
+    await act(async () => fireEvent.press(view.getByLabelText("Add to reply")));
+    await act(async () => finishing.resolve("and then said"));
+    await act(async () => sending.reject(new Error("connection interrupted")));
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toContain("typed first");
+    expect(view.getByPlaceholderText("Reply to this agent…").props.value).toContain("and then said");
+  } finally { mockDictation.available = false; }
+});
+
 /**
  * An agent waiting on something no parser recognised, and a new agent before
  * its first message: messages are refused there, so the pane shows the screen
