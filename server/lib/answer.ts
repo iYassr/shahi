@@ -22,6 +22,7 @@
  * shows what is actually on screen.
  */
 
+import { refusedBeforeDelivery } from "./herdr-delivery";
 import { isTextField, parsePrompt } from "./prompt-parser";
 import { PromptInstances, screenId } from "./prompt-instances";
 import type { ParsedPrompt, PromptOption } from "@shahi/shared";
@@ -185,13 +186,15 @@ export async function answerPrompt(
     await rpc("pane.send_keys", { pane_id: paneId, keys: moves });
     const reached = await reach(rpc, paneId, instances, prompt, target, screen, sleep);
     if (reached === "answered") return moves;
-    await rpc("pane.send_keys", { pane_id: paneId, keys: ["Enter"] });
+    await press(rpc, paneId, instances, ["Enter"], reached);
     answered = reached;
-  } else {
+  } else if (isTextField(prompt, target)) {
     await rpc("pane.send_keys", { pane_id: paneId, keys });
     // A text field's digit only puts the cursor in it: the question is still
     // open, waiting for what is typed there.
-    if (isTextField(prompt, target)) return keys;
+    return keys;
+  } else {
+    await press(rpc, paneId, instances, keys, screen);
   }
 
   instances.answered(paneId, answered);
@@ -203,6 +206,25 @@ export async function answerPrompt(
     if (!now || now.screen !== answered) break;
   }
   return keys;
+}
+
+/**
+ * Presses the keys that answer the prompt on `screen`.
+ *
+ * A call that failed may still have landed: herdr can act and the reply never
+ * arrive. Left unmarked, the next answer read the same unrepainted screen and
+ * pressed again, approving whatever the agent drew next, which is the mistake
+ * the mark exists to prevent (state-machine review, November 2026). So unless
+ * the failure proves nothing was sent, the screen counts as answered. Refusing
+ * until the screen changes is the safe mistake: the Screen tab's keys remain.
+ */
+async function press(rpc: AnswerRpc, paneId: string, instances: PromptInstances, keys: string[], screen: string): Promise<void> {
+  try {
+    await rpc("pane.send_keys", { pane_id: paneId, keys });
+  } catch (err) {
+    if (!refusedBeforeDelivery(err)) instances.answered(paneId, screen);
+    throw err;
+  }
 }
 
 /**

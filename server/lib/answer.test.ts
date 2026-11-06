@@ -234,6 +234,41 @@ describe("two phones answering one prompt", () => {
  * approved the second, which it had never shown. Each appearance now has an
  * id, and a card carries the one it was drawn from.
  */
+describe("a press whose reply never came", () => {
+  const menu = fixture("blocked__w4-p2__text.txt");
+  const choice = () => {
+    const option = parsePrompt(menu)!.options[0]!;
+    return { index: option.index, label: option.label };
+  };
+  /** herdr takes the keys and the pane has not repainted, but the call fails with `error`. */
+  function failingHerdr(error: Error) {
+    const pressed: string[][] = [];
+    const rpc = async (method: string, params: Record<string, unknown>) => {
+      if (method === "pane.read") return { read: { text: menu } };
+      pressed.push(params.keys as string[]);
+      if (pressed.length === 1) throw error;
+      return {};
+    };
+    return { rpc, pressed };
+  }
+
+  test("is not pressed a second time on the same screen, since it may have landed", async () => {
+    const herdr = failingHerdr(new Error("herdr did not answer in time"));
+    const instances = new PromptInstances();
+    await expect(answerPrompt(herdr.rpc, "w1:p1", choice(), { instances, sleep: fast })).rejects.toThrow("did not answer");
+    await expect(answerPrompt(herdr.rpc, "w1:p1", choice(), { instances, sleep: fast })).rejects.toBeInstanceOf(PromptGone);
+    expect(herdr.pressed).toHaveLength(1);
+  });
+
+  test("can be tried again when the failure proves nothing was sent", async () => {
+    const herdr = failingHerdr(Object.assign(new Error("no herdr socket"), { code: "ECONNREFUSED" }));
+    const instances = new PromptInstances();
+    await expect(answerPrompt(herdr.rpc, "w1:p1", choice(), { instances, sleep: fast })).rejects.toThrow("no herdr socket");
+    await answerPrompt(herdr.rpc, "w1:p1", choice(), { instances, sleep: fast, settleMs: 0 });
+    expect(herdr.pressed).toHaveLength(2);
+  });
+});
+
 describe("a card drawn before the agent asked the same question again", () => {
   const BASH = fixture("blocked__claude-bash__text.txt");
   const card = parsePrompt(BASH)!;
