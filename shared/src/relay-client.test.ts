@@ -350,6 +350,30 @@ test("a computer that is away shows as offline at once while its link waits for 
   expect(socket.readyState).toBe(1);
 });
 
+test("a hello after waiting cannot hold the link on LIVE with nothing behind it", () => {
+  const real = globalThis.setTimeout;
+  const deadlines: (() => void)[] = [];
+  globalThis.setTimeout = ((run: () => void, ms?: number) => {
+    if (ms === 15_000) deadlines.push(run);
+    return real(() => {}, 0);
+  }) as typeof setTimeout;
+  try {
+    const link = deviceLink();
+    link.ensureConnected();
+    const socket = FakeSocket.last;
+    socket.onopen!();
+    waitingNotice(socket);
+    deadlines.length = 0;
+    // Nothing a held socket is sent comes from the box, so this is the relay.
+    hello(socket);
+    expect(link.state).toBe("live");
+    expect(deadlines).toHaveLength(1);
+    deadlines[0]!();
+    expect(link.state).toBe("lost");
+    link.close();
+  } finally { globalThis.setTimeout = real; }
+});
+
 test("the computer coming back is a live link straight away, carrying what waited for it", async () => {
   const link = deviceLink();
   link.ensureConnected();

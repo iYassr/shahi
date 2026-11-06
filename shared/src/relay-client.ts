@@ -317,9 +317,7 @@ export class RelayLink {
     this.#sendRefilled = Date.now();
     // Includes CONNECTING and the encrypted hello. Neither state is covered
     // by the established-session heartbeat, and native may never emit close.
-    this.#handshakeTimer = setTimeout(() => {
-      if (this.#ws === socket && !this.#confirmed) this.#drop(socket, this.#lost());
-    }, CONNECT_TIMEOUT_MS);
+    this.#armHandshake(socket);
 
     socket.onopen = () => {
       if (this.#ws !== socket || this.#closed) return;
@@ -443,6 +441,11 @@ export class RelayLink {
       return;
     }
     this.#session = clientSession(this.#self, pub, this.target.secret);
+    // Waiting for the computer turned the deadline off. A hello alone proves
+    // nothing, so one arriving after that puts it back: otherwise a relay could
+    // hold the link on LIVE for as long as it liked, with no computer behind it
+    // (state-machine review, November 2026).
+    if (this.#ws && this.#handshakeTimer === undefined) this.#armHandshake(this.#ws);
     this.#waitingSince = 0;
     this.#receivedBytes = 0;
     this.#liveSince = Date.now();
@@ -628,6 +631,12 @@ export class RelayLink {
    * relay was a promise nothing kept (pre-release review, September 2026).
    */
   #next(): string { return this.target.auth.kind === "pairing" ? "Try again." : "Reconnecting…"; }
+
+  #armHandshake(socket: WebSocket): void {
+    this.#handshakeTimer = setTimeout(() => {
+      if (this.#ws === socket && !this.#confirmed) this.#drop(socket, this.#lost());
+    }, CONNECT_TIMEOUT_MS);
+  }
 
   #discard(socket: WebSocket): void {
     clearTimeout(this.#sendTimer); this.#sendTimer = undefined;
