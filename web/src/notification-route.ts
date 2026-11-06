@@ -24,7 +24,9 @@ export async function openNotification(pane: string | null, computer: string | n
   if (hosted && !target) { go("/computers", false); return; }
   // Switching remounts the session; the notification's own computer needs none.
   const switched = !!(hosted && target && target.id !== browserConnection().identity?.serverId);
-  if (switched) await selectBrowserComputer(target!.id);
+  // Overtaken by another notification's switch: this pane id would open on
+  // that computer, in whatever has that id there.
+  if (switched && !await selectBrowserComputer(target!.id)) return;
   go(pane ? `/pane/${encodeURIComponent(pane)}${instance ? `?instance=${encodeURIComponent(instance)}` : ""}` : "/", switched);
 }
 

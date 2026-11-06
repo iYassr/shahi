@@ -87,7 +87,7 @@ export function PairBrowser({ initialCode, onConsumed, onSuccess }: { initialCod
        */
       const spent = () => { setCode(""); setFromLink(false); onConsumed(); };
       void pairBrowser(code, name, remember)
-        .then(() => { spent(); onSuccess(); })
+        .then((selected) => { if (selected) { spent(); onSuccess(); } })
         .catch((e: Error) => { if (browserConnection().identity) spent(); setError(e.message); })
         .finally(() => setBusy(false));
     }}>

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { RELAY_PROTOCOL } from "@shahi/shared";
 import { ephemeral, open, seal, serverSession, type Session } from "@shahi/shared/e2e";
 import { fromBase64Url, toBase64Url } from "@shahi/shared/relay-client";
-import { browserComputers, browserConnection, forgetBrowser, pairBrowser, resumeComputers } from "./connection";
+import { browserComputers, browserConnection, forgetBrowser, pairBrowser, resumeComputers, selectBrowserComputer } from "./connection";
 import { draftOwner, webDraft } from "./drafts";
 import { SessionSocket, createApi } from "./api";
 
@@ -17,6 +17,8 @@ const server = toBase64Url(new Uint8Array(32).fill(9));
 const code = `shahi://pair#v=1&server=${server}&relay=https%3A%2F%2Frelay.example&secret=${toBase64Url(pairingSecret)}`;
 /** Paths the fake computer receives and never answers. */
 const holding = new Set<string>();
+/** Who the fake computer says it is. */
+let metaServer = server;
 
 class FakeSocket {
   static opened: FakeSocket[] = [];
@@ -31,6 +33,7 @@ class FakeSocket {
   /** Still OPEN on this side, but nothing arrives at the other: a route that died quietly. */
   silent = false;
   paths: string[] = [];
+  heldId = 0;
   constructor(readonly url: string) {
     FakeSocket.opened.push(this);
     queueMicrotask(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.(); } });
@@ -48,8 +51,8 @@ class FakeSocket {
     const message = JSON.parse(utf8.decode(open(this.box, data))) as { t: string; id: number; path: string };
     if (message.t !== "req") return;
     this.paths.push(message.path);
-    if (holding.has(message.path)) return;
-    const body = message.path === "/api/meta" ? { serverId: server }
+    if (holding.has(message.path)) { this.heldId = message.id; return; }
+    const body = message.path === "/api/meta" ? { serverId: metaServer }
       : message.path === "/api/pair/claim" ? { deviceId: "browser-1", deviceSecret: toBase64Url(deviceSecret) } : {};
     queueMicrotask(() => this.reply({ t: "res", id: message.id, status: 200, headers: { "content-type": "application/json" }, body: toBase64Url(utf8.encode(JSON.stringify(body))) }));
   }
@@ -72,6 +75,7 @@ beforeEach(() => {
 afterEach(async () => {
   for (const computer of browserComputers()) await forgetBrowser(computer.id);
   holding.clear();
+  metaServer = server;
   FakeSocket.opened = [];
   for (const [key, descriptor] of originals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as Record<string, unknown>)[key];
@@ -100,6 +104,39 @@ function dashboard() {
   socket.connect();
   return { socket, scoped, seen };
 }
+
+test("switching computers during a claim keeps the new device on the list and does not take the person away", async () => {
+  await paired();
+  const other = toBase64Url(new Uint8Array(32).fill(11));
+  metaServer = other;
+  holding.add("/api/pair/claim");
+  const pairing = pairBrowser(code.replace(server, other), "Browser test", false);
+  await settle();
+  const claiming = FakeSocket.opened.at(-1)!;
+  expect(claiming.paths).toContain("/api/pair/claim");
+
+  expect(await selectBrowserComputer(server)).toBe(true);
+  claiming.reply({ t: "res", id: claiming.heldId, status: 200, headers: { "content-type": "application/json" }, body: toBase64Url(utf8.encode(JSON.stringify({ deviceId: "browser-2", deviceSecret: toBase64Url(deviceSecret) }))) });
+
+  expect(await pairing).toBe(false);
+  expect(browserConnection().identity?.serverId).toBe(server);
+  expect(browserComputers().map(c => c.id).sort()).toEqual([other, server].sort());
+});
+
+test("a code left behind before its claim is not spent", async () => {
+  await paired();
+  const other = toBase64Url(new Uint8Array(32).fill(11));
+  metaServer = other;
+  holding.add("/api/meta");
+  const pairing = pairBrowser(code.replace(server, other), "Browser test", false);
+  await settle();
+  const checking = FakeSocket.opened.at(-1)!;
+  await selectBrowserComputer(server);
+  checking.reply({ t: "res", id: checking.heldId, status: 200, headers: { "content-type": "application/json" }, body: toBase64Url(utf8.encode(JSON.stringify({ serverId: other }))) });
+  expect(await pairing).toBe(false);
+  expect(checking.paths).not.toContain("/api/pair/claim");
+  expect(browserComputers()).toHaveLength(1);
+});
 
 // Build 32's native header read "… relay.getshahi.dev · y… CONNECTING" until
 // the first session named the computer; the browser saved the same address.

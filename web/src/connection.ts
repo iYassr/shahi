@@ -212,7 +212,8 @@ export function restoreBrowser(): Promise<void> {
   })();
 }
 export function browserConnection() { return { identity, remembered, link, generation, session: identity ? live.get(identity.serverId)?.session ?? null : null }; }
-export async function pairBrowser(text: string, name: string, remember: boolean): Promise<void> {
+/** Whether this attempt became the selected computer; false when the person had already moved on. */
+export async function pairBrowser(text: string, name: string, remember: boolean): Promise<boolean> {
   if (!window.isSecureContext) throw new Error("Open Shahi over HTTPS to pair this browser.");
   const payload = readPairing(text);
   const attempt = ++generation;
@@ -221,11 +222,22 @@ export async function pairBrowser(text: string, name: string, remember: boolean)
     const meta = await pairing.request({ method: "GET", path: "/api/meta", headers: { "x-shahi-api": String(SHAHI_API_VERSION) }, body: null }, 15_000);
     const info = await meta.json() as { serverId?: string; error?: string };
     if (!meta.ok || info.serverId !== payload.server) throw new Error(info.error ?? "The computer's identity does not match this code.");
+    // Not spending a one-time code for someone who has already gone elsewhere.
+    if (attempt !== generation) return false;
     const reply = await pairing.request({ method: "POST", path: "/api/pair/claim", headers: { "content-type": "application/json", "x-shahi-api": String(SHAHI_API_VERSION) }, body: new TextEncoder().encode(JSON.stringify({ secret: payload.secret, deviceName: name.trim() || "Web browser" })) }, 15_000);
     const result = await reply.json() as { deviceId?: string; deviceSecret?: string; error?: string };
     if (!reply.ok || !result.deviceId || !result.deviceSecret) throw new Error(result.error ?? "Pairing failed. Print a fresh code and try again.");
-    if (attempt !== generation) return;
     const next = { relay: payload.relay, serverId: payload.server, deviceId: result.deviceId, deviceSecret: result.deviceSecret };
+    // The code is spent and the device exists on that computer, so it is kept
+    // for the list, without taking the person away from where they went. These
+    // secrets were dropped here, and "paired" reported all the same, leaving a
+    // device row nothing could ever use (state-machine review, November 2026).
+    if (attempt !== generation) {
+      rememberComputer(next, remember);
+      notifyComputers();
+      if (remember) await persistComputerNames().catch(() => {});
+      return false;
+    }
     rememberComputer(next, remember); activate(next); remembered = false;
     try {
       await persistIdentity(remember ? next : null, attempt);
@@ -234,6 +246,7 @@ export async function pairBrowser(text: string, name: string, remember: boolean)
       rememberComputer(next, false);
       if (remember) throw new Error("Paired for this session, but this browser could not save the device. Continue without remembering it.");
     }
+    return true;
   } finally { pairing.close(); }
 }
 export async function forgetBrowser(id = identity?.serverId): Promise<void> {
@@ -266,7 +279,8 @@ export function keepBlob(blob: Blob): string { const url = URL.createObjectURL(b
 export function releaseBlob(url: string): void { if (blobs.delete(url)) URL.revokeObjectURL(url); }
 
 /** Switching preserves every device grant; only explicit sign-out removes one. */
-export async function selectBrowserComputer(id: string | null): Promise<void> {
+/** Whether this selection took effect; false when a later one overtook it while saving. */
+export async function selectBrowserComputer(id: string | null): Promise<boolean> {
   const target = id === null ? undefined : computers.find(c => c.identity.serverId === id);
   if (id !== null && !target) throw new Error("That computer is no longer saved. Pair it again.");
   const before = generation;
@@ -282,13 +296,14 @@ export async function selectBrowserComputer(id: string | null): Promise<void> {
       if (computers.some(c => c.remembered)) throw error;
     }
   }
-  if (generation !== before) return;
+  if (generation !== before) return false;
   generation++;
   link?.watch(null); link = null; identity = null; remembered = false;
   for (const url of blobs) URL.revokeObjectURL(url);
   blobs.clear();
   if (target) { activate(target.identity); remembered = target.remembered; }
   window.dispatchEvent(new CustomEvent("shahi:computer-changed", { detail: { pairing: id === null } }));
+  return true;
 }
 export function nameBrowserComputer(name: string): void {
   const current = computers.find(c => c.identity === identity);

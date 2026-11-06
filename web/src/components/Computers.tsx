@@ -15,7 +15,7 @@ export function Computers({ onClose }: { onClose?: () => void }) {
   const [name, setName] = useState("");
   async function choose(id: string | null) {
     setBusy(true); setError("");
-    try { navigate("/", { replace: true }); await selectBrowserComputer(id); }
+    try { navigate("/", { replace: true }); if (!await selectBrowserComputer(id)) setBusy(false); }
     catch (e) { setError((e as Error).message); setBusy(false); }
   }
   return <>
