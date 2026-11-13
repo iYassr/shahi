@@ -65,13 +65,21 @@ export class PromptOpen extends Error {
  */
 export class PromptUnrecognised extends Error {
   readonly code = "prompt_unrecognised";
-  constructor() {
-    super(
-      "This agent is waiting on something Shahi cannot read, so nothing was typed. " +
-        "Open Screen to see it and answer with the keys.",
-    );
+  constructor(
+    message = "This agent is waiting on something Shahi cannot read, so nothing was typed. " +
+      "Open Screen to see it and answer with the keys.",
+  ) {
+    super(message);
   }
 }
+
+/**
+ * The same refusal for an agent still leaving a screen by itself, in words of
+ * its own: there is nothing on Screen to answer, and "answer with the keys"
+ * sent a person looking for a question that was not there. The code is kept,
+ * so shipped clients treat it as they did.
+ */
+export const STILL_OPENING = "This agent is still getting ready, so nothing was typed. Send your message again in a moment.";
 
 export interface PromptTarget {
   paneId: string;
@@ -195,7 +203,13 @@ function sameSpot(before: Spot | null, after: Spot | null): boolean {
  * would not take typed text is refused with `PromptOpen`, unless `refuse` is
  * false, when it is returned like any other.
  */
-/** How long the first read waits for an agent's settling screen to clear (it took 0.8s). */
+/**
+ * How long the first read waits for an agent's settling screen to clear. It
+ * took 0.8s on Cursor 2026.10.19. On 2026.11.11 it took under a second once
+ * and more than 35s once (Linux, 13 November 2026), and the agent journeys
+ * failed on it daily. The wait stays short, since it holds the pane's write
+ * queue; a longer one is refused in words that say to send again.
+ */
 export const SETTLE_LIMIT_MS = 3_000;
 const SETTLE_POLL_MS = 150;
 
@@ -213,7 +227,7 @@ async function openMenu(rpc: PromptRpc, paneId: string, { refuse = true, previou
   // (`providerSettling`) is waited for: text typed there is never submitted.
   // One still there after the limit is refused with nothing typed.
   for (let waited = 0; settle && agent && providerSettling(stripAnsi(read.text)); waited += SETTLE_POLL_MS) {
-    if (waited >= SETTLE_LIMIT_MS) throw new PromptUnrecognised();
+    if (waited >= SETTLE_LIMIT_MS) throw new PromptUnrecognised(STILL_OPENING);
     await settle(SETTLE_POLL_MS);
     ({ read } = await look());
   }

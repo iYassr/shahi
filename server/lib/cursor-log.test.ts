@@ -55,6 +55,14 @@ test("store lookup requires an exact Cursor database path",()=>{
  expect(cursorSessionFromStore(`/tmp/cursor/chats/project/${id}/store.db`,"/tmp/cursor")).toBe(id);
  for(const p of [`/tmp/cursor-other/chats/project/${id}/store.db`,`/tmp/cursor/chats/project/${id}/store.db-wal`,`/tmp/cursor/chats/project/../../other/store.db`]) expect(cursorSessionFromStore(p,"/tmp/cursor")).toBeNull();
 });
+// Cursor 2026.11.11 on Linux keeps the store in its configuration folder, and
+// Reader found no conversation there unless herdr had reported the session.
+test("store lookup finds a database in Cursor's configuration folder as well as its home",()=>{
+ const roots=["/home/sample/.cursor","/home/sample/.config/cursor"];
+ expect(cursorSessionFromStore(`/home/sample/.config/cursor/chats/project/${id}/store.db`,roots)).toBe(id);
+ expect(cursorSessionFromStore(`/home/sample/.cursor/chats/project/${id}/store.db`,roots)).toBe(id);
+ for(const p of [`/home/sample/.config/other/chats/project/${id}/store.db`,`/home/sample/.config/cursor/chats/project/${id}/store.db-wal`,`/home/sample/.config/cursor/project/${id}/store.db`]) expect(cursorSessionFromStore(p,roots)).toBeNull();
+});
 test("pagination keeps stable identities, ignores partial writes, and discovers exact sessions",async()=>{
  const root=await mkdtemp(join(tmpdir(),"shahi-cursor-test-"));
  try {

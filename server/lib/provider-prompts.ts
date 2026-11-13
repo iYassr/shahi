@@ -232,6 +232,11 @@ export function providerWaitingScreen(text: string): boolean {
  * measured). A message sent then was typed into the composer and never
  * submitted, so the agent never answered (agent journeys, 20 October 2026).
  * It clears by itself; the message route waits it out.
+ *
+ * Only the bottom of the screen is read. Cursor 2026.11.11 leaves the
+ * answered box, this line included, drawn above its composer afterwards, and
+ * took from under a second to more than 35s to get there (Linux,
+ * 13 November 2026; `cursor-2026.11-trusted` is the screen it ends on).
  */
 export function providerSettling(text: string): boolean {
   const bottom = text.trimEnd().split("\n").map(line => line.trim()).filter(Boolean).slice(-4);

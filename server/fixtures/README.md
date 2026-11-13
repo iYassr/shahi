@@ -104,6 +104,11 @@ Center" for a Codex started with Shahi's own flags: 0.167.2 joins its shared
 server even with `approvals_reviewer="user"`, which on 0.157.1 kept it on a
 server of its own.
 
+`cursor-2026.11-trusted` is Cursor 2026.11.11 on Linux under herdr 0.9.5, a
+second after its trust question was answered with `a` in a scratch folder
+(13 November 2026): the composer is ready, and the answered trust box, with
+"Trusting workspace...", is still drawn above it. No message was sent.
+
 ## Codex 0.160 question panels
 
 The `blocked__codex-user-input-0.160-*__text.txt` files were captured on

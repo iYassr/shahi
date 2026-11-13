@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, SETTLE_LIMIT_MS, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
+import { PromptMoved, PromptOpen, promptTarget, PromptUnrecognised, SETTLE_LIMIT_MS, STILL_OPENING, SUBMIT_DELAY_MS, submitPrompt } from "./prompt";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "..", "fixtures", name), "utf8");
 
@@ -67,6 +67,28 @@ describe("submitPrompt", () => {
     await expect(submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "hello", sleep)).rejects.toBeInstanceOf(PromptUnrecognised);
     expect(calls.map((c) => c.method).filter((m) => m !== "pane.read")).toEqual([]);
     expect(noSleep.slept.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(SETTLE_LIMIT_MS);
+  });
+
+  // Cursor 2026.11.11 stayed on that screen for more than 35s once. The
+  // refusal then said to answer with the keys, on a screen with no question.
+  test("an agent still leaving its trust screen is refused in words that say to send again", async () => {
+    const { rpc } = fakeRpc({}, fixture("startup/cursor-2026.10-trusting.ansi"));
+    const refusal = await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "hello", sleep).catch((err) => err);
+    expect(refusal).toBeInstanceOf(PromptUnrecognised);
+    expect(refusal.code).toBe("prompt_unrecognised");
+    expect(refusal.message).toBe(STILL_OPENING);
+    expect(refusal.message).not.toContain("keys");
+  });
+
+  // Cursor 2026.11.11 leaves its answered trust box, "Trusting workspace..."
+  // and all, drawn above the composer for as long as the screen holds it. Only
+  // the bottom of the screen says whether it is still leaving.
+  test("an answered trust box left above a ready composer does not hold a message back", async () => {
+    const { rpc, calls } = fakeRpc({}, fixture("startup/cursor-2026.11-trusted.ansi"));
+    noSleep.slept = [];
+    expect(await submitPrompt(rpc, { paneId: "w1:p1", isAgent: true, status: "idle", shellAlone: false }, "hello", sleep)).toBe("agent");
+    expect(calls.map((c) => c.method)).toEqual(["pane.read", "agent.prompt"]);
+    expect(noSleep.slept).toEqual([]);
   });
 
   test("a shell gets text, the pause, then Enter — in that order", async () => {

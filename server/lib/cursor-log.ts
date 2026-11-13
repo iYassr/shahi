@@ -9,11 +9,23 @@ import { inTranscript, isRecord, normalise, readWindow, type LogMessage, type Se
 const ROOT = join(homedir(), ".cursor");
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
-export function cursorSessionFromStore(path: string, root = ROOT): string | null {
-  const relative = resolve(path).slice(resolve(root).length + 1);
-  if (!resolve(path).startsWith(resolve(root) + "/")) return null;
-  const parts = relative.split("/");
-  return parts.length === 4 && parts[0] === "chats" && parts[3] === "store.db" && UUID.test(parts[2]!) ? parts[2]! : null;
+/**
+ * Where Cursor keeps a chat's store.db. Beside its transcripts, until Cursor
+ * 2026.11.11 on Linux wrote `~/.config/cursor/chats/<hash>/<id>/store.db`
+ * with the transcript still under `~/.cursor/projects` (13 November 2026).
+ * Reader then found no conversation for any Cursor whose session herdr had
+ * not reported, and the agent journeys failed on it. The folder only says
+ * whose database an open file is; the pane's own process still has to hold it.
+ */
+const STORE_ROOTS = [...new Set([ROOT, join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "cursor"), join(homedir(), ".config", "cursor")])];
+
+export function cursorSessionFromStore(path: string, roots: string | string[] = STORE_ROOTS): string | null {
+  for (const root of [roots].flat()) {
+    if (!resolve(path).startsWith(resolve(root) + "/")) continue;
+    const parts = resolve(path).slice(resolve(root).length + 1).split("/");
+    if (parts.length === 4 && parts[0] === "chats" && parts[3] === "store.db" && UUID.test(parts[2]!)) return parts[2]!;
+  }
+  return null;
 }
 export async function findCursorTranscript(sessionId: string, root = ROOT): Promise<string | null> {
   if (!UUID.test(sessionId)) return null;

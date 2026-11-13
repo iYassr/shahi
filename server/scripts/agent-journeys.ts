@@ -50,7 +50,7 @@ import { HerdrClient } from "../lib/herdr-client";
 import { openReadOnly } from "../lib/foreign-sqlite";
 import { submitPrompt, promptTarget } from "../lib/prompt";
 import { parsePrompt } from "../lib/prompt-parser";
-import { providerIsWaiting } from "../lib/provider-prompts";
+import { providerIsWaiting, providerSettling } from "../lib/provider-prompts";
 import { compare, disagreement } from "../lib/reader-parity";
 import { SessionStore } from "../lib/state";
 
@@ -116,6 +116,8 @@ const status = async (paneId: string) => (await rpc("pane.get", { pane_id: paneI
  * bill, which no change to Shahi can fix.
  */
 class Untestable extends Error {}
+const SIGNED_OUT = /press any key to (log|sign) ?in/i;
+const NEEDS_SIGN_IN = "is not signed in on this computer, which needs a person";
 
 /**
  * Waits until the agent takes a message, answering only what a scratch folder
@@ -141,7 +143,12 @@ async function ready(paneId: string): Promise<void> {
       // herdr calls an agent at its sign-in screen idle: Cursor 2026.10 with
       // an expired login drew "Press any key to log in..." and the journey
       // went on to type into it (ubuntu, 20 October 2026).
-      if (/press any key to (log|sign) ?in/i.test(await visible(paneId))) throw new Untestable("is not signed in on this computer, which needs a person");
+      const screen = await visible(paneId);
+      if (SIGNED_OUT.test(screen)) throw new Untestable(NEEDS_SIGN_IN);
+      // Cursor 2026.11.11 can sit on "Trusting workspace..." for more than
+      // 35s, idle to herdr throughout. Shahi refuses a message there and says
+      // to send again; the journey waits, as that asks a person to.
+      if (providerSettling(screen)) continue;
       return;
     }
   }
@@ -294,7 +301,18 @@ async function journey(kind: Kind, launch: Launch, workspaceId: string): Promise
     await ready(paneId);
     await store.resync();
     const target = await promptTarget(rpc as never, paneId, store.agent(paneId));
-    await submitPrompt(rpc as never, target, `${ASK} ${token} and nothing else.`);
+    try { await submitPrompt(rpc as never, target, `${ASK} ${token} and nothing else.`); }
+    catch (err) {
+      // Cursor 2026.11.11 draws its sign-in screen after herdr already calls
+      // it idle, so `ready` passed a blank screen. Shahi then refused to type
+      // into the sign-in screen, which is right, and every run on ubuntu from
+      // 12 November 2026 reported that refusal as Shahi's failure.
+      const screen = await visible(paneId);
+      if (SIGNED_OUT.test(screen)) throw new Untestable(NEEDS_SIGN_IN);
+      // Any other refusal names a screen nobody has seen: with --out it is kept.
+      if (err instanceof Error) err.message += keep(`${kind}-${launch}-refused`, screen);
+      throw err;
+    }
     // The reply, as Reader would show it, within three minutes.
     const deadline = Date.now() + 180_000;
     let seen = await look(paneId, token);
