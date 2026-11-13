@@ -94,6 +94,16 @@ a scratch folder) under herdr 0.9.5 on 27 October 2026, when the census found
 its question reworded and a fourth way in; the 0.157.1 capture it replaced is
 `codex-0.163-sign-in`, the last release that drew it.
 
+`claude-login`, `codex-sign-in` and `codex-trust` were captured again on
+13 November 2026 on macOS, from Claude Code 2.1.323 and codex-cli 0.167.2 as
+installed, under herdr 0.9.5, when the census found all three reworded. Each
+still parsed as a card. The captures they replaced are `claude-2.1.286-login`,
+`codex-0.164-sign-in` and `codex-0.157-trust`, named for the release each was
+drawn by. The trust screen's second choice is now "Back to Agent Command
+Center" for a Codex started with Shahi's own flags: 0.167.2 joins its shared
+server even with `approvals_reviewer="user"`, which on 0.157.1 kept it on a
+server of its own.
+
 ## Codex 0.160 question panels
 
 The `blocked__codex-user-input-0.160-*__text.txt` files were captured on

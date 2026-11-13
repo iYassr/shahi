@@ -30,7 +30,7 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "claude-theme": { herdr: "idle", agent: "claude", expect: { card: { question: "Choose the text style that looks best with your terminal", answer: "cursor",
     labels: ["Auto (match terminal)", "Dark mode", "Light mode", "Dark mode (colorblind-friendly)", "Light mode (colorblind-friendly)", "Dark mode (ANSI colors only)", "Light mode (ANSI colors only)"] } } },
   "claude-login": { herdr: "idle", agent: "claude", expect: { card: { question: "Select login method:", answer: "digit",
-    labels: ["Claude account with subscription · Pro, Max, Team, or Enterprise", "Anthropic Console account · API usage billing", "3rd-party platform · Amazon Bedrock, Microsoft Foundry, Google Vertex AI"] } } },
+    labels: ["Claude account with subscription · Individual, Team, or Enterprise", "Anthropic Console account · API usage billing", "3rd-party platform · Amazon Bedrock, Microsoft Foundry, Google Vertex AI"] } } },
   "claude-api-key": { herdr: "blocked", agent: "claude", expect: { card: { question: "Do you want to use this API key?", answer: "cursor", labels: ["Yes", "No (recommended)"] } } },
   "claude-trust": { herdr: "blocked", agent: "claude", expect: { card: { question: "Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not, take a moment to review what's in this folder first.", answer: "cursor", labels: ["No, exit", "Yes, I trust this folder"] } } },
   "claude-bypass": { herdr: "blocked", agent: "claude", expect: { card: { question: "WARNING: Claude Code running in Bypass Permissions mode", answer: "cursor", labels: ["No, exit", "Yes, I accept"] } } },
@@ -41,8 +41,8 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "claude-settings-error": { herdr: "blocked", agent: "claude", expect: { card: { question: "Settings Error", answer: "digit", labels: ["Fix with Claude", "Exit and fix manually", "Continue without these settings"] } } },
   "claude-ready": { herdr: "idle", agent: "claude", expect: { ready: true } },
   "codex-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Choose how you want to use Codex.", answer: "digit", confirm: true,
-    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Use an OpenAI API key", "Use Amazon Bedrock"] } } },
-  "codex-trust": { herdr: "idle", agent: "codex", expect: { card: { question: "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.", answer: "digit", confirm: true, labels: ["Trust and continue", "Quit"] } } },
+    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Sign in another way"] } } },
+  "codex-trust": { herdr: "idle", agent: "codex", expect: { card: { question: "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.", answer: "digit", confirm: true, labels: ["Trust and continue", "Back to Agent Command Center"] } } },
   "codex-update": { herdr: "idle", agent: "codex", expect: { card: { question: "Update available · 0.157.1 → 0.159.3", answer: "digit", confirm: true,
     labels: ["Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)", "Skip", "Skip until next version"] } } },
   "codex-migration": { herdr: "idle", agent: "codex", expect: { card: { question: "GPT-5.4 is no longer available", answer: "digit", confirm: true, labels: ["Try new model", "Use existing model"] } } },
@@ -71,6 +71,15 @@ const SCREENS: Record<string, { herdr: string; agent: string; expect: Expect }> 
   "codex-0.163-migration-linux": { herdr: "idle", agent: "codex", expect: { waits: true } },
   // Up to 0.163 sign-in offered three ways in, the last "Provide your own API key";
   // 0.164.0 reworded the question and added Amazon Bedrock.
+  // Replaced on 13 November 2026 by captures from Claude Code 2.1.323 and
+  // codex 0.167.2, whose census found each reworded: the subscription named
+  // "Individual", the API key and Bedrock folded into "Sign in another way",
+  // and trust's way out leading back to Codex's shared server (below).
+  "claude-2.1.286-login": { herdr: "idle", agent: "claude", expect: { card: { question: "Select login method:", answer: "digit",
+    labels: ["Claude account with subscription · Pro, Max, Team, or Enterprise", "Anthropic Console account · API usage billing", "3rd-party platform · Amazon Bedrock, Microsoft Foundry, Google Vertex AI"] } } },
+  "codex-0.164-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Choose how you want to use Codex.", answer: "digit", confirm: true,
+    labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Use an OpenAI API key", "Use Amazon Bedrock"] } } },
+  "codex-0.157-trust": { herdr: "idle", agent: "codex", expect: { card: { question: "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you trust these files. Your trust decision will be saved.", answer: "digit", confirm: true, labels: ["Trust and continue", "Quit"] } } },
   "codex-0.163-sign-in": { herdr: "idle", agent: "codex", expect: { card: { question: "Sign in with ChatGPT to use Codex as part of your paid plan or connect an API key for usage-based billing", answer: "digit", confirm: true,
     labels: ["Sign in with ChatGPT", "Sign in with Device Code", "Provide your own API key"] } } },
   "codex-0.160-update": { herdr: "unknown", agent: "codex", expect: { card: { question: "Update available · 0.160.0 → 9.0.0", answer: "digit", confirm: true,

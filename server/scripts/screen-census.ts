@@ -70,7 +70,7 @@ const mcp = (project: string, names: string[]) =>
 
 const ALL: Situation[] = [
   { id: "claude-theme", kind: "claude", setup: (home) => `export CLAUDE_CONFIG_DIR=${home}; unset ANTHROPIC_API_KEY` },
-  { id: "claude-login", kind: "claude", setup: (home) => `export CLAUDE_CONFIG_DIR=${home}; unset ANTHROPIC_API_KEY`, then: ["Enter"] },
+  { id: "claude-login", kind: "claude", alternateFixtures: ["claude-2.1.286-login"], setup: (home) => `export CLAUDE_CONFIG_DIR=${home}; unset ANTHROPIC_API_KEY`, then: ["Enter"] },
   { id: "claude-api-key", kind: "claude", setup: (home, project) => claudeHome(home, project, { customApiKeyResponses: { approved: [], rejected: [] } }) },
   { id: "claude-trust", kind: "claude", setup: (home, project) => claudeHome(home, project, { projects: {} }) },
   { id: "claude-bypass", kind: "claude", mode: "bypass", setup: (home, project) => claudeHome(home, project, {}) },
@@ -87,10 +87,10 @@ const ALL: Situation[] = [
     return claudeHome(home, project, {});
   } },
   { id: "claude-ready", kind: "claude", setup: (home, project) => claudeHome(home, project, {}) },
-  { id: "codex-sign-in", kind: "codex", alternateFixtures: ["codex-0.163-sign-in"], setup: (home, project) => codexHome(home, project, "", { signedIn: false }) },
+  { id: "codex-sign-in", kind: "codex", alternateFixtures: ["codex-0.164-sign-in", "codex-0.163-sign-in"], setup: (home, project) => codexHome(home, project, "", { signedIn: false }) },
   // Codex 0.160 skips trust outside a project. Use a real scratch repository
   // so this case still exercises folder consent rather than its composer.
-  { id: "codex-trust", kind: "codex", setup: (home, project) => {
+  { id: "codex-trust", kind: "codex", alternateFixtures: ["codex-0.157-trust"], setup: (home, project) => {
     const init = Bun.spawnSync(["git", "init", "--quiet", project], {
       env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" }, stdout: "ignore", stderr: "pipe",
     });

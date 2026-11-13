@@ -1416,6 +1416,12 @@ ownership explicit, on 0.157.1 this per-invocation configuration uses an embedde
 server. Without it Full auto and bypass attached to the shared daemon, losing
 this terminal's hook environment and exact process-file Reader lookup. Never
 repair that by selecting a rollout by working folder or modification time.
+That no longer holds (codex-cli 0.167.2 with its self-updated 0.169.0 daemon,
+macOS, 13 November 2026): a Codex started with those flags has no server of
+its own, draws "Back to Agent Command Center" on its trust question, and holds
+no rollout open; the shared `--managed-daemon` process holds them all. So a
+Codex Shahi starts is now found the way a hand-started one is, by its reported
+session or its title, and the flag is kept only for who reviews approvals.
 A Codex a person starts by hand gets the shared daemon too (codex-cli 0.160:
 no session reported, no rollout open in the pane), and read "Nothing to read
 yet" (TestFlight build 39). Its pane title, "<thread name> | <label>", names
