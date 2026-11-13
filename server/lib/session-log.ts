@@ -681,6 +681,19 @@ export function normalise(rows: Record<string, unknown>[]): LogMessage[] {
             onlyNotes = false;
             break;
           }
+          // A PDF sent with a message, from an app that drives Claude Code
+          // rather than from its terminal (census on Linux, November 2026:
+          // one `sdk-ts` row from 2.1.314 holding 1.1 MB of base64). Reader
+          // showed the words and nothing of the document. There is no route
+          // to its bytes, so the message says one was attached, as Codex's
+          // audio does, and the bytes never enter a page.
+          case "document": {
+            const source = isRecord(block.source) ? block.source : {};
+            const what = source.media_type === "application/pdf" ? "PDF" : "Document";
+            blocks.push({ kind: "tool", name: "Attachment", summary: `${what} attached; preview is unavailable in Reader`, result: null, outputUnavailable: true });
+            onlyNotes = false;
+            break;
+          }
           // A model switch (Fable to Opus, say): chrome worth a quiet note,
           // not silence. Real occurrences (13) carry only `to.model`.
           case "fallback": {

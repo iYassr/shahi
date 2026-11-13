@@ -61,6 +61,9 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "record:mode": dropped("the composer's mode, drawn in the footer, not the conversation"),
   "record:permission-mode": dropped("the permission mode, drawn in the footer, not the conversation"),
   "record:pr-link": dropped("a pull request link drawn in the footer, not the conversation"),
+  // The account, organisation and session ids of whoever owns the session
+  // (counted from 2.1.319). Ids only, and none of them is sent to a phone.
+  "record:session-owner": dropped(BOOKKEEPING),
   "record:queue-operation": dropped("messages waiting under the composer; each is shown once delivered, as a user row or a queued_command"),
   "record:summary": dropped("an older session's title row"),
 
@@ -77,6 +80,11 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   // 20 October 2026). Notices are left as they were until one is measured.
   "informational:warning": shown("a warning Claude Code draws in the conversation and leaves there"),
   "informational:notice": dropped("transient notices such as Backgrounding…; none measured staying on screen"),
+  // One row per retry of a failed request: `retryAttempt`, `maxRetries` and
+  // `retryInMs` beside the error (21 rows on Linux, November 2026). Decided
+  // from those fields, not watched on Screen: nobody could make the API fail
+  // on request. A request that fails for good is an assistant row, and shown.
+  "system:api_error": dropped("a retry of a failed request, counted down beside the spinner and gone once it succeeds"),
   "system:local_command": dropped("a local command's echo; its output arrives as <local-command-stdout>"),
   "system:turn_duration": dropped("the turn's timing"),
 
@@ -131,6 +139,7 @@ export const CLAUDE_SHAPES: Record<string, Decision> = {
   "block:assistant.fallback": shown("a model switch, as a note"),
   "block:user.text": shown("the person's words"),
   "block:user.image": shown("an image the person attached"),
+  "block:user.document": shown("a PDF sent with a message, named as an attachment; its bytes are not served"),
   "block:user.tool_result": shown("joined to its call"),
   "result:text": shown("tool output"),
   "result:image": shown("an image a tool returned"),

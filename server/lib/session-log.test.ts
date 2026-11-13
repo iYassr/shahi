@@ -436,6 +436,36 @@ describe("images inside a tool result", () => {
   });
 });
 
+// A PDF sent from an app that drives Claude Code is a `document` block beside
+// the words. Reader used to show the words alone; the Linux census of
+// November 2026 found the block with no decision.
+describe("a PDF attached to a message", () => {
+  const sent = () => normalise([user([
+    { type: "document", source: { type: "base64", media_type: "application/pdf", data: "JVBERi0xLjQ=" } },
+    { type: "text", text: "What does this say?" },
+  ])]);
+
+  test("says a PDF was attached, beside the person's words", () => {
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0]!.role).toBe("you");
+    expect(sent()[0]!.blocks).toEqual([
+      { kind: "tool", name: "Attachment", summary: "PDF attached; preview is unavailable in Reader", result: null, outputUnavailable: true },
+      { kind: "text", text: "What does this say?" },
+    ]);
+  });
+
+  test("never carries the document's bytes", () => {
+    expect(JSON.stringify(sent())).not.toContain("JVBERi0xLjQ=");
+  });
+
+  test("names any other document without guessing its kind", () => {
+    const [message] = normalise([user([{ type: "document", source: { type: "text", media_type: "text/plain", data: "notes" } }])]);
+    expect(message!.blocks).toEqual([
+      { kind: "tool", name: "Attachment", summary: "Document attached; preview is unavailable in Reader", result: null, outputUnavailable: true },
+    ]);
+  });
+});
+
 describe("fileOf", () => {
   test("finds the file a Read or Write named", () => {
     expect(fileOf({ file_path: "/home/x/project/src/api.ts" })).toEqual({
