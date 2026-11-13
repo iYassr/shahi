@@ -1,3 +1,41 @@
+# Pre-publication review, 13 November 2026
+
+Asked: does it support the newest agents, does everything pass, can it take
+launch traffic. Run on macOS at `203f3c6` plus the state-machine commits below;
+nothing is pushed.
+
+## Done
+
+- Agents installed: Claude Code 2.1.323, codex-cli 0.167.2 (daemon 0.169.0),
+  Cursor 2026.10.22 on the Mac and 2026.11.11 on Linux, OpenCode 1.19.5 and
+  2.2.0, Antigravity 1.5.7, herdr 0.9.5 (protocol 22, current stable)
+- Transcript census clean on both computers after three new decisions
+- Screen census: three reworded screens refreshed, all still cards
+- Cursor 2026.11.11: slow trusting screen, moved store.db, both journeys pass
+- Reader's own read over the Mac's transcripts from 2.1.317 to 2.1.323: four
+  transcripts, 125 messages, no failure
+- `bun run typecheck`, `bun run test` (2,085 pass), relay 139, mobile 787,
+  browser 424, hosted 76, PWA 44, dashboard 18; relay load 1,000 pairs passed
+- Public site, PWA, installer (herdr 0.9.5), relay health and App Store 1.1.4
+  answered; this Mac's service is 0.3.36 and connected
+
+## Next
+
+- **herdr's agent hooks are gone from both computers** (the 2 November
+  cleanup, `~/.claude/backups/agent-cleanup-2026-11-02/herdr-unhook`). Since
+  then the hourly journeys fail for Claude and OpenCode with "session not
+  reported", so no Claude from 2.1.317 on has been through a journey. Shahi
+  will not reinstall an integration it has seen removed. Reinstall them
+  (`herdr integration install claude`, and the others) or accept that the
+  canary cannot see those two agents, then run `bun run test:agents`.
+- Issues 59, 61, 62, 65 and 69 are still open; 62 and 65 are answered by the
+  census commit, 69 is stale (the service is connected).
+- Not run here: `reader-parity.ts` on live panes, `test:agents` on the Mac,
+  the herdr live suite, CI. The owner's policy runs CI at a release.
+- Codex's update offer cannot be drawn on a Mac standalone install; draw it on
+  Linux before a release.
+- The review computer's `REVIEW_EXPIRES_AT` is 31 December 2026.
+
 # State-machine review, November 2026
 
 Fixes from a review of the app's implicit state machines. Most have a test named
