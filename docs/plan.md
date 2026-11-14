@@ -18,6 +18,14 @@ nothing is pushed.
   browser 424, hosted 76, PWA 44, dashboard 18; relay load 1,000 pairs passed
 - Public site, PWA, installer (herdr 0.9.5), relay health and App Store 1.1.4
   answered; this Mac's service is 0.3.36 and connected
+- Simulator pass, 14 November: a Release build of 1.1.4 from this tree on an
+  iOS 27 simulator, `mobile/uitests/run.sh` without `PhoneTests`: all 12
+  passed. The simulator works again with no first-launch step. The first run
+  failed four tests because the simulator's keychain still held an unreachable
+  computer from an earlier session, which `signOutEverywhere` cannot leave;
+  `simctl keychain <udid> reset` and a reinstall cleared it. The build needs
+  `LANG=en_US.UTF-8` (CocoaPods) and `SENTRY_DISABLE_AUTO_UPLOAD=true` (no
+  Sentry token on this Mac), and a prebuild first: `mobile/ios` was 1.1.0.
 
 ## Next
 
@@ -33,7 +41,7 @@ nothing is pushed.
 - Issues 59, 61, 62, 65 and 69 are still open; 62 and 65 are answered by the
   census commit, 69 is stale (the service is connected).
 - Not run here: `reader-parity.ts` on live panes, OpenCode's journey on the
-  Mac (left out by `mac.skip`), the herdr live suite, the simulator, CI. The owner's policy runs CI at a release.
+  Mac (left out by `mac.skip`), the herdr live suite, the Maestro flows, CI. The owner's policy runs CI at a release.
 - Codex's update offer cannot be drawn on a Mac standalone install; draw it on
   Linux before a release.
 - The review computer's `REVIEW_EXPIRES_AT` is 31 December 2026.
@@ -66,9 +74,9 @@ are local until the owner asks to push.
 
 ## Next
 
-- Simulator pass, blocked: run `sudo xcodebuild -runFirstLaunch` (simulator
-  framework 1174.9.2, Xcode expects 1174.21). Then `e2e/native/` and
-  `docs/verify-on-device.md`, including the connect dead end and dictation.
+- The XCUITest suite passed on 14 November (above). Still to do by hand:
+  `e2e/native/`, the Maestro flows and `docs/verify-on-device.md` on a phone,
+  including the connect dead end and dictation.
 - Known gap: leaving during the relay claim round trip still selects the new
   computer (`connect.tsx`); it needs a session action to save without selecting.
 - Dictation's native states (second install after Cancel, "already running"
