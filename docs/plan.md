@@ -21,17 +21,19 @@ nothing is pushed.
 
 ## Next
 
-- **herdr's agent hooks are gone from both computers** (the 2 November
-  cleanup, `~/.claude/backups/agent-cleanup-2026-11-02/herdr-unhook`). Since
-  then the hourly journeys fail for Claude and OpenCode with "session not
-  reported", so no Claude from 2.1.317 on has been through a journey. Shahi
-  will not reinstall an integration it has seen removed. Reinstall them
-  (`herdr integration install claude`, and the others) or accept that the
-  canary cannot see those two agents, then run `bun run test:agents`.
+- herdr's agent hooks were removed from both computers in the 2 November
+  cleanup, and the hourly journeys failed for Claude and OpenCode from then on
+  ("session not reported"). The owner had them reinstalled on the Mac on
+  14 November (`herdr integration install`; the settings as they were are in
+  `~/.claude/backups/herdr-rehook-2026-11-14`). Journeys on the Mac then
+  passed: Claude Code 2.1.325 both ways, Codex 0.167.2 started by Shahi (by
+  hand is skipped while the owner's shared daemon runs), Antigravity 1.5.8
+  both ways. **Ubuntu is still unhooked**: run the five installs there, or its
+  hourly run keeps failing for Claude and OpenCode 2.2.0.
 - Issues 59, 61, 62, 65 and 69 are still open; 62 and 65 are answered by the
   census commit, 69 is stale (the service is connected).
-- Not run here: `reader-parity.ts` on live panes, `test:agents` on the Mac,
-  the herdr live suite, CI. The owner's policy runs CI at a release.
+- Not run here: `reader-parity.ts` on live panes, OpenCode's journey on the
+  Mac (left out by `mac.skip`), the herdr live suite, the simulator, CI. The owner's policy runs CI at a release.
 - Codex's update offer cannot be drawn on a Mac standalone install; draw it on
   Linux before a release.
 - The review computer's `REVIEW_EXPIRES_AT` is 31 December 2026.
