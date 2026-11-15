@@ -14,17 +14,17 @@
   `/private/tmp/shahi-release47/export/Shahi.ipa`, scripts in
   `~/.config/shahi-release/build-47/`.
 
+- iPhone 1.1.5 (build 47) uploaded once the owner accepted Apple's new
+  agreement (the API recovered at 07:49Z, altool four minutes later).
+  TestFlight: internal testing, external waiting for beta review. App Store
+  1.1.5 with build 47 submitted 2026-11-15T07:57Z, WAITING_FOR_REVIEW,
+  released automatically after approval.
+
 ## Next
 
-- **App Store Connect refuses every API call with 403
-  `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`.** The account holder has
-  to accept the new agreement (App Store Connect → Business). Then: upload
-  build 47 (`build-47/ship.sh` re-exports and uploads; `/private/tmp` is lost
-  on a restart, so re-run `prepare.sh 6a523a3…` and `build.sh` first if it is
-  gone), `finish.sh` for TestFlight, `submit-app-store.sh` for 1.1.5.
+- Watch App Review for 1.1.5.
 - herdr is not running on ubuntu (no server, no socket), so its service
   reports protocol 0. Ubuntu's agent hooks are still not reinstalled.
-- Issues 62, 65, 69 can be closed.
 
 # Pre-publication review, 13 November 2026
 
