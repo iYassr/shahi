@@ -1,3 +1,31 @@
+# Release, 15 November 2026
+
+## Done
+
+- Pushed to master at `6a523a3`. Computer release 0.3.37 went straight to
+  Stable (owner's instruction; run 43667369148, full CI green, approved
+  through the API) and is GitHub's Latest. A separate `ci.yml` run on the
+  same commit (43667372276) is green, for the App Store rule.
+- This Mac and ubuntu both run 0.3.37 (`request.json` install), relay
+  connected. Agent journeys on the Mac pass: Claude Code 2.1.325 both ways,
+  Codex 0.169.0 by Shahi, Antigravity 1.5.9 both ways; Codex by hand skipped
+  (shared daemon), Cursor not signed in, OpenCode refused by its provider.
+- iPhone 1.1.5 (build 47) archived, exported and verified from `6a523a3`:
+  `/private/tmp/shahi-release47/export/Shahi.ipa`, scripts in
+  `~/.config/shahi-release/build-47/`.
+
+## Next
+
+- **App Store Connect refuses every API call with 403
+  `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`.** The account holder has
+  to accept the new agreement (App Store Connect → Business). Then: upload
+  build 47 (`build-47/ship.sh` re-exports and uploads; `/private/tmp` is lost
+  on a restart, so re-run `prepare.sh 6a523a3…` and `build.sh` first if it is
+  gone), `finish.sh` for TestFlight, `submit-app-store.sh` for 1.1.5.
+- herdr is not running on ubuntu (no server, no socket), so its service
+  reports protocol 0. Ubuntu's agent hooks are still not reinstalled.
+- Issues 62, 65, 69 can be closed.
+
 # Pre-publication review, 13 November 2026
 
 Asked: does it support the newest agents, does everything pass, can it take
